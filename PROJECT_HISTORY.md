@@ -206,13 +206,11 @@ doApkDownload(downloadUrl, apkInfo.version)
   - `KEY_PASSWORD` ✅
 - keystore 파일 백업: AI Drive 업로드 완료 (분실 시 앱 업데이트 불가 — 안전한 곳에 추가 백업 필수!)
 
-### 🔴 [진행중] APK v1.2.5 GitHub Release 빌드 (서명 빌드)
-- keystore 등록 완료 → **서명 Release 빌드 실행 필요**
-- GitHub Actions 수동 실행:
-  - https://github.com/gisubhan-droid/safetynote-android/actions/workflows/build-apk.yml
-  - "Run workflow" → version: `1.2.5` / force_update: `false`
-- 빌드 성공 시 `app-release.apk` → GitHub Release에 자동 첨부됨
-- ⚠️ GitHub App 권한 제한으로 workflow dispatch API 호출 불가 → 웹 UI 수동 실행 필수
+### ✅ [완료] APK v1.2.5 GitHub Release 빌드 (서명 빌드, 2026-06-10)
+- keystore 등록 → **서명 Release APK 빌드 성공** (`assembleRelease`)
+- GitHub Release: https://github.com/gisubhan-droid/safetynote-android/releases/tag/v1.2.5
+- 첨부 파일: `safetynote-v1.2.5.apk` (Release 서명 빌드)
+- 빌드 시간: 2m32s / Build type: **release (signed)** ✅
 
 ### 🟡 [중간] NAS 크론잡 설정 (nas-auto-deploy.sh)
 - `safetynote-android/scripts/nas-auto-deploy.sh` NAS에 설치 및 크론잡 등록 미완
@@ -691,8 +689,8 @@ https://linkmax.myds.me:3443  → ✅ 정상 접속!
 - keystore 파일 AI Drive 백업 완료
 - GitHub Actions **서명 빌드 실행 대기 중** (웹 UI에서 직접 실행 필요)
 
-#### 잔여 작업
-- [ ] GitHub Actions 수동 실행 → v1.2.5 **Release(서명) APK** 빌드
-  - URL: https://github.com/gisubhan-droid/safetynote-android/actions/workflows/build-apk.yml
-  - Run workflow → version: `1.2.5`
-- [ ] 빌드 완료 후 앱에서 업데이트 알림 수신 확인
+#### 완료 항목
+- [x] GitHub Actions 수동 실행 → v1.2.5 **Release(서명) APK** 빌드 성공
+  - `Keystore restored` → `Building release APK (signed)` → `assembleRelease` ✅
+  - GitHub Release `v1.2.5` 생성 + `safetynote-v1.2.5.apk` 첨부 ✅
+- [ ] 앱에서 업데이트 알림 수신 및 설치 확인

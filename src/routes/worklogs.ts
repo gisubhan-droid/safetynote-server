@@ -36,7 +36,11 @@ app.post('/', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const body = await c.req.json()
   const { task_id, log_date, start_time, end_time, actual_quantity, quantity_unit,
-    work_location, work_description, issues, tomorrow_plan, status } = body
+    work_location, work_description, issues, tomorrow_plan, status,
+    gps_lat, gps_lon } = body
+  const gps_recorded_at = (gps_lat != null && gps_lon != null)
+    ? new Date(Date.now() + 9*60*60*1000).toISOString().replace('T',' ').slice(0,19)
+    : null
 
   // 같은 날 같은 작업 일지 있으면 업데이트
   const existing = await c.env.DB.prepare(
@@ -46,9 +50,11 @@ app.post('/', async (c) => {
   if (existing) {
     await c.env.DB.prepare(
       `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
-       work_location=?, work_description=?, issues=?, tomorrow_plan=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+       work_location=?, work_description=?, issues=?, tomorrow_plan=?, status=?,
+       gps_lat=?, gps_lon=?, gps_recorded_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
     ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
-      work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working', existing.id
+      work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
+      gps_lat ?? null, gps_lon ?? null, gps_recorded_at, existing.id
     ).run()
 
     // ── 기존 일지 수정 시에도 work_completed → completed 전환 체크 ──────────
@@ -70,9 +76,11 @@ app.post('/', async (c) => {
 
   const result = await c.env.DB.prepare(
     `INSERT INTO work_logs (task_id, worker_id, log_date, start_time, end_time, actual_quantity,
-     quantity_unit, work_location, work_description, issues, tomorrow_plan, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     quantity_unit, work_location, work_description, issues, tomorrow_plan, status,
+     gps_lat, gps_lon, gps_recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(task_id, user.id, log_date, start_time || '', end_time || '', actual_quantity || 0,
-    quantity_unit || '개', work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working'
+    quantity_unit || '개', work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
+    gps_lat ?? null, gps_lon ?? null, gps_recorded_at
   ).run()
 
   // 작업 일지 저장 후 작업 상태를 'completed'로 전환 (work_completed → completed)
@@ -111,7 +119,11 @@ app.put('/:id', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = c.req.param('id')
   const body = await c.req.json()
-  const { start_time, end_time, actual_quantity, quantity_unit, work_location, work_description, issues, tomorrow_plan, status } = body
+  const { start_time, end_time, actual_quantity, quantity_unit, work_location, work_description, issues, tomorrow_plan, status,
+    gps_lat, gps_lon } = body
+  const gps_recorded_at = (gps_lat != null && gps_lon != null)
+    ? new Date(Date.now() + 9*60*60*1000).toISOString().replace('T',' ').slice(0,19)
+    : null
 
   // 수정 전 일지에서 task_id 조회
   const logRow = await c.env.DB.prepare(
@@ -120,9 +132,11 @@ app.put('/:id', async (c) => {
 
   await c.env.DB.prepare(
     `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
-     work_location=?, work_description=?, issues=?, tomorrow_plan=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+     work_location=?, work_description=?, issues=?, tomorrow_plan=?, status=?,
+     gps_lat=?, gps_lon=?, gps_recorded_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
   ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
-    work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working', id
+    work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
+    gps_lat ?? null, gps_lon ?? null, gps_recorded_at, id
   ).run()
 
   // ── 일지 수정 시 work_completed → completed 전환 체크 ────────────────────

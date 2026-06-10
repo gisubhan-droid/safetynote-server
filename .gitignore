@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.wrangler/
+.env
+safety.db
+*.db-shm
+*.db-wal
+public/uploads/
+logs/
+*.log
+pids/
+.pm2/

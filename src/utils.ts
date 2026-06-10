@@ -1,0 +1,106 @@
+// UTF-8 안전한 토큰 디코딩 유틸리티
+export function decodeToken(token: string): any {
+  const binary = atob(token)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  const decoder = new TextDecoder()
+  return JSON.parse(decoder.decode(bytes))
+}
+
+export function getUser(c: any): any {
+  const auth = c.req.header('Authorization')
+  if (!auth) return null
+  try { return decodeToken(auth.replace('Bearer ', '')) } catch { return null }
+}
+
+// ─── 저장소 경로 생성 유틸리티 ────────────────────────────────────────────────
+//
+// 폴더 구조:
+//   {uploadRoot}/
+//     {공사요청번호}_{공사명}/          ← 공사 단위 루트
+//       {서브번호}_{작업일}_{작업종류}/ ← 작업 단위
+//         01_작업지시서/
+//         02_TBM/
+//         03_작업사진/
+//         04_현장점검/
+//         05_기타/
+//
+// 공사 미연결(construction_id = null) 작업의 경우:
+//   {uploadRoot}/미분류/{작업번호}_{작업일}_{작업종류}/{단계폴더}/
+
+export const STAGE_DIRS = {
+  order:      '01_작업지시서',
+  tbm:        '02_TBM',
+  photo:      '03_작업사진',
+  inspection: '04_현장점검',
+  other:      '05_기타',
+} as const
+
+export type StageKey = keyof typeof STAGE_DIRS
+
+/** 파일시스템에 사용할 수 없는 문자를 '_'로 치환 */
+function safeName(s: string): string {
+  return (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim()
+}
+
+/** YYYY-MM-DD 형태로 날짜 반환 (work_date 가 null 이면 오늘) */
+function fmtDate(d: string | null | undefined): string {
+  if (!d) return new Date().toISOString().slice(0, 10)
+  return String(d).slice(0, 10)
+}
+
+export interface StoragePathInfo {
+  /** 업로드 루트 (절대 or 상대) */
+  uploadRoot: string
+  /** 공사 폴더명 e.g. "REQ-2024-001_한전지중화공사" */
+  conFolder:  string
+  /** 작업 폴더명 e.g. "T-2024-0001_2024-07-01_청약개통" */
+  taskFolder: string
+  /** 단계 폴더명 e.g. "01_작업지시서" */
+  stageDir:   string
+  /** 최종 업로드 경로 (conFolder / taskFolder / stageDir) */
+  uploadDir:  string
+}
+
+/**
+ * 저장 경로를 조합해 반환.
+ * @param opts.uploadRoot   시스템 설정 upload_root_path (default: './public/uploads')
+ * @param opts.conRequestNo 공사 요청번호  (construction.request_no)
+ * @param opts.conTitle     공사명         (construction.title)
+ * @param opts.taskNumber   작업 번호      (task.task_number or sub_task_number)
+ * @param opts.workDate     작업 예정일    (task.work_date or planned_date)
+ * @param opts.workType     작업 종류      (task.construction_type)
+ * @param opts.stage        파일 단계      ('order'|'tbm'|'photo'|'inspection'|'other')
+ */
+export function buildStoragePath(opts: {
+  uploadRoot?:   string
+  conRequestNo?: string | null
+  conTitle?:     string | null
+  taskNumber?:   string | null
+  workDate?:     string | null
+  workType?:     string | null
+  stage?:        StageKey
+}): StoragePathInfo {
+  const root      = (opts.uploadRoot || './public/uploads').replace(/\/+$/, '')
+  const stage     = opts.stage || 'other'
+  const stageDir  = STAGE_DIRS[stage] || STAGE_DIRS.other
+
+  // 공사 폴더: "{request_no}_{공사명}"  / 미연결 시 "미분류"
+  const conFolder = (opts.conRequestNo && opts.conTitle)
+    ? safeName(`${opts.conRequestNo}_${opts.conTitle}`)
+    : '미분류'
+
+  // 작업 폴더: "{task_number}_{YYYY-MM-DD}_{작업종류}"
+  const taskNum  = safeName(opts.taskNumber  || 'UNKNOWN')
+  const workDate = fmtDate(opts.workDate)
+  const workType = safeName(opts.workType    || '작업')
+  const taskFolder = `${taskNum}_${workDate}_${workType}`
+
+  // 최종 경로 조합 (node:path 없이 직접 join — 런타임에서 호출될 때는 동적 import 사용)
+  const uploadDir = `${root}/${conFolder}/${taskFolder}/${stageDir}`
+
+  return { uploadRoot: root, conFolder, taskFolder, stageDir, uploadDir }
+}
+

@@ -1,0 +1,22 @@
+{
+  "name": "SafetyNOTE",
+  "short_name": "SafetyNOTE",
+  "description": "현장 안전관리 시스템",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#4E3A63",
+  "theme_color": "#4E3A63",
+  "orientation": "portrait-primary",
+  "lang": "ko",
+  "scope": "/",
+  "icons": [
+    { "src": "/static/app-icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/static/app-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "내 작업", "url": "/?page=my-tasks", "icons": [{"src":"/static/app-icon.png","sizes":"96x96"}] },
+    { "name": "TBM",     "url": "/?page=tbm",      "icons": [{"src":"/static/app-icon.png","sizes":"96x96"}] }
+  ],
+  "categories": ["productivity", "utilities"],
+  "prefer_related_applications": false
+}

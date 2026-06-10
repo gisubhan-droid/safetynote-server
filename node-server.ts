@@ -1,0 +1,2967 @@
+/**
+ * Safety NOTE - Node.js 통합 서버
+ * wrangler 없이 순수 Node.js로 실행
+ * @hono/node-server + better-sqlite3 + 원본 파일 업로드 지원
+ *
+ * 실행: npx tsx node-server.ts
+ *
+ * 환경변수 (.env 또는 시스템 환경변수):
+ *   PORT        - 포트 번호 (기본: 3000)
+ *   DB_PATH     - SQLite DB 파일 경로
+ *   UPLOAD_PATH - 파일 저장 루트 폴더 (기본: ./public/uploads)
+ *                 NAS 예시: /mnt/nas/safetynote/uploads
+ *                 서브폴더(연도/월)가 자동 생성됩니다.
+ *   UPLOAD_SUBDIR - 'true' 이면 연도/월 하위폴더 사용 (기본: true)
+ */
+
+import { serve } from '@hono/node-server'
+import { serveStatic } from '@hono/node-server/serve-static'
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import Database from 'better-sqlite3'
+import {
+  readFileSync, writeFileSync, unlinkSync,
+  mkdirSync, existsSync, readdirSync, statSync, createReadStream
+} from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { randomBytes } from 'node:crypto'
+import { spawn } from 'node:child_process'
+
+// SSE 공유 모듈
+import { sseClients, sendToUser, broadcastAll, broadcastToRoles, getConnectionCount } from './src/sse'
+
+// 라우트 임포트
+import authRoutes from './src/routes/auth'
+import taskRoutes from './src/routes/tasks'
+import userRoutes from './src/routes/users'
+import riskRoutes from './src/routes/risk'
+import tbmRoutes from './src/routes/tbm'
+import statsRoutes from './src/routes/stats'
+import inspectionRoutes from './src/routes/inspections'
+import hazardRoutes from './src/routes/hazards'
+import worklogRoutes from './src/routes/worklogs'
+import { checklistRoutes } from './src/routes/checklist'
+import teamRoutes from './src/routes/teams'
+import educationRoutes from './src/routes/education'
+import constructionRoutes from './src/routes/constructions'
+import notificationRoutes from './src/routes/notifications'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// ─── .env 파일 로드 (dotenv 없이 직접 파싱) ─────────────────────────
+function loadEnvFile(): void {
+  const envPath = join(__dirname, '.env')
+  if (!existsSync(envPath)) return
+  try {
+    const lines = readFileSync(envPath, 'utf-8').split('\n')
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+      const eqIdx = trimmed.indexOf('=')
+      if (eqIdx < 0) continue
+      const key = trimmed.slice(0, eqIdx).trim()
+      const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '')
+      if (key && !(key in process.env)) process.env[key] = val  // 시스템 환경변수 우선
+    }
+    console.log('[ENV] .env 파일 로드 완료:', envPath)
+  } catch (e) {
+    console.warn('[ENV] .env 파일 로드 실패:', e)
+  }
+}
+loadEnvFile()
+
+const PORT = parseInt(process.env.PORT || '3000')
+
+// ─── DB 경로 결정 ─────────────────────────────────────────────────────
+// 우선순위: 1) DB_PATH 환경변수  2) wrangler D1 로컬 sqlite (10KB 이상)  3) safety.db
+function resolveDbPath(): string {
+  if (process.env.DB_PATH && existsSync(process.env.DB_PATH)) return process.env.DB_PATH
+
+  // wrangler local D1 탐색 — 가장 큰 sqlite 파일 선택 (빈 파일 제외)
+  // ※ safety.db보다 D1 sqlite를 우선 사용 (실수로 빈 safety.db가 생성돼도 무시)
+  const d1Dir = join(__dirname, '.wrangler/state/v3/d1/miniflare-D1DatabaseObject')
+  if (existsSync(d1Dir)) {
+    const files = readdirSync(d1Dir)
+      .filter(f => f.endsWith('.sqlite') && !f.includes('metadata') && f !== '*.sqlite')
+      .map(f => ({ name: f, size: statSync(join(d1Dir, f)).size }))
+      .filter(f => f.size > 10240)         // 10KB 이상인 파일만 (실데이터 있는 DB)
+      .sort((a, b) => b.size - a.size)     // 가장 큰 파일 우선
+    if (files.length > 0) {
+      const p = join(d1Dir, files[0].name)
+      console.log(`[DB] wrangler local D1 사용: ${p}`)
+      return p
+    }
+  }
+
+  // fallback: safety.db (NAS 환경 등 wrangler D1 없는 경우)
+  const localDb = join(__dirname, 'safety.db')
+  if (existsSync(localDb)) {
+    console.log(`[DB] safety.db 사용: ${localDb}`)
+    return localDb
+  }
+
+  console.log(`[DB] 새 DB 생성: ${localDb}`)
+  return localDb
+}
+
+const DB_FILE = resolveDbPath()
+console.log(`[DB] ${DB_FILE}`)
+
+// ─── better-sqlite3 D1 호환 어댑터 ───────────────────────────────────
+const rawDb = new Database(DB_FILE)
+rawDb.pragma('journal_mode = WAL')
+rawDb.pragma('foreign_keys = ON')
+
+function makeD1(db: Database.Database) {
+  function makeStmt(query: string, params: any[] = []) {
+    return {
+      _query: query,
+      _params: params,
+      bind(...newParams: any[]) {
+        return makeStmt(query, newParams)
+      },
+      async first(col?: string) {
+        try {
+          const stmt = db.prepare(query)
+          const row: any = stmt.get(...params)
+          if (col !== undefined) return row ? row[col] : null
+          return row || null
+        } catch(e: any) { throw new Error(`D1_ERROR: ${e.message}`) }
+      },
+      async all() {
+        try {
+          const results = db.prepare(query).all(...params) as any[]
+          return { results: results || [], success: true, meta: { duration: 0 } }
+        } catch(e: any) { throw new Error(`D1_ERROR: ${e.message}`) }
+      },
+      async run() {
+        try {
+          const info = db.prepare(query).run(...params)
+          return { success: true, meta: { last_row_id: info.lastInsertRowid, changes: info.changes, duration: 0 } }
+        } catch(e: any) { throw new Error(`D1_ERROR: ${e.message}`) }
+      }
+    }
+  }
+  return {
+    prepare(query: string) { return makeStmt(query) },
+    async exec(query: string) { db.exec(query); return { success: true } }
+  }
+}
+
+const DB = makeD1(rawDb)
+
+// ─── 업로드 디렉토리 ──────────────────────────────────────────────────
+// 환경변수 UPLOAD_PATH 로 NAS/외부 폴더 지정 가능
+// 예) UPLOAD_PATH=/mnt/nas/safetynote/uploads
+const UPLOAD_ROOT = process.env.UPLOAD_PATH
+  ? process.env.UPLOAD_PATH.replace(/\/+$/, '')          // 끝 슬래시 제거
+  : join(__dirname, 'public', 'uploads')
+
+// 연도/월 하위폴더 사용 여부 (기본 true)
+const USE_SUBDIR = (process.env.UPLOAD_SUBDIR ?? 'true') !== 'false'
+
+// 루트 폴더 생성 보장
+mkdirSync(UPLOAD_ROOT, { recursive: true })
+
+// ─── 시스템 설정 캐시 (DB 준비 후 로드) ─────────────────────────────
+// DB가 초기화된 뒤 loadSystemSettings()로 채워짐
+let sysSettings: Record<string, string> = {
+  upload_root_path: '',
+  attach_max_mb:    '20',
+  attach_total_mb:  '200',
+  attach_allowed_ext: 'pdf,doc,docx,xls,xlsx,ppt,pptx,hwp,txt,jpg,jpeg,png,gif,webp,heic,mp4,zip',
+}
+
+function getSetting(key: string): string {
+  return sysSettings[key] ?? ''
+}
+
+// ─── 스키마 안전 패치 (컬럼 없으면 자동 추가) ─────────────────────────────────
+function patchSchema() {
+  const safeAlter = (sql: string) => {
+    try { rawDb.exec(sql) } catch(e: any) {
+      // "duplicate column name" 은 이미 있는 것이므로 무시
+      if (!e.message?.includes('duplicate column')) console.warn('[patchSchema]', e.message)
+    }
+  }
+  // v0.96: tasks 최종 확인 주소
+  safeAlter("ALTER TABLE tasks ADD COLUMN confirmed_address TEXT DEFAULT ''")
+  safeAlter("ALTER TABLE tasks ADD COLUMN confirmed_address_source TEXT DEFAULT ''")
+  safeAlter("ALTER TABLE tasks ADD COLUMN confirmed_address_at DATETIME")
+
+  // v0.100: users 가입 승인 컬럼
+  safeAlter("ALTER TABLE users ADD COLUMN is_pending INTEGER DEFAULT 0")
+  safeAlter("ALTER TABLE users ADD COLUMN rejection_reason TEXT DEFAULT NULL")
+  safeAlter("ALTER TABLE users ADD COLUMN approved_by INTEGER DEFAULT NULL")
+  safeAlter("ALTER TABLE users ADD COLUMN approved_at DATETIME DEFAULT NULL")
+
+  // v0.101: 안전교육 관리 테이블
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS safety_education_sessions (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      edu_type         TEXT NOT NULL,
+      edu_subject      TEXT NOT NULL,
+      edu_date         DATE NOT NULL,
+      edu_hours        REAL NOT NULL,
+      instructor       TEXT,
+      location         TEXT,
+      quarter          INTEGER,
+      year             INTEGER,
+      target_type      TEXT,
+      special_work_type TEXT,
+      notes            TEXT,
+      created_by       INTEGER REFERENCES users(id),
+      created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS safety_education_attendees (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id     INTEGER NOT NULL REFERENCES safety_education_sessions(id) ON DELETE CASCADE,
+      user_id        INTEGER REFERENCES users(id),
+      user_name      TEXT NOT NULL,
+      department     TEXT,
+      position       TEXT,
+      signature_data TEXT,
+      attended       INTEGER DEFAULT 1,
+      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_edu_sessions_type ON safety_education_sessions(edu_type)`)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_edu_sessions_date ON safety_education_sessions(edu_date)`)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_edu_sessions_year ON safety_education_sessions(year)`)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_edu_attendees_sess ON safety_education_attendees(session_id)`)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_edu_attendees_user ON safety_education_attendees(user_id)`)
+
+  // v0.98: tbm_photo_sections FK 수정 (checklist_assessments_old → checklist_assessments)
+  try {
+    const tpsSql: any = rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='tbm_photo_sections'").get()
+    if (tpsSql?.sql?.includes('checklist_assessments_old')) {
+      console.log('[patchSchema] tbm_photo_sections FK 수정 중...')
+      rawDb.pragma('foreign_keys = OFF')
+      const fix1 = rawDb.transaction(() => {
+        const existing: any[] = rawDb.prepare('SELECT * FROM tbm_photo_sections').all()
+        rawDb.exec('DROP TABLE tbm_photo_sections')
+        rawDb.exec(`CREATE TABLE tbm_photo_sections (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          assessment_id   INTEGER NOT NULL,
+          section_type    TEXT NOT NULL,
+          section_name    TEXT NOT NULL,
+          is_required     INTEGER DEFAULT 1,
+          FOREIGN KEY (assessment_id) REFERENCES checklist_assessments(id) ON DELETE CASCADE
+        )`)
+        const ins = rawDb.prepare('INSERT INTO tbm_photo_sections (id, assessment_id, section_type, section_name, is_required) VALUES (?,?,?,?,?)')
+        for (const r of existing) ins.run(r.id, r.assessment_id, r.section_type, r.section_name, r.is_required ?? 1)
+      })
+      fix1()
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[patchSchema] tbm_photo_sections FK 수정 완료')
+    }
+  } catch(e: any) { console.warn('[patchSchema] tbm_photo_sections FK 수정 실패:', e.message) }
+
+  // v0.98: risk_assessments status CHECK 제약 확장 (in_review, measures_done 추가)
+  try {
+    const raSql: any = rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='risk_assessments'").get()
+    if (raSql?.sql && !raSql.sql.includes('in_review')) {
+      console.log('[patchSchema] risk_assessments status CHECK 확장 중...')
+      rawDb.pragma('foreign_keys = OFF')
+      const fix2 = rawDb.transaction(() => {
+        rawDb.exec('DROP TABLE IF EXISTS risk_assessments_new')
+        rawDb.exec(`CREATE TABLE risk_assessments_new (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          task_id         INTEGER,
+          assessor_id     INTEGER NOT NULL,
+          assessment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+          weather         TEXT,
+          temperature     TEXT,
+          workers_count   INTEGER DEFAULT 1,
+          notes           TEXT,
+          status          TEXT DEFAULT 'draft' CHECK(status IN ('draft','in_review','measures_done','completed','approved')),
+          kakao_shared    INTEGER DEFAULT 0,
+          kakao_shared_at DATETIME,
+          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+          assessment_type TEXT NOT NULL DEFAULT 'task',
+          title           TEXT,
+          location        TEXT,
+          review_notes    TEXT,
+          final_notes     TEXT,
+          source_adhoc_ids TEXT,
+          review_date     DATE,
+          meeting_date    DATE,
+          meeting_place   TEXT,
+          adhoc_trigger   TEXT,
+          assessment_method TEXT DEFAULT '빈도·강도법(5×5 매트릭스)',
+          risk_acceptance_criteria TEXT DEFAULT '허용가능: 낮음(4점 이하) / 허용불가: 보통 이상(5점 이상)',
+          scan_files      TEXT,
+          FOREIGN KEY (task_id)     REFERENCES tasks(id),
+          FOREIGN KEY (assessor_id) REFERENCES users(id)
+        )`)
+        rawDb.exec('INSERT INTO risk_assessments_new SELECT * FROM risk_assessments')
+        rawDb.exec('DROP TABLE risk_assessments')
+        rawDb.exec('ALTER TABLE risk_assessments_new RENAME TO risk_assessments')
+      })
+      fix2()
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[patchSchema] risk_assessments status CHECK 확장 완료')
+    }
+  } catch(e: any) { console.warn('[patchSchema] risk_assessments status CHECK 수정 실패:', e.message) }
+  // v0.98: checklist_responses FK 수정 (checklist_assessments_old → checklist_assessments)
+  try {
+    const crSql: any = rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='checklist_responses'").get()
+    if (crSql?.sql?.includes('checklist_assessments_old')) {
+      console.log('[patchSchema] checklist_responses FK 수정 중...')
+      rawDb.pragma('foreign_keys = OFF')
+      const fixCR = rawDb.transaction(() => {
+        const existing: any[] = rawDb.prepare('SELECT * FROM checklist_responses').all()
+        rawDb.exec('DROP TABLE checklist_responses')
+        rawDb.exec(`CREATE TABLE checklist_responses (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          assessment_id   INTEGER NOT NULL,
+          item_id         INTEGER NOT NULL,
+          response        TEXT DEFAULT NULL CHECK(response IS NULL OR response IN ('na','ok','nok')),
+          memo            TEXT,
+          FOREIGN KEY (assessment_id) REFERENCES checklist_assessments(id) ON DELETE CASCADE,
+          FOREIGN KEY (item_id) REFERENCES checklist_items(id),
+          UNIQUE(assessment_id, item_id)
+        )`)
+        const ins = rawDb.prepare('INSERT INTO checklist_responses (id, assessment_id, item_id, response, memo) VALUES (?,?,?,?,?)')
+        for (const r of existing) ins.run(r.id, r.assessment_id, r.item_id, r.response, r.memo)
+      })
+      fixCR()
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[patchSchema] checklist_responses FK 수정 완료')
+    }
+  } catch(e: any) { console.warn('[patchSchema] checklist_responses FK 수정 실패:', e.message) }
+
+  // v0.98: inspection_photos FK 수정 (site_inspections_old → site_inspections)
+  try {
+    const ipSql: any = rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='inspection_photos'").get()
+    if (ipSql?.sql?.includes('site_inspections_old')) {
+      console.log('[patchSchema] inspection_photos FK 수정 중...')
+      rawDb.pragma('foreign_keys = OFF')
+      const fixIP = rawDb.transaction(() => {
+        const existing: any[] = rawDb.prepare('SELECT * FROM inspection_photos').all()
+        rawDb.exec('DROP TABLE inspection_photos')
+        rawDb.exec(`CREATE TABLE inspection_photos (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          inspection_id   INTEGER NOT NULL,
+          file_name       TEXT NOT NULL,
+          file_path       TEXT,
+          file_data       TEXT,
+          caption         TEXT,
+          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+          mime_type       TEXT DEFAULT 'image/jpeg',
+          FOREIGN KEY (inspection_id) REFERENCES site_inspections(id)
+        )`)
+        const ins = rawDb.prepare('INSERT INTO inspection_photos (id, inspection_id, file_name, file_path, file_data, caption, created_at, mime_type) VALUES (?,?,?,?,?,?,?,?)')
+        for (const r of existing) ins.run(r.id, r.inspection_id, r.file_name, r.file_path, r.file_data, r.caption, r.created_at, r.mime_type || 'image/jpeg')
+      })
+      fixIP()
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[patchSchema] inspection_photos FK 수정 완료')
+    }
+  } catch(e: any) { console.warn('[patchSchema] inspection_photos FK 수정 실패:', e.message) }
+
+  // v0.107: 안전교육 법령기준 레코드 시드 (교육 유형별 대상/시간/과태료)
+  // content 컬럼에 JSON 배열 저장: [{target, hours, fine}, ...]
+  // law_ref 컬럼에 교육 페이지 서브타이틀 텍스트 저장
+  try {
+    const eduSeeds = [
+      {
+        key: 'edu_periodic',
+        title: '정기교육 법적 기준',
+        law_ref: '매 분기 실시 | 사무직 6h↑ / 그 외 12h↑ (산안법 제29조)',
+        content: JSON.stringify([
+          { target: '사무직/판매직', hours: '분기별 6시간 이상', fine: '10→20→50만원' },
+          { target: '그 외 근로자', hours: '분기별 12시간 이상', fine: '10→20→50만원' },
+        ])
+      },
+      {
+        key: 'edu_hire',
+        title: '채용시 교육 법적 기준',
+        law_ref: '채용 즉시 실시 | 일용 1h↑ / 기간제 4h↑ / 그 외 8h↑',
+        content: JSON.stringify([
+          { target: '일용근로자 (1주 이하)', hours: '1시간 이상', fine: '10→20→50만원' },
+          { target: '기간제 (1주~1개월)', hours: '4시간 이상', fine: '10→20→50만원' },
+          { target: '그 외 근로자', hours: '8시간 이상', fine: '10→20→50만원' },
+        ])
+      },
+      {
+        key: 'edu_job_change',
+        title: '작업내용 변경시 교육 법적 기준',
+        law_ref: '작업 변경 전 실시 | 일용 1h↑ / 그 외 2h↑',
+        content: JSON.stringify([
+          { target: '일용근로자 (1주 이하)', hours: '1시간 이상', fine: '10→20→50만원' },
+          { target: '그 외 근로자', hours: '2시간 이상', fine: '10→20→50만원' },
+        ])
+      },
+      {
+        key: 'edu_special',
+        title: '특별교육 법적 기준',
+        law_ref: '특별 작업 전 실시 | 일용 2h↑ / 그 외 16h↑ (분할 가능)',
+        content: JSON.stringify([
+          { target: '일용근로자 (타워크레인 제외)', hours: '2시간 이상', fine: '50→100→150만원' },
+          { target: '타워크레인 신호 일용', hours: '8시간 이상', fine: '50→100→150만원' },
+          { target: '그 외 근로자', hours: '16시간 이상 (단기 2h 가능)', fine: '50→100→150만원' },
+        ])
+      },
+      {
+        key: 'edu_supervisor',
+        title: '관리감독자 교육 법적 기준',
+        law_ref: '연간 16시간 이상 | 과태료 50~500만원',
+        content: JSON.stringify([
+          { target: '관리감독자', hours: '연간 16시간 이상', fine: '50→250→500만원' },
+        ])
+      },
+    ]
+    const insStmt = rawDb.prepare(
+      `INSERT OR IGNORE INTO legal_notices (notice_key, title, law_ref, content, is_active)
+       VALUES (?, ?, ?, ?, 1)`
+    )
+    for (const s of eduSeeds) {
+      insStmt.run(s.key, s.title, s.law_ref, s.content)
+    }
+    console.log('[patchSchema] 교육 법령기준 시드 완료')
+  } catch(e: any) { console.warn('[patchSchema] 교육 법령기준 시드 실패:', e.message) }
+
+  // v0.109: 안전교육 증빙사진 + 결과보고서 테이블
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS edu_photos (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id  INTEGER NOT NULL REFERENCES safety_education_sessions(id) ON DELETE CASCADE,
+      file_name   TEXT NOT NULL,
+      file_path   TEXT NOT NULL,
+      caption     TEXT,
+      uploaded_by INTEGER REFERENCES users(id),
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_edu_photos_session ON edu_photos(session_id)`)
+
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS edu_reports (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id   INTEGER NOT NULL UNIQUE REFERENCES safety_education_sessions(id) ON DELETE CASCADE,
+      report_title TEXT,
+      objectives   TEXT,
+      content_desc TEXT,
+      outcomes     TEXT,
+      improvements TEXT,
+      created_by   INTEGER REFERENCES users(id),
+      updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_edu_reports_session ON edu_reports(session_id)`)
+  console.log('[patchSchema] edu_photos/edu_reports 테이블 준비 완료')
+
+  // v0.110: safety_education_sessions 새 컬럼 추가
+  //  - start_time / end_time : 시작·종료 시간 (HH:MM)
+  //  - edu_content           : 교육 내용 (법령 기본값 포함, 수정 가능)
+  //  - is_completed          : 완료처리 여부 (0/1)
+  //  - completed_at          : 완료처리 일시
+  const eduAlters = [
+    `ALTER TABLE safety_education_sessions ADD COLUMN start_time   TEXT`,
+    `ALTER TABLE safety_education_sessions ADD COLUMN end_time     TEXT`,
+    `ALTER TABLE safety_education_sessions ADD COLUMN edu_content  TEXT`,
+    `ALTER TABLE safety_education_sessions ADD COLUMN is_completed INTEGER DEFAULT 0`,
+    `ALTER TABLE safety_education_sessions ADD COLUMN completed_at DATETIME`,
+  ]
+  for (const sql of eduAlters) {
+    try { rawDb.exec(sql) } catch(e: any) {
+      if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.110]', e.message)
+    }
+  }
+  console.log('[patchSchema] v0.110 교육 컬럼 패치 완료')
+
+  // v0.110: users 테이블 교육 이수현황 컬럼 추가
+  const userEduAlters = [
+    `ALTER TABLE users ADD COLUMN edu_periodic_date   DATE`,
+    `ALTER TABLE users ADD COLUMN edu_job_change_date DATE`,
+    `ALTER TABLE users ADD COLUMN edu_special_date    DATE`,
+    `ALTER TABLE users ADD COLUMN edu_supervisor_date DATE`,
+  ]
+  for (const sql of userEduAlters) {
+    try { rawDb.exec(sql) } catch(e: any) {
+      if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.110 users]', e.message)
+    }
+  }
+  console.log('[patchSchema] v0.110 users 교육 이수 컬럼 패치 완료')
+
+  // v0.111m: 서명 이미지(Canvas) 저장 컬럼 추가
+  const signDataAlters = [
+    `ALTER TABLE tbm_signatures               ADD COLUMN sign_data TEXT`,
+    `ALTER TABLE risk_assessment_signatures   ADD COLUMN sign_data TEXT`,
+  ]
+  for (const sql of signDataAlters) {
+    try { rawDb.exec(sql) } catch(e: any) {
+      if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.111m]', e.message)
+    }
+  }
+  console.log('[patchSchema] v0.111m sign_data 컬럼 패치 완료')
+
+  // v0.112p: 서명 요청 테이블
+  // ref_type: 'tbm' | 'risk_assessment' | 'education'
+  // status: 'pending' | 'signed' | 'rejected'
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS signature_requests (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      ref_type     TEXT NOT NULL,
+      ref_id       INTEGER NOT NULL,
+      ref_sub_type TEXT,
+      title        TEXT NOT NULL,
+      description  TEXT,
+      requester_id INTEGER NOT NULL REFERENCES users(id),
+      target_user_id INTEGER NOT NULL REFERENCES users(id),
+      status       TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','signed','rejected')),
+      sign_data    TEXT,
+      signed_at    DATETIME,
+      rejected_reason TEXT,
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      expires_at   DATETIME
+    )
+  `)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_sig_req_target ON signature_requests(target_user_id, status)`)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_sig_req_ref ON signature_requests(ref_type, ref_id)`)
+  console.log('[patchSchema] v0.112p signature_requests 테이블 준비 완료')
+
+  // v0.118h: tbm_signatures 테이블 없으면 생성 후 인덱스 추가
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS tbm_signatures (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      tbm_id      INTEGER NOT NULL REFERENCES tbm_records(id) ON DELETE CASCADE,
+      user_id     INTEGER REFERENCES users(id),
+      user_name   TEXT NOT NULL,
+      position    TEXT,
+      role        TEXT DEFAULT 'attendee',
+      signed_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      sign_method TEXT DEFAULT 'account',
+      sign_data   TEXT,
+      UNIQUE(tbm_id, user_id)
+    )
+  `)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_sig_tbm  ON tbm_signatures(tbm_id)`)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_sig_name ON tbm_signatures(tbm_id, user_name)`)
+  console.log('[patchSchema] v0.118h tbm_signatures 테이블 및 인덱스 준비 완료')
+
+  // v0.119i: tbm_signatures — user_id FK 제약 완화 (이름 기반 서명 시 user_id NULL 허용)
+  // 기존: user_id INTEGER NOT NULL REFERENCES users(id)
+  // 변경: user_id INTEGER REFERENCES users(id)  (NULL 허용 → 이름 기반 서명 저장 가능)
+  {
+    const colInfo = rawDb.prepare(`PRAGMA table_info(tbm_signatures)`).all() as any[]
+    const uidCol = colInfo.find((c: any) => c.name === 'user_id')
+    // notnull=1 이면 아직 마이그레이션 전
+    if (uidCol && uidCol.notnull === 1) {
+      console.log('[patchSchema] v0.119i tbm_signatures user_id NULL 허용 마이그레이션 시작...')
+      rawDb.exec(`
+        PRAGMA foreign_keys=OFF;
+        BEGIN;
+        CREATE TABLE IF NOT EXISTS tbm_signatures_new (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          tbm_id      INTEGER NOT NULL REFERENCES tbm_records(id) ON DELETE CASCADE,
+          user_id     INTEGER REFERENCES users(id),
+          user_name   TEXT NOT NULL,
+          position    TEXT,
+          role        TEXT DEFAULT 'attendee',
+          signed_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+          sign_method TEXT DEFAULT 'account',
+          sign_data   TEXT,
+          UNIQUE(tbm_id, user_id)
+        );
+        INSERT INTO tbm_signatures_new SELECT * FROM tbm_signatures;
+        DROP TABLE tbm_signatures;
+        ALTER TABLE tbm_signatures_new RENAME TO tbm_signatures;
+        CREATE INDEX IF NOT EXISTS idx_tbm_sig_tbm  ON tbm_signatures(tbm_id);
+        CREATE INDEX IF NOT EXISTS idx_tbm_sig_name ON tbm_signatures(tbm_id, user_name);
+        COMMIT;
+        PRAGMA foreign_keys=ON;
+      `)
+      console.log('[patchSchema] v0.119i tbm_signatures user_id NULL 허용 마이그레이션 완료')
+    } else {
+      console.log('[patchSchema] v0.119i tbm_signatures 이미 마이그레이션됨 (skip)')
+    }
+  }
+
+  // v0.121u: tbm_signatures UNIQUE 제약 (tbm_id, user_id) → (tbm_id, user_id, role)
+  // 결재 서명은 동일 user가 role별로 서명 가능해야 하므로 role을 UNIQUE 키에 포함
+  {
+    const idxInfo = rawDb.prepare(`PRAGMA index_list(tbm_signatures)`).all() as any[]
+    const hasRoleUniq = idxInfo.some((ix: any) => {
+      // (tbm_id, user_id, role) 3컬럼 unique 인덱스가 있으면 skip
+      const cols = rawDb.prepare(`PRAGMA index_info(${ix.name})`).all() as any[]
+      return ix.unique === 1 && cols.length === 3 && cols.some((c: any) => c.name === 'role')
+    })
+    if (!hasRoleUniq) {
+      console.log('[patchSchema] v0.121u tbm_signatures UNIQUE 제약 role 포함으로 변경 시작...')
+      rawDb.exec(`
+        PRAGMA foreign_keys=OFF;
+        BEGIN;
+        CREATE TABLE IF NOT EXISTS tbm_signatures_v121 (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          tbm_id      INTEGER NOT NULL REFERENCES tbm_records(id) ON DELETE CASCADE,
+          user_id     INTEGER REFERENCES users(id),
+          user_name   TEXT NOT NULL,
+          position    TEXT,
+          role        TEXT DEFAULT 'attendee',
+          signed_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+          sign_method TEXT DEFAULT 'account',
+          sign_data   TEXT,
+          UNIQUE(tbm_id, user_id, role)
+        );
+        INSERT OR IGNORE INTO tbm_signatures_v121 SELECT * FROM tbm_signatures;
+        DROP TABLE tbm_signatures;
+        ALTER TABLE tbm_signatures_v121 RENAME TO tbm_signatures;
+        CREATE INDEX IF NOT EXISTS idx_tbm_sig_tbm  ON tbm_signatures(tbm_id);
+        CREATE INDEX IF NOT EXISTS idx_tbm_sig_name ON tbm_signatures(tbm_id, user_name);
+        COMMIT;
+        PRAGMA foreign_keys=ON;
+      `)
+      console.log('[patchSchema] v0.121u tbm_signatures UNIQUE(tbm_id, user_id, role) 변경 완료')
+    } else {
+      console.log('[patchSchema] v0.121u tbm_signatures UNIQUE 제약 이미 적용됨 (skip)')
+    }
+  }
+
+  // v0.120n: notifications 테이블 (정산요청 등 알림 영구 저장)
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL,
+      type        TEXT    NOT NULL,
+      title       TEXT    NOT NULL,
+      message     TEXT    NOT NULL,
+      ref_id      INTEGER,
+      ref_type    TEXT,
+      is_read     INTEGER NOT NULL DEFAULT 0,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `)
+  rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+      ON notifications(user_id, is_read, created_at DESC)
+  `)
+  console.log('[patchSchema] v0.120n notifications 테이블 준비 완료')
+
+  // v0.121g: users.grade 컬럼 추가 (직급)
+  try {
+    rawDb.exec(`ALTER TABLE users ADD COLUMN grade TEXT NOT NULL DEFAULT ''`)
+    console.log('[patchSchema] v0.121g users.grade 컬럼 추가 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.121g]', e.message)
+  }
+}
+patchSchema()
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function loadSystemSettings(db: any): Promise<void> {
+  try {
+    // 테이블 없으면 자동 생성
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL DEFAULT '',
+        label TEXT,
+        description TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT OR IGNORE INTO system_settings (key, value, label, description) VALUES
+        ('upload_root_path',           '',    '파일 저장 루트 경로', 'NAS 또는 로컬 경로. 비워두면 기본 경로(./public/uploads) 사용'),
+        ('attach_max_mb',              '20',  '[공통] 파일 1개 최대 용량(MB)', '단계별 설정이 없을 때 사용되는 기본값'),
+        ('attach_total_mb',            '200', '[공통] 작업 총 첨부 한도(MB)', '단계별 설정이 없을 때 사용되는 기본값'),
+        ('attach_allowed_ext',         'pdf,doc,docx,xls,xlsx,ppt,pptx,hwp,txt,jpg,jpeg,png,gif,webp,heic,mp4,zip', '[공통] 허용 확장자', '단계별 설정이 없을 때 사용되는 기본값'),
+        ('attach_order_max_mb',        '',    '01_작업지시서 파일 1개 최대(MB)', '비워두면 공통값 사용'),
+        ('attach_order_total_mb',      '',    '01_작업지시서 총 한도(MB)', '비워두면 공통값 사용'),
+        ('attach_order_allowed_ext',   '',    '01_작업지시서 허용 확장자', '비워두면 공통값 사용'),
+        ('attach_tbm_max_mb',          '',    '02_TBM 파일 1개 최대(MB)', '비워두면 공통값 사용'),
+        ('attach_tbm_total_mb',        '',    '02_TBM 총 한도(MB)', '비워두면 공통값 사용'),
+        ('attach_tbm_allowed_ext',     '',    '02_TBM 허용 확장자', '비워두면 공통값 사용'),
+        ('attach_photo_max_mb',        '',    '03_작업사진 파일 1개 최대(MB)', '비워두면 공통값 사용'),
+        ('attach_photo_total_mb',      '',    '03_작업사진 총 한도(MB)', '비워두면 공통값 사용'),
+        ('attach_photo_allowed_ext',   '',    '03_작업사진 허용 확장자', '비워두면 공통값 사용'),
+        ('attach_inspection_max_mb',   '',    '04_현장점검 파일 1개 최대(MB)', '비워두면 공통값 사용'),
+        ('attach_inspection_total_mb', '',    '04_현장점검 총 한도(MB)', '비워두면 공통값 사용'),
+        ('attach_inspection_allowed_ext','',  '04_현장점검 허용 확장자', '비워두면 공통값 사용'),
+        ('attach_other_max_mb',        '',    '05_기타 파일 1개 최대(MB)', '비워두면 공통값 사용'),
+        ('attach_other_total_mb',      '',    '05_기타 총 한도(MB)', '비워두면 공통값 사용'),
+        ('attach_other_allowed_ext',   '',    '05_기타 허용 확장자', '비워두면 공통값 사용'),
+        ('kakao_rest_api_key',         '',    '카카오 REST API 키', 'GPS 역지오코딩(지번주소 포함)에 사용. 없으면 Nominatim(도로명만) 사용');
+    `)
+    const rows = await db.prepare('SELECT key, value FROM system_settings').all()
+    for (const row of (rows.results || [])) {
+      sysSettings[row.key] = row.value
+    }
+    // DB 설정값이 있으면 UPLOAD_ROOT 재정의
+    const dbPath = getSetting('upload_root_path')
+    if (dbPath) {
+      const resolved = dbPath.replace(/\/+$/, '')
+      if (resolved !== UPLOAD_ROOT) {
+        ;(global as any).__UPLOAD_ROOT_OVERRIDE = resolved
+        mkdirSync(resolved, { recursive: true })
+        console.log(`[설정] 업로드 루트 → ${resolved}`)
+      }
+    }
+  } catch (e) {
+    console.warn('[설정] system_settings 로드 실패:', e)
+  }
+}
+
+/** 현재 유효한 업로드 루트 반환 */
+function getUploadRoot(): string {
+  const override = (global as any).__UPLOAD_ROOT_OVERRIDE
+  return override || UPLOAD_ROOT
+}
+
+// ─── 새 폴더 구조 (v2) ────────────────────────────────────────────────────────
+// {uploadRoot}/{공사요청번호}_{공사명}/{서브번호}_{작업일}_{작업종류}/{단계폴더}/
+const STAGE_DIRS: Record<string, string> = {
+  order:      '01_작업지시서',
+  tbm:        '02_TBM',
+  photo:      '03_작업사진',
+  inspection: '04_현장점검',
+  other:      '05_기타',
+}
+
+function safeFsName(s: string): string {
+  return (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim()
+}
+
+function fmtDateStr(d: string | null | undefined): string {
+  if (!d) return new Date().toISOString().slice(0, 10)
+  return String(d).slice(0, 10)
+}
+
+/**
+ * 파일 저장 폴더 반환 — 없으면 자동 생성
+ * @param task  tasks + constructions JOIN 결과 (또는 하위호환용 문자열)
+ * @param stage 'order'|'tbm'|'photo'|'inspection'|'other'
+ */
+function getUploadDir(
+  task: {
+    task_number?: string | null; sub_task_number?: string | null
+    work_date?: string | null;   planned_date?: string | null
+    construction_type?: string | null
+    con_request_no?: string | null; con_title?: string | null
+  } | string,
+  stage: string = 'photo'
+): string {
+  const root = getUploadRoot()
+
+  // 하위 호환: 문자열 전달 시 미분류 처리
+  if (typeof task === 'string') {
+    const dir = join(root, '미분류', safeFsName(task), STAGE_DIRS[stage] || STAGE_DIRS.other)
+    mkdirSync(dir, { recursive: true })
+    return dir
+  }
+
+  const conFolder = (task.con_request_no && task.con_title)
+    ? safeFsName(`${task.con_request_no}_${task.con_title}`)
+    : '미분류'
+
+  const taskNum    = safeFsName(task.sub_task_number || task.task_number || 'UNKNOWN')
+  const workDate   = fmtDateStr(task.work_date || task.planned_date)
+  const workType   = safeFsName(task.construction_type || '작업')
+  const taskFolder = `${taskNum}_${workDate}_${workType}`
+  const stageDir   = STAGE_DIRS[stage] || STAGE_DIRS.other
+
+  const dir = join(root, conFolder, taskFolder, stageDir)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/** 하위 호환 */
+const UPLOAD_DIR = UPLOAD_ROOT
+
+/** @deprecated getUploadDir(task, stage) 사용 */
+function buildTaskFolderName(task: {
+  request_no?: string | null; work_number?: string | null; id?: number
+}): string {
+  return safeFsName(task.request_no || task.work_number || `task_${task.id || 'UNKNOWN'}`)
+}
+
+function generateFileName(originalName: string): string {
+  const ext = (originalName.split('.').pop() || 'jpg').toLowerCase()
+  return `${Date.now()}_${randomBytes(3).toString('hex')}.${ext}`
+}
+
+// ─── TBM 결재 완료 PDF 자동 저장 ──────────────────────────────────────────
+const HEADLESS_SHELL = '/home/user/.cache/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell'
+
+function htmlFileToPdf(htmlPath: string, pdfPath: string, timeoutMs = 30000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(HEADLESS_SHELL, [
+      '--no-sandbox', '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage', '--disable-gpu',
+      '--no-zygote', '--single-process',
+      `--print-to-pdf=${pdfPath}`,
+      '--no-pdf-header-footer',
+      `file://${htmlPath}`,
+    ], { stdio: 'pipe' })
+    const timer = setTimeout(() => {
+      proc.kill('SIGKILL')
+      reject(new Error(`chrome-headless-shell timeout (${timeoutMs}ms)`))
+    }, timeoutMs)
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0) resolve()
+      else reject(new Error(`chrome-headless-shell exited with code ${code}`))
+    })
+    proc.on('error', (err) => { clearTimeout(timer); reject(err) })
+  })
+}
+
+async function generateTbmApprovalPdf(tbmId: number): Promise<void> {
+  const tmpHtml = join('/tmp', `tbm_${tbmId}_${Date.now()}.html`)
+  try {
+    console.log(`[PDF] TBM #${tbmId} 결과보고서 생성 시작`)
+
+    const tbm = rawDb.prepare(`
+      SELECT tr.*,
+             t.title              AS task_title,
+             t.task_number        AS task_number,
+             t.sub_task_number    AS sub_task_number,
+             t.work_date          AS work_date,
+             t.planned_date       AS planned_date,
+             t.construction_type  AS construction_type,
+             c.request_no         AS con_request_no,
+             c.title              AS con_title,
+             u.name               AS conductor_name,
+             u.position           AS conductor_position
+      FROM   tbm_records tr
+      LEFT JOIN tasks         t ON t.id = tr.task_id
+      LEFT JOIN constructions c ON c.id = t.construction_id
+      LEFT JOIN users         u ON u.id = tr.conductor_id
+      WHERE  tr.id = ?
+    `).get(tbmId) as any
+    if (!tbm) { console.warn(`[PDF] TBM #${tbmId} 없음`); return }
+
+    const sigs = rawDb.prepare(`
+      SELECT user_name, position, role, signed_at, sign_method, sign_data
+      FROM   tbm_signatures WHERE tbm_id = ?
+      ORDER BY CASE role
+        WHEN 'attendee' THEN 0 WHEN 'approval_safety' THEN 1
+        WHEN 'approval_general' THEN 2 WHEN 'approval_ceo' THEN 3 ELSE 4
+      END, signed_at ASC
+    `).all(tbmId) as any[]
+
+    const sigMap: Record<string, any> = {}
+    for (const s of sigs) { sigMap[s.role] = s }
+    const attendees = sigs.filter((s: any) => s.role === 'attendee')
+
+    const taskObj = {
+      task_number: tbm.task_number, sub_task_number: tbm.sub_task_number,
+      work_date: tbm.work_date, planned_date: tbm.planned_date,
+      construction_type: tbm.construction_type,
+      con_request_no: tbm.con_request_no, con_title: tbm.con_title,
+    }
+    const saveDir  = getUploadDir(taskObj, 'tbm')
+    const dateStr  = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const filePath = join(saveDir, `TBM결과보고_${dateStr}.pdf`)
+
+    const fmtDt = (v?: string) =>
+      v ? new Date(v).toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '-'
+    const fmtD = (v?: string) =>
+      v ? new Date(v).toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' }) : '-'
+    const esc = (s: any) => String(s ?? '-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    const signCell = (sig: any) => {
+      if (!sig) return '<div class="sc empty">미서명</div>'
+      if (sig.sign_method === 'pad' && sig.sign_data)
+        return `<div class="sc"><img src="${sig.sign_data}" style="max-width:100%;max-height:54px"/></div>`
+      return `<div class="sc name">${esc(sig.user_name)}</div>`
+    }
+    const safetyTopics = (tbm.safety_topics || '').split('\n').filter(Boolean)
+    const precautions  = (tbm.precautions   || '').split('\n').filter(Boolean)
+    const attendeeRows = attendees.length > 0
+      ? attendees.map((a: any) =>
+          `<tr><td>${esc(a.user_name)}</td><td>${esc(a.position)}</td><td>${fmtDt(a.signed_at)}</td><td>${signCell(a)}</td></tr>`
+        ).join('')
+      : `<tr><td colspan="4" class="empty-row">참석자 서명 없음</td></tr>`
+
+    const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-size:11px;color:#111}
+.page{width:190mm;margin:0 auto;padding:8mm 0}
+h1{font-size:16px;text-align:center;border-bottom:2px solid #1a237e;padding-bottom:5px;margin-bottom:10px;color:#1a237e}
+.sec{margin-bottom:9px}
+.sec-t{font-size:11px;font-weight:bold;background:#e8eaf6;border-left:4px solid #1a237e;padding:3px 7px;margin-bottom:4px}
+table{width:100%;border-collapse:collapse;font-size:10px}
+th,td{border:1px solid #bbb;padding:3px 5px;vertical-align:middle}
+th{background:#f5f5f5;font-weight:bold;text-align:center;width:85px}
+td{text-align:left}
+ul{padding-left:13px;margin:3px 0}li{margin-bottom:1px}
+.aw{display:flex;gap:8px;margin-top:5px}
+.ab{flex:1;border:1px solid #bbb;border-radius:3px;padding:5px;text-align:center}
+.ab .rl{font-size:8.5px;color:#666;margin-bottom:2px}
+.ab .sn{font-weight:bold;font-size:10.5px;margin-bottom:3px}
+.sc{min-height:52px;display:flex;align-items:center;justify-content:center;border:1px dashed #aaa;border-radius:2px;padding:2px}
+.sc.empty{color:#bbb;font-size:9px}.sc.name{font-size:10px;font-weight:bold;color:#1a237e}
+.ab .at{font-size:7.5px;color:#888;margin-top:2px}
+.notes{background:#fffde7;border:1px solid #f9a825;border-radius:2px;padding:5px;font-size:10px;white-space:pre-wrap}
+.empty-row{text-align:center;color:#999}
+.footer{margin-top:10px;text-align:right;font-size:7.5px;color:#aaa}
+</style></head><body><div class="page">
+<h1>TBM 결과보고서</h1>
+<div class="sec"><div class="sec-t">기본 정보</div>
+<table>
+<tr><th>공사명</th><td>${esc(tbm.con_title)}</td><th>공사번호</th><td>${esc(tbm.con_request_no)}</td></tr>
+<tr><th>작업명</th><td>${esc(tbm.task_title)}</td><th>작업일</th><td>${fmtD(tbm.work_date || tbm.planned_date)}</td></tr>
+<tr><th>TBM 일시</th><td>${fmtDt(tbm.tbm_date)}</td><th>장소</th><td>${esc(tbm.location)}</td></tr>
+<tr><th>날씨/기온</th><td>${esc(tbm.weather)} / ${esc(tbm.temperature)}</td><th>참석인원</th><td>${esc(tbm.workers_count)}명</td></tr>
+<tr><th>진행자</th><td>${esc(tbm.conductor_name)} (${esc(tbm.conductor_position)})</td><th>GPS</th><td>${esc(tbm.gps_address)}</td></tr>
+</table></div>
+${safetyTopics.length > 0 ? `<div class="sec"><div class="sec-t">안전 주제</div><ul>${safetyTopics.map((t:string)=>`<li>${esc(t)}</li>`).join('')}</ul></div>` : ''}
+${precautions.length > 0 ? `<div class="sec"><div class="sec-t">안전 수칙 / 위험 요소</div><ul>${precautions.map((p:string)=>`<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
+${tbm.special_notes ? `<div class="sec"><div class="sec-t">특이사항</div><div class="notes">${esc(tbm.special_notes)}</div></div>` : ''}
+<div class="sec"><div class="sec-t">참석자 서명</div>
+<table><thead><tr><th>이름</th><th>직책</th><th>서명일시</th><th>서명</th></tr></thead>
+<tbody>${attendeeRows}</tbody></table></div>
+<div class="sec"><div class="sec-t">결재란</div>
+<div class="aw">
+<div class="ab"><div class="rl">안전관리자</div><div class="sn">${esc(sigMap['approval_safety']?.user_name||'미서명')}</div>${signCell(sigMap['approval_safety'])}<div class="at">${sigMap['approval_safety']?fmtDt(sigMap['approval_safety'].signed_at):''}</div></div>
+<div class="ab"><div class="rl">총괄책임(현장대리인)</div><div class="sn">${esc(sigMap['approval_general']?.user_name||'미서명')}</div>${signCell(sigMap['approval_general'])}<div class="at">${sigMap['approval_general']?fmtDt(sigMap['approval_general'].signed_at):''}</div></div>
+<div class="ab"><div class="rl">대표이사</div><div class="sn">${esc(sigMap['approval_ceo']?.user_name||'미서명')}</div>${signCell(sigMap['approval_ceo'])}<div class="at">${sigMap['approval_ceo']?fmtDt(sigMap['approval_ceo'].signed_at):''}</div></div>
+</div></div>
+<div class="footer">생성일시: ${new Date().toLocaleString('ko-KR')} | Safety NOTE</div>
+</div></body></html>`
+
+    writeFileSync(tmpHtml, html, 'utf-8')
+    await htmlFileToPdf(tmpHtml, filePath)
+    console.log(`[PDF] 저장 완료: ${filePath}`)
+  } catch (err) {
+    console.error(`[PDF] TBM #${tbmId} PDF 생성 오류:`, err)
+  } finally {
+    try { if (existsSync(tmpHtml)) unlinkSync(tmpHtml) } catch (_) {}
+  }
+}
+
+// MIME 타입 매핑
+const MIME_MAP: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  gif: 'image/gif', webp: 'image/webp', heic: 'image/heic',
+  mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo',
+  webm: 'video/webm', mkv: 'video/x-matroska', m4v: 'video/mp4'
+}
+
+function getMimeType(filePath: string, fallback = 'application/octet-stream'): string {
+  const ext = (filePath.split('.').pop() || '').toLowerCase()
+  return MIME_MAP[ext] || fallback
+}
+
+// 동영상 Range 서빙 (브라우저 스트리밍용)
+function serveFileWithRange(filePath: string, rangeHeader: string | null, mimeType: string): Response {
+  const stat = statSync(filePath)
+  const fileSize = stat.size
+  const isVideo = mimeType.startsWith('video/')
+
+  if (isVideo && rangeHeader) {
+    const [startStr, endStr] = rangeHeader.replace('bytes=', '').split('-')
+    const start = parseInt(startStr, 10)
+    const end = endStr ? parseInt(endStr, 10) : Math.min(start + 1024 * 1024 - 1, fileSize - 1)
+    const chunkSize = end - start + 1
+    const stream = createReadStream(filePath, { start, end })
+    const nodeToWeb = new ReadableStream({
+      start(controller) {
+        stream.on('data', chunk => controller.enqueue(chunk))
+        stream.on('end', () => controller.close())
+        stream.on('error', e => controller.error(e))
+      }
+    })
+    return new Response(nodeToWeb, {
+      status: 206,
+      headers: {
+        'Content-Type': mimeType,
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(chunkSize),
+        'Cache-Control': 'no-cache'
+      }
+    })
+  }
+
+  if (isVideo) {
+    // 동영상 첫 요청 - 전체 크기 알림
+    const stream = createReadStream(filePath)
+    const nodeToWeb = new ReadableStream({
+      start(controller) {
+        stream.on('data', chunk => controller.enqueue(chunk))
+        stream.on('end', () => controller.close())
+        stream.on('error', e => controller.error(e))
+      }
+    })
+    return new Response(nodeToWeb, {
+      status: 200,
+      headers: {
+        'Content-Type': mimeType,
+        'Content-Length': String(fileSize),
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-cache'
+      }
+    })
+  }
+
+  // 이미지 - 그냥 전체 읽기
+  const buf = readFileSync(filePath)
+  return new Response(buf, {
+    headers: { 'Content-Type': mimeType, 'Cache-Control': 'public, max-age=86400' }
+  })
+}
+
+// ─── 앱 생성 ─────────────────────────────────────────────────────────
+type Bindings = { DB: typeof DB }
+const app = new Hono<{ Bindings: Bindings }>()
+
+// DB 주입 미들웨어
+app.use('*', async (c, next) => {
+  c.env = { DB } as any
+  await next()
+})
+
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+}))
+
+// ─── API 라우트 ───────────────────────────────────────────────────────
+app.route('/api/auth', authRoutes)
+app.route('/api/tasks', taskRoutes)
+app.route('/api/users', userRoutes)
+app.route('/api/risk', riskRoutes)
+app.route('/api/tbm', tbmRoutes)
+app.route('/api/stats', statsRoutes)
+
+// 점검 사진/동영상 서빙 - inspectionRoutes보다 먼저 등록해야 인증 없이 <img> 서빙 가능
+app.get('/api/inspections/photo/:id/img', async (c) => {
+  const photo: any = await DB.prepare(
+    'SELECT file_path, file_data, mime_type, file_name FROM inspection_photos WHERE id = ?'
+  ).bind(c.req.param('id')).first()
+  if (!photo) return c.json({ error: '미디어 없음' }, 404)
+  if (photo.file_path && existsSync(photo.file_path)) {
+    const mimeType = photo.mime_type || getMimeType(photo.file_path, 'image/jpeg')
+    const rangeHeader = c.req.header('Range') || null
+    return serveFileWithRange(photo.file_path, rangeHeader, mimeType)
+  }
+  if (photo.file_data) {
+    return new Response(Buffer.from(photo.file_data, 'base64'), {
+      headers: { 'Content-Type': photo.mime_type || 'image/jpeg' }
+    })
+  }
+  return c.json({ error: '데이터 없음' }, 404)
+})
+
+app.route('/api/inspections', inspectionRoutes)
+app.route('/api/hazards', hazardRoutes)
+app.route('/api/worklogs', worklogRoutes)
+app.route('/api/checklist', checklistRoutes)
+app.route('/api/teams', teamRoutes)
+app.route('/api/education', educationRoutes)
+app.route('/api/constructions', constructionRoutes)
+app.route('/api/notifications', notificationRoutes)
+
+// ─── 서명 API ─────────────────────────────────────────────────────────────────
+// 위험성평가 서명 조회
+app.get('/api/risk/:id/signatures', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const rows = rawDb.prepare(
+    `SELECT ras.*, u.name as user_name_from_users, u.position
+     FROM risk_assessment_signatures ras
+     LEFT JOIN users u ON u.id = ras.user_id
+     WHERE ras.assessment_id = ?
+     ORDER BY ras.signed_at ASC`
+  ).all(Number(id))
+  return c.json(rows)
+})
+
+// 위험성평가 서명 등록 (본인 계정 또는 서명 패드)
+app.post('/api/risk/:id/signatures', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const body = await c.req.json().catch(() => ({})) as any
+  const role = body.role || 'member'
+  const signData = body.sign_data || null   // base64 서명 이미지
+  const signMethod = signData ? 'pad' : 'account'
+  try {
+    const info = rawDb.prepare(
+      `INSERT OR REPLACE INTO risk_assessment_signatures
+       (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
+    ).run(Number(id), user.id, user.name, user.position || '', role, signMethod, signData)
+    return c.json({ success: true, id: info.lastInsertRowid })
+  } catch(e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// 위험성평가 서명 삭제 (본인만)
+app.delete('/api/risk/:id/signatures/:sigId', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const { id, sigId } = c.req.param()
+  const sig = rawDb.prepare(
+    'SELECT * FROM risk_assessment_signatures WHERE id=? AND assessment_id=?'
+  ).get(Number(sigId), Number(id))
+  if (!sig) return c.json({ error: '서명을 찾을 수 없습니다.' }, 404)
+  if ((sig as any).user_id !== user.id && user.role !== 'admin')
+    return c.json({ error: '본인 서명만 삭제할 수 있습니다.' }, 403)
+  rawDb.prepare('DELETE FROM risk_assessment_signatures WHERE id=?').run(Number(sigId))
+  return c.json({ success: true })
+})
+
+// TBM 서명 조회
+app.get('/api/tbm/:id/signatures', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const rows = rawDb.prepare(
+    `SELECT ts.*, u.name as user_name_from_users, u.position
+     FROM tbm_signatures ts
+     LEFT JOIN users u ON u.id = ts.user_id
+     WHERE ts.tbm_id = ?
+     ORDER BY ts.signed_at ASC`
+  ).all(Number(id))
+  return c.json(rows)
+})
+
+// TBM 서명 등록 (본인 계정 또는 서명 패드)
+// signer_name: 현장 순차 서명 시 참가자 이름으로 저장 (비계정 서명)
+app.post('/api/tbm/:id/signatures', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const body = await c.req.json().catch(() => ({})) as any
+  const role = body.role || 'attendee'
+  const signData = body.sign_data || null
+  const signMethod = signData ? 'pad' : 'account'
+  const isNamedSign = !!(body.signer_name && String(body.signer_name).trim())
+  const signerName = isNamedSign ? String(body.signer_name).trim() : user.name
+  try {
+    let resultId: any = null
+    if (isNamedSign) {
+      // 이름 기반 서명 (현장 순차 서명): user_id=NULL, user_name=signerName
+      // 동일 tbm_id + user_name + user_id IS NULL 이면 기존 서명 업데이트
+      const existing = rawDb.prepare(
+        `SELECT id FROM tbm_signatures WHERE tbm_id=? AND user_name=? AND user_id IS NULL`
+      ).get(Number(id), signerName) as any
+      if (existing) {
+        rawDb.prepare(
+          `UPDATE tbm_signatures SET sign_data=?, sign_method=?, role=?, signed_at=CURRENT_TIMESTAMP WHERE id=?`
+        ).run(signData, signMethod, role, existing.id)
+        resultId = existing.id
+      } else {
+        const info = rawDb.prepare(
+          `INSERT INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+           VALUES (?, NULL, ?, '', ?, CURRENT_TIMESTAMP, ?, ?)`
+        ).run(Number(id), signerName, role, signMethod, signData)
+        resultId = info.lastInsertRowid
+      }
+    } else {
+      // 계정 기반 서명: (tbm_id, user_id) UNIQUE 기준으로 upsert
+      const existing = rawDb.prepare(
+        `SELECT id FROM tbm_signatures WHERE tbm_id=? AND user_id=?`
+      ).get(Number(id), user.id) as any
+      if (existing) {
+        rawDb.prepare(
+          `UPDATE tbm_signatures SET sign_data=?, sign_method=?, role=?, signed_at=CURRENT_TIMESTAMP WHERE id=?`
+        ).run(signData, signMethod, role, existing.id)
+        resultId = existing.id
+      } else {
+        const info = rawDb.prepare(
+          `INSERT INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
+        ).run(Number(id), user.id, user.name, user.position || '', role, signMethod, signData)
+        resultId = info.lastInsertRowid
+      }
+    }
+    return c.json({ success: true, id: resultId })
+  } catch(e: any) {
+    return c.json({ error: (e as any).message }, 500)
+  }
+})
+
+// TBM 서명 삭제 (본인만)
+app.delete('/api/tbm/:id/signatures/:sigId', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const { id, sigId } = c.req.param()
+  const sig = rawDb.prepare(
+    'SELECT * FROM tbm_signatures WHERE id=? AND tbm_id=?'
+  ).get(Number(sigId), Number(id))
+  if (!sig) return c.json({ error: '서명을 찾을 수 없습니다.' }, 404)
+  if ((sig as any).user_id !== user.id && user.role !== 'admin')
+    return c.json({ error: '본인 서명만 삭제할 수 있습니다.' }, 403)
+  rawDb.prepare('DELETE FROM tbm_signatures WHERE id=?').run(Number(sigId))
+  return c.json({ success: true })
+})
+
+// ─── TBM 결재 서명 ─────────────────────────────────────────────────────────────
+// ref_sub_type: 'approval_general'(총괄책임/현장대리인) | 'approval_ceo'(대표이사) | 'approval_safety'(안전관리자)
+// 서명 순서: 총괄책임(현장대리인) → 대표이사 → 안전관리자 최종 확인
+
+// GET: 결재 서명 현황 조회
+app.get('/api/tbm/:id/approval-status', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+
+  // tbm_signatures에서 approval_* role로 저장된 결재 서명 조회
+  const sigs = rawDb.prepare(`
+    SELECT ts.*, u.name as user_display_name
+    FROM tbm_signatures ts
+    LEFT JOIN users u ON u.id = ts.user_id
+    WHERE ts.tbm_id = ? AND ts.role IN ('approval_general','approval_ceo','approval_safety')
+    ORDER BY ts.signed_at ASC
+  `).all(id) as any[]
+
+  return c.json({
+    approval_general: sigs.find(s => s.role === 'approval_general') || null,
+    approval_ceo:     sigs.find(s => s.role === 'approval_ceo')     || null,
+    approval_safety:  sigs.find(s => s.role === 'approval_safety')  || null,
+  })
+})
+
+// POST: 결재 서명 처리 + 다음 단계 알림 연쇄
+app.post('/api/tbm/:id/approval-sign', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  const body = await c.req.json().catch(() => ({})) as any
+  const { approval_role, sign_data } = body
+  // approval_role: 'approval_general' | 'approval_ceo' | 'approval_safety'
+  const validRoles = ['approval_general', 'approval_ceo', 'approval_safety']
+  if (!validRoles.includes(approval_role))
+    return c.json({ error: '유효하지 않은 결재 역할' }, 400)
+
+  const tbm = rawDb.prepare(`
+    SELECT tr.*, t.title as task_title
+    FROM tbm_records tr LEFT JOIN tasks t ON t.id = tr.task_id
+    WHERE tr.id = ?
+  `).get(id) as any
+  if (!tbm) return c.json({ error: 'TBM을 찾을 수 없습니다.' }, 404)
+
+  // 서명 순서 잠금: 안전관리자 → 총괄책임 → 대표이사
+  const existing = rawDb.prepare(`
+    SELECT role FROM tbm_signatures WHERE tbm_id = ? AND role IN ('approval_general','approval_ceo','approval_safety')
+  `).all(id) as any[]
+  const signedRoles = new Set(existing.map((s: any) => s.role))
+
+  if (approval_role === 'approval_general' && !signedRoles.has('approval_safety'))
+    return c.json({ error: '안전관리자 서명 후 총괄책임 서명이 가능합니다.' }, 409)
+  if (approval_role === 'approval_ceo' && !signedRoles.has('approval_general'))
+    return c.json({ error: '총괄책임 서명 후 대표이사 서명이 가능합니다.' }, 409)
+  if (signedRoles.has(approval_role))
+    return c.json({ error: '이미 서명된 결재란입니다.' }, 409)
+
+  // 서명 저장
+  const signMethod = sign_data ? 'pad' : 'account'
+  rawDb.prepare(`
+    INSERT INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+  `).run(id, user.id, user.name, user.position || '', approval_role, signMethod, sign_data || null)
+
+  const tbmTitle = `TBM: ${tbm.task_title || tbm.id}`
+
+  // ── 다음 단계 알림 연쇄 (순서: 안전관리자 → 총괄책임 → 대표이사) ──────────
+  if (approval_role === 'approval_safety') {
+    // 안전관리자 서명 완료 → 총괄책임(현장대리인)에게 서명 요청
+    const generalUsers = rawDb.prepare(
+      `SELECT id, name FROM users WHERE position = '현장대리인' AND is_active = 1`
+    ).all() as any[]
+    for (const gu of generalUsers) {
+      const already = rawDb.prepare(
+        `SELECT id FROM signature_requests WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type='approval_general' AND target_user_id=? AND status='pending'`
+      ).get(id, gu.id)
+      if (!already) {
+        const info = rawDb.prepare(`
+          INSERT INTO signature_requests (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id)
+          VALUES ('tbm', ?, 'approval_general', ?, ?, ?, ?)
+        `).run(id, `[결재요청] ${tbmTitle}`, `안전관리자(${user.name}) 서명 완료. 총괄책임 결재를 요청합니다.`, user.id, gu.id)
+        sendToUser(gu.id, {
+          type: 'sign_request', id: info.lastInsertRowid,
+          title: `[결재요청] ${tbmTitle}`,
+          requester: user.name, ref_type: 'tbm', ref_sub_type: 'approval_general',
+          message: `[TBM 결재] 안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`,
+          ts: Date.now()
+        })
+        // notifications 영구 저장
+        rawDb.prepare(`
+          INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+          VALUES (?, 'sign_request', ?, ?, ?, 'tbm', 0)
+        `).run(gu.id, `[결재요청] ${tbmTitle}`, `안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`, id)
+      }
+    }
+  } else if (approval_role === 'approval_general') {
+    // 총괄책임 서명 완료 → 대표이사에게 서명 요청
+    const ceoUsers = rawDb.prepare(
+      `SELECT id, name FROM users WHERE position = '대표이사' AND is_active = 1`
+    ).all() as any[]
+    for (const ceo of ceoUsers) {
+      const already = rawDb.prepare(
+        `SELECT id FROM signature_requests WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type='approval_ceo' AND target_user_id=? AND status='pending'`
+      ).get(id, ceo.id)
+      if (!already) {
+        const info = rawDb.prepare(`
+          INSERT INTO signature_requests (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id)
+          VALUES ('tbm', ?, 'approval_ceo', ?, ?, ?, ?)
+        `).run(id, `[결재요청] ${tbmTitle}`, `총괄책임(${user.name}) 서명 완료. 대표이사 결재를 요청합니다.`, user.id, ceo.id)
+        sendToUser(ceo.id, {
+          type: 'sign_request', id: info.lastInsertRowid,
+          title: `[결재요청] ${tbmTitle}`,
+          requester: user.name, ref_type: 'tbm', ref_sub_type: 'approval_ceo',
+          message: `[TBM 결재] 총괄책임 서명 완료. 대표이사 결재를 요청합니다.`,
+          ts: Date.now()
+        })
+        // notifications 영구 저장
+        rawDb.prepare(`
+          INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+          VALUES (?, 'sign_request', ?, ?, ?, 'tbm', 0)
+        `).run(ceo.id, `[결재요청] ${tbmTitle}`, `총괄책임 서명 완료. 대표이사 결재를 요청합니다.`, id)
+      }
+    }
+  } else if (approval_role === 'approval_ceo') {
+    // 대표이사 서명 완료 → 안전관리자에게 최종 완료 알림
+    const safetyUsers = rawDb.prepare(
+      `SELECT id, name FROM users WHERE position = '안전관리자' AND is_active = 1`
+    ).all() as any[]
+    for (const su of safetyUsers) {
+      sendToUser(su.id, {
+        type: 'tbm_approval_done',
+        title: `[TBM 결재완료] ${tbmTitle}`,
+        message: `[TBM 결재] 대표이사(${user.name}) 서명 완료. TBM 결재가 모두 완료되었습니다.`,
+        tbmId: id,
+        ts: Date.now()
+      })
+      // notifications 영구 저장
+      rawDb.prepare(`
+        INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+        VALUES (?, 'tbm_approval_done', ?, ?, ?, 'tbm', 0)
+      `).run(su.id, `[TBM 결재완료] ${tbmTitle}`, `대표이사 서명 완료. TBM 결재가 모두 완료되었습니다.`, id)
+    }
+  }
+
+  // 결재 완료 알림: admin/supervisor 에게 브로드캐스트
+  const roleLabel: Record<string, string> = {
+    approval_safety:  '안전관리자',
+    approval_general: '총괄책임(현장대리인)',
+    approval_ceo:     '대표이사',
+  }
+  broadcastToRoles(['admin', 'supervisor'], {
+    type: 'tbm_approval',
+    tbmId: id,
+    role: approval_role,
+    roleLabel: roleLabel[approval_role],
+    signer: user.name,
+    message: `[TBM 결재] ${roleLabel[approval_role]} ${user.name}님이 "${tbmTitle}" 결재에 서명했습니다.`,
+    ts: Date.now()
+  })
+
+  // 대표이사 서명 완료 → PDF 자동 생성 (비동기, 응답 지연 없음)
+  if (approval_role === 'approval_ceo') {
+    setImmediate(() => generateTbmApprovalPdf(id))
+  }
+
+  return c.json({ success: true, approval_role, signer: user.name })
+})
+
+// TBM 레코드 삭제
+// - admin 또는 작성자(conductor_id)만 삭제 가능
+// - ON DELETE CASCADE로 tbm_signatures 자동 삭제
+// - 해당 task에 TBM이 더 이상 없으면 task.status를 tbm_done → in_progress로 되돌림
+app.delete('/api/tbm/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const tbm = rawDb.prepare('SELECT * FROM tbm_records WHERE id=?').get(Number(id)) as any
+  if (!tbm) return c.json({ error: 'TBM을 찾을 수 없습니다.' }, 404)
+  // 권한 확인: admin 또는 작성자(conductor_id)
+  if (user.role !== 'admin' && tbm.conductor_id !== user.id) {
+    return c.json({ error: '삭제 권한이 없습니다. (작성자 또는 관리자만 삭제 가능)' }, 403)
+  }
+  try {
+    // tbm_signatures는 ON DELETE CASCADE로 자동 삭제됨
+    rawDb.prepare('DELETE FROM tbm_records WHERE id=?').run(Number(id))
+    // 해당 task에 TBM이 남아있는지 확인
+    const remaining = rawDb.prepare(
+      `SELECT COUNT(*) as cnt FROM tbm_records WHERE task_id=? AND status='completed'`
+    ).get(tbm.task_id) as any
+    // TBM이 하나도 없으면 task 상태를 tbm_done → in_progress로 롤백
+    if (remaining.cnt === 0) {
+      const task = rawDb.prepare('SELECT status FROM tasks WHERE id=?').get(tbm.task_id) as any
+      if (task && task.status === 'tbm_done') {
+        rawDb.prepare("UPDATE tasks SET status='in_progress', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(tbm.task_id)
+      }
+    }
+    return c.json({ success: true, task_id: tbm.task_id, remaining_tbm: remaining.cnt })
+  } catch(e: any) {
+    return c.json({ error: (e as any).message }, 500)
+  }
+})
+
+// TBM 참가자 명단 수정 (추가/삭제)
+// body: { attendees: string[] }  — 전체 배열로 교체
+app.patch('/api/tbm/:id/attendees', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const body = await c.req.json().catch(() => ({})) as any
+  if (!Array.isArray(body.attendees)) return c.json({ error: 'attendees 배열 필요' }, 400)
+  // 빈 문자열 제거 + 중복 제거
+  const cleaned = [...new Set((body.attendees as string[]).map(s => String(s).trim()).filter(Boolean))]
+  try {
+    rawDb.prepare(
+      `UPDATE tbm_records SET attendees=? WHERE id=?`
+    ).run(JSON.stringify(cleaned), Number(id))
+    return c.json({ success: true, attendees: cleaned })
+  } catch(e: any) {
+    return c.json({ error: (e as any).message }, 500)
+  }
+})
+
+// ─── 서명 요청 API ─────────────────────────────────────────────────────────────
+
+// 내 서명 요청 목록 조회 (pending/signed 분리)
+app.get('/api/signature-requests', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const status = c.req.query('status') || 'pending'
+  const rows = rawDb.prepare(`
+    SELECT sr.*,
+           ru.name as requester_name, ru.position as requester_position,
+           tu.name as target_name
+    FROM signature_requests sr
+    LEFT JOIN users ru ON ru.id = sr.requester_id
+    LEFT JOIN users tu ON tu.id = sr.target_user_id
+    WHERE sr.target_user_id = ? AND sr.status = ?
+    ORDER BY sr.created_at DESC
+    LIMIT 100
+  `).all(user.id, status)
+  return c.json(rows)
+})
+
+// 서명 요청 건수 (배지용)
+app.get('/api/signature-requests/count', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const row: any = rawDb.prepare(
+    `SELECT COUNT(*) as cnt FROM signature_requests WHERE target_user_id = ? AND status = 'pending'`
+  ).get(user.id)
+  return c.json({ count: row?.cnt || 0 })
+})
+
+// 서명 요청 생성
+app.post('/api/signature-requests', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const body = await c.req.json().catch(() => ({})) as any
+  const { ref_type, ref_id, ref_sub_type, title, description, target_user_id, expires_at } = body
+  if (!ref_type || !ref_id || !title || !target_user_id)
+    return c.json({ error: 'ref_type, ref_id, title, target_user_id 필수' }, 400)
+  // 이미 동일 요청 있으면 중복 방지
+  const existing: any = rawDb.prepare(
+    `SELECT id FROM signature_requests WHERE ref_type=? AND ref_id=? AND ref_sub_type IS ? AND target_user_id=? AND status='pending'`
+  ).get(ref_type, Number(ref_id), ref_sub_type || null, Number(target_user_id))
+  if (existing) return c.json({ id: existing.id, already_exists: true })
+  const info = rawDb.prepare(`
+    INSERT INTO signature_requests (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(ref_type, Number(ref_id), ref_sub_type || null, title, description || null, user.id, Number(target_user_id), expires_at || null)
+  // SSE: 대상자에게 서명 요청 알림
+  sendToUser(Number(target_user_id), {
+    type: 'sign_request', id: info.lastInsertRowid,
+    title, description: description || '',
+    requester: user.name, ref_type,
+    message: `[서명 요청] ${user.name}님이 서명을 요청했습니다`,
+    ts: Date.now()
+  })
+  return c.json({ success: true, id: info.lastInsertRowid })
+})
+
+// 서명 요청 일괄 생성 (여러 대상에게)
+app.post('/api/signature-requests/bulk', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const body = await c.req.json().catch(() => ({})) as any
+  const { ref_type, ref_id, ref_sub_type, title, description, target_user_ids, expires_at } = body
+  if (!ref_type || !ref_id || !title || !Array.isArray(target_user_ids) || target_user_ids.length === 0)
+    return c.json({ error: '필수 필드 누락' }, 400)
+  const stmt = rawDb.prepare(`
+    INSERT OR IGNORE INTO signature_requests (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const insert = rawDb.transaction(() => {
+    let created = 0
+    for (const uid of target_user_ids) {
+      const existing: any = rawDb.prepare(
+        `SELECT id FROM signature_requests WHERE ref_type=? AND ref_id=? AND ref_sub_type IS ? AND target_user_id=? AND status='pending'`
+      ).get(ref_type, Number(ref_id), ref_sub_type || null, Number(uid))
+      if (!existing) {
+        stmt.run(ref_type, Number(ref_id), ref_sub_type || null, title, description || null, user.id, Number(uid), expires_at || null)
+        created++
+      }
+    }
+    return created
+  })
+  const created = insert()
+  // SSE: 각 대상자에게 서명 요청 알림
+  for (const uid of target_user_ids) {
+    sendToUser(Number(uid), {
+      type: 'sign_request',
+      title, description: description || '',
+      requester: user.name, ref_type,
+      message: `[서명 요청] ${user.name}님이 서명을 요청했습니다`,
+      ts: Date.now()
+    })
+  }
+  return c.json({ success: true, created })
+})
+
+// 서명 처리 (서명 패드 or 계정 서명)
+app.patch('/api/signature-requests/:id/sign', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  const req: any = rawDb.prepare(`SELECT * FROM signature_requests WHERE id=?`).get(id)
+  if (!req) return c.json({ error: '요청을 찾을 수 없습니다.' }, 404)
+  if (req.target_user_id !== user.id && user.role !== 'admin')
+    return c.json({ error: '본인 서명 요청만 처리할 수 있습니다.' }, 403)
+  if (req.status !== 'pending') return c.json({ error: '이미 처리된 요청입니다.' }, 409)
+  const body = await c.req.json().catch(() => ({})) as any
+  const signData = body.sign_data || null
+  rawDb.prepare(`
+    UPDATE signature_requests SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP WHERE id=?
+  `).run(signData, id)
+  // ref_type에 따라 실제 서명 테이블에도 자동 반영
+  try {
+    if (req.ref_type === 'tbm') {
+      const signMethod = signData ? 'pad' : 'account'
+      rawDb.prepare(`
+        INSERT OR REPLACE INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+        VALUES (?, ?, ?, ?, 'attendee', CURRENT_TIMESTAMP, ?, ?)
+      `).run(req.ref_id, user.id, user.name, user.position || '', signMethod, signData)
+    } else if (req.ref_type === 'risk_assessment') {
+      const signMethod = signData ? 'pad' : 'account'
+      rawDb.prepare(`
+        INSERT OR REPLACE INTO risk_assessment_signatures (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+        VALUES (?, ?, ?, ?, 'member', CURRENT_TIMESTAMP, ?, ?)
+      `).run(req.ref_id, user.id, user.name, user.position || '', signMethod, signData)
+    } else if (req.ref_type === 'education') {
+      rawDb.prepare(`
+        UPDATE safety_education_attendees SET signature_data=? WHERE session_id=? AND user_id=?
+      `).run(signData, req.ref_id, user.id)
+    }
+  } catch(e: any) { console.warn('[signature-request/sign] ref 반영 실패:', e.message) }
+  // SSE: 관련 관리자들에게도 서명 완료 알림 (ref_type별)
+  broadcastToRoles(['admin','supervisor'], {
+    type: `${req.ref_type === 'tbm' ? 'tbm' : req.ref_type === 'risk_assessment' ? 'risk' : 'edu'}_sign`,
+    signer: user.name,
+    title: req.title,
+    message: `[서명완료] ${user.name}님이 "${req.title}"에 서명했습니다`,
+    ts: Date.now()
+  })
+  // SSE: 요청자에게 서명 완료 알림
+  sendToUser(req.requester_id, {
+    type: 'sign_done',
+    title: req.title,
+    signer: user.name,
+    message: `[서명완료] ${user.name}님이 서명을 완료했습니다`,
+    ts: Date.now()
+  })
+  return c.json({ success: true })
+})
+
+// 서명 거부
+app.patch('/api/signature-requests/:id/reject', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  const req: any = rawDb.prepare(`SELECT * FROM signature_requests WHERE id=?`).get(id)
+  if (!req) return c.json({ error: '요청을 찾을 수 없습니다.' }, 404)
+  if (req.target_user_id !== user.id && user.role !== 'admin')
+    return c.json({ error: '본인 서명 요청만 처리할 수 있습니다.' }, 403)
+  if (req.status !== 'pending') return c.json({ error: '이미 처리된 요청입니다.' }, 409)
+  const body = await c.req.json().catch(() => ({})) as any
+  rawDb.prepare(`
+    UPDATE signature_requests SET status='rejected', rejected_reason=?, signed_at=CURRENT_TIMESTAMP WHERE id=?
+  `).run(body.reason || null, id)
+  // SSE: 요청자에게 거부 알림
+  sendToUser(req.requester_id, {
+    type: 'sign_rejected',
+    title: req.title,
+    signer: user.name,
+    reason: body.reason || '',
+    message: `[서명거부] ${user.name}님이 서명을 거부했습니다`,
+    ts: Date.now()
+  })
+  return c.json({ success: true })
+})
+
+// 서명 요청 삭제 (요청자 or 관리자)
+app.delete('/api/signature-requests/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  const req: any = rawDb.prepare(`SELECT * FROM signature_requests WHERE id=?`).get(id)
+  if (!req) return c.json({ error: '요청을 찾을 수 없습니다.' }, 404)
+  if (req.requester_id !== user.id && user.role !== 'admin')
+    return c.json({ error: '요청자만 삭제할 수 있습니다.' }, 403)
+  rawDb.prepare(`DELETE FROM signature_requests WHERE id=?`).run(id)
+  return c.json({ success: true })
+})
+
+// ─── 법령안내 API ──────────────────────────────────────────────────────────────
+// 법령안내 전체 조회
+app.get('/api/legal-notices', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rows = rawDb.prepare(
+    `SELECT ln.*, u.name as updated_by_name
+     FROM legal_notices ln
+     LEFT JOIN users u ON u.id = ln.updated_by
+     ORDER BY ln.id`
+  ).all()
+  return c.json(rows)
+})
+
+// 법령안내 단건 조회 (key 기준)
+app.get('/api/legal-notices/:key', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const key = c.req.param('key')
+  const row = rawDb.prepare('SELECT * FROM legal_notices WHERE notice_key=?').get(key)
+  if (!row) return c.json({ error: '존재하지 않는 법령안내입니다.' }, 404)
+  return c.json(row)
+})
+
+// 법령안내 수정 (admin/supervisor만)
+app.put('/api/legal-notices/:key', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role === 'worker') return c.json({ error: '권한이 없습니다.' }, 403)
+  const key = c.req.param('key')
+  const body = await c.req.json().catch(() => ({})) as any
+  const { title, content, law_ref } = body
+  if (!title || !content) return c.json({ error: '제목과 내용은 필수입니다.' }, 400)
+  rawDb.prepare(
+    `UPDATE legal_notices SET title=?, content=?, law_ref=?,
+     updated_by=?, updated_at=CURRENT_TIMESTAMP WHERE notice_key=?`
+  ).run(title, content, law_ref || null, user.id, key)
+  return c.json({ success: true })
+})
+
+
+// ─── 교육 증빙사진 API ──────────────────────────────────────────────────────
+// GET  /api/education/sessions/:id/photos   — 사진 목록
+app.get('/api/education/sessions/:id/photos', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  const rows = rawDb.prepare(
+    `SELECT ep.*, u.name as uploader_name
+     FROM edu_photos ep LEFT JOIN users u ON u.id = ep.uploaded_by
+     WHERE ep.session_id=? ORDER BY ep.created_at`
+  ).all(id)
+  return c.json(rows)
+})
+
+// POST /api/education/sessions/:id/photos   — 사진 업로드 (multipart)
+app.post('/api/education/sessions/:id/photos', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  const sessionId = Number(c.req.param('id'))
+  const session = rawDb.prepare('SELECT id FROM safety_education_sessions WHERE id=?').get(sessionId)
+  if (!session) return c.json({ error: '교육 세션을 찾을 수 없습니다.' }, 404)
+
+  let formData: FormData
+  try { formData = await c.req.formData() } catch(e) { return c.json({ error: '파일 파싱 실패' }, 400) }
+  const file = formData.get('photo') as File | null
+  const caption = (formData.get('caption') as string || '').trim()
+  if (!file || !file.size) return c.json({ error: '사진 파일이 없습니다.' }, 400)
+
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+  const fname = `edu_${sessionId}_${Date.now()}.${ext}`
+  const dir = join(getUploadRoot(), 'edu_photos')
+  mkdirSync(dir, { recursive: true })
+  const fpath = join(dir, fname)
+  const buf = Buffer.from(await file.arrayBuffer())
+  writeFileSync(fpath, buf)
+
+  const rel = `/uploads/edu_photos/${fname}`
+  const result = rawDb.prepare(
+    `INSERT INTO edu_photos (session_id, file_name, file_path, caption, uploaded_by) VALUES (?,?,?,?,?)`
+  ).run(sessionId, fname, rel, caption || null, user.id)
+  return c.json({ id: result.lastInsertRowid, file_name: fname, file_path: rel, caption })
+})
+
+// DELETE /api/education/photos/:photoId   — 사진 삭제
+app.delete('/api/education/photos/:photoId', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  const photoId = Number(c.req.param('photoId'))
+  const photo = rawDb.prepare('SELECT * FROM edu_photos WHERE id=?').get(photoId) as any
+  if (!photo) return c.json({ error: '사진을 찾을 수 없습니다.' }, 404)
+  // 파일 삭제 시도
+  try {
+    const absPath = join(getUploadRoot(), 'edu_photos', photo.file_name)
+    if (existsSync(absPath)) unlinkSync(absPath)
+  } catch(e) {}
+  rawDb.prepare('DELETE FROM edu_photos WHERE id=?').run(photoId)
+  return c.json({ success: true })
+})
+
+// ─── 교육 결과보고서 API ─────────────────────────────────────────────────────
+// GET  /api/education/sessions/:id/report
+app.get('/api/education/sessions/:id/report', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  const row = rawDb.prepare(
+    `SELECT er.*, u.name as author_name
+     FROM edu_reports er LEFT JOIN users u ON u.id = er.created_by
+     WHERE er.session_id=?`
+  ).get(id)
+  return c.json(row || null)
+})
+
+// PUT  /api/education/sessions/:id/report  — 등록 or 수정 (UPSERT)
+app.put('/api/education/sessions/:id/report', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  const sessionId = Number(c.req.param('id'))
+  const session = rawDb.prepare('SELECT id FROM safety_education_sessions WHERE id=?').get(sessionId)
+  if (!session) return c.json({ error: '교육 세션을 찾을 수 없습니다.' }, 404)
+  const body = await c.req.json().catch(() => ({})) as any
+  const { report_title, objectives, content_desc, outcomes, improvements } = body
+  rawDb.prepare(`
+    INSERT INTO edu_reports (session_id, report_title, objectives, content_desc, outcomes, improvements, created_by, updated_at)
+    VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(session_id) DO UPDATE SET
+      report_title=excluded.report_title, objectives=excluded.objectives,
+      content_desc=excluded.content_desc, outcomes=excluded.outcomes,
+      improvements=excluded.improvements, updated_at=CURRENT_TIMESTAMP
+  `).run(sessionId, report_title||null, objectives||null, content_desc||null, outcomes||null, improvements||null, user.id)
+  return c.json({ success: true })
+})
+
+// ─── 위험성평가 수시사유·기록필수항목 업데이트 API ────────────────────────────
+app.put('/api/risk/:id/meta', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role === 'worker') return c.json({ error: '권한이 없습니다.' }, 403)
+  const id = c.req.param('id')
+  const body = await c.req.json().catch(() => ({})) as any
+  const { adhoc_trigger, assessment_method, risk_acceptance_criteria } = body
+  rawDb.prepare(
+    `UPDATE risk_assessments
+     SET adhoc_trigger=COALESCE(?,adhoc_trigger),
+         assessment_method=COALESCE(?,assessment_method),
+         risk_acceptance_criteria=COALESCE(?,risk_acceptance_criteria)
+     WHERE id=?`
+  ).run(
+    adhoc_trigger || null,
+    assessment_method || null,
+    risk_acceptance_criteria || null,
+    Number(id)
+  )
+  return c.json({ success: true })
+})
+
+
+const photoApp = new Hono<{ Bindings: Bindings }>()
+photoApp.use('*', async (c, next) => { c.env = { DB } as any; await next() })
+
+// 사진 목록
+photoApp.get('/', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const { task_id, photo_type } = c.req.query()
+  let q = `SELECT p.id, p.task_id, p.photo_type, p.file_name, p.file_path, p.file_size,
+    p.mime_type, p.caption, p.taken_at, p.created_at, u.name as uploader_name
+    FROM task_photos p LEFT JOIN users u ON u.id = p.uploader_id`
+  const params: any[] = []
+  const wheres: string[] = []
+  if (task_id) { wheres.push('p.task_id = ?'); params.push(task_id) }
+  if (photo_type) { wheres.push('p.photo_type = ?'); params.push(photo_type) }
+  if (wheres.length) q += ' WHERE ' + wheres.join(' AND ')
+  q += ' ORDER BY p.created_at DESC'
+  const result = await DB.prepare(q).bind(...params).all()
+  return c.json(result.results || [])
+})
+
+// 사진/동영상 원본 서빙 - Range Request 지원 (동영상 스트리밍)
+photoApp.get('/:id/img', async (c) => {
+  const photo: any = await DB.prepare(
+    'SELECT file_path, file_data, mime_type, file_name FROM task_photos WHERE id = ?'
+  ).bind(c.req.param('id')).first()
+  if (!photo) return c.json({ error: '미디어 없음' }, 404)
+
+  if (photo.file_path && existsSync(photo.file_path)) {
+    const mimeType = photo.mime_type || getMimeType(photo.file_path, 'image/jpeg')
+    const rangeHeader = c.req.header('Range') || null
+    return serveFileWithRange(photo.file_path, rangeHeader, mimeType)
+  }
+  if (photo.file_data) {
+    const buf = Buffer.from(photo.file_data, 'base64')
+    const mimeType = photo.mime_type || 'image/jpeg'
+    return new Response(buf, { headers: { 'Content-Type': mimeType } })
+  }
+  return c.json({ error: '데이터 없음' }, 404)
+})
+
+// 하위호환 data 엔드포인트
+photoApp.get('/:id/data', async (c) => {
+  const photo: any = await DB.prepare(
+    'SELECT file_path, file_data, mime_type FROM task_photos WHERE id = ?'
+  ).bind(c.req.param('id')).first()
+  if (!photo) return c.json({ error: '사진 없음' }, 404)
+  if (photo.file_path && existsSync(photo.file_path)) {
+    const b64 = readFileSync(photo.file_path).toString('base64')
+    return c.json({ file_data: b64, mime_type: photo.mime_type })
+  }
+  return c.json({ file_data: photo.file_data, mime_type: photo.mime_type })
+})
+
+// 사진 업로드 (multipart - 원본 파일 저장)
+photoApp.post('/', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const ct = c.req.header('Content-Type') || ''
+
+  if (ct.includes('multipart/form-data')) {
+    const formData = await c.req.formData()
+    const taskId   = formData.get('task_id')
+    const photoType = (formData.get('photo_type') as string) || 'progress'
+    const caption   = (formData.get('caption') as string) || ''
+    const files     = formData.getAll('photos') as File[]
+    if (!taskId) return c.json({ error: 'task_id 필요' }, 400)
+    if (!files.length) return c.json({ error: '파일 없음' }, 400)
+
+    // 작업 정보 조회 (constructions JOIN으로 공사 정보 포함)
+    const task: any = await DB.prepare(
+      `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
+              t.construction_type, t.construction_id,
+              c.request_no AS con_request_no, c.title AS con_title
+       FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+       WHERE t.id = ?`
+    ).bind(Number(taskId)).first()
+
+    const savedIds: number[] = []
+    for (const file of files) {
+      if (!file || typeof file === 'string') continue
+      const originalName = file.name || 'media.jpg'
+      const fileName = generateFileName(originalName)
+      const uploadDir = task ? getUploadDir(task, 'photo') : join(getUploadRoot(), '미분류', `task_${taskId}`, STAGE_DIRS.photo)
+      mkdirSync(uploadDir, { recursive: true })
+      const filePath = join(uploadDir, fileName)
+      writeFileSync(filePath, Buffer.from(await file.arrayBuffer()))
+      // mime type: 브라우저 제공값 우선, 없으면 확장자로 추론
+      const mimeType = (file.type && file.type !== 'application/octet-stream')
+        ? file.type
+        : getMimeType(originalName, 'image/jpeg')
+      // 동영상 여부 판단
+      const mediaType = mimeType.startsWith('video/') ? 'video' : 'photo'
+      const r = await DB.prepare(
+        `INSERT INTO task_photos (task_id,uploader_id,photo_type,file_name,file_path,file_data,file_size,mime_type,caption)
+         VALUES (?,?,?,?,?,NULL,?,?,?)`
+      ).bind(Number(taskId), user.id, photoType, originalName, filePath, file.size, mimeType, caption).run()
+      savedIds.push(r.meta.last_row_id as number)
+    }
+    return c.json({ success: true, ids: savedIds, count: savedIds.length })
+  }
+
+  // JSON 하위호환
+  const { task_id, photo_type, file_name, file_data, file_size, mime_type, caption } = await c.req.json()
+  if (!task_id || !file_data) return c.json({ error: '필수 항목 누락' }, 400)
+  const r = await DB.prepare(
+    `INSERT INTO task_photos (task_id,uploader_id,photo_type,file_name,file_path,file_data,file_size,mime_type,caption)
+     VALUES (?,?,?,?,NULL,?,?,?,?)`
+  ).bind(task_id, user.id, photo_type || 'progress', file_name || 'photo.jpg', file_data, file_size || 0, mime_type || 'image/jpeg', caption || '').run()
+  return c.json({ success: true, id: r.meta.last_row_id })
+})
+
+// 사진 삭제
+photoApp.delete('/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const photo: any = await DB.prepare('SELECT uploader_id, file_path FROM task_photos WHERE id = ?').bind(c.req.param('id')).first()
+  if (!photo) return c.json({ error: '없음' }, 404)
+  if (user.role === 'worker' && photo.uploader_id !== user.id) return c.json({ error: '권한 없음' }, 403)
+  if (photo.file_path && existsSync(photo.file_path)) { try { unlinkSync(photo.file_path) } catch(_) {} }
+  await DB.prepare('DELETE FROM task_photos WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ success: true })
+})
+
+// 범용 파일 업로드 엔드포인트 (TBM 사진 등 용)
+// POST /api/photos/upload → { file_path, file_name, mime_type, id }
+// task_id 필수: TBM 사진은 반드시 특정 작업에 연결됨
+photoApp.post('/upload', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const ct = c.req.header('Content-Type') || ''
+  if (!ct.includes('multipart/form-data')) return c.json({ error: 'multipart 필요' }, 400)
+
+  const formData = await c.req.formData()
+  const file = formData.get('photo') as File | null
+  if (!file || typeof file === 'string') return c.json({ error: '파일 없음' }, 400)
+
+  // task_id: TBM 사진은 반드시 task에 연결되어야 함
+  const taskIdRaw = formData.get('task_id') as string | null
+  if (!taskIdRaw) return c.json({ error: 'task_id 필요 (TBM 사진은 작업에 연결되어야 합니다)' }, 400)
+  const taskId = Number(taskIdRaw)
+  if (isNaN(taskId) || taskId <= 0) return c.json({ error: 'task_id가 올바르지 않습니다' }, 400)
+
+  // 작업 정보 조회 (constructions JOIN으로 공사 정보 포함)
+  const task: any = await DB.prepare(
+    `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
+            t.construction_type, t.construction_id,
+            c.request_no AS con_request_no, c.title AS con_title
+     FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+     WHERE t.id = ?`
+  ).bind(taskId).first()
+  if (!task) return c.json({ error: '작업을 찾을 수 없습니다' }, 404)
+
+  const label = (formData.get('label') as string) || 'TBM사진'
+  const originalName = file.name || 'photo.jpg'
+  const fileName = generateFileName(originalName)
+  const uploadDir = getUploadDir(task, 'tbm')
+  const filePath = join(uploadDir, fileName)
+  writeFileSync(filePath, Buffer.from(await file.arrayBuffer()))
+
+  const mimeType = (file.type && file.type !== 'application/octet-stream')
+    ? file.type : getMimeType(originalName, 'image/jpeg')
+
+  // task_photos에 task_id 포함하여 저장 (tbm 유형)
+  const r = await DB.prepare(
+    `INSERT INTO task_photos (task_id,uploader_id,photo_type,file_name,file_path,file_data,file_size,mime_type,caption)
+     VALUES (?,?,?,?,?,NULL,?,?,?)`
+  ).bind(taskId, user.id, 'tbm', originalName, filePath, file.size, mimeType, label).run()
+
+  return c.json({ success: true, id: r.meta.last_row_id, file_path: filePath, file_name: originalName, mime_type: mimeType })
+})
+
+app.route('/api/photos', photoApp)
+
+// ─── 현장점검 사진 API ────────────────────────────────────────────────
+// POST /api/inspection-photos - 현장점검 사진 업로드
+app.post('/api/inspection-photos', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const ct = c.req.header('Content-Type') || ''
+  if (!ct.includes('multipart/form-data')) return c.json({ error: 'multipart 필요' }, 400)
+
+  const formData = await c.req.formData()
+  const inspectionId = formData.get('inspection_id')
+  const files = formData.getAll('photos') as File[]
+  if (!inspectionId) return c.json({ error: 'inspection_id 필요' }, 400)
+  if (!files.length) return c.json({ error: '파일 없음' }, 400)
+
+  // 연결된 작업 정보 조회 (constructions JOIN으로 공사 정보 포함)
+  const insRow: any = await DB.prepare(
+    `SELECT si.task_id,
+            t.task_number, t.sub_task_number, t.planned_date, t.work_date,
+            t.construction_type, t.construction_id,
+            c.request_no AS con_request_no, c.title AS con_title
+     FROM site_inspections si
+     LEFT JOIN tasks t ON t.id = si.task_id
+     LEFT JOIN constructions c ON c.id = t.construction_id
+     WHERE si.id = ?`
+  ).bind(Number(inspectionId)).first()
+
+  const savedIds: number[] = []
+  for (const file of files) {
+    if (!file || typeof file === 'string') continue
+    const fileName = generateFileName(file.name || 'photo.jpg')
+    const inspUploadDir = insRow ? getUploadDir(insRow, 'inspection') : join(getUploadRoot(), '미분류', `inspection_${inspectionId}`, STAGE_DIRS.inspection)
+    mkdirSync(inspUploadDir, { recursive: true })
+    const filePath = join(inspUploadDir, fileName)
+    writeFileSync(filePath, Buffer.from(await file.arrayBuffer()))
+    const mimeType = file.type || getMimeType(file.name || fileName, 'image/jpeg')
+    const r = await DB.prepare(
+      `INSERT INTO inspection_photos (inspection_id, file_name, file_path, file_data, caption, mime_type) VALUES (?,?,?,NULL,?,?)`
+    ).bind(Number(inspectionId), file.name || fileName, filePath, '', mimeType).run()
+    savedIds.push(r.meta.last_row_id as number)
+  }
+  return c.json({ success: true, ids: savedIds, count: savedIds.length })
+})
+
+// DELETE /api/inspection-photos/:id - 점검 사진/동영상 삭제
+app.delete('/api/inspection-photos/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const photoId = c.req.param('id')
+  const photo: any = await DB.prepare(
+    'SELECT id, file_path FROM inspection_photos WHERE id = ?'
+  ).bind(photoId).first()
+  if (!photo) return c.json({ error: '사진 없음' }, 404)
+  // 파일 삭제
+  if (photo.file_path && existsSync(photo.file_path)) {
+    try { unlinkSync(photo.file_path) } catch (e) { console.warn('파일 삭제 실패:', e) }
+  }
+  await DB.prepare('DELETE FROM inspection_photos WHERE id = ?').bind(photoId).run()
+  return c.json({ success: true })
+})
+
+// ─── 정적 파일 서빙 ───────────────────────────────────────────────────
+// /uploads/* - 업로드된 원본 파일 (사진/동영상) — 서브디렉토리 포함 처리
+app.get('/uploads/*', async (c) => {
+  // c.req.path 예: /uploads/edu_photos/edu_1_xxx.jpg
+  const subpath = c.req.path.replace(/^\/uploads\//, '')
+  // 경로 traversal 방지
+  if (!subpath || subpath.includes('..') || subpath.startsWith('/')) {
+    return c.json({ error: 'Invalid path' }, 400)
+  }
+  const filePath = join(getUploadRoot(), subpath)
+  if (!existsSync(filePath)) return c.json({ error: '없음' }, 404)
+  const fname = subpath.split('/').pop() || subpath
+  const mimeType = getMimeType(fname, 'application/octet-stream')
+  const rangeHeader = c.req.header('Range') || null
+  return serveFileWithRange(filePath, rangeHeader, mimeType)
+})
+
+// /static/app.js, style.css - 직접 서빙 (캐시 무효화 포함)
+app.get('/static/app.js', (c) => {
+  const filePath = join(__dirname, 'public', 'static', 'app.js')
+  if (!existsSync(filePath)) return c.json({ error: '없음' }, 404)
+  const content = readFileSync(filePath, 'utf-8')
+  return new Response(content, {
+    headers: {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    }
+  })
+})
+app.get('/static/style.css', (c) => {
+  const filePath = join(__dirname, 'public', 'static', 'style.css')
+  if (!existsSync(filePath)) return c.json({ error: '없음' }, 404)
+  const content = readFileSync(filePath, 'utf-8')
+  return new Response(content, {
+    headers: {
+      'Content-Type': 'text/css; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    }
+  })
+})
+
+// /static/* - 나머지 정적 파일 (root는 process.cwd() 기준 상대경로)
+app.use('/static/*', serveStatic({ root: './public' }))
+
+// ─── 관리자 시스템 설정 API ────────────────────────────────────────────
+// GET /api/geocode/reverse - 역지오코딩 프록시 (카카오 우선, 없으면 Nominatim fallback)
+app.get('/api/geocode/reverse', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const { lat, lon } = c.req.query()
+  if (!lat || !lon) return c.json({ error: 'lat, lon 필요' }, 400)
+
+  const kakaoKey = getSetting('kakao_rest_api_key') || ''
+
+  // ── 카카오 역지오코딩 ─────────────────────────────────────────────────────
+  if (kakaoKey) {
+    try {
+      const kakaoUrl = `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lon}&y=${lat}&input_coord=WGS84`
+      const kakaoRes = await fetch(kakaoUrl, {
+        headers: { Authorization: `KakaoAK ${kakaoKey}` }
+      })
+      if (kakaoRes.ok) {
+        const data: any = await kakaoRes.json()
+        const doc = data?.documents?.[0]
+        if (doc) {
+          const road   = doc.road_address
+          const jibun  = doc.address
+
+          // 도로명 주소 조합
+          let roadAddr = ''
+          if (road) {
+            const parts = [
+              road.region_1depth_name,
+              road.region_2depth_name,
+              road.road_name,
+              road.main_building_no ? road.main_building_no + (road.sub_building_no ? `-${road.sub_building_no}` : '') : ''
+            ].filter(Boolean)
+            roadAddr = parts.join(' ')
+          }
+
+          // 지번 주소 조합
+          let jibunAddr = ''
+          if (jibun) {
+            const parts = [
+              jibun.region_1depth_name,
+              jibun.region_2depth_name,
+              jibun.region_3depth_name,
+              jibun.main_address_no ? jibun.main_address_no + (jibun.sub_address_no && jibun.sub_address_no !== '0' ? `-${jibun.sub_address_no}` : '') : ''
+            ].filter(Boolean)
+            jibunAddr = parts.join(' ')
+          }
+
+          // 표시 주소: 도로명 있으면 "도로명 (지번)" 형태, 없으면 지번만
+          let address = ''
+          if (roadAddr && jibunAddr) {
+            address = `${roadAddr} (${jibunAddr})`
+          } else {
+            address = roadAddr || jibunAddr || `${parseFloat(lat).toFixed(5)}, ${parseFloat(lon).toFixed(5)}`
+          }
+
+          return c.json({ address, road_address: roadAddr, jibun_address: jibunAddr, source: 'kakao' })
+        }
+      }
+    } catch (e) {
+      console.warn('[역지오코딩] 카카오 실패, Nominatim fallback:', e)
+    }
+  }
+
+  // ── Nominatim fallback ───────────────────────────────────────────────────
+  try {
+    const nomUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=ko`
+    const nomRes = await fetch(nomUrl, {
+      headers: { 'User-Agent': 'SafetyNoteApp/1.0' }
+    })
+    if (nomRes.ok) {
+      const data: any = await nomRes.json()
+      const a = data.address || {}
+      // house_number + road 조합으로 최대한 상세하게
+      const parts = [
+        a.city || a.province || a.state || '',
+        a.borough || a.city_district || a.county || '',
+        a.suburb || a.quarter || a.neighbourhood || '',
+        a.road || '',
+        a.house_number || ''
+      ].filter(Boolean)
+      const address = parts.join(' ') || data.display_name || `${parseFloat(lat).toFixed(5)}, ${parseFloat(lon).toFixed(5)}`
+      return c.json({ address, road_address: address, jibun_address: '', source: 'nominatim' })
+    }
+  } catch (e) {
+    console.warn('[역지오코딩] Nominatim 실패:', e)
+  }
+
+  // 최후 fallback: 좌표값
+  return c.json({
+    address: `${parseFloat(lat).toFixed(5)}, ${parseFloat(lon).toFixed(5)}`,
+    road_address: '',
+    jibun_address: '',
+    source: 'coords'
+  })
+})
+
+// GET /api/admin/settings - 설정 목록 조회
+app.get('/api/admin/settings', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+  const rows = await DB.prepare('SELECT key, value, label, description, updated_at FROM system_settings').all()
+  // 현재 유효 업로드 경로 포함
+  const effectiveUploadRoot = getUploadRoot()
+  return c.json({ settings: rows.results || [], effectiveUploadRoot })
+})
+
+// PATCH /api/admin/settings - 설정 일괄 저장
+app.patch('/api/admin/settings', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+  const body = await c.req.json() as Record<string, string>
+  const now = new Date().toISOString()
+  for (const [key, value] of Object.entries(body)) {
+    await DB.prepare(
+      `INSERT INTO system_settings (key, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`
+    ).bind(key, String(value), now).run()
+  }
+  // 설정 재로드
+  await loadSystemSettings(DB)
+  return c.json({ success: true, effectiveUploadRoot: getUploadRoot() })
+})
+
+// GET /api/admin/folders - 현재 업로드 폴더 구조 조회
+app.get('/api/admin/folders', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+  const root = getUploadRoot()
+  const result: any[] = []
+  try {
+    if (!existsSync(root)) return c.json({ root, folders: [] })
+    const topDirs = readdirSync(root, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    for (const d of topDirs) {
+      const subPath = join(root, d.name)
+      let fileCount = 0
+      const subDirs: any[] = []
+      try {
+        const subEntries = readdirSync(subPath, { withFileTypes: true })
+        for (const s of subEntries) {
+          if (s.isDirectory()) {
+            const sPath = join(subPath, s.name)
+            const sFiles = readdirSync(sPath).filter(f => !f.startsWith('.')).length
+            fileCount += sFiles
+            subDirs.push({ name: s.name, fileCount: sFiles })
+          } else {
+            fileCount++
+          }
+        }
+      } catch (_) {}
+      result.push({ name: d.name, path: subPath, fileCount, subDirs })
+    }
+  } catch (e) {
+    return c.json({ error: '폴더 읽기 실패', detail: String(e) }, 500)
+  }
+  return c.json({ root, folders: result })
+})
+
+
+// ═══════════════════════════════════════════════════════════════
+// 작업지시서 첨부파일 API  /api/attachments
+// ═══════════════════════════════════════════════════════════════
+
+// 고유 파일명 생성 헬퍼
+function genAttachFileName(originalName: string): string {
+  const ext  = originalName.split('.').pop()?.toLowerCase() || 'bin'
+  const ts   = Date.now()
+  const rand = Math.random().toString(36).substring(2, 8)
+  return `${ts}_${rand}.${ext}`
+}
+
+// GET /api/attachments?task_id=X  - 목록
+app.get('/api/attachments', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const { task_id } = c.req.query()
+  if (!task_id) return c.json({ error: 'task_id 필요' }, 400)
+  const result = await DB.prepare(
+    `SELECT ta.*, u.name as uploader_name
+     FROM task_attachments ta
+     LEFT JOIN users u ON u.id = ta.uploader_id
+     WHERE ta.task_id = ?
+     ORDER BY ta.created_at DESC`
+  ).bind(task_id).all<any>()
+  return c.json(result.results || [])
+})
+
+// GET /api/attachments/:id/download  - 다운로드/미리보기
+app.get('/api/attachments/:id/download', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const att = await DB.prepare(
+    'SELECT file_path, file_name, mime_type FROM task_attachments WHERE id = ?'
+  ).bind(id).first<any>()
+  if (!att) return c.json({ error: '첨부파일 없음' }, 404)
+  try {
+    const buf = readFileSync(att.file_path)
+    const inline = (att.mime_type || '').startsWith('image/') || att.mime_type === 'application/pdf'
+    return new Response(buf, {
+      headers: {
+        'Content-Type': att.mime_type || 'application/octet-stream',
+        'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(att.file_name)}`,
+        'Cache-Control': 'private, max-age=3600',
+      },
+    })
+  } catch (_) {
+    return c.json({ error: '파일을 찾을 수 없습니다.' }, 404)
+  }
+})
+
+// POST /api/attachments  - 업로드
+app.post('/api/attachments', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const contentType = c.req.header('Content-Type') || ''
+  if (!contentType.includes('multipart/form-data')) {
+    return c.json({ error: 'multipart/form-data 필요' }, 400)
+  }
+
+  try {
+    const formData    = await c.req.formData()
+    const taskId      = formData.get('task_id') as string
+    const attachType  = (formData.get('attach_type') as string) || 'order'
+    const description = (formData.get('description') as string) || ''
+    const files       = formData.getAll('files') as File[]
+
+    if (!taskId) return c.json({ error: 'task_id 필요' }, 400)
+    if (!files || files.length === 0) return c.json({ error: '파일 없음' }, 400)
+
+    // 시스템 설정 조회 — 공통값 + 단계별 오버라이드 값 모두 로드
+    const settRows = await DB.prepare(
+      `SELECT key, value FROM system_settings WHERE key LIKE 'attach_%'`
+    ).all<any>()
+    const sv: Record<string, string> = {}
+    for (const r of (settRows.results || [])) sv[r.key] = r.value
+
+    // attachType → stage 매핑 (설정 키 접두사로 사용)
+    const attachStageMap: Record<string, string> = {
+      order: 'order', work_order: 'order',
+      tbm: 'tbm',
+      photo: 'photo', progress: 'photo',
+      inspection: 'inspection',
+    }
+    const attachStage = attachStageMap[attachType] || 'other'
+
+    // 단계별 설정 우선, 없으면 공통값 fallback
+    const defMaxMb    = parseInt(sv.attach_max_mb   || '20')
+    const defTotalMb  = parseInt(sv.attach_total_mb  || '200')
+    const defExt      = sv.attach_allowed_ext || 'pdf,doc,docx,xls,xlsx,ppt,pptx,hwp,txt,jpg,jpeg,png,gif,webp,heic,mp4,zip'
+
+    const maxMb      = parseInt(sv[`attach_${attachStage}_max_mb`]   || '') || defMaxMb
+    const totalMb    = parseInt(sv[`attach_${attachStage}_total_mb`]  || '') || defTotalMb
+    const allowedExt = (sv[`attach_${attachStage}_allowed_ext`] || defExt)
+                         .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean)
+
+    // 작업 정보 조회 (constructions JOIN으로 공사 정보 포함)
+    const task = await DB.prepare(
+      `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
+              t.construction_type, t.construction_id,
+              c.request_no AS con_request_no, c.title AS con_title
+       FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+       WHERE t.id = ?`
+    ).bind(taskId).first<any>()
+    if (!task) return c.json({ error: '작업 없음' }, 404)
+
+    // 이미 저장된 총 용량
+    const totalRow = await DB.prepare(
+      'SELECT COALESCE(SUM(file_size),0) as total FROM task_attachments WHERE task_id = ?'
+    ).bind(taskId).first<any>()
+    let usedBytes = totalRow?.total || 0
+
+    // 저장 폴더 결정 — 새 구조: {공사폴더}/{작업폴더}/{단계폴더}
+    // (attachStage는 위에서 이미 결정됨)
+    const uploadDir = getUploadDir(task, attachStage)
+    mkdirSync(uploadDir, { recursive: true })
+
+    const savedIds: number[] = []
+    const errors: string[]   = []
+
+    for (const file of files) {
+      if (!file || typeof file === 'string') continue
+
+      // 확장자 검사
+      const ext = (file.name.split('.').pop() || '').toLowerCase()
+      if (allowedExt.length && !allowedExt.includes(ext)) {
+        errors.push(`${file.name}: 허용되지 않는 파일 형식 (.${ext})`)
+        continue
+      }
+      // 개별 용량 검사
+      if (file.size > maxMb * 1024 * 1024) {
+        errors.push(`${file.name}: 파일 크기 초과 (최대 ${maxMb}MB)`)
+        continue
+      }
+      // 총 용량 검사
+      if (usedBytes + file.size > totalMb * 1024 * 1024) {
+        errors.push(`${file.name}: 작업 총 첨부 용량 초과 (최대 ${totalMb}MB)`)
+        continue
+      }
+
+      const savedName = genAttachFileName(file.name)
+      const filePath  = join(uploadDir, savedName)
+      const buf       = await file.arrayBuffer()
+      writeFileSync(filePath, Buffer.from(buf))
+
+      const mimeType = file.type || 'application/octet-stream'
+      const result = await DB.prepare(
+        `INSERT INTO task_attachments (task_id, uploader_id, file_name, file_path, file_size, mime_type, attach_type, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(Number(taskId), user.id, file.name, filePath, file.size, mimeType, attachType, description).run()
+
+      savedIds.push(result.meta.last_row_id as number)
+      usedBytes += file.size
+    }
+
+    if (savedIds.length === 0 && errors.length > 0) {
+      return c.json({ error: errors.join(' / ') }, 400)
+    }
+    return c.json({ success: true, ids: savedIds, count: savedIds.length, errors })
+  } catch (e: any) {
+    console.error('[첨부] 업로드 오류:', e)
+    return c.json({ error: `업로드 실패: ${e.message}` }, 500)
+  }
+})
+
+// DELETE /api/attachments/:id  - 삭제
+app.delete('/api/attachments/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+
+  const att = await DB.prepare('SELECT uploader_id, file_path FROM task_attachments WHERE id = ?').bind(id).first<any>()
+  if (!att) return c.json({ error: '첨부파일 없음' }, 404)
+
+  if (user.role === 'worker' && att.uploader_id !== user.id) {
+    return c.json({ error: '권한 없음' }, 403)
+  }
+
+  if (att.file_path) {
+    try { unlinkSync(att.file_path) } catch (_) {}
+  }
+  await DB.prepare('DELETE FROM task_attachments WHERE id = ?').bind(id).run()
+  return c.json({ success: true })
+})
+
+// ─── QR 공개 프로필 페이지 (인증 불필요) ─────────────────────────────
+app.get('/qr/:userId', async (c) => {
+  const userId = c.req.param('userId')
+  return c.html(`<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>작업자 안전 프로필 — Safety NOTE</title>
+  <link rel="icon" type="image/png" href="/static/app-icon.png">
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: linear-gradient(135deg, #F2F0EB 0%, #FDE8F3 100%); min-height: 100vh; font-family: 'LG Smart KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+    .profile-wrap { max-width: 440px; margin: 0 auto; padding: 20px 14px 48px; }
+    .lgu-header { background: linear-gradient(135deg, #E6007E 0%, #6B5B9A 100%); border-radius: 22px 22px 0 0; padding: 28px 24px 22px; text-align: center; color: white; }
+    .lgu-avatar { width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 900; color: white; margin: 0 auto 12px; border: 3px solid rgba(255,255,255,0.45); }
+    .lgu-name { font-size: 23px; font-weight: 900; letter-spacing: -0.5px; }
+    .lgu-sub { font-size: 13px; opacity: 0.82; margin-top: 3px; }
+    .lgu-badges { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+    .lgu-badge { display: inline-block; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.38); border-radius: 20px; padding: 3px 13px; font-size: 12px; font-weight: 700; }
+    .blood-badge { background: rgba(255,80,80,0.3); border-color: rgba(255,120,120,0.5); }
+    .info-card { background: white; box-shadow: 0 8px 32px rgba(230,0,126,0.10); overflow: hidden; }
+    .info-card:last-of-type { border-radius: 0 0 22px 22px; }
+    .section-title { display: flex; align-items: center; gap: 7px; padding: 12px 18px 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px; border-bottom: 1px solid #F5F0EB; }
+    .info-row { display: flex; align-items: flex-start; padding: 11px 18px; border-bottom: 1px solid #F5F0EB; gap: 12px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-icon { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+    .info-label { font-size: 10px; font-weight: 700; color: #9CA3AF; line-height: 1; text-transform: uppercase; letter-spacing: 0.3px; }
+    .info-value { font-size: 14px; font-weight: 600; color: #1A1A1A; line-height: 1.4; margin-top: 3px; }
+    .edu-card { background: white; border-top: 1px solid #F5F0EB; }
+    .edu-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 18px; border-bottom: 1px solid #F9F6F2; }
+    .edu-row:last-child { border-bottom: none; }
+    .edu-name { font-size: 12px; color: #4B5563; font-weight: 500; }
+    .edu-date { font-size: 12px; font-weight: 700; color: #1A1A1A; }
+    .edu-none { font-size: 11px; color: #D1D5DB; }
+    .task-card { margin: 0 18px 14px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid #E6007E; background: #FEF0F8; }
+    .status-badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    .footer-note { text-align: center; font-size: 11px; color: #9CA3AF; margin-top: 20px; line-height: 1.6; }
+    /* 동의 화면 스타일 */
+    #qrConsentScreen { display: none; }
+    #qrProfileScreen { display: none; }
+    .consent-card { background: white; border-radius: 22px; box-shadow: 0 8px 32px rgba(0,0,0,0.10); overflow: hidden; }
+    .consent-header { background: linear-gradient(135deg, #E6007E 0%, #6B5B9A 100%); padding: 28px 24px 20px; text-align: center; color: white; }
+    .consent-body { padding: 20px; }
+    .consent-section { border: 1.5px solid #E5E7EB; border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+    .consent-section-head { padding: 12px 16px; background: #F9FAFB; font-size: 13px; font-weight: 700; color: #1E293B; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .consent-section-body { padding: 14px 16px; font-size: 12px; color: #374151; line-height: 1.7; background: #FAFAFA; border-top: 1px solid #E5E7EB; display: none; }
+    .consent-check-row { padding: 12px 16px; background: white; display: flex; align-items: center; gap: 10px; }
+    .consent-check-row label { font-size: 13px; font-weight: 600; color: #1E293B; cursor: pointer; flex: 1; }
+    .consent-all-row { background: #F5F3FF; border: 2px solid #7C3AED; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 14px; }
+    .consent-all-row label { font-size: 13px; font-weight: 800; color: #4C1D95; cursor: pointer; flex: 1; }
+    .consent-btn { width: 100%; padding: 14px; border-radius: 12px; border: none; font-size: 15px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+    .consent-btn:disabled { background: #D1D5DB; color: #9CA3AF; cursor: not-allowed; }
+    .consent-btn:not(:disabled) { background: linear-gradient(135deg, #E6007E, #6B5B9A); color: white; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="profile-wrap">
+
+  <!-- 로딩 초기 화면 -->
+  <div id="qrLoadingScreen" style="text-align:center;padding:80px 20px">
+    <div style="width:44px;height:44px;border:4px solid #F0EDE8;border-top-color:#E6007E;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px"></div>
+    <p style="color:#9CA3AF;font-size:14px">확인 중...</p>
+  </div>
+
+  <!-- 개인정보 동의 화면 (비회원) -->
+  <div id="qrConsentScreen">
+    <div class="consent-card">
+      <div class="consent-header">
+        <div style="width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;margin:0 auto 12px">
+          <i class="fas fa-shield-alt" style="font-size:24px"></i>
+        </div>
+        <div style="font-size:19px;font-weight:900;margin-bottom:4px">개인정보 유의사항 안내</div>
+        <div style="font-size:12px;opacity:0.85">Safety NOTE · LGU+ 협력사 현장 안전관리 시스템</div>
+      </div>
+      <div class="consent-body">
+        <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:12px 14px;margin-bottom:16px">
+          <p style="font-size:12px;color:#9A3412;line-height:1.6">
+            <i class="fas fa-info-circle mr-1"></i>
+            이 QR 코드에는 <strong>근로자의 개인정보</strong>(성명, 소속, 연락처, 교육 이력 등)가 포함되어 있습니다.<br>
+            조회한 개인정보는 <strong>업무 목적 이외에 사용할 수 없으며</strong>, 무단 유출 시 개인정보보호법에 따른 법적 책임이 발생합니다.
+          </p>
+        </div>
+
+        <!-- 동의 1: 개인정보 열람 목적 -->
+        <div class="consent-section">
+          <div class="consent-section-head" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='block'?'none':'block'">
+            <span><i class="fas fa-user-shield mr-2" style="color:#685182"></i>[필수] 개인정보 열람 목적 확인 및 동의</span>
+            <span style="font-size:11px;color:#6B7280">▼</span>
+          </div>
+          <div class="consent-section-body">
+            <p class="mb-2"><strong>■ 법적 근거:</strong> 개인정보보호법 제15조, 제19조(개인정보의 목적 외 이용·제공 제한)</p>
+            <p style="margin-bottom:6px"><strong>■ 개인정보 열람 유의사항</strong></p>
+            <p style="margin-bottom:4px">1. 본 QR 코드를 통해 조회되는 개인정보(성명, 소속, 연락처, 교육이력 등)는 <strong>현장 안전관리 목적에 한해</strong> 열람이 허용됩니다.</p>
+            <p style="margin-bottom:4px">2. 조회한 개인정보를 <strong>제3자에게 제공·공유·유출하는 행위는 금지</strong>됩니다.</p>
+            <p style="margin-bottom:4px">3. 조회한 정보를 캡처·촬영·저장하여 업무 외 용도로 사용하는 행위는 금지됩니다.</p>
+            <p style="margin-bottom:4px">4. 위반 시 <strong>개인정보보호법 제71조</strong>(5년 이하 징역 또는 5천만원 이하 벌금)가 적용될 수 있습니다.</p>
+            <p style="margin-top:8px;padding:8px;background:#FEF2F2;border-radius:6px;color:#991B1B;font-weight:600;font-size:11px">
+              ※ 본 동의는 해당 기기에서 24시간 동안 유효하며, 이후 재동의가 필요합니다.
+            </p>
+          </div>
+          <div class="consent-check-row">
+            <input type="checkbox" id="qrPrivacyCheck" onchange="_updateQrConsentBtn()"
+              style="width:18px;height:18px;accent-color:#D70072;flex-shrink:0;cursor:pointer">
+            <label for="qrPrivacyCheck">
+              개인정보 열람 목적 및 유의사항을 확인하였으며, <strong style="color:#D70072">동의</strong>합니다.
+            </label>
+          </div>
+        </div>
+
+        <!-- 동의 2: 보안 서약 -->
+        <div class="consent-section">
+          <div class="consent-section-head" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='block'?'none':'block'">
+            <span><i class="fas fa-lock mr-2" style="color:#685182"></i>[필수] 정보 보안 준수 서약</span>
+            <span style="font-size:11px;color:#6B7280">▼</span>
+          </div>
+          <div class="consent-section-body">
+            <p class="mb-2"><strong>■ 법적 근거:</strong> 부정경쟁방지 및 영업비밀보호에 관한 법률, 개인정보보호법 제29조</p>
+            <p style="margin-bottom:4px">1. 본 시스템을 통해 열람하는 근로자의 개인정보는 <strong>현장 안전 확인 목적으로만</strong> 사용합니다.</p>
+            <p style="margin-bottom:4px">2. 열람한 정보를 <strong>업무 이외의 목적으로 이용하거나 외부에 유출하지 않겠습니다.</strong></p>
+            <p style="margin-bottom:4px">3. 해당 정보를 타인과 공유하거나 SNS 등에 게시하지 않겠습니다.</p>
+            <p style="margin-top:8px;padding:8px;background:#FEF2F2;border-radius:6px;color:#991B1B;font-weight:600;font-size:11px">
+              ※ 개인정보 무단 유출 시: 개인정보보호법 제71조(형사) 및 제39조(민사 손해배상) 적용
+            </p>
+          </div>
+          <div class="consent-check-row">
+            <input type="checkbox" id="qrSecurityCheck" onchange="_updateQrConsentBtn()"
+              style="width:18px;height:18px;accent-color:#D70072;flex-shrink:0;cursor:pointer">
+            <label for="qrSecurityCheck">
+              정보 보안 준수 서약에 <strong style="color:#D70072">동의</strong>합니다.
+            </label>
+          </div>
+        </div>
+
+        <!-- 전체 동의 -->
+        <div class="consent-all-row" onclick="document.getElementById('qrAllCheck').click()">
+          <input type="checkbox" id="qrAllCheck" onchange="_toggleQrAllCheck(this)"
+            style="width:20px;height:20px;accent-color:#7C3AED;flex-shrink:0;cursor:pointer">
+          <label for="qrAllCheck" onclick="event.preventDefault()">
+            <i class="fas fa-check-double mr-1"></i> 위 필수 동의 사항 전체에 동의합니다.
+          </label>
+        </div>
+
+        <button id="qrConsentBtn" class="consent-btn" disabled onclick="_proceedAfterConsent()">
+          <i class="fas fa-eye mr-2"></i> 동의 후 프로필 보기
+        </button>
+
+        <p style="font-size:11px;color:#9CA3AF;text-align:center;margin-top:12px;line-height:1.6">
+          <i class="fas fa-shield-alt" style="color:#E6007E"></i>&nbsp;
+          동의 내역은 개인정보보호법 준수를 위해 기록됩니다.<br>
+          동의 유효 시간: 24시간 (이후 재동의 필요)
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 프로필 화면 -->
+  <div id="qrProfileScreen">
+    <div id="profileCard">
+      <div style="text-align:center;padding:80px 20px">
+        <div style="width:44px;height:44px;border:4px solid #F0EDE8;border-top-color:#E6007E;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px"></div>
+        <p style="color:#9CA3AF;font-size:14px">프로필 불러오는 중...</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer-note"><i class="fas fa-shield-alt" style="color:#E6007E"></i>&nbsp;Safety NOTE<br>LGU+ 협력사 현장 안전관리 시스템</p>
+</div>
+
+<script>
+(function() {
+  const userId = '${userId}';
+  // localStorage 동의 캐시 키 (24시간 유효)
+  const CONSENT_KEY = 'qr_consent_v1';
+  const CONSENT_TTL = 24 * 60 * 60 * 1000; // 24시간
+
+  function isConsentValid() {
+    try {
+      const stored = localStorage.getItem(CONSENT_KEY);
+      if (!stored) return false;
+      const data = JSON.parse(stored);
+      return data.agreed && (Date.now() - data.ts) < CONSENT_TTL;
+    } catch(e) { return false; }
+  }
+
+  function isSystemUser() {
+    // Safety NOTE 앱 로그인 사용자 확인 (token 존재 여부)
+    try {
+      const token = localStorage.getItem('safety_token') || localStorage.getItem('token') || sessionStorage.getItem('safety_token');
+      return !!token;
+    } catch(e) { return false; }
+  }
+
+  function saveConsent() {
+    try {
+      localStorage.setItem(CONSENT_KEY, JSON.stringify({ agreed: true, ts: Date.now() }));
+    } catch(e) {}
+  }
+
+  // 초기화: 동의 여부 확인
+  function init() {
+    document.getElementById('qrLoadingScreen').style.display = 'none';
+    if (isSystemUser() || isConsentValid()) {
+      // 시스템 가입자이거나 이미 동의한 경우 → 바로 프로필 표시
+      document.getElementById('qrProfileScreen').style.display = 'block';
+      loadProfile();
+    } else {
+      // 비회원 → 동의 화면 표시
+      document.getElementById('qrConsentScreen').style.display = 'block';
+    }
+  }
+
+  // 동의 버튼 활성화 상태 업데이트
+  window._updateQrConsentBtn = function() {
+    const privacy  = document.getElementById('qrPrivacyCheck')?.checked;
+    const security = document.getElementById('qrSecurityCheck')?.checked;
+    const btn      = document.getElementById('qrConsentBtn');
+    const allCheck = document.getElementById('qrAllCheck');
+    if (allCheck) allCheck.checked = !!(privacy && security);
+    if (btn) btn.disabled = !(privacy && security);
+  };
+
+  // 전체 동의 토글
+  window._toggleQrAllCheck = function(checkbox) {
+    const checked = checkbox.checked;
+    const p = document.getElementById('qrPrivacyCheck');
+    const s = document.getElementById('qrSecurityCheck');
+    if (p) p.checked = checked;
+    if (s) s.checked = checked;
+    const btn = document.getElementById('qrConsentBtn');
+    if (btn) btn.disabled = !checked;
+  };
+
+  // 동의 후 프로필 이동
+  window._proceedAfterConsent = function() {
+    saveConsent();
+    document.getElementById('qrConsentScreen').style.display = 'none';
+    document.getElementById('qrProfileScreen').style.display = 'block';
+    loadProfile();
+  };
+
+  function fmtDate(d) {
+    if (!d) return '';
+    return d.replace(/-/g, '.');
+  }
+
+  function infoRow(iconBg, iconColor, iconClass, label, value) {
+    if (!value) return '';
+    return \`<div class="info-row">
+      <div class="info-icon" style="background:\${iconBg}"><i class="fas \${iconClass}" style="color:\${iconColor}"></i></div>
+      <div><div class="info-label">\${label}</div><div class="info-value">\${value}</div></div>
+    </div>\`;
+  }
+  function infoRowAlways(iconBg, iconColor, iconClass, label, value) {
+    return \`<div class="info-row">
+      <div class="info-icon" style="background:\${iconBg}"><i class="fas \${iconClass}" style="color:\${iconColor}"></i></div>
+      <div><div class="info-label">\${label}</div><div class="info-value" style="\${value ? '' : 'color:#C9CBD0;font-weight:500'}">\${value || '미입력'}</div></div>
+    </div>\`;
+  }
+
+  function eduRow(label, dateVal) {
+    return \`<div class="edu-row">
+      <span class="edu-name">\${label}</span>
+      \${dateVal ? \`<span class="edu-date">\${fmtDate(dateVal)}</span>\` : \`<span class="edu-none">미이수</span>\`}
+    </div>\`;
+  }
+
+  async function loadProfile() {
+    const card = document.getElementById('profileCard');
+    try {
+      const res = await fetch('/api/users/qr-profile/' + userId);
+      if (!res.ok) throw new Error('사용자를 찾을 수 없습니다.');
+      const u = await res.json();
+
+      const statusMap = {
+        unassigned:     { label: '미배정',            bg: '#F0EFEB', color: '#6B7280' },
+        assigned:       { label: '배정완료',           bg: '#FDE8F3', color: '#E6007E' },
+        in_progress:    { label: '진행중',             bg: '#FFF3CD', color: '#B45309' },
+        tbm_done:       { label: 'TBM완료',            bg: '#EDE9F7', color: '#6B5B9A' },
+        working:        { label: '작업중',             bg: '#E8F5E9', color: '#2E7D32' },
+        work_completed: { label: '작업완료(일지대기)', bg: '#FEF3C7', color: '#92400E' },
+        completed:      { label: '일지작성완료',       bg: '#DCFCE7', color: '#166534' },
+      };
+      const st = u.current_task
+        ? (statusMap[u.current_task.status] || { label: u.current_task.status, bg: '#F0EFEB', color: '#6B7280' })
+        : null;
+
+      card.innerHTML = \`
+        <div class="lgu-header">
+          <div class="lgu-avatar">\${u.name.charAt(0)}</div>
+          <div class="lgu-name">\${u.name}</div>
+          \${(u.company || u.position) ? \`<div class="lgu-sub">\${[u.company, u.position].filter(Boolean).join(' · ')}</div>\` : ''}
+          <div class="lgu-badges">
+            <span class="lgu-badge">\${u.role_label}</span>
+            \${u.blood_type ? \`<span class="lgu-badge blood-badge"><i class="fas fa-tint"></i> \${u.blood_type}</span>\` : ''}
+          </div>
+        </div>
+
+        <div class="info-card">
+          <div class="section-title" style="color:#E6007E"><i class="fas fa-id-card"></i> 인적사항</div>
+          \${infoRow('#FDE8F3','#E6007E','fa-building','소속 부서', u.department)}
+          \${infoRowAlways('#EDE9F7','#6B5B9A','fa-phone','연락처', u.phone)}
+          \${infoRowAlways('#FFF8E1','#B45309','fa-exclamation-triangle','긴급연락처', u.emergency_contact)}
+          \${infoRowAlways('#FFF0F0','#E53E3E','fa-tint','혈액형', u.blood_type)}
+          \${infoRowAlways('#F0FFF4','#2E7D32','fa-heartbeat','건강정보', u.health_info)}
+          <div class="info-row">
+            <div class="info-icon" style="background:#FFF3CD"><i class="fas fa-clipboard-check" style="color:#B45309"></i></div>
+            <div><div class="info-label">완료 작업</div><div class="info-value">\${u.completed_tasks}건</div></div>
+          </div>
+        </div>
+
+        \${u.current_task ? \`
+        <div class="info-card" style="border-top:1px solid #F5F0EB">
+          <div class="section-title" style="color:#E6007E"><i class="fas fa-hard-hat"></i> 현재 배정 작업</div>
+          <div class="task-card">
+            <div style="font-size:14px;font-weight:700;color:#1A1A1A;margin-bottom:7px">\${u.current_task.title}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span class="status-badge" style="background:\${st.bg};color:\${st.color}">\${st.label}</span>
+              \${u.current_task.work_order_address ? \`<span style="font-size:11px;color:#6B7280"><i class="fas fa-map-marker-alt"></i> \${u.current_task.work_order_address}</span>\` : ''}
+            </div>
+          </div>
+        </div>\` : \`
+        <div class="info-card" style="border-top:1px solid #F5F0EB">
+          <div style="padding:14px 18px;font-size:13px;color:#9CA3AF;text-align:center">
+            <i class="fas fa-check-circle" style="color:#6B5B9A"></i> 현재 배정된 작업 없음
+          </div>
+        </div>\`}
+
+        <div class="edu-card">
+          <div class="section-title" style="color:#B45309"><i class="fas fa-graduation-cap"></i> 안전교육 이수 현황</div>
+          \${eduRow('채용시교육', u.edu_hire_date)}
+          \${eduRow('특별안전교육 — 전기작업', u.edu_special_electric)}
+          \${eduRow('특별안전교육 — 밀폐공간작업', u.edu_special_confined)}
+          \${eduRow('특별안전교육 — 하역작업', u.edu_special_loading)}
+          \${eduRow('체험안전교육', u.edu_experience_date)}
+        </div>
+
+        <div style="margin-top:12px;padding:10px 14px;background:rgba(255,255,255,0.7);border-radius:10px;text-align:center">
+          <p style="font-size:10px;color:#9CA3AF;line-height:1.6">
+            <i class="fas fa-shield-alt" style="color:#E6007E"></i>
+            이 프로필 정보는 개인정보보호법에 의해 보호됩니다.<br>
+            무단 수집·유출 시 법적 책임이 따릅니다.
+          </p>
+        </div>
+      \`;
+      const cards = card.querySelectorAll('.info-card, .edu-card');
+      if (cards.length) cards[cards.length-1].style.borderRadius = '0 0 22px 22px';
+
+    } catch(e) {
+      card.innerHTML = \`<div style="background:white;border-radius:22px;padding:40px 24px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.08)">
+        <i class="fas fa-user-slash" style="font-size:40px;color:#E6007E;margin-bottom:12px;display:block"></i>
+        <p style="color:#1A1A1A;font-weight:700;font-size:16px">프로필을 불러올 수 없습니다</p>
+        <p style="color:#9CA3AF;font-size:13px;margin-top:4px">\${e.message}</p>
+      </div>\`;
+    }
+  }
+
+  // 페이지 로드 시 초기화
+  init();
+})();
+</script>
+</body>
+</html>`)
+})
+
+// ─── SSE 실시간 알림 시스템 (공유 모듈 src/sse.ts 사용) ───────────────────────
+// sseClients, sendToUser, broadcastAll, broadcastToRoles, getConnectionCount
+// → 최상단 import에서 로드됨
+
+// SSE 연결 엔드포인트: GET /api/events
+// EventSource는 커스텀 헤더 불가 → ?token= 쿼리스트링으로도 인증 허용
+app.get('/api/events', (c) => {
+  let user = getUser(c)
+  if (!user) {
+    // 쿼리스트링 토큰 fallback (EventSource는 커스텀 헤더 불가)
+    const qToken = c.req.query('token')
+    if (qToken) {
+      try {
+        // auth.ts encodeToken과 동일한 UTF-8 byte-by-byte 디코딩
+        const binary = Buffer.from(qToken, 'base64').toString('binary')
+        const bytes = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+        user = JSON.parse(new TextDecoder().decode(bytes))
+      } catch(_) {}
+    }
+  }
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  let clientEntry: any = null
+  const userId = user.id
+
+  const stream = new ReadableStream({
+    start(controller) {
+      clientEntry = { controller, userId, userName: user.name, role: user.role }
+      if (!sseClients.has(userId)) sseClients.set(userId, new Set())
+      sseClients.get(userId)!.add(clientEntry)
+
+      // 연결 성공 이벤트
+      const welcome = `data: ${JSON.stringify({
+        type: 'connected',
+        message: '실시간 알림 연결됨',
+        userId,
+        connections: getConnectionCount(),
+        ts: Date.now()
+      })}\n\n`
+      controller.enqueue(new TextEncoder().encode(welcome))
+
+      // 30초마다 heartbeat (연결 유지)
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(new TextEncoder().encode(`: heartbeat\n\n`))
+        } catch(_) {
+          clearInterval(heartbeat)
+        }
+      }, 30000)
+
+      // 클린업 등록
+      clientEntry.heartbeat = heartbeat
+    },
+    cancel() {
+      if (clientEntry) {
+        clearInterval(clientEntry.heartbeat)
+        sseClients.get(userId)?.delete(clientEntry)
+        if (sseClients.get(userId)?.size === 0) sseClients.delete(userId)
+      }
+    }
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': '*',
+    }
+  })
+})
+
+// SSE 연결 현황 조회 (관리자용)
+app.get('/api/events/stats', (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '권한 없음' }, 403)
+  const stats: any[] = []
+  for (const [uid, clients] of sseClients.entries()) {
+    for (const cl of clients) {
+      stats.push({ userId: uid, userName: cl.userName, role: cl.role })
+    }
+  }
+  return c.json({ total: stats.length, clients: stats })
+})
+
+// ─── 알림 이벤트 타입 정의 ────────────────────────────────────────────────────
+// type: 'sign_request'   → 서명 요청 수신
+// type: 'task_assigned'  → 작업 배정
+// type: 'task_status'    → 작업 상태 변경
+// type: 'tbm_sign'       → TBM 서명 완료
+// type: 'risk_sign'      → 위험성평가 서명 완료
+// type: 'edu_sign'       → 교육 서명 완료
+// type: 'hazard_report'  → 위험 신고
+// type: 'work_stop'      → 작업 중지
+// type: 'inspection'     → 현장점검
+// type: 'system'         → 시스템 공지
+
+// ─── PWA: /manifest.json ─────────────────────────────────────────────────
+app.get('/manifest.json', (c) => {
+  c.header('Content-Type', 'application/manifest+json')
+  c.header('Cache-Control', 'public, max-age=86400')
+  return c.body(readFileSync(join(__dirname, 'public/static/manifest.json'), 'utf-8'))
+})
+
+// ─── PWA: /service-worker.js ──────────────────────────────────────────────
+app.get('/service-worker.js', (c) => {
+  c.header('Content-Type', 'application/javascript')
+  c.header('Cache-Control', 'no-cache, no-store, must-revalidate')  // SW는 항상 최신
+  c.header('Service-Worker-Allowed', '/')
+  return c.body(readFileSync(join(__dirname, 'public/static/service-worker.js'), 'utf-8'))
+})
+
+// SPA fallback - index.html
+app.get('*', (c) => {
+  c.header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  c.header('Pragma', 'no-cache')
+  c.header('Expires', '0')
+  return c.html(`<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Safety NOTE</title>
+  <link rel="icon" type="image/png" href="/static/app-icon.png">
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#4E3A63">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SafetyNOTE">
+  <link rel="apple-touch-icon" href="/static/app-icon.png">
+  <!-- SheetJS: 로컬 서빙 (app.js보다 먼저 로드) -->
+  <script src="/static/xlsx.full.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css?v=20260610">
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div id="app"></div>
+  <script src="/static/app.js?v=20260610"></script>
+  <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
+  <script src="/static/mobile-app.js?v=20260610"></script>
+</body>
+</html>`)
+})
+
+// ─── JWT 파싱 헬퍼 ────────────────────────────────────────────────────
+function getUser(c: any): any {
+  const auth = c.req.header('Authorization') || ''
+  if (!auth.startsWith('Bearer ')) return null
+  try {
+    const token = auth.slice(7)
+    // 단순 base64 (이 앱 방식)
+    const buf = Buffer.from(token, 'base64')
+    return JSON.parse(buf.toString('utf-8'))
+  } catch(_) { return null }
+}
+
+// ─── 서버 시작 ────────────────────────────────────────────────────────
+console.log(`\n🚀 Safety NOTE - Node.js 서버`)
+console.log(`   포트: ${PORT}`)
+console.log(`   DB:   ${DB_FILE}`)
+console.log(`   업로드 루트:  ${UPLOAD_ROOT}`)
+console.log(`   연도/월 폴더: ${USE_SUBDIR ? '활성화 (YYYY/MM 자동 생성)' : '비활성화'}\n`)
+
+// DB 초기화 후 시스템 설정 로드
+loadSystemSettings(DB).then(() => {
+  console.log(`[설정] 업로드 루트: ${getUploadRoot()}`)
+  console.log(`[설정] 폴더 구조: {공사요청번호}_{공사명}/{서브번호}_{작업일}_{작업종류}/01~05단계`)
+})
+
+const serverInstance = serve({
+  fetch: app.fetch,
+  port: PORT,
+  hostname: '0.0.0.0'
+}, (info) => {
+  console.log(`✅ 서버 실행 중: http://0.0.0.0:${info.port}`)
+})
+
+// 프록시/게이트웨이 502 방지: Keep-Alive 타임아웃을 65초로 설정
+// Node.js http.Server의 keepAliveTimeout 기본값은 5초 → 프록시가 60초 타임아웃이면 502 발생
+try {
+  const srv = serverInstance as any
+  if (srv && srv.keepAliveTimeout !== undefined) {
+    Object.defineProperty(srv, 'keepAliveTimeout', { value: 65000, writable: true })
+    Object.defineProperty(srv, 'headersTimeout',   { value: 66000, writable: true })
+    console.log('[서버] keepAliveTimeout=65s 설정 완료')
+  }
+} catch(_) { /* 설정 실패 시 무시 */ }

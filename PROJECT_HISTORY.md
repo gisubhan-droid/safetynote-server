@@ -193,16 +193,26 @@ doApkDownload(downloadUrl, apkInfo.version)
 - `pm2 save` + `pm2 startup` (systemd) 완료
 - `curl http://localhost:3443` → **HTTP 200** 확인
 
-### 🔴 [높음] APK v1.2.5 GitHub Release 빌드
-- permissions: contents: write 추가 완료 → **재빌드 미실행**
-- GitHub Actions 수동 실행 필요:
-  - https://github.com/gisubhan-droid/safetynote-android/actions
-  - "Safety NOTE APK Build and Deploy" → Run workflow → version: 1.2.5
+### ✅ [완료] APK Release 서명 keystore 등록 (2026-06-10 세션 6)
+- 샌드박스에서 `keytool`로 `safetynote-release.keystore` 생성
+  - 알고리즘: RSA 2048bit / 유효기간: 36,500일(100년)
+  - CN=SafetyNOTE Dev, O=LinkMax, C=KR
+  - 비밀번호: `SafetyNOTE2026!` (키스토어/키 동일)
+  - alias: `safetynote`
+- GitHub Secrets 4개 등록 완료:
+  - `KEYSTORE_BASE64` ✅
+  - `KEYSTORE_PASSWORD` ✅  
+  - `KEY_ALIAS` ✅
+  - `KEY_PASSWORD` ✅
+- keystore 파일 백업: AI Drive 업로드 완료 (분실 시 앱 업데이트 불가 — 안전한 곳에 추가 백업 필수!)
 
-### 🔴 [높음] APK Release 서명 (keystore 미등록)
-- 현재 debug 빌드로 생성됨 → "개발자 미확인 앱" 경고
-- GitHub Secrets에 등록 필요: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`
-- `generate-keystore.sh` 실행 후 등록
+### 🔴 [진행중] APK v1.2.5 GitHub Release 빌드 (서명 빌드)
+- keystore 등록 완료 → **서명 Release 빌드 실행 필요**
+- GitHub Actions 수동 실행:
+  - https://github.com/gisubhan-droid/safetynote-android/actions/workflows/build-apk.yml
+  - "Run workflow" → version: `1.2.5` / force_update: `false`
+- 빌드 성공 시 `app-release.apk` → GitHub Release에 자동 첨부됨
+- ⚠️ GitHub App 권한 제한으로 workflow dispatch API 호출 불가 → 웹 UI 수동 실행 필수
 
 ### 🟡 [중간] NAS 크론잡 설정 (nas-auto-deploy.sh)
 - `safetynote-android/scripts/nas-auto-deploy.sh` NAS에 설치 및 크론잡 등록 미완
@@ -411,10 +421,22 @@ GitHub → safetynote-android → Actions
 |--------|------|------|
 | `NAS_URL` | ✅ | NAS 서버 주소 (자동배포 스크립트용) |
 | `DIST_SECRET` | ✅ | APK 업로드 인증 |
-| `KEYSTORE_BASE64` | ❌ 미등록 | Release 서명 |
-| `KEYSTORE_PASSWORD` | ❌ 미등록 | keystore 비밀번호 |
-| `KEY_ALIAS` | ❌ 미등록 | 키 별칭 |
-| `KEY_PASSWORD` | ❌ 미등록 | 키 비밀번호 |
+| `KEYSTORE_BASE64` | ✅ **등록완료** | Release 서명 (2026-06-10) |
+| `KEYSTORE_PASSWORD` | ✅ **등록완료** | keystore 비밀번호 `SafetyNOTE2026!` |
+| `KEY_ALIAS` | ✅ **등록완료** | 키 별칭 `safetynote` |
+| `KEY_PASSWORD` | ✅ **등록완료** | 키 비밀번호 `SafetyNOTE2026!` |
+
+### 🔑 Keystore 정보 (분실 금지!)
+| 항목 | 값 |
+|------|-----|
+| 파일명 | `safetynote-release.keystore` |
+| 알고리즘 | RSA 2048bit |
+| 유효기간 | 36,500일 (100년) |
+| alias | `safetynote` |
+| 비밀번호 | `SafetyNOTE2026!` |
+| DN | CN=SafetyNOTE Dev, O=LinkMax, C=KR |
+| 백업 | AI Drive 업로드 완료 ✅ |
+| ⚠️ 주의 | **이 keystore 분실 시 동일 앱 이름으로 업데이트 불가!** |
 
 ---
 
@@ -654,5 +676,23 @@ https://linkmax.myds.me:3443  → ✅ 정상 접속!
 - [x] GitHub push + NAS git pull 적용
 - [x] `https://linkmax.myds.me:3443` **정상 접속 확인** ✅
 - [x] PROJECT_HISTORY.md HTTPS 구조 오류 기록 수정
-- [ ] NAS-HTTPS-SETUP.md 별도 문서 생성
-- [ ] APK v1.2.5 GitHub Actions 재빌드
+- [x] NAS-HTTPS-SETUP.md 별도 문서 생성
+- [x] node-server.ts HTTPS 구간 경고 주석 강화 (수정 금지 표시)
+- [ ] APK v1.2.5 GitHub Actions 서명 빌드 실행 (세션 7에서 진행)
+
+### 2026-06-10 세션 7 — APK Release 서명 keystore 생성 + GitHub Secrets 등록
+
+#### 작업 내용
+- 샌드박스에서 `keytool`로 `safetynote-release.keystore` 생성
+  - RSA 2048bit / 유효기간 100년 / alias: `safetynote`
+  - 비밀번호: `SafetyNOTE2026!`
+- Base64 인코딩 후 GitHub Secrets 4개 등록 (웹 UI 수동 등록)
+  - `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` 모두 ✅
+- keystore 파일 AI Drive 백업 완료
+- GitHub Actions **서명 빌드 실행 대기 중** (웹 UI에서 직접 실행 필요)
+
+#### 잔여 작업
+- [ ] GitHub Actions 수동 실행 → v1.2.5 **Release(서명) APK** 빌드
+  - URL: https://github.com/gisubhan-droid/safetynote-android/actions/workflows/build-apk.yml
+  - Run workflow → version: `1.2.5`
+- [ ] 빌드 완료 후 앱에서 업데이트 알림 수신 확인

@@ -4,6 +4,7 @@ module.exports = {
       name: 'safetynote',
       script: '/volume1/safetynote/node_modules/.bin/tsx',
       args: 'node-server.ts',
+      interpreter: '/usr/local/bin/node',
       cwd: '/volume1/safetynote',
       env: {
         NODE_ENV: 'production',

@@ -2,8 +2,8 @@ module.exports = {
   apps: [
     {
       name: 'safetynote',
-      script: 'npx',
-      args: 'tsx node-server.ts',
+      script: '/volume1/safetynote/node_modules/.bin/tsx',
+      args: 'node-server.ts',
       cwd: '/volume1/safetynote',
       env: {
         NODE_ENV: 'production',

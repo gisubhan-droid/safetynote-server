@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-10 (세션 8)
+> 최종 업데이트: 2026-06-10 (세션 9)
 > **앱 현재 버전: v1.2.5** ← 최신 (✅ GitHub Release 빌드 완료)
 > NAS 배포 버전: v1.2.5 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, systemd 자동시작 ✅)
-> **다음 작업**: 4단계(로그인 개선) → 5단계(앱 설정) → 2단계(GPS) → 빌드 v1.3.0
+> **다음 작업**: 2단계(GPS) ✅완료 → APK v1.3.0 빌드 → 1단계(알림 Android 테스트)
 
 ---
 
@@ -697,7 +697,6 @@ https://linkmax.myds.me:3443  → ✅ 정상 접속!
 - [ ] 앱에서 업데이트 알림 수신 및 설치 확인
 
 ### 2026-06-10 세션 8 — 현황 파악 + 6단계 개발 계획 수립 및 정리
-
 #### 작업 내용
 - 이전 세션 요약 기반으로 작업 인수
 - 코드 전면 분석을 통해 6단계 개발 계획 현황 파악
@@ -709,7 +708,7 @@ https://linkmax.myds.me:3443  → ✅ 정상 접속!
 | 단계 | 기능 | 구현 상태 | 비고 |
 |------|------|----------|------|
 | 1단계 | 🔔 앱 내 알림 기능 | **✅ 거의 완성** | 벨 아이콘, 배지, 패널, SSE 실시간, DB 읽기/쓰기 모두 구현됨 |
-| 2단계 | 📍 GPS 위치 추적 | **🔧 부분 구현** | 점검/위험 기록 시 GPS 주소 조회 있음. 실시간 위치 추적 없음 |
+| 2단계 | 📍 GPS 위치 추적 | **✅ 세션9 완료** | 작업일지 저장 시 GPS 좌표 자동 기록 + 내 계정 위치 이력 카드 |
 | 3단계 | 🔄 자동 업데이트 | **✅ 완성** | syncInstalledVersion() + DownloadManager 완성 |
 | 4단계 | 👤 로그인 화면 개선 | **✅ 세션8 완료** | 아이디 저장/자동완성, 비밀번호 표시, 로딩 스피너, 흔들기 애니메이션 |
 | 5단계 | ⚙️ 앱 설정 메뉴 | **✅ 세션8 완료** | 내 계정 페이지에 앱 설정 카드 추가 (테마/알림/글자크기/진동) |
@@ -718,7 +717,49 @@ https://linkmax.myds.me:3443  → ✅ 정상 접속!
 #### 진행 순서 결정
 1. **4단계 (로그인 화면 개선)** — 빠르고 임팩트 있음 → **✅ 완료**
 2. **5단계 (앱 설정 메뉴)** — 사용자 설정 페이지 신규 추가 → **✅ 완료**
-3. **2단계 (GPS 위치 추적)** — 출퇴근 위치 자동 기록 등 기능 확장
+3. **2단계 (GPS 위치 추적)** — 출퇴근 위치 자동 기록 등 기능 확장 → **✅ 세션9 완료**
+
+---
+
+### 2026-06-10 세션 9 — NAS HTTPS 접속 불가 수정 + 2단계 GPS 위치 추적 구현
+
+#### 작업 내용 1: HTTPS 접속 불가 수정 (EADDRINUSE 버그)
+- **원인**: 이전 세션에서 webapp repo 커밋이 safetynote-server repo에 force push로 덮어씌워짐
+  → NAS `git reset --hard origin/main` 시 구버전 `node-server.ts` 설치 (HTTP+HTTPS 동시 기동 버그)
+- **증상**: HTTPS가 3443 점유 후 HTTP도 3443 시도 → `EADDRINUSE` → `process.exit(1)` → 서버 종료
+- **해결**: 샌드박스에서 safetynote-server repo `git push -f origin main` → NAS `git reset --hard origin/main` → `pm2 restart`
+- **문서**: `NAS-HTTPS-SETUP.md`에 "EADDRINUSE 버그" 진단 섹션 추가 (커밋 `65cd4f6`)
+
+#### 작업 내용 2: 2단계 GPS 위치 추적 구현
+- **migration 0050**: `work_logs` 테이블에 `gps_lat`, `gps_lon`, `gps_recorded_at` 컬럼 추가
+- **worklogs.ts**: POST(생성) / PUT(수정) API에 gps 좌표 저장 반영
+- **app.js `submitWorkLog()`**: 작업일지 저장 시 `navigator.geolocation.getCurrentPosition()` 백그라운드 호출 → GPS 실패해도 저장 계속 진행
+- **app.js `_loadLocationHistory()`**: 내 작업일지 중 위치 정보 있는 항목 최근 20개 조회 + 카카오맵 링크 제공
+- **`renderMyProfilePage()`**: 앱 설정 카드 아래에 "최근 작업 위치 이력" 카드 추가 (페이지 로드 시 자동 호출)
+
+#### ⚠️ NAS 적용 필수 작업
+```bash
+# NAS SSH에서 실행
+cd /volume1/safetynote
+git fetch origin && git reset --hard origin/main
+
+# migration 0050 적용 (gps 컬럼 추가)
+sqlite3 /volume1/safetynote/data/safety.db < migrations/0050_worklogs_gps_coords.sql
+
+# 서버 재시작
+pm2 restart safetynote --update-env
+sleep 5 && pm2 logs safetynote --nostream --lines 5
+```
+
+#### 완료 항목
+- [x] NAS HTTPS EADDRINUSE 버그 원인 파악 및 수정
+- [x] NAS-HTTPS-SETUP.md EADDRINUSE 진단 섹션 추가
+- [x] migration 0050 생성 (work_logs GPS 컬럼)
+- [x] worklogs.ts GPS 좌표 저장 반영
+- [x] app.js 작업일지 저장 시 GPS 자동 수집
+- [x] app.js 내 계정 위치 이력 카드 + `_loadLocationHistory()` 구현
+- [x] GitHub push (safetynote-server repo)
+- [ ] **NAS DB migration 0050 적용** ← 아직 미실행
 
 ---
 
@@ -749,14 +790,18 @@ https://linkmax.myds.me:3443  → ✅ 정상 접속!
 
 **목표**: 현장 근무 중 위치 기록, 출퇴근 위치 자동 저장
 
-**현재 구현 상태 (🔧 부분 구현)**:
+**현재 구현 상태 (✅ 세션9 완료)**:
 - `app.js` — `getGPSAddress()`, `getGPSAddressWithConsent()`: 점검/위험 기록 시 GPS 주소 조회
 - `MainActivity.java` — 런타임 GPS 권한 요청 (`ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`)
 - `AndroidManifest.xml` — GPS 권한 선언
+- `submitWorkLog()` — 작업일지 저장 시 `gps_lat`, `gps_lon` 자동 수집 → 서버 전송
+- `worklogs.ts` — INSERT/UPDATE 시 `gps_lat`, `gps_lon`, `gps_recorded_at` 저장
+- `migrations/0050_worklogs_gps_coords.sql` — `work_logs` 테이블 GPS 컬럼 추가
+- `renderMyProfilePage()` — 내 계정 페이지 "최근 작업 위치 이력" 카드 추가
+- `_loadLocationHistory()` — 작업일지 위치 이력 조회 + 카카오맵 링크
 
 **남은 작업**:
-- [ ] 출퇴근(근태) 기록 시 위치 자동 저장 (`worklogs` 테이블 `location` 컬럼 활용)
-- [ ] 위치 기록 이력 조회 UI (내 계정 → 위치 이력 탭)
+- [ ] NAS DB 마이그레이션 `0050` 적용 (`sqlite3 /volume1/safetynote/data/safety.db < migrations/0050_worklogs_gps_coords.sql`)
 - [ ] 실시간 위치 업데이트 주기 설정 (선택적)
 
 ---

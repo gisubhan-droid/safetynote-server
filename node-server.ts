@@ -27,6 +27,8 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import * as https from 'node:https'
+import * as http from 'node:http'
 
 // SSE 공유 모듈
 import { sseClients, sendToUser, broadcastAll, broadcastToRoles, getConnectionCount } from './src/sse'
@@ -2988,21 +2990,110 @@ loadSystemSettings(DB).then(() => {
   console.log(`[설정] 폴더 구조: {공사요청번호}_{공사명}/{서브번호}_{작업일}_{작업종류}/01~05단계`)
 })
 
-const serverInstance = serve({
-  fetch: app.fetch,
-  port: PORT,
-  hostname: '0.0.0.0'
-}, (info) => {
-  console.log(`✅ 서버 실행 중: http://0.0.0.0:${info.port}`)
-})
-
-// 프록시/게이트웨이 502 방지: Keep-Alive 타임아웃을 65초로 설정
-// Node.js http.Server의 keepAliveTimeout 기본값은 5초 → 프록시가 60초 타임아웃이면 502 발생
-try {
-  const srv = serverInstance as any
-  if (srv && srv.keepAliveTimeout !== undefined) {
-    Object.defineProperty(srv, 'keepAliveTimeout', { value: 65000, writable: true })
-    Object.defineProperty(srv, 'headersTimeout',   { value: 66000, writable: true })
-    console.log('[서버] keepAliveTimeout=65s 설정 완료')
+// ─── HTTPS 인증서 로드 (Synology DSM 인증서) ─────────────────────────
+// 인증서 경로: /usr/syno/etc/certificate/_archive/<DEFAULT>/
+// DEFAULT 파일에서 현재 사용 중인 인증서 폴더명을 읽어옴
+function loadSynologyCert(): { key: string; cert: string; ca?: string } | null {
+  try {
+    const defaultPath = '/usr/syno/etc/certificate/_archive/DEFAULT'
+    if (!existsSync(defaultPath)) return null
+    const archiveName = readFileSync(defaultPath, 'utf-8').trim()
+    const certDir = `/usr/syno/etc/certificate/_archive/${archiveName}`
+    const keyPath  = join(certDir, 'privkey.pem')
+    const certPath = join(certDir, 'cert.pem')
+    const chainPath = join(certDir, 'fullchain.pem')
+    if (!existsSync(keyPath) || !existsSync(certPath)) return null
+    const result: { key: string; cert: string; ca?: string } = {
+      key:  readFileSync(keyPath, 'utf-8'),
+      cert: existsSync(chainPath)
+              ? readFileSync(chainPath, 'utf-8')   // fullchain 우선 (중간 CA 포함)
+              : readFileSync(certPath, 'utf-8'),
+    }
+    console.log(`[SSL] Synology 인증서 로드 완료: ${certDir}`)
+    return result
+  } catch (e) {
+    console.warn('[SSL] 인증서 로드 실패:', e)
+    return null
   }
-} catch(_) { /* 설정 실패 시 무시 */ }
+}
+
+const tlsCert = loadSynologyCert()
+
+if (tlsCert) {
+  // ── HTTPS 서버 (인증서 있을 때) ──────────────────────────────────────
+  const httpsServer = https.createServer(
+    { key: tlsCert.key, cert: tlsCert.cert },
+    (req, res) => {
+      // @hono/node-server의 내부 핸들러를 직접 호출
+      app.fetch(
+        new Request(
+          `https://${req.headers.host || `localhost:${PORT}`}${req.url}`,
+          {
+            method: req.method,
+            headers: req.headers as any,
+            body: ['GET','HEAD'].includes(req.method ?? '') ? undefined : req as any,
+            duplex: 'half',
+          } as any
+        ),
+        { incoming: req, outgoing: res } as any
+      ).then((honoRes: Response) => {
+        res.writeHead(honoRes.status, Object.fromEntries(honoRes.headers.entries()))
+        if (honoRes.body) {
+          const reader = honoRes.body.getReader()
+          const pump = () => reader.read().then(({ done, value }) => {
+            if (done) { res.end(); return }
+            res.write(value)
+            pump()
+          })
+          pump()
+        } else {
+          res.end()
+        }
+      }).catch((err: any) => {
+        console.error('[HTTPS] 요청 처리 오류:', err)
+        res.writeHead(500)
+        res.end('Internal Server Error')
+      })
+    }
+  )
+
+  httpsServer.keepAliveTimeout = 65000
+  httpsServer.headersTimeout   = 66000
+
+  httpsServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ 서버 실행 중 (HTTPS): https://0.0.0.0:${PORT}`)
+  })
+
+  httpsServer.on('error', (err: any) => {
+    if (err.code === 'EACCES') {
+      console.error(`[SSL] 포트 ${PORT} 권한 없음 — root 권한 필요`)
+    } else if (err.code === 'EADDRINUSE') {
+      console.error(`[SSL] 포트 ${PORT} 이미 사용 중`)
+    } else {
+      console.error('[SSL] 서버 오류:', err)
+    }
+    process.exit(1)
+  })
+
+} else {
+  // ── HTTP 폴백 (인증서 없을 때 — 개발/샌드박스 환경) ─────────────────
+  console.warn('[SSL] 인증서 없음 → HTTP 서버로 시작 (개발 환경)')
+
+  const serverInstance = serve({
+    fetch: app.fetch,
+    port: PORT,
+    hostname: '0.0.0.0'
+  }, (info) => {
+    console.log(`✅ 서버 실행 중 (HTTP): http://0.0.0.0:${info.port}`)
+  })
+
+  // 프록시/게이트웨이 502 방지: Keep-Alive 타임아웃을 65초로 설정
+  try {
+    const srv = serverInstance as any
+    if (srv && srv.keepAliveTimeout !== undefined) {
+      Object.defineProperty(srv, 'keepAliveTimeout', { value: 65000, writable: true })
+      Object.defineProperty(srv, 'headersTimeout',   { value: 66000, writable: true })
+      console.log('[서버] keepAliveTimeout=65s 설정 완료')
+    }
+  } catch(_) { /* 설정 실패 시 무시 */ }
+}

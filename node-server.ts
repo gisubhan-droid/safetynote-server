@@ -298,7 +298,18 @@ function patchSchema() {
           FOREIGN KEY (task_id)     REFERENCES tasks(id),
           FOREIGN KEY (assessor_id) REFERENCES users(id)
         )`)
-        rawDb.exec('INSERT INTO risk_assessments_new SELECT * FROM risk_assessments')
+        // 기존 테이블의 실제 컬럼 목록을 동적으로 조회하여 INSERT (컬럼 수 불일치 방지)
+        const existingCols: any[] = rawDb.prepare("PRAGMA table_info(risk_assessments)").all()
+        const newCols = [
+          'id','task_id','assessor_id','assessment_date','weather','temperature',
+          'workers_count','notes','status','kakao_shared','kakao_shared_at','created_at',
+          'assessment_type','title','location','review_notes','final_notes',
+          'source_adhoc_ids','review_date','meeting_date','meeting_place',
+          'adhoc_trigger','assessment_method','risk_acceptance_criteria','scan_files'
+        ]
+        const existingColNames = new Set(existingCols.map((c: any) => c.name))
+        const copyCols = newCols.filter(c => existingColNames.has(c)).join(', ')
+        rawDb.exec(`INSERT INTO risk_assessments_new (${copyCols}) SELECT ${copyCols} FROM risk_assessments`)
         rawDb.exec('DROP TABLE risk_assessments')
         rawDb.exec('ALTER TABLE risk_assessments_new RENAME TO risk_assessments')
       })
@@ -490,6 +501,36 @@ function patchSchema() {
   console.log('[patchSchema] v0.110 users 교육 이수 컬럼 패치 완료')
 
   // v0.111m: 서명 이미지(Canvas) 저장 컬럼 추가
+  // ※ risk_assessment_signatures 테이블이 없으면 먼저 생성 (0049 migration 미적용 대비)
+  try {
+    rawDb.exec(`CREATE TABLE IF NOT EXISTS risk_assessment_signatures (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      assessment_id INTEGER NOT NULL REFERENCES risk_assessments(id) ON DELETE CASCADE,
+      user_id       INTEGER NOT NULL REFERENCES users(id),
+      user_name     TEXT NOT NULL,
+      position      TEXT DEFAULT '',
+      role          TEXT DEFAULT 'member',
+      signed_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+      sign_method   TEXT DEFAULT 'account',
+      sign_data     TEXT,
+      UNIQUE(assessment_id, user_id)
+    )`)
+  } catch(e: any) { if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.111m] risk_assessment_signatures 생성 실패:', e.message) }
+
+  // legal_notices 테이블도 없으면 생성 (0049 migration 미적용 대비)
+  try {
+    rawDb.exec(`CREATE TABLE IF NOT EXISTS legal_notices (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      notice_key TEXT UNIQUE NOT NULL,
+      title      TEXT NOT NULL,
+      law_ref    TEXT,
+      content    TEXT,
+      is_active  INTEGER DEFAULT 1,
+      updated_by INTEGER REFERENCES users(id),
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+  } catch(e: any) { if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.111m] legal_notices 생성 실패:', e.message) }
+
   const signDataAlters = [
     `ALTER TABLE tbm_signatures               ADD COLUMN sign_data TEXT`,
     `ALTER TABLE risk_assessment_signatures   ADD COLUMN sign_data TEXT`,

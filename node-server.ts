@@ -12,6 +12,34 @@
  *                 NAS 예시: /mnt/nas/safetynote/uploads
  *                 서브폴더(연도/월)가 자동 생성됩니다.
  *   UPLOAD_SUBDIR - 'true' 이면 연도/월 하위폴더 사용 (기본: true)
+ *
+ * ============================================================
+ * ⚠️  HTTPS / SSL 중요 주의사항 — 절대 수정 금지 구간
+ * ============================================================
+ *
+ * 이 서버는 NAS(운영)와 샌드박스(개발) 환경을 자동으로 구분하여
+ * HTTPS / HTTP 서버를 선택적으로 시작합니다.
+ *
+ *  [NAS 운영 환경]
+ *    - loadSynologyCert() 가 Synology DSM 인증서를 자동 탐지
+ *    - https.createServer() 로 HTTPS 직접 서빙 (PORT=3443)
+ *    - 인증서 경로: /usr/syno/etc/certificate/_archive/<DEFAULT>/
+ *    - 앱/브라우저 → https://linkmax.myds.me:3443 → 공유기 포트포워딩 → NAS:3443
+ *    - Synology 리버스 프록시 없음 (설정하면 이중 SSL 충돌!)
+ *
+ *  [샌드박스 / 개발 환경]
+ *    - 인증서 경로 없음 → HTTP 자동 폴백 (코드 변경 불필요)
+ *    - @hono/node-server serve() 로 HTTP 서빙 (PORT=3000)
+ *
+ *  ❌ 절대 하지 말 것:
+ *    1. loadSynologyCert() 함수 삭제 또는 비활성화
+ *    2. https.createServer() 블록을 serve() 로 교체
+ *    3. 인증서 경로 하드코딩 (DEFAULT 파일로 동적 탐지해야 함)
+ *    4. PORT 3443 변경 (공유기 포트포워딩 고정값)
+ *    5. Synology 리버스 프록시 설정 추가
+ *
+ *  📖 상세 가이드: NAS-HTTPS-SETUP.md
+ * ============================================================
  */
 
 import { serve } from '@hono/node-server'
@@ -2990,9 +3018,20 @@ loadSystemSettings(DB).then(() => {
   console.log(`[설정] 폴더 구조: {공사요청번호}_{공사명}/{서브번호}_{작업일}_{작업종류}/01~05단계`)
 })
 
+// ═══════════════════════════════════════════════════════════════
+// ⚠️  HTTPS / SSL 핵심 구간 — 수정 전 반드시 NAS-HTTPS-SETUP.md 확인
+//
+//  NAS(운영):   Synology 인증서 자동 탐지 → https.createServer() HTTPS 서빙
+//  샌드박스:    인증서 없음 → serve() HTTP 폴백 (자동, 코드 변경 불필요)
+//
+//  ❌ loadSynologyCert() 삭제 금지
+//  ❌ https.createServer() → serve() 교체 금지
+//  ❌ 이 if/else 블록 구조 변경 금지
+// ═══════════════════════════════════════════════════════════════
+
 // ─── HTTPS 인증서 로드 (Synology DSM 인증서) ─────────────────────────
-// 인증서 경로: /usr/syno/etc/certificate/_archive/<DEFAULT>/
-// DEFAULT 파일에서 현재 사용 중인 인증서 폴더명을 읽어옴
+// DEFAULT 파일 → 현재 활성 인증서 폴더명 동적 탐지
+// (DSM 인증서 갱신 시 폴더명이 바뀌어도 자동 대응)
 function loadSynologyCert(): { key: string; cert: string; ca?: string } | null {
   try {
     const defaultPath = '/usr/syno/etc/certificate/_archive/DEFAULT'
@@ -3020,7 +3059,9 @@ function loadSynologyCert(): { key: string; cert: string; ca?: string } | null {
 const tlsCert = loadSynologyCert()
 
 if (tlsCert) {
-  // ── HTTPS 서버 (인증서 있을 때) ──────────────────────────────────────
+  // ── ✅ NAS 운영 환경: HTTPS 직접 서빙 ────────────────────────────────
+  // Synology DSM 인증서로 https.createServer() 사용
+  // https://linkmax.myds.me:3443 → 공유기 포트포워딩 → 이 서버
   const httpsServer = https.createServer(
     { key: tlsCert.key, cert: tlsCert.cert },
     (req, res) => {
@@ -3076,7 +3117,9 @@ if (tlsCert) {
   })
 
 } else {
-  // ── HTTP 폴백 (인증서 없을 때 — 개발/샌드박스 환경) ─────────────────
+  // ── ✅ 샌드박스 / 개발 환경: HTTP 자동 폴백 ──────────────────────────
+  // Synology 인증서 없음 → HTTP로 서빙 (개발/테스트 환경 정상 동작)
+  // ⚠️  이 블록을 NAS에서 실행하면 HTTPS가 안 됨 — 인증서 경로 확인 필요
   console.warn('[SSL] 인증서 없음 → HTTP 서버로 시작 (개발 환경)')
 
   const serverInstance = serve({
@@ -3097,3 +3140,6 @@ if (tlsCert) {
     }
   } catch(_) { /* 설정 실패 시 무시 */ }
 }
+// ═══════════════════════════════════════════════════════════════
+// ⚠️  HTTPS 구간 끝 — NAS-HTTPS-SETUP.md 참고
+// ═══════════════════════════════════════════════════════════════

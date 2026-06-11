@@ -13545,25 +13545,30 @@ async function _deleteLegalNotice(key, title) {
     <div style="padding:0 20px 20px;display:flex;gap:8px">
       <button onclick="this.closest('.modal-overlay').remove()"
         style="flex:1;padding:10px;background:#F3F4F6;color:#374151;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">취소</button>
-      <button onclick="_confirmDeleteLegalNotice('${key.replace(/'/g, "\\'")}')"
+      <button id="ln-confirm-delete-btn" data-key="${key}"
         style="flex:1;padding:10px;background:#DC2626;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
         <i class="fas fa-trash" style="margin-right:5px"></i>삭제
       </button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
-}
-
-async function _confirmDeleteLegalNotice(key) {
-  try {
-    await API.delete('/legal-notices/' + key);
-    document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
-    toast('법령안내가 삭제되었습니다.', 'success');
-    navigateTo('legal-notices');
-  } catch(e) {
-    const msg = e.response?.data?.error || e.message;
-    toast('삭제 실패: ' + msg, 'error');
-  }
+  // onclick 인라인 대신 addEventListener로 안전하게 연결
+  document.getElementById('ln-confirm-delete-btn').addEventListener('click', async function() {
+    const k = this.dataset.key;
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:5px"></i>삭제 중...';
+    try {
+      await API.delete('/legal-notices/' + k);
+      document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+      toast('법령안내가 삭제되었습니다.', 'success');
+      navigateTo('legal-notices');
+    } catch(e) {
+      const msg = e.response?.data?.error || e.message;
+      toast('삭제 실패: ' + msg, 'error');
+      this.disabled = false;
+      this.innerHTML = '<i class="fas fa-trash" style="margin-right:5px"></i>삭제';
+    }
+  });
 }
 
 function _switchLnTab(tab) {

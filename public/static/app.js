@@ -13519,7 +13519,9 @@ async function _submitAddLegalNotice() {
     await API.post('/legal-notices', { notice_key: key, title, law_ref: lawRef, content });
     document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
     toast('법령안내가 추가되었습니다.', 'success');
-    navigateTo('legal-notices');
+    // 강제 재렌더링
+    const content2 = document.getElementById('page-content');
+    if (content2) renderLegalNoticesPage(content2);
   } catch(e) {
     const msg = e.response?.data?.error || e.message;
     toast('저장 실패: ' + msg, 'error');
@@ -13559,9 +13561,12 @@ async function _deleteLegalNotice(key, title) {
     this.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:5px"></i>삭제 중...';
     try {
       await API.delete('/legal-notices/' + k);
+      // 모달 먼저 제거
       document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
       toast('법령안내가 삭제되었습니다.', 'success');
-      navigateTo('legal-notices');
+      // 같은 페이지 강제 재렌더링 (navigateTo는 currentPage가 같으면 캐시 사용 가능)
+      const content = document.getElementById('page-content');
+      if (content) renderLegalNoticesPage(content);
     } catch(e) {
       const msg = e.response?.data?.error || e.message;
       toast('삭제 실패: ' + msg, 'error');

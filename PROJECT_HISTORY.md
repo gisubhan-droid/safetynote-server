@@ -3,7 +3,7 @@
 > 최종 업데이트: 2026-06-11 (세션 11)
 > **앱 현재 버전: v1.3.0** ← 최신 (✅ GitHub Release 빌드 완료 — 2026-06-11)
 > NAS 배포 버전: v1.2.5 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, systemd 자동시작 ✅) — v1.3.0 설치 필요
-> **다음 작업**: NAS git pull → pm2 restart → 앱에서 위치 이력 카드 확인 → 1단계(알림 Android 테스트) → NAS 크론잡 설정
+> **다음 작업**: 1단계(알림 Android 테스트) → NAS 크론잡 설정
 
 ---
 
@@ -885,8 +885,8 @@ sqlite3 safety.db < 0050_...sql
 - [x] PROJECT_HISTORY.md 세션 11 이력 정리
 
 #### 잔여 작업
-- [ ] **NAS git pull + pm2 restart** — 위치 이력 카드 수정사항 NAS 반영
-- [ ] **앱에서 위치 이력 카드 표시 확인** — NAS 배포 후 앱 재접속 테스트
+- [x] **NAS git pull + pm2 restart** — 완료 (사용자 확인)
+- [x] **앱에서 위치 이력 카드 표시 확인** — ✅ 정상 표시 확인 (세션 11)
 - [ ] **1단계 알림 기능 Android 테스트** — 벨 아이콘, 배지, 알림 패널 확인
 - [ ] **NAS 크론잡 설정** — nas-auto-deploy.sh 등록
 

@@ -132,8 +132,9 @@ app.post('/', async (c) => {
 
   // ── TBM 완료 시 admin/supervisor에게 알림 ─────────────────────────────────
   try {
-    const notifTitle = `TBM 완료: ${taskRow?.title || task_id}`
-    const notifMsg   = `${user.name}님이 TBM을 완료했습니다. (${taskRow?.task_number || ''})`
+    const taskNum    = taskRow?.task_number ? `[${taskRow.task_number}] ` : ''
+    const notifTitle = `TBM 완료: ${taskNum}${taskRow?.title || task_id}`
+    const notifMsg   = `${user.name}님이 TBM을 완료했습니다.${taskRow?.task_number ? ` (${taskRow.task_number})` : ''}`
     const adminUsers = await c.env.DB.prepare(
       `SELECT id FROM users WHERE role IN ('admin','supervisor') AND is_active=1`
     ).all<any>()

@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-11 (세션 14 — 완료)
+> 최종 업데이트: 2026-06-11 (세션 14 — 진행중)
 > **앱 현재 버전: v1.3.0** ← 최신 (✅ GitHub Release 빌드 완료 — 2026-06-11)
-> NAS 배포 버전: v1.3.0 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
-> **다음 작업**: NAS `git pull + pm2 restart` → TBM 서명/알림 최종 테스트 → NAS 크론잡 설정
+> NAS 배포 버전: v1.3.0 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, TBM 서명 FK 수정 ✅)
+> **다음 작업**: TBM 서명 최종 테스트 확인 → 작업상태변경 알림 테스트 → NAS 크론잡 설정
 
 ## 💾 NAS 백업 기록
 
@@ -1286,18 +1286,14 @@ INSERT OR IGNORE INTO legal_notices (notice_key, title, law_ref, content, is_act
   - `src/routes/legal-notices.ts`: 법령안내 CRUD API
   - `migrations/0051_legal_notices_seed.sql`: 법령안내 초기 데이터
 
+- **NAS git pull + pm2 restart** — `581866f → 208639a` 반영 완료 (`app.js?v=20260611` ✅)
+- **TBM 서명 FK 수정 (NAS DB 직접)** — `tbm_signatures.tbm_id` FK가 `tbm_records_old` 참조 → `tbm_records`로 재생성
+  - 원인: `0028` 마이그레이션 `tbm_records→tbm_records_old` rename 후 `tbm_signatures` FK 미정리
+  - 수정: sqlite3 직접 테이블 재생성 (`tbm_signatures_new` → rename)
+  - 확인: `PRAGMA foreign_key_list(tbm_signatures)` → `tbm_records` ✅
+
 ### 미완료 (다음 세션 인계)
-- [ ] **NAS `git pull` + `pm2 restart safetynote --update-env`** — GitHub 배포본 미적용
-- [ ] TBM 서명 최종 동작 확인 (`tbm_records_old` 삭제 후)
+- [ ] TBM 서명 최종 동작 확인 (앱에서 테스트)
 - [ ] 작업상태변경 알림 최종 동작 확인
 - [ ] NAS 크론잡 설정 (`nas-auto-deploy.sh` crontab 등록)
 - [ ] `patchSchema`에 `safety_*` 자동시드 추가
-
-### NAS 적용 명령어
-```bash
-cd /volume1/safetynote
-git pull origin main
-pm2 restart safetynote --update-env
-# 확인
-pm2 logs safetynote --nostream | tail -20
-```

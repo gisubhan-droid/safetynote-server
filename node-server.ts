@@ -1691,6 +1691,7 @@ app.get('/api/legal-notices', async (c) => {
     `SELECT ln.*, u.name as updated_by_name
      FROM legal_notices ln
      LEFT JOIN users u ON u.id = ln.updated_by
+     WHERE ln.is_active = 1
      ORDER BY ln.id`
   ).all()
   return c.json(rows)

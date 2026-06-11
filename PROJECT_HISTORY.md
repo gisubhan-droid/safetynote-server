@@ -3,7 +3,7 @@
 > 최종 업데이트: 2026-06-11 (세션 11)
 > **앱 현재 버전: v1.3.0** ← 최신 (✅ GitHub Release 빌드 완료 — 2026-06-11)
 > NAS 배포 버전: v1.2.5 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, systemd 자동시작 ✅) — v1.3.0 설치 필요
-> **다음 작업**: 1단계(알림 Android 테스트) → NAS 크론잡 설정
+> **다음 작업**: NAS git pull → pm2 restart → 화면 dim 버그 확인 → 1단계(알림 Android 테스트) → NAS 크론잡 설정
 
 ---
 
@@ -887,8 +887,44 @@ sqlite3 safety.db < 0050_...sql
 #### 잔여 작업
 - [x] **NAS git pull + pm2 restart** — 완료 (사용자 확인)
 - [x] **앱에서 위치 이력 카드 표시 확인** — ✅ 정상 표시 확인 (세션 11)
+- [ ] **화면 전체 dim 버그 NAS 배포** — NAS git pull 후 확인 필요
 - [ ] **1단계 알림 기능 Android 테스트** — 벨 아이콘, 배지, 알림 패널 확인
 - [ ] **NAS 크론잡 설정** — nas-auto-deploy.sh 등록
+
+---
+
+### 2026-06-11 세션 11 (2차) — 화면 전체 dim 처리 버그 수정
+
+#### 증상
+작업관리 페이지에서 상단 메뉴 부분 클릭 시 화면 전체에 어두운 반투명 오버레이(dim)가 덮혀 헤더 아이콘 및 콘텐츠가 음영 처리되어 클릭 불가 상태 발생.
+
+#### 원인 분석
+1. **modal-overlay 잔류 버그**: 작업/공사 상세 모달 오픈 후 하단 탭으로 페이지 전환 시 `.modal-overlay`가 DOM에서 제거되지 않고 남아있음
+   - `safeNavigateTo()`: `querySelector()`로 **첫 번째** 오버레이만 제거 → 중첩 모달 시 나머지 잔류
+   - `navigateTo()`: 오버레이 정리 로직 **없음**
+2. **z-index 부족**: `top-header z-index:50` vs `modal-overlay z-index:1000` → 오버레이 잔류 시 헤더가 오버레이 아래로 내려가 클릭 불가
+
+#### 수정 내용
+
+| 파일 | 수정 내용 |
+|------|----------|
+| `public/static/app.js` | `safeNavigateTo()`: `querySelector` → `querySelectorAll + forEach remove` |
+| `public/static/app.js` | `navigateTo()`: 페이지 전환 시 `querySelectorAll('.modal-overlay')` 전부 제거 추가 |
+| `public/static/app.js` | `navigateTo()`: 알림 패널(`_notifPanelOpen`) 닫기 처리 추가 |
+| `public/static/style.css` | `top-header z-index: 50 → 1100` (modal-overlay 1000 위로 상향) |
+
+#### 이중 방어 전략
+- **1차 방어**: `navigateTo()` / `safeNavigateTo()`에서 페이지 전환 시 모든 오버레이 즉시 제거
+- **2차 방어**: `top-header z-index:1100` → 오버레이(1000)보다 높게 → 잔류 시에도 헤더 항상 위에 표시
+
+#### 완료 항목
+- [x] 원인 파악 (modal-overlay 잔류 + z-index 부족)
+- [x] `safeNavigateTo()` querySelectorAll 수정
+- [x] `navigateTo()` 오버레이 정리 로직 추가
+- [x] `top-header z-index` 1100으로 상향
+- [x] `npm run build` 성공 (211.33 kB)
+- [x] git commit `d78b45d`
+- [x] GitHub 배포: app.js `4c36ed1b4e4d`, style.css `c84b8408607c`
 
 ---
 

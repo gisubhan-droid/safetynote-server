@@ -2607,11 +2607,13 @@ function safeNavigateTo(page) {
   if (modal && isFormDirty()) {
     showNavigationWarning(() => {
       clearFormDirty();
-      modal.remove();
+      // 열려있는 모든 오버레이 제거
+      document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
       navigateTo(page);
     });
   } else {
-    if (modal) modal.remove();
+    // 열려있는 모든 오버레이 제거 (querySelector → querySelectorAll)
+    document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
     navigateTo(page);
   }
 }
@@ -2651,6 +2653,13 @@ function showNavigationWarning(onConfirm) {
 function navigateTo(page) {
   currentPage = page;
   clearFormDirty();
+  // 페이지 전환 시 잔여 오버레이 전체 정리 (딤 처리 버그 방지)
+  document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+  // 알림 패널 닫기
+  if (_notifPanelOpen) {
+    _notifPanelOpen = false;
+    document.getElementById('notif-panel')?.remove();
+  }
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.bottom-nav-item').forEach(el => el.classList.remove('active'));
   document.getElementById('pageTitle').textContent = getPageTitle(page);

@@ -119,16 +119,47 @@ app.post('/', async (c) => {
   const tbmTs = tbmKst.toISOString().replace('T', ' ').slice(0, 19)
 
   if (gps_address) {
-    const taskRow = await c.env.DB.prepare(
+    const taskRowAddr = await c.env.DB.prepare(
       `SELECT work_start_address FROM tasks WHERE id = ?`
     ).bind(task_id).first() as any
 
-    if (!taskRow?.work_start_address) {
+    if (!taskRowAddr?.work_start_address) {
       await c.env.DB.prepare(
         `UPDATE tasks SET work_start_address = ?, work_start_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
       ).bind(gps_address, tbmTs, task_id).run()
     }
   }
+
+  // ── TBM 완료 시 admin/supervisor에게 알림 ─────────────────────────────────
+  try {
+    const notifTitle = `TBM 완료: ${taskRow?.title || task_id}`
+    const notifMsg   = `${user.name}님이 TBM을 완료했습니다. (${taskRow?.task_number || ''})`
+    const adminUsers = await c.env.DB.prepare(
+      `SELECT id FROM users WHERE role IN ('admin','supervisor') AND is_active=1`
+    ).all<any>()
+    if (adminUsers.results?.length > 0) {
+      const insertStmt = c.env.DB.prepare(
+        `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+         VALUES (?, 'tbm_completed', ?, ?, ?, 'tbm', 0)`
+      )
+      await c.env.DB.batch(
+        adminUsers.results
+          .filter((u: any) => u.id !== user.id)
+          .map((u: any) => insertStmt.bind(u.id, notifTitle, notifMsg, Number(tbmId)))
+      )
+      // SSE 실시간 푸시
+      for (const u of adminUsers.results.filter((u: any) => u.id !== user.id)) {
+        sendToUser(u.id, {
+          type: 'tbm_completed',
+          title: notifTitle,
+          message: notifMsg,
+          ref_id: Number(tbmId),
+          ref_type: 'tbm',
+          ts: Date.now()
+        })
+      }
+    }
+  } catch(_) {}
 
   return c.json({ success: true, id: result.meta.last_row_id })
 })

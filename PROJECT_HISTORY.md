@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-11 (세션 14 — 진행중)
-> **앱 현재 버전: v1.3.0** ← 최신 (✅ GitHub Release 빌드 완료 — 2026-06-11)
-> NAS 배포 버전: v1.3.0 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, TBM 서명 FK 수정 ✅)
-> **다음 작업**: TBM 서명 최종 테스트 확인 → 작업상태변경 알림 테스트 → NAS 크론잡 설정
+> 최종 업데이트: 2026-06-11 (세션 14 — 완료)
+> **앱 현재 버전: v1.3.1** ← 최신 (✅ NAS 서버 배포 완료 — 2026-06-11)
+> NAS 배포 버전: v1.3.1 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
+> **다음 작업**: 작업상태변경 알림 테스트 → NAS 크론잡 설정 → patchSchema safety_* 자동시드
 
 ## 💾 NAS 백업 기록
 
@@ -27,6 +27,7 @@
 | v1.2.4 | 2026-06-10 | ✅ 배포완료 | **APK 업데이트 설치 실패 완전 수정** - `file_paths.xml` 추가, HTTPS→HTTP 변환, `REQUEST_INSTALL_PACKAGES` 권한, 버전 갱신 로직 개선 |
 | v1.2.5 | 2026-06-10 | ✅ 배포완료 | PC/브라우저 업데이트 팝업 제거, WebView(앱)에서만 업데이트 모달 표시, GitHub Release 자동배포 전환 |
 | **v1.3.0** | **2026-06-11** | ✅ **GitHub Release 빌드 완료** | 4단계 로그인개선(아이디저장/비번토글/로딩스피너), 5단계 앱설정(테마/알림/글자크기/진동), 2단계 GPS위치추적(작업일지 위치자동기록+이력조회) |
+| **v1.3.1** | **2026-06-11** | ✅ **NAS 배포 완료** | TBM 서명 FK 수정(`tbm_records_old`→`tbm_records`), TBM 앱 서명요청 근로자 허용, 작업상태변경 알림 DB저장, app.js 캐시 무효화(`v=20260611`) |
 
 ---
 
@@ -1292,8 +1293,10 @@ INSERT OR IGNORE INTO legal_notices (notice_key, title, law_ref, content, is_act
   - 수정: sqlite3 직접 테이블 재생성 (`tbm_signatures_new` → rename)
   - 확인: `PRAGMA foreign_key_list(tbm_signatures)` → `tbm_records` ✅
 
+- **TBM 앱 서명요청 버튼 근로자 허용** — `!_tbmIsWorker` 조건 제거, 전 역할 사용 가능 (`560f5ff`)
+- NAS git pull + pm2 restart 적용 완료 ✅
+
 ### 미완료 (다음 세션 인계)
-- [ ] TBM 서명 최종 동작 확인 (앱에서 테스트)
 - [ ] 작업상태변경 알림 최종 동작 확인
 - [ ] NAS 크론잡 설정 (`nas-auto-deploy.sh` crontab 등록)
 - [ ] `patchSchema`에 `safety_*` 자동시드 추가

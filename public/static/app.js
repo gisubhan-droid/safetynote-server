@@ -931,34 +931,32 @@ function showMapModal(address) {
     const isWebView = isAndroid && (/wv\b|WebView/i.test(ua) || !/Chrome/i.test(ua) || /Version\/\d/i.test(ua));
 
     if (isAndroid) {
-      // Android 환경: 앱 스킴 시도 → 앱이 열리면 WebView는 그대로 유지
-      // visibilitychange로 앱 전환 감지 → 앱이 열렸으면 webUrl fallback 하지 않음
+      // Capacitor WebView: window.open(appUrl, '_system') → shouldOverrideUrlLoading
+      // 이 방식만이 WebView 히스토리 오염 없이 외부 앱을 실행함
+      // 앱 미설치 시 shouldOverrideUrlLoading이 false 반환 → WebView가 URL 처리 시도
+      // → 앱 스킴을 처리 못하면 아무것도 안 열림 (WebView 화면 유지)
+      // visibilitychange로 앱 전환 여부 감지 → 미전환이면 웹 URL로 폴백
+      const isCapacitor = !!(window.Capacitor) || /wv\b|WebView/i.test(ua);
+
       let appOpened = false;
+      const onHide = () => { if (document.hidden) appOpened = true; };
+      document.addEventListener('visibilitychange', onHide);
 
-      const onVisibilityChange = () => {
-        if (document.hidden) appOpened = true; // 앱 전환됨 → 지도 앱 실행 성공
-      };
-      document.addEventListener('visibilitychange', onVisibilityChange);
+      if (isCapacitor) {
+        // Capacitor: _system으로 외부 인텐트 실행 (WebView 히스토리 무관)
+        try { window.open(appUrl, '_system'); } catch(e) {}
+      } else {
+        // 일반 Android 브라우저: location 이동
+        window.location.href = appUrl;
+      }
 
-      // iframe으로 앱 스킴 호출 (WebView 히스토리 오염 방지)
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = appUrl;
-      document.body.appendChild(iframe);
-      setTimeout(() => document.body.removeChild(iframe), 1000);
-
-      // 1500ms 후 앱이 열리지 않았으면(미설치) 웹 URL로 폴백
+      // 1500ms 후 앱이 안 열렸으면(미설치) 웹 URL을 시스템 브라우저로 열기
       setTimeout(() => {
-        document.removeEventListener('visibilitychange', onVisibilityChange);
+        document.removeEventListener('visibilitychange', onHide);
         if (!appOpened) {
-          // 앱이 열리지 않은 경우에만 웹 URL을 외부 브라우저로 열기
-          const a = document.createElement('a');
-          a.href = webUrl;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
+          try { window.open(webUrl, '_system'); } catch(e) {
+            window.open(webUrl, '_blank');
+          }
         }
       }, 1500);
       return;

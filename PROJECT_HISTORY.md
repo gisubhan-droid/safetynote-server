@@ -230,6 +230,17 @@ doApkDownload(downloadUrl, apkInfo.version)
 - 현재 기본값: `1.3.0` (최신 적용 상태, 커밋 `650a3852`)
 - 수정 URL: https://github.com/gisubhan-droid/safetynote-android/blob/main/.github/workflows/build-apk.yml
 
+### ✅ [완료] safetynote-deploy PAT에 safetynote-server repo 권한 추가 (2026-06-11 세션 10)
+- 기존 PAT: `safetynote-android` 1개 repo만 접근 가능 (Fine-grained)
+- 문제: `safetynote-server` repo push 403 오류
+- 해결: GitHub → Fine-grained tokens → `safetynote-deploy` 편집
+  - Repository access에 `gisubhan-droid/safetynote-server` 추가
+  - `Generate token` → 새 PAT 발급
+- 결과: 양쪽 repo 모두 push 가능
+- **PAT 이름**: `safetynote-deploy` (Fine-grained, 만료일 없음)
+- **접근 가능 repo**: `safetynote-android` + `safetynote-server`
+- **권한**: actions, code, workflows Read/Write
+
 ---
 
 ## 🗂️ 파일 구조 및 역할
@@ -767,7 +778,7 @@ sleep 5 && pm2 logs safetynote --nostream --lines 5
 - [x] app.js 작업일지 저장 시 GPS 자동 수집
 - [x] app.js 내 계정 위치 이력 카드 + `_loadLocationHistory()` 구현
 - [x] GitHub push (safetynote-server repo)
-- [ ] **NAS DB migration 0050 적용** ← 아직 미실행
+- [x] **NAS DB migration 0050 적용** ← NAS에서 직접 확인 → "duplicate column name" = **이미 적용된 상태** (정상)
 
 ### 2026-06-11 세션 10 — APK v1.3.0 빌드 트리거 및 Release 확인
 
@@ -789,16 +800,50 @@ sleep 5 && pm2 logs safetynote --nostream --lines 5
 URL:  https://github.com/gisubhan-droid/safetynote-android/releases/tag/v1.3.0
 ```
 
-#### 완료 항목
+#### 완료 항목 (전반부 — APK 빌드)
+- [x] GitHub Actions workflow_dispatch 트리거 (PAT API)
+- [x] APK v1.3.0 빌드 성공 확인 (Release 서명 빌드, Run #27330508906)
+- [x] GitHub Release v1.3.0 생성 + safetynote-v1.3.0.apk (5,572KB) 첨부 확인
+- [x] PROJECT_HISTORY.md 버전 테이블 v1.3.0 업데이트
+
+#### 추가 작업 내용 (후반부 — NAS 확인 + PAT 권한 확장)
+
+**NAS 상태 직접 확인 (사용자 SSH 실행)**:
+```bash
+# NAS에서 직접 실행 결과
+git pull origin main          # Already up to date ✅
+sqlite3 safety.db < 0050_...sql
+# Error: duplicate column name: gps_lat  → 이미 적용됨 ✅ (정상)
+```
+
+**PAT 권한 문제 해결**:
+- 기존 `safetynote-deploy` Fine-grained PAT: `safetynote-android` repo만 접근 가능
+- `safetynote-server` repo push 403 오류 발생
+- **해결**: GitHub Fine-grained tokens → `safetynote-deploy` 편집
+  - Repository access에 `gisubhan-droid/safetynote-server` 추가
+  - `Generate token` → 새 PAT 발급
+- 새 PAT로 `safetynote-server` push 성공 (커밋 `5d68188`)
+- git credential store에 새 PAT 저장 → 이후 자동 사용
+
+**PAT 현황 (최종)**:
+| 토큰 이름 | 종류 | 접근 가능 repo | 권한 |
+|-----------|------|----------------|------|
+| `safetynote-nas` | Classic | 전체 repo | repo |
+| `safetynote-build` | Classic | 전체 repo | repo + workflow |
+| `safetynote-deploy` | Fine-grained | safetynote-android, **safetynote-server** | actions, code, workflows R/W |
+
+#### 완료 항목 (전체)
 - [x] GitHub Actions workflow_dispatch 트리거 (PAT API)
 - [x] APK v1.3.0 빌드 성공 확인 (Release 서명 빌드)
 - [x] GitHub Release v1.3.0 생성 + safetynote-v1.3.0.apk 첨부 확인
-- [x] PROJECT_HISTORY.md 버전 테이블 v1.3.0 업데이트
+- [x] NAS migration 0050 이미 적용 확인 (GPS 컬럼 정상)
+- [x] `safetynote-deploy` PAT에 `safetynote-server` repo 권한 추가
+- [x] PROJECT_HISTORY.md safetynote-server repo push 완료 (커밋 `5d68188`)
+- [x] 세션 10 전체 내용 PROJECT_HISTORY.md 정리
 
 #### 잔여 작업
-- [ ] **APK v1.3.0 설치 테스트** — 기기에 설치 후 정상 동작 확인
-- [ ] **1단계 알림 기능 Android 테스트** — v1.3.0 설치 후 알림 수신 확인
-- [ ] **NAS DB migration 0050 적용** — GPS 컬럼 추가 (이미 적용됐을 수 있음)
+- [ ] **APK v1.3.0 기기 설치 및 테스트** — GPS/로그인개선/앱설정 동작 확인
+- [ ] **1단계 알림 기능 Android 테스트** — 벨 아이콘, 배지, 알림 패널 확인
 - [ ] **NAS 크론잡 설정** — nas-auto-deploy.sh 등록
 
 ---

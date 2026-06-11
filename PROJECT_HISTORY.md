@@ -5,6 +5,13 @@
 > NAS 배포 버전: v1.3.0 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
 > **다음 작업**: NAS `git pull + pm2 restart` → TBM 서명/알림 최종 테스트 → NAS 크론잡 설정
 
+## 💾 NAS 백업 기록
+
+| 날짜 | 종류 | 경로 | 비고 |
+|------|------|------|------|
+| 2026-06-11 | DB 백업 | `/volume1/safetynote_data/safety_backup_20260611.db` | git pull 적용 전 운영 DB |
+| 2026-06-11 | 소스 백업 | `/volume1/safetynote_backup_20260611.tar.gz` (142MB) | node_modules/.git 제외 |
+
 ---
 
 ## 📋 버전별 변경 이력

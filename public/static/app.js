@@ -72,11 +72,17 @@ function buildThemePanel() {
   panel.classList.add('open');
 }
 
-// 페이지 로드 시 저장된 테마 복원
+// 페이지 로드 시 저장된 테마 + 사용자 설정 복원
 (function() {
   const saved = localStorage.getItem('sn-theme');
   if (saved && saved !== 'default') {
     document.documentElement.setAttribute('data-theme', saved);
+  }
+  // 글자 크기 즉시 적용 (FOUC 방지)
+  const fontKey = localStorage.getItem('sn-font-size');
+  if (fontKey) {
+    const sizes = { small: '13px', medium: '15px', large: '17px' };
+    if (sizes[fontKey]) document.documentElement.style.setProperty('--sn-font-size', sizes[fontKey]);
   }
 })();
 
@@ -1204,7 +1210,14 @@ function getRiskColor(level) {
 }
 
 // ======= 인증 =======
+// ─── 4단계: 로그인 화면 개선 ─────────────────────────────────────────────────
+// - 아이디 자동 저장 (localStorage 'sn-last-username')
+// - 페이지 로드 시 마지막 아이디 자동 채우기
+// - 아이디 Enter → 비밀번호 필드 포커스 이동
+// - 로그인 버튼 로딩 스피너 + 중복 클릭 방지
+// - 로그인 실패 시 비밀번호 필드 흔들기 애니메이션
 function renderLogin() {
+  const savedUsername = localStorage.getItem('sn-last-username') || '';
   document.getElementById('app').innerHTML = `
   <div class="min-h-screen bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center p-4">
     <div class="w-full max-w-sm">
@@ -1216,16 +1229,41 @@ function renderLogin() {
       </div>
       <div class="bg-white rounded-2xl shadow-2xl p-8">
         <h2 class="text-xl font-bold text-gray-800 mb-6 text-center">로그인</h2>
+
         <div class="form-group">
           <label class="form-label">아이디</label>
-          <input id="loginUsername" class="form-control" placeholder="아이디 입력" type="text" autocomplete="username">
+          <div style="position:relative">
+            <input id="loginUsername" class="form-control" placeholder="아이디 입력" type="text"
+              autocomplete="username" value="${savedUsername}"
+              style="padding-right:${savedUsername ? '36px' : ''}">
+            ${savedUsername ? `
+            <button id="loginUsernameClear" onclick="_loginUsernameClear()"
+              style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+                background:none;border:none;cursor:pointer;color:#9CA3AF;font-size:14px;padding:2px;line-height:1"
+              title="아이디 지우기">
+              <i class="fas fa-times-circle"></i>
+            </button>` : ''}
+          </div>
+          ${savedUsername ? `<p class="text-xs mt-1" style="color:#059669"><i class="fas fa-check-circle mr-1"></i>저장된 아이디가 자동 입력되었습니다</p>` : ''}
         </div>
+
         <div class="form-group">
           <label class="form-label">비밀번호</label>
-          <input id="loginPassword" class="form-control" placeholder="비밀번호 입력" type="password" autocomplete="current-password">
+          <div style="position:relative">
+            <input id="loginPassword" class="form-control" placeholder="비밀번호 입력" type="password"
+              autocomplete="current-password" style="padding-right:36px">
+            <button onclick="_toggleLoginPwVis()" id="loginPwToggle"
+              style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+                background:none;border:none;cursor:pointer;color:#9CA3AF;font-size:14px;padding:2px;line-height:1"
+              title="비밀번호 표시/숨기기">
+              <i class="fas fa-eye" id="loginPwToggleIcon"></i>
+            </button>
+          </div>
         </div>
-        <button onclick="doLogin()" class="btn btn-primary w-full justify-center py-3 text-base mt-2">
-          <i class="fas fa-sign-in-alt"></i> 로그인
+
+        <button id="loginBtn" onclick="doLogin()" class="btn btn-primary w-full justify-center py-3 text-base mt-2">
+          <i class="fas fa-sign-in-alt" id="loginBtnIcon"></i>
+          <span id="loginBtnText"> 로그인</span>
         </button>
 
         <!-- 자체 가입 링크 -->
@@ -1241,7 +1279,57 @@ function renderLogin() {
       </div>
     </div>
   </div>`;
-  document.getElementById('loginPassword').addEventListener('keyup', e => { if(e.key==='Enter') doLogin(); });
+
+  // 아이디 Enter → 비밀번호 필드 이동
+  document.getElementById('loginUsername').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('loginPassword').focus();
+    }
+    // 아이디 입력 시 저장 아이콘 갱신
+    if (e.target.value && !document.getElementById('loginUsernameClear')) {
+      document.getElementById('loginUsername').style.paddingRight = '';
+    }
+  });
+
+  // 비밀번호 Enter → 로그인
+  document.getElementById('loginPassword').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); doLogin(); }
+  });
+
+  // 저장된 아이디 있으면 비밀번호 필드에 즉시 포커스
+  if (savedUsername) {
+    setTimeout(() => { document.getElementById('loginPassword').focus(); }, 100);
+  } else {
+    setTimeout(() => { document.getElementById('loginUsername').focus(); }, 100);
+  }
+}
+
+/** 로그인 아이디 필드 지우기 버튼 */
+function _loginUsernameClear() {
+  const inp = document.getElementById('loginUsername');
+  inp.value = '';
+  inp.style.paddingRight = '';
+  const btn = document.getElementById('loginUsernameClear');
+  if (btn) btn.remove();
+  const hint = inp.closest('.form-group').querySelector('p.text-xs');
+  if (hint) hint.remove();
+  localStorage.removeItem('sn-last-username');
+  inp.focus();
+}
+
+/** 비밀번호 표시/숨기기 토글 */
+function _toggleLoginPwVis() {
+  const inp = document.getElementById('loginPassword');
+  const icon = document.getElementById('loginPwToggleIcon');
+  if (!inp || !icon) return;
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    icon.className = 'fas fa-eye-slash';
+  } else {
+    inp.type = 'password';
+    icon.className = 'fas fa-eye';
+  }
 }
 
 // ======= 자체 가입 신청 모달 =======
@@ -1744,17 +1832,50 @@ async function submitSelfRegister() {
 }
 
 async function doLogin() {
-  const username = document.getElementById('loginUsername').value;
-  const password = document.getElementById('loginPassword').value;
+  const usernameEl = document.getElementById('loginUsername');
+  const passwordEl = document.getElementById('loginPassword');
+  const loginBtn   = document.getElementById('loginBtn');
+  const btnIcon    = document.getElementById('loginBtnIcon');
+  const btnText    = document.getElementById('loginBtnText');
+
+  const username = usernameEl?.value?.trim() || '';
+  const password = passwordEl?.value || '';
   if (!username || !password) { toast('아이디와 비밀번호를 입력하세요.', 'error'); return; }
+
+  // 로딩 상태 시작 (중복 클릭 방지)
+  if (loginBtn) { loginBtn.disabled = true; loginBtn.style.opacity = '0.8'; }
+  if (btnIcon) btnIcon.className = 'fas fa-spinner fa-spin';
+  if (btnText) btnText.textContent = ' 로그인 중...';
+
   try {
     const res = await API.post('/auth/login', { username, password });
+    // ✅ 로그인 성공 → 아이디 저장
+    localStorage.setItem('sn-last-username', username);
     localStorage.setItem('token', res.data.token);
     currentUser = res.data.user;
     toast(`${currentUser.name}님 환영합니다!`);
     renderApp();
   } catch (e) {
     toast(e.response?.data?.error || '로그인 실패', 'error');
+    // ❌ 실패 시 버튼 복구 + 비밀번호 필드 흔들기
+    if (loginBtn) { loginBtn.disabled = false; loginBtn.style.opacity = ''; }
+    if (btnIcon) btnIcon.className = 'fas fa-sign-in-alt';
+    if (btnText) btnText.textContent = ' 로그인';
+    // 비밀번호 필드 흔들기 애니메이션
+    if (passwordEl) {
+      passwordEl.style.transition = 'transform 0.1s';
+      let shake = 0;
+      const shakeInterval = setInterval(() => {
+        passwordEl.style.transform = `translateX(${shake % 2 === 0 ? '6px' : '-6px'})`;
+        shake++;
+        if (shake > 5) {
+          clearInterval(shakeInterval);
+          passwordEl.style.transform = '';
+          passwordEl.focus();
+          passwordEl.select();
+        }
+      }, 60);
+    }
   }
 }
 
@@ -2062,6 +2183,8 @@ function renderApp() {
   _loadUnreadNotificationsFromDB();
   // 저장된 테마 적용 (버튼 아이콘 색 포함)
   applyTheme(localStorage.getItem('sn-theme') || 'default');
+  // 저장된 사용자 설정 적용 (글자 크기 등)
+  applyUserPrefs();
 }
 
 // 금일예정작업 바로가기 — dashboard로 이동 후 금일 예정 작업 카드로 스크롤
@@ -8296,6 +8419,19 @@ function removeLogAttachFile(index) {
 async function submitWorkLog(taskId) {
   try {
     const status = document.getElementById('logStatus').value;
+
+    // ── 2단계: GPS 좌표 자동 수집 (백그라운드, 실패해도 저장 진행) ──
+    let gps_lat = null, gps_lon = null;
+    try {
+      if (navigator.geolocation) {
+        const pos = await new Promise((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 60000 })
+        );
+        gps_lat = parseFloat(pos.coords.latitude.toFixed(6));
+        gps_lon = parseFloat(pos.coords.longitude.toFixed(6));
+      }
+    } catch(_) { /* GPS 실패 시 null 유지 — 저장은 계속 진행 */ }
+
     const logRes = await API.post('/worklogs', {
       task_id: taskId,
       log_date: document.getElementById('logDate').value,
@@ -8306,7 +8442,9 @@ async function submitWorkLog(taskId) {
       work_description: document.getElementById('logDesc').value,
       issues: document.getElementById('logIssues').value,
       tomorrow_plan: document.getElementById('logTomorrow').value,
-      status
+      status,
+      gps_lat,
+      gps_lon
     });
     // 저장된 worklog id (description에 넣어서 첨부파일과 연결)
     const worklogId = logRes.data?.id || logRes.data?.worklog_id || '';
@@ -20392,7 +20530,7 @@ async function renderMyProfilePage(container) {
       </div>
 
       <!-- 비밀번호 변경 카드 -->
-      <div class="card">
+      <div class="card mb-4">
         <h3 class="font-bold text-gray-800 mb-4">
           <i class="fas fa-lock mr-2" style="color:#D70072"></i>비밀번호 변경
         </h3>
@@ -20415,10 +20553,125 @@ async function renderMyProfilePage(container) {
         </div>
       </div>
 
+      <!-- ⚙️ 앱 설정 카드 (5단계) -->
+      <div class="card mb-4" id="appSettingsCard">
+        <h3 class="font-bold text-gray-800 mb-4">
+          <i class="fas fa-sliders mr-2" style="color:#685182"></i>앱 설정
+        </h3>
+
+        <!-- 테마 선택 -->
+        <div class="mb-5">
+          <div class="text-xs font-bold mb-3 flex items-center gap-2" style="color:#685182">
+            <i class="fas fa-palette"></i> 화면 테마
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px" id="settingsThemeGrid">
+            ${THEMES.map(t => {
+              const isCur = (localStorage.getItem('sn-theme') || 'default') === t.id;
+              return `
+              <button onclick="applyTheme('${t.id}');_refreshSettingsTheme()" data-theme-id="${t.id}"
+                title="${t.label}"
+                style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;
+                  border-radius:10px;border:2px solid ${isCur ? '#685182' : '#E5E7EB'};
+                  background:${isCur ? '#EDE7F6' : '#fff'};cursor:pointer;transition:all 0.15s">
+                <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,${t.colors[0]} 0%,${t.colors[1]} 100%);
+                  box-shadow:${isCur ? '0 0 0 3px '+t.colors[0]+'44' : 'none'}"></div>
+                <span style="font-size:9px;color:${isCur ? '#685182' : '#6B7280'};font-weight:${isCur ? '700' : '400'};text-align:center;line-height:1.2">${t.label.split(' ')[0]}</span>
+                ${isCur ? '<i class="fas fa-check" style="font-size:8px;color:#685182"></i>' : ''}
+              </button>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- 구분선 -->
+        <div style="border-top:1px solid #F0E6F6;margin-bottom:16px"></div>
+
+        <!-- 알림 수신 설정 -->
+        <div class="mb-4">
+          <div class="text-xs font-bold mb-3 flex items-center gap-2" style="color:#685182">
+            <i class="fas fa-bell"></i> 알림 설정
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#F9F5FF;border-radius:10px">
+              <div>
+                <div style="font-size:13px;font-weight:600;color:#374151">실시간 알림 수신</div>
+                <div style="font-size:11px;color:#9CA3AF;margin-top:1px">작업 배정, 상태 변경, 서명 요청 알림</div>
+              </div>
+              <label class="sn-toggle" title="알림 수신 On/Off">
+                <input type="checkbox" id="settingNotifEnabled"
+                  ${(localStorage.getItem('sn-notif-enabled') !== 'false') ? 'checked' : ''}
+                  onchange="_saveAppSetting('sn-notif-enabled', this.checked)">
+                <span class="sn-toggle-slider"></span>
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#F9F5FF;border-radius:10px">
+              <div>
+                <div style="font-size:13px;font-weight:600;color:#374151">진동 피드백</div>
+                <div style="font-size:11px;color:#9CA3AF;margin-top:1px">알림 수신 시 진동 (모바일 앱)</div>
+              </div>
+              <label class="sn-toggle" title="진동 On/Off">
+                <input type="checkbox" id="settingVibration"
+                  ${(localStorage.getItem('sn-vibration') !== 'false') ? 'checked' : ''}
+                  onchange="_saveAppSetting('sn-vibration', this.checked)">
+                <span class="sn-toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 구분선 -->
+        <div style="border-top:1px solid #F0E6F6;margin-bottom:16px"></div>
+
+        <!-- 글자 크기 -->
+        <div class="mb-2">
+          <div class="text-xs font-bold mb-3 flex items-center gap-2" style="color:#685182">
+            <i class="fas fa-text-height"></i> 글자 크기
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px" id="settingsFontGrid">
+            ${[
+              { key:'small',  label:'작게',  size:'13px', px:13 },
+              { key:'medium', label:'보통',  size:'15px', px:15 },
+              { key:'large',  label:'크게',  size:'17px', px:17 },
+            ].map(f => {
+              const cur = localStorage.getItem('sn-font-size') || 'medium';
+              const isSel = cur === f.key;
+              return `
+              <button onclick="_applyFontSize('${f.key}')" data-font-key="${f.key}"
+                style="padding:10px 6px;border-radius:10px;border:2px solid ${isSel ? '#685182' : '#E5E7EB'};
+                  background:${isSel ? '#EDE7F6' : '#fff'};cursor:pointer;transition:all 0.15s;text-align:center">
+                <div style="font-size:${f.size};font-weight:${isSel ? '700' : '500'};color:${isSel ? '#685182' : '#6B7280'}">${f.label}</div>
+                <div style="font-size:10px;color:#9CA3AF;margin-top:2px">${f.size}</div>
+                ${isSel ? '<div style="margin-top:3px"><i class="fas fa-check" style="font-size:9px;color:#685182"></i></div>' : ''}
+              </button>`;
+            }).join('')}
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ─── 2단계: 최근 작업 위치 이력 카드 ─────────────────────────────── -->
+      <div style="background:#fff;border-radius:16px;box-shadow:0 1px 6px rgba(104,81,130,0.08);padding:20px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div style="font-size:15px;font-weight:700;color:#374151;display:flex;align-items:center;gap:8px">
+            <i class="fas fa-map-marker-alt" style="color:#685182"></i>최근 작업 위치 이력
+          </div>
+          <span onclick="_loadLocationHistory()"
+            style="font-size:11px;color:#685182;cursor:pointer;padding:4px 10px;border:1px solid #D8D0DC;border-radius:20px;background:#F9F5FF">
+            <i class="fas fa-sync-alt mr-1"></i>새로고침
+          </span>
+        </div>
+        <div id="locationHistoryList" style="min-height:60px">
+          <div style="text-align:center;color:#9CA3AF;font-size:13px;padding:20px 0">
+            <i class="fas fa-spinner fa-spin mr-1"></i>불러오는 중...
+          </div>
+        </div>
+      </div>
+
     </div>`;
   } catch(e) {
     container.innerHTML = `<p class="text-red-500 p-4">로드 실패: ${e.message}</p>`;
   }
+  // 카드 렌더링 후 위치 이력 자동 로드
+  _loadLocationHistory();
 }
 
 async function saveMyProfile() {
@@ -20476,6 +20729,140 @@ async function changeMyPassword() {
     document.getElementById('mpNewPwd2').value = '';
   } catch(e) {
     toast(e.response?.data?.error || '비밀번호 변경 실패', 'error');
+  }
+}
+
+// ─── 5단계: 앱 설정 함수들 ────────────────────────────────────────────────────
+
+/** 앱 설정 저장 (localStorage) + 즉시 적용 */
+function _saveAppSetting(key, value) {
+  localStorage.setItem(key, value);
+  if (key === 'sn-notif-enabled') {
+    if (!value) stopSseClient();
+    else if (currentUser) startSseClient();
+  }
+  if (key === 'sn-vibration') {
+    // 진동 테스트 (지원 시)
+    if (value && navigator.vibrate) navigator.vibrate(30);
+  }
+}
+
+/** 테마 변경 후 설정 카드 테마 버튼 active 상태 갱신 */
+function _refreshSettingsTheme() {
+  const cur = localStorage.getItem('sn-theme') || 'default';
+  document.querySelectorAll('#settingsThemeGrid button[data-theme-id]').forEach(btn => {
+    const isSel = btn.dataset.themeId === cur;
+    const t = THEMES.find(t => t.id === btn.dataset.themeId);
+    btn.style.border = `2px solid ${isSel ? '#685182' : '#E5E7EB'}`;
+    btn.style.background = isSel ? '#EDE7F6' : '#fff';
+    const swatch = btn.querySelector('div[style*="border-radius:50%"]');
+    if (swatch) swatch.style.boxShadow = isSel && t ? `0 0 0 3px ${t.colors[0]}44` : 'none';
+    const nameEl = btn.querySelector('span');
+    if (nameEl) { nameEl.style.color = isSel ? '#685182' : '#6B7280'; nameEl.style.fontWeight = isSel ? '700' : '400'; }
+    const chk = btn.querySelector('i.fa-check');
+    if (chk) chk.remove();
+    if (isSel) {
+      const ic = document.createElement('i');
+      ic.className = 'fas fa-check';
+      ic.style.cssText = 'font-size:8px;color:#685182';
+      btn.appendChild(ic);
+    }
+  });
+}
+
+/** 글자 크기 적용 + 설정 저장 */
+function _applyFontSize(key) {
+  const sizes = { small: '13px', medium: '15px', large: '17px' };
+  const px = sizes[key] || '15px';
+  document.documentElement.style.setProperty('--sn-font-size', px);
+  document.body.style.fontSize = px;
+  localStorage.setItem('sn-font-size', key);
+  // 설정 카드 버튼 active 갱신
+  document.querySelectorAll('#settingsFontGrid button[data-font-key]').forEach(btn => {
+    const isSel = btn.dataset.fontKey === key;
+    btn.style.border = `2px solid ${isSel ? '#685182' : '#E5E7EB'}`;
+    btn.style.background = isSel ? '#EDE7F6' : '#fff';
+    const label = btn.querySelector('div:first-child');
+    if (label) { label.style.color = isSel ? '#685182' : '#6B7280'; label.style.fontWeight = isSel ? '700' : '500'; }
+    const chk = btn.querySelector('[style*="fa-check"]');
+    if (chk) chk.parentElement.remove();
+    if (isSel) {
+      const d = document.createElement('div');
+      d.style.cssText = 'margin-top:3px';
+      d.innerHTML = '<i class="fas fa-check" style="font-size:9px;color:#685182"></i>';
+      btn.appendChild(d);
+    }
+  });
+}
+
+/** 앱 시작 시 저장된 사용자 설정 모두 적용 */
+function applyUserPrefs() {
+  // 글자 크기
+  const fontKey = localStorage.getItem('sn-font-size') || 'medium';
+  const sizes = { small: '13px', medium: '15px', large: '17px' };
+  document.body.style.fontSize = sizes[fontKey] || '15px';
+  // 테마는 파일 상단 즉시실행함수에서 이미 처리됨
+}
+
+// ─── 2단계: 위치 이력 로드 & 렌더 ────────────────────────────────────────────
+async function _loadLocationHistory() {
+  const el = document.getElementById('locationHistoryList');
+  if (!el) return;
+  el.innerHTML = `<div style="text-align:center;color:#9CA3AF;font-size:13px;padding:20px 0">
+    <i class="fas fa-spinner fa-spin mr-1"></i>불러오는 중...</div>`;
+  try {
+    // 내 작업일지 중 위치 정보 있는 항목 최근 20개
+    const res = await API.get('/worklogs');
+    const logs = (res.data || [])
+      .filter(l => l.work_location || l.gps_lat)
+      .slice(0, 20);
+
+    if (!logs.length) {
+      el.innerHTML = `
+        <div style="text-align:center;padding:24px 0;color:#9CA3AF;font-size:13px">
+          <i class="fas fa-map-marker-alt" style="font-size:28px;color:#D8D0DC;display:block;margin-bottom:8px"></i>
+          아직 위치 기록이 없습니다.<br>
+          <span style="font-size:11px">작업일지 저장 시 GPS 위치가 자동으로 기록됩니다.</span>
+        </div>`;
+      return;
+    }
+
+    el.innerHTML = logs.map(l => {
+      const hasCoords = l.gps_lat && l.gps_lon;
+      const mapUrl = hasCoords
+        ? `https://map.kakao.com/link/map/${encodeURIComponent(l.work_location||'작업위치')},${l.gps_lat},${l.gps_lon}`
+        : '';
+      const dateStr = l.log_date || l.created_at?.slice(0,10) || '';
+      const taskTitle = l.task_title || `작업 #${l.task_id}`;
+      return `
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 4px;border-bottom:1px solid #F3F0F7">
+        <div style="width:32px;height:32px;border-radius:50%;background:${hasCoords ? '#EDE7F6' : '#F3F4F6'};
+          display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px">
+          <i class="fas fa-map-marker-alt" style="font-size:13px;color:${hasCoords ? '#685182' : '#9CA3AF'}"></i>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${l.work_location || '위치 미상'}
+          </div>
+          <div style="font-size:11px;color:#9CA3AF;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            <i class="fas fa-briefcase mr-1"></i>${taskTitle}
+          </div>
+          ${hasCoords ? `<div style="font-size:10px;color:#B0A0BF;margin-top:1px">
+            <i class="fas fa-crosshairs mr-1"></i>${l.gps_lat}, ${l.gps_lon}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+          <span style="font-size:10px;color:#9CA3AF">${dateStr}</span>
+          ${hasCoords ? `
+          <a href="${mapUrl}" target="_blank"
+            style="font-size:10px;color:#685182;background:#F9F5FF;padding:3px 8px;border-radius:10px;border:1px solid #D8D0DC;text-decoration:none;white-space:nowrap">
+            <i class="fas fa-map mr-1"></i>지도
+          </a>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="text-align:center;color:#D70072;font-size:12px;padding:16px 0">
+      <i class="fas fa-exclamation-circle mr-1"></i>위치 이력 로드 실패</div>`;
   }
 }
 

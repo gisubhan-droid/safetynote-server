@@ -3,7 +3,7 @@
 > 최종 업데이트: 2026-06-11 (세션 11)
 > **앱 현재 버전: v1.3.0** ← 최신 (✅ GitHub Release 빌드 완료 — 2026-06-11)
 > NAS 배포 버전: v1.2.5 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, systemd 자동시작 ✅) — v1.3.0 설치 필요
-> **다음 작업**: NAS git pull → pm2 restart → 화면 dim 버그 확인 → 1단계(알림 Android 테스트) → NAS 크론잡 설정
+> **다음 작업**: NAS git pull → migration 0051 적용 → pm2 restart → 법령안내 페이지 확인 → 1단계(알림 Android 테스트) → NAS 크론잡 설정
 
 ---
 
@@ -925,6 +925,53 @@ sqlite3 safety.db < 0050_...sql
 - [x] `npm run build` 성공 (211.33 kB)
 - [x] git commit `d78b45d`
 - [x] GitHub 배포: app.js `4c36ed1b4e4d`, style.css `c84b8408607c`
+
+---
+
+### 2026-06-11 세션 11 (3차) — 법령안내 페이지 데이터 없음 버그 수정
+
+#### 증상
+법령안내 관리 페이지에서 "일반 법령안내 데이터가 없습니다." 표시.
+
+#### 원인 분석
+`/api/legal-notices` 엔드포인트가 **서버에 전혀 구현되지 않은 상태**였음.
+- `src/routes/legal-notices.ts` 파일 없음
+- `src/index.tsx`에 라우트 등록 없음
+- `legal_notices` 테이블은 migration 0049에서 생성되었으나 초기 시드 데이터 없음
+- API 호출 시 404 반환 → 프론트에서 `[]` 처리 → "데이터가 없습니다" 표시
+
+#### 수정 내용
+
+| 파일 | 작업 | 내용 |
+|------|------|------|
+| `src/routes/legal-notices.ts` | **신규 생성** | GET /api/legal-notices (목록), GET /:key (개별), PUT /:key (수정), DELETE /:key (삭제) |
+| `src/index.tsx` | **수정** | `legalNoticeRoutes` import 및 `/api/legal-notices` 등록 |
+| `migrations/0051_legal_notices_seed.sql` | **신규 생성** | 일반 법령안내 5건 (산안법 주요 조항) + 교육 법령기준 5건 시드 |
+
+#### 기본 시드 데이터 (일반 법령안내)
+| notice_key | 제목 |
+|-----------|------|
+| `safety_general` | 산업안전보건법 주요 의무사항 |
+| `safety_ppe` | 개인보호구 지급 및 착용 의무 |
+| `safety_stop` | 중대재해 발생 시 작업중지 의무 |
+| `safety_hazard` | 위험성 평가 실시 의무 |
+| `safety_tbm` | TBM(작업 전 안전점검) 실시 |
+
+#### NAS 적용 방법
+```bash
+cd /volume1/safetynote
+git pull origin main
+# migration 0051 적용
+sqlite3 safety.db < migrations/0051_legal_notices_seed.sql
+pm2 restart safetynote --update-env
+```
+
+#### 완료 항목
+- [x] 원인 파악 (라우트 파일 미구현)
+- [x] `src/routes/legal-notices.ts` 신규 생성 (CRUD 전체)
+- [x] `src/index.tsx` 라우트 등록 추가
+- [x] `migrations/0051_legal_notices_seed.sql` 기본 데이터 시드 생성
+- [x] GitHub 배포: legal-notices.ts `61f70da68625`, index.tsx `0ab158014f30`, migration `1fe852b62b0e`
 
 ---
 

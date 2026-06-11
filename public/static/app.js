@@ -9076,8 +9076,8 @@ async function showTbmDetail(tbmId) {
             <span style="font-size:11px;opacity:0.85">(미서명 ${unsignedNames.length}명)</span>
           </button>` : ''}
 
-          <!-- 서명 요청 보내기 (비근로자만) -->
-          ${!_tbmIsWorker ? `
+          <!-- 서명 요청 보내기 (전체 공개) -->
+          ${true ? `
           <button onclick="_tbmSendSignRequest(${tbmId},${_tbmTaskId})"
             style="width:100%;padding:8px;background:linear-gradient(135deg,#685182,#8E72A8);color:white;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px">
             <i class="fas fa-paper-plane"></i> 앱 서명 요청 보내기

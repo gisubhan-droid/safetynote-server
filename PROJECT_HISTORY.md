@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-11 (세션 10)
+> 최종 업데이트: 2026-06-11 (세션 11)
 > **앱 현재 버전: v1.3.0** ← 최신 (✅ GitHub Release 빌드 완료 — 2026-06-11)
 > NAS 배포 버전: v1.2.5 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, systemd 자동시작 ✅) — v1.3.0 설치 필요
-> **다음 작업**: APK v1.3.0 설치 테스트 → 1단계(알림 Android 테스트) → NAS 크론잡 설정
+> **다음 작업**: NAS git pull → pm2 restart → 앱에서 위치 이력 카드 확인 → 1단계(알림 Android 테스트) → NAS 크론잡 설정
 
 ---
 
@@ -433,69 +433,7 @@ GitHub → safetynote-android → Actions
 
 ---
 
-## 🔑 GitHub PAT (Personal Access Token) 현황
-
-> ⚠️ **필독 — 세션 인수 시 반드시 확인!**
-> **GitHub push / workflow 트리거 시 항상 `safetynote-deploy` PAT를 사용할 것**
-
-### ✅ 현재 사용 PAT: `safetynote-deploy` (Fine-grained)
-
-| 항목 | 값 |
-|------|-----|
-| **토큰 이름** | `safetynote-deploy` |
-| **종류** | Fine-grained PAT |
-| **만료일** | 없음 (무기한) |
-| **마지막 갱신** | 2026-06-11 (세션 10) |
-| **접근 가능 repo** | `gisubhan-droid/safetynote-android` + `gisubhan-droid/safetynote-server` |
-| **권한** | Actions R/W, Contents(code) R/W, Workflows R/W, Metadata R |
-| **설정 위치** | https://github.com/settings/tokens?type=beta → `safetynote-deploy` |
-
-### 📌 샌드박스에서 GitHub push 방법 (매 세션 표준 절차)
-
-```bash
-# PAT 변수 설정
-PAT="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"
-
-# ① safetynote-server repo push
-cd /home/user/webapp-deploy/safetynote   # 또는 /home/user/webapp
-git remote set-url origin "https://x-access-token:${PAT}@github.com/gisubhan-droid/safetynote-server.git"
-git push origin main          # 또는 git push -f origin main
-git remote set-url origin "https://github.com/gisubhan-droid/safetynote-server.git"  # 보안 복원
-
-# ② safetynote-android repo push (필요 시)
-cd /home/user/safetynote-android
-git remote set-url origin "https://x-access-token:${PAT}@github.com/gisubhan-droid/safetynote-android.git"
-git push origin main
-git remote set-url origin "https://github.com/gisubhan-droid/safetynote-android.git"  # 보안 복원
-
-# ③ GitHub Contents API로 단일 파일 업데이트 (git push 불가 시 대안)
-CURRENT_SHA=$(curl -s -H "Authorization: token $PAT" \
-  "https://api.github.com/repos/gisubhan-droid/safetynote-server/contents/파일경로" \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'])")
-CONTENT_B64=$(base64 -w 0 로컬파일경로)
-curl -s -X PUT \
-  -H "Authorization: token $PAT" \
-  "https://api.github.com/repos/gisubhan-droid/safetynote-server/contents/파일경로" \
-  -d "{\"message\":\"커밋메시지\",\"content\":\"${CONTENT_B64}\",\"sha\":\"${CURRENT_SHA}\"}"
-
-# ④ workflow_dispatch 트리거 (APK 빌드)
-curl -s -X POST \
-  -H "Authorization: token $PAT" \
-  -H "Accept: application/vnd.github.v3+json" \
-  "https://api.github.com/repos/gisubhan-droid/safetynote-android/actions/workflows/build-apk.yml/dispatches" \
-  -d '{"ref":"main","inputs":{"version":"x.x.x","release_note":"변경내용","force_update":"false"}}'
-```
-
-### 보조 PAT (Classic, 범용)
-
-| 토큰 이름 | 종류 | 권한 | 용도 |
-|-----------|------|------|------|
-| `safetynote-nas` | Classic | repo | NAS git 연동용 |
-| `safetynote-build` | Classic | repo + workflow | 빌드/배포 보조용 |
-
----
-
-## 🔐 GitHub Secrets 현황 (Actions용)
+## 🔐 GitHub Secrets 현황
 
 | Secret | 상태 | 용도 |
 |--------|------|------|
@@ -904,7 +842,51 @@ sqlite3 safety.db < 0050_...sql
 - [x] 세션 10 전체 내용 PROJECT_HISTORY.md 정리
 
 #### 잔여 작업
-- [ ] **APK v1.3.0 기기 설치 및 테스트** — GPS/로그인개선/앱설정 동작 확인
+- [x] **APK v1.3.0 기기 설치** — 세션 11에서 사용자 확인 완료
+- [ ] **1단계 알림 기능 Android 테스트** — 벨 아이콘, 배지, 알림 패널 확인
+- [ ] **NAS 크론잡 설정** — nas-auto-deploy.sh 등록
+
+---
+
+### 2026-06-11 세션 11 — 위치 이력 카드 미표시 버그 수정 및 GitHub 배포
+
+#### 작업 내용
+- **세션 인수**: PROJECT_HISTORY.md 기반 세션 10 상태에서 이어받음
+- **현상 확인**: 앱 `내 계정` 페이지에서 "최근 작업 위치 이력" 카드가 화면에 표시되지 않음
+- **원인 분석**: `renderMyProfilePage()`의 HTML 구조 오류
+  - 위치 이력 카드 `<div>`가 `max-w-2xl` 메인 컨테이너 `</div>` 닫힘 **이후**에 위치
+  - 브라우저가 컨테이너 밖 요소를 무시하여 미표시
+- **수정**: `public/static/app.js` 들여쓰기 수정 → 위치 이력 카드를 컨테이너 안으로 이동
+- **빌드**: `npm run build` → 성공 (211.33 kB, 2.54s)
+- **PM2 재시작**: `pm2 start npx --name safetynote -- wrangler pages dev dist --ip 0.0.0.0 --port 3000` → HTTP 200 ✅
+- **GitHub 배포**: Contents API (Python) → commit `a1cc384d8c9f` → safetynote-server 반영
+
+#### 수정 코드 핵심
+```javascript
+// 수정 전 (broken): 위치 이력 카드가 컨테이너 밖
+    </div>  // max-w-2xl 컨테이너 닫힘
+    <div style="...위치 이력 카드...">  // ❌ 컨테이너 밖!
+    </div>`;
+
+// 수정 후 (fixed): 위치 이력 카드를 컨테이너 안으로
+      <!-- ─── 2단계: 최근 작업 위치 이력 카드 ─── -->
+      <div style="...위치 이력 카드...">  // ✅ 컨테이너 안
+      </div>
+    </div>`;  // max-w-2xl 컨테이너 여기서 닫힘
+```
+
+#### 완료 항목
+- [x] 세션 11 인수 (PROJECT_HISTORY.md 기반)
+- [x] PM2 샌드박스용 명령으로 재시작 (`pm2 start npx --name safetynote -- wrangler pages dev dist`)
+- [x] 위치 이력 카드 HTML 구조 버그 확인 및 수정 (`public/static/app.js`)
+- [x] `npm run build` 성공 (211.33 kB)
+- [x] git commit `384aa30` — `fix: 위치 이력 카드 컨테이너 밖 렌더링 버그 수정`
+- [x] GitHub Contents API (Python)로 app.js 배포 → commit `a1cc384d8c9f`
+- [x] PROJECT_HISTORY.md 세션 11 이력 정리
+
+#### 잔여 작업
+- [ ] **NAS git pull + pm2 restart** — 위치 이력 카드 수정사항 NAS 반영
+- [ ] **앱에서 위치 이력 카드 표시 확인** — NAS 배포 후 앱 재접속 테스트
 - [ ] **1단계 알림 기능 Android 테스트** — 벨 아이콘, 배지, 알림 패널 확인
 - [ ] **NAS 크론잡 설정** — nas-auto-deploy.sh 등록
 

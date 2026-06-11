@@ -512,7 +512,7 @@ body {
   padding: 0 16px;
   height: 56px;
   display: flex; align-items: center; justify-content: space-between;
-  position: sticky; top: 0; z-index: 50;
+  position: sticky; top: 0; z-index: 1100;
   box-shadow: 0 2px 12px var(--t-shadow-hover);
 }
 
@@ -810,8 +810,9 @@ body {
     padding-bottom: calc(var(--mob-nav-h) + var(--safe-bottom) + 16px) !important;
   }
 
-  /* 사이드바 숨김 */
+  /* 사이드바 — 기본 숨김, open 클래스일 때만 표시 */
   .sidebar { display: none !important; }
+  .sidebar.open { display: flex !important; }
 
   /* 상단 헤더 */
   .top-header { padding: 0 12px; }
@@ -857,3 +858,46 @@ body {
 
 /* ─── 키보드 열림 시 하단 탭바 숨김 ────────────────────────────── */
 .keyboard-open #mobile-nav-bar { display: none !important; }
+
+/* ─── 5단계: 앱 설정 — 토글 스위치 ────────────────────────────────── */
+.sn-toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.sn-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+  min-height: unset !important;
+  font-size: inherit !important;
+}
+.sn-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: #D1D5DB;
+  border-radius: 24px;
+  transition: background 0.2s;
+}
+.sn-toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.sn-toggle input:checked + .sn-toggle-slider {
+  background: #685182;
+}
+.sn-toggle input:checked + .sn-toggle-slider::before {
+  transform: translateX(20px);
+}

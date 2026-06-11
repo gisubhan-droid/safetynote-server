@@ -1706,6 +1706,25 @@ app.get('/api/legal-notices/:key', async (c) => {
   return c.json(row)
 })
 
+// 법령안내 신규 추가 (admin만)
+app.post('/api/legal-notices', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 추가할 수 있습니다.' }, 403)
+  const body = await c.req.json().catch(() => ({})) as any
+  const { notice_key, title, law_ref, content } = body
+  if (!notice_key || !title || !content) return c.json({ error: '키, 제목, 내용은 필수입니다.' }, 400)
+  if (!/^[a-zA-Z0-9_]+$/.test(notice_key)) return c.json({ error: '키는 영문, 숫자, 언더바(_)만 가능합니다.' }, 400)
+  const existing = rawDb.prepare('SELECT id FROM legal_notices WHERE notice_key=?').get(notice_key)
+  if (existing) return c.json({ error: '이미 존재하는 키입니다: ' + notice_key }, 409)
+  rawDb.prepare(
+    `INSERT INTO legal_notices (notice_key, title, law_ref, content, is_active, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)`
+  ).run(notice_key, title, law_ref || null, content, user.id)
+  const created = rawDb.prepare('SELECT * FROM legal_notices WHERE notice_key=?').get(notice_key)
+  return c.json({ success: true, data: created }, 201)
+})
+
 // 법령안내 수정 (admin/supervisor만)
 app.put('/api/legal-notices/:key', async (c) => {
   const user = getUser(c)
@@ -1719,6 +1738,18 @@ app.put('/api/legal-notices/:key', async (c) => {
     `UPDATE legal_notices SET title=?, content=?, law_ref=?,
      updated_by=?, updated_at=CURRENT_TIMESTAMP WHERE notice_key=?`
   ).run(title, content, law_ref || null, user.id, key)
+  return c.json({ success: true })
+})
+
+// 법령안내 삭제 (admin만, 소프트 삭제)
+app.delete('/api/legal-notices/:key', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 삭제할 수 있습니다.' }, 403)
+  const key = c.req.param('key')
+  const row = rawDb.prepare('SELECT id FROM legal_notices WHERE notice_key=? AND is_active=1').get(key)
+  if (!row) return c.json({ error: '존재하지 않는 법령안내입니다.' }, 404)
+  rawDb.prepare(`UPDATE legal_notices SET is_active=0, updated_by=?, updated_at=CURRENT_TIMESTAMP WHERE notice_key=?`).run(user.id, key)
   return c.json({ success: true })
 })
 

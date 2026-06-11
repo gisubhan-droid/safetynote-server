@@ -433,7 +433,69 @@ GitHub → safetynote-android → Actions
 
 ---
 
-## 🔐 GitHub Secrets 현황
+## 🔑 GitHub PAT (Personal Access Token) 현황
+
+> ⚠️ **필독 — 세션 인수 시 반드시 확인!**
+> **GitHub push / workflow 트리거 시 항상 `safetynote-deploy` PAT를 사용할 것**
+
+### ✅ 현재 사용 PAT: `safetynote-deploy` (Fine-grained)
+
+| 항목 | 값 |
+|------|-----|
+| **토큰 이름** | `safetynote-deploy` |
+| **종류** | Fine-grained PAT |
+| **만료일** | 없음 (무기한) |
+| **마지막 갱신** | 2026-06-11 (세션 10) |
+| **접근 가능 repo** | `gisubhan-droid/safetynote-android` + `gisubhan-droid/safetynote-server` |
+| **권한** | Actions R/W, Contents(code) R/W, Workflows R/W, Metadata R |
+| **설정 위치** | https://github.com/settings/tokens?type=beta → `safetynote-deploy` |
+
+### 📌 샌드박스에서 GitHub push 방법 (매 세션 표준 절차)
+
+```bash
+# PAT 변수 설정
+PAT="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"
+
+# ① safetynote-server repo push
+cd /home/user/webapp-deploy/safetynote   # 또는 /home/user/webapp
+git remote set-url origin "https://x-access-token:${PAT}@github.com/gisubhan-droid/safetynote-server.git"
+git push origin main          # 또는 git push -f origin main
+git remote set-url origin "https://github.com/gisubhan-droid/safetynote-server.git"  # 보안 복원
+
+# ② safetynote-android repo push (필요 시)
+cd /home/user/safetynote-android
+git remote set-url origin "https://x-access-token:${PAT}@github.com/gisubhan-droid/safetynote-android.git"
+git push origin main
+git remote set-url origin "https://github.com/gisubhan-droid/safetynote-android.git"  # 보안 복원
+
+# ③ GitHub Contents API로 단일 파일 업데이트 (git push 불가 시 대안)
+CURRENT_SHA=$(curl -s -H "Authorization: token $PAT" \
+  "https://api.github.com/repos/gisubhan-droid/safetynote-server/contents/파일경로" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'])")
+CONTENT_B64=$(base64 -w 0 로컬파일경로)
+curl -s -X PUT \
+  -H "Authorization: token $PAT" \
+  "https://api.github.com/repos/gisubhan-droid/safetynote-server/contents/파일경로" \
+  -d "{\"message\":\"커밋메시지\",\"content\":\"${CONTENT_B64}\",\"sha\":\"${CURRENT_SHA}\"}"
+
+# ④ workflow_dispatch 트리거 (APK 빌드)
+curl -s -X POST \
+  -H "Authorization: token $PAT" \
+  -H "Accept: application/vnd.github.v3+json" \
+  "https://api.github.com/repos/gisubhan-droid/safetynote-android/actions/workflows/build-apk.yml/dispatches" \
+  -d '{"ref":"main","inputs":{"version":"x.x.x","release_note":"변경내용","force_update":"false"}}'
+```
+
+### 보조 PAT (Classic, 범용)
+
+| 토큰 이름 | 종류 | 권한 | 용도 |
+|-----------|------|------|------|
+| `safetynote-nas` | Classic | repo | NAS git 연동용 |
+| `safetynote-build` | Classic | repo + workflow | 빌드/배포 보조용 |
+
+---
+
+## 🔐 GitHub Secrets 현황 (Actions용)
 
 | Secret | 상태 | 용도 |
 |--------|------|------|

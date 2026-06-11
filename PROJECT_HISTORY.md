@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-10 (세션 9)
-> **앱 현재 버전: v1.2.5** ← 최신 (✅ GitHub Release 빌드 완료)
-> NAS 배포 버전: v1.2.5 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, systemd 자동시작 ✅)
-> **다음 작업**: 2단계(GPS) ✅완료 → APK v1.3.0 빌드 → 1단계(알림 Android 테스트)
+> 최종 업데이트: 2026-06-11 (세션 10)
+> **앱 현재 버전: v1.3.0** ← 최신 (✅ GitHub Release 빌드 완료 — 2026-06-11)
+> NAS 배포 버전: v1.2.5 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, systemd 자동시작 ✅) — v1.3.0 설치 필요
+> **다음 작업**: APK v1.3.0 설치 테스트 → 1단계(알림 Android 테스트) → NAS 크론잡 설정
 
 ---
 
@@ -18,7 +18,8 @@
 | v1.2.2 | 2026-06-10 | ✅ 배포완료 | AndroidManifest 권한 추가 (GPS/카메라/알림/지도앱), allowMixedContent 수정 |
 | v1.2.3 | 2026-06-10 | ✅ 배포완료 | 서버주소 UI 개선(https:// 고정·주소/포트 분리), 런타임 권한 요청, 업데이트 팝업 오발송 버그 수정 |
 | v1.2.4 | 2026-06-10 | ✅ 배포완료 | **APK 업데이트 설치 실패 완전 수정** - `file_paths.xml` 추가, HTTPS→HTTP 변환, `REQUEST_INSTALL_PACKAGES` 권한, 버전 갱신 로직 개선 |
-| **v1.2.5** | **2026-06-10** | 🔲 GitHub Release 빌드필요 | PC/브라우저 업데이트 팝업 제거, WebView(앱)에서만 업데이트 모달 표시, GitHub Release 자동배포 전환 |
+| v1.2.5 | 2026-06-10 | ✅ 배포완료 | PC/브라우저 업데이트 팝업 제거, WebView(앱)에서만 업데이트 모달 표시, GitHub Release 자동배포 전환 |
+| **v1.3.0** | **2026-06-11** | ✅ **GitHub Release 빌드 완료** | 4단계 로그인개선(아이디저장/비번토글/로딩스피너), 5단계 앱설정(테마/알림/글자크기/진동), 2단계 GPS위치추적(작업일지 위치자동기록+이력조회) |
 
 ---
 
@@ -216,10 +217,17 @@ doApkDownload(downloadUrl, apkInfo.version)
 ### 🟡 [중간] NAS 크론잡 설정 (nas-auto-deploy.sh)
 - `safetynote-android/scripts/nas-auto-deploy.sh` NAS에 설치 및 크론잡 등록 미완
 
+### ✅ [완료] APK v1.3.0 GitHub Release 빌드 (2026-06-11 세션 10)
+- GitHub Actions workflow_dispatch 트리거 → **빌드 성공** (Run #27330508906)
+- GitHub Release: https://github.com/gisubhan-droid/safetynote-android/releases/tag/v1.3.0
+- 첨부 파일: `safetynote-v1.3.0.apk` (5,572KB, Release 서명 빌드)
+- 빌드 시간: 약 2분 30초 / Build type: **release (signed)** ✅
+- 포함 기능: 4단계(로그인개선) + 5단계(앱설정) + 2단계(GPS위치추적)
+
 ### 🟡 [중간] build-apk.yml 버전 수동 업데이트 필요
 - GitHub App 권한 제한으로 `.github/workflows/` 자동 push 불가
-- **매 버전마다 GitHub 웹 UI에서 직접 수정 필요**
-- 현재 기본값: `1.2.5` (최신 적용 상태)
+- **매 버전마다 PAT로 GitHub Contents API 직접 수정 필요** (세션 9에서 방법 확립)
+- 현재 기본값: `1.3.0` (최신 적용 상태, 커밋 `650a3852`)
 - 수정 URL: https://github.com/gisubhan-droid/safetynote-android/blob/main/.github/workflows/build-apk.yml
 
 ---
@@ -712,7 +720,7 @@ https://linkmax.myds.me:3443  → ✅ 정상 접속!
 | 3단계 | 🔄 자동 업데이트 | **✅ 완성** | syncInstalledVersion() + DownloadManager 완성 |
 | 4단계 | 👤 로그인 화면 개선 | **✅ 세션8 완료** | 아이디 저장/자동완성, 비밀번호 표시, 로딩 스피너, 흔들기 애니메이션 |
 | 5단계 | ⚙️ 앱 설정 메뉴 | **✅ 세션8 완료** | 내 계정 페이지에 앱 설정 카드 추가 (테마/알림/글자크기/진동) |
-| 6단계 | 📦 Release APK 빌드 | **✅ 완성** | v1.2.5 서명 빌드 완료 |
+| 6단계 | 📦 Release APK 빌드 | **✅ 완성** | v1.3.0 서명 빌드 완료 (2026-06-11) |
 
 #### 진행 순서 결정
 1. **4단계 (로그인 화면 개선)** — 빠르고 임팩트 있음 → **✅ 완료**
@@ -760,6 +768,38 @@ sleep 5 && pm2 logs safetynote --nostream --lines 5
 - [x] app.js 내 계정 위치 이력 카드 + `_loadLocationHistory()` 구현
 - [x] GitHub push (safetynote-server repo)
 - [ ] **NAS DB migration 0050 적용** ← 아직 미실행
+
+### 2026-06-11 세션 10 — APK v1.3.0 빌드 트리거 및 Release 확인
+
+#### 작업 내용
+- **세션 인수**: PROJECT_HISTORY.md 기반 세션 9 상태에서 이어받음
+- **workflow_dispatch 트리거**: PAT로 GitHub Actions API 호출 → `build-apk.yml` v1.3.0 빌드 시작
+- **빌드 모니터링**: 단계별 실시간 확인
+  - ✅ Set up job → Checkout → Node.js → Java 17 → Android SDK → npm install
+  - ✅ Capacitor Android platform 추가 → web assets sync → MainActivity/아이콘 적용
+  - ✅ Set version info → Restore keystore → **Build APK** → Rename → Upload Artifact
+  - ✅ Create GitHub Release 생성 완료
+- **빌드 결과**: Run #27330508906 — **success** (약 2분 29초)
+
+#### GitHub Release 결과
+```
+태그: v1.3.0
+이름: Safety NOTE v1.3.0
+파일: safetynote-v1.3.0.apk (5,572KB)
+URL:  https://github.com/gisubhan-droid/safetynote-android/releases/tag/v1.3.0
+```
+
+#### 완료 항목
+- [x] GitHub Actions workflow_dispatch 트리거 (PAT API)
+- [x] APK v1.3.0 빌드 성공 확인 (Release 서명 빌드)
+- [x] GitHub Release v1.3.0 생성 + safetynote-v1.3.0.apk 첨부 확인
+- [x] PROJECT_HISTORY.md 버전 테이블 v1.3.0 업데이트
+
+#### 잔여 작업
+- [ ] **APK v1.3.0 설치 테스트** — 기기에 설치 후 정상 동작 확인
+- [ ] **1단계 알림 기능 Android 테스트** — v1.3.0 설치 후 알림 수신 확인
+- [ ] **NAS DB migration 0050 적용** — GPS 컬럼 추가 (이미 적용됐을 수 있음)
+- [ ] **NAS 크론잡 설정** — nas-auto-deploy.sh 등록
 
 ---
 

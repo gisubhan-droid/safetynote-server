@@ -17,6 +17,7 @@ import teamRoutes from './routes/teams'
 import educationRoutes from './routes/education'
 import constructionRoutes from './routes/constructions'
 import notificationRoutes from './routes/notifications'
+import legalNoticeRoutes from './routes/legal-notices'
 
 type Bindings = {
   DB: D1Database
@@ -47,6 +48,7 @@ app.route('/api/teams', teamRoutes)
 app.route('/api/education', educationRoutes)
 app.route('/api/constructions', constructionRoutes)
 app.route('/api/notifications', notificationRoutes)
+app.route('/api/legal-notices', legalNoticeRoutes)
 
 // Static files
 app.use('/static/*', serveStatic({ root: './' }))

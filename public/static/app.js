@@ -2801,7 +2801,7 @@ function formatWorkNumber(val) {
   if (nums.length <= 6) return nums.length ? 'WKS-' + nums : '';
   return 'WKS-' + nums.slice(0,6) + '-' + nums.slice(6,11);
 }
-// 하위작업번호 입력 마스킹 (숫자만 4자리)
+// 서브작업번호 입력 마스킹 (숫자만 4자리)
 function formatSubTaskNo(val) {
   return val.replace(/\D/g,'').slice(0,4);
 }
@@ -3076,7 +3076,9 @@ async function showConstructionDetail(conId) {
           ? `<div class="text-center py-6 text-gray-400 text-sm"><i class="fas fa-clipboard text-2xl block mb-2 opacity-30"></i>등록된 작업이 없습니다</div>`
           : `<div style="display:flex;flex-direction:column;gap:6px">
             ${tasks.map(t => {
-              const dispNum = t.sub_task_number ? `${t.task_number}-${t.sub_task_number}` : t.task_number;
+              const dispNum = t.work_number
+                ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number)
+                : (t.sub_task_number ? t.sub_task_number : t.task_number);
               return `
               <div class="flex items-center justify-between p-3 rounded-xl cursor-pointer hover:shadow-sm"
                 style="background:#FAFAFA;border:1px solid #F0ECF6"
@@ -4294,17 +4296,17 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
             </div>
             <input type="hidden" id="mConReqNo" value="${task.request_no||presetConstruction?.request_no||''}">
           </div>
-          <!-- 작업 ID -->
+          <!-- 작업번호 -->
           <div>
-            <div class="text-xs text-gray-400 mb-0.5"><i class="fas fa-tag mr-0.5"></i>작업 ID</div>
+            <div class="text-xs text-gray-400 mb-0.5"><i class="fas fa-tag mr-0.5"></i>작업번호</div>
             <div id="mConWorkNumDisplay" class="text-xs font-mono font-semibold text-gray-700">
               ${task.work_number||presetConstruction?.work_number||'<span class="text-gray-300">-</span>'}
             </div>
             <input type="hidden" id="mConWorkNum" value="${task.work_number||presetConstruction?.work_number||''}">
           </div>
-          <!-- 하위작업번호 -->
+          <!-- 서브작업번호 -->
           <div>
-            <div class="text-xs text-gray-400 mb-0.5">하위작업번호 <span class="text-red-400">*</span></div>
+            <div class="text-xs text-gray-400 mb-0.5">서브작업번호 <span class="text-red-400">*</span></div>
             <input id="mSubTaskNo" class="form-control font-mono text-xs py-1" style="height:28px"
               placeholder="0001" maxlength="4"
               value="${task.sub_task_number||''}"
@@ -5691,7 +5693,7 @@ async function showTaskDetail(id, openTbmTab) {
       <div id="dtab-info" class="detail-tab">
         <div class="space-y-2 text-sm">
 
-          <!-- ① 공사요청번호 / 작업번호 / 작업 ID -->
+          <!-- ① 공사요청번호 / 서브작업번호 -->
           <div class="grid grid-cols-2 gap-2">
             <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
               <div class="flex items-center gap-1 mb-1">
@@ -5703,7 +5705,7 @@ async function showTaskDetail(id, openTbmTab) {
             <div class="bg-indigo-50 rounded-lg p-3 border border-indigo-200">
               <div class="flex items-center gap-1 mb-1">
                 <i class="fas fa-barcode text-xs text-indigo-500"></i>
-                <span class="text-indigo-600 text-xs font-semibold">작업번호</span>
+                <span class="text-indigo-600 text-xs font-semibold">서브작업번호</span>
               </div>
               <span class="font-mono font-bold text-indigo-800 tracking-wide">
                 ${task.work_number
@@ -5712,11 +5714,11 @@ async function showTaskDetail(id, openTbmTab) {
               </span>
             </div>
           </div>
-          <!-- 작업 ID (시스템 식별자) -->
-          <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
-            <i class="fas fa-fingerprint text-xs text-gray-400"></i>
-            <span class="text-gray-400 text-xs">작업 ID</span>
-            <span class="font-mono text-xs text-gray-500 ml-1">${task.task_number||'-'}</span>
+          <!-- 작업번호 (DB 관리용) -->
+          <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+            <i class="fas fa-tag text-xs text-gray-300"></i>
+            <span class="text-gray-300 text-xs">작업번호</span>
+            <span class="font-mono text-xs text-gray-300 ml-1">${task.task_number||'-'}</span>
           </div>
 
           <!-- ② 작업종류(공사종류) / 작업분류 -->

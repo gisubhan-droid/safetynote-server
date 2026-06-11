@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-11 (세션 11 — 완료)
+> 최종 업데이트: 2026-06-11 (세션 14 — 완료)
 > **앱 현재 버전: v1.3.0** ← 최신 (✅ GitHub Release 빌드 완료 — 2026-06-11)
-> NAS 배포 버전: v1.3.0 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, legal-notices 라우트 정상 ✅)
-> **다음 작업**: 1단계(알림 Android 테스트) → NAS 크론잡 설정 (`nas-auto-deploy.sh` 등록)
+> NAS 배포 버전: v1.3.0 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
+> **다음 작업**: NAS `git pull + pm2 restart` → TBM 서명/알림 최종 테스트 → NAS 크론잡 설정
 
 ---
 
@@ -1264,3 +1264,33 @@ INSERT OR IGNORE INTO legal_notices (notice_key, title, law_ref, content, is_act
 - [ ] 1단계 알림 Android 테스트
 - [ ] NAS 크론잡 설정 (`nas-auto-deploy.sh`)
 - [ ] `patchSchema`에 `safety_*` 자동시드 추가
+
+---
+
+## 🗓️ 세션 14 — 2026-06-11
+
+### 완료
+- **세션 13 인수** — GitHub 미배포 커밋(`a46862b`) 확인 후 작업 재개
+- **`task_stops` 컬럼명 버그 수정** — 세션13에서 잘못 수정한 `stopped_by` → `reported_by` 복원 (실제 DB 컬럼: `reported_by`)
+- **`legal-notices` 라우트 추가** — `src/routes/legal-notices.ts` + `migrations/0051` + `src/index.tsx` 라우트 등록
+- **GitHub 배포** — `safetynote-server` main 브랜치 push 완료 (`8835845`)
+  - `node-server.ts`: `app.js?v=20260611` 캐시 버전 업데이트
+  - `src/routes/tasks.ts`: `task_stops reported_by` 컬럼명 통일 + 작업상태변경 notifications DB 저장
+  - `src/routes/legal-notices.ts`: 법령안내 CRUD API
+  - `migrations/0051_legal_notices_seed.sql`: 법령안내 초기 데이터
+
+### 미완료 (다음 세션 인계)
+- [ ] **NAS `git pull` + `pm2 restart safetynote --update-env`** — GitHub 배포본 미적용
+- [ ] TBM 서명 최종 동작 확인 (`tbm_records_old` 삭제 후)
+- [ ] 작업상태변경 알림 최종 동작 확인
+- [ ] NAS 크론잡 설정 (`nas-auto-deploy.sh` crontab 등록)
+- [ ] `patchSchema`에 `safety_*` 자동시드 추가
+
+### NAS 적용 명령어
+```bash
+cd /volume1/safetynote
+git pull origin main
+pm2 restart safetynote --update-env
+# 확인
+pm2 logs safetynote --nostream | tail -20
+```

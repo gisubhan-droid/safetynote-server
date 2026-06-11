@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-11 (세션 11)
+> 최종 업데이트: 2026-06-11 (세션 11 — 완료)
 > **앱 현재 버전: v1.3.0** ← 최신 (✅ GitHub Release 빌드 완료 — 2026-06-11)
-> NAS 배포 버전: v1.2.5 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, systemd 자동시작 ✅) — v1.3.0 설치 필요
-> **다음 작업**: NAS git pull → migration 0051 적용 → pm2 restart → 법령안내 페이지 확인 → 1단계(알림 Android 테스트) → NAS 크론잡 설정
+> NAS 배포 버전: v1.3.0 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, legal-notices 라우트 정상 ✅)
+> **다음 작업**: 1단계(알림 Android 테스트) → NAS 크론잡 설정 (`nas-auto-deploy.sh` 등록)
 
 ---
 
@@ -1086,11 +1086,12 @@ pm2 restart safetynote --update-env
 
 ---
 
-## 🔢 개발 우선순위 (세션 8 기준)
+## 🔢 개발 우선순위 (세션 11 기준)
 
 ```
 ✅ 완료        : 3단계(자동업데이트), 4단계(로그인 개선), 5단계(앱 설정), 6단계(APK 빌드)
-🚧 진행 예정   : 2단계(GPS 위치 추적) → 1단계(알림 Android 수신 확인) → 빌드 v1.3.0
+✅ 완료        : 2단계(GPS 위치 추적), 법령안내 관리(legal-notices)
+🚧 진행 예정   : 1단계(알림 Android 수신 테스트) → NAS 크론잡 설정
 ⏸️ 보류        : 강제업데이트 UI, 네이티브 푸시알림
 ```
 
@@ -1098,5 +1099,63 @@ pm2 restart safetynote --update-env
 |------|------|------|------|
 | 1 | 4단계 | 로그인 화면 개선 (아이디 저장, 자동완성, 로딩) | ✅ 완료 (세션8) |
 | 2 | 5단계 | 앱 설정 메뉴 (설정 카드 추가) | ✅ 완료 (세션8) |
-| 3 | 2단계 | GPS 위치 추적 (출퇴근 위치 저장) | 🔧 다음 작업 |
-| 4 | 1단계 | 알림 기능 Android 수신 테스트 | ⏸️ 앱 설치 후 |
+| 3 | 2단계 | GPS 위치 추적 (출퇴근 위치 저장) | ✅ 완료 (세션11) |
+| 4 | 법령안내 | legal-notices 라우트 + 시드 데이터 | ✅ 완료 (세션11) |
+| 5 | 버그수정 | 위치이력 카드 컨테이너 구조 / 화면 dim 처리 | ✅ 완료 (세션11) |
+| 6 | 1단계 | 알림 기능 Android 수신 테스트 | ⏸️ 다음 세션 |
+| 7 | NAS | 크론잡 설정 (`nas-auto-deploy.sh`) | ⏸️ 다음 세션 |
+
+---
+
+## 🗓️ 세션 11 — 2026-06-11 버그 수정 3건 + 법령안내 구현
+
+### 완료된 작업
+
+#### ✅ [1] PM2 샌드박스 재시작
+- **문제**: `ecosystem.config.cjs`에 NAS 로컬 경로 하드코딩
+- **해결**: `pm2 start npx --name safetynote -- wrangler pages dev dist --ip 0.0.0.0 --port 3000`
+- 샌드박스 PM2 재시작 횟수 정상 (2회)
+
+#### ✅ [2] 위치 이력 카드 HTML 구조 버그 수정
+- **문제**: `renderMyProfilePage()`에서 위치이력 카드 `<div>`가 `max-w-2xl` 컨테이너 밖에 생성
+- **해결**: 들여쓰기 조정으로 컨테이너 안으로 이동, `max-w-2xl` 닫는 태그를 위치이력 카드 뒤로 이동
+- **파일**: `webapp/public/static/app.js`
+- **커밋**: `384aa30`, GitHub: `a1cc384d8c9f`
+
+#### ✅ [3] 화면 전체 dim 처리 버그 수정
+- **문제**: 모달 오픈 후 페이지 전환 시 `.modal-overlay` 잔류 + `top-header` z-index(50)가 overlay(1000)보다 낮아 헤더 숨김
+- **해결**:
+  - `safeNavigateTo()` / `navigateTo()`: `querySelector` → `querySelectorAll(...).forEach(el => el.remove())` 전부 제거
+  - `top-header` z-index: 50 → 1100 (modal-overlay 1000 위)
+- **파일**: `webapp/public/static/app.js`, `webapp/public/static/style.css`
+- **커밋**: `d78b45d`, GitHub: `4c36ed1b4e4d` (app.js), `c84b8408607c` (style.css)
+
+#### ✅ [4] 법령안내 페이지 데이터 없음 버그 수정
+- **문제**: `/api/legal-notices` 라우트 자체가 미구현 → 프론트엔드 빈 화면
+- **해결**:
+  - `src/routes/legal-notices.ts` 신규 생성 (GET /  GET /:key  PUT /:key  DELETE /:key)
+  - `getUser()` 패턴 사용 (`hono/jwt` 미들웨어 사용 시 `c.env.SESSION_SECRET` undefined 크래시)
+  - `src/index.tsx`에 `app.route('/api/legal-notices', legalNoticeRoutes)` 등록
+  - `migrations/0051_legal_notices_seed.sql` 생성 (일반 법령안내 5건 + 교육 법령기준 5건)
+- **파일**: `webapp-deploy/safetynote/src/routes/legal-notices.ts` (신규)
+- **GitHub commit**: `d18c2e64df9e` (getUser 패턴 최종 수정본)
+
+#### ✅ [5] NAS PM2 크래시 루프 원인 해결
+- **증상**: PM2 재시작 횟수 377회 — 서버 크래시 루프
+- **원인 1**: `legal-notices.ts` 초기 버전에서 `hono/jwt` 미들웨어가 `c.env.SESSION_SECRET` 참조 → undefined 에러 크래시
+- **원인 2**: `EADDRINUSE port 3443` — PM2 restart 시 이전 프로세스 종료 전 재기동으로 포트 충돌 루프
+- **해결**: `legal-notices.ts` `getUser()` 패턴으로 재작성 후 NAS `git pull` + `pm2 restart`
+- **확인**: `pm2 reset safetynote` 후 10초 경과 → 재시작 횟수 0 유지 ✅
+
+### 세션 11 미완료 (다음 세션 진행)
+- [ ] 1단계 알림 기능 Android 테스트 (벨 아이콘, 배지, 알림 패널)
+- [ ] NAS 크론잡 설정 (`nas-auto-deploy.sh` 등록)
+
+### 파일 수정 요약
+| 파일 | 변경 |
+|------|------|
+| `webapp/public/static/app.js` | 위치이력 카드 컨테이너 구조 + safeNavigateTo/navigateTo overlay 전체 정리 |
+| `webapp/public/static/style.css` | top-header z-index 50 → 1100 |
+| `webapp-deploy/.../routes/legal-notices.ts` | 신규 생성 (getUser 패턴) |
+| `webapp-deploy/.../src/index.tsx` | legalNoticeRoutes 등록 |
+| `webapp-deploy/.../migrations/0051_legal_notices_seed.sql` | 10건 시드 데이터 |

@@ -931,21 +931,36 @@ function showMapModal(address) {
     const isWebView = isAndroid && (/wv\b|WebView/i.test(ua) || !/Chrome/i.test(ua) || /Version\/\d/i.test(ua));
 
     if (isAndroid) {
-      // Android 환경: 앱 스킴을 <a target="_blank">로 시도
-      // → WebView가 shouldOverrideUrlLoading으로 외부 앱 처리 가능하면 앱 실행
-      // → 처리 못하면 웹 URL로 자동 폴백
-      const a = document.createElement('a');
-      a.href = appUrl;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      // Android 환경: 앱 스킴 시도 → 앱이 열리면 WebView는 그대로 유지
+      // visibilitychange로 앱 전환 감지 → 앱이 열렸으면 webUrl fallback 하지 않음
+      let appOpened = false;
 
-      // 500ms 후에도 페이지가 그대로면 웹 URL 열기 (앱 미설치 폴백)
+      const onVisibilityChange = () => {
+        if (document.hidden) appOpened = true; // 앱 전환됨 → 지도 앱 실행 성공
+      };
+      document.addEventListener('visibilitychange', onVisibilityChange);
+
+      // iframe으로 앱 스킴 호출 (WebView 히스토리 오염 방지)
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = appUrl;
+      document.body.appendChild(iframe);
+      setTimeout(() => document.body.removeChild(iframe), 1000);
+
+      // 1500ms 후 앱이 열리지 않았으면(미설치) 웹 URL로 폴백
       setTimeout(() => {
-        try { window.open(webUrl, '_blank'); } catch(e) {}
-      }, 500);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        if (!appOpened) {
+          // 앱이 열리지 않은 경우에만 웹 URL을 외부 브라우저로 열기
+          const a = document.createElement('a');
+          a.href = webUrl;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      }, 1500);
       return;
     }
 

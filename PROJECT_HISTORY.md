@@ -3,7 +3,7 @@
 > 최종 업데이트: 2026-06-11 (세션 14 — 완료)
 > **앱 현재 버전: v1.3.1** ← 최신 (✅ NAS 서버 배포 완료 — 2026-06-11)
 > NAS 배포 버전: v1.3.1 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
-> **다음 작업**: 작업상태변경 알림 테스트 → NAS 크론잡 설정 → patchSchema safety_* 자동시드
+> **다음 작업**: 보류 중 — 향후 계획 항목 참고
 
 ## 💾 NAS 백업 기록
 
@@ -1296,7 +1296,14 @@ INSERT OR IGNORE INTO legal_notices (notice_key, title, law_ref, content, is_act
 - **TBM 앱 서명요청 버튼 근로자 허용** — `!_tbmIsWorker` 조건 제거, 전 역할 사용 가능 (`560f5ff`)
 - NAS git pull + pm2 restart 적용 완료 ✅
 
-### 미완료 (다음 세션 인계)
-- [ ] 작업상태변경 알림 최종 동작 확인
-- [ ] NAS 크론잡 설정 (`nas-auto-deploy.sh` crontab 등록)
-- [ ] `patchSchema`에 `safety_*` 자동시드 추가
+- **TBM 완료 알림** — admin/supervisor에게 SSE + notifications DB 저장 (`95e181d`)
+- **TBM 완료 알림 메시지 개선** — 작업번호(WKS-xxx) 포함 형식으로 수정 (`bbdb0bc`)
+- **작업상태변경 알림 정상 동작 확인** ✅
+- NAS git pull + pm2 restart 적용 완료 ✅
+
+### 미완료 — 보류 (향후 작업 예정)
+- [ ] **NAS 크론잡 설정** — `nas-auto-deploy.sh` crontab 등록 (git pull 자동화)
+- [ ] **`patchSchema` safety_* 자동시드** — DB 초기화 시 안전 기본데이터 자동 삽입
+- [ ] **버전 캐시 자동화** — `app.js?v=날짜` 하드코딩 → 빌드 시 자동 갱신
+- [ ] **TBM 결재 서명 완료 알림** — 모든 결재 서명 완료 시 작업 담당자에게 알림
+- [ ] **사진/파일 첨부 알림** — 작업에 사진/파일 첨부 시 관리자 알림

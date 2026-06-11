@@ -1128,7 +1128,7 @@ app.get('/:id/stops', async (c) => {
   const stops = await c.env.DB.prepare(
     `SELECT ts.*, u.name as reporter_name, u.position as reporter_position
      FROM task_stops ts
-     LEFT JOIN users u ON u.id = ts.reported_by
+     LEFT JOIN users u ON u.id = ts.stopped_by
      WHERE ts.task_id = ?
      ORDER BY ts.stopped_at DESC`
   ).bind(id).all<any>()

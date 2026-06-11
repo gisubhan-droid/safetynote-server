@@ -822,6 +822,27 @@ app.patch('/:id/status', async (c) => {
     }
     // 관리자/감독자에게 브로드캐스트
     broadcastToRoles(['admin', 'supervisor'], ssePayload)
+
+    // ─── 모든 상태변경 → admin/supervisor DB 저장 (배지 카운트 유지용)
+    try {
+      const notifTitle = `작업 상태 변경: ${sLabel}`
+      const notifMsg   = ssePayload.message
+      const adminUsers = await c.env.DB.prepare(
+        `SELECT id FROM users WHERE role IN ('admin','supervisor') AND is_active=1`
+      ).all<any>()
+      if (adminUsers.results?.length > 0) {
+        const insertStmt = c.env.DB.prepare(
+          `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+           VALUES (?, 'task_status_change', ?, ?, ?, 'task', 0)`
+        )
+        await c.env.DB.batch(
+          adminUsers.results
+            .filter((u: any) => u.id !== user.id)
+            .map((u: any) => insertStmt.bind(u.id, notifTitle, notifMsg, Number(id)))
+        )
+      }
+    } catch(_) {}
+
     // 배정된 작업자들에게 개별 알림
     if (taskRow?.worker_ids) {
       const wids = String(taskRow.worker_ids).split(',').map(Number).filter(Boolean)

@@ -1159,3 +1159,107 @@ pm2 restart safetynote --update-env
 | `webapp-deploy/.../routes/legal-notices.ts` | 신규 생성 (getUser 패턴) |
 | `webapp-deploy/.../src/index.tsx` | legalNoticeRoutes 등록 |
 | `webapp-deploy/.../migrations/0051_legal_notices_seed.sql` | 10건 시드 데이터 |
+
+---
+
+## 🗓️ 세션 12 — 2026-06-11 법령안내 복구 확인 + 추가/삭제 기능 구현
+
+### ✅ [1] 법령안내 페이지 데이터 복구 과정 (세션12 인수 후)
+
+**증상**: 법령안내 관리 페이지에 데이터가 표시되지 않음 ("기존과 동일")
+
+**진단 과정**:
+1. DB 확인: `sqlite3 /volume1/safetynote/data/safety.db "SELECT notice_key, title FROM legal_notices LIMIT 5;"`
+   - `edu_*` 5건만 존재, `safety_*` 5건 **누락** 확인
+   - 0051 migration이 부분 적용됨 (edu 시드는 `patchSchema`에서 자동 삽입, safety 시드는 migration만 존재)
+
+2. API 테스트 (토큰 없어서 실패 → 로그인으로 토큰 획득):
+   - `users` 테이블에 `token` 컬럼 없음 확인 → 토큰은 로그인 시 즉석 base64 생성 방식
+   - `curl -s -k https://localhost:3443/api/auth/login`으로 토큰 획득 후 API 호출
+   - API 응답: 총 10건 정상 반환 확인 (DB 삽입 후)
+
+3. NAS 서버 구조 재확인:
+   - `node-server.ts`가 실제 NAS 엔트리 포인트 (Cloudflare Workers용 `src/index.tsx`와 별개)
+   - `node-server.ts`에 `/api/legal-notices` 라우트 이미 직접 구현되어 있었음
+
+**해결**: NAS DB에 `safety_*` 5건 직접 삽입 (INSERT OR IGNORE)
+```sql
+INSERT OR IGNORE INTO legal_notices (notice_key, title, law_ref, content, is_active) VALUES
+  ('safety_general', '산업안전보건법 주요 의무사항', ...),
+  ('safety_ppe', '개인보호구 지급 및 착용 의무', ...),
+  ('safety_stop', '중대재해 발생 시 작업중지 의무', ...),
+  ('safety_hazard', '위험성 평가 실시 의무', ...),
+  ('safety_tbm', 'TBM(작업 전 안전점검) 실시', ...);
+```
+→ `SELECT COUNT(*) FROM legal_notices WHERE is_active = 1` = **10건 확인** ✅
+
+**교훈**:
+- NAS는 `node-server.ts` (Node.js SQLite) / Cloudflare는 `src/index.tsx` (D1) — 서버가 분리됨
+- `patchSchema` 자동시드는 `edu_*`만 처리, `safety_*`는 별도 migration 필요
+- `safety_*`는 향후 `patchSchema`에 자동시드 추가 권장
+
+### ✅ [2] 법령안내 추가/삭제 기능 구현 (세션12)
+
+**구현 내용**:
+- **추가 기능** (admin 전용): 헤더 우측 "새 법령안내 추가" 버튼 → 모달 폼 (키/제목/법령근거/내용 입력)
+- **삭제 기능** (admin 전용): 각 카드 우측 휴지통 버튼 → 확인 다이얼로그 → 소프트 삭제(`is_active=0`)
+- `node-server.ts`에 `POST /api/legal-notices` + `DELETE /api/legal-notices/:key` 라우트 추가
+
+**파일**:
+- `public/static/app.js` — 추가/삭제 UI + 모달 함수 (`_addLegalNotice`, `_submitAddLegalNotice`, `_deleteLegalNotice`)
+- `node-server.ts` — POST(신규추가, 중복키 409), DELETE(소프트삭제, admin전용) 라우트
+
+**GitHub commit**: `a8f9ae94` (app.js), `120ea589` (node-server.ts)
+
+---
+
+### 🐛 [3] 삭제 버그 1차 — GET `is_active=1` 필터 누락
+
+**증상**: 삭제 성공 메시지는 나오지만 화면에서 항목이 사라지지 않음. 재삭제 시 "존재하지 않는 법령안내" 에러.
+
+**원인**: `GET /api/legal-notices` 쿼리에 `WHERE is_active = 1` 필터 누락
+- DB에서는 `is_active=0`으로 정상 소프트삭제됨
+- 목록 조회 시 전체 반환 → 삭제된 항목도 화면에 표시
+
+**수정**: `node-server.ts` GET 쿼리에 `WHERE ln.is_active = 1` 추가
+
+**GitHub commit**: `917ea4f3` (node-server.ts)
+
+---
+
+### 🐛 [4] 삭제 버그 2차 — 삭제 후 화면 미갱신
+
+**증상**: 필터 수정 후에도 삭제 메시지는 나오지만 목록이 갱신되지 않음.
+
+**원인**: 삭제 성공 후 `navigateTo('legal-notices')` 호출 시 `currentPage`가 이미 `'legal-notices'`인 상태에서 DOM 재렌더링이 타이밍 문제로 이전 화면 유지
+
+**수정**:
+- `navigateTo('legal-notices')` → `renderLegalNoticesPage(content)` 직접 호출로 변경
+- 삭제 버튼: `onclick` 인라인 → `addEventListener` + `data-key` 방식 (안전성 강화)
+- 삭제 중 버튼 비활성화 + 스피너 표시 (중복 클릭 방지)
+- 추가 성공 후도 동일하게 `renderLegalNoticesPage` 직접 호출 적용
+
+**GitHub commit**: `81e119a9` (app.js)
+
+---
+
+### 세션 12 파일 수정 요약
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | 추가/삭제 UI + 버그 수정 2건 |
+| `node-server.ts` | POST/DELETE 라우트 + GET is_active 필터 |
+| `PROJECT_HISTORY.md` | 세션12 전체 이력 기록 |
+
+---
+
+## 🗓️ 세션 13 — 2026-06-11
+
+### 완료
+- PROJECT_HISTORY.md 기록 방식 개선: 상세 전문 → **핵심 요약** 방식으로 변경
+
+### 미완료 (다음 세션 인계)
+- [ ] PROJECT_HISTORY.md GitHub 배포 (Contents API PUT)
+- [ ] NAS `git pull` + `pm2 restart` — 버그 수정본 적용
+- [ ] 1단계 알림 Android 테스트
+- [ ] NAS 크론잡 설정 (`nas-auto-deploy.sh`)
+- [ ] `patchSchema`에 `safety_*` 자동시드 추가

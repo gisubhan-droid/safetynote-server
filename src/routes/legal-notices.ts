@@ -1,20 +1,14 @@
 import { Hono } from 'hono'
-import { jwt } from 'hono/jwt'
+import { getUser } from '../utils'
 
-type Bindings = { DB: D1Database }
-type Variables = { jwtPayload: { id: number; role: string; name: string } }
-
-const router = new Hono<{ Bindings: Bindings; Variables: Variables }>()
-
-// JWT 인증
-router.use('*', (c, next) => {
-  const jwtMiddleware = jwt({ secret: c.env.SESSION_SECRET || 'safetynote-secret' })
-  return jwtMiddleware(c, next)
-})
+const app = new Hono<{ Bindings: CloudflareBindings }>()
 
 // ─── GET /api/legal-notices ─────────────────────────────────────────────────
 // 모든 법령안내 목록 반환
-router.get('/', async (c) => {
+app.get('/', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
   try {
     const { results } = await c.env.DB.prepare(`
       SELECT
@@ -33,7 +27,10 @@ router.get('/', async (c) => {
 
 // ─── GET /api/legal-notices/:key ────────────────────────────────────────────
 // 개별 법령안내 조회
-router.get('/:key', async (c) => {
+app.get('/:key', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
   const key = c.req.param('key')
   try {
     const row = await c.env.DB.prepare(`
@@ -57,9 +54,10 @@ router.get('/:key', async (c) => {
 
 // ─── PUT /api/legal-notices/:key ────────────────────────────────────────────
 // 법령안내 생성 또는 수정 (admin/supervisor 전용)
-router.put('/:key', async (c) => {
-  const payload = c.get('jwtPayload')
-  if (!payload || (payload.role !== 'admin' && payload.role !== 'supervisor')) {
+app.put('/:key', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin' && user.role !== 'supervisor') {
     return c.json({ error: '관리자·감독자만 수정할 수 있습니다.' }, 403)
   }
 
@@ -67,7 +65,6 @@ router.put('/:key', async (c) => {
   const { title, law_ref, content } = await c.req.json()
 
   try {
-    // UPSERT: 있으면 UPDATE, 없으면 INSERT
     await c.env.DB.prepare(`
       INSERT INTO legal_notices (notice_key, title, law_ref, content, updated_by, updated_at)
       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -77,7 +74,7 @@ router.put('/:key', async (c) => {
         content    = excluded.content,
         updated_by = excluded.updated_by,
         updated_at = CURRENT_TIMESTAMP
-    `).bind(key, title || '', law_ref || '', content || '', payload.id).run()
+    `).bind(key, title || '', law_ref || '', content || '', user.id).run()
 
     const updated = await c.env.DB.prepare(
       `SELECT * FROM legal_notices WHERE notice_key = ?`
@@ -90,11 +87,13 @@ router.put('/:key', async (c) => {
 })
 
 // ─── DELETE /api/legal-notices/:key (소프트 삭제) ───────────────────────────
-router.delete('/:key', async (c) => {
-  const payload = c.get('jwtPayload')
-  if (!payload || payload.role !== 'admin') {
+app.delete('/:key', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') {
     return c.json({ error: '관리자만 삭제할 수 있습니다.' }, 403)
   }
+
   const key = c.req.param('key')
   try {
     await c.env.DB.prepare(
@@ -106,4 +105,4 @@ router.delete('/:key', async (c) => {
   }
 })
 
-export default router
+export default app

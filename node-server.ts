@@ -2283,40 +2283,56 @@ app.patch('/api/admin/settings', async (c) => {
   return c.json({ success: true, effectiveUploadRoot: getUploadRoot() })
 })
 
-// GET /api/admin/folders - 현재 업로드 폴더 구조 조회
+// GET /api/admin/folders - 저장 폴더 용량 및 파일 종류별 집계 조회
 app.get('/api/admin/folders', async (c) => {
   const user = getUser(c)
   if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
   const root = getUploadRoot()
-  const result: any[] = []
-  try {
-    if (!existsSync(root)) return c.json({ root, folders: [] })
-    const topDirs = readdirSync(root, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-    for (const d of topDirs) {
-      const subPath = join(root, d.name)
-      let fileCount = 0
-      const subDirs: any[] = []
-      try {
-        const subEntries = readdirSync(subPath, { withFileTypes: true })
-        for (const s of subEntries) {
-          if (s.isDirectory()) {
-            const sPath = join(subPath, s.name)
-            const sFiles = readdirSync(sPath).filter(f => !f.startsWith('.')).length
-            fileCount += sFiles
-            subDirs.push({ name: s.name, fileCount: sFiles })
-          } else {
-            fileCount++
-          }
+
+  const IMG_EXT  = new Set(['jpg','jpeg','png','gif','webp','heic','bmp','tiff','svg'])
+  const DOC_EXT  = new Set(['pdf','doc','docx','xls','xlsx','ppt','pptx','hwp','hwpx','txt','csv'])
+  const VID_EXT  = new Set(['mp4','avi','mov','mkv','wmv','flv'])
+
+  let totalBytes = 0
+  let imgCount   = 0
+  let docCount   = 0
+  let vidCount   = 0
+  let etcCount   = 0
+
+  // 재귀적으로 파일 집계
+  function scanDir(dirPath: string) {
+    try {
+      const entries = readdirSync(dirPath, { withFileTypes: true })
+      for (const e of entries) {
+        if (e.name.startsWith('.')) continue
+        const fullPath = join(dirPath, e.name)
+        if (e.isDirectory()) {
+          scanDir(fullPath)
+        } else {
+          try {
+            const st = statSync(fullPath)
+            totalBytes += st.size
+            const ext = e.name.split('.').pop()?.toLowerCase() || ''
+            if (IMG_EXT.has(ext))      imgCount++
+            else if (DOC_EXT.has(ext)) docCount++
+            else if (VID_EXT.has(ext)) vidCount++
+            else                        etcCount++
+          } catch (_) {}
         }
-      } catch (_) {}
-      result.push({ name: d.name, path: subPath, fileCount, subDirs })
+      }
+    } catch (_) {}
+  }
+
+  try {
+    if (!existsSync(root)) {
+      return c.json({ root, totalBytes: 0, imgCount: 0, docCount: 0, vidCount: 0, etcCount: 0 })
     }
+    scanDir(root)
   } catch (e) {
     return c.json({ error: '폴더 읽기 실패', detail: String(e) }, 500)
   }
-  return c.json({ root, folders: result })
+
+  return c.json({ root, totalBytes, imgCount, docCount, vidCount, etcCount })
 })
 
 

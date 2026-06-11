@@ -13621,10 +13621,10 @@ async function renderAdminSettingsPage(container) {
   try {
     const [settRes, folderRes] = await Promise.all([
       API.get('/admin/settings'),
-      API.get('/admin/folders').catch(() => ({ data: { root: '-', folders: [] } }))
+      API.get('/admin/folders').catch(() => ({ data: { root: '-', totalBytes: 0, imgCount: 0, docCount: 0, vidCount: 0, etcCount: 0 } }))
     ]);
     const { settings, effectiveUploadRoot } = settRes.data;
-    const { root: folderRoot, folders } = folderRes.data;
+    const { root: folderRoot, totalBytes = 0, imgCount = 0, docCount = 0, vidCount = 0, etcCount = 0 } = folderRes.data;
 
     // 설정값 맵
     const sv = {};
@@ -13851,35 +13851,76 @@ async function renderAdminSettingsPage(container) {
         </div>
       </div>
 
-      <!-- 폴더 현황 -->
+      <!-- 폴더 현황 — 요약 카드 -->
       <div class="bg-white rounded-2xl shadow-sm p-5">
         <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
           <i class="fas fa-folder-tree text-yellow-500"></i> 저장 폴더 현황
         </h3>
-        <p class="text-xs text-gray-400 mb-3">루트: <code class="bg-gray-100 px-1 rounded">${folderRoot}</code></p>
-        ${folders.length === 0
-          ? '<p class="text-sm text-gray-400">저장된 폴더가 없습니다.</p>'
-          : `<div class="space-y-2">
-              ${folders.map(f => `
-                <div class="border rounded-xl p-3">
-                  <div class="flex items-center gap-2 mb-1">
-                    <i class="fas fa-folder text-yellow-400"></i>
-                    <span class="font-medium text-sm truncate">${f.name}</span>
-                    <span class="ml-auto text-xs text-gray-400">${f.fileCount}개 파일</span>
-                  </div>
-                  ${f.subDirs.length > 0 ? `
-                    <div class="pl-5 space-y-1">
-                      ${f.subDirs.map(s => `
-                        <div class="flex items-center gap-2 text-xs text-gray-500">
-                          <i class="fas fa-folder-open text-yellow-300"></i>
-                          <span>${s.name}</span>
-                          <span class="text-gray-400">${s.fileCount}개</span>
-                        </div>`).join('')}
-                    </div>` : ''}
-                </div>`).join('')}
-            </div>`
-        }
-        <button onclick="renderAdminSettingsPage(document.getElementById('page-content'))" class="btn btn-outline btn-sm mt-3">
+        <p class="text-xs text-gray-400 mb-4">루트: <code class="bg-gray-100 px-1 rounded">${folderRoot}</code></p>
+
+        <!-- 총 저장용량 -->
+        <div class="flex items-center gap-3 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-4 mb-4">
+          <div class="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-hdd text-white text-lg"></i>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500 mb-0.5">총 저장 용량</div>
+            <div class="text-2xl font-bold text-gray-800">${_formatBytes(totalBytes)}</div>
+          </div>
+          <div class="ml-auto text-right">
+            <div class="text-xs text-gray-400">전체 파일</div>
+            <div class="text-lg font-semibold text-gray-600">${(imgCount + docCount + vidCount + etcCount).toLocaleString()}개</div>
+          </div>
+        </div>
+
+        <!-- 종류별 파일 수량 카드 -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex items-center gap-3 bg-green-50 border border-green-100 rounded-xl p-3">
+            <div class="w-9 h-9 rounded-lg bg-green-400 flex items-center justify-center flex-shrink-0">
+              <i class="fas fa-image text-white"></i>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500">이미지</div>
+              <div class="text-xl font-bold text-green-700">${imgCount.toLocaleString()}<span class="text-xs font-normal text-gray-400 ml-1">개</span></div>
+              <div class="text-xs text-gray-400">jpg · png · gif · webp 등</div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl p-3">
+            <div class="w-9 h-9 rounded-lg bg-blue-400 flex items-center justify-center flex-shrink-0">
+              <i class="fas fa-file-alt text-white"></i>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500">문서</div>
+              <div class="text-xl font-bold text-blue-700">${docCount.toLocaleString()}<span class="text-xs font-normal text-gray-400 ml-1">개</span></div>
+              <div class="text-xs text-gray-400">pdf · doc · xls · hwp 등</div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 bg-purple-50 border border-purple-100 rounded-xl p-3">
+            <div class="w-9 h-9 rounded-lg bg-purple-400 flex items-center justify-center flex-shrink-0">
+              <i class="fas fa-film text-white"></i>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500">동영상</div>
+              <div class="text-xl font-bold text-purple-700">${vidCount.toLocaleString()}<span class="text-xs font-normal text-gray-400 ml-1">개</span></div>
+              <div class="text-xs text-gray-400">mp4 · avi · mov 등</div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl p-3">
+            <div class="w-9 h-9 rounded-lg bg-gray-400 flex items-center justify-center flex-shrink-0">
+              <i class="fas fa-file text-white"></i>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500">기타</div>
+              <div class="text-xl font-bold text-gray-600">${etcCount.toLocaleString()}<span class="text-xs font-normal text-gray-400 ml-1">개</span></div>
+              <div class="text-xs text-gray-400">그 외 파일</div>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="renderAdminSettingsPage(document.getElementById('page-content'))" class="btn btn-outline btn-sm mt-4">
           <i class="fas fa-sync"></i> 새로고침
         </button>
       </div>
@@ -13891,6 +13932,15 @@ async function renderAdminSettingsPage(container) {
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
+}
+
+/** 바이트를 읽기 쉬운 용량 문자열로 변환 (KB/MB/GB) */
+function _formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const val = bytes / Math.pow(1024, i);
+  return val.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
 }
 
 /** 확장자 컬러 뱃지 HTML 생성 헬퍼 */

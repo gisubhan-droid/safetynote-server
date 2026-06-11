@@ -1256,10 +1256,11 @@ INSERT OR IGNORE INTO legal_notices (notice_key, title, law_ref, content, is_act
 
 ### 완료
 - PROJECT_HISTORY.md 기록 방식 개선: 상세 전문 → **핵심 요약** 방식으로 변경
+- 지도앱 복귀 후 WebView 멈춤 버그 수정 — `window.open(_system)` 방식으로 변경
+- 위험성 체크리스트 500 에러 수정 — `checklist_assessments` FK가 `tasks_old` 참조 → `tasks`로 수정 (sqlite3 직접 실행)
+- NAS git pull + pm2 restart 적용 완료
 
 ### 미완료 (다음 세션 인계)
-- [ ] PROJECT_HISTORY.md GitHub 배포 (Contents API PUT)
-- [ ] NAS `git pull` + `pm2 restart` — 버그 수정본 적용
 - [ ] 1단계 알림 Android 테스트
 - [ ] NAS 크론잡 설정 (`nas-auto-deploy.sh`)
 - [ ] `patchSchema`에 `safety_*` 자동시드 추가

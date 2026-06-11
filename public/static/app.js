@@ -13354,6 +13354,11 @@ async function renderLegalNoticesPage(container) {
           <h2 style="font-size:16px;font-weight:700;color:#1F2937;margin:0"><i class="fas fa-balance-scale" style="margin-right:6px;color:#B45309"></i>법령안내 관리</h2>
           <p style="font-size:11px;color:#9CA3AF;margin:3px 0 0">법령 안내 내용과 안전교육 법령기준을 관리합니다.</p>
         </div>
+        ${currentUser.role === 'admin' ? `
+        <button onclick="_addLegalNotice()"
+          style="padding:8px 14px;background:#B45309;color:white;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">
+          <i class="fas fa-plus"></i>새 법령안내 추가
+        </button>` : ''}
       </div>
 
       <!-- 탭 -->
@@ -13382,10 +13387,17 @@ async function renderLegalNoticesPage(container) {
                 <div style="font-size:10px;color:#B45309;margin-bottom:4px"><i class="fas fa-book" style="margin-right:3px"></i>${n.law_ref||'-'}</div>
                 <div style="font-size:11px;color:#6B7280;white-space:pre-wrap;max-height:80px;overflow:hidden">${(n.content||'-').slice(0,200)}${(n.content||'').length>200?'…':''}</div>
               </div>
-              <button onclick="_editLegalNotice('${n.notice_key}')"
-                style="padding:6px 12px;background:#FEF3C7;color:#92400E;border:1.5px solid #FDE68A;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0">
-                <i class="fas fa-edit" style="margin-right:3px"></i>편집
-              </button>
+              <div style="display:flex;gap:6px;flex-shrink:0">
+                <button onclick="_editLegalNotice('${n.notice_key}')"
+                  style="padding:6px 12px;background:#FEF3C7;color:#92400E;border:1.5px solid #FDE68A;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
+                  <i class="fas fa-edit" style="margin-right:3px"></i>편집
+                </button>
+                ${currentUser.role === 'admin' ? `
+                <button onclick="_deleteLegalNotice('${n.notice_key}', '${(n.title||'').replace(/'/g,"\\'")}')"
+                  style="padding:6px 10px;background:#FEE2E2;color:#B91C1C;border:1.5px solid #FECACA;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">
+                  <i class="fas fa-trash"></i>
+                </button>` : ''}
+              </div>
             </div>
             ${n.updated_by_name ? `<div style="font-size:10px;color:#9CA3AF;margin-top:6px;border-top:1px solid #F3F4F6;padding-top:5px">최종수정: ${n.updated_by_name} · ${(n.updated_at||'').slice(0,16).replace('T',' ')}</div>` : ''}
           </div>`).join('')}
@@ -13441,6 +13453,116 @@ async function renderLegalNoticesPage(container) {
     </div>`;
   } catch(e) {
     container.innerHTML = '<div class="text-center p-8 text-red-400"><i class="fas fa-exclamation-circle text-4xl mb-3"></i><p>로딩 실패: ' + e.message + '</p></div>';
+  }
+}
+
+// 법령안내 신규 추가 모달
+async function _addLegalNotice() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = `
+  <div style="background:white;border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+    <div style="padding:18px 20px;border-bottom:1px solid #F3F4F6;display:flex;align-items:center;justify-content:space-between">
+      <h3 style="font-size:15px;font-weight:700;margin:0;color:#1F2937"><i class="fas fa-plus-circle" style="margin-right:7px;color:#B45309"></i>새 법령안내 추가</h3>
+      <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#9CA3AF">✕</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+      <div>
+        <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">키(notice_key) <span style="color:#DC2626">*</span></label>
+        <input id="ln-new-key" placeholder="예: safety_new (영문+언더바)" maxlength="50"
+          style="width:100%;padding:9px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:13px;box-sizing:border-box"
+          oninput="this.value=this.value.replace(/[^a-zA-Z0-9_]/g,'')">
+        <p style="font-size:10px;color:#9CA3AF;margin:3px 0 0">영문, 숫자, 언더바(_)만 사용. 중복 불가.</p>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">제목 <span style="color:#DC2626">*</span></label>
+        <input id="ln-new-title" placeholder="예: 안전관리자 선임 의무"
+          style="width:100%;padding:9px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">법령 근거</label>
+        <input id="ln-new-lawref" placeholder="예: 산업안전보건법 제17조"
+          style="width:100%;padding:9px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">내용 <span style="color:#DC2626">*</span></label>
+        <textarea id="ln-new-content" rows="5" placeholder="법령 안내 내용을 입력하세요."
+          style="width:100%;padding:9px 12px;border:1.5px solid #D1D5DB;border-radius:8px;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>
+      </div>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid #F3F4F6;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('.modal-overlay').remove()"
+        style="padding:9px 18px;background:#F3F4F6;color:#374151;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">취소</button>
+      <button onclick="_submitAddLegalNotice()"
+        style="padding:9px 18px;background:#B45309;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
+        <i class="fas fa-save" style="margin-right:5px"></i>저장
+      </button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('ln-new-key')?.focus();
+}
+
+async function _submitAddLegalNotice() {
+  const key     = (document.getElementById('ln-new-key')?.value || '').trim();
+  const title   = (document.getElementById('ln-new-title')?.value || '').trim();
+  const lawRef  = (document.getElementById('ln-new-lawref')?.value || '').trim();
+  const content = (document.getElementById('ln-new-content')?.value || '').trim();
+
+  if (!key)     { toast('키(notice_key)를 입력하세요.', 'error'); return; }
+  if (!title)   { toast('제목을 입력하세요.', 'error'); return; }
+  if (!content) { toast('내용을 입력하세요.', 'error'); return; }
+  if (!/^[a-zA-Z0-9_]+$/.test(key)) { toast('키는 영문, 숫자, 언더바(_)만 가능합니다.', 'error'); return; }
+
+  try {
+    await API.post('/legal-notices', { notice_key: key, title, law_ref: lawRef, content });
+    document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+    toast('법령안내가 추가되었습니다.', 'success');
+    navigateTo('legal-notices');
+  } catch(e) {
+    const msg = e.response?.data?.error || e.message;
+    toast('저장 실패: ' + msg, 'error');
+  }
+}
+
+// 법령안내 삭제
+async function _deleteLegalNotice(key, title) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = `
+  <div style="background:white;border-radius:16px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+    <div style="padding:24px 20px 20px;text-align:center">
+      <div style="width:52px;height:52px;background:#FEE2E2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+        <i class="fas fa-trash" style="color:#DC2626;font-size:20px"></i>
+      </div>
+      <h3 style="font-size:15px;font-weight:700;color:#1F2937;margin:0 0 8px">법령안내 삭제</h3>
+      <p style="font-size:13px;color:#6B7280;margin:0 0 4px">아래 항목을 삭제하시겠습니까?</p>
+      <p style="font-size:13px;font-weight:700;color:#B91C1C;margin:0">${title}</p>
+      <p style="font-size:11px;color:#9CA3AF;margin:6px 0 0">삭제 후에는 복구할 수 없습니다.</p>
+    </div>
+    <div style="padding:0 20px 20px;display:flex;gap:8px">
+      <button onclick="this.closest('.modal-overlay').remove()"
+        style="flex:1;padding:10px;background:#F3F4F6;color:#374151;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">취소</button>
+      <button onclick="_confirmDeleteLegalNotice('${key.replace(/'/g, "\\'")}')"
+        style="flex:1;padding:10px;background:#DC2626;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
+        <i class="fas fa-trash" style="margin-right:5px"></i>삭제
+      </button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function _confirmDeleteLegalNotice(key) {
+  try {
+    await API.delete('/legal-notices/' + key);
+    document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+    toast('법령안내가 삭제되었습니다.', 'success');
+    navigateTo('legal-notices');
+  } catch(e) {
+    const msg = e.response?.data?.error || e.message;
+    toast('삭제 실패: ' + msg, 'error');
   }
 }
 

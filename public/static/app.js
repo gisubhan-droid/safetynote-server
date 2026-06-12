@@ -24187,17 +24187,73 @@ async function renderWorkReportForm(container, taskId) {
     const detailType  = report?.detail_type || '';
 
     // 메인 그리드 행 (최소 5행)
-    const lineRows = lines.length > 0 ? lines : Array(5).fill(null).map(() => ({}));
+    const lineRows  = lines.length  > 0 ? lines  : Array(5).fill(null).map(() => ({}));
     // 케이블 행 (최소 5행)
     const cableRows = cables.length > 0 ? cables : Array(5).fill(null).map(() => ({}));
 
+    // ── 옵션 목록 ─────────────────────────────────────────────────────────
     const DIV_OPTS  = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
-    const IP_OPTS   = ['','신설','철거'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
+    // IP주: A/B/C 선택 (기본값 미선택)
+    const IP_OPTS   = ['','A','B','C'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
     const GND_OPTS  = ['','B','A'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
-    const TYPE_OPTS = ['','A','CDA','CD','F'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
-    const KIND_OPTS = ['','가공','일반','지중(관로)','난연'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
+    // 케이블 규격(C): 1C/2C/12C/36C/72C/144C/288C 드롭다운
+    const SPEC_OPTS = ['','1C','2C','12C','36C','72C','144C','288C'].map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
+    // 제작년도: 현재년도 ~ 1990년 드롭다운
+    const THIS_YEAR = new Date().getFullYear();
+    const YEAR_OPTS = [''].concat(Array.from({length: THIS_YEAR - 1989}, (_,i) => String(THIS_YEAR - i)))
+                         .map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
+    // 케이블종류 (체크박스 대신 가독성 위해 드롭다운 유지 — 화면에서 체크박스 그룹으로 표현)
+    const KIND_LIST = ['가공','일반','지중(관로)','난연'];
     const CODE_OPTS = ['','AOFC','CDAOFC','CDOFC','FOFC'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
     const WDIV_OPTS = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
+
+    // 행 생성 헬퍼 (작업내역)
+    const mkLine = (l, i) => `
+    <tr class="hover:bg-gray-50">
+      <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-work-div">${DIV_OPTS.replace(`"${l.work_div||''}"`,`"${l.work_div||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${l.mgmt_zone||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-mgmt-zone" placeholder="관리구"></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${l.mgmt_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-mgmt-no" placeholder="번호"></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${l.line_name||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-line-name" placeholder="간선명"></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${l.line_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-line-no" placeholder="번호"></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${l.digital_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-digital-no" placeholder="전산화번호"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" value="${l.section_dist||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wr-section-dist" placeholder="0" step="0.1"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" value="${l.pole_count||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wr-pole-count" placeholder="0"></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-ip-pole">${IP_OPTS.replace(`"${l.ip_pole||''}"`,`"${l.ip_pole||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-bind-wire w-4 h-4" ${l.bind_wire?'checked':''}></td>
+      <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-hanger w-4 h-4" ${l.hanger?'checked':''}></td>
+      <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-hardware w-4 h-4" ${l.hardware?'checked':''}></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${l.cabinet||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-cabinet" placeholder="함체"></td>
+      <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-name-tag w-4 h-4" ${l.name_tag?'checked':''}></td>
+      <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-warning-sign w-4 h-4" ${l.warning_sign?'checked':''}></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-grounding">${GND_OPTS.replace(`"${l.grounding||''}"`,`"${l.grounding||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${l.remark||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-remark" placeholder="비고"></td>
+      <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
+    </tr>`;
+
+    // 케이블종류 체크박스 그룹 생성
+    const mkKindChk = (saved) => KIND_LIST.map(k =>
+      `<label class="flex items-center gap-0.5 whitespace-nowrap text-xs cursor-pointer">
+        <input type="checkbox" class="wrc-cable-kind-chk w-3.5 h-3.5" value="${k}" ${saved===k?'checked':''}>${k}
+       </label>`).join('');
+
+    // 행 생성 헬퍼 (광케이블)
+    const mkCable = (cb, i) => `
+    <tr class="hover:bg-gray-50">
+      <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.lot_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS.replace(`"${cb.spec||''}"`,`"${cb.spec||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.maker||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS.replace(`"${cb.mfg_year||''}"`,`"${cb.mfg_year||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><div class="flex flex-col gap-0.5 p-1">${mkKindChk(cb.cable_kind||'')}</div></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-work-div">${WDIV_OPTS.replace(`"${cb.work_div||''}"`,`"${cb.work_div||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.start_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작점(M)" oninput="_calcUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.end_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단점(M)" oninput="_calcUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.usage_m||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-cable-code">${CODE_OPTS.replace(`"${cb.cable_code||''}"`,`"${cb.cable_code||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.special_note||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-special-note" placeholder="특이사항"></td>
+      <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
+    </tr>`;
 
     container.innerHTML = `
     <div class="max-w-5xl mx-auto p-3 space-y-4" id="wr-form-wrap">
@@ -24220,7 +24276,7 @@ async function renderWorkReportForm(container, taskId) {
             <div class="bg-gray-50 rounded-lg px-3 py-2 text-gray-700 font-medium">${constrType}</div>
           </div>
           <div>
-            <label class="text-xs text-gray-400 block mb-1">상세구분 <span class="text-red-400">*</span></label>
+            <label class="text-xs text-gray-400 block mb-1">상세구분 <span class="text-xs text-gray-400">(선택)</span></label>
             <input id="wr-detail-type" type="text" value="${detailType}"
                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-pink-400"
                    placeholder="상세구분 입력">
@@ -24248,7 +24304,7 @@ async function renderWorkReportForm(container, taskId) {
         </div>
       </div>
 
-      <!-- 메인 그리드 -->
+      <!-- 작업 내역 그리드 -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100">
         <div class="flex items-center justify-between px-4 pt-4 pb-2">
           <span class="font-semibold text-gray-700 text-sm"><i class="fas fa-table text-pink-400 mr-1"></i>작업 내역</span>
@@ -24257,106 +24313,66 @@ async function renderWorkReportForm(container, taskId) {
           </button>
         </div>
         <div class="overflow-x-auto pb-2">
-          <table class="w-full text-xs border-collapse" id="wr-line-table" style="min-width:900px">
+          <table class="w-full text-xs border-collapse" id="wr-line-table" style="min-width:980px">
             <thead>
-              <tr class="bg-gray-50 text-gray-500">
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-8">No</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-14">구분</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-12">관리구</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-16">관리번호</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-20">간선명</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-16">간선번호</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-20">전산화번호</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-14">구간거리</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-10">장주</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-14">IP주</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-14">바인드</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-14">행거</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-12">금구류</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-12">함체</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-8">명찰</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-8">주의판</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-14">접지</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center">기타공정</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center">비고</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-8"></th>
+              <tr class="bg-gray-50 text-gray-500 text-center">
+                <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-14">구분</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-12">관리구</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-16">관리번호</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-20">간선명</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-16">간선번호</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-20">전산화번호</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-14">구간거리</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-10">장주</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-12">IP주<br><span class="text-gray-400 font-normal">(A/B/C)</span></th>
+                <th class="border border-gray-200 px-1 py-1.5 w-10">바인드</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-10">행거</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-10">금구류</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-14">함체</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-8">명찰</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-10">주의판</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-12">접지</th>
+                <th class="border border-gray-200 px-1 py-1.5">비고</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
               </tr>
             </thead>
             <tbody id="wr-line-tbody">
-              ${lineRows.map((l,i)=>`
-              <tr class="hover:bg-gray-50">
-                <td class="border border-gray-200 px-1 py-1 text-center text-gray-400">${i+1}</td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-work-div">${DIV_OPTS.replace(`"${l.work_div||''}"`,`"${l.work_div||''}" selected`)}</select></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${l.mgmt_zone||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-mgmt-zone" placeholder="관리구"></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${l.mgmt_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-mgmt-no" placeholder="번호"></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${l.line_name||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-line-name" placeholder="간선명"></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${l.line_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-line-no" placeholder="번호"></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${l.digital_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-digital-no" placeholder="전산화번호"></td>
-                <td class="border border-gray-200 p-0.5"><input type="number" value="${l.section_dist||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wr-section-dist" placeholder="0" step="0.1"></td>
-                <td class="border border-gray-200 p-0.5"><input type="number" value="${l.pole_count||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wr-pole-count" placeholder="0"></td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-ip-pole">${IP_OPTS.replace(`"${l.ip_pole||''}"`,`"${l.ip_pole||''}" selected`)}</select></td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-bind-wire">${IP_OPTS.replace(`"${l.bind_wire||''}"`,`"${l.bind_wire||''}" selected`)}</select></td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-hanger">${['','기설','신설'].map(v=>`<option value="${v}" ${v===l.hanger?'selected':''}>${v||'-'}</option>`).join('')}</select></td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-hardware">${['','유','무'].map(v=>`<option value="${v}" ${v===l.hardware?'selected':''}>${v||'-'}</option>`).join('')}</select></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${l.cabinet||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-cabinet" placeholder="함체"></td>
-                <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-name-tag" ${l.name_tag?'checked':''}></td>
-                <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-warning-sign" ${l.warning_sign?'checked':''}></td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-grounding">${GND_OPTS.replace(`"${l.grounding||''}"`,`"${l.grounding||''}" selected`)}</select></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${l.other_work||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-other-work" placeholder="CD관 등"></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${l.remark||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-remark" placeholder="비고"></td>
-                <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
-              </tr>`).join('')}
+              ${lineRows.map((l,i) => mkLine(l, i)).join('')}
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- 광케이블 정보 -->
+      <!-- 광케이블 정보 (작업내역 하단) -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100">
         <div class="flex items-center justify-between px-4 pt-4 pb-2">
-          <span class="font-semibold text-gray-700 text-sm"><i class="fas fa-cable-car text-blue-400 mr-1"></i>광 케이블 정보</span>
+          <span class="font-semibold text-gray-700 text-sm"><i class="fas fa-stream text-blue-400 mr-1"></i>광 케이블 정보</span>
           <button onclick="_wrAddCable()" class="text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-100">
             <i class="fas fa-plus mr-1"></i>행 추가
           </button>
         </div>
         <div class="overflow-x-auto pb-2">
-          <table class="w-full text-xs border-collapse" id="wr-cable-table" style="min-width:880px">
+          <table class="w-full text-xs border-collapse" id="wr-cable-table" style="min-width:960px">
             <thead>
-              <tr class="bg-blue-50 text-gray-500">
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-8">No</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-20">LOT NO.</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-14">규격(C)</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-20">제조사</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-16">제작년도</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-16">구분(A/CDA/CD/F)</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-14">공정구분</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center">시작점</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center">종단점</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-16">사용량(M)</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-16">케이블종류</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-16">구분코드</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center">특이사항</th>
-                <th class="border border-gray-200 px-1 py-1.5 text-center w-8"></th>
+              <tr class="bg-blue-50 text-gray-500 text-center">
+                <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-20">LOT NO.</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-16">규격(C)</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-18">제조사</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-16">제작년도</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-24">케이블종류</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-14">공정구분</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-18">시작점(M)</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-18">종단점(M)</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-16">사용량(M)<br><span class="text-blue-400 font-normal text-xs">자동계산</span></th>
+                <th class="border border-gray-200 px-1 py-1.5 w-16">구분코드</th>
+                <th class="border border-gray-200 px-1 py-1.5">특이사항</th>
+                <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
               </tr>
             </thead>
             <tbody id="wr-cable-tbody">
-              ${cableRows.map((cb,i)=>`
-              <tr class="hover:bg-gray-50">
-                <td class="border border-gray-200 px-1 py-1 text-center text-gray-400">${i+1}</td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.lot_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-                <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.spec||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-spec" placeholder="0" step="0.1"></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.maker||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.mfg_year||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year" placeholder="연도"></td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-cable-type">${TYPE_OPTS.replace(`"${cb.cable_type||''}"`,`"${cb.cable_type||''}" selected`)}</select></td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-work-div">${WDIV_OPTS.replace(`"${cb.work_div||''}"`,`"${cb.work_div||''}" selected`)}</select></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.start_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-start-point" placeholder="시작점(M)"></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.end_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-end-point" placeholder="종단점(M)"></td>
-                <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.usage_m||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m" placeholder="0" step="0.1"></td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-cable-kind">${KIND_OPTS.replace(`"${cb.cable_kind||''}"`,`"${cb.cable_kind||''}" selected`)}</select></td>
-                <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-cable-code">${CODE_OPTS.replace(`"${cb.cable_code||''}"`,`"${cb.cable_code||''}" selected`)}</select></td>
-                <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.special_note||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-special-note" placeholder="특이사항"></td>
-                <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
-              </tr>`).join('')}
+              ${cableRows.map((cb,i) => mkCable(cb, i)).join('')}
             </tbody>
           </table>
         </div>
@@ -24364,7 +24380,7 @@ async function renderWorkReportForm(container, taskId) {
 
       <!-- 저장 버튼 -->
       <div class="flex gap-3 pb-6">
-        <button onclick="saveWorkReport(${taskId})" class="flex-1 btn btn-primary py-3 text-sm font-semibold">
+        <button onclick="saveWorkReport(${taskId})" class="flex-1 py-3 text-sm font-semibold rounded-xl text-white hover:opacity-90 transition" style="background:#685182;">
           <i class="fas fa-save mr-1"></i> 임시저장
         </button>
         <button onclick="submitWorkReport(${taskId})" class="flex-1 py-3 text-sm font-semibold rounded-xl bg-green-500 text-white hover:bg-green-600 transition">
@@ -24383,18 +24399,30 @@ async function renderWorkReportForm(container, taskId) {
   }
 }
 
-// 행 추가 헬퍼
+// 사용량(M) 자동계산: 종단점 - 시작점
+function _calcUsage(inputEl) {
+  const tr = inputEl.closest('tr');
+  if (!tr) return;
+  const sp = parseFloat(tr.querySelector('.wrc-start-point')?.value) || 0;
+  const ep = parseFloat(tr.querySelector('.wrc-end-point')?.value)   || 0;
+  const usageEl = tr.querySelector('.wrc-usage-m');
+  if (usageEl && ep > sp) usageEl.value = (ep - sp).toFixed(1);
+  else if (usageEl) usageEl.value = '';
+}
+
+// 행 추가 헬퍼 — 작업내역
 function _wrAddLine() {
   const tbody = document.getElementById('wr-line-tbody');
   if (!tbody) return;
   const i = tbody.rows.length;
-  const DIV_OPTS  = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
-  const IP_OPTS   = ['','신설','철거'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
-  const GND_OPTS  = ['','B','A'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
+  const DIV_OPTS = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
+  // IP주: A/B/C
+  const IP_OPTS  = ['','A','B','C'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
+  const GND_OPTS = ['','B','A'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
   const tr = document.createElement('tr');
   tr.className = 'hover:bg-gray-50';
   tr.innerHTML = `
-    <td class="border border-gray-200 px-1 py-1 text-center text-gray-400">${i+1}</td>
+    <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-work-div">${DIV_OPTS}</select></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-mgmt-zone" placeholder="관리구"></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-mgmt-no" placeholder="번호"></td>
@@ -24404,41 +24432,47 @@ function _wrAddLine() {
     <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wr-section-dist" placeholder="0" step="0.1"></td>
     <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wr-pole-count" placeholder="0"></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-ip-pole">${IP_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-bind-wire">${IP_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-hanger">${['','기설','신설'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('')}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-hardware">${['','유','무'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('')}</select></td>
+    <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-bind-wire w-4 h-4"></td>
+    <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-hanger w-4 h-4"></td>
+    <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-hardware w-4 h-4"></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-cabinet" placeholder="함체"></td>
-    <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-name-tag"></td>
-    <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-warning-sign"></td>
+    <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-name-tag w-4 h-4"></td>
+    <td class="border border-gray-200 p-0.5 text-center"><input type="checkbox" class="wr-warning-sign w-4 h-4"></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-grounding">${GND_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-other-work" placeholder="CD관 등"></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wr-remark" placeholder="비고"></td>
     <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>`;
   tbody.appendChild(tr);
 }
 
+// 행 추가 헬퍼 — 광케이블
 function _wrAddCable() {
   const tbody = document.getElementById('wr-cable-tbody');
   if (!tbody) return;
   const i = tbody.rows.length;
-  const TYPE_OPTS = ['','A','CDA','CD','F'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
-  const KIND_OPTS = ['','가공','일반','지중(관로)','난연'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
+  const SPEC_OPTS = ['','1C','2C','12C','36C','72C','144C','288C'].map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
+  const THIS_YEAR = new Date().getFullYear();
+  const YEAR_OPTS = [''].concat(Array.from({length: THIS_YEAR - 1989}, (_,j) => String(THIS_YEAR - j)))
+                       .map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
+  const KIND_LIST = ['가공','일반','지중(관로)','난연'];
   const CODE_OPTS = ['','AOFC','CDAOFC','CDOFC','FOFC'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
   const WDIV_OPTS = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'-'}</option>`).join('');
+  const kindChk   = KIND_LIST.map(k =>
+    `<label class="flex items-center gap-0.5 whitespace-nowrap text-xs cursor-pointer">
+       <input type="checkbox" class="wrc-cable-kind-chk w-3.5 h-3.5" value="${k}">${k}
+     </label>`).join('');
   const tr = document.createElement('tr');
   tr.className = 'hover:bg-gray-50';
   tr.innerHTML = `
-    <td class="border border-gray-200 px-1 py-1 text-center text-gray-400">${i+1}</td>
+    <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-spec" placeholder="0" step="0.1"></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS}</select></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year" placeholder="연도"></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-cable-type">${TYPE_OPTS}</select></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
+    <td class="border border-gray-200 p-0.5"><div class="flex flex-col gap-0.5 p-1">${kindChk}</div></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-work-div">${WDIV_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-start-point" placeholder="시작점(M)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-end-point" placeholder="종단점(M)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m" placeholder="0" step="0.1"></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-cable-kind">${KIND_OPTS}</select></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작점(M)" oninput="_calcUsage(this)"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단점(M)" oninput="_calcUsage(this)"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-cable-code">${CODE_OPTS}</select></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-special-note" placeholder="특이사항"></td>
     <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>`;
@@ -24460,30 +24494,34 @@ function _collectWrData(taskId) {
       section_dist: parseFloat(tr.querySelector('.wr-section-dist')?.value) || 0,
       pole_count:   parseInt(tr.querySelector('.wr-pole-count')?.value) || 0,
       ip_pole:      tr.querySelector('.wr-ip-pole')?.value || '',
-      bind_wire:    tr.querySelector('.wr-bind-wire')?.value || '',
-      hanger:       tr.querySelector('.wr-hanger')?.value || '',
-      hardware:     tr.querySelector('.wr-hardware')?.value || '',
+      // 바인드/행거/금구류 → 체크박스 (1/0)
+      bind_wire:    tr.querySelector('.wr-bind-wire')?.checked ? 1 : 0,
+      hanger:       tr.querySelector('.wr-hanger')?.checked ? 1 : 0,
+      hardware:     tr.querySelector('.wr-hardware')?.checked ? 1 : 0,
       cabinet:      tr.querySelector('.wr-cabinet')?.value || '',
       name_tag:     tr.querySelector('.wr-name-tag')?.checked ? 1 : 0,
       warning_sign: tr.querySelector('.wr-warning-sign')?.checked ? 1 : 0,
       grounding:    tr.querySelector('.wr-grounding')?.value || '',
-      other_work:   tr.querySelector('.wr-other-work')?.value || '',
+      other_work:   '',  // 기타공정 열 삭제됨
       remark:       tr.querySelector('.wr-remark')?.value || '',
     });
   });
   const cables = [];
   document.querySelectorAll('#wr-cable-tbody tr').forEach(tr => {
+    // 케이블종류: 체크된 항목들 쉼표 구분 수집
+    const kindChecked = [...tr.querySelectorAll('.wrc-cable-kind-chk')]
+      .filter(cb => cb.checked).map(cb => cb.value).join(',');
     cables.push({
       lot_no:      tr.querySelector('.wrc-lot-no')?.value || '',
-      spec:        parseFloat(tr.querySelector('.wrc-spec')?.value) || 0,
+      spec:        tr.querySelector('.wrc-spec')?.value || '',  // 드롭다운 문자열
       maker:       tr.querySelector('.wrc-maker')?.value || '',
       mfg_year:    tr.querySelector('.wrc-mfg-year')?.value || '',
-      cable_type:  tr.querySelector('.wrc-cable-type')?.value || '',
+      cable_type:  '',  // 구분(A/CDA/CD/F) 열 삭제됨
       work_div:    tr.querySelector('.wrc-work-div')?.value || '',
       start_point: tr.querySelector('.wrc-start-point')?.value || '',
       end_point:   tr.querySelector('.wrc-end-point')?.value || '',
       usage_m:     parseFloat(tr.querySelector('.wrc-usage-m')?.value) || 0,
-      cable_kind:  tr.querySelector('.wrc-cable-kind')?.value || '',
+      cable_kind:  kindChecked,
       cable_code:  tr.querySelector('.wrc-cable-code')?.value || '',
       special_note:tr.querySelector('.wrc-special-note')?.value || '',
     });

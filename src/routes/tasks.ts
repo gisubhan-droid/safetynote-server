@@ -718,15 +718,20 @@ app.get('/:id/tbm-info', async (c) => {
   if (!tbm) return c.json({ tbm: null })
 
   // TBM 완료시각 KST 변환
+  // tbm_records.created_at 은 CURRENT_TIMESTAMP(SQLite UTC)로 저장되므로 +9h 적용
   let tbmDate = ''
   let tbmTime = ''
   if (tbm.created_at) {
-    const d = new Date(tbm.created_at.replace(' ', 'T') + (tbm.created_at.includes('+') ? '' : '+09:00'))
-    const kst = new Date(d.getTime())
-    // 이미 KST로 저장된 경우 그대로 사용
-    const raw = tbm.created_at
-    tbmDate = raw.slice(0, 10)  // YYYY-MM-DD
-    tbmTime = raw.slice(11, 16) // HH:MM
+    // SQLite CURRENT_TIMESTAMP는 UTC로 저장됨 → +09:00 강제 부여 후 KST 변환
+    const raw = tbm.created_at.replace(' ', 'T')
+    // 이미 timezone 정보가 붙어 있으면 그대로, 없으면 UTC로 간주하고 +9h
+    const hasOffset = raw.includes('+') || raw.endsWith('Z')
+    const utcStr = hasOffset ? raw : raw + 'Z'  // UTC로 명시
+    const utcMs = new Date(utcStr).getTime()
+    const kstMs = utcMs + 9 * 60 * 60 * 1000
+    const kstDt = new Date(kstMs).toISOString() // 내부적으로 UTC지만 이미 +9h 적용됨
+    tbmDate = kstDt.slice(0, 10)   // YYYY-MM-DD
+    tbmTime = kstDt.slice(11, 16)  // HH:MM
   }
 
   return c.json({

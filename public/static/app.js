@@ -6744,27 +6744,14 @@ function confirmWorkComplete(taskId) {
     try {
       await API.patch(`/tasks/${taskId}/status`, { status: 'work_completed' });
       toast('작업이 완료되었습니다. 작업 일지를 작성해 주세요.', 'success');
-      // 작업 상세 모달 재로드 후 일지 작성 폼 오픈
-      const openModal = document.querySelector(`.modal[data-task-id="${taskId}"]`);
-      if (openModal) {
-        openModal.closest('.modal-overlay')?.remove();
-        setTimeout(() => showTaskDetail(taskId), 200);
-      } else {
-        const content = document.getElementById('page-content');
-        if (content) {
-          if (currentUser?.role === 'worker') renderMyTasksPage(content);
-          else renderTasksPage(content);
-        }
-      }
-      // 일지 작성 폼 자동 오픈 (종료 시간 자동기입을 위해)
-      setTimeout(() => {
-        showWorkLogForm(taskId);
-        // 종료 시간 자동 기입 (버튼 클릭 시각)
-        setTimeout(() => {
-          const endInput = document.getElementById('logEnd');
-          if (endInput && !endInput.value) endInput.value = getKSTTime();
-        }, 500);
-      }, 600);
+      // 모든 모달 닫기 → 작업 상세 재로드 → 일지작성 폼 자동오픈
+      // (work_completed_at이 DB에 저장된 후 폼을 열어야 종료시간이 자동입력됨)
+      document.querySelectorAll('.modal-overlay').forEach(mo => mo.remove());
+      setTimeout(async () => {
+        await showTaskDetail(taskId);
+        // 작업 상세 로드 완료 후 일지작성 폼 오픈
+        setTimeout(() => showWorkLogForm(taskId), 400);
+      }, 200);
     } catch(e) {
       toast(e.response?.data?.error || '상태 변경 실패', 'error');
     }
@@ -8254,8 +8241,15 @@ async function showWorkLogForm(taskId) {
   // 작업일: TBM 완료 기준 날짜, 없으면 오늘
   const logDate = tbm?.tbm_date || getKSTDate();
 
-  // 시작시간: TBM 완료 기준 시간을 기본값으로 제공하되 직접 수정 가능
+  // 시작시간: TBM 완료 기준 시간 (수정 불가)
   const logTime = tbm?.tbm_time || getKSTTime();
+
+  // 종료시간: work_completed_at (KST로 저장된 값) HH:MM 추출, 없으면 빈값
+  let logEndTime = '';
+  if (task.work_completed_at) {
+    // work_completed_at 은 kstNow()로 저장 → "YYYY-MM-DD HH:MM:SS" 형식
+    logEndTime = task.work_completed_at.slice(11, 16); // HH:MM
+  }
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
@@ -8321,18 +8315,27 @@ async function showWorkLogForm(taskId) {
             <option value="paused">중지</option>
           </select>
         </div>
-        <!-- 시작시간: 직접 입력 가능 (TBM 완료 시간을 기본값으로만 표시) -->
+        <!-- 시작시간: TBM 완료 시간 자동입력, 수정 불가 -->
         <div class="form-group">
           <label class="form-label">
             <i class="fas fa-clock mr-1 text-green-500"></i>시작 시간
-            <span class="text-xs font-normal text-gray-400 ml-1">(직접 수정 가능)</span>
+            <span class="text-xs font-normal text-green-600 ml-1">
+              <i class="fas fa-lock mr-0.5"></i>TBM 기준
+            </span>
           </label>
-          <input id="logStart" class="form-control"
-            type="time" value="${logTime}">
+          <input id="logStart" class="form-control bg-gray-50 cursor-not-allowed"
+            type="time" value="${logTime}" readonly
+            style="border-color:#68518240;background:#F5F0F8;">
         </div>
+        <!-- 종료시간: 작업완료 처리 시각 자동기입, 수정 불가 -->
         <div class="form-group">
-          <label class="form-label"><i class="fas fa-clock mr-1 text-orange-400"></i>종료 시간</label>
-          <input id="logEnd" class="form-control" type="time" value="">
+          <label class="form-label">
+            <i class="fas fa-clock mr-1 text-orange-400"></i>종료 시간
+            ${logEndTime ? `<span class="text-xs font-normal text-green-600 ml-1"><i class="fas fa-lock mr-0.5"></i>작업완료 시각</span>` : `<span class="text-xs font-normal text-gray-400 ml-1">(작업완료 처리 시 자동입력)</span>`}
+          </label>
+          <input id="logEnd" class="form-control ${logEndTime ? 'bg-gray-50 cursor-not-allowed' : ''}"
+            type="time" value="${logEndTime}"
+            ${logEndTime ? 'readonly style="border-color:#68518240;background:#F5F0F8;"' : ''}>
         </div>
       </div>
 
@@ -8508,14 +8511,7 @@ async function submitWorkLog(taskId) {
   try {
     const status = document.getElementById('logStatus').value;
 
-    // ── 1단계: 작업 상태가 work_completed이면 task 상태 자동 변경 ──
-    if (status === 'work_completed') {
-      try {
-        await API.patch(`/tasks/${taskId}/status`, { status: 'work_completed' });
-      } catch(_) { /* 이미 work_completed인 경우 무시 */ }
-    }
-
-    // ── 2단계: GPS 좌표 자동 수집 (백그라운드, 실패해도 저장 진행) ──
+    // ── GPS 좌표 자동 수집 (백그라운드, 실패해도 저장 진행) ──
     let gps_lat = null, gps_lon = null;
     try {
       if (navigator.geolocation) {

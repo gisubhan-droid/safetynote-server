@@ -24210,6 +24210,7 @@ async function renderWorkReportForm(container, taskId) {
     const SPEC_OPTS     = ['','1C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
     const KIND_OPTS     = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
     const PROC_OPTS     = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
+    const YEAR_OPTS     = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
     // 추가입력 공종 목록
     const WR_EXTRA_ITEMS = [
       {key:'조가선신설',  unit:'M'},  {key:'커넥터취부',   unit:'개'},

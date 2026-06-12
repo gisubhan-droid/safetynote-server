@@ -722,6 +722,127 @@ function patchSchema() {
   } catch(e: any) {
     if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.121g]', e.message)
   }
+
+  // v0.130w: 외선작업일보 / 기타공종 / 물량통계 테이블
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS work_reports (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id      INTEGER NOT NULL UNIQUE,
+        detail_type  TEXT DEFAULT '',
+        work_date    TEXT DEFAULT '',
+        worker_team  TEXT DEFAULT '',
+        manager_name TEXT DEFAULT '',
+        status       TEXT DEFAULT 'draft' CHECK(status IN ('draft','submitted','confirmed')),
+        created_by   INTEGER REFERENCES users(id),
+        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (task_id) REFERENCES tasks(id)
+      )
+    `)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS work_report_lines (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id     INTEGER NOT NULL,
+        line_order    INTEGER DEFAULT 0,
+        work_div      TEXT DEFAULT '',
+        mgmt_zone     TEXT DEFAULT '',
+        mgmt_no       TEXT DEFAULT '',
+        line_name     TEXT DEFAULT '',
+        line_no       TEXT DEFAULT '',
+        digital_no    TEXT DEFAULT '',
+        section_dist  REAL DEFAULT 0,
+        pole_count    INTEGER DEFAULT 0,
+        ip_pole       TEXT DEFAULT '',
+        bind_wire     TEXT DEFAULT '',
+        hanger        TEXT DEFAULT '',
+        hardware      TEXT DEFAULT '',
+        cabinet       TEXT DEFAULT '',
+        name_tag      INTEGER DEFAULT 0,
+        warning_sign  INTEGER DEFAULT 0,
+        grounding     TEXT DEFAULT '',
+        other_work    TEXT DEFAULT '',
+        remark        TEXT DEFAULT '',
+        FOREIGN KEY (report_id) REFERENCES work_reports(id) ON DELETE CASCADE
+      )
+    `)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS work_report_cables (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id    INTEGER NOT NULL,
+        cable_order  INTEGER DEFAULT 0,
+        lot_no       TEXT DEFAULT '',
+        spec         REAL DEFAULT 0,
+        maker        TEXT DEFAULT '',
+        mfg_year     TEXT DEFAULT '',
+        cable_type   TEXT DEFAULT '',
+        work_div     TEXT DEFAULT '',
+        start_point  TEXT DEFAULT '',
+        end_point    TEXT DEFAULT '',
+        usage_m      REAL DEFAULT 0,
+        cable_kind   TEXT DEFAULT '',
+        cable_code   TEXT DEFAULT '',
+        special_note TEXT DEFAULT '',
+        FOREIGN KEY (report_id) REFERENCES work_reports(id) ON DELETE CASCADE
+      )
+    `)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS other_work_types (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL UNIQUE,
+        unit       TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 0,
+        is_active  INTEGER DEFAULT 1,
+        unit_price INTEGER DEFAULT 0
+      )
+    `)
+    rawDb.exec(`
+      INSERT OR IGNORE INTO other_work_types (name, unit, sort_order, unit_price) VALUES
+        ('지선신설','M',1,35000),('전주세움','개소',2,45000),
+        ('가요전선관','M',3,600),('내관포설','M',4,400),
+        ('완금설치(한전주)','개소',5,28000),
+        ('단순1','본',6,15000),('단순1-2','경간',7,29000),('단순2','경간',8,80000)
+    `)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS work_report_other (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id     INTEGER NOT NULL,
+        other_type_id INTEGER NOT NULL,
+        quantity      REAL DEFAULT 0,
+        FOREIGN KEY (report_id)     REFERENCES work_reports(id) ON DELETE CASCADE,
+        FOREIGN KEY (other_type_id) REFERENCES other_work_types(id),
+        UNIQUE(report_id, other_type_id)
+      )
+    `)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS volume_unit_prices (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_key   TEXT NOT NULL UNIQUE,
+        item_label TEXT NOT NULL,
+        unit_price INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0
+      )
+    `)
+    rawDb.exec(`
+      INSERT OR IGNORE INTO volume_unit_prices (item_key, item_label, unit_price, sort_order) VALUES
+        ('cable_new','광케이블(신설/이설)',1100,1),
+        ('joga_new','조가선(신설)',400,2),
+        ('connector','커넥터취부',38000,3),
+        ('cable_remove','광케이블(철거/이설)',300,4),
+        ('joga_remove','조가선(철거)',100,5),
+        ('ip_new','IP주(신설)',120000,6),
+        ('ip_remove','IP주(철거)',30000,7),
+        ('ground_b','접지(대지B)',35000,8),
+        ('ground_a','접지(연동A)',6000,9)
+    `)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_work_reports_task  ON work_reports(task_id)`)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_lines       ON work_report_lines(report_id)`)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_cables      ON work_report_cables(report_id)`)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_other       ON work_report_other(report_id)`)
+    console.log('[patchSchema] v0.130w 외선작업일보 테이블 준비 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.130w]', e.message)
+  }
 }
 patchSchema()
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2283,6 +2404,155 @@ app.patch('/api/admin/settings', async (c) => {
   return c.json({ success: true, effectiveUploadRoot: getUploadRoot() })
 })
 
+// ═══════════════════════════════════════════════════════════════
+// 외선작업일보 API  /api/work-reports
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/work-reports/other-work-types
+app.get('/api/work-reports/other-work-types', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rows = rawDb.prepare(`SELECT * FROM other_work_types WHERE is_active=1 ORDER BY sort_order`).all()
+  return c.json({ types: rows })
+})
+
+// GET /api/work-reports/volume-stats
+app.get('/api/work-reports/volume-stats', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const { construction_id, from_date, to_date } = c.req.query()
+  let where = `WHERE r.status IN ('submitted','confirmed')`
+  const params: any[] = []
+  if (construction_id) { where += ` AND t.request_no=(SELECT request_no FROM constructions WHERE id=?)`; params.push(construction_id) }
+  if (from_date) { where += ` AND r.work_date>=?`; params.push(from_date) }
+  if (to_date)   { where += ` AND r.work_date<=?`; params.push(to_date) }
+  if (user.role === 'worker') {
+    where += ` AND EXISTS (SELECT 1 FROM task_assignments ta WHERE ta.task_id=t.id AND ta.worker_id=?)`
+    params.push(user.id)
+  }
+  const rows = rawDb.prepare(`
+    SELECT r.id AS report_id, r.work_date, t.created_at AS order_date, r.worker_team,
+           t.request_no, t.construction_type AS work_class, r.manager_name,
+           (SELECT COALESCE(SUM(rl.usage_m),0) FROM work_report_cables rl WHERE rl.report_id=r.id AND rl.work_div IN ('신설','이설')) AS cable_new,
+           (SELECT COALESCE(SUM(rl2.section_dist),0) FROM work_report_lines rl2 WHERE rl2.report_id=r.id AND rl2.work_div='신설' AND rl2.pole_count>0) AS joga_new,
+           (SELECT COUNT(*) FROM work_report_cables rl3 WHERE rl3.report_id=r.id AND rl3.spec=1) AS connector,
+           (SELECT COALESCE(SUM(rl4.usage_m),0) FROM work_report_cables rl4 WHERE rl4.report_id=r.id AND rl4.work_div IN ('철거','이설')) AS cable_remove,
+           (SELECT COALESCE(SUM(rl5.section_dist),0) FROM work_report_lines rl5 WHERE rl5.report_id=r.id AND rl5.work_div='철거' AND rl5.pole_count>0) AS joga_remove,
+           (SELECT COUNT(*) FROM work_report_lines rl6 WHERE rl6.report_id=r.id AND rl6.ip_pole='신설') AS ip_new,
+           (SELECT COUNT(*) FROM work_report_lines rl7 WHERE rl7.report_id=r.id AND rl7.ip_pole='철거') AS ip_remove,
+           (SELECT COUNT(*) FROM work_report_lines rl8 WHERE rl8.report_id=r.id AND rl8.grounding='B') AS ground_b,
+           (SELECT COUNT(*) FROM work_report_lines rl9 WHERE rl9.report_id=r.id AND rl9.grounding='A') AS ground_a
+    FROM work_reports r JOIN tasks t ON t.id=r.task_id
+    ${where} ORDER BY r.work_date DESC
+  `).all(...params)
+  const otherTypes = rawDb.prepare(`SELECT * FROM other_work_types WHERE is_active=1 ORDER BY sort_order`).all()
+  const otherRows  = rawDb.prepare(`
+    SELECT wo.report_id, wo.other_type_id, wo.quantity
+    FROM work_report_other wo JOIN work_reports wr ON wr.id=wo.report_id JOIN tasks t ON t.id=wr.task_id
+    ${where.replace('WHERE', 'WHERE wr.id IS NOT NULL AND')}
+  `).all(...params)
+  const prices = rawDb.prepare(`SELECT * FROM volume_unit_prices ORDER BY sort_order`).all()
+  return c.json({ rows, otherTypes, otherRows, prices })
+})
+
+// GET /api/work-reports/task/:taskId
+app.get('/api/work-reports/task/:taskId', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const taskId = Number(c.req.param('taskId'))
+  const report = rawDb.prepare(`
+    SELECT r.*, t.task_number, t.work_number, t.request_no, t.title,
+           t.construction_type, t.work_completed_at, t.work_date AS task_work_date,
+           cs.title AS construction_title, cs.manager_name, cs.work_class
+    FROM work_reports r JOIN tasks t ON t.id=r.task_id
+    LEFT JOIN constructions cs ON cs.request_no=t.request_no
+    WHERE r.task_id=?
+  `).get(taskId)
+  if (!report) return c.json({ report: null })
+  const rid = (report as any).id
+  const lines  = rawDb.prepare(`SELECT * FROM work_report_lines WHERE report_id=? ORDER BY line_order`).all(rid)
+  const cables = rawDb.prepare(`SELECT * FROM work_report_cables WHERE report_id=? ORDER BY cable_order`).all(rid)
+  const others = rawDb.prepare(`
+    SELECT o.*, wt.name, wt.unit, wt.sort_order FROM work_report_other o
+    JOIN other_work_types wt ON wt.id=o.other_type_id WHERE o.report_id=? ORDER BY wt.sort_order
+  `).all(rid)
+  return c.json({ report, lines, cables, others })
+})
+
+// POST /api/work-reports
+app.post('/api/work-reports', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const body = await c.req.json()
+  const { task_id, detail_type = '' } = body
+  if (!task_id) return c.json({ error: 'task_id 필수' }, 400)
+  const task = rawDb.prepare(`
+    SELECT t.*, cs.manager_name FROM tasks t
+    LEFT JOIN constructions cs ON cs.request_no=t.request_no WHERE t.id=?
+  `).get(task_id) as any
+  if (!task) return c.json({ error: '작업 없음' }, 404)
+  const teamRow = rawDb.prepare(`
+    SELECT DISTINCT tm.name AS team_name FROM task_assignments ta
+    JOIN users u ON u.id=ta.worker_id JOIN teams tm ON tm.id=u.team_id
+    WHERE ta.task_id=? LIMIT 1
+  `).get(task_id) as any
+  const worker_team  = teamRow?.team_name || task.contractor_name || ''
+  const manager_name = task.manager_name || task.lgu_supervisor || ''
+  const work_date    = task.work_completed_at || task.work_date || ''
+  const existing = rawDb.prepare(`SELECT id FROM work_reports WHERE task_id=?`).get(task_id) as any
+  let reportId: number
+  if (existing) {
+    rawDb.prepare(`UPDATE work_reports SET detail_type=?,worker_team=?,manager_name=?,work_date=?,updated_at=CURRENT_TIMESTAMP WHERE task_id=?`)
+      .run(detail_type, worker_team, manager_name, work_date, task_id)
+    reportId = existing.id
+  } else {
+    const ins = rawDb.prepare(`INSERT INTO work_reports (task_id,detail_type,worker_team,manager_name,work_date,status,created_by) VALUES (?,?,?,?,?,'draft',?)`)
+      .run(task_id, detail_type, worker_team, manager_name, work_date, user.id)
+    reportId = ins.lastInsertRowid as number
+  }
+  if (Array.isArray(body.lines)) {
+    rawDb.prepare(`DELETE FROM work_report_lines WHERE report_id=?`).run(reportId)
+    const lineStmt = rawDb.prepare(`INSERT INTO work_report_lines (report_id,line_order,work_div,mgmt_zone,mgmt_no,line_name,line_no,digital_no,section_dist,pole_count,ip_pole,bind_wire,hanger,hardware,cabinet,name_tag,warning_sign,grounding,other_work,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    for (let i = 0; i < body.lines.length; i++) {
+      const l = body.lines[i]
+      lineStmt.run(reportId,i,l.work_div||'',l.mgmt_zone||'',l.mgmt_no||'',l.line_name||'',l.line_no||'',l.digital_no||'',l.section_dist||0,l.pole_count||0,l.ip_pole||'',l.bind_wire||'',l.hanger||'',l.hardware||'',l.cabinet||'',l.name_tag||0,l.warning_sign||0,l.grounding||'',l.other_work||'',l.remark||'')
+    }
+  }
+  if (Array.isArray(body.cables)) {
+    rawDb.prepare(`DELETE FROM work_report_cables WHERE report_id=?`).run(reportId)
+    const cableStmt = rawDb.prepare(`INSERT INTO work_report_cables (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,start_point,end_point,usage_m,cable_kind,cable_code,special_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    for (let i = 0; i < body.cables.length; i++) {
+      const cb = body.cables[i]
+      cableStmt.run(reportId,i,cb.lot_no||'',cb.spec||0,cb.maker||'',cb.mfg_year||'',cb.cable_type||'',cb.work_div||'',cb.start_point||'',cb.end_point||'',cb.usage_m||0,cb.cable_kind||'',cb.cable_code||'',cb.special_note||'')
+    }
+  }
+  return c.json({ ok: true, reportId })
+})
+
+// POST /api/work-reports/:reportId/submit
+app.post('/api/work-reports/:reportId/submit', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const reportId = Number(c.req.param('reportId'))
+  rawDb.prepare(`UPDATE work_reports SET status='submitted', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(reportId)
+  return c.json({ ok: true })
+})
+
+// POST /api/work-reports/:reportId/other-works
+app.post('/api/work-reports/:reportId/other-works', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const reportId = Number(c.req.param('reportId'))
+  const items = await c.req.json() as any[]
+  rawDb.prepare(`DELETE FROM work_report_other WHERE report_id=?`).run(reportId)
+  const stmt = rawDb.prepare(`INSERT OR REPLACE INTO work_report_other (report_id,other_type_id,quantity) VALUES (?,?,?)`)
+  for (const item of items) {
+    if (!item.other_type_id || item.quantity == null) continue
+    stmt.run(reportId, item.other_type_id, item.quantity)
+  }
+  return c.json({ ok: true })
+})
+
 // GET /api/admin/folders - 저장 폴더 용량 및 파일 종류별 집계 조회
 app.get('/api/admin/folders', async (c) => {
   const user = getUser(c)
@@ -3030,13 +3300,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260611">
+  <link rel="stylesheet" href="/static/style.css?v=20260612">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260611"></script>
+  <script src="/static/app.js?v=20260612"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260611"></script>
+  <script src="/static/mobile-app.js?v=20260612"></script>
 </body>
 </html>`)
 })

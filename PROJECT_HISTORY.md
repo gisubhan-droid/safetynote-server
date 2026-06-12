@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-11 (세션 15 — 진행 중)
-> **앱 현재 버전: v1.3.1** ← 최신 (✅ NAS 서버 배포 완료 — 2026-06-11)
+> 최종 업데이트: 2026-06-12 (세션 16 — 완료)
+> **앱 현재 버전: v1.3.2** ← 최신 (⏳ NAS git pull + pm2 restart 필요)
 > NAS 배포 버전: v1.3.1 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
-> **다음 작업**: 외선일보 워크시트 UI 프로토타입 제작 (독립 앱 → 통합 예정)
+> **다음 작업**: NAS git pull + pm2 restart 적용 후 현장 테스트
 
 ## 💾 NAS 백업 기록
 
@@ -29,10 +29,57 @@
 | **v1.3.0** | **2026-06-11** | ✅ **GitHub Release 빌드 완료** | 4단계 로그인개선(아이디저장/비번토글/로딩스피너), 5단계 앱설정(테마/알림/글자크기/진동), 2단계 GPS위치추적(작업일지 위치자동기록+이력조회) |
 | **v1.3.1** | **2026-06-11** | ✅ **NAS 배포 완료** | TBM 서명 FK 수정(`tbm_records_old`→`tbm_records`), TBM 앱 서명요청 근로자 허용, 작업상태변경 알림 DB저장, app.js 캐시 무효화(`v=20260611`) |
 | **v1.3.1-r1** | **2026-06-11** | ✅ **GitHub 배포 완료** | 용어통일: 작업 ID→작업번호, 하위작업번호→서브작업번호, dispNum work_number 기준 변경, 작업 상세 서브작업번호 강조 + 작업번호 회색 표시 |
+| **v1.3.2** | **2026-06-12** | ✅ **GitHub 배포 완료** | 외선일보 시스템(현장공량관리 메뉴, DB 6테이블, API 6개), 작업일지 모달 5항목 수정(시작시간 편집가능화, 종료시간 자동기입, 작업완료 상태 자동변경, 익일계획→작업물량, 작업완료물량 워크시트 UI+외선일보 연동) |
 
 ---
 
 ## 🔧 이슈별 수정 이력 (전체)
+
+---
+
+### ✅ [v1.3.2 / 세션16] 작업 일지 모달 5항목 수정
+**날짜**: 2026-06-12  
+**커밋**: (세션16 커밋 예정)
+
+| 항목 | 이전 | 변경 후 |
+|------|------|---------|
+| 시작 시간 | TBM 완료 시간 자동입력, 수정 불가(readonly) | TBM 완료 시간을 기본값으로만 표시, 직접 수정 가능 |
+| 종료 시간 | 빈값, 수동 입력 | 작업 완료 버튼 클릭 시 현재 시간(KST) 자동 기입 |
+| 작업 상태 | working/paused 선택 | work_completed 옵션 추가(기본 선택), 일지 저장 시 tasks 상태 자동 변경 |
+| 익일 계획 | `익일 계획` (logTomorrow) | `작업물량` 으로 필드명 변경 |
+| 작업 완료 물량 | 없음 | 외선/접속/관로/장비 선택 버튼 UI, 외선 선택 시 `일보작성` 버튼 활성화, 클릭 시 `renderWorkReportForm`으로 이동 |
+
+**변경 파일**:
+- `public/static/app.js`: `showWorkLogForm()`, `submitWorkLog()`, `confirmWorkComplete()` 수정, `selectWorkVolType()`, `goToWorkReport()`, `_currentWorklogTaskId` 추가
+- `node-server.ts`: 캐시 버전 `v=20260612` → `v=20260612b`
+
+---
+
+### ✅ [v1.3.2 / 세션15-16] 외선일보 시스템 신규 구현
+**날짜**: 2026-06-11~12
+
+**DB (patchSchema v0.130w)**:
+- `work_reports` (일보 헤더, task_id UNIQUE)
+- `work_report_lines` (작업내역 그리드 행)
+- `work_report_cables` (광케이블 정보)
+- `other_work_types` (기타공종 마스터, 8종 시드)
+- `work_report_other` (기타공종 입력값)
+- `volume_unit_prices` (단가 설정, 9종 시드)
+
+**API (node-server.ts 직접)**:
+- `GET /api/work-reports/task/:taskId` — 일보 조회
+- `POST /api/work-reports` — 일보 upsert
+- `POST /api/work-reports/:reportId/submit` — 제출
+- `POST /api/work-reports/:reportId/other-works` — 기타공종 저장
+- `GET /api/work-reports/other-work-types` — 마스터 조회
+- `GET /api/work-reports/volume-stats` — 물량통계
+
+**UI (app.js)**:
+- 현장공량관리 사이드 메뉴 그룹
+- `renderWorkReportListPage` — 완료 작업 목록
+- `renderWorkReportForm` — 외선일보 작성폼 (상단 자동입력 + 작업내역 그리드 + 광케이블 그리드)
+- `showOtherWorkPopup` — 기타공종 팝업
+- `renderVolumeStatsPage` — 물량통계
 
 ---
 

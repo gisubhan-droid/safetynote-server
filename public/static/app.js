@@ -6744,7 +6744,7 @@ function confirmWorkComplete(taskId) {
     try {
       await API.patch(`/tasks/${taskId}/status`, { status: 'work_completed' });
       toast('작업이 완료되었습니다. 작업 일지를 작성해 주세요.', 'success');
-      // 작업 상세 모달 재로드
+      // 작업 상세 모달 재로드 후 일지 작성 폼 오픈
       const openModal = document.querySelector(`.modal[data-task-id="${taskId}"]`);
       if (openModal) {
         openModal.closest('.modal-overlay')?.remove();
@@ -6756,6 +6756,15 @@ function confirmWorkComplete(taskId) {
           else renderTasksPage(content);
         }
       }
+      // 일지 작성 폼 자동 오픈 (종료 시간 자동기입을 위해)
+      setTimeout(() => {
+        showWorkLogForm(taskId);
+        // 종료 시간 자동 기입 (버튼 클릭 시각)
+        setTimeout(() => {
+          const endInput = document.getElementById('logEnd');
+          if (endInput && !endInput.value) endInput.value = getKSTTime();
+        }, 500);
+      }, 600);
     } catch(e) {
       toast(e.response?.data?.error || '상태 변경 실패', 'error');
     }
@@ -8225,7 +8234,12 @@ function _showTbmSignRequestPrompt(tbmId, taskId, attendees) {
 }
 
 // ======= 작업 일지 양식 =======
+// 일보작성 버튼에서 taskId를 참조하기 위한 전역 변수
+let _currentWorklogTaskId = null;
+
 async function showWorkLogForm(taskId) {
+  _currentWorklogTaskId = taskId; // 일보작성 버튼 연결용 전역 저장
+
   // 작업 정보 + TBM 정보 병렬 로드
   const [taskRes, tbmRes] = await Promise.all([
     API.get(`/tasks/${taskId}`),
@@ -8240,7 +8254,7 @@ async function showWorkLogForm(taskId) {
   // 작업일: TBM 완료 기준 날짜, 없으면 오늘
   const logDate = tbm?.tbm_date || getKSTDate();
 
-  // 시작시간: TBM 완료 기준 시간, 없으면 현재 시간
+  // 시작시간: TBM 완료 기준 시간을 기본값으로 제공하되 직접 수정 가능
   const logTime = tbm?.tbm_time || getKSTTime();
 
   const modal = document.createElement('div');
@@ -8303,20 +8317,18 @@ async function showWorkLogForm(taskId) {
           <label class="form-label"><i class="fas fa-tasks mr-1 text-purple-500"></i>작업 상태</label>
           <select id="logStatus" class="form-control">
             <option value="working">작업중</option>
+            <option value="work_completed" selected>작업완료</option>
             <option value="paused">중지</option>
           </select>
         </div>
-        <!-- 시작시간: TBM 완료 시간 자동입력, 수정 불가 -->
+        <!-- 시작시간: 직접 입력 가능 (TBM 완료 시간을 기본값으로만 표시) -->
         <div class="form-group">
           <label class="form-label">
             <i class="fas fa-clock mr-1 text-green-500"></i>시작 시간
-            <span class="text-xs font-normal text-green-600 ml-1">
-              <i class="fas fa-lock mr-0.5"></i>TBM 기준
-            </span>
+            <span class="text-xs font-normal text-gray-400 ml-1">(직접 수정 가능)</span>
           </label>
-          <input id="logStart" class="form-control bg-gray-50 cursor-not-allowed"
-            type="time" value="${logTime}" readonly
-            style="border-color:#68518240;background:#F5F0F8;">
+          <input id="logStart" class="form-control"
+            type="time" value="${logTime}">
         </div>
         <div class="form-group">
           <label class="form-label"><i class="fas fa-clock mr-1 text-orange-400"></i>종료 시간</label>
@@ -8338,8 +8350,52 @@ async function showWorkLogForm(taskId) {
       </div>
 
       <div class="form-group">
-        <label class="form-label">익일 계획</label>
-        <textarea id="logTomorrow" class="form-control" rows="2" placeholder="내일 예정 작업 계획"></textarea>
+        <label class="form-label">작업물량</label>
+        <textarea id="logTomorrow" class="form-control" rows="2" placeholder="작업 물량을 입력하세요"></textarea>
+      </div>
+
+      <!-- 작업 완료 물량 워크시트 -->
+      <div class="form-group">
+        <label class="form-label">
+          <i class="fas fa-layer-group mr-1 text-pink-500"></i>작업 완료 물량
+          <span class="text-xs font-normal text-gray-400 ml-1">(종류 선택 후 입력)</span>
+        </label>
+        <div class="grid grid-cols-4 gap-2 mb-3" id="workVolTypeButtons">
+          <button type="button" onclick="selectWorkVolType(this,'cable')"
+            class="work-vol-type-btn py-2 rounded-lg border-2 text-sm font-bold transition-all"
+            style="border-color:#E5E7EB;background:#F9FAFB;color:#6B7280">
+            <i class="fas fa-ethernet mr-1"></i>외선
+          </button>
+          <button type="button" onclick="selectWorkVolType(this,'splice')"
+            class="work-vol-type-btn py-2 rounded-lg border-2 text-sm font-bold transition-all"
+            style="border-color:#E5E7EB;background:#F9FAFB;color:#6B7280">
+            <i class="fas fa-plug mr-1"></i>접속
+          </button>
+          <button type="button" onclick="selectWorkVolType(this,'duct')"
+            class="work-vol-type-btn py-2 rounded-lg border-2 text-sm font-bold transition-all"
+            style="border-color:#E5E7EB;background:#F9FAFB;color:#6B7280">
+            <i class="fas fa-project-diagram mr-1"></i>관로
+          </button>
+          <button type="button" onclick="selectWorkVolType(this,'equip')"
+            class="work-vol-type-btn py-2 rounded-lg border-2 text-sm font-bold transition-all"
+            style="border-color:#E5E7EB;background:#F9FAFB;color:#6B7280">
+            <i class="fas fa-tools mr-1"></i>장비
+          </button>
+        </div>
+        <!-- 공통 입력 영역 -->
+        <div id="workVolInputArea" class="hidden p-3 rounded-xl border mb-2" style="background:#F8F5FF;border-color:#DDD6FE;">
+          <textarea id="logWorkVolume" class="form-control" rows="2"
+            placeholder="완료 물량을 입력하세요 (예: 케이블 포설 50m, 접속 2점 등)"></textarea>
+        </div>
+        <!-- 외선 선택 시 일보작성 버튼 -->
+        <div id="workVolCableAction" class="hidden">
+          <button type="button" onclick="goToWorkReport(_currentWorklogTaskId)"
+            class="btn w-full font-bold text-white"
+            style="background:linear-gradient(135deg,#D70072,#685182);border:none;">
+            <i class="fas fa-file-alt mr-2"></i>외선일보 작성
+            <span class="text-xs font-normal ml-1 opacity-80">(외선일보 작성 화면으로 이동)</span>
+          </button>
+        </div>
       </div>
 
       <!-- 첨부파일 업로드 섹션 -->
@@ -8451,6 +8507,13 @@ function removeLogAttachFile(index) {
 async function submitWorkLog(taskId) {
   try {
     const status = document.getElementById('logStatus').value;
+
+    // ── 1단계: 작업 상태가 work_completed이면 task 상태 자동 변경 ──
+    if (status === 'work_completed') {
+      try {
+        await API.patch(`/tasks/${taskId}/status`, { status: 'work_completed' });
+      } catch(_) { /* 이미 work_completed인 경우 무시 */ }
+    }
 
     // ── 2단계: GPS 좌표 자동 수집 (백그라운드, 실패해도 저장 진행) ──
     let gps_lat = null, gps_lon = null;
@@ -24691,5 +24754,63 @@ async function renderVolumeStatsPage(container) {
     </div>`;
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+// ── 작업 완료 물량 워크시트 UI 헬퍼 ──────────────────────────────────────────
+
+// 작업 완료 물량 종류 선택 버튼 클릭 핸들러
+function selectWorkVolType(btn, type) {
+  // 모든 버튼 비활성화 스타일
+  document.querySelectorAll('.work-vol-type-btn').forEach(b => {
+    b.style.borderColor = '#E5E7EB';
+    b.style.background = '#F9FAFB';
+    b.style.color = '#6B7280';
+  });
+  // 선택된 버튼 활성화 스타일
+  btn.style.borderColor = '#D70072';
+  btn.style.background = '#FDE8F3';
+  btn.style.color = '#D70072';
+
+  // 입력 영역 표시
+  const inputArea = document.getElementById('workVolInputArea');
+  const cableAction = document.getElementById('workVolCableAction');
+  if (inputArea) inputArea.classList.remove('hidden');
+
+  // 외선 선택 시 일보작성 버튼 표시, 나머지는 숨김
+  if (cableAction) {
+    if (type === 'cable') {
+      cableAction.classList.remove('hidden');
+    } else {
+      cableAction.classList.add('hidden');
+    }
+  }
+
+  // placeholder 업데이트
+  const textarea = document.getElementById('logWorkVolume');
+  if (textarea) {
+    const placeholders = {
+      cable: '예: 단심 케이블 50m, 다심 케이블 20m',
+      splice: '예: 광케이블 접속 2점, 동축 접속 1점',
+      duct: '예: 관로 굴착 30m, 맨홀 설치 2개소',
+      equip: '예: 지상분전함 설치 1대, 단자함 교체 2대'
+    };
+    textarea.placeholder = placeholders[type] || '완료 물량을 입력하세요';
+  }
+}
+
+// 외선일보 작성 화면으로 이동 (작업일지 모달 닫고 이동)
+function goToWorkReport(taskId) {
+  if (!taskId) { toast('작업 정보를 찾을 수 없습니다.', 'error'); return; }
+  // 모달 전체 닫기
+  document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+  // 외선일보 작성 페이지로 이동
+  const content = document.getElementById('page-content');
+  if (content) {
+    renderWorkReportForm(content, taskId);
+    // 사이드바 메뉴 활성화
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    const navItem = document.querySelector('.nav-item[data-page="work-report"]');
+    if (navItem) navItem.classList.add('active');
   }
 }

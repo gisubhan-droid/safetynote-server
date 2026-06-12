@@ -24340,6 +24340,20 @@ async function renderWorkReportForm(container, taskId) {
             <span class="font-semibold text-gray-700 text-sm">
               <i class="fas fa-clipboard-list text-orange-400 mr-1"></i>
               <span class="wr-set-extra-title text-orange-600 font-bold" style="display:none">${n}번</span> 추가입력
+            </span>
+          </div>
+          <div class="px-3 pb-3">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <!-- 좌측 8항목 -->
+              <table class="w-full text-xs border-collapse">
+                <thead>
+                  <tr class="bg-orange-50 text-gray-600 text-center">
+                    <th class="border border-gray-200 px-2 py-1.5">구분</th>
+                    <th class="border border-gray-200 px-2 py-1.5 w-24">작업량</th>
+                    <th class="border border-gray-200 px-2 py-1.5 w-12">단위</th>
+                  </tr>
+                </thead>
+                <tbody id="${sid}-extra-tbody">
                   ${WR_EXTRA_ITEMS.slice(0,8).map(item=>`
                   <tr class="hover:bg-orange-50">
                     <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
@@ -24592,7 +24606,7 @@ function _wrAddCableSet() {
         </span>
       </div>
       <div class="px-3 pb-3">
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <!-- 좌측 8항목 -->
           <table class="w-full text-xs border-collapse">
             <thead>

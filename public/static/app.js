@@ -24207,9 +24207,9 @@ async function renderWorkReportForm(container, taskId) {
     const BYPASS_OPTS   = ['','해당없음','우회필요','우회중'].map(v=>`<option value="${v}">${v||'우회여부'}</option>`).join('');
     const LOCATION_OPTS = ['','지하','지상','기타'].map(v=>`<option value="${v}">${v||'위치'}</option>`).join('');
     // 작업 케이블정보 전용 옵션
-    const SPEC_OPTS     = ['','12C','24C','48C','96C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
-    const YEAR_OPTS     = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
-    const PROC_OPTS     = ['','가공','관로','지중(직매)','기타'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
+    const SPEC_OPTS     = ['','1C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
+    const KIND_OPTS     = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
+    const PROC_OPTS     = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
     // 추가입력 공종 목록
     const WR_EXTRA_ITEMS = [
       {key:'조가선신설',  unit:'M'},  {key:'커넥터취부',   unit:'개'},
@@ -24274,14 +24274,10 @@ async function renderWorkReportForm(container, taskId) {
       <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
       <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.lot_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS.replace(`value="${cb.spec||''}"`,`value="${cb.spec||''}" selected`)}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker">${MAKER_OPTS.replace(`"${cb.maker||''}"`,`"${cb.maker||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.maker||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS.replace(`value="${cb.mfg_year||''}"`,`value="${cb.mfg_year||''}" selected`)}</select></td>
-      <td class="border border-gray-200 p-0.5">
-        <div class="flex flex-wrap gap-x-2 gap-y-0.5 px-1 py-0.5 text-xs">
-          ${['가공','일반','지중(관로)','난연'].map(k=>`<label class="flex items-center gap-0.5 whitespace-nowrap"><input type="checkbox" class="wrc-kind-cb" value="${k}" ${cktypes.includes(k)?'checked':''}> ${k}</label>`).join('')}
-        </div>
-      </td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS.replace(`"${cb.proc||''}"`,`"${cb.proc||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS.replace(`value="${cb.cable_kind||''}"`,`value="${cb.cable_kind||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS.replace(`value="${cb.proc||''}"`,`value="${cb.proc||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.start_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
       <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.end_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
       <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.usage_m||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
@@ -24343,42 +24339,23 @@ async function renderWorkReportForm(container, taskId) {
             </span>
           </div>
           <div class="px-3 pb-3">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <table class="w-full text-xs border-collapse">
-                <thead>
-                  <tr class="bg-orange-50 text-gray-600 text-center">
-                    <th class="border border-gray-200 px-2 py-1.5">구분</th>
-                    <th class="border border-gray-200 px-2 py-1.5 w-24">작업량</th>
-                    <th class="border border-gray-200 px-2 py-1.5 w-12">단위</th>
-                  </tr>
-                </thead>
-                <tbody id="${sid}-extra-tbody">
-                  ${WR_EXTRA_ITEMS.slice(0,8).map(item=>`
-                  <tr class="hover:bg-orange-50">
-                    <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
-                    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
-                    <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
-                  </tr>`).join('')}
-                </tbody>
-              </table>
-              <table class="w-full text-xs border-collapse">
-                <thead>
-                  <tr class="bg-orange-50 text-gray-600 text-center">
-                    <th class="border border-gray-200 px-2 py-1.5">구분</th>
-                    <th class="border border-gray-200 px-2 py-1.5 w-24">작업량</th>
-                    <th class="border border-gray-200 px-2 py-1.5 w-12">단위</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${WR_EXTRA_ITEMS.slice(8).map(item=>`
-                  <tr class="hover:bg-orange-50">
-                    <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
-                    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
-                    <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
-                  </tr>`).join('')}
-                </tbody>
-              </table>
-            </div>
+            <table class="w-full text-xs border-collapse">
+              <thead>
+                <tr class="bg-orange-50 text-gray-600 text-center">
+                  <th class="border border-gray-200 px-2 py-1.5">구분</th>
+                  <th class="border border-gray-200 px-2 py-1.5 w-32">작업량</th>
+                  <th class="border border-gray-200 px-2 py-1.5 w-14">단위</th>
+                </tr>
+              </thead>
+              <tbody id="${sid}-extra-tbody">
+                ${WR_EXTRA_ITEMS.map(item=>`
+                <tr class="hover:bg-orange-50">
+                  <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
+                  <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
+                  <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>`;
@@ -24499,9 +24476,9 @@ function _wrAddCableSet() {
   div.className = 'wr-cable-set space-y-3';
   div.dataset.set = n;
   const DIV_OPTS    = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
-  const MAKER_OPTS  = ['','LS','대한','일진','가온','기타'].map(v=>`<option value="${v}">${v||'제조사'}</option>`).join('');
-  const SPEC_OPTS   = ['','12C','24C','48C','96C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
-  const PROC_OPTS   = ['','가공','관로','지중(직매)','기타'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
+  const SPEC_OPTS   = ['','1C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
+  const KIND_OPTS2  = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
+  const PROC_OPTS   = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
   const YEAR_OPTS   = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
   const OD_OPTS     = ['','32','50','63','75','100','125','150','200'].map(v=>`<option value="${v}">${v||'외경'}</option>`).join('');
   const ID_OPTS     = ['','26','42','51','63','82','101','127','170'].map(v=>`<option value="${v}">${v||'내경'}</option>`).join('');
@@ -24524,13 +24501,9 @@ function _wrAddCableSet() {
       <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${r+1}</td>
       <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker">${MAKER_OPTS}</select></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5">
-        <div class="flex flex-wrap gap-x-2 gap-y-0.5 px-1 py-0.5 text-xs">
-          ${['가공','일반','지중(관로)','난연'].map(k=>`<label class="flex items-center gap-0.5 whitespace-nowrap"><input type="checkbox" class="wrc-kind-cb" value="${k}"> ${k}</label>`).join('')}
-        </div>
-      </td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS2}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS}</select></td>
       <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
       <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
@@ -24604,52 +24577,31 @@ function _wrAddCableSet() {
         </span>
       </div>
       <div class="px-3 pb-3">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <!-- 좌측 8항목 -->
-          <table class="w-full text-xs border-collapse">
-            <thead>
-              <tr class="bg-orange-50 text-gray-600 text-center">
-                <th class="border border-gray-200 px-2 py-1.5">구분</th>
-                <th class="border border-gray-200 px-2 py-1.5 w-24">작업량</th>
-                <th class="border border-gray-200 px-2 py-1.5 w-12">단위</th>
-              </tr>
-            </thead>
-            <tbody id="${sid}-extra-tbody">
-              ${[
-                {key:'조가선신설',unit:'M'},{key:'커넥터취부',unit:'개'},
-                {key:'조가선 철거',unit:'M'},{key:'전주 건식',unit:'본'},
-                {key:'전주 철거',unit:'본'},{key:'B 형접지(대지)',unit:'건'},
-                {key:'A 형접지(대지)',unit:'건'},{key:'지선신설',unit:'건'}
-              ].map(item=>`<tr class="hover:bg-orange-50">
-                <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
-                <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
-                <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-          <!-- 우측 7항목 -->
-          <table class="w-full text-xs border-collapse">
-            <thead>
-              <tr class="bg-orange-50 text-gray-600 text-center">
-                <th class="border border-gray-200 px-2 py-1.5">구분</th>
-                <th class="border border-gray-200 px-2 py-1.5 w-24">작업량</th>
-                <th class="border border-gray-200 px-2 py-1.5 w-12">단위</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${[
-                {key:'전주세움',unit:'본'},{key:'가요전선관',unit:'M'},
-                {key:'내관포설',unit:'M'},{key:'완금설치 (한전주)',unit:'식'},
-                {key:'단순1',unit:'본'},{key:'단순1-2',unit:'경간'},
-                {key:'단순2',unit:'경간'}
-              ].map(item=>`<tr class="hover:bg-orange-50">
-                <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
-                <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
-                <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
+        <table class="w-full text-xs border-collapse">
+          <thead>
+            <tr class="bg-orange-50 text-gray-600 text-center">
+              <th class="border border-gray-200 px-2 py-1.5">구분</th>
+              <th class="border border-gray-200 px-2 py-1.5 w-32">작업량</th>
+              <th class="border border-gray-200 px-2 py-1.5 w-14">단위</th>
+            </tr>
+          </thead>
+          <tbody id="${sid}-extra-tbody">
+            ${[
+              {key:'조가선신설',unit:'M'},{key:'커넥터취부',unit:'개'},
+              {key:'조가선 철거',unit:'M'},{key:'전주 건식',unit:'본'},
+              {key:'전주 철거',unit:'본'},{key:'B 형접지(대지)',unit:'건'},
+              {key:'A 형접지(대지)',unit:'건'},{key:'지선신설',unit:'건'},
+              {key:'전주세움',unit:'본'},{key:'가요전선관',unit:'M'},
+              {key:'내관포설',unit:'M'},{key:'완금설치 (한전주)',unit:'식'},
+              {key:'단순1',unit:'본'},{key:'단순1-2',unit:'경간'},
+              {key:'단순2',unit:'경간'}
+            ].map(item=>`<tr class="hover:bg-orange-50">
+              <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
+              <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
+              <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
       </div>
     </div>`;
   wrap.appendChild(div);
@@ -24686,9 +24638,9 @@ function _wrAddCableRow(tbodyId) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
   const i = tbody.rows.length;
-  const MAKER_OPTS  = ['','LS','대한','일진','가온','기타'].map(v=>`<option value="${v}">${v||'제조사'}</option>`).join('');
-  const SPEC_OPTS   = ['','12C','24C','48C','96C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
-  const PROC_OPTS   = ['','가공','관로','지중(직매)','기타'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
+  const SPEC_OPTS3  = ['','1C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
+  const KIND_OPTS3  = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
+  const PROC_OPTS3  = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
   const YEAR_OPTS   = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
   const tr = document.createElement('tr');
   tr.className = 'hover:bg-gray-50';
@@ -24696,14 +24648,10 @@ function _wrAddCableRow(tbodyId) {
     <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker">${MAKER_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5">
-      <div class="flex flex-wrap gap-x-2 gap-y-0.5 px-1 py-0.5 text-xs">
-        ${['가공','일반','지중(관로)','난연'].map(k=>`<label class="flex items-center gap-0.5 whitespace-nowrap"><input type="checkbox" class="wrc-kind-cb" value="${k}"> ${k}</label>`).join('')}
-      </div>
-    </td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS}</select></td>
+    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS3}</select></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS3}</select></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS3}</select></td>
     <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
     <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
     <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
@@ -24825,14 +24773,12 @@ function _collectWrData(taskId) {
     const tbodyCable = document.getElementById(`${sid}-cable-tbody`);
     if (tbodyCable) {
       tbodyCable.querySelectorAll('tr').forEach(tr => {
-        // 체크박스 케이블종류 수집
-        const kindCbs = [...tr.querySelectorAll('.wrc-kind-cb:checked')].map(cb => cb.value);
         cables.push({
           lot_no:      tr.querySelector('.wrc-lot-no')?.value || '',
           spec:        tr.querySelector('.wrc-spec')?.value || '',
           maker:       tr.querySelector('.wrc-maker')?.value || '',
           mfg_year:    tr.querySelector('.wrc-mfg-year')?.value || '',
-          cable_kind:  kindCbs.join(','),
+          cable_kind:  tr.querySelector('.wrc-kind')?.value || '',
           proc:        tr.querySelector('.wrc-proc')?.value || '',
           start_point: parseFloat(tr.querySelector('.wrc-start-point')?.value) || 0,
           end_point:   parseFloat(tr.querySelector('.wrc-end-point')?.value) || 0,

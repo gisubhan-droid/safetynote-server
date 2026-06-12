@@ -24301,7 +24301,7 @@ async function renderWorkReportForm(container, taskId) {
           <div class="flex items-center justify-between px-4 pt-3 pb-2">
             <span class="font-semibold text-gray-700 text-sm">
               <i class="fas fa-stream text-blue-400 mr-1"></i>
-              <span class="wr-set-cable-title text-blue-600 font-bold">${n}번</span> 작업 케이블정보
+              작업 케이블정보
             </span>
             <div class="flex items-center gap-2">
               <button onclick="_wrAddCableRow('${sid}-cable-tbody')" class="text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-lg px-3 py-1 hover:bg-blue-100">
@@ -24334,68 +24334,39 @@ async function renderWorkReportForm(container, taskId) {
             </table>
           </div>
         </div>
-        <!-- N번 작업내역 -->
-        <div class="bg-white rounded-2xl shadow-sm border border-pink-100">
-          <div class="flex items-center justify-between px-4 pt-3 pb-2">
-            <span class="font-semibold text-gray-700 text-sm">
-              <i class="fas fa-hard-hat text-pink-400 mr-1"></i>
-              <span class="wr-set-line-title text-pink-600 font-bold">${n}번</span> 작업내역
-            </span>
-            <button onclick="_wrAddLineRow('${sid}-line-tbody')" class="text-xs bg-pink-50 text-pink-600 border border-pink-200 rounded-lg px-3 py-1 hover:bg-pink-100">
-              <i class="fas fa-plus mr-1"></i>+ 추가
-            </button>
-          </div>
-          <div class="overflow-x-auto pb-2">
-            <table class="w-full text-xs border-collapse" style="min-width:1050px">
-              <thead>
-                <tr class="bg-pink-50 text-gray-600 text-center">
-                  <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-14">구분</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-16">제조사</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-14">외경<br><span class="font-normal text-gray-400">(mm)</span></th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-14">내경<br><span class="font-normal text-gray-400">(mm)</span></th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-20">용도</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-18">시작점<br><span class="font-normal text-gray-400">(M)</span></th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-18">종료점<br><span class="font-normal text-gray-400">(M)</span></th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-18">사용길이<br><span class="text-blue-400 font-normal">(자동)</span></th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-16">광도시<br>사용(S)</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-18">기초번호</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-14">자재수량</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
-                </tr>
-              </thead>
-              <tbody id="${sid}-line-tbody">
-                ${lnRows.map((l,i) => mkLine(l, i)).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <!-- N번 추가 입력 (공종별 작업량) -->
+        <!-- N번 추가입력 (공종별 작업량) -->
         <div class="bg-white rounded-2xl shadow-sm border border-orange-100">
           <div class="flex items-center px-4 pt-3 pb-2">
             <span class="font-semibold text-gray-700 text-sm">
               <i class="fas fa-clipboard-list text-orange-400 mr-1"></i>
-              <span class="wr-set-extra-title text-orange-600 font-bold">${n}번</span> 추가 입력
-            </span>
-          </div>
-          <div class="overflow-x-auto pb-2">
-            <table class="w-full text-xs border-collapse" style="min-width:360px">
-              <thead>
-                <tr class="bg-orange-50 text-gray-600 text-center">
-                  <th class="border border-gray-200 px-2 py-1.5">구분</th>
-                  <th class="border border-gray-200 px-2 py-1.5 w-28">작업량</th>
-                  <th class="border border-gray-200 px-2 py-1.5 w-14">단위</th>
-                </tr>
-              </thead>
-              <tbody id="${sid}-extra-tbody">
-                ${WR_EXTRA_ITEMS.map(item=>`
-                <tr class="hover:bg-orange-50">
-                  <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
-                  <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
-                  <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
-                </tr>`).join('')}
-              </tbody>
-            </table>
+              <span class="wr-set-extra-title text-orange-600 font-bold" style="display:none">${n}번</span> 추가입력
+                  ${WR_EXTRA_ITEMS.slice(0,8).map(item=>`
+                  <tr class="hover:bg-orange-50">
+                    <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
+                    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
+                    <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
+                  </tr>`).join('')}
+                </tbody>
+              </table>
+              <!-- 우측 7항목 -->
+              <table class="w-full text-xs border-collapse">
+                <thead>
+                  <tr class="bg-orange-50 text-gray-600 text-center">
+                    <th class="border border-gray-200 px-2 py-1.5">구분</th>
+                    <th class="border border-gray-200 px-2 py-1.5 w-24">작업량</th>
+                    <th class="border border-gray-200 px-2 py-1.5 w-12">단위</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${WR_EXTRA_ITEMS.slice(8).map(item=>`
+                  <tr class="hover:bg-orange-50">
+                    <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
+                    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
+                    <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
+                  </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>`;
@@ -24452,50 +24423,6 @@ async function renderWorkReportForm(container, taskId) {
             <label class="text-xs text-gray-400 block mb-1">담당공무(작업지시자) <span class="text-xs text-blue-400">(자동)</span></label>
             <div class="bg-gray-50 rounded-lg px-3 py-2 text-gray-700">${managerName}</div>
           </div>
-        </div>
-      </div>
-
-      <!-- ── 확선내역 (고정 1개) ── -->
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100">
-        <div class="flex items-center justify-between px-4 pt-4 pb-2">
-          <span class="font-semibold text-gray-700 text-sm">
-            <i class="fas fa-route text-indigo-400 mr-1"></i>확선 내역
-          </span>
-          <button onclick="_wrAddConfirm()" class="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg px-3 py-1.5 hover:bg-indigo-100">
-            <i class="fas fa-plus mr-1"></i>+ 추가
-          </button>
-        </div>
-        <div class="overflow-x-auto pb-2">
-          <table class="w-full text-xs border-collapse" id="wr-confirm-table" style="min-width:1400px">
-            <thead>
-              <tr class="bg-indigo-50 text-gray-600 text-center">
-                <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-14">구분</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-18">관로ID</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-18">맨홀(전)</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-18">맨홀(후)</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-14">점유공</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-14">점유내공</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-18">우회여부</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-14">위치</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-12">외경</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-12">내경</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-8">방기</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-14">방기수량</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-8">철거</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-14">철거수량</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-18">용도</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-8">포설</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-14">수용여부</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-14">상태</th>
-                <th class="border border-gray-200 px-1 py-1.5">비고</th>
-                <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
-              </tr>
-            </thead>
-            <tbody id="wr-confirm-tbody">
-              ${confirmRows.map((c,i) => mkConfirm(c, i)).join('')}
-            </tbody>
-          </table>
         </div>
       </div>
 
@@ -24625,7 +24552,7 @@ function _wrAddCableSet() {
       <div class="flex items-center justify-between px-4 pt-3 pb-2">
         <span class="font-semibold text-gray-700 text-sm">
           <i class="fas fa-stream text-blue-400 mr-1"></i>
-          <span class="wr-set-cable-title text-blue-600 font-bold">${n}번</span> 작업 케이블정보
+          작업 케이블정보
         </span>
         <div class="flex items-center gap-2">
           <button onclick="_wrAddCableRow('${sid}-cable-tbody')" class="text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-lg px-3 py-1 hover:bg-blue-100">
@@ -24656,74 +24583,61 @@ function _wrAddCableSet() {
         </table>
       </div>
     </div>
-    <!-- ${n}번 작업내역 -->
-    <div class="bg-white rounded-2xl shadow-sm border border-pink-100">
-      <div class="flex items-center justify-between px-4 pt-3 pb-2">
-        <span class="font-semibold text-gray-700 text-sm">
-          <i class="fas fa-hard-hat text-pink-400 mr-1"></i>
-          <span class="wr-set-line-title text-pink-600 font-bold">${n}번</span> 작업내역
-        </span>
-        <button onclick="_wrAddLineRow('${sid}-line-tbody')" class="text-xs bg-pink-50 text-pink-600 border border-pink-200 rounded-lg px-3 py-1 hover:bg-pink-100">
-          <i class="fas fa-plus mr-1"></i>+ 추가
-        </button>
-      </div>
-      <div class="overflow-x-auto pb-2">
-        <table class="w-full text-xs border-collapse" style="min-width:1050px">
-          <thead>
-            <tr class="bg-pink-50 text-gray-600 text-center">
-              <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-14">구분</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-16">제조사</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-14">외경<br><span class="font-normal text-gray-400">(mm)</span></th>
-              <th class="border border-gray-200 px-1 py-1.5 w-14">내경<br><span class="font-normal text-gray-400">(mm)</span></th>
-              <th class="border border-gray-200 px-1 py-1.5 w-20">용도</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-18">시작점<br><span class="font-normal text-gray-400">(M)</span></th>
-              <th class="border border-gray-200 px-1 py-1.5 w-18">종료점<br><span class="font-normal text-gray-400">(M)</span></th>
-              <th class="border border-gray-200 px-1 py-1.5 w-18">사용길이<br><span class="text-blue-400 font-normal">(자동)</span></th>
-              <th class="border border-gray-200 px-1 py-1.5 w-16">광도시<br>사용(S)</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-18">기초번호</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-14">자재수량</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
-            </tr>
-          </thead>
-          <tbody id="${sid}-line-tbody">${lineRows3}</tbody>
-        </table>
-      </div>
-    </div>
-    <!-- ${n}번 추가 입력 -->
+    <!-- ${n}번 추가입력 -->
     <div class="bg-white rounded-2xl shadow-sm border border-orange-100">
       <div class="flex items-center px-4 pt-3 pb-2">
         <span class="font-semibold text-gray-700 text-sm">
           <i class="fas fa-clipboard-list text-orange-400 mr-1"></i>
-          <span class="wr-set-extra-title text-orange-600 font-bold">${n}번</span> 추가 입력
+          <span class="wr-set-extra-title text-orange-600 font-bold" style="display:none">${n}번</span> 추가입력
         </span>
       </div>
-      <div class="overflow-x-auto pb-2">
-        <table class="w-full text-xs border-collapse" style="min-width:360px">
-          <thead>
-            <tr class="bg-orange-50 text-gray-600 text-center">
-              <th class="border border-gray-200 px-2 py-1.5">구분</th>
-              <th class="border border-gray-200 px-2 py-1.5 w-28">작업량</th>
-              <th class="border border-gray-200 px-2 py-1.5 w-14">단위</th>
-            </tr>
-          </thead>
-          <tbody id="${sid}-extra-tbody">
-            ${[
-              {key:'조가선신설',unit:'M'},{key:'커넥터취부',unit:'개'},
-              {key:'조가선 철거',unit:'M'},{key:'전주 건식',unit:'본'},
-              {key:'전주 철거',unit:'본'},{key:'B 형접지(대지)',unit:'건'},
-              {key:'A 형접지(대지)',unit:'건'},{key:'지선신설',unit:'건'},
-              {key:'전주세움',unit:'본'},{key:'가요전선관',unit:'M'},
-              {key:'내관포설',unit:'M'},{key:'완금설치 (한전주)',unit:'식'},
-              {key:'단순1',unit:'본'},{key:'단순1-2',unit:'경간'},
-              {key:'단순2',unit:'경간'}
-            ].map(item=>`<tr class="hover:bg-orange-50">
-              <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
-              <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
-              <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
+      <div class="px-3 pb-3">
+        <div class="grid grid-cols-2 gap-3">
+          <!-- 좌측 8항목 -->
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr class="bg-orange-50 text-gray-600 text-center">
+                <th class="border border-gray-200 px-2 py-1.5">구분</th>
+                <th class="border border-gray-200 px-2 py-1.5 w-24">작업량</th>
+                <th class="border border-gray-200 px-2 py-1.5 w-12">단위</th>
+              </tr>
+            </thead>
+            <tbody id="${sid}-extra-tbody">
+              ${[
+                {key:'조가선신설',unit:'M'},{key:'커넥터취부',unit:'개'},
+                {key:'조가선 철거',unit:'M'},{key:'전주 건식',unit:'본'},
+                {key:'전주 철거',unit:'본'},{key:'B 형접지(대지)',unit:'건'},
+                {key:'A 형접지(대지)',unit:'건'},{key:'지선신설',unit:'건'}
+              ].map(item=>`<tr class="hover:bg-orange-50">
+                <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
+                <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
+                <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+          <!-- 우측 7항목 -->
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr class="bg-orange-50 text-gray-600 text-center">
+                <th class="border border-gray-200 px-2 py-1.5">구분</th>
+                <th class="border border-gray-200 px-2 py-1.5 w-24">작업량</th>
+                <th class="border border-gray-200 px-2 py-1.5 w-12">단위</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${[
+                {key:'전주세움',unit:'본'},{key:'가요전선관',unit:'M'},
+                {key:'내관포설',unit:'M'},{key:'완금설치 (한전주)',unit:'식'},
+                {key:'단순1',unit:'본'},{key:'단순1-2',unit:'경간'},
+                {key:'단순2',unit:'경간'}
+              ].map(item=>`<tr class="hover:bg-orange-50">
+                <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
+                <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
+                <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>`;
   wrap.appendChild(div);

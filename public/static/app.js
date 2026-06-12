@@ -24339,12 +24339,11 @@ async function renderWorkReportForm(container, taskId) {
           <div class="flex items-center px-4 pt-3 pb-2">
             <span class="font-semibold text-gray-700 text-sm">
               <i class="fas fa-clipboard-list text-orange-400 mr-1"></i>
-              <span class="wr-set-extra-title text-orange-600 font-bold" style="display:none">${n}번</span> 추가입력
+              추가입력
             </span>
           </div>
           <div class="px-3 pb-3">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <!-- 좌측 8항목 -->
               <table class="w-full text-xs border-collapse">
                 <thead>
                   <tr class="bg-orange-50 text-gray-600 text-center">
@@ -24362,7 +24361,6 @@ async function renderWorkReportForm(container, taskId) {
                   </tr>`).join('')}
                 </tbody>
               </table>
-              <!-- 우측 7항목 -->
               <table class="w-full text-xs border-collapse">
                 <thead>
                   <tr class="bg-orange-50 text-gray-600 text-center">
@@ -24602,7 +24600,7 @@ function _wrAddCableSet() {
       <div class="flex items-center px-4 pt-3 pb-2">
         <span class="font-semibold text-gray-700 text-sm">
           <i class="fas fa-clipboard-list text-orange-400 mr-1"></i>
-          <span class="wr-set-extra-title text-orange-600 font-bold" style="display:none">${n}번</span> 추가입력
+          추가입력
         </span>
       </div>
       <div class="px-3 pb-3">

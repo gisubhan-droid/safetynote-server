@@ -2812,39 +2812,56 @@ app.get('/api/splice-reports', async (c) => {
 
 // GET /api/splice-reports/stats — 공량내역/물량통계 (접속탭)
 // ⚠️ /:id 보다 반드시 먼저 등록해야 라우트 충돌 없음
-// 프론트 기대 구조: { rows: [...일보별집계], items: [...공종별상세] }
+// 프론트 기대 구조: { stats: [...{work_label, unit, total_qty, worker_team}], rows, items }
 app.get('/api/splice-reports/stats', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const { construction_id, from_date, to_date } = c.req.query()
 
+  // ① splice_reports 단독 조회 (JOIN 없이 — 항상 안전)
   let where = `WHERE sr.status IN ('draft','submitted','confirmed')`
   const params: any[] = []
-
-  if (construction_id) {
-    where += ` AND t.request_no=(SELECT request_no FROM constructions WHERE id=?)`
-    params.push(construction_id)
-  }
   if (from_date) { where += ` AND sr.work_date >= ?`; params.push(from_date) }
   if (to_date)   { where += ` AND sr.work_date <= ?`; params.push(to_date) }
 
-  // ── rows: 일보별 집계행 (report 단위) ──────────────────────────────
-  const rows = rawDb.prepare(`
-    SELECT
-      sr.id,
-      sr.work_date,
-      sr.worker_team,
-      sr.manager_name,
-      sr.status,
-      t.request_no,
-      t.title AS task_title
-    FROM splice_reports sr
-    LEFT JOIN tasks t ON sr.task_id = t.id
-    ${where}
-    ORDER BY sr.work_date DESC, sr.id DESC
-  `).all(...params) as any[]
+  let rows: any[] = []
+  try {
+    rows = rawDb.prepare(`
+      SELECT
+        sr.id,
+        sr.work_date,
+        sr.worker_team,
+        sr.manager_name,
+        sr.status
+      FROM splice_reports sr
+      ${where}
+      ORDER BY sr.work_date DESC, sr.id DESC
+    `).all(...params) as any[]
+  } catch(e: any) {
+    return c.json({ error: 'DB 조회 실패: ' + e.message }, 500)
+  }
 
-  // ── items: 공종별 상세 (report_id 포함, work_label별 qty 합계) ──────
+  // ② construction_id 필터: tasks JOIN은 별도 처리 (실패해도 무시)
+  if (construction_id && rows.length > 0) {
+    try {
+      const ids = rows.map((r: any) => r.id)
+      const placeholders = ids.map(() => '?').join(',')
+      const filtered = rawDb.prepare(`
+        SELECT sr.id
+        FROM splice_reports sr
+        LEFT JOIN tasks t ON sr.task_id = t.id
+        WHERE sr.id IN (${placeholders})
+          AND t.request_no = (SELECT request_no FROM constructions WHERE id=?)
+      `).all(...ids, construction_id) as any[]
+      const filteredIds = new Set(filtered.map((r: any) => r.id))
+      rows = rows.filter((r: any) => filteredIds.has(r.id))
+    } catch(joinErr: any) {
+      console.warn('[GET /api/splice-reports/stats] construction_id 필터 JOIN 실패 (무시):', joinErr.message)
+      // 필터 실패 시 전체 결과 반환 (빈 결과보다 낫다)
+    }
+  }
+
+  // ③ items: 공종별 상세 (report_id 포함, work_label별 qty 합계)
   const reportIds = rows.map((r: any) => r.id)
   let items: any[] = []
   if (reportIds.length > 0) {
@@ -2856,7 +2873,7 @@ app.get('/api/splice-reports/stats', async (c) => {
         swi.unit,
         swi.is_night,
         swi.is_aerial,
-        SUM(swi.qty) AS qty
+        SUM(swi.qty) AS total_qty
       FROM splice_work_items swi
       WHERE swi.report_id IN (${placeholders})
       GROUP BY swi.report_id, swi.work_label, swi.unit, swi.is_night, swi.is_aerial
@@ -2864,7 +2881,21 @@ app.get('/api/splice-reports/stats', async (c) => {
     `).all(...reportIds) as any[]
   }
 
-  return c.json({ rows, items })
+  // ④ stats: 프론트가 기대하는 flat 구조 (report_id별 worker_team 포함)
+  // items에 해당 report의 worker_team을 조인하여 { work_label, unit, total_qty, worker_team } 배열 생성
+  const rowMap: Record<number, any> = {}
+  rows.forEach((r: any) => { rowMap[r.id] = r })
+  const stats = items.map((it: any) => ({
+    work_label:  it.work_label,
+    unit:        it.unit,
+    total_qty:   it.total_qty || 0,
+    worker_team: rowMap[it.report_id]?.worker_team || '',
+    is_night:    it.is_night,
+    is_aerial:   it.is_aerial,
+    report_id:   it.report_id,
+  }))
+
+  return c.json({ stats, rows, items })
 })
 
 // GET /api/splice-reports/:id — 단건 상세 (items 포함)

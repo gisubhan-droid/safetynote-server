@@ -24245,7 +24245,9 @@ async function renderFieldReportPage(container) {
         const spliceRes = await API.get('/splice-reports/stats' + spliceQS);
         spliceRows  = spliceRes.data.rows  || [];
         spliceItems = spliceRes.data.items || [];
-      } catch(e) { /* 무시 */ }
+      } catch(e) {
+        console.warn('[공량내역] 접속 탭 데이터 로드 실패:', e.message || e);
+      }
     }
 
     // ── 접속 테이블 헬퍼 ──
@@ -24253,7 +24255,7 @@ async function renderFieldReportPage(container) {
     const spliceMap = {};
     spliceItems.forEach(it => {
       if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
-      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0) + (it.qty||0);
+      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0) + (it.total_qty||it.qty||0);
     });
 
     container.innerHTML = `
@@ -24498,7 +24500,7 @@ async function _frLoadSpliceStats() {
     const spliceMap = {};
     spliceItems.forEach(it => {
       if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
-      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0) + (it.qty||0);
+      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0) + (it.total_qty||it.qty||0);
     });
 
     if (spliceRows.length === 0) {
@@ -24533,7 +24535,7 @@ async function _frLoadSpliceStats() {
           <tfoot>
             <tr class="bg-gray-100 font-bold text-gray-700">
               <td class="border border-gray-200 px-2 py-2 text-center" colspan="3">합 계</td>
-              ${spliceItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-indigo-100">${spliceItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.qty||0),0)||''}</td>`).join('')}
+              ${spliceItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-indigo-100">${spliceItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)||''}</td>`).join('')}
             </tr>
           </tfoot>
         </table>
@@ -24621,7 +24623,7 @@ function downloadFieldReportCSV() {
     const spliceMap = {};
     _frSpliceCacheItems.forEach(it => {
       if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
-      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0)+(it.qty||0);
+      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0)+(it.total_qty||it.qty||0);
     });
     const rows = _frSpliceCacheRows.map(row => {
       const sm = spliceMap[row.id] || {};
@@ -24635,7 +24637,7 @@ function downloadFieldReportCSV() {
     // 합계 행
     const totRow = ['합계','','',
       ..._frSpliceCacheItemKeys.map(k=>
-        _frSpliceCacheItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.qty||0),0)
+        _frSpliceCacheItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)
       )
     ];
     rows.push(totRow);

@@ -2437,33 +2437,53 @@ app.get('/api/work-reports/volume-stats', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const { construction_id, from_date, to_date } = c.req.query()
-  // status 조건: draft(임시저장)도 포함하여 작성된 일보 모두 표시
-  let where = `WHERE r.status IN ('draft','submitted','confirmed')`
+
+  // WHERE 조건을 r2/t2 별칭으로 구성 (서브쿼리 내 별칭 충돌 방지)
+  let mainWhere  = `WHERE r.status  IN ('draft','submitted','confirmed')`
+  let innerWhere = `WHERE r2.status IN ('draft','submitted','confirmed')`
   const params: any[] = []
-  if (construction_id) { where += ` AND t.request_no=(SELECT request_no FROM constructions WHERE id=?)`; params.push(construction_id) }
-  if (from_date) { where += ` AND r.work_date>=?`; params.push(from_date) }
-  if (to_date)   { where += ` AND r.work_date<=?`; params.push(to_date) }
-  if (user.role === 'worker') {
-    where += ` AND EXISTS (SELECT 1 FROM task_assignments ta WHERE ta.task_id=t.id AND ta.worker_id=?)`
-    params.push(user.id)
+  const innerParams: any[] = []
+
+  if (construction_id) {
+    const sub = `(SELECT request_no FROM constructions WHERE id=?)`
+    mainWhere  += ` AND t.request_no=${sub}`
+    innerWhere += ` AND t2.request_no=${sub}`
+    params.push(construction_id)
+    innerParams.push(construction_id)
   }
+  if (from_date) {
+    mainWhere  += ` AND r.work_date>=?`;  params.push(from_date)
+    innerWhere += ` AND r2.work_date>=?`; innerParams.push(from_date)
+  }
+  if (to_date) {
+    mainWhere  += ` AND r.work_date<=?`;  params.push(to_date)
+    innerWhere += ` AND r2.work_date<=?`; innerParams.push(to_date)
+  }
+  if (user.role === 'worker') {
+    mainWhere  += ` AND EXISTS (SELECT 1 FROM task_assignments ta  WHERE ta.task_id=t.id  AND ta.worker_id=?)`;  params.push(user.id)
+    innerWhere += ` AND EXISTS (SELECT 1 FROM task_assignments ta2 WHERE ta2.task_id=t2.id AND ta2.worker_id=?)`; innerParams.push(user.id)
+  }
+
   const rows = rawDb.prepare(`
-    SELECT r.id AS report_id, r.work_date, t.created_at AS order_date, r.worker_team,
+    SELECT r.id AS report_id, r.work_date, r.worker_team,
            t.request_no, t.construction_type AS work_class, r.manager_name,
            (SELECT COALESCE(SUM(rl.usage_m),0) FROM work_report_cables rl WHERE rl.report_id=r.id) AS cable_total
     FROM work_reports r JOIN tasks t ON t.id=r.task_id
-    ${where} ORDER BY r.work_date DESC
+    ${mainWhere} ORDER BY r.work_date DESC
   `).all(...params)
-  // extras(추가입력 공종별 작업량) — WHERE 절을 별도 구성하여 t 별칭 충돌 방지
-  let extraWhere = `WHERE re.report_id IN (SELECT r2.id FROM work_reports r2 JOIN tasks t ON t.id=r2.task_id ${where})`
+
+  // extras: 서브쿼리에서 별칭 r2/t2 사용 → 외부 WHERE와 별칭 충돌 없음
   const extras = rawDb.prepare(`
     SELECT re.report_id, re.item_key, SUM(re.qty) AS qty
     FROM work_report_extras re
-    ${extraWhere}
+    WHERE re.report_id IN (
+      SELECT r2.id FROM work_reports r2 JOIN tasks t2 ON t2.id=r2.task_id
+      ${innerWhere}
+    )
     GROUP BY re.report_id, re.item_key
-  `).all(...params)
-  const prices = rawDb.prepare(`SELECT * FROM volume_unit_prices ORDER BY sort_order`).all()
-  return c.json({ rows, extras, prices })
+  `).all(...innerParams)
+
+  return c.json({ rows, extras })
 })
 
 // GET /api/work-reports/task/:taskId

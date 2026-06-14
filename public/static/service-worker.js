@@ -1,6 +1,6 @@
-// SafetyNOTE Service Worker v1
-const STATIC_CACHE = 'sn-static-v1';
-const API_CACHE    = 'sn-api-v1';
+// SafetyNOTE Service Worker v7
+const STATIC_CACHE = 'sn-static-v7';
+const API_CACHE    = 'sn-api-v7';
 
 const PRECACHE = [
   '/',

@@ -24676,12 +24676,18 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
   const cDrafts    = cableTasks.filter(t => t.report_id && t.report_status === 'draft');
   const cCompleted = cableTasks.filter(t => t.report_id && (t.report_status === 'submitted' || t.report_status === 'confirmed'));
 
-  // ── 접속 탭 분류 ──────────────────────────────────────────────────
-  const reportMap = {};
-  spliceReports.forEach(r => { if (r.task_id) reportMap[r.task_id] = { id: r.id, status: r.status }; });
-  const sPending   = spliceTasks.filter(t => !reportMap[t.id]);
-  const sDrafts    = spliceTasks.filter(t => reportMap[t.id] && (reportMap[t.id].status === 'draft' || !reportMap[t.id].status));
-  const sCompleted = spliceTasks.filter(t => reportMap[t.id] && (reportMap[t.id].status === 'submitted' || reportMap[t.id].status === 'confirmed'));
+  // ── 접속 탭 분류 ─────────────────────────────────────────────────
+  // - 작성 대상(pending) : task 기반 — 아직 report가 없는 task 목록
+  // - 작성 중  (draft)   : report 기반 — status='draft'인 report 목록
+  // - 작성 완료(completed): report 기반 — status='submitted'|'confirmed'인 report 목록
+  // ※ report 기반 분류로 task_id 없는 일보도 올바르게 표시됨
+  const reportedTaskIds = new Set(spliceReports.filter(r => r.task_id).map(r => r.task_id));
+  const sPending   = spliceTasks.filter(t => !reportedTaskIds.has(t.id));
+  const sDrafts    = spliceReports.filter(r => r.status === 'draft');
+  const sCompleted = spliceReports.filter(r => r.status === 'submitted' || r.status === 'confirmed');
+  // task 정보를 카드에서 참조하기 위한 taskMap
+  const taskMap = {};
+  spliceTasks.forEach(t => { taskMap[t.id] = t; });
 
   // ── 카드 렌더러 ──────────────────────────────────────────────────
   const makeBadge = (type, rptStatus) => {
@@ -24720,14 +24726,14 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
     </div>`;
   };
 
-  const renderSpliceCard = (t) => {
+  // ── 접속 카드 렌더러 ─────────────────────────────────────────────
+  // ① 작성 대상용 (task 기반 — 아직 report 없음)
+  const renderSpliceTaskCard = (t) => {
     const subNum = t.work_number ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number) : t.task_number;
-    const rpt = reportMap[t.id];
-    const badge = makeBadge('splice', rpt ? rpt.status || 'draft' : 'none');
-    const reportId = rpt ? rpt.id : null;
+    const badge = makeBadge('splice', 'none');
     return `
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-indigo-300 hover:shadow transition-all"
-         onclick="renderSpliceReportForm(document.getElementById('page-content'), ${reportId}, ${t.id})">
+         onclick="renderSpliceReportForm(document.getElementById('page-content'), null, ${t.id})">
       <div class="flex items-start justify-between gap-2">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1 flex-wrap">
@@ -24739,6 +24745,33 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
             ${t.request_no ? `<span><i class="fas fa-file-contract mr-0.5 text-gray-300"></i>${t.request_no}</span>` : ''}
             ${t.work_completed_at ? `<span><i class="fas fa-calendar-check mr-0.5 text-gray-300"></i>${(t.work_completed_at||'').slice(0,10)}</span>` : ''}
             ${t.construction_type ? `<span class="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">${t.construction_type}</span>` : ''}
+          </div>
+        </div>
+        <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
+      </div>
+    </div>`;
+  };
+
+  // ② 작성 중 / 작성 완료용 (report 기반)
+  const renderSpliceCard = (r) => {
+    const task = r.task_id ? taskMap[r.task_id] : null;
+    const badge = makeBadge('splice', r.status || 'draft');
+    const title = task ? (task.title || '-') : (r.work_date ? `${r.work_date} 접속일보` : '접속일보');
+    const subNum = task ? (task.work_number ? (task.sub_task_number ? `${task.work_number}-${task.sub_task_number}` : task.work_number) : task.task_number) : '';
+    return `
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-indigo-300 hover:shadow transition-all"
+         onclick="renderSpliceReportForm(document.getElementById('page-content'), ${r.id}, ${r.task_id || 'null'})">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1 flex-wrap">
+            <span class="font-semibold text-sm text-gray-800 truncate">${title}</span>
+            ${badge}
+          </div>
+          <div class="text-xs text-gray-500 flex flex-wrap gap-2">
+            ${subNum ? `<span><i class="fas fa-hashtag mr-0.5 text-gray-300"></i>${subNum}</span>` : ''}
+            ${r.worker_team ? `<span><i class="fas fa-users mr-0.5 text-gray-300"></i>${r.worker_team}</span>` : ''}
+            ${r.work_date ? `<span><i class="fas fa-calendar mr-0.5 text-gray-300"></i>${r.work_date}</span>` : ''}
+            ${task && task.construction_type ? `<span class="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">${task.construction_type}</span>` : ''}
           </div>
         </div>
         <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
@@ -24808,9 +24841,9 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
         ${subTabBtn('splice', 'completed', '작성 완료', sCompleted.length, 'green')}
       </div>
       <input type="hidden" id="rw-splice-sub-state" value="${sSubActive}">
-      <div id="rw-splice-pane-pending"   class="${sSubActive==='pending'   ? '' : 'hidden'} space-y-2">${sPending.length   ? sPending.map(renderSpliceCard).join('')   : emptyMsg('작성 대상 접속 일보가 없습니다')}</div>
-      <div id="rw-splice-pane-draft"     class="${sSubActive==='draft'     ? '' : 'hidden'} space-y-2">${sDrafts.length    ? sDrafts.map(renderSpliceCard).join('')    : emptyMsg('임시저장된 접속 일보가 없습니다')}</div>
-      <div id="rw-splice-pane-completed" class="${sSubActive==='completed' ? '' : 'hidden'} space-y-2">${sCompleted.length ? sCompleted.map(renderSpliceCard).join('') : emptyMsg('제출된 접속 일보가 없습니다')}</div>
+      <div id="rw-splice-pane-pending"   class="${sSubActive==='pending'   ? '' : 'hidden'} space-y-2">${sPending.length   ? sPending.map(renderSpliceTaskCard).join('')  : emptyMsg('작성 대상 접속 일보가 없습니다')}</div>
+      <div id="rw-splice-pane-draft"     class="${sSubActive==='draft'     ? '' : 'hidden'} space-y-2">${sDrafts.length    ? sDrafts.map(renderSpliceCard).join('')     : emptyMsg('임시저장된 접속 일보가 없습니다')}</div>
+      <div id="rw-splice-pane-completed" class="${sSubActive==='completed' ? '' : 'hidden'} space-y-2">${sCompleted.length ? sCompleted.map(renderSpliceCard).join('')  : emptyMsg('제출된 접속 일보가 없습니다')}</div>
     </div>
   </div>`;
 

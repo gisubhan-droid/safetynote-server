@@ -24346,12 +24346,12 @@ async function renderWorkReportForm(container, taskId) {
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-od">${OD_OPTS.replace(`"${l.od||''}"`,`"${l.od||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-id">${ID_OPTS.replace(`"${l.id_val||''}"`,`"${l.id_val||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-purpose">${PURPOSE_OPTS.replace(`"${l.purpose||''}"`,`"${l.purpose||''}" selected`)}</select></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" value="${l.start_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-start-point" placeholder="시작(M)" oninput="_calcLineUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" value="${l.end_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-end-point" placeholder="종료(M)" oninput="_calcLineUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" value="${l.usage_length||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-usage-length bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${l.start_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-start-point" placeholder="시작(M)" oninput="_calcLineUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${l.end_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-end-point" placeholder="종료(M)" oninput="_calcLineUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${l.usage_length||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-usage-length bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
       <td class="border border-gray-200 p-0.5"><input type="text" value="${l.optical_city||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-center wrl-optical-city" placeholder="광도시(S)"></td>
       <td class="border border-gray-200 p-0.5"><input type="text" value="${l.base_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-base-no" placeholder="기초번호"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" value="${l.mat_qty||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-mat-qty" placeholder="0"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${l.mat_qty||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-mat-qty" placeholder="0"></td>
       <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
     </tr>`;
 
@@ -24393,9 +24393,9 @@ async function renderWorkReportForm(container, taskId) {
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS.replace(`value="${cb.mfg_year||''}"`,`value="${cb.mfg_year||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS.replace(`value="${cb.cable_kind||''}"`,`value="${cb.cable_kind||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS.replace(`value="${cb.proc||''}"`,`value="${cb.proc||''}" selected`)}</select></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.start_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.end_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" value="${cb.usage_m||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${cb.start_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${cb.end_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${cb.usage_m||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
       <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.remark||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-remark" placeholder="특이사항"></td>
       <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
     </tr>`};
@@ -24570,10 +24570,10 @@ async function renderWorkReportForm(container, taskId) {
 function _calcUsage(inputEl) {
   const tr = inputEl.closest('tr');
   if (!tr) return;
-  const sp = parseFloat(tr.querySelector('.wrc-start-point')?.value);
-  const ep = parseFloat(tr.querySelector('.wrc-end-point')?.value);
+  const sp = parseInt(tr.querySelector('.wrc-start-point')?.value);
+  const ep = parseInt(tr.querySelector('.wrc-end-point')?.value);
   const usageEl = tr.querySelector('.wrc-usage-m');
-  if (usageEl && !isNaN(sp) && !isNaN(ep)) usageEl.value = Math.abs(ep - sp).toFixed(1);
+  if (usageEl && !isNaN(sp) && !isNaN(ep)) usageEl.value = Math.abs(ep - sp);
   else if (usageEl) usageEl.value = '';
 }
 
@@ -24581,10 +24581,10 @@ function _calcUsage(inputEl) {
 function _calcLineUsage(inputEl) {
   const tr = inputEl.closest('tr');
   if (!tr) return;
-  const sp = parseFloat(tr.querySelector('.wrl-start-point')?.value) || 0;
-  const ep = parseFloat(tr.querySelector('.wrl-end-point')?.value)   || 0;
+  const sp = parseInt(tr.querySelector('.wrl-start-point')?.value) || 0;
+  const ep = parseInt(tr.querySelector('.wrl-end-point')?.value)   || 0;
   const usageEl = tr.querySelector('.wrl-usage-length');
-  if (usageEl && ep > sp) usageEl.value = (ep - sp).toFixed(1);
+  if (usageEl && ep > sp) usageEl.value = (ep - sp);
   else if (usageEl) usageEl.value = '';
 }
 
@@ -24628,9 +24628,9 @@ function _wrAddCableSet() {
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS2}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
       <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-remark" placeholder="특이사항"></td>
       <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
     </tr>`;
@@ -24645,12 +24645,12 @@ function _wrAddCableSet() {
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-od">${OD_OPTS}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-id">${ID_OPTS}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-purpose">${PURPOSE_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-start-point" placeholder="시작(M)" oninput="_calcLineUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-end-point" placeholder="종료(M)" oninput="_calcLineUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-usage-length bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-start-point" placeholder="시작(M)" oninput="_calcLineUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-end-point" placeholder="종료(M)" oninput="_calcLineUsage(this)"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-usage-length bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
       <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-center wrl-optical-city" placeholder="광도시(S)"></td>
       <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-base-no" placeholder="기초번호"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-mat-qty" placeholder="0"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-mat-qty" placeholder="0"></td>
       <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
     </tr>`;
   }
@@ -24775,9 +24775,9 @@ function _wrAddCableRow(tbodyId) {
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS3}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS3}</select></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-remark" placeholder="특이사항"></td>
     <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>`;
   tbody.appendChild(tr);
@@ -24802,12 +24802,12 @@ function _wrAddLineRow(tbodyId) {
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-od">${OD_OPTS}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-id">${ID_OPTS}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-purpose">${PURPOSE_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-start-point" placeholder="시작(M)" oninput="_calcLineUsage(this)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-end-point" placeholder="종료(M)" oninput="_calcLineUsage(this)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-usage-length bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-start-point" placeholder="시작(M)" oninput="_calcLineUsage(this)"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-end-point" placeholder="종료(M)" oninput="_calcLineUsage(this)"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-usage-length bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-center wrl-optical-city" placeholder="광도시(S)"></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-base-no" placeholder="기초번호"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-mat-qty" placeholder="0"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-mat-qty" placeholder="0"></td>
     <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>`;
   tbody.appendChild(tr);
 }
@@ -24903,9 +24903,9 @@ function _collectWrData(taskId) {
           mfg_year:    tr.querySelector('.wrc-mfg-year')?.value || '',
           cable_kind:  tr.querySelector('.wrc-kind')?.value || '',
           proc:        tr.querySelector('.wrc-proc')?.value || '',
-          start_point: parseFloat(tr.querySelector('.wrc-start-point')?.value) || 0,
-          end_point:   parseFloat(tr.querySelector('.wrc-end-point')?.value) || 0,
-          usage_m:     parseFloat(tr.querySelector('.wrc-usage-m')?.value) || 0,
+          start_point: parseInt(tr.querySelector('.wrc-start-point')?.value) || 0,
+          end_point:   parseInt(tr.querySelector('.wrc-end-point')?.value) || 0,
+          usage_m:     parseInt(tr.querySelector('.wrc-usage-m')?.value) || 0,
           remark:      tr.querySelector('.wrc-remark')?.value || '',
         });
       });
@@ -24920,9 +24920,9 @@ function _collectWrData(taskId) {
           od:           tr.querySelector('.wrl-od')?.value || '',
           id_val:       tr.querySelector('.wrl-id')?.value || '',
           purpose:      tr.querySelector('.wrl-purpose')?.value || '',
-          start_point:  parseFloat(tr.querySelector('.wrl-start-point')?.value) || 0,
-          end_point:    parseFloat(tr.querySelector('.wrl-end-point')?.value) || 0,
-          usage_length: parseFloat(tr.querySelector('.wrl-usage-length')?.value) || 0,
+          start_point:  parseInt(tr.querySelector('.wrl-start-point')?.value) || 0,
+          end_point:    parseInt(tr.querySelector('.wrl-end-point')?.value) || 0,
+          usage_length: parseInt(tr.querySelector('.wrl-usage-length')?.value) || 0,
           optical_city: tr.querySelector('.wrl-optical-city')?.value || '',
           base_no:      tr.querySelector('.wrl-base-no')?.value || '',
           mat_qty:      parseInt(tr.querySelector('.wrl-mat-qty')?.value) || 0,
@@ -24933,7 +24933,7 @@ function _collectWrData(taskId) {
     const tbodyExtra = document.getElementById(`${sid}-extra-tbody`);
     if (tbodyExtra) {
       tbodyExtra.querySelectorAll('tr').forEach(tr => {
-        const qty = parseFloat(tr.querySelector('.wre-qty')?.value) || 0;
+        const qty = parseInt(tr.querySelector('.wre-qty')?.value) || 0;
         const key = tr.querySelector('.wre-qty')?.dataset.key || '';
         if (qty > 0) extras.push({ key, qty });
       });

@@ -25205,11 +25205,14 @@ async function renderCableDetailPage(container) {
     const totalMove   = cables.filter(c=>c.proc==='이설').reduce((s,c)=>s+(c.usage_m||0),0);
     const totalAll    = cables.reduce((s,c)=>s+(c.usage_m||0),0);
 
-    // 케이블 종류별 집계
+    // 규격 + 케이블종류 + 제조사 기준 집계
     const byType = {};
     cables.forEach(c => {
-      const key = c.cable_type || '미분류';
-      if (!byType[key]) byType[key] = { new:0, remove:0, move:0 };
+      const spec  = c.spec       || '-';
+      const type  = c.cable_type || '-';
+      const maker = c.maker      || '-';
+      const key   = `${spec}__${type}__${maker}`;
+      if (!byType[key]) byType[key] = { spec, type, maker, new:0, remove:0, move:0 };
       if (c.proc==='신설') byType[key].new    += (c.usage_m||0);
       if (c.proc==='철거') byType[key].remove += (c.usage_m||0);
       if (c.proc==='이설') byType[key].move   += (c.usage_m||0);
@@ -25262,17 +25265,19 @@ async function renderCableDetailPage(container) {
         </div>`).join('')}
       </div>
 
-      <!-- 케이블 종류별 요약 -->
+      <!-- 케이블 요약 -->
       ${Object.keys(byType).length > 0 ? `
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
         <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <i class="fas fa-chart-bar text-blue-400"></i> 케이블 종류별 요약
+          <i class="fas fa-chart-bar text-blue-400"></i> 케이블 요약
         </h3>
         <div class="overflow-x-auto">
           <table class="text-xs border-collapse w-full">
             <thead>
               <tr class="bg-gray-50 text-gray-600">
-                <th class="border border-gray-200 px-3 py-2 text-left">케이블 종류</th>
+                <th class="border border-gray-200 px-3 py-2 text-center">규격</th>
+                <th class="border border-gray-200 px-3 py-2 text-center">케이블종류</th>
+                <th class="border border-gray-200 px-3 py-2 text-center">제조사</th>
                 <th class="border border-gray-200 px-3 py-2 text-right bg-blue-50">신설(M)</th>
                 <th class="border border-gray-200 px-3 py-2 text-right bg-red-50">철거(M)</th>
                 <th class="border border-gray-200 px-3 py-2 text-right bg-purple-50">이설(M)</th>
@@ -25280,9 +25285,11 @@ async function renderCableDetailPage(container) {
               </tr>
             </thead>
             <tbody>
-              ${Object.entries(byType).map(([type, v])=>`
+              ${Object.entries(byType).map(([, v])=>`
               <tr class="hover:bg-gray-50">
-                <td class="border border-gray-100 px-3 py-1.5 font-medium">${type}</td>
+                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
+                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
+                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
                 <td class="border border-gray-100 px-3 py-1.5 text-right bg-blue-50">${v.new>0?v.new.toFixed(1):''}</td>
                 <td class="border border-gray-100 px-3 py-1.5 text-right bg-red-50">${v.remove>0?v.remove.toFixed(1):''}</td>
                 <td class="border border-gray-100 px-3 py-1.5 text-right bg-purple-50">${v.move>0?v.move.toFixed(1):''}</td>
@@ -25291,7 +25298,7 @@ async function renderCableDetailPage(container) {
             </tbody>
             <tfoot>
               <tr class="bg-gray-100 font-bold text-gray-700">
-                <td class="border border-gray-200 px-3 py-2">합 계</td>
+                <td class="border border-gray-200 px-3 py-2 text-center" colspan="3">합 계</td>
                 <td class="border border-gray-200 px-3 py-2 text-right bg-blue-100">${totalNew.toFixed(1)}</td>
                 <td class="border border-gray-200 px-3 py-2 text-right bg-red-100">${totalRemove.toFixed(1)}</td>
                 <td class="border border-gray-200 px-3 py-2 text-right bg-purple-100">${totalMove.toFixed(1)}</td>

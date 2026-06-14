@@ -24179,7 +24179,11 @@ async function renderFieldReportPage(container) {
     const frQS = frParams.length ? '?' + frParams.join('&') : '';
 
     const [statsRes, consRes, priceRes] = await Promise.all([
-      API.get('/work-reports/volume-stats' + frQS),
+      API.get('/work-reports/volume-stats' + frQS).catch(err => {
+        const status = err?.response?.status;
+        if (status === 404) throw new Error('volume-stats API 없음 (서버 버전 확인 필요 — NAS에서 pm2 restart all 실행)');
+        throw err;
+      }),
       API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } })),
       API.get('/volume-unit-prices').catch(() => ({ data: { prices: [] } }))
     ]);
@@ -26351,7 +26355,11 @@ async function renderVolumeStatsPage(container) {
     const vsQS = vsParams.length ? '?' + vsParams.join('&') : '';
 
     const [statsRes, consRes, priceRes] = await Promise.all([
-      API.get('/work-reports/volume-stats' + vsQS),
+      API.get('/work-reports/volume-stats' + vsQS).catch(err => {
+        const status = err?.response?.status;
+        if (status === 404) throw new Error('volume-stats API 없음 (서버 버전 확인 필요 — NAS에서 pm2 restart all 실행)');
+        throw err;
+      }),
       API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } })),
       API.get('/volume-unit-prices').catch(() => ({ data: { prices: [] } }))
     ]);

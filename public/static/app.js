@@ -26102,7 +26102,7 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     <div class="max-w-3xl mx-auto p-4 space-y-4">
       <!-- 헤더 -->
       <div class="flex items-center gap-3">
-        <button onclick="navigateTo('field-report')" class="text-gray-400 hover:text-gray-600">
+        <button onclick="navigateTo('report-write')" class="text-gray-400 hover:text-gray-600">
           <i class="fas fa-arrow-left text-lg"></i>
         </button>
         <div>
@@ -26289,7 +26289,11 @@ async function submitSpliceReport() {
     const reportId = res.data.reportId;
     await API.post(`/splice-reports/${reportId}/submit`, {});
     toast('접속일보 제출 완료!', 'success');
-    setTimeout(() => navigateTo('field-report'), 1200);
+    // 제출 완료 후 접속 작업일보 목록(완료 탭)으로 이동
+    setTimeout(async () => {
+      const content = document.getElementById('page-content');
+      if (content) await _reportWriteSpliceList(content, 'completed');
+    }, 1200);
   } catch(e) {
     toast('제출 실패: ' + e.message, 'error');
   }

@@ -2883,7 +2883,8 @@ app.put('/api/splice-unit-prices', async (c) => {
   return c.json({ ok: true })
 })
 
-// GET /api/splice-reports/stats — 물량통계 (접속)
+// GET /api/splice-reports/stats — 공량내역/물량통계 (접속탭)
+// 프론트 기대 구조: { rows: [...일보별집계], items: [...공종별상세] }
 app.get('/api/splice-reports/stats', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
@@ -2899,24 +2900,43 @@ app.get('/api/splice-reports/stats', async (c) => {
   if (from_date) { where += ` AND sr.work_date >= ?`; params.push(from_date) }
   if (to_date)   { where += ` AND sr.work_date <= ?`; params.push(to_date) }
 
+  // ── rows: 일보별 집계행 (report 단위) ──────────────────────────────
   const rows = rawDb.prepare(`
     SELECT
+      sr.id,
       sr.work_date,
       sr.worker_team,
-      swi.work_label,
-      swi.unit,
-      swi.is_night,
-      swi.is_aerial,
-      SUM(swi.qty) AS total_qty
+      sr.manager_name,
+      sr.status,
+      t.request_no,
+      t.title AS task_title
     FROM splice_reports sr
-    JOIN splice_work_items swi ON swi.report_id = sr.id
     LEFT JOIN tasks t ON sr.task_id = t.id
     ${where}
-    GROUP BY sr.work_date, sr.worker_team, swi.work_label, swi.unit, swi.is_night, swi.is_aerial
-    ORDER BY sr.work_date, sr.worker_team
-  `).all(...params)
+    ORDER BY sr.work_date DESC, sr.id DESC
+  `).all(...params) as any[]
 
-  return c.json({ stats: rows })
+  // ── items: 공종별 상세 (report_id 포함, work_label별 qty 합계) ──────
+  const reportIds = rows.map((r: any) => r.id)
+  let items: any[] = []
+  if (reportIds.length > 0) {
+    const placeholders = reportIds.map(() => '?').join(',')
+    items = rawDb.prepare(`
+      SELECT
+        swi.report_id,
+        swi.work_label,
+        swi.unit,
+        swi.is_night,
+        swi.is_aerial,
+        SUM(swi.qty) AS qty
+      FROM splice_work_items swi
+      WHERE swi.report_id IN (${placeholders})
+      GROUP BY swi.report_id, swi.work_label, swi.unit, swi.is_night, swi.is_aerial
+      ORDER BY swi.report_id, swi.item_order
+    `).all(...reportIds) as any[]
+  }
+
+  return c.json({ rows, items })
 })
 
 // GET /api/admin/folders - 저장 폴더 용량 및 파일 종류별 집계 조회

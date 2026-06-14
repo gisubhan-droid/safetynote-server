@@ -24606,18 +24606,30 @@ async function _reportWriteSelectType(type) {
   }
 }
 
-async function _reportWriteCableList(container) {
+async function _reportWriteCableList(container, activeTab) {
+  activeTab = activeTab || 'pending';
   container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
-    const res = await API.get('/tasks?status=working,work_completed,completed&limit=200');
+    const res = await API.get('/tasks?status=working,work_completed,completed');
     const tasks = (res.data.tasks || []);
-    const pending = tasks.filter(t => !t.report_id || t.report_status === 'draft');
+
+    // 탭 분류
+    const pending   = tasks.filter(t => !t.report_id);
+    const drafts    = tasks.filter(t => t.report_id && t.report_status === 'draft');
+    const completed = tasks.filter(t => t.report_id && (t.report_status === 'submitted' || t.report_status === 'confirmed'));
 
     const renderCard = (t) => {
       const subNum = t.work_number ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number) : t.task_number;
-      const badge = !t.report_id
-        ? `<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">미작성</span>`
-        : `<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">임시저장</span>`;
+      let badge = '';
+      if (!t.report_id) {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">미작성</span>`;
+      } else if (t.report_status === 'draft') {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">임시저장</span>`;
+      } else if (t.report_status === 'submitted') {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">제출완료</span>`;
+      } else if (t.report_status === 'confirmed') {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">확인완료</span>`;
+      }
       return `
       <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-pink-300 hover:shadow transition-all"
            onclick="renderWorkReportForm(document.getElementById('page-content'), ${t.id})">
@@ -24631,7 +24643,7 @@ async function _reportWriteCableList(container) {
               <span><i class="fas fa-hashtag mr-0.5 text-gray-300"></i>${subNum}</span>
               ${t.request_no ? `<span><i class="fas fa-file-contract mr-0.5 text-gray-300"></i>${t.request_no}</span>` : ''}
               ${t.work_completed_at ? `<span><i class="fas fa-calendar-check mr-0.5 text-gray-300"></i>${t.work_completed_at?.slice(0,10)||''}</span>` : ''}
-              ${t.construction_type ? `<span class="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">${t.construction_type}</span>` : ''}
+              ${t.construction_type ? `<span class="bg-pink-50 text-pink-600 px-1.5 py-0.5 rounded">${t.construction_type}</span>` : ''}
             </div>
           </div>
           <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
@@ -24639,30 +24651,88 @@ async function _reportWriteCableList(container) {
       </div>`;
     };
 
+    const emptyMsg = (msg) => `<div class="text-center py-12 text-gray-400"><i class="fas fa-check-circle text-4xl mb-3 text-green-400 block"></i><p class="text-sm">${msg}</p></div>`;
+
+    const tabBtn = (id, label, count, color) => {
+      const isActive = activeTab === id;
+      const activeColor = { pending:'pink', draft:'orange', completed:'green' }[id] || 'gray';
+      const on  = `border-${activeColor}-500 text-${activeColor}-600 bg-white`;
+      const off = `border-transparent text-gray-400 bg-gray-50 hover:text-gray-600`;
+      return `<button class="px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors flex items-center gap-1.5 ${isActive ? on : off}"
+        onclick="_rwCableTab('${id}')">
+        ${label}
+        <span class="text-xs px-1.5 py-0.5 rounded-full ${isActive ? `bg-${activeColor}-100 text-${activeColor}-600` : 'bg-gray-200 text-gray-500'}">${count}</span>
+      </button>`;
+    };
+
     container.innerHTML = `
-    <div class="max-w-4xl mx-auto p-4 space-y-3">
-      <div class="flex items-center gap-3 mb-2">
+    <div class="max-w-4xl mx-auto p-4 space-y-0">
+      <!-- 헤더 -->
+      <div class="flex items-center gap-3 mb-3">
         <button onclick="renderReportWritePage(document.getElementById('page-content'))"
                 class="text-gray-400 hover:text-gray-600 p-1">
           <i class="fas fa-arrow-left text-lg"></i>
         </button>
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <i class="fas fa-cable-car text-pink-500"></i> 외선 작업일보 — 작성 대상
+          <i class="fas fa-cable-car text-pink-500"></i> 외선 작업일보
         </h2>
       </div>
-      ${pending.length === 0
-        ? `<div class="text-center py-12 text-gray-400"><i class="fas fa-check-circle text-4xl mb-3 text-green-400 block"></i><p class="text-sm">작성 대상 외선 일보가 없습니다</p></div>`
-        : pending.map(renderCard).join('')}
+
+      <!-- 탭 바 -->
+      <div class="flex gap-0 border-b border-gray-200 mb-0">
+        ${tabBtn('pending',   '작성 대상', pending.length,   'pink')}
+        ${tabBtn('draft',     '작성 중',   drafts.length,    'orange')}
+        ${tabBtn('completed', '작성 완료', completed.length, 'green')}
+      </div>
+      <input type="hidden" id="rwc-tab-state" value="${activeTab}">
+
+      <!-- 작성 대상 -->
+      <div id="rwc-pane-pending" class="${activeTab==='pending' ? '' : 'hidden'} pt-3 space-y-2">
+        ${pending.length === 0 ? emptyMsg('작성 대상 외선 일보가 없습니다') : pending.map(renderCard).join('')}
+      </div>
+      <!-- 작성 중 -->
+      <div id="rwc-pane-draft" class="${activeTab==='draft' ? '' : 'hidden'} pt-3 space-y-2">
+        ${drafts.length === 0 ? emptyMsg('임시저장된 외선 일보가 없습니다') : drafts.map(renderCard).join('')}
+      </div>
+      <!-- 작성 완료 -->
+      <div id="rwc-pane-completed" class="${activeTab==='completed' ? '' : 'hidden'} pt-3 space-y-2">
+        ${completed.length === 0 ? emptyMsg('제출된 외선 일보가 없습니다') : completed.map(renderCard).join('')}
+      </div>
     </div>`;
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
 }
 
-async function _reportWriteSpliceList(container) {
+function _rwCableTab(tab) {
+  const stateEl = document.getElementById('rwc-tab-state');
+  if (stateEl) stateEl.value = tab;
+  ['pending','draft','completed'].forEach(id => {
+    const pane = document.getElementById(`rwc-pane-${id}`);
+    const btn  = document.querySelector(`button[onclick="_rwCableTab('${id}')"]`);
+    const isActive = id === tab;
+    if (pane) pane.classList.toggle('hidden', !isActive);
+    if (btn) {
+      const colorMap = { pending:'pink', draft:'orange', completed:'green' };
+      const c = colorMap[id];
+      // active 클래스 재설정
+      btn.className = btn.className
+        .replace(/border-\w+-500|text-\w+-600|bg-white|border-transparent|text-gray-400|bg-gray-50|hover:text-gray-600/g, '')
+        .trim();
+      btn.className += isActive
+        ? ` border-${c}-500 text-${c}-600 bg-white`
+        : ` border-transparent text-gray-400 bg-gray-50 hover:text-gray-600`;
+      const badge = btn.querySelector('span');
+      if (badge) badge.className = `text-xs px-1.5 py-0.5 rounded-full ${isActive ? `bg-${c}-100 text-${c}-600` : 'bg-gray-200 text-gray-500'}`;
+    }
+  });
+}
+
+async function _reportWriteSpliceList(container, activeTab) {
+  activeTab = activeTab || 'pending';
   container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
   try {
-    // 작업 목록과 접속일보 목록을 개별 조회 (하나 실패해도 나머지 표시)
+    // 작업 목록과 접속일보 목록을 개별 조회
     let tasks = [], reports = [];
     try {
       const taskRes = await API.get('/tasks?status=working,work_completed,completed');
@@ -24677,28 +24747,31 @@ async function _reportWriteSpliceList(container) {
       console.error('[splice-list] splice-reports 조회 실패:', e?.response?.status, e?.message);
     }
 
-    // splice_report가 있는 task_id 집합 (draft 포함 모든 상태)
-    const reportedTaskIds = new Set(reports.map(r => r.task_id).filter(Boolean));
-    // draft 상태 보고서의 task_id → report_id 맵
-    const draftMap = {};
+    // task_id → report 맵 (전체 상태)
+    const reportMap = {};   // task_id → { id, status }
     reports.forEach(r => {
-      if ((r.status === 'draft' || !r.status) && r.task_id) {
-        draftMap[r.task_id] = r.id;
-      }
+      if (r.task_id) reportMap[r.task_id] = { id: r.id, status: r.status };
     });
 
-    // 작성 대상: 접속일보가 없거나 임시저장 상태인 작업
-    const pending = tasks.filter(t =>
-      !reportedTaskIds.has(t.id) || draftMap[t.id] !== undefined
-    );
+    // 탭 분류
+    const pending   = tasks.filter(t => !reportMap[t.id]);
+    const drafts    = tasks.filter(t => reportMap[t.id] && (reportMap[t.id].status === 'draft' || !reportMap[t.id].status));
+    const completed = tasks.filter(t => reportMap[t.id] && (reportMap[t.id].status === 'submitted' || reportMap[t.id].status === 'confirmed'));
 
     const renderCard = (t) => {
       const subNum = t.work_number ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number) : t.task_number;
-      const hasDraft = draftMap[t.id] !== undefined;
-      const badge = hasDraft
-        ? `<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">임시저장</span>`
-        : `<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">미작성</span>`;
-      const reportId = hasDraft ? draftMap[t.id] : null;
+      const rpt = reportMap[t.id];
+      let badge = '';
+      if (!rpt) {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">미작성</span>`;
+      } else if (rpt.status === 'draft' || !rpt.status) {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">임시저장</span>`;
+      } else if (rpt.status === 'submitted') {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">제출완료</span>`;
+      } else if (rpt.status === 'confirmed') {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">확인완료</span>`;
+      }
+      const reportId = rpt ? rpt.id : null;
       return `
       <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-indigo-300 hover:shadow transition-all"
            onclick="renderSpliceReportForm(document.getElementById('page-content'), ${reportId}, ${t.id})">
@@ -24720,25 +24793,82 @@ async function _reportWriteSpliceList(container) {
       </div>`;
     };
 
+    const emptyMsg = (msg) => `<div class="text-center py-12 text-gray-400"><i class="fas fa-check-circle text-4xl mb-3 text-green-400 block"></i><p class="text-sm">${msg}</p></div>`;
+
+    const tabBtn = (id, label, count) => {
+      const isActive = activeTab === id;
+      const colorMap = { pending:'indigo', draft:'orange', completed:'green' };
+      const c = colorMap[id];
+      const on  = `border-${c}-500 text-${c}-600 bg-white`;
+      const off = `border-transparent text-gray-400 bg-gray-50 hover:text-gray-600`;
+      return `<button class="px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors flex items-center gap-1.5 ${isActive ? on : off}"
+        onclick="_rwSpliceTab('${id}')">
+        ${label}
+        <span class="text-xs px-1.5 py-0.5 rounded-full ${isActive ? `bg-${c}-100 text-${c}-600` : 'bg-gray-200 text-gray-500'}">${count}</span>
+      </button>`;
+    };
+
     container.innerHTML = `
-    <div class="max-w-4xl mx-auto p-4 space-y-3">
-      <div class="flex items-center gap-3 mb-2">
+    <div class="max-w-4xl mx-auto p-4 space-y-0">
+      <!-- 헤더 -->
+      <div class="flex items-center gap-3 mb-3">
         <button onclick="renderReportWritePage(document.getElementById('page-content'))"
                 class="text-gray-400 hover:text-gray-600 p-1">
           <i class="fas fa-arrow-left text-lg"></i>
         </button>
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <i class="fas fa-plug text-indigo-500"></i> 접속 작업일보 — 작성 대상
+          <i class="fas fa-plug text-indigo-500"></i> 접속 작업일보
         </h2>
       </div>
-      ${pending.length === 0
-        ? `<div class="text-center py-12 text-gray-400"><i class="fas fa-check-circle text-4xl mb-3 text-green-400 block"></i><p class="text-sm">작성 대상 접속 일보가 없습니다</p></div>`
-        : pending.map(renderCard).join('')}
+
+      <!-- 탭 바 -->
+      <div class="flex gap-0 border-b border-gray-200 mb-0">
+        ${tabBtn('pending',   '작성 대상', pending.length)}
+        ${tabBtn('draft',     '작성 중',   drafts.length)}
+        ${tabBtn('completed', '작성 완료', completed.length)}
+      </div>
+      <input type="hidden" id="rws-tab-state" value="${activeTab}">
+
+      <!-- 작성 대상 -->
+      <div id="rws-pane-pending" class="${activeTab==='pending' ? '' : 'hidden'} pt-3 space-y-2">
+        ${pending.length === 0 ? emptyMsg('작성 대상 접속 일보가 없습니다') : pending.map(renderCard).join('')}
+      </div>
+      <!-- 작성 중 -->
+      <div id="rws-pane-draft" class="${activeTab==='draft' ? '' : 'hidden'} pt-3 space-y-2">
+        ${drafts.length === 0 ? emptyMsg('임시저장된 접속 일보가 없습니다') : drafts.map(renderCard).join('')}
+      </div>
+      <!-- 작성 완료 -->
+      <div id="rws-pane-completed" class="${activeTab==='completed' ? '' : 'hidden'} pt-3 space-y-2">
+        ${completed.length === 0 ? emptyMsg('제출된 접속 일보가 없습니다') : completed.map(renderCard).join('')}
+      </div>
     </div>`;
   } catch(e) {
     const status = e?.response?.status ? ` (HTTP ${e.response.status})` : '';
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}${status}</div>`;
   }
+}
+
+function _rwSpliceTab(tab) {
+  const stateEl = document.getElementById('rws-tab-state');
+  if (stateEl) stateEl.value = tab;
+  ['pending','draft','completed'].forEach(id => {
+    const pane = document.getElementById(`rws-pane-${id}`);
+    const btn  = document.querySelector(`button[onclick="_rwSpliceTab('${id}')"]`);
+    const isActive = id === tab;
+    if (pane) pane.classList.toggle('hidden', !isActive);
+    if (btn) {
+      const colorMap = { pending:'indigo', draft:'orange', completed:'green' };
+      const c = colorMap[id];
+      btn.className = btn.className
+        .replace(/border-\w+-500|text-\w+-600|bg-white|border-transparent|text-gray-400|bg-gray-50|hover:text-gray-600/g, '')
+        .trim();
+      btn.className += isActive
+        ? ` border-${c}-500 text-${c}-600 bg-white`
+        : ` border-transparent text-gray-400 bg-gray-50 hover:text-gray-600`;
+      const badge = btn.querySelector('span');
+      if (badge) badge.className = `text-xs px-1.5 py-0.5 rounded-full ${isActive ? `bg-${c}-100 text-${c}-600` : 'bg-gray-200 text-gray-500'}`;
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════

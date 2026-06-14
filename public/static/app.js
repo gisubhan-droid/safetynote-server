@@ -24150,16 +24150,386 @@ document.addEventListener('DOMContentLoaded', init);
 let _workReportListData = [];
 
 // ═══════════════════════════════════════════════════════════════
-// 공량내역 — 공사건별 물량/금액 테이블 (물량통계 테이블과 동일 내용)
+// 공량내역 — 조회조건 + 데이터 테이블 (요약카드/차트 없음)
 // ═══════════════════════════════════════════════════════════════
 async function renderFieldReportPage(container) {
-  // 공량내역 = 물량통계 페이지와 동일 내용을 표시 (타이틀만 교체)
-  await renderVolumeStatsPage(container);
-  // 헤더 타이틀을 "공량내역"으로 교체
-  const h2 = container.querySelector('h2');
-  if (h2 && h2.textContent.includes('물량통계')) {
-    h2.innerHTML = `<i class="fas fa-list-alt text-pink-500"></i> 공량내역`;
+  container.innerHTML = `<div class="max-w-5xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  try {
+    // ── 조회 조건 읽기 (volume-stats와 동일 방식) ──
+    const frMode   = document.getElementById('fr-period-mode')?.value  || 'month';
+    const frMVal   = document.getElementById('fr-period-month')?.value || '';
+    const frQVal   = document.getElementById('fr-period-quarter')?.value || '';
+    const nowYear  = new Date().getFullYear();
+    const frYVal   = document.getElementById('fr-period-year')?.value  || String(nowYear);
+    const frConsVal= document.getElementById('fr-construction')?.value || '';
+    const frTab    = document.getElementById('fr-active-tab')?.value   || 'cable';
+
+    let frFromDate = '', frToDate = '';
+    if (frMode === 'month' && frMVal) {
+      frFromDate = frMVal + '-01';
+      const d = new Date(frMVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      frToDate = d.toISOString().slice(0,10);
+    } else if (frMode === 'quarter' && frQVal && frYVal) {
+      const q = parseInt(frQVal);
+      const startM = String((q-1)*3+1).padStart(2,'0');
+      const endM   = String(q*3).padStart(2,'0');
+      frFromDate = `${frYVal}-${startM}-01`;
+      const d = new Date(`${frYVal}-${endM}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
+      frToDate = d.toISOString().slice(0,10);
+    } else if (frMode === 'year' && frYVal) {
+      frFromDate = `${frYVal}-01-01`;
+      frToDate   = `${frYVal}-12-31`;
+    }
+
+    const frParams = [];
+    if (frConsVal)  frParams.push(`construction_id=${frConsVal}`);
+    if (frFromDate) frParams.push(`from_date=${frFromDate}`);
+    if (frToDate)   frParams.push(`to_date=${frToDate}`);
+    const frQS = frParams.length ? '?' + frParams.join('&') : '';
+
+    const [statsRes, consRes, priceRes] = await Promise.all([
+      API.get('/work-reports/volume-stats' + frQS),
+      API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } })),
+      API.get('/volume-unit-prices').catch(() => ({ data: { prices: [] } }))
+    ]);
+    const { rows = [], extras = [] } = statsRes.data;
+    const constructions = consRes.data.constructions || consRes.data.data || [];
+    const unitPrices    = priceRes.data.prices || [];
+    const priceMap = {};
+    unitPrices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
+    const isWorker = currentUser && currentUser.role === 'worker';
+
+    const frYears = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
+    const savedFrMode = frMode; const savedFrMVal = frMVal;
+    const savedFrQVal = frQVal; const savedFrYVal = frYVal;
+    const savedFrTab  = frTab;
+
+    // extras 맵
+    const extrasMap = {};
+    extras.forEach(ex => {
+      if (!extrasMap[ex.report_id]) extrasMap[ex.report_id] = {};
+      extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
+    });
+    const WR_EXTRA_ORDER = [
+      '조가선신설','커넥터취부','조가선 철거','전주 건식','전주 철거',
+      'B 형접지(대지)','A 형접지(대지)','지선신설','전주세움','가요전선관',
+      '내관포설','완금설치 (한전주)','단순1','단순1-2','단순2'
+    ];
+    const existingKeys = new Set(extras.map(ex => ex.item_key));
+    const allItemKeys = WR_EXTRA_ORDER.filter(k => existingKeys.has(k));
+    extras.forEach(ex => { if (!WR_EXTRA_ORDER.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
+
+    // ── 접속 통계 데이터 (접속 탭용) ──
+    let spliceRows = [], spliceItems = [];
+    if (savedFrTab === 'splice') {
+      const spliceParams = [];
+      if (frConsVal)  spliceParams.push(`construction_id=${frConsVal}`);
+      if (frFromDate) spliceParams.push(`from_date=${frFromDate}`);
+      if (frToDate)   spliceParams.push(`to_date=${frToDate}`);
+      const spliceQS = spliceParams.length ? '?' + spliceParams.join('&') : '';
+      try {
+        const spliceRes = await API.get('/splice-reports/stats' + spliceQS);
+        spliceRows  = spliceRes.data.rows  || [];
+        spliceItems = spliceRes.data.items || [];
+      } catch(e) { /* 무시 */ }
+    }
+
+    // ── 접속 테이블 헬퍼 ──
+    const spliceItemKeys = [...new Set(spliceItems.map(i => i.work_label))];
+    const spliceMap = {};
+    spliceItems.forEach(it => {
+      if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
+      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0) + (it.qty||0);
+    });
+
+    container.innerHTML = `
+    <div class="max-w-5xl mx-auto p-4 space-y-4">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <i class="fas fa-list-alt text-pink-500"></i> 공량내역
+        </h2>
+      </div>
+
+      <!-- 외선 / 접속 탭 -->
+      <div class="flex rounded-xl overflow-hidden border border-gray-200 text-sm font-medium">
+        <button id="fr-tab-cable-btn" onclick="_frSwitchTab('cable')"
+          class="flex-1 py-2 text-center transition ${savedFrTab==='cable' ? 'bg-pink-50 text-pink-700 border-r border-gray-200' : 'text-gray-500 hover:bg-gray-50 border-r border-gray-200'}">
+          <i class="fas fa-ethernet mr-1"></i>외선
+        </button>
+        <button id="fr-tab-splice-btn" onclick="_frSwitchTab('splice')"
+          class="flex-1 py-2 text-center transition ${savedFrTab==='splice' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:bg-gray-50'}">
+          <i class="fas fa-plug mr-1"></i>접속
+        </button>
+      </div>
+      <input type="hidden" id="fr-active-tab" value="${savedFrTab}">
+
+      <!-- ── 외선 섹션 ── -->
+      <div id="fr-cable-section" class="${savedFrTab==='cable' ? '' : 'hidden'} space-y-4">
+        <!-- 조회 조건 -->
+        <div class="flex gap-2 flex-wrap items-center">
+          <select id="fr-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="">전체 공사</option>
+            ${constructions.map(c=>`<option value="${c.id}" ${frConsVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
+          </select>
+          <select id="fr-period-mode" onchange="_frUpdatePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="month"   ${savedFrMode==='month'  ?'selected':''}>월별</option>
+            <option value="quarter" ${savedFrMode==='quarter'?'selected':''}>분기별</option>
+            <option value="year"    ${savedFrMode==='year'   ?'selected':''}>연도별</option>
+            <option value="all"     ${savedFrMode==='all'    ?'selected':''}>전체</option>
+          </select>
+          <select id="fr-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none ${savedFrMode==='month'||savedFrMode==='all'?'hidden':''}">
+            ${frYears.map(y=>`<option value="${y}" ${savedFrYVal==y?'selected':''}>${y}년</option>`).join('')}
+          </select>
+          <select id="fr-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none ${savedFrMode!=='quarter'?'hidden':''}">
+            ${[1,2,3,4].map(q=>`<option value="${q}" ${savedFrQVal==q?'selected':''}>Q${q} (${(q-1)*3+1}~${q*3}월)</option>`).join('')}
+          </select>
+          <input type="month" id="fr-period-month" value="${savedFrMVal}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedFrMode!=='month'?'hidden':''}">
+          <button onclick="renderFieldReportPage(document.getElementById('page-content'))"
+                  class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600">
+            <i class="fas fa-search mr-1"></i>조회
+          </button>
+          <button onclick="downloadFieldReportCSV()"
+                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
+            <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
+          </button>
+        </div>
+
+        <!-- 데이터 테이블 -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs border-collapse" style="min-width:700px">
+              <thead>
+                <tr class="bg-gray-50 text-gray-600">
+                  <th class="border border-gray-200 px-2 py-2 text-center">완료일</th>
+                  <th class="border border-gray-200 px-2 py-2 text-center">작업자(팀)</th>
+                  <th class="border border-gray-200 px-2 py-2 text-center">요청번호</th>
+                  <th class="border border-gray-200 px-2 py-2 text-center">구분</th>
+                  <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">신설<br>(M)</th>
+                  <th class="border border-gray-200 px-2 py-2 text-center bg-red-50">철거<br>(M)</th>
+                  <th class="border border-gray-200 px-2 py-2 text-center bg-purple-50">이설<br>(M)</th>
+                  ${allItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center bg-orange-50">${k}</th>`).join('')}
+                  ${!isWorker ? `<th class="border border-gray-200 px-2 py-2 text-center bg-green-50 font-bold">합계금액(원)</th>` : ''}
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.length === 0
+                  ? `<tr><td colspan="99" class="text-center py-8 text-gray-400">데이터 없음<br><span class="text-xs">임시저장 또는 제출된 일보가 없습니다</span></td></tr>`
+                  : rows.map(row => {
+                      const exMap = extrasMap[row.report_id] || {};
+                      const rowAmt = isWorker ? 0 :
+                        (row.cable_new_m    ||0) * (priceMap['cable_new']    ||0) +
+                        (row.cable_remove_m ||0) * (priceMap['cable_remove'] ||0) +
+                        (row.cable_move_m   ||0) * (priceMap['cable_move']   ||0) +
+                        allItemKeys.reduce((s,k) => s + (exMap[k]||0)*(priceMap[k]||0), 0);
+                      return `
+                      <tr class="hover:bg-gray-50 border-b border-gray-100">
+                        <td class="border border-gray-100 px-2 py-1.5 text-center">${(row.work_date||'').slice(0,10)||'-'}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-center">${row.request_no||'-'}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-center">${row.work_class||'-'}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${(row.cable_new_m||0)>0?(row.cable_new_m||0).toFixed(1):''}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50">${(row.cable_remove_m||0)>0?(row.cable_remove_m||0).toFixed(1):''}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50">${(row.cable_move_m||0)>0?(row.cable_move_m||0).toFixed(1):''}</td>
+                        ${allItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-orange-50">${exMap[k]||''}</td>`).join('')}
+                        ${!isWorker ? `<td class="border border-gray-100 px-2 py-1.5 text-right bg-green-50 font-semibold">${rowAmt>0?rowAmt.toLocaleString():''}</td>` : ''}
+                      </tr>`;
+                    }).join('')}
+              </tbody>
+              ${rows.length > 0 ? `
+              <tfoot>
+                <tr class="bg-gray-100 font-bold text-gray-700">
+                  <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
+                  <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${rows.reduce((s,r)=>s+(r.cable_new_m||0),0).toFixed(1)||''}</td>
+                  <td class="border border-gray-200 px-2 py-2 text-right bg-red-100">${rows.reduce((s,r)=>s+(r.cable_remove_m||0),0).toFixed(1)||''}</td>
+                  <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100">${rows.reduce((s,r)=>s+(r.cable_move_m||0),0).toFixed(1)||''}</td>
+                  ${allItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-orange-100">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`).join('')}
+                  ${!isWorker ? (() => {
+                    const totalAmt =
+                      rows.reduce((s,r)=>s+(r.cable_new_m||0),0)    * (priceMap['cable_new']    ||0) +
+                      rows.reduce((s,r)=>s+(r.cable_remove_m||0),0) * (priceMap['cable_remove'] ||0) +
+                      rows.reduce((s,r)=>s+(r.cable_move_m||0),0)   * (priceMap['cable_move']   ||0) +
+                      allItemKeys.reduce((s,k) => {
+                        const qtySum = extras.filter(ex=>ex.item_key===k).reduce((a,ex)=>a+(ex.qty||0),0);
+                        return s + qtySum * (priceMap[k]||0);
+                      }, 0);
+                    return `<td class="border border-gray-200 px-2 py-2 text-right bg-green-100 text-green-800">${totalAmt>0?totalAmt.toLocaleString():''}</td>`;
+                  })() : ''}
+                </tr>
+              </tfoot>` : ''}
+            </table>
+          </div>
+        </div>
+        <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보가 표시됩니다 &nbsp;|
+          <button onclick="renderCableDetailPage(document.getElementById('page-content'))" class="text-blue-500 hover:underline ml-1">광케이블 상세 현황 보기 →</button>
+        </p>
+      </div><!-- /fr-cable-section -->
+
+      <!-- ── 접속 섹션 ── -->
+      <div id="fr-splice-section" class="${savedFrTab==='splice' ? '' : 'hidden'} space-y-4">
+        <div class="flex gap-2 flex-wrap items-center">
+          <select id="fr-splice-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="">전체 공사</option>
+            ${constructions.map(c=>`<option value="${c.id}" ${frConsVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
+          </select>
+          <select id="fr-splice-period-mode" onchange="_frSplicePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="month">월별</option><option value="quarter">분기별</option>
+            <option value="year">연도별</option><option value="all">전체</option>
+          </select>
+          <select id="fr-splice-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none hidden">
+            ${frYears.map(y=>`<option value="${y}">${y}년</option>`).join('')}
+          </select>
+          <select id="fr-splice-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none hidden">
+            ${[1,2,3,4].map(q=>`<option value="${q}">Q${q}</option>`).join('')}
+          </select>
+          <input type="month" id="fr-splice-period-month" value="${new Date().toISOString().slice(0,7)}"
+            class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
+          <button onclick="_frLoadSpliceStats()"
+            class="bg-indigo-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-indigo-600">
+            <i class="fas fa-search mr-1"></i>조회
+          </button>
+        </div>
+        <div id="fr-splice-result">
+          <div class="text-center text-gray-400 py-10 text-sm">조회 버튼을 눌러주세요</div>
+        </div>
+      </div><!-- /fr-splice-section -->
+
+    </div>`;
+
+  } catch(e) {
+    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
+}
+
+function _frUpdatePeriodUI() {
+  const mode = document.getElementById('fr-period-mode')?.value;
+  if (!mode) return;
+  const yearSel    = document.getElementById('fr-period-year');
+  const quarterSel = document.getElementById('fr-period-quarter');
+  const monthInp   = document.getElementById('fr-period-month');
+  if (yearSel)    yearSel.classList.toggle('hidden',    mode === 'month' || mode === 'all');
+  if (quarterSel) quarterSel.classList.toggle('hidden', mode !== 'quarter');
+  if (monthInp)   monthInp.classList.toggle('hidden',   mode !== 'month');
+}
+
+function _frSwitchTab(tab) {
+  const stateEl = document.getElementById('fr-active-tab');
+  if (stateEl) stateEl.value = tab;
+  const cableSection  = document.getElementById('fr-cable-section');
+  const spliceSection = document.getElementById('fr-splice-section');
+  const cableBtn  = document.getElementById('fr-tab-cable-btn');
+  const spliceBtn = document.getElementById('fr-tab-splice-btn');
+  if (cableSection)  cableSection.classList.toggle('hidden',  tab !== 'cable');
+  if (spliceSection) spliceSection.classList.toggle('hidden', tab !== 'splice');
+  if (cableBtn) {
+    cableBtn.className  = tab === 'cable'
+      ? 'flex-1 py-2 text-center transition bg-pink-50 text-pink-700 border-r border-gray-200'
+      : 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50 border-r border-gray-200';
+  }
+  if (spliceBtn) {
+    spliceBtn.className = tab === 'splice'
+      ? 'flex-1 py-2 text-center transition bg-indigo-50 text-indigo-700'
+      : 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50';
+  }
+}
+
+function _frSplicePeriodUI() {
+  const mode = document.getElementById('fr-splice-period-mode')?.value;
+  if (!mode) return;
+  const yearSel    = document.getElementById('fr-splice-period-year');
+  const quarterSel = document.getElementById('fr-splice-period-quarter');
+  const monthInp   = document.getElementById('fr-splice-period-month');
+  if (yearSel)    yearSel.classList.toggle('hidden',    mode === 'month' || mode === 'all');
+  if (quarterSel) quarterSel.classList.toggle('hidden', mode !== 'quarter');
+  if (monthInp)   monthInp.classList.toggle('hidden',   mode !== 'month');
+}
+
+async function _frLoadSpliceStats() {
+  const resultDiv = document.getElementById('fr-splice-result');
+  if (!resultDiv) return;
+  resultDiv.innerHTML = `<div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div>`;
+  try {
+    const mode  = document.getElementById('fr-splice-period-mode')?.value || 'month';
+    const mVal  = document.getElementById('fr-splice-period-month')?.value || '';
+    const qVal  = document.getElementById('fr-splice-period-quarter')?.value || '';
+    const yVal  = document.getElementById('fr-splice-period-year')?.value || String(new Date().getFullYear());
+    const consVal = document.getElementById('fr-splice-construction')?.value || '';
+
+    let fromDate = '', toDate = '';
+    if (mode === 'month' && mVal) {
+      fromDate = mVal + '-01';
+      const d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      toDate = d.toISOString().slice(0,10);
+    } else if (mode === 'quarter' && qVal && yVal) {
+      const q = parseInt(qVal);
+      fromDate = `${yVal}-${String((q-1)*3+1).padStart(2,'0')}-01`;
+      const d = new Date(`${yVal}-${String(q*3).padStart(2,'0')}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
+      toDate = d.toISOString().slice(0,10);
+    } else if (mode === 'year' && yVal) {
+      fromDate = `${yVal}-01-01`; toDate = `${yVal}-12-31`;
+    }
+    const params = [];
+    if (consVal)   params.push(`construction_id=${consVal}`);
+    if (fromDate)  params.push(`from_date=${fromDate}`);
+    if (toDate)    params.push(`to_date=${toDate}`);
+    const qs = params.length ? '?' + params.join('&') : '';
+
+    const res = await API.get('/splice-reports/stats' + qs);
+    const spliceRows  = res.data.rows  || [];
+    const spliceItems = res.data.items || [];
+    const spliceItemKeys = [...new Set(spliceItems.map(i => i.work_label))];
+    const spliceMap = {};
+    spliceItems.forEach(it => {
+      if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
+      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0) + (it.qty||0);
+    });
+
+    if (spliceRows.length === 0) {
+      resultDiv.innerHTML = `<div class="text-center text-gray-400 py-10 text-sm"><i class="fas fa-inbox text-3xl mb-2 block"></i>조회된 접속일보가 없습니다</div>`;
+      return;
+    }
+
+    resultDiv.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs border-collapse" style="min-width:600px">
+          <thead>
+            <tr class="bg-gray-50 text-gray-600">
+              <th class="border border-gray-200 px-2 py-2 text-center">작업일</th>
+              <th class="border border-gray-200 px-2 py-2 text-center">작업팀</th>
+              <th class="border border-gray-200 px-2 py-2 text-center">담당자</th>
+              ${spliceItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center bg-indigo-50 whitespace-nowrap">${k}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${spliceRows.map(row => {
+              const sm = spliceMap[row.id] || {};
+              return `
+              <tr class="hover:bg-gray-50 border-b border-gray-100">
+                <td class="border border-gray-100 px-2 py-1.5 text-center">${(row.work_date||'').slice(0,10)||'-'}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-center">${row.manager_name||'-'}</td>
+                ${spliceItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-indigo-50">${sm[k]||''}</td>`).join('')}
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="bg-gray-100 font-bold text-gray-700">
+              <td class="border border-gray-200 px-2 py-2 text-center" colspan="3">합 계</td>
+              ${spliceItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-indigo-100">${spliceItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.qty||0),0)||''}</td>`).join('')}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    <p class="text-xs text-gray-400 text-right mt-1">* 임시저장 포함 모든 접속일보가 표시됩니다</p>`;
+  } catch(e) {
+    if (resultDiv) resultDiv.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+function downloadFieldReportCSV() {
+  // 현재 테이블 데이터를 CSV로 다운로드 (volume-stats CSV와 동일 로직)
+  downloadVolumeStatsCSV();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -25828,76 +26198,6 @@ async function renderVolumeStatsPage(container) {
         <canvas id="vs-chart-main" height="160"></canvas>
       </div>` : ''}
 
-      <!-- 데이터 테이블 -->
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-xs border-collapse" style="min-width:700px">
-            <thead>
-              <tr class="bg-gray-50 text-gray-600">
-                <th class="border border-gray-200 px-2 py-2 text-center">완료일</th>
-                <th class="border border-gray-200 px-2 py-2 text-center">작업자(팀)</th>
-                <th class="border border-gray-200 px-2 py-2 text-center">요청번호</th>
-                <th class="border border-gray-200 px-2 py-2 text-center">구분</th>
-                <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">신설<br>(M)</th>
-                <th class="border border-gray-200 px-2 py-2 text-center bg-red-50">철거<br>(M)</th>
-                <th class="border border-gray-200 px-2 py-2 text-center bg-purple-50">이설<br>(M)</th>
-                ${allItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center bg-orange-50">${k}</th>`).join('')}
-                ${!isWorker ? `<th class="border border-gray-200 px-2 py-2 text-center bg-green-50 font-bold">합계금액(원)</th>` : ''}
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.length === 0 ? `<tr><td colspan="99" class="text-center py-8 text-gray-400">데이터 없음<br><span class="text-xs">임시저장 또는 제출된 일보가 없습니다</span></td></tr>` :
-                rows.map(row => {
-                  const exMap = extrasMap[row.report_id] || {};
-                  return `
-                  <tr class="hover:bg-gray-50 border-b border-gray-100">
-                    <td class="border border-gray-100 px-2 py-1.5 text-center">${(row.work_date||'').slice(0,10)||'-'}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-center">${row.request_no||'-'}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-center">${row.work_class||'-'}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${(row.cable_new_m||0)>0?(row.cable_new_m||0).toFixed(1):''}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50">${(row.cable_remove_m||0)>0?(row.cable_remove_m||0).toFixed(1):''}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50">${(row.cable_move_m||0)>0?(row.cable_move_m||0).toFixed(1):''}</td>
-                    ${allItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-orange-50">${exMap[k]||''}</td>`).join('')}
-                    ${!isWorker ? (() => {
-                      const rowAmt =
-                        (row.cable_new_m    ||0) * (priceMap['cable_new']    ||0) +
-                        (row.cable_remove_m ||0) * (priceMap['cable_remove'] ||0) +
-                        (row.cable_move_m   ||0) * (priceMap['cable_move']   ||0) +
-                        allItemKeys.reduce((s,k) => s + (exMap[k]||0)*(priceMap[k]||0), 0);
-                      return `<td class="border border-gray-100 px-2 py-1.5 text-right bg-green-50 font-semibold">${rowAmt>0?rowAmt.toLocaleString():''}</td>`;
-                    })() : ''}
-                  </tr>`
-                }).join('')
-              }
-            </tbody>
-            ${rows.length > 0 ? `
-            <tfoot>
-              <tr class="bg-gray-100 font-bold text-gray-700">
-                <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${rows.reduce((s,r)=>s+(r.cable_new_m||0),0).toFixed(1)||''}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-red-100">${rows.reduce((s,r)=>s+(r.cable_remove_m||0),0).toFixed(1)||''}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100">${rows.reduce((s,r)=>s+(r.cable_move_m||0),0).toFixed(1)||''}</td>
-                ${allItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-orange-100">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`).join('')}
-                ${!isWorker ? (() => {
-                  const totalAmt =
-                    rows.reduce((s,r)=>s+(r.cable_new_m||0),0)    * (priceMap['cable_new']    ||0) +
-                    rows.reduce((s,r)=>s+(r.cable_remove_m||0),0) * (priceMap['cable_remove'] ||0) +
-                    rows.reduce((s,r)=>s+(r.cable_move_m||0),0)   * (priceMap['cable_move']   ||0) +
-                    allItemKeys.reduce((s,k) => {
-                      const qtySum = extras.filter(ex=>ex.item_key===k).reduce((a,ex)=>a+(ex.qty||0),0);
-                      return s + qtySum * (priceMap[k]||0);
-                    }, 0);
-                  return `<td class="border border-gray-200 px-2 py-2 text-right bg-green-100 text-green-800">${totalAmt>0?totalAmt.toLocaleString():''}</td>`;
-                })() : ''}
-              </tr>
-            </tfoot>` : ''}
-          </table>
-        </div>
-      </div>
-      <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보가 표시됩니다 &nbsp;|
-        <button onclick="renderCableDetailPage(document.getElementById('page-content'))" class="text-blue-500 hover:underline ml-1">광케이블 상세 현황 보기 →</button>
-      </p>
       </div><!-- /vs-cable-section -->
 
       <!-- ── 접속 통계 섹션 (기본 숨김) ── -->

@@ -24444,6 +24444,10 @@ async function renderFieldReportPage(container) {
             class="bg-indigo-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-indigo-600">
             <i class="fas fa-search mr-1"></i>조회
           </button>
+          <button onclick="downloadFieldReportCSV()"
+            class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
+            <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
+          </button>
         </div>
         <div id="fr-splice-result">
           <div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-indigo-400 text-xl"></i></div>

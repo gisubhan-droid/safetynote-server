@@ -14015,7 +14015,76 @@ async function renderAdminSettingsPage(container) {
         </button>
       </div>
 
+      <!-- ══════════════════════════════════════════════════════ -->
+      <!-- DB 초기화 (시스템관리자 전용)                          -->
+      <!-- ══════════════════════════════════════════════════════ -->
+      <div class="bg-white rounded-2xl shadow-sm p-5 border-2 border-red-100">
+        <h3 class="font-bold text-red-600 mb-1 flex items-center gap-2">
+          <i class="fas fa-trash-alt text-red-500"></i> 데이터 초기화
+          <span class="text-xs font-normal text-red-400 ml-1">⚠ 시스템관리자 전용 — 삭제된 데이터는 복구 불가</span>
+        </h3>
+        <p class="text-xs text-gray-400 mb-4">테스트 데이터를 정리하거나 운영 초기화 시 사용합니다. 사용자 계정은 삭제되지 않습니다.</p>
+
+        <!-- 레코드 수 현황 -->
+        <div id="db-reset-counts" class="grid grid-cols-3 gap-2 mb-4 text-xs">
+          <div class="col-span-3 text-gray-400 text-center py-2"><i class="fas fa-spinner fa-spin mr-1"></i>현황 조회 중...</div>
+        </div>
+
+        <!-- 항목 선택 체크박스 -->
+        <div class="space-y-2 mb-4" id="db-reset-targets">
+          ${[
+            { key:'constructions',    icon:'fas fa-building',      color:'blue',   label:'공사',         desc:'모든 공사 데이터 (하위 작업·일보 포함 연쇄 삭제)' },
+            { key:'tasks',            icon:'fas fa-tasks',          color:'orange', label:'작업',         desc:'모든 작업 및 배정 데이터 (일보 포함 연쇄 삭제)' },
+            { key:'work_reports',     icon:'fas fa-file-alt',       color:'pink',   label:'외선일보',     desc:'외선 작업일보 및 케이블·내역·공종 데이터' },
+            { key:'splice_reports',   icon:'fas fa-plug',           color:'indigo', label:'접속일보',     desc:'접속 작업일보 및 공종 데이터' },
+            { key:'inspections',      icon:'fas fa-hard-hat',       color:'yellow', label:'현장점검',     desc:'현장점검 기록 및 항목 데이터' },
+            { key:'tbm',              icon:'fas fa-users',          color:'green',  label:'TBM',          desc:'TBM 세션·참석자·서명 데이터' },
+            { key:'education',        icon:'fas fa-chalkboard-teacher', color:'teal','label':'안전교육', desc:'교육 세션·참석자·사진 데이터' },
+            { key:'risk',             icon:'fas fa-exclamation-triangle', color:'red','label':'위험성평가','desc':'위험성평가 및 서명 데이터' },
+            { key:'notifications',    icon:'fas fa-bell',           color:'gray',   label:'알림',         desc:'시스템 알림 데이터' },
+            { key:'signature_requests',icon:'fas fa-signature',    color:'purple', label:'서명요청',     desc:'서명요청 데이터' },
+          ].map(t => `
+          <label class="flex items-start gap-3 p-3 rounded-xl border border-gray-100 hover:border-red-200 hover:bg-red-50 cursor-pointer transition-all">
+            <input type="checkbox" class="db-reset-chk mt-0.5 w-4 h-4 accent-red-500 flex-shrink-0" value="${t.key}">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <i class="${t.icon} text-${t.color}-500 text-xs"></i>
+                <span class="font-semibold text-sm text-gray-700">${t.label}</span>
+                <span id="cnt-${t.key}" class="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">-</span>
+              </div>
+              <p class="text-xs text-gray-400 mt-0.5">${t.desc}</p>
+            </div>
+          </label>`).join('')}
+        </div>
+
+        <!-- 전체 선택 / 해제 -->
+        <div class="flex gap-2 mb-4">
+          <button onclick="_dbResetSelectAll(true)"  class="text-xs text-red-500 underline hover:text-red-700">전체 선택</button>
+          <span class="text-gray-300">|</span>
+          <button onclick="_dbResetSelectAll(false)" class="text-xs text-gray-400 underline hover:text-gray-600">전체 해제</button>
+        </div>
+
+        <!-- 비밀번호 확인 + 실행 버튼 -->
+        <div class="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+          <p class="text-xs text-red-600 font-semibold flex items-center gap-1">
+            <i class="fas fa-lock"></i> 실행 전 관리자 비밀번호를 입력하세요
+          </p>
+          <div class="flex gap-2">
+            <input type="password" id="db-reset-pw" placeholder="관리자 비밀번호"
+              class="flex-1 border border-red-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400 bg-white"
+              onkeydown="if(event.key==='Enter') _execDbReset()">
+            <button onclick="_execDbReset()"
+              class="bg-red-500 hover:bg-red-600 text-white rounded-lg px-4 py-2 text-sm font-semibold transition-all flex items-center gap-2">
+              <i class="fas fa-trash-alt"></i> 초기화 실행
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div>`;
+
+    // 레코드 수 비동기 로드
+    _loadDbResetCounts();
 
     // (폴더명 입력 토글 제거 — 새 구조에서는 단계폴더가 고정됨)
 
@@ -14106,6 +14175,112 @@ async function saveAdminSettings() {
     setTimeout(() => renderAdminSettingsPage(document.getElementById('page-content')), 800);
   } catch(e) {
     toast(e.response?.data?.error || '저장 실패', 'error');
+  }
+}
+
+// ─── DB 초기화 헬퍼 함수들 ───────────────────────────────────────────────────
+
+// 각 항목별 레코드 수 조회 후 배지 업데이트
+async function _loadDbResetCounts() {
+  try {
+    const res = await API.get('/admin/reset/counts');
+    const c = res.data;
+    const map = {
+      constructions:     c.constructions,
+      tasks:             c.tasks,
+      work_reports:      c.work_reports,
+      splice_reports:    c.splice_reports,
+      inspections:       c.inspections,
+      tbm:               c.tbm,
+      education:         c.education,
+      risk:              c.risk,
+      notifications:     c.notifications || 0,
+      signature_requests:c.signature_requests || 0,
+    };
+    // 배지 업데이트
+    Object.entries(map).forEach(([key, val]) => {
+      const el = document.getElementById(`cnt-${key}`);
+      if (el) {
+        el.textContent = `${val}건`;
+        el.className = val > 0
+          ? 'text-xs font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full'
+          : 'text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full';
+      }
+    });
+    // 요약 그리드 업데이트
+    const grid = document.getElementById('db-reset-counts');
+    if (grid) {
+      const total = Object.values(map).reduce((s, v) => s + (v || 0), 0);
+      grid.innerHTML = `
+        <div class="col-span-3 flex items-center justify-between bg-gray-50 rounded-xl px-4 py-2">
+          <span class="text-gray-500">전체 데이터 건수</span>
+          <span class="font-bold text-lg ${total > 0 ? 'text-red-600' : 'text-gray-400'}">${total.toLocaleString()}건</span>
+        </div>`;
+    }
+  } catch(e) {
+    const grid = document.getElementById('db-reset-counts');
+    if (grid) grid.innerHTML = `<div class="col-span-3 text-xs text-gray-400 text-center py-1">현황 조회 실패</div>`;
+  }
+}
+
+// 전체 선택 / 전체 해제
+function _dbResetSelectAll(checked) {
+  document.querySelectorAll('.db-reset-chk').forEach(el => el.checked = checked);
+}
+
+// 초기화 실행
+async function _execDbReset() {
+  const targets = Array.from(document.querySelectorAll('.db-reset-chk:checked')).map(el => el.value);
+  if (targets.length === 0) {
+    toast('초기화할 항목을 하나 이상 선택하세요.', 'warning');
+    return;
+  }
+  const pw = document.getElementById('db-reset-pw')?.value || '';
+  if (!pw) {
+    toast('관리자 비밀번호를 입력하세요.', 'warning');
+    document.getElementById('db-reset-pw')?.focus();
+    return;
+  }
+
+  // 최종 확인 다이얼로그
+  const targetNames = {
+    constructions:'공사', tasks:'작업', work_reports:'외선일보',
+    splice_reports:'접속일보', inspections:'현장점검', tbm:'TBM',
+    education:'안전교육', risk:'위험성평가', notifications:'알림', signature_requests:'서명요청'
+  };
+  const selectedLabels = targets.map(k => targetNames[k] || k).join(', ');
+  const confirmed = confirm(
+    `⚠️ 데이터 초기화 최종 확인\n\n` +
+    `삭제 항목: ${selectedLabels}\n\n` +
+    `삭제된 데이터는 복구할 수 없습니다.\n정말 실행하시겠습니까?`
+  );
+  if (!confirmed) return;
+
+  // 버튼 비활성화
+  const btn = document.querySelector('button[onclick="_execDbReset()"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> 실행 중...'; }
+
+  try {
+    const res = await API.post('/admin/reset', { targets, confirm_password: pw });
+    const { deleted, summary } = res.data;
+
+    // 결과 표시
+    const lines = Object.entries(deleted).map(([k,v]) => `• ${k}: ${v}건 삭제`).join('\n');
+    toast(`초기화 완료!\n${summary}`, 'success');
+
+    // 비밀번호 초기화
+    const pwEl = document.getElementById('db-reset-pw');
+    if (pwEl) pwEl.value = '';
+
+    // 체크박스 해제 + 카운트 갱신
+    _dbResetSelectAll(false);
+    await _loadDbResetCounts();
+
+  } catch(e) {
+    const msg = e.response?.data?.error || e.message || '초기화 실패';
+    toast(msg, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-trash-alt"></i> 초기화 실행'; }
   }
 }
 

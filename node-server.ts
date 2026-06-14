@@ -3098,6 +3098,154 @@ app.get('/api/admin/folders', async (c) => {
 
 
 // ═══════════════════════════════════════════════════════════════
+// DB 초기화 API  /api/admin/reset  (시스템관리자 전용)
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/admin/reset/counts — 각 그룹별 레코드 수 조회
+app.get('/api/admin/reset/counts', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+  const count = (table: string) => {
+    try { return (rawDb.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as any)?.n ?? 0 }
+    catch { return 0 }
+  }
+  return c.json({
+    constructions : count('constructions'),
+    tasks         : count('tasks'),
+    work_reports  : count('work_reports'),
+    splice_reports: count('splice_reports'),
+    inspections   : count('inspections'),
+    tbm           : count('tbm_sessions'),
+    education     : count('safety_education_sessions'),
+    risk          : count('risk_assessments'),
+    users         : count('users'),
+  })
+})
+
+// POST /api/admin/reset — 선택 항목 초기화
+app.post('/api/admin/reset', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const body = await c.req.json() as any
+  const { targets, confirm_password } = body
+
+  // 비밀번호 재확인 (DB에서 직접 검증 — plain hash 비교)
+  const userRow = rawDb.prepare(`SELECT password_hash FROM users WHERE id=?`).get(user.id) as any
+  if (!userRow) return c.json({ error: '사용자 정보 없음' }, 403)
+  const inputPw = String(confirm_password || '')
+  if (!inputPw || userRow.password_hash !== inputPw) {
+    return c.json({ error: '비밀번호가 올바르지 않습니다.' }, 403)
+  }
+
+  if (!Array.isArray(targets) || targets.length === 0)
+    return c.json({ error: '초기화 항목을 선택하세요.' }, 400)
+
+  const deleted: Record<string, number> = {}
+
+  const delTable = (table: string, label: string) => {
+    try {
+      const n = (rawDb.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as any)?.n ?? 0
+      rawDb.prepare(`DELETE FROM ${table}`).run()
+      // AUTOINCREMENT 시퀀스 초기화
+      try { rawDb.prepare(`DELETE FROM sqlite_sequence WHERE name=?`).run(table) } catch {}
+      deleted[label] = n
+    } catch(e: any) { console.warn(`[reset] ${table} 삭제 실패:`, e.message) }
+  }
+
+  // ── 그룹별 초기화 ──────────────────────────────────────────
+  if (targets.includes('work_reports')) {
+    delTable('work_report_extras',  '외선일보-추가공종')
+    delTable('work_report_other',   '외선일보-기타공종')
+    delTable('work_report_cables',  '외선일보-케이블')
+    delTable('work_report_lines',   '외선일보-내역')
+    delTable('work_reports',        '외선일보')
+  }
+  if (targets.includes('splice_reports')) {
+    delTable('splice_work_items',   '접속일보-공종')
+    delTable('splice_reports',      '접속일보')
+  }
+  if (targets.includes('tbm')) {
+    try {
+      delTable('tbm_signatures',      'TBM서명')
+      delTable('tbm_attendees',       'TBM참석자')
+      delTable('tbm_photos',          'TBM사진')
+      delTable('tbm_sessions',        'TBM')
+    } catch {}
+  }
+  if (targets.includes('education')) {
+    delTable('edu_photos',           '교육사진')
+    delTable('edu_reports',          '교육리포트')
+    delTable('safety_education_attendees', '교육참석자')
+    delTable('safety_education_sessions', '안전교육')
+  }
+  if (targets.includes('risk')) {
+    try {
+      delTable('risk_assessment_signatures', '위험성평가서명')
+      delTable('risk_assessment_items',      '위험성평가항목')
+      delTable('risk_assessments',           '위험성평가')
+    } catch {}
+  }
+  if (targets.includes('inspections')) {
+    try {
+      delTable('inspection_items',    '현장점검항목')
+      delTable('inspections',         '현장점검')
+    } catch {}
+  }
+  if (targets.includes('tasks')) {
+    // 작업 삭제 전 연관 일보도 함께 삭제
+    if (!targets.includes('work_reports')) {
+      delTable('work_report_extras', '외선일보-추가공종')
+      delTable('work_report_other',  '외선일보-기타공종')
+      delTable('work_report_cables', '외선일보-케이블')
+      delTable('work_report_lines',  '외선일보-내역')
+      delTable('work_reports',       '외선일보')
+    }
+    if (!targets.includes('splice_reports')) {
+      delTable('splice_work_items',  '접속일보-공종')
+      delTable('splice_reports',     '접속일보')
+    }
+    delTable('task_assignments',    '작업배정')
+    delTable('task_checklist',      '작업체크리스트')
+    delTable('worklogs',            '작업로그')
+    delTable('hazards',             '위험요소')
+    delTable('tasks',               '작업')
+  }
+  if (targets.includes('constructions')) {
+    // 공사 삭제 전 하위 작업 전체 연쇄 삭제
+    if (!targets.includes('tasks')) {
+      delTable('work_report_extras', '외선일보-추가공종')
+      delTable('work_report_other',  '외선일보-기타공종')
+      delTable('work_report_cables', '외선일보-케이블')
+      delTable('work_report_lines',  '외선일보-내역')
+      delTable('work_reports',       '외선일보')
+      delTable('splice_work_items',  '접속일보-공종')
+      delTable('splice_reports',     '접속일보')
+      delTable('task_assignments',   '작업배정')
+      delTable('task_checklist',     '작업체크리스트')
+      delTable('worklogs',           '작업로그')
+      delTable('hazards',            '위험요소')
+      delTable('tasks',              '작업')
+    }
+    delTable('constructions',       '공사')
+  }
+  if (targets.includes('notifications')) {
+    delTable('notifications',       '알림')
+  }
+  if (targets.includes('signature_requests')) {
+    delTable('signature_requests',  '서명요청')
+  }
+
+  // 이력 로그 기록
+  const summary = Object.entries(deleted)
+    .map(([k,v]) => `${k}(${v}건)`)
+    .join(', ')
+  console.log(`[DB초기화] 관리자(id=${user.id}) 실행 — ${summary || '없음'}`)
+
+  return c.json({ ok: true, deleted, summary })
+})
+
+// ═══════════════════════════════════════════════════════════════
 // 작업지시서 첨부파일 API  /api/attachments
 // ═══════════════════════════════════════════════════════════════
 

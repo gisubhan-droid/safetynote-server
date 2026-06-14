@@ -2467,7 +2467,10 @@ app.get('/api/work-reports/volume-stats', async (c) => {
   const rows = rawDb.prepare(`
     SELECT r.id AS report_id, r.work_date, r.worker_team,
            t.request_no, t.construction_type AS work_class, r.manager_name,
-           (SELECT COALESCE(SUM(rl.usage_m),0) FROM work_report_cables rl WHERE rl.report_id=r.id) AS cable_total
+           (SELECT COALESCE(SUM(rl.usage_m),0) FROM work_report_cables rl WHERE rl.report_id=r.id) AS cable_total,
+           (SELECT COALESCE(SUM(rl.usage_m),0) FROM work_report_cables rl WHERE rl.report_id=r.id AND rl.proc='신설') AS cable_new_m,
+           (SELECT COALESCE(SUM(rl.usage_m),0) FROM work_report_cables rl WHERE rl.report_id=r.id AND rl.proc='철거') AS cable_remove_m,
+           (SELECT COALESCE(SUM(rl.usage_m),0) FROM work_report_cables rl WHERE rl.report_id=r.id AND rl.proc='이설') AS cable_move_m
     FROM work_reports r JOIN tasks t ON t.id=r.task_id
     ${mainWhere} ORDER BY r.work_date DESC
   `).all(...params)
@@ -2483,7 +2486,24 @@ app.get('/api/work-reports/volume-stats', async (c) => {
     GROUP BY re.report_id, re.item_key
   `).all(...innerParams)
 
-  return c.json({ rows, extras })
+  // cables: 공정구분별 상세 내역 (광케이블 현황 메뉴용)
+  const cables = rawDb.prepare(`
+    SELECT rc.report_id, rc.lot_no, rc.spec, rc.maker, rc.mfg_year,
+           rc.cable_type, rc.proc, rc.start_point, rc.end_point,
+           rc.usage_m, rc.cable_kind, rc.special_note,
+           r3.work_date, r3.worker_team, t3.request_no,
+           t3.construction_type AS work_class
+    FROM work_report_cables rc
+    JOIN work_reports r3 ON r3.id = rc.report_id
+    JOIN tasks t3 ON t3.id = r3.task_id
+    WHERE rc.report_id IN (
+      SELECT r2.id FROM work_reports r2 JOIN tasks t2 ON t2.id=r2.task_id
+      ${innerWhere}
+    )
+    ORDER BY r3.work_date DESC, rc.report_id, rc.cable_order
+  `).all(...innerParams)
+
+  return c.json({ rows, extras, cables })
 })
 
 // GET /api/work-reports/task/:taskId

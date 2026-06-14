@@ -1960,8 +1960,9 @@ function renderApp() {
     { id:'sign-requests', icon:'fas fa-pen-fancy', label:'서명요청', group:'안전관리' },
     { divider: true, label: '현장공량관리' },
     { id:'field-volume', icon:'fas fa-chart-line', label:'현장공량관리', group:'현장공량관리', children: [
-      { id:'work-report',   icon:'fas fa-file-alt',   label:'외선일보 작성' },
-      { id:'volume-stats',  icon:'fas fa-table',      label:'물량통계 (외선부분)' },
+      { id:'work-report',    icon:'fas fa-file-alt',          label:'외선일보 작성' },
+      { id:'volume-stats',   icon:'fas fa-table',             label:'물량통계 (외선부분)' },
+      { id:'cable-detail',   icon:'fas fa-cable-car',         label:'광케이블 현황' },
     ]},
     { divider: true, label: '관리' },
     { id:'personnel', icon:'fas fa-users', label:'사용자관리', children: [
@@ -2615,7 +2616,7 @@ function getPageTitle(page) {
     'edu-supervisor': '관리감독자교육', 'edu-stats': '교육현황통계',
     'edu': '안전교육',
     'sign-requests': '서명 요청',
-    'work-report': '외선일보 작성', 'field-volume': '현장공량관리', 'volume-stats': '물량통계 (외선부분)',
+    'work-report': '외선일보 작성', 'field-volume': '현장공량관리', 'volume-stats': '물량통계 (외선부분)', 'cable-detail': '광케이블 현황',
   };
   return map[page] || page;
 }
@@ -2725,7 +2726,8 @@ function navigateTo(page) {
     case 'legal-notices': renderLegalNoticesPage(content); break;
     case 'field-volume': navigateTo('work-report'); return;
     case 'work-report':  renderWorkReportListPage(content); break;
-    case 'volume-stats': renderVolumeStatsPage(content); break;
+    case 'volume-stats':  renderVolumeStatsPage(content);  break;
+    case 'cable-detail':   renderCableDetailPage(content);  break;
     case 'edu': navigateTo('edu-periodic'); return;
     case 'edu-periodic':   renderEducationPage(content, 'periodic');    break;
     case 'edu-hire':       renderEducationPage(content, 'hire');         break;
@@ -25034,11 +25036,12 @@ async function renderVolumeStatsPage(container) {
       </div>
 
       <!-- 통계 요약 카드 -->
-      <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         ${[
-          { label:'총 건수',      val: rows.length + '건',   icon:'fas fa-file-alt',    color:'pink' },
-          { label:'광케이블 합계', val: rows.reduce((s,r)=>s+(r.cable_total||0),0).toFixed(1)+'M', icon:'fas fa-ruler-horizontal', color:'blue' },
-          { label:'추가입력 건수', val: Object.keys(extrasMap).length + '건', icon:'fas fa-clipboard-list', color:'orange' },
+          { label:'총 건수',           val: rows.length + '건',   icon:'fas fa-file-alt',    color:'pink' },
+          { label:'광케이블 신설',      val: rows.reduce((s,r)=>s+(r.cable_new_m||0),0).toFixed(1)+'M', icon:'fas fa-plus-circle', color:'blue' },
+          { label:'광케이블 철거',      val: rows.reduce((s,r)=>s+(r.cable_remove_m||0),0).toFixed(1)+'M', icon:'fas fa-minus-circle', color:'red' },
+          { label:'추가입력 건수',      val: Object.keys(extrasMap).length + '건', icon:'fas fa-clipboard-list', color:'orange' },
         ].map(c=>`
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
           <div class="flex items-center gap-2 mb-1">
@@ -25059,7 +25062,9 @@ async function renderVolumeStatsPage(container) {
                 <th class="border border-gray-200 px-2 py-2 text-center">작업자(팀)</th>
                 <th class="border border-gray-200 px-2 py-2 text-center">요청번호</th>
                 <th class="border border-gray-200 px-2 py-2 text-center">구분</th>
-                <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">광케이블<br>합계(M)</th>
+                <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">신설<br>(M)</th>
+                <th class="border border-gray-200 px-2 py-2 text-center bg-red-50">철거<br>(M)</th>
+                <th class="border border-gray-200 px-2 py-2 text-center bg-purple-50">이설<br>(M)</th>
                 ${allItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center bg-orange-50">${k}</th>`).join('')}
               </tr>
             </thead>
@@ -25073,7 +25078,9 @@ async function renderVolumeStatsPage(container) {
                     <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
                     <td class="border border-gray-100 px-2 py-1.5 text-center">${row.request_no||'-'}</td>
                     <td class="border border-gray-100 px-2 py-1.5 text-center">${row.work_class||'-'}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${(row.cable_total||0).toFixed(1)}</td>
+                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${(row.cable_new_m||0)>0?(row.cable_new_m||0).toFixed(1):''}</td>
+                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50">${(row.cable_remove_m||0)>0?(row.cable_remove_m||0).toFixed(1):''}</td>
+                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50">${(row.cable_move_m||0)>0?(row.cable_move_m||0).toFixed(1):''}</td>
                     ${allItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-orange-50">${exMap[k]||''}</td>`).join('')}
                   </tr>`
                 }).join('')
@@ -25083,14 +25090,18 @@ async function renderVolumeStatsPage(container) {
             <tfoot>
               <tr class="bg-gray-100 font-bold text-gray-700">
                 <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${rows.reduce((s,r)=>s+(r.cable_total||0),0).toFixed(1)}</td>
+                <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${rows.reduce((s,r)=>s+(r.cable_new_m||0),0).toFixed(1)||''}</td>
+                <td class="border border-gray-200 px-2 py-2 text-right bg-red-100">${rows.reduce((s,r)=>s+(r.cable_remove_m||0),0).toFixed(1)||''}</td>
+                <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100">${rows.reduce((s,r)=>s+(r.cable_move_m||0),0).toFixed(1)||''}</td>
                 ${allItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-orange-100">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`).join('')}
               </tr>
             </tfoot>` : ''}
           </table>
         </div>
       </div>
-      <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보가 표시됩니다</p>
+      <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보가 표시됩니다 &nbsp;|
+        <button onclick="renderCableDetailPage(document.getElementById('page-content'))" class="text-blue-500 hover:underline ml-1">광케이블 상세 현황 보기 →</button>
+      </p>
     </div>`;
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
@@ -25109,7 +25120,7 @@ function downloadVolumeStatsCSV() {
     extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
   });
 
-  const fixedHeaders = ['완료일','작업자(팀)','요청번호','구분','광케이블 합계(M)'];
+  const fixedHeaders = ['완료일','작업자(팀)','요청번호','구분','신설(M)','철거(M)','이설(M)'];
   const headers = [...fixedHeaders, ...allItemKeys];
 
   // 데이터 행
@@ -25120,7 +25131,9 @@ function downloadVolumeStatsCSV() {
       row.worker_team || '-',
       row.request_no  || '-',
       row.work_class  || '-',
-      (row.cable_total || 0).toFixed(1),
+      (row.cable_new_m    || 0) > 0 ? (row.cable_new_m||0).toFixed(1)    : '',
+      (row.cable_remove_m || 0) > 0 ? (row.cable_remove_m||0).toFixed(1) : '',
+      (row.cable_move_m   || 0) > 0 ? (row.cable_move_m||0).toFixed(1)   : '',
       ...allItemKeys.map(k => exMap[k] != null ? exMap[k] : '')
     ];
   });
@@ -25128,13 +25141,234 @@ function downloadVolumeStatsCSV() {
   // 합계 행
   const totals = [
     '합 계', '', '', '',
-    rows.reduce((s,r) => s + (r.cable_total||0), 0).toFixed(1),
+    rows.reduce((s,r) => s + (r.cable_new_m||0),    0).toFixed(1),
+    rows.reduce((s,r) => s + (r.cable_remove_m||0), 0).toFixed(1),
+    rows.reduce((s,r) => s + (r.cable_move_m||0),   0).toFixed(1),
     ...allItemKeys.map(k => extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0) || '')
   ];
   dataRows.push(totals);
 
   const today = new Date().toISOString().slice(0,10);
   downloadCSV(`물량통계_외선부분_${today}.csv`, headers, dataRows);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 광케이블 현황 페이지 (물량통계 > 광케이블 현황)
+// ═══════════════════════════════════════════════════════════════
+let _cableDetailCache = [];
+
+async function renderCableDetailPage(container) {
+  container.innerHTML = `<div class="max-w-6xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-blue-400 text-2xl"></i></div></div>`;
+  try {
+    const [statsRes, consRes] = await Promise.all([
+      API.get('/work-reports/volume-stats'),
+      API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } }))
+    ]);
+    const { cables = [] } = statsRes.data;
+    const constructions = consRes.data.constructions || consRes.data.data || [];
+    _cableDetailCache = cables;
+
+    // 공정별 집계
+    const totalNew    = cables.filter(c=>c.proc==='신설').reduce((s,c)=>s+(c.usage_m||0),0);
+    const totalRemove = cables.filter(c=>c.proc==='철거').reduce((s,c)=>s+(c.usage_m||0),0);
+    const totalMove   = cables.filter(c=>c.proc==='이설').reduce((s,c)=>s+(c.usage_m||0),0);
+    const totalAll    = cables.reduce((s,c)=>s+(c.usage_m||0),0);
+
+    // 케이블 종류별 집계
+    const byType = {};
+    cables.forEach(c => {
+      const key = c.cable_type || '미분류';
+      if (!byType[key]) byType[key] = { new:0, remove:0, move:0 };
+      if (c.proc==='신설') byType[key].new    += (c.usage_m||0);
+      if (c.proc==='철거') byType[key].remove += (c.usage_m||0);
+      if (c.proc==='이설') byType[key].move   += (c.usage_m||0);
+    });
+
+    container.innerHTML = `
+    <div class="max-w-6xl mx-auto p-4 space-y-4">
+      <!-- 헤더 -->
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <i class="fas fa-project-diagram text-blue-500"></i> 광케이블 현황
+        </h2>
+        <div class="flex gap-2 flex-wrap">
+          <select id="cd-construction" onchange="renderCableDetailPage(document.getElementById('page-content'))"
+                  class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="">전체 공사</option>
+            ${constructions.map(c=>`<option value="${c.id}">${c.request_no} ${c.title||''}</option>`).join('')}
+          </select>
+          <input type="date" id="cd-from" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
+          <input type="date" id="cd-to"   class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
+          <button onclick="renderCableDetailPage(document.getElementById('page-content'))"
+                  class="bg-blue-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-blue-600">
+            <i class="fas fa-search mr-1"></i>조회
+          </button>
+          <button onclick="downloadCableDetailCSV()"
+                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
+            <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
+          </button>
+          <button onclick="navigateTo('volume-stats')"
+                  class="bg-gray-100 text-gray-600 rounded-lg px-3 py-1.5 text-sm hover:bg-gray-200">
+            <i class="fas fa-arrow-left mr-1"></i>물량통계로
+          </button>
+        </div>
+      </div>
+
+      <!-- 요약 카드 -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        ${[
+          { label:'전체 사용량', val: totalAll.toFixed(1)+'M',    icon:'fas fa-ruler-horizontal', color:'gray'   },
+          { label:'신설 합계',   val: totalNew.toFixed(1)+'M',    icon:'fas fa-plus-circle',      color:'blue'   },
+          { label:'철거 합계',   val: totalRemove.toFixed(1)+'M', icon:'fas fa-minus-circle',     color:'red'    },
+          { label:'이설 합계',   val: totalMove.toFixed(1)+'M',   icon:'fas fa-exchange-alt',     color:'purple' },
+        ].map(c=>`
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <i class="${c.icon} text-${c.color}-400 text-sm"></i>
+            <span class="text-xs text-gray-500">${c.label}</span>
+          </div>
+          <div class="text-lg font-bold text-gray-800">${c.val}</div>
+        </div>`).join('')}
+      </div>
+
+      <!-- 케이블 종류별 요약 -->
+      ${Object.keys(byType).length > 0 ? `
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <i class="fas fa-chart-bar text-blue-400"></i> 케이블 종류별 요약
+        </h3>
+        <div class="overflow-x-auto">
+          <table class="text-xs border-collapse w-full">
+            <thead>
+              <tr class="bg-gray-50 text-gray-600">
+                <th class="border border-gray-200 px-3 py-2 text-left">케이블 종류</th>
+                <th class="border border-gray-200 px-3 py-2 text-right bg-blue-50">신설(M)</th>
+                <th class="border border-gray-200 px-3 py-2 text-right bg-red-50">철거(M)</th>
+                <th class="border border-gray-200 px-3 py-2 text-right bg-purple-50">이설(M)</th>
+                <th class="border border-gray-200 px-3 py-2 text-right bg-gray-50">합계(M)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(byType).map(([type, v])=>`
+              <tr class="hover:bg-gray-50">
+                <td class="border border-gray-100 px-3 py-1.5 font-medium">${type}</td>
+                <td class="border border-gray-100 px-3 py-1.5 text-right bg-blue-50">${v.new>0?v.new.toFixed(1):''}</td>
+                <td class="border border-gray-100 px-3 py-1.5 text-right bg-red-50">${v.remove>0?v.remove.toFixed(1):''}</td>
+                <td class="border border-gray-100 px-3 py-1.5 text-right bg-purple-50">${v.move>0?v.move.toFixed(1):''}</td>
+                <td class="border border-gray-100 px-3 py-1.5 text-right font-semibold">${(v.new+v.remove+v.move).toFixed(1)}</td>
+              </tr>`).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="bg-gray-100 font-bold text-gray-700">
+                <td class="border border-gray-200 px-3 py-2">합 계</td>
+                <td class="border border-gray-200 px-3 py-2 text-right bg-blue-100">${totalNew.toFixed(1)}</td>
+                <td class="border border-gray-200 px-3 py-2 text-right bg-red-100">${totalRemove.toFixed(1)}</td>
+                <td class="border border-gray-200 px-3 py-2 text-right bg-purple-100">${totalMove.toFixed(1)}</td>
+                <td class="border border-gray-200 px-3 py-2 text-right">${totalAll.toFixed(1)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>` : ''}
+
+      <!-- 상세 내역 테이블 -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <i class="fas fa-list text-blue-400"></i> 케이블 상세 내역
+            <span class="text-xs text-gray-400 font-normal">(총 ${cables.length}건)</span>
+          </h3>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs border-collapse" style="min-width:900px">
+            <thead>
+              <tr class="bg-gray-50 text-gray-600">
+                <th class="border border-gray-200 px-2 py-2 text-center">완료일</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">작업자(팀)</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">요청번호</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">구분</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">LOT NO.</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">규격</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">제조사</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">제작년도</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">케이블종류</th>
+                <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">공정</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">시작점(M)</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">종단점(M)</th>
+                <th class="border border-gray-200 px-2 py-2 text-center bg-yellow-50">사용량(M)</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">특이사항</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${cables.length === 0
+                ? `<tr><td colspan="14" class="text-center py-8 text-gray-400">데이터 없음</td></tr>`
+                : cables.map(cb => {
+                    const procColor = cb.proc==='신설' ? 'bg-blue-50 text-blue-700'
+                                    : cb.proc==='철거' ? 'bg-red-50 text-red-700'
+                                    : cb.proc==='이설' ? 'bg-purple-50 text-purple-700' : '';
+                    return `
+                    <tr class="hover:bg-gray-50 border-b border-gray-100">
+                      <td class="border border-gray-100 px-2 py-1.5 text-center">${(cb.work_date||'').slice(0,10)||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.worker_team||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.request_no||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.work_class||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center font-mono text-xs">${cb.lot_no||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.spec||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.maker||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.mfg_year||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.cable_type||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded text-xs ${procColor}">${cb.proc||'-'}</span></td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.start_point||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.end_point||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-right bg-yellow-50 font-semibold">${(cb.usage_m||0).toFixed(1)}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center text-gray-400">${cb.special_note||''}</td>
+                    </tr>`;
+                  }).join('')
+              }
+            </tbody>
+            ${cables.length > 0 ? `
+            <tfoot>
+              <tr class="bg-gray-100 font-bold text-gray-700">
+                <td colspan="12" class="border border-gray-200 px-2 py-2 text-center">합 계</td>
+                <td class="border border-gray-200 px-2 py-2 text-right bg-yellow-100">${totalAll.toFixed(1)}</td>
+                <td class="border border-gray-200 px-2 py-2"></td>
+              </tr>
+            </tfoot>` : ''}
+          </table>
+        </div>
+      </div>
+      <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보의 케이블 내역이 표시됩니다</p>
+    </div>`;
+  } catch(e) {
+    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+// ─── 광케이블 현황 엑셀 다운로드 ────────────────────────────────────────────
+function downloadCableDetailCSV() {
+  if (!_cableDetailCache || _cableDetailCache.length === 0) {
+    alert('다운로드할 데이터가 없습니다. 먼저 조회해 주세요.');
+    return;
+  }
+  const headers = ['완료일','작업자(팀)','요청번호','구분','LOT NO.','규격','제조사','제작년도','케이블종류','공정','시작점(M)','종단점(M)','사용량(M)','특이사항'];
+  const rows = _cableDetailCache.map(cb => [
+    (cb.work_date||'').slice(0,10)||'-',
+    cb.worker_team||'-',
+    cb.request_no||'-',
+    cb.work_class||'-',
+    cb.lot_no||'-',
+    cb.spec||'-',
+    cb.maker||'-',
+    cb.mfg_year||'-',
+    cb.cable_type||'-',
+    cb.proc||'-',
+    cb.start_point||'-',
+    cb.end_point||'-',
+    (cb.usage_m||0).toFixed(1),
+    cb.special_note||''
+  ]);
+  const today = new Date().toISOString().slice(0,10);
+  downloadCSV(`광케이블현황_${today}.csv`, headers, rows);
 }
 
 // ── 작업 완료 물량 워크시트 UI 헬퍼 ──────────────────────────────────────────

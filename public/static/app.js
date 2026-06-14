@@ -1961,8 +1961,8 @@ function renderApp() {
     { divider: true, label: '현장공량관리' },
     { id:'field-volume', icon:'fas fa-chart-line', label:'현장공량관리', group:'현장공량관리', children: [
       { id:'volume-stats',     icon:'fas fa-chart-bar',        label:'물량통계' },
-      { id:'work-report',      icon:'fas fa-file-alt',         label:'공량내역 — 외선' },
-      { id:'splice-report',    icon:'fas fa-plug',             label:'공량내역 — 접속' },
+      { id:'report-write',     icon:'fas fa-pen-to-square',    label:'작업일보 작성' },
+      { id:'field-report',     icon:'fas fa-list-alt',         label:'공량내역' },
       { id:'cable-detail',     icon:'fas fa-cable-car',        label:'광케이블 현황' },
       ...(dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin' ? [
         { id:'unit-price',     icon:'fas fa-tags',             label:'단가 관리' },
@@ -2621,6 +2621,7 @@ function getPageTitle(page) {
     'edu': '안전교육',
     'sign-requests': '서명 요청',
     'work-report': '공량내역 — 외선', 'splice-report': '공량내역 — 접속',
+    'field-report': '공량내역', 'report-write': '작업일보 작성',
     'field-volume': '현장공량관리', 'volume-stats': '물량통계', 'cable-detail': '광케이블 현황', 'unit-price': '단가 관리',
   };
   return map[page] || page;
@@ -2730,6 +2731,8 @@ function navigateTo(page) {
     case 'checklist-risk': renderChecklistRiskPage(content); break;
     case 'legal-notices': renderLegalNoticesPage(content); break;
     case 'field-volume': navigateTo('volume-stats'); return;
+    case 'report-write':   renderReportWritePage(content);   break;
+    case 'field-report':   renderFieldReportPage(content);   break;
     case 'work-report':    renderWorkReportListPage(content); break;
     case 'splice-report':  renderSpliceReportListPage(content); break;
     case 'volume-stats':   renderVolumeStatsPage(content);  break;
@@ -24146,6 +24149,256 @@ document.addEventListener('DOMContentLoaded', init);
 // ═══════════════════════════════════════════════════════════════
 let _workReportListData = [];
 
+// ═══════════════════════════════════════════════════════════════
+// 공량내역 — 외선/접속 통합 페이지 (상단 탭 전환)
+// ═══════════════════════════════════════════════════════════════
+async function renderFieldReportPage(container) {
+  // 현재 활성 탭 유지 (DOM에서 읽거나 기본값 'cable')
+  const activeTab = document.getElementById('fr-outer-tab-state')?.value || 'cable';
+
+  // 탭 버튼 렌더
+  const outerTab = (id, icon, label, color, isActive) => {
+    const on  = `bg-white border-b-2 border-${color}-500 text-${color}-600 font-semibold`;
+    const off = `text-gray-400 hover:text-gray-600 bg-gray-50`;
+    return `<button class="flex-1 py-3 text-sm flex items-center justify-center gap-2 transition-all ${isActive ? on : off}"
+              onclick="_frSwitchOuterTab('${id}')">
+              <i class="${icon}"></i>${label}
+            </button>`;
+  };
+
+  // 외부 레이아웃 (탭 바 + 콘텐츠 영역)
+  container.innerHTML = `
+  <div class="max-w-4xl mx-auto">
+    <!-- 상단 외선/접속 탭 -->
+    <div class="flex border-b border-gray-200 bg-white sticky top-0 z-10">
+      ${outerTab('cable',  'fas fa-cable-car',  '외선', 'pink',   activeTab==='cable')}
+      ${outerTab('splice', 'fas fa-plug',        '접속', 'indigo', activeTab==='splice')}
+    </div>
+    <input type="hidden" id="fr-outer-tab-state" value="${activeTab}">
+    <!-- 각 탭 콘텐츠 -->
+    <div id="fr-pane-cable"  class="${activeTab==='cable'  ? '' : 'hidden'}"></div>
+    <div id="fr-pane-splice" class="${activeTab==='splice' ? '' : 'hidden'}"></div>
+  </div>`;
+
+  // 활성 탭 내용 로드
+  if (activeTab === 'cable') {
+    await renderWorkReportListPage(document.getElementById('fr-pane-cable'));
+  } else {
+    await renderSpliceReportListPage(document.getElementById('fr-pane-splice'));
+  }
+}
+
+async function _frSwitchOuterTab(tab) {
+  const stateEl = document.getElementById('fr-outer-tab-state');
+  if (stateEl) stateEl.value = tab;
+
+  ['cable','splice'].forEach(id => {
+    const pane = document.getElementById(`fr-pane-${id}`);
+    if (!pane) return;
+    pane.classList.toggle('hidden', id !== tab);
+  });
+
+  // 탭 버튼 스타일 갱신
+  const colors = { cable:'pink', splice:'indigo' };
+  ['cable','splice'].forEach(id => {
+    const btn = document.querySelector(`button[onclick="_frSwitchOuterTab('${id}')"]`);
+    if (!btn) return;
+    const isActive = id === tab;
+    const c = colors[id];
+    btn.className = btn.className
+      .replace(/bg-white|bg-gray-50|border-b-2|border-\S+-500|text-\S+-600|font-semibold|text-gray-400|hover:text-gray-600/g, '')
+      .trim();
+    if (isActive) {
+      btn.className += ` bg-white border-b-2 border-${c}-500 text-${c}-600 font-semibold`;
+    } else {
+      btn.className += ` text-gray-400 hover:text-gray-600 bg-gray-50`;
+    }
+  });
+
+  // 아직 로드 안 된 탭이면 데이터 로드
+  const pane = document.getElementById(`fr-pane-${tab}`);
+  if (pane && pane.innerHTML.trim() === '') {
+    if (tab === 'cable') {
+      await renderWorkReportListPage(pane);
+    } else {
+      await renderSpliceReportListPage(pane);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 작업일보 작성 — 외선/접속 선택 페이지
+// ═══════════════════════════════════════════════════════════════
+async function renderReportWritePage(container) {
+  container.innerHTML = `
+  <div class="max-w-2xl mx-auto p-6">
+    <div class="mb-6">
+      <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+        <i class="fas fa-pen-to-square text-pink-500"></i> 작업일보 작성
+      </h2>
+      <p class="text-sm text-gray-500 mt-1">작성할 일보 유형을 선택하세요.</p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+      <!-- 외선 카드 -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 cursor-pointer hover:border-pink-400 hover:shadow-md transition-all group"
+           onclick="_reportWriteSelectType('cable')">
+        <div class="flex flex-col items-center text-center gap-3">
+          <div class="w-16 h-16 rounded-2xl flex items-center justify-center group-hover:scale-105 transition-transform"
+               style="background:linear-gradient(135deg,#FCE7F3,#FBCFE8);">
+            <i class="fas fa-cable-car text-pink-500 text-2xl"></i>
+          </div>
+          <div>
+            <div class="font-bold text-gray-800 text-base">외선 작업일보</div>
+            <div class="text-xs text-gray-500 mt-1">광케이블 포설·설치 공사<br>시공 일보 작성</div>
+          </div>
+          <div class="mt-1 text-xs px-3 py-1 rounded-full bg-pink-50 text-pink-600 font-medium">
+            <i class="fas fa-arrow-right mr-1"></i>선택
+          </div>
+        </div>
+      </div>
+
+      <!-- 접속 카드 -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 cursor-pointer hover:border-indigo-400 hover:shadow-md transition-all group"
+           onclick="_reportWriteSelectType('splice')">
+        <div class="flex flex-col items-center text-center gap-3">
+          <div class="w-16 h-16 rounded-2xl flex items-center justify-center group-hover:scale-105 transition-transform"
+               style="background:linear-gradient(135deg,#EDE9FE,#DDD6FE);">
+            <i class="fas fa-plug text-indigo-500 text-2xl"></i>
+          </div>
+          <div>
+            <div class="font-bold text-gray-800 text-base">접속 작업일보</div>
+            <div class="text-xs text-gray-500 mt-1">광케이블 코아접속·성단<br>공종별 시공량 입력</div>
+          </div>
+          <div class="mt-1 text-xs px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 font-medium">
+            <i class="fas fa-arrow-right mr-1"></i>선택
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>`;
+}
+
+async function _reportWriteSelectType(type) {
+  const content = document.getElementById('page-content');
+  if (!content) return;
+  if (type === 'cable') {
+    // 외선: 작성대상 목록 표시 (작업 선택 → 폼으로 이동)
+    await _reportWriteCableList(content);
+  } else {
+    // 접속: 바로 신규 작성 폼 or 목록에서 선택
+    await _reportWriteSpliceList(content);
+  }
+}
+
+async function _reportWriteCableList(container) {
+  container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  try {
+    const res = await API.get('/tasks?status=working,work_completed,completed&limit=200');
+    const tasks = (res.data.tasks || []);
+    const pending = tasks.filter(t => !t.report_id || t.report_status === 'draft');
+
+    const renderCard = (t) => {
+      const subNum = t.work_number ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number) : t.task_number;
+      const badge = !t.report_id
+        ? `<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">미작성</span>`
+        : `<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">임시저장</span>`;
+      return `
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-pink-300 hover:shadow transition-all"
+           onclick="renderWorkReportForm(document.getElementById('page-content'), ${t.id})">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <span class="font-semibold text-sm text-gray-800 truncate">${t.title||'-'}</span>
+              ${badge}
+            </div>
+            <div class="text-xs text-gray-500 flex flex-wrap gap-2">
+              <span><i class="fas fa-hashtag mr-0.5 text-gray-300"></i>${subNum}</span>
+              ${t.request_no ? `<span><i class="fas fa-file-contract mr-0.5 text-gray-300"></i>${t.request_no}</span>` : ''}
+              ${t.work_completed_at ? `<span><i class="fas fa-calendar-check mr-0.5 text-gray-300"></i>${t.work_completed_at?.slice(0,10)||''}</span>` : ''}
+              ${t.construction_type ? `<span class="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">${t.construction_type}</span>` : ''}
+            </div>
+          </div>
+          <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
+        </div>
+      </div>`;
+    };
+
+    container.innerHTML = `
+    <div class="max-w-4xl mx-auto p-4 space-y-3">
+      <div class="flex items-center gap-3 mb-2">
+        <button onclick="renderReportWritePage(document.getElementById('page-content'))"
+                class="text-gray-400 hover:text-gray-600 p-1">
+          <i class="fas fa-arrow-left text-lg"></i>
+        </button>
+        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <i class="fas fa-cable-car text-pink-500"></i> 외선 작업일보 — 작성 대상
+        </h2>
+      </div>
+      ${pending.length === 0
+        ? `<div class="text-center py-12 text-gray-400"><i class="fas fa-check-circle text-4xl mb-3 text-green-400 block"></i><p class="text-sm">작성 대상 외선 일보가 없습니다</p></div>`
+        : pending.map(renderCard).join('')}
+    </div>`;
+  } catch(e) {
+    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+async function _reportWriteSpliceList(container) {
+  container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
+  try {
+    const res = await API.get('/splice-reports');
+    const reports = res.data.reports || [];
+    const pending = reports.filter(r => r.status === 'draft' || !r.status);
+
+    const mkCard = (r) => `
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3 hover:shadow-md transition cursor-pointer"
+           onclick="renderSpliceReportForm(document.getElementById('page-content'), ${r.id || 'null'}, null)">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style="background:#EDE9FE;">
+          <i class="fas fa-plug text-indigo-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-semibold text-gray-800 text-sm truncate">${r.work_date || '날짜미정'}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-600">임시저장</span>
+          </div>
+          <div class="text-xs text-gray-500 mt-0.5 truncate">
+            ${r.worker_team || '팀미지정'} · ${r.task_title || '작업없음'} · ${r.item_count || 0}개 공종
+          </div>
+        </div>
+        <i class="fas fa-chevron-right text-gray-300 text-xs flex-shrink-0"></i>
+      </div>`;
+
+    container.innerHTML = `
+    <div class="max-w-4xl mx-auto p-4 space-y-3">
+      <div class="flex items-center gap-3 mb-2">
+        <button onclick="renderReportWritePage(document.getElementById('page-content'))"
+                class="text-gray-400 hover:text-gray-600 p-1">
+          <i class="fas fa-arrow-left text-lg"></i>
+        </button>
+        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <i class="fas fa-plug text-indigo-500"></i> 접속 작업일보 — 작성
+        </h2>
+        <button onclick="renderSpliceReportForm(document.getElementById('page-content'), null, null)"
+                class="ml-auto text-sm px-4 py-2 rounded-xl text-white font-semibold hover:opacity-90 transition flex items-center gap-1"
+                style="background:linear-gradient(135deg,#685182,#4F46E5);">
+          <i class="fas fa-plus mr-1"></i>신규 작성
+        </button>
+      </div>
+      ${pending.length === 0
+        ? `<div class="text-center py-8 text-gray-400 text-sm">임시저장된 접속일보가 없습니다.<br>신규 작성을 눌러 작성하세요.</div>`
+        : `<p class="text-xs text-gray-400">임시저장 목록</p>` + pending.map(mkCard).join('')}
+    </div>`;
+  } catch(e) {
+    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 외선 작업일보 목록 페이지 (공량내역 탭 내부용)
+// ═══════════════════════════════════════════════════════════════
 async function renderWorkReportListPage(container) {
   container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
@@ -24211,11 +24464,8 @@ async function renderWorkReportListPage(container) {
     container.innerHTML = `
     <div class="max-w-4xl mx-auto p-4 space-y-0">
 
-      <!-- 헤더 -->
-      <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <i class="fas fa-file-alt text-pink-500"></i> 외선 작업일보
-        </h2>
+      <!-- 헤더 (엑셀 다운로드) -->
+      <div class="flex items-center justify-end mb-3">
         <button onclick="downloadWorkReportListCSV()"
                 class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-xs hover:bg-green-600">
           <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
@@ -24513,7 +24763,7 @@ async function renderWorkReportForm(container, taskId) {
 
       <!-- ── 헤더 ── -->
       <div class="flex items-center gap-3">
-        <button onclick="navigateTo('work-report')" class="text-gray-400 hover:text-gray-600">
+        <button onclick="navigateTo('field-report')" class="text-gray-400 hover:text-gray-600">
           <i class="fas fa-arrow-left text-lg"></i>
         </button>
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -25072,7 +25322,7 @@ async function _finalSubmit(reportId, taskId) {
   try {
     await API.post(`/work-reports/${reportId}/submit`, {});
     toast('일보 제출 완료!', 'success');
-    setTimeout(() => navigateTo('work-report'), 1200);
+    setTimeout(() => navigateTo('field-report'), 1200);
   } catch(e) {
     toast('제출 실패: ' + e.message, 'error');
   }
@@ -25117,10 +25367,8 @@ async function renderSpliceReportListPage(container) {
 
     container.innerHTML = `
     <div class="max-w-4xl mx-auto p-4 space-y-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <i class="fas fa-plug text-indigo-500"></i> 공량내역 — 접속
-        </h2>
+      <!-- 신규 작성 버튼 -->
+      <div class="flex items-center justify-end">
         <button onclick="renderSpliceReportForm(document.getElementById('page-content'), null, null)"
                 class="text-sm px-4 py-2 rounded-xl text-white font-semibold hover:opacity-90 transition flex items-center gap-1"
                 style="background:linear-gradient(135deg,#685182,#4F46E5);">
@@ -25286,7 +25534,7 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     <div class="max-w-3xl mx-auto p-4 space-y-4">
       <!-- 헤더 -->
       <div class="flex items-center gap-3">
-        <button onclick="navigateTo('splice-report')" class="text-gray-400 hover:text-gray-600">
+        <button onclick="navigateTo('field-report')" class="text-gray-400 hover:text-gray-600">
           <i class="fas fa-arrow-left text-lg"></i>
         </button>
         <div>
@@ -25457,7 +25705,7 @@ async function submitSpliceReport() {
     const reportId = res.data.reportId;
     await API.post(`/splice-reports/${reportId}/submit`, {});
     toast('접속일보 제출 완료!', 'success');
-    setTimeout(() => navigateTo('splice-report'), 1200);
+    setTimeout(() => navigateTo('field-report'), 1200);
   } catch(e) {
     toast('제출 실패: ' + e.message, 'error');
   }
@@ -26915,7 +27163,7 @@ function goToWorkReport(taskId) {
     renderWorkReportForm(content, taskId);
     // 사이드바 메뉴 활성화
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    const navItem = document.querySelector('.nav-item[data-page="work-report"]');
+    const navItem = document.querySelector('.nav-item[data-page="field-report"]');
     if (navItem) navItem.classList.add('active');
   }
 }

@@ -25191,13 +25191,48 @@ let _cableDetailCache = [];
 async function renderCableDetailPage(container) {
   container.innerHTML = `<div class="max-w-6xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-blue-400 text-2xl"></i></div></div>`;
   try {
+    // 조회 기간 계산 (mode: month/quarter/year)
+    const mode  = document.getElementById('cd-period-mode')?.value  || 'month';
+    const mVal  = document.getElementById('cd-period-month')?.value || '';
+    const qVal  = document.getElementById('cd-period-quarter')?.value || '';
+    const yVal  = document.getElementById('cd-period-year')?.value  || '';
+    const consVal = document.getElementById('cd-construction')?.value || '';
+
+    let fromDate = '', toDate = '';
+    if (mode === 'month' && mVal) {
+      fromDate = mVal + '-01';
+      const d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      toDate = d.toISOString().slice(0,10);
+    } else if (mode === 'quarter' && qVal && yVal) {
+      const q = parseInt(qVal);
+      const startM = String((q-1)*3+1).padStart(2,'0');
+      const endM   = String(q*3).padStart(2,'0');
+      fromDate = `${yVal}-${startM}-01`;
+      const d = new Date(`${yVal}-${endM}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
+      toDate = d.toISOString().slice(0,10);
+    } else if (mode === 'year' && yVal) {
+      fromDate = `${yVal}-01-01`;
+      toDate   = `${yVal}-12-31`;
+    }
+
+    const params = [];
+    if (consVal)  params.push(`construction_id=${consVal}`);
+    if (fromDate) params.push(`from_date=${fromDate}`);
+    if (toDate)   params.push(`to_date=${toDate}`);
+    const qs = params.length ? '?' + params.join('&') : '';
+
     const [statsRes, consRes] = await Promise.all([
-      API.get('/work-reports/volume-stats'),
+      API.get('/work-reports/volume-stats' + qs),
       API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } }))
     ]);
     const { cables = [] } = statsRes.data;
     const constructions = consRes.data.constructions || consRes.data.data || [];
     _cableDetailCache = cables;
+
+    // 연도 목록 생성 (2020~현재년)
+    const nowYear = new Date().getFullYear();
+    const years = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
+    const savedMode = mode; const savedMVal = mVal; const savedQVal = qVal; const savedYVal = yVal || String(nowYear);
 
     // 공정별 집계
     const totalNew    = cables.filter(c=>c.proc==='신설').reduce((s,c)=>s+(c.usage_m||0),0);
@@ -25225,14 +25260,29 @@ async function renderCableDetailPage(container) {
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
           <i class="fas fa-project-diagram text-blue-500"></i> 광케이블 현황
         </h2>
-        <div class="flex gap-2 flex-wrap">
-          <select id="cd-construction" onchange="renderCableDetailPage(document.getElementById('page-content'))"
-                  class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+        <div class="flex gap-2 flex-wrap items-center">
+          <!-- 공사 선택 -->
+          <select id="cd-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
             <option value="">전체 공사</option>
-            ${constructions.map(c=>`<option value="${c.id}">${c.request_no} ${c.title||''}</option>`).join('')}
+            ${constructions.map(c=>`<option value="${c.id}" ${consVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
           </select>
-          <input type="date" id="cd-from" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
-          <input type="date" id="cd-to"   class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
+          <!-- 기간 모드 선택 -->
+          <select id="cd-period-mode" onchange="_cdUpdatePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="month"   ${savedMode==='month'  ?'selected':''}>월별</option>
+            <option value="quarter" ${savedMode==='quarter'?'selected':''}>분기별</option>
+            <option value="year"    ${savedMode==='year'   ?'selected':''}>연도별</option>
+            <option value="all"     ${savedMode==='all'    ?'selected':''}>전체</option>
+          </select>
+          <!-- 연도 선택 (분기/연도 모드) -->
+          <select id="cd-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none cd-year-sel ${savedMode==='month'||savedMode==='all'?'hidden':''}">
+            ${years.map(y=>`<option value="${y}" ${savedYVal==y?'selected':''}>${y}년</option>`).join('')}
+          </select>
+          <!-- 분기 선택 -->
+          <select id="cd-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none ${savedMode!=='quarter'?'hidden':''}" id="cd-quarter-sel">
+            ${[1,2,3,4].map(q=>`<option value="${q}" ${savedQVal==q?'selected':''}>Q${q} (${(q-1)*3+1}~${q*3}월)</option>`).join('')}
+          </select>
+          <!-- 월 선택 -->
+          <input type="month" id="cd-period-month" value="${savedMVal}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedMode!=='month'?'hidden':''}">
           <button onclick="renderCableDetailPage(document.getElementById('page-content'))"
                   class="bg-blue-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-blue-600">
             <i class="fas fa-search mr-1"></i>조회
@@ -25405,6 +25455,24 @@ async function renderCableDetailPage(container) {
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
+}
+
+// ─── 광케이블 현황 기간 UI show/hide ────────────────────────────────────────
+function _cdUpdatePeriodUI() {
+  const mode = document.getElementById('cd-period-mode')?.value || 'month';
+
+  // 연도 select: quarter/year 모드에서만 표시
+  document.querySelectorAll('.cd-year-sel').forEach(el => {
+    el.classList.toggle('hidden', mode === 'month' || mode === 'all');
+  });
+
+  // 분기 select: quarter 모드에서만 표시
+  const qSel = document.getElementById('cd-period-quarter');
+  if (qSel) qSel.classList.toggle('hidden', mode !== 'quarter');
+
+  // 월 input: month 모드에서만 표시
+  const mIn = document.getElementById('cd-period-month');
+  if (mIn) mIn.classList.toggle('hidden', mode !== 'month');
 }
 
 // ─── 광케이블 현황 엑셀 다운로드 ────────────────────────────────────────────

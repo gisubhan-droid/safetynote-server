@@ -2615,6 +2615,7 @@ function getPageTitle(page) {
     'edu-supervisor': '관리감독자교육', 'edu-stats': '교육현황통계',
     'edu': '안전교육',
     'sign-requests': '서명 요청',
+    'work-report': '외선일보 작성', 'field-volume': '현장공량관리', 'volume-stats': '물량통계 (외선부분)',
   };
   return map[page] || page;
 }
@@ -24427,7 +24428,7 @@ async function renderWorkReportForm(container, taskId) {
           <i class="fas fa-save mr-1"></i> 임시저장
         </button>
         <button onclick="submitWorkReport(${taskId})" class="flex-1 py-3 text-sm font-semibold rounded-xl bg-green-500 text-white hover:bg-green-600 transition">
-          <i class="fas fa-paper-plane mr-1"></i> 메인 등록
+          <i class="fas fa-paper-plane mr-1"></i> 제출
         </button>
       </div>
     </div>`;
@@ -24648,7 +24649,7 @@ function _wrAddCableRow(tbodyId) {
   tr.innerHTML = `
     <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS}</select></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS3}</select></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS3}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS3}</select></td>

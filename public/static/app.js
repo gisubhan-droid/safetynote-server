@@ -25268,44 +25268,69 @@ async function renderCableDetailPage(container) {
       <!-- 케이블 요약 -->
       ${Object.keys(byType).length > 0 ? `
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-        <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <i class="fas fa-chart-bar text-blue-400"></i> 케이블 요약
-        </h3>
+        <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <i class="fas fa-chart-bar text-blue-400"></i> 케이블 요약
+          </h3>
+          <!-- 공정구분 다중 선택 필터 -->
+          <div class="flex gap-2">
+            <label class="flex items-center gap-1 cursor-pointer select-none">
+              <input type="checkbox" id="cd-filter-new"    checked onchange="_filterCableSummary()"
+                     class="w-3.5 h-3.5 accent-blue-500">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">신설</span>
+            </label>
+            <label class="flex items-center gap-1 cursor-pointer select-none">
+              <input type="checkbox" id="cd-filter-remove" checked onchange="_filterCableSummary()"
+                     class="w-3.5 h-3.5 accent-red-500">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">철거</span>
+            </label>
+            <label class="flex items-center gap-1 cursor-pointer select-none">
+              <input type="checkbox" id="cd-filter-move"   checked onchange="_filterCableSummary()"
+                     class="w-3.5 h-3.5 accent-purple-500">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">이설</span>
+            </label>
+          </div>
+        </div>
         <div class="overflow-x-auto">
-          <table class="text-xs border-collapse w-full">
+          <table class="text-xs border-collapse w-full" id="cd-summary-table">
             <thead>
               <tr class="bg-gray-50 text-gray-600">
                 <th class="border border-gray-200 px-3 py-2 text-center">제조사</th>
                 <th class="border border-gray-200 px-3 py-2 text-center">케이블종류</th>
                 <th class="border border-gray-200 px-3 py-2 text-center">규격</th>
-                <th class="border border-gray-200 px-3 py-2 text-right bg-blue-50">신설(M)</th>
-                <th class="border border-gray-200 px-3 py-2 text-right bg-red-50">철거(M)</th>
-                <th class="border border-gray-200 px-3 py-2 text-right bg-purple-50">이설(M)</th>
-                <th class="border border-gray-200 px-3 py-2 text-right bg-gray-50">합계(M)</th>
+                <th class="border border-gray-200 px-3 py-2 text-center cd-col-proc">공정</th>
+                <th class="border border-gray-200 px-3 py-2 text-right cd-col-m">사용량(M)</th>
               </tr>
             </thead>
-            <tbody>
-              ${Object.entries(byType).map(([, v])=>`
-              <tr class="hover:bg-gray-50">
-                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
-                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
-                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
-                <td class="border border-gray-100 px-3 py-1.5 text-right bg-blue-50">${v.new>0?v.new.toFixed(1):''}</td>
-                <td class="border border-gray-100 px-3 py-1.5 text-right bg-red-50">${v.remove>0?v.remove.toFixed(1):''}</td>
-                <td class="border border-gray-100 px-3 py-1.5 text-right bg-purple-50">${v.move>0?v.move.toFixed(1):''}</td>
-                <td class="border border-gray-100 px-3 py-1.5 text-right font-semibold">${(v.new+v.remove+v.move).toFixed(1)}</td>
-              </tr>`).join('')}
+            <tbody id="cd-summary-tbody">
+              ${Object.entries(byType).flatMap(([, v]) => {
+                const rows = [];
+                if (v.new    > 0) rows.push(`<tr class="hover:bg-gray-50 cd-row-new">
+                  <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs">신설</span></td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-right bg-blue-50 font-semibold">${v.new.toFixed(1)}</td>
+                </tr>`);
+                if (v.remove > 0) rows.push(`<tr class="hover:bg-gray-50 cd-row-remove">
+                  <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs">철거</span></td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-right bg-red-50 font-semibold">${v.remove.toFixed(1)}</td>
+                </tr>`);
+                if (v.move   > 0) rows.push(`<tr class="hover:bg-gray-50 cd-row-move">
+                  <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs">이설</span></td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-right bg-purple-50 font-semibold">${v.move.toFixed(1)}</td>
+                </tr>`);
+                return rows;
+              }).join('')}
             </tbody>
-            <tfoot>
-              <tr class="bg-gray-100 font-bold text-gray-700">
-                <td class="border border-gray-200 px-3 py-2 text-center" colspan="3">합 계</td>
-                <td class="border border-gray-200 px-3 py-2 text-right bg-blue-100">${totalNew.toFixed(1)}</td>
-                <td class="border border-gray-200 px-3 py-2 text-right bg-red-100">${totalRemove.toFixed(1)}</td>
-                <td class="border border-gray-200 px-3 py-2 text-right bg-purple-100">${totalMove.toFixed(1)}</td>
-                <td class="border border-gray-200 px-3 py-2 text-right">${totalAll.toFixed(1)}</td>
-              </tr>
-            </tfoot>
           </table>
+          <p id="cd-summary-empty" class="text-center py-4 text-gray-400 text-xs hidden">선택된 공정이 없습니다</p>
         </div>
       </div>` : ''}
 
@@ -25383,6 +25408,27 @@ async function renderCableDetailPage(container) {
 }
 
 // ─── 광케이블 현황 엑셀 다운로드 ────────────────────────────────────────────
+// ─── 케이블 요약 공정 필터 ───────────────────────────────────────────────────
+function _filterCableSummary() {
+  const showNew    = document.getElementById('cd-filter-new')?.checked;
+  const showRemove = document.getElementById('cd-filter-remove')?.checked;
+  const showMove   = document.getElementById('cd-filter-move')?.checked;
+
+  const rows    = document.querySelectorAll('#cd-summary-tbody tr');
+  let visible   = 0;
+  rows.forEach(tr => {
+    const isNew    = tr.classList.contains('cd-row-new');
+    const isRemove = tr.classList.contains('cd-row-remove');
+    const isMove   = tr.classList.contains('cd-row-move');
+    const show = (isNew && showNew) || (isRemove && showRemove) || (isMove && showMove);
+    tr.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+
+  const emptyMsg = document.getElementById('cd-summary-empty');
+  if (emptyMsg) emptyMsg.classList.toggle('hidden', visible > 0);
+}
+
 function downloadCableDetailCSV() {
   if (!_cableDetailCache || _cableDetailCache.length === 0) {
     alert('다운로드할 데이터가 없습니다. 먼저 조회해 주세요.');

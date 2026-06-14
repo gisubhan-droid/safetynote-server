@@ -24650,11 +24650,9 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
   // activeType : 'cable'(기본) | 'splice'
   // cSubInit   : 외선 서브탭 초기값 'pending'|'draft'|'completed'  (기본 'pending')
   // sSubInit   : 접속 서브탭 초기값 'pending'|'draft'|'completed'  (기본 'pending')
-  console.log('[renderReportWritePage] 호출 params:', activeType, cSubInit, sSubInit);
   activeType = activeType || 'cable';
   const cSubActive = cSubInit || 'pending';
   const sSubActive = sSubInit || 'pending';
-  console.log('[renderReportWritePage] 최종 sSubActive:', sSubActive);
   const content = container || document.getElementById('page-content');
   if (!content) return;
   if (!content) return;
@@ -24697,8 +24695,7 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
   const sPending   = spliceTasks.filter(t => !reportedTaskIds.has(t.id));
   const sDrafts    = spliceReports.filter(r => r.status === 'draft');
   const sCompleted = spliceReports.filter(r => r.status === 'submitted' || r.status === 'confirmed');
-  console.log('[renderReportWritePage] spliceReports 전체:', spliceReports.map(r => ({id:r.id, status:r.status})));
-  console.log('[renderReportWritePage] sCompleted 수:', sCompleted.length, sCompleted.map(r => r.id));
+
   // task 정보를 카드에서 참조하기 위한 taskMap
   const taskMap = {};
   spliceTasks.forEach(t => { taskMap[t.id] = t; });
@@ -26527,26 +26524,26 @@ async function submitSpliceReport() {
   try {
     // 1단계: 저장 (POST /splice-reports)
     const data = _collectSpliceData();
-    console.log('[submitSpliceReport] 1단계 저장 data:', JSON.stringify(data).slice(0,200));
+
     const res = await API.post('/splice-reports', data);
     const reportId = res.data?.reportId;
-    console.log('[submitSpliceReport] 저장 완료 reportId:', reportId);
+
     if (!reportId) throw new Error('reportId를 받지 못했습니다.');
 
     // 2단계: 제출 상태로 변경 (POST /splice-reports/:id/submit)
-    console.log('[submitSpliceReport] 2단계 submit 호출');
+
     await API.post(`/splice-reports/${reportId}/submit`, {});
-    console.log('[submitSpliceReport] submit 완료, 완료탭으로 이동');
+
 
     toast('접속일보 제출 완료!', 'success');
 
     // 3단계: 완료탭으로 이동 (setTimeout 없이 즉시 실행 후 딜레이)
     await new Promise(r => setTimeout(r, 1200));
     const content = document.getElementById('page-content');
-    console.log('[submitSpliceReport] page-content 존재:', !!content);
+
     if (content) {
       await renderReportWritePage(content, 'splice', 'pending', 'completed');
-      console.log('[submitSpliceReport] renderReportWritePage 완료');
+
     }
   } catch(e) {
     console.error('[submitSpliceReport] 에러:', e);

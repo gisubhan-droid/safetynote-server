@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-14 (세션 20 — 완료)
-> **앱 현재 버전: v1.3.8** ← 최신 (⏳ NAS git pull + pm2 restart 필요)
+> 최종 업데이트: 2026-06-14 (세션 21 — 완료)
+> **앱 현재 버전: v1.3.9** ← 최신 (⏳ NAS git pull + pm2 restart 필요)
 > NAS 배포 버전: v1.3.1 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
 > **다음 작업**: NAS git pull + pm2 restart 적용 후 현장 테스트
 
@@ -36,10 +36,41 @@
 | **v1.3.6** | **2026-06-12** | ✅ **GitHub 배포 완료** | **bugfix**: renderWorkReportForm 스코프 내 YEAR_OPTS 누락 복구(sed 치환 오작동) (캐시 `v=20260612l`) |
 | **v1.3.7** | **2026-06-14** | ✅ **GitHub 배포 완료** | +행추가 버튼 버그 수정(_wrAddCableRow에서 `${SPEC_OPTS}`→`${SPEC_OPTS3}`), 버튼명 '메인 등록'→'제출', getPageTitle에 work-report/field-volume/volume-stats 추가(헤더 타이틀 코드 ID 표시 수정) (캐시 `v=20260612m`) |
 | **v1.3.8** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: `showToast`→`toast` 치환(임시저장/제출/행추가 버튼 완전 무반응 핵심 원인), +케이블추가 버튼 삭제, tasks 조회 범위 확대(working/work_completed/completed), SW 등록경로 `/service-worker.js` 수정 (캐시 `v=20260614a`) |
+| **v1.3.9** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: 외선일보 공정구분(proc) DB 저장, 추가입력(extras) 저장/복원, `YEAR_OPTS3` 오타 수정(행추가 버튼 최종 수정) — `work_report_extras` 테이블 신규 생성, `work_report_cables.proc/remark` 컬럼 추가 (`2e97d32`) |
 
 ---
 
 ## 🔧 이슈별 수정 이력 (전체)
+
+---
+
+### ✅ [v1.3.9 / 세션21] 외선일보 공정구분/추가입력 저장 + 행추가 버튼 최종 수정
+**날짜**: 2026-06-14  
+**커밋**: `2e97d32`  
+
+#### 문제 1: `+ 행추가` 버튼 클릭 시 아무 반응 없음 (최종 수정)
+- **원인**: `_wrAddCableRow` 함수 내 `${YEAR_OPTS3}` 참조 — 해당 스코프에는 `YEAR_OPTS`만 정의되어 있음 → `undefined`가 tr.innerHTML에 삽입되어 행 전체가 파괴됨
+- **수정**: `public/static/app.js` line 24648 `${YEAR_OPTS3}` → `${YEAR_OPTS}`
+
+#### 문제 2: `공정구분` 저장 후 재진입 시 사라짐
+- **원인**: `_collectWrData`에서 `proc` 필드를 수집하고 전송하지만, `POST /api/work-reports` INSERT문에 `proc` 컬럼이 없었음. DB 테이블(`work_report_cables`)에도 해당 컬럼 없음
+- **수정**:
+  - `node-server.ts` patchSchema: `ALTER TABLE work_report_cables ADD COLUMN proc TEXT DEFAULT ''` 추가
+  - `node-server.ts` patchSchema: `ALTER TABLE work_report_cables ADD COLUMN remark TEXT DEFAULT ''` 추가 (특이사항 동시 수정)
+  - `POST /api/work-reports` INSERT 컬럼/바인딩에 `proc`, `remark` 추가
+
+#### 문제 3: `추가입력` 섹션 전체 저장/복원 안됨
+- **원인 (저장)**: `cable_sets[].extras`를 프론트에서 전송하지만 백엔드에 `work_report_extras` 테이블 자체가 없었고 저장 로직도 없었음
+- **원인 (복원)**: GET 응답에 extras가 없었고, 폼 렌더링 후 값을 채우는 코드가 없었음
+- **수정**:
+  - `node-server.ts` patchSchema: `work_report_extras` 테이블 신규 생성 (`report_id`, `set_no`, `item_key`, `qty`)
+  - `POST /api/work-reports`: `body.cable_sets[].extras` 순회 → `work_report_extras` INSERT
+  - `GET /api/work-reports/task/:taskId`: `work_report_extras` 쿼리 + 응답에 `extras` 포함
+  - `app.js` `renderWorkReportForm`: API 응답 `extras` 변수 수신, 폼 렌더링 후 `data-key`로 해당 `<input>` 찾아 값 복원
+
+**변경 파일**:
+- `public/static/app.js`: YEAR_OPTS3 오타 수정, extras 변수 수신, extras 폼 복원 로직 추가
+- `node-server.ts`: patchSchema proc/remark/work_report_extras 추가, POST proc+remark INSERT, POST extras 저장, GET extras 반환
 
 ---
 

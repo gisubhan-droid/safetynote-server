@@ -26024,10 +26024,15 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     }
 
     const workDate   = report?.work_date   || (task?.work_completed_at || '').slice(0,10) || '';
-    const workerTeam = report?.worker_team || task?.contractor_name || '';
-    const managerName= report?.manager_name|| task?.lgu_supervisor  || '';
+    const workerTeam = report?.worker_team || task?.contractor_name || '-';
+    const managerName= report?.manager_name|| task?.lgu_supervisor  || '-';
     const remark     = report?.remark      || '';
     const status     = report?.status      || 'draft';
+    // 외선일보와 동일한 자동입력 필드
+    const constrType  = task?.construction_type || '-';
+    const requestNo   = task?.request_no || '-';
+    const taskTitle   = task?.title || '-';
+    const detailType  = report?.detail_type || '';
 
     // 기존 저장 데이터를 key→item 맵으로
     const savedMap = {};
@@ -26110,25 +26115,38 @@ async function renderSpliceReportForm(container, reportId, taskId) {
         ${status === 'confirmed' ? `<span class="ml-auto text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">확인완료</span>` : ''}
       </div>
 
-      <!-- 기본정보 -->
+      <!-- 기본정보 (외선일보와 동일한 형식) -->
       <div class="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
         <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <div>
-            <label class="text-xs text-gray-400 block mb-1">작업일 <span class="text-xs text-blue-400">(자동/수정가능)</span></label>
-            <input id="sr-work-date" type="date" value="${workDate}"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400">
+            <label class="text-xs text-gray-400 block mb-1">공사구분 <span class="text-xs text-blue-400">(자동)</span></label>
+            <div class="bg-gray-50 rounded-lg px-3 py-2 text-gray-700 font-medium">${constrType}</div>
           </div>
           <div>
-            <label class="text-xs text-gray-400 block mb-1">작업팀 <span class="text-xs text-blue-400">(자동/수정가능)</span></label>
-            <input id="sr-worker-team" type="text" value="${workerTeam}"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400"
-              placeholder="팀명 입력">
+            <label class="text-xs text-gray-400 block mb-1">상세구분 <span class="text-xs text-gray-400">(선택)</span></label>
+            <input id="sr-detail-type" type="text" value="${detailType}"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400"
+                   placeholder="상세구분 입력">
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">요청번호 <span class="text-xs text-blue-400">(자동)</span></label>
+            <div class="bg-gray-50 rounded-lg px-3 py-2 text-gray-700">${requestNo}</div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">작업명</label>
+            <div class="bg-gray-50 rounded-lg px-3 py-2 text-gray-700 truncate">${taskTitle}</div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">작업자(팀) <span class="text-xs text-blue-400">(자동)</span></label>
+            <div class="bg-gray-50 rounded-lg px-3 py-2 text-gray-700">${workerTeam}</div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">작업일 <span class="text-xs text-blue-400">(자동)</span></label>
+            <div class="bg-gray-50 rounded-lg px-3 py-2 text-gray-700">${workDate || '-'}</div>
           </div>
           <div class="col-span-2">
-            <label class="text-xs text-gray-400 block mb-1">담당공무(작업지시자) <span class="text-xs text-blue-400">(자동/수정가능)</span></label>
-            <input id="sr-manager-name" type="text" value="${managerName}"
-              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400"
-              placeholder="담당자명">
+            <label class="text-xs text-gray-400 block mb-1">담당공무(작업지시자) <span class="text-xs text-blue-400">(자동)</span></label>
+            <div class="bg-gray-50 rounded-lg px-3 py-2 text-gray-700">${managerName}</div>
           </div>
           <div class="col-span-2">
             <label class="text-xs text-gray-400 block mb-1">특이사항</label>
@@ -26170,6 +26188,9 @@ async function renderSpliceReportForm(container, reportId, taskId) {
       </div>
       <input type="hidden" id="sr-report-id" value="${reportId || ''}">
       <input type="hidden" id="sr-task-id"   value="${tId || ''}">
+      <input type="hidden" id="sr-work-date"    value="${workDate || ''}">
+      <input type="hidden" id="sr-worker-team"  value="${workerTeam || ''}">
+      <input type="hidden" id="sr-manager-name" value="${managerName || ''}">
 
       <!-- 저장/제출 버튼 -->
       <div class="flex gap-3 pb-6">

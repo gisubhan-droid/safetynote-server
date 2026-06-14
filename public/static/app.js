@@ -25794,7 +25794,10 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     const tId = taskId || report?.task_id;
     let task = null;
     if (tId) {
-      try { task = (await API.get(`/tasks/${tId}`)).data?.task || null; } catch(_) {}
+      try {
+        const tr = await API.get(`/tasks/${tId}`);
+        task = tr.data?.task || tr.data || null;
+      } catch(_) {}
     }
 
     const workDate   = report?.work_date   || (task?.work_completed_at || '').slice(0,10) || '';

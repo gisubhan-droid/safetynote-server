@@ -24673,11 +24673,12 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
     const r = await API.get('/splice-reports');
     spliceReports = r.data.reports || [];
   } catch(e) {
-    const errDetail = e.response?.data?.error || e.message;
-    console.error('[report-write] splice-reports 로드 실패', errDetail);
-    // 500 에러 시 화면에 에러 메시지 표시
+    // 500 에러 시 서버 응답 raw text까지 전부 표시
+    let errDetail = e.message;
+    try { errDetail = JSON.stringify(e.response?.data) || e.message; } catch(_) {}
+    console.error('[report-write] splice-reports 로드 실패', errDetail, e.response?.status, e.response?.data);
     if (e.response?.status === 500) {
-      content.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700"><b>서버 오류 (500)</b><br>${errDetail}<br><br><button onclick="renderReportWritePage(document.getElementById('page-content'),'splice')" class="mt-2 px-3 py-1 bg-red-100 rounded text-xs">다시 시도</button></div></div>`;
+      content.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 break-all"><b>서버 오류 (500)</b><br>${errDetail}<br><br><button onclick="renderReportWritePage(document.getElementById('page-content'),'splice')" class="mt-2 px-3 py-1 bg-red-100 rounded text-xs">다시 시도</button></div></div>`;
       return;
     }
   }

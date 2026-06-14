@@ -2760,19 +2760,13 @@ app.post('/api/work-reports/:reportId/other-works', async (c) => {
 app.get('/api/splice-reports', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { construction_id, from_date, to_date } = c.req.query()
+  const { from_date, to_date } = c.req.query()
 
+  // ── 필터 조건 (splice_reports 단독, JOIN 없이) ────────────────────
   let where = `WHERE 1=1`
   const params: any[] = []
-
-  if (construction_id) {
-    where += ` AND t.request_no=(SELECT request_no FROM constructions WHERE id=?)`
-    params.push(construction_id)
-  }
   if (from_date) { where += ` AND sr.work_date >= ?`; params.push(from_date) }
   if (to_date)   { where += ` AND sr.work_date <= ?`; params.push(to_date) }
-
-  // 권한: sysadmin/manager는 전체, 일반은 본인 팀
   const roleUi = dbRoleToUi(user.role, user.position, user.sub_role)
   if (roleUi !== 'sysadmin' && roleUi !== 'manager') {
     where += ` AND sr.created_by=?`
@@ -2781,22 +2775,40 @@ app.get('/api/splice-reports', async (c) => {
 
   let rows: any[] = []
   try {
+    // ① splice_reports 단독 조회 (JOIN 없이 — 항상 안전)
     rows = rawDb.prepare(`
       SELECT sr.*,
-             t.title      AS task_title,
-             t.request_no AS request_no,
              (SELECT COUNT(*) FROM splice_work_items WHERE report_id=sr.id AND qty>0) AS item_count
       FROM splice_reports sr
-      LEFT JOIN tasks t ON sr.task_id = t.id
       ${where}
       ORDER BY sr.work_date DESC, sr.id DESC
     `).all(...params)
   } catch(e: any) {
-    console.error('[GET /api/splice-reports] SQL 에러:', e.message)
+    console.error('[GET /api/splice-reports] 단순 조회 에러:', e.message)
     return c.json({ error: 'DB 조회 실패: ' + e.message }, 500)
   }
 
+  // ② task 정보 별도 병합 (에러나도 무시 — 없어도 동작)
+  if (rows.length > 0) {
+    try {
+      const ids = rows.map((r: any) => r.id)
+      const placeholders = ids.map(() => '?').join(',')
+      const taskInfo = rawDb.prepare(`
+        SELECT sr.id, t.title AS task_title, t.request_no AS task_request_no
+        FROM splice_reports sr
+        LEFT JOIN tasks t ON sr.task_id = t.id
+        WHERE sr.id IN (${placeholders})
+      `).all(...ids) as any[]
+      const joinMap: Record<number, any> = {}
+      taskInfo.forEach((r: any) => { joinMap[r.id] = r })
+      rows = rows.map((r: any) => ({ ...r, ...(joinMap[r.id] || {}) }))
+    } catch(joinErr: any) {
+      console.warn('[GET /api/splice-reports] tasks JOIN 실패 (무시):', joinErr.message)
+    }
+  }
+
   return c.json({ reports: rows })
+})
 })
 
 // GET /api/splice-reports/stats — 공량내역/물량통계 (접속탭)

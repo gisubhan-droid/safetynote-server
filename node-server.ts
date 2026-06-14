@@ -2861,7 +2861,9 @@ app.get('/api/splice-reports/stats', async (c) => {
     }
   }
 
-  // ③ tasks + constructions JOIN: request_no, task_title, work_class(공사종류) 병합 (실패해도 무시)
+  // ③ tasks + constructions JOIN: request_no, task_title, work_class(공사종류), 팀명 병합 (실패해도 무시)
+  // - constructions JOIN: construction_id 방식 우선, 없으면 request_no 방식 fallback
+  // - 팀명: task_assignments → users.team_id → teams (외선 work_reports와 동일한 방식)
   if (rows.length > 0) {
     try {
       const ids = rows.map((r: any) => r.id)
@@ -2869,26 +2871,28 @@ app.get('/api/splice-reports/stats', async (c) => {
       const taskInfo = rawDb.prepare(`
         SELECT sr.id,
                t.request_no,
-               t.title        AS task_title,
-               cs.work_class  AS construction_work_class,
-               (SELECT tm.name
+               t.title AS task_title,
+               COALESCE(cs1.work_class, cs2.work_class) AS construction_work_class,
+               (SELECT DISTINCT tm.name
                 FROM task_assignments ta
-                JOIN teams tm ON tm.id = ta.team_id
+                JOIN users u  ON u.id  = ta.worker_id
+                JOIN teams tm ON tm.id = u.team_id
                 WHERE ta.task_id = t.id
-                LIMIT 1)      AS team_name
+                LIMIT 1) AS team_name
         FROM splice_reports sr
-        LEFT JOIN tasks t        ON sr.task_id = t.id
-        LEFT JOIN constructions cs ON cs.id = t.construction_id
+        LEFT JOIN tasks t   ON sr.task_id = t.id
+        LEFT JOIN constructions cs1 ON cs1.id         = t.construction_id
+        LEFT JOIN constructions cs2 ON cs2.request_no = t.request_no
         WHERE sr.id IN (${placeholders})
       `).all(...ids) as any[]
       const taskMap: Record<number, any> = {}
       taskInfo.forEach((r: any) => { taskMap[r.id] = r })
       rows = rows.map((r: any) => ({
         ...r,
-        request_no:             taskMap[r.id]?.request_no             || '',
-        task_title:             taskMap[r.id]?.task_title             || '',
-        construction_work_class:taskMap[r.id]?.construction_work_class|| '',
-        // 실제 팀명이 있으면 우선, 없으면 기존 worker_team 유지
+        request_no:              taskMap[r.id]?.request_no              || '',
+        task_title:              taskMap[r.id]?.task_title              || '',
+        construction_work_class: taskMap[r.id]?.construction_work_class || '',
+        // 팀명 우선, 없으면 DB에 저장된 worker_team 유지
         worker_team: taskMap[r.id]?.team_name || r.worker_team || '',
       }))
     } catch(joinErr: any) {
@@ -2936,7 +2940,72 @@ app.get('/api/splice-reports/stats', async (c) => {
   return c.json({ stats, rows, items })
 })
 
-// GET /api/splice-reports/:id — 단건 상세 (items 포함)
+// GET /api/splice-reports/debug — 데이터 구조 진단용 (개발/디버그 전용)
+app.get('/api/splice-reports/debug', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const results: any = { tables: {}, sample: {} }
+
+  // splice_reports 최근 3건
+  try {
+    results.sample.splice_reports = rawDb.prepare(
+      `SELECT id, task_id, work_date, worker_team, manager_name, status FROM splice_reports ORDER BY id DESC LIMIT 3`
+    ).all()
+  } catch(e: any) { results.sample.splice_reports_err = e.message }
+
+  // 최근 splice_report의 task 정보
+  try {
+    const sr = results.sample.splice_reports?.[0]
+    if (sr?.task_id) {
+      results.sample.task_for_sr = rawDb.prepare(
+        `SELECT id, request_no, title, construction_id, contractor_name FROM tasks WHERE id=?`
+      ).get(sr.task_id)
+    }
+  } catch(e: any) { results.sample.task_err = e.message }
+
+  // constructions JOIN 방식 테스트
+  try {
+    results.sample.constructions_join_test = rawDb.prepare(`
+      SELECT sr.id, sr.task_id,
+             t.request_no, t.construction_id,
+             cs1.work_class AS wc_by_id,
+             cs2.work_class AS wc_by_reqno
+      FROM splice_reports sr
+      LEFT JOIN tasks t ON sr.task_id = t.id
+      LEFT JOIN constructions cs1 ON cs1.id = t.construction_id
+      LEFT JOIN constructions cs2 ON cs2.request_no = t.request_no
+      ORDER BY sr.id DESC LIMIT 3
+    `).all()
+  } catch(e: any) { results.sample.constructions_join_err = e.message }
+
+  // 팀 정보 조회 테스트
+  try {
+    const sr = results.sample.splice_reports?.[0]
+    if (sr?.task_id) {
+      results.sample.team_for_task = rawDb.prepare(`
+        SELECT ta.worker_id, u.name AS user_name, u.team_id, tm.name AS team_name
+        FROM task_assignments ta
+        JOIN users u  ON u.id  = ta.worker_id
+        LEFT JOIN teams tm ON tm.id = u.team_id
+        WHERE ta.task_id = ?
+        LIMIT 5
+      `).all(sr.task_id)
+    }
+  } catch(e: any) { results.sample.team_err = e.message }
+
+  // tasks 컬럼 목록
+  try {
+    results.tables.tasks_columns = rawDb.prepare(`PRAGMA table_info(tasks)`).all()
+  } catch(e: any) { results.tables.tasks_err = e.message }
+
+  // constructions 컬럼 목록
+  try {
+    results.tables.constructions_columns = rawDb.prepare(`PRAGMA table_info(constructions)`).all()
+  } catch(e: any) { results.tables.constructions_err = e.message }
+
+  return c.json(results)
+})
 app.get('/api/splice-reports/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)

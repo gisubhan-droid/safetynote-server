@@ -25205,14 +25205,14 @@ async function renderCableDetailPage(container) {
     const totalMove   = cables.filter(c=>c.proc==='이설').reduce((s,c)=>s+(c.usage_m||0),0);
     const totalAll    = cables.reduce((s,c)=>s+(c.usage_m||0),0);
 
-    // 규격 + 케이블종류 + 제조사 기준 집계
+    // 제조사 + 케이블종류 + 규격 기준 집계
     const byType = {};
     cables.forEach(c => {
-      const spec  = c.spec       || '-';
-      const type  = c.cable_type || '-';
       const maker = c.maker      || '-';
-      const key   = `${spec}__${type}__${maker}`;
-      if (!byType[key]) byType[key] = { spec, type, maker, new:0, remove:0, move:0 };
+      const type  = c.cable_type || '-';
+      const spec  = c.spec       || '-';
+      const key   = `${maker}__${type}__${spec}`;
+      if (!byType[key]) byType[key] = { maker, type, spec, new:0, remove:0, move:0 };
       if (c.proc==='신설') byType[key].new    += (c.usage_m||0);
       if (c.proc==='철거') byType[key].remove += (c.usage_m||0);
       if (c.proc==='이설') byType[key].move   += (c.usage_m||0);
@@ -25275,9 +25275,9 @@ async function renderCableDetailPage(container) {
           <table class="text-xs border-collapse w-full">
             <thead>
               <tr class="bg-gray-50 text-gray-600">
-                <th class="border border-gray-200 px-3 py-2 text-center">규격</th>
-                <th class="border border-gray-200 px-3 py-2 text-center">케이블종류</th>
                 <th class="border border-gray-200 px-3 py-2 text-center">제조사</th>
+                <th class="border border-gray-200 px-3 py-2 text-center">케이블종류</th>
+                <th class="border border-gray-200 px-3 py-2 text-center">규격</th>
                 <th class="border border-gray-200 px-3 py-2 text-right bg-blue-50">신설(M)</th>
                 <th class="border border-gray-200 px-3 py-2 text-right bg-red-50">철거(M)</th>
                 <th class="border border-gray-200 px-3 py-2 text-right bg-purple-50">이설(M)</th>
@@ -25287,9 +25287,9 @@ async function renderCableDetailPage(container) {
             <tbody>
               ${Object.entries(byType).map(([, v])=>`
               <tr class="hover:bg-gray-50">
-                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
-                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
                 <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
+                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
+                <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
                 <td class="border border-gray-100 px-3 py-1.5 text-right bg-blue-50">${v.new>0?v.new.toFixed(1):''}</td>
                 <td class="border border-gray-100 px-3 py-1.5 text-right bg-red-50">${v.remove>0?v.remove.toFixed(1):''}</td>
                 <td class="border border-gray-100 px-3 py-1.5 text-right bg-purple-50">${v.move>0?v.move.toFixed(1):''}</td>

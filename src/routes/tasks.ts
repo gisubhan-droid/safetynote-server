@@ -159,7 +159,7 @@ app.get('/', async (c) => {
     }
   }
 
-  return c.json(tasks)
+  return c.json({ tasks })
 })
 
 // 미배정 작업 목록 (작업자 직접 선택용) - /:id 보다 먼저 등록

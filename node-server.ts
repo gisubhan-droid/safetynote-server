@@ -2437,7 +2437,8 @@ app.get('/api/work-reports/volume-stats', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const { construction_id, from_date, to_date } = c.req.query()
-  let where = `WHERE r.status IN ('submitted','confirmed')`
+  // status 조건: draft(임시저장)도 포함하여 작성된 일보 모두 표시
+  let where = `WHERE r.status IN ('draft','submitted','confirmed')`
   const params: any[] = []
   if (construction_id) { where += ` AND t.request_no=(SELECT request_no FROM constructions WHERE id=?)`; params.push(construction_id) }
   if (from_date) { where += ` AND r.work_date>=?`; params.push(from_date) }
@@ -2449,26 +2450,20 @@ app.get('/api/work-reports/volume-stats', async (c) => {
   const rows = rawDb.prepare(`
     SELECT r.id AS report_id, r.work_date, t.created_at AS order_date, r.worker_team,
            t.request_no, t.construction_type AS work_class, r.manager_name,
-           (SELECT COALESCE(SUM(rl.usage_m),0) FROM work_report_cables rl WHERE rl.report_id=r.id AND rl.work_div IN ('신설','이설')) AS cable_new,
-           (SELECT COALESCE(SUM(rl2.section_dist),0) FROM work_report_lines rl2 WHERE rl2.report_id=r.id AND rl2.work_div='신설' AND rl2.pole_count>0) AS joga_new,
-           (SELECT COUNT(*) FROM work_report_cables rl3 WHERE rl3.report_id=r.id AND rl3.spec=1) AS connector,
-           (SELECT COALESCE(SUM(rl4.usage_m),0) FROM work_report_cables rl4 WHERE rl4.report_id=r.id AND rl4.work_div IN ('철거','이설')) AS cable_remove,
-           (SELECT COALESCE(SUM(rl5.section_dist),0) FROM work_report_lines rl5 WHERE rl5.report_id=r.id AND rl5.work_div='철거' AND rl5.pole_count>0) AS joga_remove,
-           (SELECT COUNT(*) FROM work_report_lines rl6 WHERE rl6.report_id=r.id AND rl6.ip_pole='신설') AS ip_new,
-           (SELECT COUNT(*) FROM work_report_lines rl7 WHERE rl7.report_id=r.id AND rl7.ip_pole='철거') AS ip_remove,
-           (SELECT COUNT(*) FROM work_report_lines rl8 WHERE rl8.report_id=r.id AND rl8.grounding='B') AS ground_b,
-           (SELECT COUNT(*) FROM work_report_lines rl9 WHERE rl9.report_id=r.id AND rl9.grounding='A') AS ground_a
+           (SELECT COALESCE(SUM(rl.usage_m),0) FROM work_report_cables rl WHERE rl.report_id=r.id) AS cable_total
     FROM work_reports r JOIN tasks t ON t.id=r.task_id
     ${where} ORDER BY r.work_date DESC
   `).all(...params)
-  const otherTypes = rawDb.prepare(`SELECT * FROM other_work_types WHERE is_active=1 ORDER BY sort_order`).all()
-  const otherRows  = rawDb.prepare(`
-    SELECT wo.report_id, wo.other_type_id, wo.quantity
-    FROM work_report_other wo JOIN work_reports wr ON wr.id=wo.report_id JOIN tasks t ON t.id=wr.task_id
-    ${where.replace('WHERE', 'WHERE wr.id IS NOT NULL AND')}
+  // extras(추가입력 공종별 작업량) — WHERE 절을 별도 구성하여 t 별칭 충돌 방지
+  let extraWhere = `WHERE re.report_id IN (SELECT r2.id FROM work_reports r2 JOIN tasks t ON t.id=r2.task_id ${where})`
+  const extras = rawDb.prepare(`
+    SELECT re.report_id, re.item_key, SUM(re.qty) AS qty
+    FROM work_report_extras re
+    ${extraWhere}
+    GROUP BY re.report_id, re.item_key
   `).all(...params)
   const prices = rawDb.prepare(`SELECT * FROM volume_unit_prices ORDER BY sort_order`).all()
-  return c.json({ rows, otherTypes, otherRows, prices })
+  return c.json({ rows, extras, prices })
 })
 
 // GET /api/work-reports/task/:taskId

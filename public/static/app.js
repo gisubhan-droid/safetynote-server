@@ -3918,7 +3918,7 @@ async function renderTasksPage(container) {
       ...(taskFilters.date                               ? { date:        taskFilters.date                                      } : {}),
       ...(taskFilters.start_date && taskFilters.end_date ? { start_date:  taskFilters.start_date, end_date: taskFilters.end_date } : {}),
     } });
-    _taskListData = tasksRes.data;
+    _taskListData = tasksRes.data.tasks || tasksRes.data || [];
 
     // 팀 정보: tasks 응답의 team_name 필드 직접 사용 (teams API 별도 호출 불필요)
     function getTaskTeam(t) {
@@ -10582,7 +10582,7 @@ async function renderInspectionsPage(container) {
       API.get('/tasks'),
       API.get('/inspections'),
     ]);
-    const tasks       = tasksRes.data || [];
+    const tasks       = tasksRes.data.tasks || tasksRes.data || [];
     const inspections = insRes.data   || [];
 
     // 모달용 작업자 맵 미리 구성 → showCreateInspectionModal 재호출 방지
@@ -10801,7 +10801,7 @@ async function showCreateInspectionModal(presetTaskId) {
   if (allTasks.length === 0) {
     try {
       const tRes = await API.get('/tasks');
-      allTasks = tRes.data || [];
+      allTasks = tRes.data.tasks || tRes.data || [];
       window._insTasksCache = allTasks;
       _insTaskWorkersMap = {};
       for (const t of allTasks) {
@@ -24942,41 +24942,18 @@ async function renderVolumeStatsPage(container) {
       API.get('/work-reports/volume-stats'),
       API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } }))
     ]);
-    const { rows = [], otherTypes = [], otherRows = [], prices = [] } = statsRes.data;
+    const { rows = [], extras = [], prices = [] } = statsRes.data;
     const constructions = consRes.data.constructions || consRes.data.data || [];
 
-    // 기타공종 데이터를 report_id로 인덱싱
-    const otherMap = {};
-    otherRows.forEach(o => {
-      if (!otherMap[o.report_id]) otherMap[o.report_id] = {};
-      otherMap[o.report_id][o.other_type_id] = o.quantity;
+    // extras를 report_id → { item_key: qty } 맵으로 인덱싱
+    const extrasMap = {};
+    extras.forEach(ex => {
+      if (!extrasMap[ex.report_id]) extrasMap[ex.report_id] = {};
+      extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
     });
 
-    // 단가 맵
-    const priceMap = {};
-    prices.forEach(p => priceMap[p.item_key] = p.unit_price);
-
-    // 건별 금액 계산
-    const calcAmount = (row) => {
-      const otherTypesById = {};
-      otherTypes.forEach(t => otherTypesById[t.id] = t);
-      let total = 0;
-      total += (row.cable_new  || 0) * (priceMap['cable_new']    || 0);
-      total += (row.joga_new   || 0) * (priceMap['joga_new']     || 0);
-      total += (row.connector  || 0) * (priceMap['connector']    || 0);
-      total += (row.cable_remove||0) * (priceMap['cable_remove'] || 0);
-      total += (row.joga_remove|| 0) * (priceMap['joga_remove']  || 0);
-      total += (row.ip_new     || 0) * (priceMap['ip_new']       || 0);
-      total += (row.ip_remove  || 0) * (priceMap['ip_remove']    || 0);
-      total += (row.ground_b   || 0) * (priceMap['ground_b']     || 0);
-      total += (row.ground_a   || 0) * (priceMap['ground_a']     || 0);
-      const others = otherMap[row.report_id] || {};
-      Object.entries(others).forEach(([typeId, qty]) => {
-        const t = otherTypesById[typeId];
-        if (t) total += (qty || 0) * (t.unit_price || 0);
-      });
-      return total;
-    };
+    // extras에 등장하는 모든 item_key 목록 (헤더 컬럼 동적 생성)
+    const allItemKeys = [...new Set(extras.map(ex => ex.item_key))].sort();
 
     container.innerHTML = `
     <div class="max-w-5xl mx-auto p-4 space-y-4">
@@ -25000,12 +24977,11 @@ async function renderVolumeStatsPage(container) {
       </div>
 
       <!-- 통계 요약 카드 -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
         ${[
           { label:'총 건수',      val: rows.length + '건',   icon:'fas fa-file-alt',    color:'pink' },
-          { label:'광케이블(신설)', val: rows.reduce((s,r)=>s+(r.cable_new||0),0).toFixed(1)+'M', icon:'fas fa-ruler-horizontal', color:'blue' },
-          { label:'IP주(신설)',    val: rows.reduce((s,r)=>s+(r.ip_new||0),0)+'개', icon:'fas fa-map-pin', color:'green' },
-          { label:'총 금액',      val: '₩'+rows.reduce((s,r)=>s+calcAmount(r),0).toLocaleString(), icon:'fas fa-won-sign', color:'orange' },
+          { label:'광케이블 합계', val: rows.reduce((s,r)=>s+(r.cable_total||0),0).toFixed(1)+'M', icon:'fas fa-ruler-horizontal', color:'blue' },
+          { label:'추가입력 건수', val: Object.keys(extrasMap).length + '건', icon:'fas fa-clipboard-list', color:'orange' },
         ].map(c=>`
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
           <div class="flex items-center gap-2 mb-1">
@@ -25019,77 +24995,45 @@ async function renderVolumeStatsPage(container) {
       <!-- 데이터 테이블 -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="overflow-x-auto">
-          <table class="w-full text-xs border-collapse" style="min-width:1100px">
+          <table class="w-full text-xs border-collapse" style="min-width:700px">
             <thead>
               <tr class="bg-gray-50 text-gray-600">
                 <th class="border border-gray-200 px-2 py-2 text-center">완료일</th>
-                <th class="border border-gray-200 px-2 py-2 text-center">작업자</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">작업자(팀)</th>
                 <th class="border border-gray-200 px-2 py-2 text-center">요청번호</th>
                 <th class="border border-gray-200 px-2 py-2 text-center">구분</th>
-                <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">광케이블<br>신설(M)</th>
-                <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">조가선<br>신설(M)</th>
-                <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">커넥터<br>취부</th>
-                <th class="border border-gray-200 px-2 py-2 text-center bg-red-50">광케이블<br>철거(M)</th>
-                <th class="border border-gray-200 px-2 py-2 text-center bg-red-50">조가선<br>철거(M)</th>
-                <th class="border border-gray-200 px-2 py-2 text-center">IP주<br>신설</th>
-                <th class="border border-gray-200 px-2 py-2 text-center">IP주<br>철거</th>
-                <th class="border border-gray-200 px-2 py-2 text-center">접지B</th>
-                <th class="border border-gray-200 px-2 py-2 text-center">접지A</th>
-                ${otherTypes.map(t=>`<th class="border border-gray-200 px-2 py-2 text-center bg-yellow-50">${t.name}<br>(${t.unit})</th>`).join('')}
-                <th class="border border-gray-200 px-2 py-2 text-center bg-green-50">금액(원)</th>
+                <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">광케이블<br>합계(M)</th>
+                ${allItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center bg-orange-50">${k}</th>`).join('')}
               </tr>
             </thead>
             <tbody>
-              ${rows.length === 0 ? `<tr><td colspan="99" class="text-center py-8 text-gray-400">데이터 없음</td></tr>` :
+              ${rows.length === 0 ? `<tr><td colspan="99" class="text-center py-8 text-gray-400">데이터 없음<br><span class="text-xs">임시저장 또는 제출된 일보가 없습니다</span></td></tr>` :
                 rows.map(row => {
-                  const others = otherMap[row.report_id] || {};
+                  const exMap = extrasMap[row.report_id] || {};
                   return `
                   <tr class="hover:bg-gray-50 border-b border-gray-100">
-                    <td class="border border-gray-100 px-2 py-1.5 text-center">${(row.work_date||'').slice(0,10)}</td>
+                    <td class="border border-gray-100 px-2 py-1.5 text-center">${(row.work_date||'').slice(0,10)||'-'}</td>
                     <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
                     <td class="border border-gray-100 px-2 py-1.5 text-center">${row.request_no||'-'}</td>
                     <td class="border border-gray-100 px-2 py-1.5 text-center">${row.work_class||'-'}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${row.cable_new?.toFixed(1)||0}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${row.joga_new?.toFixed(1)||0}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${row.connector||0}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50">${row.cable_remove?.toFixed(1)||0}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50">${row.joga_remove?.toFixed(1)||0}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right">${row.ip_new||0}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right">${row.ip_remove||0}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right">${row.ground_b||0}</td>
-                    <td class="border border-gray-100 px-2 py-1.5 text-right">${row.ground_a||0}</td>
-                    ${otherTypes.map(t=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-yellow-50">${others[t.id]||0}</td>`).join('')}
-                    <td class="border border-gray-100 px-2 py-1.5 text-right font-semibold bg-green-50 text-green-700">
-                      ${calcAmount(row).toLocaleString()}
-                    </td>
+                    <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${(row.cable_total||0).toFixed(1)}</td>
+                    ${allItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-orange-50">${exMap[k]||''}</td>`).join('')}
                   </tr>`
                 }).join('')
               }
             </tbody>
-            <!-- 합계 행 -->
             ${rows.length > 0 ? `
             <tfoot>
               <tr class="bg-gray-100 font-bold text-gray-700">
                 <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${rows.reduce((s,r)=>s+(r.cable_new||0),0).toFixed(1)}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${rows.reduce((s,r)=>s+(r.joga_new||0),0).toFixed(1)}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${rows.reduce((s,r)=>s+(r.connector||0),0)}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-red-100">${rows.reduce((s,r)=>s+(r.cable_remove||0),0).toFixed(1)}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-red-100">${rows.reduce((s,r)=>s+(r.joga_remove||0),0).toFixed(1)}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right">${rows.reduce((s,r)=>s+(r.ip_new||0),0)}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right">${rows.reduce((s,r)=>s+(r.ip_remove||0),0)}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right">${rows.reduce((s,r)=>s+(r.ground_b||0),0)}</td>
-                <td class="border border-gray-200 px-2 py-2 text-right">${rows.reduce((s,r)=>s+(r.ground_a||0),0)}</td>
-                ${otherTypes.map(t=>`<td class="border border-gray-200 px-2 py-2 text-right bg-yellow-100">${otherRows.filter(o=>o.other_type_id===t.id).reduce((s,o)=>s+(o.quantity||0),0)}</td>`).join('')}
-                <td class="border border-gray-200 px-2 py-2 text-right bg-green-100 text-green-700">
-                  ${rows.reduce((s,r)=>s+calcAmount(r),0).toLocaleString()}
-                </td>
+                <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${rows.reduce((s,r)=>s+(r.cable_total||0),0).toFixed(1)}</td>
+                ${allItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-orange-100">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`).join('')}
               </tr>
             </tfoot>` : ''}
           </table>
         </div>
       </div>
-      <p class="text-xs text-gray-400 text-right">* 금액은 단가 기준 산출값이며, 실제 정산과 다를 수 있습니다</p>
+      <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보가 표시됩니다</p>
     </div>`;
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;

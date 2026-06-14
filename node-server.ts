@@ -2779,16 +2779,22 @@ app.get('/api/splice-reports', async (c) => {
     params.push(user.id)
   }
 
-  const rows = rawDb.prepare(`
-    SELECT sr.*,
-           t.title      AS task_title,
-           t.request_no AS request_no,
-           (SELECT COUNT(*) FROM splice_work_items WHERE report_id=sr.id AND qty>0) AS item_count
-    FROM splice_reports sr
-    LEFT JOIN tasks t ON sr.task_id = t.id
-    ${where}
-    ORDER BY sr.work_date DESC, sr.id DESC
-  `).all(...params)
+  let rows: any[] = []
+  try {
+    rows = rawDb.prepare(`
+      SELECT sr.*,
+             t.title      AS task_title,
+             t.request_no AS request_no,
+             (SELECT COUNT(*) FROM splice_work_items WHERE report_id=sr.id AND qty>0) AS item_count
+      FROM splice_reports sr
+      LEFT JOIN tasks t ON sr.task_id = t.id
+      ${where}
+      ORDER BY sr.work_date DESC, sr.id DESC
+    `).all(...params)
+  } catch(e: any) {
+    console.error('[GET /api/splice-reports] SQL 에러:', e.message)
+    return c.json({ error: 'DB 조회 실패: ' + e.message }, 500)
+  }
 
   return c.json({ reports: rows })
 })

@@ -8441,6 +8441,15 @@ async function showWorkLogForm(taskId) {
             <span class="text-xs font-normal ml-1 opacity-80">(외선일보 작성 화면으로 이동)</span>
           </button>
         </div>
+        <!-- 접속 선택 시 일보작성 버튼 -->
+        <div id="workVolSpliceAction" class="hidden mt-2">
+          <button type="button" onclick="goToSpliceReport(_currentWorklogTaskId)"
+            class="btn w-full font-bold text-white"
+            style="background:linear-gradient(135deg,#685182,#4F46E5);border:none;">
+            <i class="fas fa-plug mr-2"></i>접속일보 작성
+            <span class="text-xs font-normal ml-1 opacity-80">(접속일보 작성 화면으로 이동)</span>
+          </button>
+        </div>
       </div>
 
       <!-- 첨부파일 업로드 섹션 -->
@@ -27281,9 +27290,10 @@ function selectWorkVolType(btn, type) {
   btn.style.color = '#D70072';
 
   // 입력 영역 표시 (splice는 별도 테이블, 나머지는 textarea)
-  const inputArea   = document.getElementById('workVolInputArea');
-  const spliceArea  = document.getElementById('workVolSpliceArea');
-  const cableAction = document.getElementById('workVolCableAction');
+  const inputArea    = document.getElementById('workVolInputArea');
+  const spliceArea   = document.getElementById('workVolSpliceArea');
+  const cableAction  = document.getElementById('workVolCableAction');
+  const spliceAction = document.getElementById('workVolSpliceAction');
 
   if (type === 'splice') {
     if (inputArea)  inputArea.classList.add('hidden');
@@ -27296,14 +27306,9 @@ function selectWorkVolType(btn, type) {
     if (spliceArea) spliceArea.classList.add('hidden');
   }
 
-  // 외선 선택 시 일보작성 버튼 표시, 나머지는 숨김
-  if (cableAction) {
-    if (type === 'cable') {
-      cableAction.classList.remove('hidden');
-    } else {
-      cableAction.classList.add('hidden');
-    }
-  }
+  // 외선 선택 → 외선일보 작성 버튼, 접속 선택 → 접속일보 작성 버튼
+  if (cableAction)  cableAction.classList.toggle('hidden',  type !== 'cable');
+  if (spliceAction) spliceAction.classList.toggle('hidden', type !== 'splice');
 
   // placeholder 업데이트
   const textarea = document.getElementById('logWorkVolume');
@@ -27398,6 +27403,21 @@ function goToWorkReport(taskId) {
     // 사이드바 메뉴 활성화
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     const navItem = document.querySelector('.nav-item[data-page="field-report"]');
+    if (navItem) navItem.classList.add('active');
+  }
+}
+
+// 접속일보 작성 화면으로 이동 (작업일지 모달 닫고 이동)
+function goToSpliceReport(taskId) {
+  // 모달 전체 닫기
+  document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+  // 접속일보 작성 페이지로 이동
+  const content = document.getElementById('page-content');
+  if (content) {
+    renderSpliceReportForm(content, null, taskId || null);
+    // 사이드바 메뉴 활성화
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    const navItem = document.querySelector('.nav-item[data-page="report-write"]');
     if (navItem) navItem.classList.add('active');
   }
 }

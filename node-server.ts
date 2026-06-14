@@ -930,6 +930,38 @@ function patchSchema() {
   } catch(e: any) {
     if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.130w]', e.message)
   }
+
+  // ── v0.133: tasks.created_by / sub_task_number 컬럼 (tasks.ts API 호환) ─────
+  try {
+    rawDb.exec(`ALTER TABLE tasks ADD COLUMN created_by INTEGER DEFAULT NULL`)
+    console.log('[patchSchema] v0.133 tasks.created_by 컬럼 추가 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.133]', e.message)
+  }
+  try {
+    rawDb.exec(`ALTER TABLE tasks ADD COLUMN sub_task_number TEXT DEFAULT NULL`)
+    console.log('[patchSchema] v0.133 tasks.sub_task_number 컬럼 추가 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.133]', e.message)
+  }
+
+  // ── v0.133t: teams 테이블 (users.team_id JOIN 대응) ────────────────────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS teams (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT    NOT NULL,
+        description TEXT,
+        is_active   INTEGER DEFAULT 1,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    rawDb.exec(`ALTER TABLE users ADD COLUMN team_id INTEGER DEFAULT NULL`)
+    console.log('[patchSchema] v0.133t teams 테이블 / users.team_id 준비 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('already exists') && !e.message?.includes('duplicate column'))
+      console.warn('[patchSchema v0.133t]', e.message)
+  }
 }
 patchSchema()
 // ─────────────────────────────────────────────────────────────────────────────

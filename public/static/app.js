@@ -24662,13 +24662,20 @@ async function _reportWriteCableList(container) {
 async function _reportWriteSpliceList(container) {
   container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
   try {
-    // 작업 목록 + 접속일보 목록 병렬 조회
-    const [taskRes, spliceRes] = await Promise.all([
-      API.get('/tasks?status=working,work_completed,completed&limit=200'),
-      API.get('/splice-reports')
-    ]);
-    const tasks   = taskRes.data.tasks || [];
-    const reports = spliceRes.data.reports || [];
+    // 작업 목록과 접속일보 목록을 개별 조회 (하나 실패해도 나머지 표시)
+    let tasks = [], reports = [];
+    try {
+      const taskRes = await API.get('/tasks?status=working,work_completed,completed');
+      tasks = taskRes.data.tasks || [];
+    } catch(e) {
+      console.error('[splice-list] tasks 조회 실패:', e?.response?.status, e?.message);
+    }
+    try {
+      const spliceRes = await API.get('/splice-reports');
+      reports = spliceRes.data.reports || [];
+    } catch(e) {
+      console.error('[splice-list] splice-reports 조회 실패:', e?.response?.status, e?.message);
+    }
 
     // splice_report가 있는 task_id 집합 (draft 포함 모든 상태)
     const reportedTaskIds = new Set(reports.map(r => r.task_id).filter(Boolean));
@@ -24729,7 +24736,8 @@ async function _reportWriteSpliceList(container) {
         : pending.map(renderCard).join('')}
     </div>`;
   } catch(e) {
-    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+    const status = e?.response?.status ? ` (HTTP ${e.response.status})` : '';
+    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}${status}</div>`;
   }
 }
 

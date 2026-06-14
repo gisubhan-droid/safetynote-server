@@ -24106,20 +24106,29 @@ document.addEventListener('DOMContentLoaded', init);
 // ═══════════════════════════════════════════════════════════════
 // 현장공량관리 — 외선일보 목록 페이지
 // ═══════════════════════════════════════════════════════════════
+let _workReportListData = [];
+
 async function renderWorkReportListPage(container) {
   container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
     // 작업완료(일지대기) + 완료 상태 작업 목록 조회 (work_completed, completed)
     const res = await API.get('/tasks?status=working,work_completed,completed&limit=200');
     const tasks = (res.data.tasks || []);
+    _workReportListData = tasks; // 전역 캐시 저장
 
     container.innerHTML = `
     <div class="max-w-4xl mx-auto p-4 space-y-4">
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between flex-wrap gap-2">
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
           <i class="fas fa-file-alt text-pink-500"></i> 외선 작업일보
         </h2>
-        <span class="text-xs text-gray-400">작업 완료 건에서 일보 작성</span>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400">작업 완료 건에서 일보 작성</span>
+          <button onclick="downloadWorkReportListCSV()"
+                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-xs hover:bg-green-600">
+            <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
+          </button>
+        </div>
       </div>
 
       <!-- 작업 선택 카드 목록 -->
@@ -24156,6 +24165,36 @@ async function renderWorkReportListPage(container) {
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
+}
+
+// ─── 외선일보 목록 엑셀 다운로드 ────────────────────────────────────────────
+function downloadWorkReportListCSV() {
+  if (!_workReportListData || _workReportListData.length === 0) {
+    alert('다운로드할 데이터가 없습니다. 목록을 먼저 조회해 주세요.');
+    return;
+  }
+  const headers = ['작업번호','공사명','요청번호','공사종류','진행상태','일보작성','작업완료일','시공사'];
+  const statusLabel = {
+    working: '진행중', work_completed: '작업완료', completed: '완료',
+    waiting: '대기', cancelled: '취소'
+  };
+  const rows = _workReportListData.map(t => {
+    const subNum = t.work_number
+      ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number)
+      : (t.task_number || '-');
+    return [
+      subNum,
+      t.title || '-',
+      t.request_no || '-',
+      t.construction_type || '-',
+      statusLabel[t.status] || t.status || '-',
+      t.report_id ? '작성완료' : '미작성',
+      (t.work_completed_at || '').slice(0,10) || '-',
+      t.contractor_name || '-'
+    ];
+  });
+  const today = new Date().toISOString().slice(0,10);
+  downloadCSV(`외선일보_목록_${today}.csv`, headers, rows);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -24935,6 +24974,8 @@ async function _finalSubmit(reportId, taskId) {
 // ═══════════════════════════════════════════════════════════════
 // 물량통계 페이지 (종합통계 > 외선부분)
 // ═══════════════════════════════════════════════════════════════
+let _volumeStatsCache = { rows: [], extras: [], allItemKeys: [] };
+
 async function renderVolumeStatsPage(container) {
   container.innerHTML = `<div class="max-w-5xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
@@ -24943,7 +24984,10 @@ async function renderVolumeStatsPage(container) {
       API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } }))
     ]);
     const { rows = [], extras = [], prices = [] } = statsRes.data;
+    // 전역 캐시 저장 (엑셀 다운로드용)
     const constructions = consRes.data.constructions || consRes.data.data || [];
+
+    _volumeStatsCache = { rows, extras, allItemKeys: [] };
 
     // extras를 report_id → { item_key: qty } 맵으로 인덱싱
     const extrasMap = {};
@@ -24952,8 +24996,17 @@ async function renderVolumeStatsPage(container) {
       extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
     });
 
-    // extras에 등장하는 모든 item_key 목록 (헤더 컬럼 동적 생성)
-    const allItemKeys = [...new Set(extras.map(ex => ex.item_key))].sort();
+    // extras에 등장하는 모든 item_key 목록 (헤더 컬럼 동적 생성 — WR_EXTRA_ITEMS 입력 순서 기준)
+    const WR_EXTRA_ORDER = [
+      '조가선신설','커넥터취부','조가선 철거','전주 건식','전주 철거',
+      'B 형접지(대지)','A 형접지(대지)','지선신설','전주세움','가요전선관',
+      '내관포설','완금설치 (한전주)','단순1','단순1-2','단순2'
+    ];
+    const existingKeys = new Set(extras.map(ex => ex.item_key));
+    const allItemKeys = WR_EXTRA_ORDER.filter(k => existingKeys.has(k));
+    // WR_EXTRA_ORDER에 없는 미등록 키는 뒤에 추가
+    extras.forEach(ex => { if (!WR_EXTRA_ORDER.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
+    _volumeStatsCache.allItemKeys = allItemKeys;
 
     container.innerHTML = `
     <div class="max-w-5xl mx-auto p-4 space-y-4">
@@ -24972,6 +25025,10 @@ async function renderVolumeStatsPage(container) {
           <button onclick="renderVolumeStatsPage(document.getElementById('page-content'))"
                   class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600">
             <i class="fas fa-search mr-1"></i>조회
+          </button>
+          <button onclick="downloadVolumeStatsCSV()"
+                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
+            <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
           </button>
         </div>
       </div>
@@ -25038,6 +25095,46 @@ async function renderVolumeStatsPage(container) {
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
+}
+
+// ─── 물량통계 엑셀 다운로드 ─────────────────────────────────────────────────
+function downloadVolumeStatsCSV() {
+  const { rows, extras, allItemKeys } = _volumeStatsCache;
+  if (!rows || rows.length === 0) { alert('다운로드할 데이터가 없습니다. 먼저 조회해 주세요.'); return; }
+
+  // extras를 report_id → { item_key: qty } 맵으로 변환
+  const extrasMap = {};
+  extras.forEach(ex => {
+    if (!extrasMap[ex.report_id]) extrasMap[ex.report_id] = {};
+    extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
+  });
+
+  const fixedHeaders = ['완료일','작업자(팀)','요청번호','구분','광케이블 합계(M)'];
+  const headers = [...fixedHeaders, ...allItemKeys];
+
+  // 데이터 행
+  const dataRows = rows.map(row => {
+    const exMap = extrasMap[row.report_id] || {};
+    return [
+      (row.work_date||'').slice(0,10) || '-',
+      row.worker_team || '-',
+      row.request_no  || '-',
+      row.work_class  || '-',
+      (row.cable_total || 0).toFixed(1),
+      ...allItemKeys.map(k => exMap[k] != null ? exMap[k] : '')
+    ];
+  });
+
+  // 합계 행
+  const totals = [
+    '합 계', '', '', '',
+    rows.reduce((s,r) => s + (r.cable_total||0), 0).toFixed(1),
+    ...allItemKeys.map(k => extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0) || '')
+  ];
+  dataRows.push(totals);
+
+  const today = new Date().toISOString().slice(0,10);
+  downloadCSV(`물량통계_외선부분_${today}.csv`, headers, dataRows);
 }
 
 // ── 작업 완료 물량 워크시트 UI 헬퍼 ──────────────────────────────────────────

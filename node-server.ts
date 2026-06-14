@@ -2809,7 +2809,6 @@ app.get('/api/splice-reports', async (c) => {
 
   return c.json({ reports: rows })
 })
-})
 
 // GET /api/splice-reports/stats — 공량내역/물량통계 (접속탭)
 // ⚠️ /:id 보다 반드시 먼저 등록해야 라우트 충돌 없음
@@ -3713,6 +3712,17 @@ app.get('*', (c) => {
 </body>
 </html>`)
 })
+
+// ─── 역할 변환 헬퍼 ───────────────────────────────────────────────────
+function dbRoleToUi(dbRole: string, position: string, subRole: string): string {
+  if (subRole) return subRole
+  if (dbRole === 'admin') {
+    if ((position || '') === '시스템관리자') return 'sysadmin'
+    return 'ceo'
+  }
+  if (dbRole === 'supervisor') return 'safety'
+  return 'worker'
+}
 
 // ─── JWT 파싱 헬퍼 ────────────────────────────────────────────────────
 function getUser(c: any): any {

@@ -2783,11 +2783,9 @@ app.get('/api/splice-reports', async (c) => {
     SELECT sr.*,
            t.title      AS task_title,
            t.request_no AS request_no,
-           ct.name      AS team_name,
            (SELECT COUNT(*) FROM splice_work_items WHERE report_id=sr.id AND qty>0) AS item_count
     FROM splice_reports sr
-    LEFT JOIN tasks      t  ON sr.task_id  = t.id
-    LEFT JOIN contractor_teams ct ON sr.worker_team = ct.name
+    LEFT JOIN tasks t ON sr.task_id = t.id
     ${where}
     ORDER BY sr.work_date DESC, sr.id DESC
   `).all(...params)

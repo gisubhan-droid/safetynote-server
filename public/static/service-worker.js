@@ -1,6 +1,6 @@
-// SafetyNOTE Service Worker v8
-const STATIC_CACHE = 'sn-static-v8';
-const API_CACHE    = 'sn-api-v8';
+// SafetyNOTE Service Worker v9
+const STATIC_CACHE = 'sn-static-v9';
+const API_CACHE    = 'sn-api-v9';
 
 // Network First 대상: 자주 업데이트되는 파일 (항상 서버에서 최신 버전을 받아옴)
 const NETWORK_FIRST_URLS = [
@@ -43,12 +43,15 @@ self.addEventListener('fetch', e => {
   if (url.pathname.startsWith('/sse'))      return;
   if (url.pathname.startsWith('/uploads/')) return;
 
-  // API: Network First (기존과 동일)
+  // API: Network First — clone()을 먼저 캐시에 저장 후 원본 반환
   if (url.pathname.startsWith('/api/')) {
     e.respondWith(
       fetch(e.request)
         .then(res => {
-          if (res.ok) caches.open(API_CACHE).then(c => c.put(e.request, res.clone()));
+          if (res.ok) {
+            const toCache = res.clone();
+            caches.open(API_CACHE).then(c => c.put(e.request, toCache));
+          }
           return res;
         })
         .catch(() => caches.match(e.request).then(r => r || offlineJson()))
@@ -56,12 +59,15 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // app.js / style.css / mobile-app.js / 루트(/): Network First (항상 최신 버전)
+  // app.js / style.css / mobile-app.js / 루트(/): Network First — clone() 먼저
   if (NETWORK_FIRST_URLS.includes(url.pathname)) {
     e.respondWith(
       fetch(e.request)
         .then(res => {
-          if (res.ok) caches.open(STATIC_CACHE).then(c => c.put(e.request, res.clone()));
+          if (res.ok) {
+            const toCache = res.clone();
+            caches.open(STATIC_CACHE).then(c => c.put(e.request, toCache));
+          }
           return res;
         })
         .catch(() => caches.match(e.request).then(r => r || offlinePage()))

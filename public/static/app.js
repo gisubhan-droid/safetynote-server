@@ -24122,55 +24122,124 @@ async function renderWorkReportListPage(container) {
     const tasks = (res.data.tasks || []);
     _workReportListData = tasks; // 전역 캐시 저장
 
+    // ── 탭 분류 ──────────────────────────────────────────────────────
+    // 작성대상: 일보 없음(report_id null) 또는 임시저장(draft)
+    // 작성완료: 제출(submitted) 또는 확인완료(confirmed)
+    const pending   = tasks.filter(t => !t.report_id || t.report_status === 'draft');
+    const completed = tasks.filter(t => t.report_id && (t.report_status === 'submitted' || t.report_status === 'confirmed'));
+
+    // 현재 활성 탭 (DOM에서 읽거나 기본값)
+    const activeTab = document.getElementById('wr-tab-state')?.value || 'pending';
+
+    const renderCard = (t, tab) => {
+      const subNum = t.work_number ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number) : t.task_number;
+
+      let badge = '';
+      if (!t.report_id) {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">미작성</span>`;
+      } else if (t.report_status === 'draft') {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">임시저장</span>`;
+      } else if (t.report_status === 'submitted') {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">제출완료</span>`;
+      } else if (t.report_status === 'confirmed') {
+        badge = `<span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">확인완료</span>`;
+      }
+
+      // 작성완료 탭에서는 클릭 시 읽기 전용으로 열기 (동일 함수, submitted이면 내부에서 읽기모드)
+      return `
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-pink-300 hover:shadow transition-all"
+           onclick="renderWorkReportForm(document.getElementById('page-content'), ${t.id})">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <span class="font-semibold text-sm text-gray-800 truncate">${t.title||'-'}</span>
+              ${badge}
+            </div>
+            <div class="text-xs text-gray-500 flex flex-wrap gap-2">
+              <span><i class="fas fa-hashtag mr-0.5 text-gray-300"></i>${subNum}</span>
+              ${t.request_no ? `<span><i class="fas fa-file-contract mr-0.5 text-gray-300"></i>${t.request_no}</span>` : ''}
+              ${t.work_completed_at ? `<span><i class="fas fa-calendar-check mr-0.5 text-gray-300"></i>${t.work_completed_at?.slice(0,10)||''}</span>` : ''}
+              ${t.construction_type ? `<span class="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">${t.construction_type}</span>` : ''}
+            </div>
+          </div>
+          <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
+        </div>
+      </div>`;
+    };
+
+    const tabBtn = (id, label, count, isActive) => {
+      const base = 'px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors flex items-center gap-1.5';
+      const on   = 'border-pink-500 text-pink-600 bg-white';
+      const off  = 'border-transparent text-gray-400 bg-gray-50 hover:text-gray-600';
+      return `<button class="${base} ${isActive ? on : off}" onclick="_wrSwitchTab('${id}')">${label}
+        <span class="text-xs px-1.5 py-0.5 rounded-full ${isActive ? 'bg-pink-100 text-pink-600' : 'bg-gray-200 text-gray-500'}">${count}</span>
+      </button>`;
+    };
+
     container.innerHTML = `
-    <div class="max-w-4xl mx-auto p-4 space-y-4">
-      <div class="flex items-center justify-between flex-wrap gap-2">
+    <div class="max-w-4xl mx-auto p-4 space-y-0">
+
+      <!-- 헤더 -->
+      <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
           <i class="fas fa-file-alt text-pink-500"></i> 외선 작업일보
         </h2>
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-gray-400">작업 완료 건에서 일보 작성</span>
-          <button onclick="downloadWorkReportListCSV()"
-                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-xs hover:bg-green-600">
-            <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
-          </button>
-        </div>
+        <button onclick="downloadWorkReportListCSV()"
+                class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-xs hover:bg-green-600">
+          <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
+        </button>
       </div>
 
-      <!-- 작업 선택 카드 목록 -->
-      <div class="space-y-2">
-        ${tasks.length === 0 ? `<div class="text-center py-10 text-gray-400"><i class="fas fa-inbox text-3xl mb-2"></i><p>완료된 작업이 없습니다</p></div>` :
-          tasks.map(t => {
-            const subNum = t.work_number ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number) : t.task_number;
-            const statusBadge = t.report_id
-              ? `<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">일보작성완료</span>`
-              : `<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">미작성</span>`;
-            return `
-            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-pink-300 hover:shadow transition-all"
-                 onclick="renderWorkReportForm(document.getElementById('page-content'), ${t.id})">
-              <div class="flex items-start justify-between gap-2">
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2 mb-1">
-                    <span class="font-semibold text-sm text-gray-800 truncate">${t.title||'-'}</span>
-                    ${statusBadge}
-                  </div>
-                  <div class="text-xs text-gray-500 flex flex-wrap gap-2">
-                    <span><i class="fas fa-hashtag mr-0.5 text-gray-300"></i>${subNum}</span>
-                    ${t.request_no ? `<span><i class="fas fa-file-contract mr-0.5 text-gray-300"></i>${t.request_no}</span>` : ''}
-                    ${t.work_completed_at ? `<span><i class="fas fa-calendar-check mr-0.5 text-gray-300"></i>${t.work_completed_at?.slice(0,10)||''}</span>` : ''}
-                    ${t.construction_type ? `<span class="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">${t.construction_type}</span>` : ''}
-                  </div>
-                </div>
-                <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
-              </div>
-            </div>`
-          }).join('')
-        }
+      <!-- 탭 바 -->
+      <div class="flex gap-0 border-b border-gray-200 mb-0">
+        ${tabBtn('pending',   '작성 대상', pending.length,   activeTab==='pending')}
+        ${tabBtn('completed', '작성 완료', completed.length, activeTab==='completed')}
       </div>
+      <input type="hidden" id="wr-tab-state" value="${activeTab}">
+
+      <!-- 탭: 작성 대상 -->
+      <div id="wr-pane-pending" class="${activeTab==='pending' ? '' : 'hidden'} pt-3 space-y-2">
+        ${pending.length === 0
+          ? `<div class="text-center py-10 text-gray-400"><i class="fas fa-check-circle text-3xl mb-2 text-green-400"></i><p class="text-sm">작성 대상 일보가 없습니다</p></div>`
+          : pending.map(t => renderCard(t, 'pending')).join('')}
+      </div>
+
+      <!-- 탭: 작성 완료 -->
+      <div id="wr-pane-completed" class="${activeTab==='completed' ? '' : 'hidden'} pt-3 space-y-2">
+        ${completed.length === 0
+          ? `<div class="text-center py-10 text-gray-400"><i class="fas fa-inbox text-3xl mb-2"></i><p class="text-sm">제출된 일보가 없습니다</p></div>`
+          : completed.map(t => renderCard(t, 'completed')).join('')}
+      </div>
+
     </div>`;
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
+}
+
+// ─── 외선일보 탭 전환 ─────────────────────────────────────────────────────────
+function _wrSwitchTab(tab) {
+  const stateEl = document.getElementById('wr-tab-state');
+  if (stateEl) stateEl.value = tab;
+  ['pending','completed'].forEach(id => {
+    const pane = document.getElementById(`wr-pane-${id}`);
+    const btn  = document.querySelector(`button[onclick="_wrSwitchTab('${id}')"]`);
+    const isActive = id === tab;
+    if (pane) pane.classList.toggle('hidden', !isActive);
+    if (btn) {
+      btn.className = btn.className
+        .replace('border-pink-500 text-pink-600 bg-white', '')
+        .replace('border-transparent text-gray-400 bg-gray-50 hover:text-gray-600', '')
+        .trim();
+      btn.className += isActive
+        ? ' border-pink-500 text-pink-600 bg-white'
+        : ' border-transparent text-gray-400 bg-gray-50 hover:text-gray-600';
+      const badge = btn.querySelector('span');
+      if (badge) {
+        badge.className = `text-xs px-1.5 py-0.5 rounded-full ${isActive ? 'bg-pink-100 text-pink-600' : 'bg-gray-200 text-gray-500'}`;
+      }
+    }
+  });
 }
 
 // ─── 외선일보 목록 엑셀 다운로드 ────────────────────────────────────────────

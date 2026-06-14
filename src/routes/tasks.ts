@@ -109,7 +109,7 @@ app.get('/', async (c) => {
     const taskIds = tasks.map((t: any) => t.id)
     const idPlaceholders = taskIds.map(() => '?').join(',')
 
-    const [workersRes, typesRes] = await Promise.all([
+    const [workersRes, typesRes, reportsRes] = await Promise.all([
       // 배정 작업자 + 팀명 (한 번에)
       c.env.DB.prepare(`
         SELECT ta.task_id, u.id, u.name, u.position, tm.name AS team_name
@@ -126,6 +126,13 @@ app.get('/', async (c) => {
         FROM task_work_types twt
         JOIN work_types wt ON wt.id = twt.work_type_id
         WHERE twt.task_id IN (${idPlaceholders})
+      `).bind(...taskIds).all<any>(),
+
+      // 일보 report_id + report_status (한 번에)
+      c.env.DB.prepare(`
+        SELECT task_id, id AS report_id, status AS report_status
+        FROM work_reports
+        WHERE task_id IN (${idPlaceholders})
       `).bind(...taskIds).all<any>(),
     ])
 
@@ -145,10 +152,18 @@ app.get('/', async (c) => {
       typesMap[wt.task_id].push({ id: wt.work_type_id, name: wt.name })
     }
 
+    // task_id → report 맵 구성
+    const reportMap: Record<number, { report_id: number; report_status: string }> = {}
+    for (const r of (reportsRes.results || [])) {
+      reportMap[r.task_id] = { report_id: r.report_id, report_status: r.report_status }
+    }
+
     for (const task of tasks) {
       task.assigned_workers = workersMap[task.id] || []
       task.work_types        = typesMap[task.id]  || []
       task.team_name         = teamNameMap[task.id] || null
+      task.report_id         = reportMap[task.id]?.report_id    ?? null
+      task.report_status     = reportMap[task.id]?.report_status ?? null
     }
   } else {
     // tasks 없을 때 빈 배열 초기화

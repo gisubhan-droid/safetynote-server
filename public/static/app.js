@@ -24508,15 +24508,19 @@ async function _frLoadSpliceStats() {
       return;
     }
 
+    // status → 구분 한글 변환
+    const spliceStatusLabel = s => s === 'confirmed' ? '확정' : s === 'submitted' ? '제출' : '작성중';
+
     resultDiv.innerHTML = `
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div class="overflow-x-auto">
         <table class="w-full text-xs border-collapse" style="min-width:600px">
           <thead>
             <tr class="bg-gray-50 text-gray-600">
-              <th class="border border-gray-200 px-2 py-2 text-center">작업일</th>
-              <th class="border border-gray-200 px-2 py-2 text-center">작업팀</th>
-              <th class="border border-gray-200 px-2 py-2 text-center">담당자</th>
+              <th class="border border-gray-200 px-2 py-2 text-center">완료일</th>
+              <th class="border border-gray-200 px-2 py-2 text-center">작업자(팀)</th>
+              <th class="border border-gray-200 px-2 py-2 text-center">요청번호</th>
+              <th class="border border-gray-200 px-2 py-2 text-center">구분</th>
               ${spliceItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center bg-indigo-50 whitespace-nowrap">${k}</th>`).join('')}
             </tr>
           </thead>
@@ -24527,14 +24531,15 @@ async function _frLoadSpliceStats() {
               <tr class="hover:bg-gray-50 border-b border-gray-100">
                 <td class="border border-gray-100 px-2 py-1.5 text-center">${(row.work_date||'').slice(0,10)||'-'}</td>
                 <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
-                <td class="border border-gray-100 px-2 py-1.5 text-center">${row.manager_name||'-'}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-center">${row.request_no||'-'}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-center">${spliceStatusLabel(row.status)}</td>
                 ${spliceItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-indigo-50">${sm[k]||''}</td>`).join('')}
               </tr>`;
             }).join('')}
           </tbody>
           <tfoot>
             <tr class="bg-gray-100 font-bold text-gray-700">
-              <td class="border border-gray-200 px-2 py-2 text-center" colspan="3">합 계</td>
+              <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
               ${spliceItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-indigo-100">${spliceItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)||''}</td>`).join('')}
             </tr>
           </tfoot>
@@ -24619,7 +24624,8 @@ function downloadFieldReportCSV() {
     if (!_frSpliceCacheRows || _frSpliceCacheRows.length === 0) {
       alert('다운로드할 데이터가 없습니다. 먼저 [조회] 버튼을 눌러주세요.'); return;
     }
-    const headers = ['작업일','작업팀','담당자', ..._frSpliceCacheItemKeys];
+    const headers = ['완료일','작업자(팀)','요청번호','구분', ..._frSpliceCacheItemKeys];
+    const statusLabel = s => s === 'confirmed' ? '확정' : s === 'submitted' ? '제출' : '작성중';
     const spliceMap = {};
     _frSpliceCacheItems.forEach(it => {
       if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
@@ -24630,12 +24636,13 @@ function downloadFieldReportCSV() {
       return [
         (row.work_date||'').slice(0,10)||'-',
         row.worker_team  ||'-',
-        row.manager_name ||'-',
+        row.request_no   ||'-',
+        statusLabel(row.status),
         ..._frSpliceCacheItemKeys.map(k => sm[k]||0)
       ];
     });
     // 합계 행
-    const totRow = ['합계','','',
+    const totRow = ['합계','','','',
       ..._frSpliceCacheItemKeys.map(k=>
         _frSpliceCacheItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)
       )

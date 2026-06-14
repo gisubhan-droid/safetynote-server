@@ -2861,7 +2861,30 @@ app.get('/api/splice-reports/stats', async (c) => {
     }
   }
 
-  // ③ items: 공종별 상세 (report_id 포함, work_label별 qty 합계)
+  // ③ tasks JOIN: request_no, task_title 병합 (실패해도 무시)
+  if (rows.length > 0) {
+    try {
+      const ids = rows.map((r: any) => r.id)
+      const placeholders = ids.map(() => '?').join(',')
+      const taskInfo = rawDb.prepare(`
+        SELECT sr.id, t.request_no, t.title AS task_title
+        FROM splice_reports sr
+        LEFT JOIN tasks t ON sr.task_id = t.id
+        WHERE sr.id IN (${placeholders})
+      `).all(...ids) as any[]
+      const taskMap: Record<number, any> = {}
+      taskInfo.forEach((r: any) => { taskMap[r.id] = r })
+      rows = rows.map((r: any) => ({
+        ...r,
+        request_no: taskMap[r.id]?.request_no || '',
+        task_title: taskMap[r.id]?.task_title || '',
+      }))
+    } catch(joinErr: any) {
+      console.warn('[GET /api/splice-reports/stats] tasks JOIN 실패 (무시):', joinErr.message)
+    }
+  }
+
+  // ④ items: 공종별 상세 (report_id 포함, work_label별 qty 합계)
   const reportIds = rows.map((r: any) => r.id)
   let items: any[] = []
   if (reportIds.length > 0) {
@@ -2881,8 +2904,7 @@ app.get('/api/splice-reports/stats', async (c) => {
     `).all(...reportIds) as any[]
   }
 
-  // ④ stats: 프론트가 기대하는 flat 구조 (report_id별 worker_team 포함)
-  // items에 해당 report의 worker_team을 조인하여 { work_label, unit, total_qty, worker_team } 배열 생성
+  // ⑤ stats: 프론트가 기대하는 flat 구조 (report_id별 worker_team + request_no 포함)
   const rowMap: Record<number, any> = {}
   rows.forEach((r: any) => { rowMap[r.id] = r })
   const stats = items.map((it: any) => ({
@@ -2890,6 +2912,9 @@ app.get('/api/splice-reports/stats', async (c) => {
     unit:        it.unit,
     total_qty:   it.total_qty || 0,
     worker_team: rowMap[it.report_id]?.worker_team || '',
+    request_no:  rowMap[it.report_id]?.request_no  || '',
+    task_title:  rowMap[it.report_id]?.task_title  || '',
+    status:      rowMap[it.report_id]?.status       || '',
     is_night:    it.is_night,
     is_aerial:   it.is_aerial,
     report_id:   it.report_id,

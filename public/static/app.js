@@ -24127,6 +24127,19 @@ document.addEventListener('DOMContentLoaded', init);
 
 // ═══════════════════════════════════════════════════════════════
 // 현장공량관리 — 외선일보 목록 페이지
+// ── 숫자 포맷 헬퍼 (3자리 콤마 + 소수점 1자리) ─────────────────────────────
+// fmtM(1234.5) → "1,234.5"   fmtM(0) → ""(빈 문자열)
+function fmtM(v) {
+  const n = parseFloat(v) || 0;
+  if (n === 0) return '';
+  return n.toLocaleString('ko-KR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+// fmtMZ : 0도 표시 (합계 행용)
+function fmtMZ(v) {
+  const n = parseFloat(v) || 0;
+  return n.toLocaleString('ko-KR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
 // ═══════════════════════════════════════════════════════════════
 let _workReportListData = [];
 // 공량내역 엑셀 다운로드용 전역 캐시
@@ -24328,9 +24341,9 @@ async function renderFieldReportPage(container) {
                         <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
                         <td class="border border-gray-100 px-2 py-1.5 text-center">${row.request_no||'-'}</td>
                         <td class="border border-gray-100 px-2 py-1.5 text-center">${row.work_class||'-'}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${(row.cable_new_m||0)>0?(row.cable_new_m||0).toFixed(1):''}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50">${(row.cable_remove_m||0)>0?(row.cable_remove_m||0).toFixed(1):''}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50">${(row.cable_move_m||0)>0?(row.cable_move_m||0).toFixed(1):''}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${fmtM(row.cable_new_m)}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50">${fmtM(row.cable_remove_m)}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50">${fmtM(row.cable_move_m)}</td>
                         ${allItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-orange-50">${exMap[k]||''}</td>`).join('')}
                         ${!isWorker ? `<td class="border border-gray-100 px-2 py-1.5 text-right bg-green-50 font-semibold">${rowAmt>0?rowAmt.toLocaleString():''}</td>` : ''}
                       </tr>`;
@@ -24340,9 +24353,9 @@ async function renderFieldReportPage(container) {
               <tfoot>
                 <tr class="bg-gray-100 font-bold text-gray-700">
                   <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
-                  <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${rows.reduce((s,r)=>s+(r.cable_new_m||0),0).toFixed(1)||''}</td>
-                  <td class="border border-gray-200 px-2 py-2 text-right bg-red-100">${rows.reduce((s,r)=>s+(r.cable_remove_m||0),0).toFixed(1)||''}</td>
-                  <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100">${rows.reduce((s,r)=>s+(r.cable_move_m||0),0).toFixed(1)||''}</td>
+                  <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_new_m||0),0))}</td>
+                  <td class="border border-gray-200 px-2 py-2 text-right bg-red-100">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_remove_m||0),0))}</td>
+                  <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_move_m||0),0))}</td>
                   ${allItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-orange-100">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`).join('')}
                   ${!isWorker ? (() => {
                     const totalAmt =
@@ -24633,9 +24646,13 @@ function downloadFieldReportCSV() {
 // ═══════════════════════════════════════════════════════════════
 // 작업일보 작성 — 외선/접속 선택 페이지
 // ═══════════════════════════════════════════════════════════════
-async function renderReportWritePage(container, activeType) {
-  // activeType: 'cable'(기본) | 'splice'
+async function renderReportWritePage(container, activeType, cSubInit, sSubInit) {
+  // activeType : 'cable'(기본) | 'splice'
+  // cSubInit   : 외선 서브탭 초기값 'pending'|'draft'|'completed'  (기본 'pending')
+  // sSubInit   : 접속 서브탭 초기값 'pending'|'draft'|'completed'  (기본 'pending')
   activeType = activeType || 'cable';
+  const cSubActive = cSubInit || 'pending';
+  const sSubActive = sSubInit || 'pending';
   const content = container || document.getElementById('page-content');
   if (!content) return;
 
@@ -24752,9 +24769,6 @@ async function renderReportWritePage(container, activeType) {
     </button>`;
   };
 
-  const cSubActive = document.getElementById('rw-cable-sub-state')?.value || 'pending';
-  const sSubActive = document.getElementById('rw-splice-sub-state')?.value || 'pending';
-
   content.innerHTML = `
   <div class="max-w-4xl mx-auto p-4 space-y-0">
     <!-- 페이지 헤더 -->
@@ -24851,10 +24865,9 @@ function _rwSubTabStyle(type, activeTab) {
 }
 
 async function _reportWriteSelectType(type) {
-  // 하위 호환 — 직접 호출 시 통합 페이지로 이동
   const content = document.getElementById('page-content');
   if (!content) return;
-  await renderReportWritePage(content, type);
+  await renderReportWritePage(content, type, 'pending', 'pending');
 }
 
 async function _reportWriteCableList(container, activeTab) {
@@ -25962,11 +25975,9 @@ async function saveWorkReport(taskId) {
     const res  = await API.post('/work-reports', data);
     window._wrReportId = res.data.reportId;
     toast('임시저장 완료', 'success');
-    // 임시저장 후 작업일보 작성 페이지(외선 탭 > 작성중)로 이동
     setTimeout(async () => {
       const content = document.getElementById('page-content');
-      if (content) await renderReportWritePage(content, 'cable');
-      setTimeout(() => _rwSubTab('cable', 'draft'), 100);
+      if (content) await renderReportWritePage(content, 'cable', 'draft', 'pending');
     }, 1000);
   } catch(e) {
     toast('저장 실패: ' + e.message, 'error');
@@ -26054,11 +26065,9 @@ async function _finalSubmit(reportId, taskId) {
   try {
     await API.post(`/work-reports/${reportId}/submit`, {});
     toast('일보 제출 완료!', 'success');
-    // 제출 완료 후 작업일보 작성 페이지(외선 탭 > 작성완료)로 이동
     setTimeout(async () => {
       const content = document.getElementById('page-content');
-      if (content) await renderReportWritePage(content, 'cable');
-      setTimeout(() => _rwSubTab('cable', 'completed'), 100);
+      if (content) await renderReportWritePage(content, 'cable', 'completed', 'pending');
     }, 1200);
   } catch(e) {
     toast('제출 실패: ' + e.message, 'error');
@@ -26455,12 +26464,9 @@ async function saveSpliceReport() {
     const idEl = document.getElementById('sr-report-id');
     if (idEl) idEl.value = reportId;
     toast('접속일보 임시저장 완료', 'success');
-    // 임시저장 후 작업일보 작성 페이지(접속 탭 > 작성중)로 이동
     setTimeout(async () => {
       const content = document.getElementById('page-content');
-      if (content) await renderReportWritePage(content, 'splice');
-      // 서브탭을 '작성 중'으로 전환
-      setTimeout(() => _rwSubTab('splice', 'draft'), 100);
+      if (content) await renderReportWritePage(content, 'splice', 'pending', 'draft');
     }, 1000);
   } catch(e) {
     toast('저장 실패: ' + e.message, 'error');
@@ -26474,12 +26480,9 @@ async function submitSpliceReport() {
     const reportId = res.data.reportId;
     await API.post(`/splice-reports/${reportId}/submit`, {});
     toast('접속일보 제출 완료!', 'success');
-    // 제출 완료 후 작업일보 작성 페이지(접속 탭 > 작성완료)로 이동
     setTimeout(async () => {
       const content = document.getElementById('page-content');
-      if (content) await renderReportWritePage(content, 'splice');
-      // 서브탭을 '작성 완료'로 전환
-      setTimeout(() => _rwSubTab('splice', 'completed'), 100);
+      if (content) await renderReportWritePage(content, 'splice', 'pending', 'completed');
     }, 1200);
   } catch(e) {
     toast('제출 실패: ' + e.message, 'error');
@@ -26648,8 +26651,8 @@ async function renderVolumeStatsPage(container) {
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         ${[
           { label:'총 건수',           val: rows.length + '건',   icon:'fas fa-file-alt',    color:'pink' },
-          { label:'광케이블 신설',      val: rows.reduce((s,r)=>s+(r.cable_new_m||0),0).toFixed(1)+'M', icon:'fas fa-plus-circle', color:'blue' },
-          { label:'광케이블 철거',      val: rows.reduce((s,r)=>s+(r.cable_remove_m||0),0).toFixed(1)+'M', icon:'fas fa-minus-circle', color:'red' },
+          { label:'광케이블 신설',      val: fmtMZ(rows.reduce((s,r)=>s+(r.cable_new_m||0),0))+'M', icon:'fas fa-plus-circle', color:'blue' },
+          { label:'광케이블 철거',      val: fmtMZ(rows.reduce((s,r)=>s+(r.cable_remove_m||0),0))+'M', icon:'fas fa-minus-circle', color:'red' },
           { label:'추가입력 건수',      val: Object.keys(extrasMap).length + '건', icon:'fas fa-clipboard-list', color:'orange' },
         ].map(c=>`
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
@@ -27157,9 +27160,9 @@ function printVolumeStats() {
       <td style="${tdStyle}">${row.worker_team||'-'}</td>
       <td style="${tdStyle}">${row.request_no||'-'}</td>
       <td style="${tdStyle}">${row.work_class||'-'}</td>
-      <td style="${tdRStyle}">${(row.cable_new_m||0)>0?(row.cable_new_m||0).toFixed(1):''}</td>
-      <td style="${tdRStyle}">${(row.cable_remove_m||0)>0?(row.cable_remove_m||0).toFixed(1):''}</td>
-      <td style="${tdRStyle}">${(row.cable_move_m||0)>0?(row.cable_move_m||0).toFixed(1):''}</td>
+      <td style="${tdRStyle}">${fmtM(row.cable_new_m)}</td>
+      <td style="${tdRStyle}">${fmtM(row.cable_remove_m)}</td>
+      <td style="${tdRStyle}">${fmtM(row.cable_move_m)}</td>
       ${allItemKeys.map(k=>`<td style="${tdRStyle}">${exMap[k]||''}</td>`).join('')}
       ${!isWorker?`<td style="${tdRStyle}">${amt>0?amt.toLocaleString():''}</td>`:''}
     </tr>`;
@@ -27167,9 +27170,9 @@ function printVolumeStats() {
 
   const totalRow = `<tr>
     <td style="${tfStyle}" colspan="4">합 계</td>
-    <td style="${tfStyle}">${totalCableNew.toFixed(1)}</td>
-    <td style="${tfStyle}">${totalCableRemove.toFixed(1)}</td>
-    <td style="${tfStyle}">${totalCableMove.toFixed(1)}</td>
+    <td style="${tfStyle}">${fmtMZ(totalCableNew)}</td>
+    <td style="${tfStyle}">${fmtMZ(totalCableRemove)}</td>
+    <td style="${tfStyle}">${fmtMZ(totalCableMove)}</td>
     ${allItemKeys.map(k=>`<td style="${tfStyle}">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`).join('')}
     ${!isWorker?`<td style="${tfStyle}">${totalAmt>0?totalAmt.toLocaleString():''}</td>`:''}
   </tr>`;
@@ -27208,8 +27211,8 @@ function printVolumeStats() {
   <!-- 요약 카드 -->
   <div class="summary">
     <div class="summary-card"><div class="lbl">총 건수</div><div class="val">${rows.length}건</div></div>
-    <div class="summary-card"><div class="lbl">광케이블 신설</div><div class="val">${totalCableNew.toFixed(1)}M</div></div>
-    <div class="summary-card"><div class="lbl">광케이블 철거</div><div class="val">${totalCableRemove.toFixed(1)}M</div></div>
+    <div class="summary-card"><div class="lbl">광케이블 신설</div><div class="val">${fmtMZ(totalCableNew)}M</div></div>
+    <div class="summary-card"><div class="lbl">광케이블 철거</div><div class="val">${fmtMZ(totalCableRemove)}M</div></div>
     ${!isWorker?`<div class="summary-card"><div class="lbl">합계금액</div><div class="val">${totalAmt.toLocaleString()}원</div></div>`:''}
   </div>
 
@@ -27350,10 +27353,10 @@ async function renderCableDetailPage(container) {
       <!-- 요약 카드 -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         ${[
-          { label:'전체 사용량', val: totalAll.toFixed(1)+'M',    icon:'fas fa-ruler-horizontal', color:'gray'   },
-          { label:'신설 합계',   val: totalNew.toFixed(1)+'M',    icon:'fas fa-plus-circle',      color:'blue'   },
-          { label:'철거 합계',   val: totalRemove.toFixed(1)+'M', icon:'fas fa-minus-circle',     color:'red'    },
-          { label:'이설 합계',   val: totalMove.toFixed(1)+'M',   icon:'fas fa-exchange-alt',     color:'purple' },
+          { label:'전체 사용량', val: fmtMZ(totalAll)+'M',    icon:'fas fa-ruler-horizontal', color:'gray'   },
+          { label:'신설 합계',   val: fmtMZ(totalNew)+'M',    icon:'fas fa-plus-circle',      color:'blue'   },
+          { label:'철거 합계',   val: fmtMZ(totalRemove)+'M', icon:'fas fa-minus-circle',     color:'red'    },
+          { label:'이설 합계',   val: fmtMZ(totalMove)+'M',   icon:'fas fa-exchange-alt',     color:'purple' },
         ].map(c=>`
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
           <div class="flex items-center gap-2 mb-1">
@@ -27409,21 +27412,21 @@ async function renderCableDetailPage(container) {
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs">신설</span></td>
-                  <td class="border border-gray-100 px-3 py-1.5 text-right bg-blue-50 font-semibold">${v.new.toFixed(1)}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-right bg-blue-50 font-semibold">${fmtMZ(v.new)}</td>
                 </tr>`);
                 if (v.remove > 0) rows.push(`<tr class="hover:bg-gray-50 cd-row-remove">
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs">철거</span></td>
-                  <td class="border border-gray-100 px-3 py-1.5 text-right bg-red-50 font-semibold">${v.remove.toFixed(1)}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-right bg-red-50 font-semibold">${fmtMZ(v.remove)}</td>
                 </tr>`);
                 if (v.move   > 0) rows.push(`<tr class="hover:bg-gray-50 cd-row-move">
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs">이설</span></td>
-                  <td class="border border-gray-100 px-3 py-1.5 text-right bg-purple-50 font-semibold">${v.move.toFixed(1)}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-right bg-purple-50 font-semibold">${fmtMZ(v.move)}</td>
                 </tr>`);
                 return rows;
               }).join('')}
@@ -27482,7 +27485,7 @@ async function renderCableDetailPage(container) {
                       <td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded text-xs ${procColor}">${cb.proc||'-'}</span></td>
                       <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.start_point||'-'}</td>
                       <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.end_point||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-right bg-yellow-50 font-semibold">${(cb.usage_m||0).toFixed(1)}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-right bg-yellow-50 font-semibold">${fmtMZ(cb.usage_m)}</td>
                       <td class="border border-gray-100 px-2 py-1.5 text-center text-gray-400">${cb.special_note||''}</td>
                     </tr>`;
                   }).join('')
@@ -27492,7 +27495,7 @@ async function renderCableDetailPage(container) {
             <tfoot>
               <tr class="bg-gray-100 font-bold text-gray-700">
                 <td colspan="12" class="border border-gray-200 px-2 py-2 text-center">합 계</td>
-                <td class="border border-gray-200 px-2 py-2 text-right bg-yellow-100">${totalAll.toFixed(1)}</td>
+                <td class="border border-gray-200 px-2 py-2 text-right bg-yellow-100">${fmtMZ(totalAll)}</td>
                 <td class="border border-gray-200 px-2 py-2"></td>
               </tr>
             </tfoot>` : ''}

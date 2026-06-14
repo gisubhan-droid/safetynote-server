@@ -825,15 +825,24 @@ function patchSchema() {
     `)
     rawDb.exec(`
       INSERT OR IGNORE INTO volume_unit_prices (item_key, item_label, unit_price, sort_order) VALUES
-        ('cable_new','광케이블(신설/이설)',1100,1),
-        ('joga_new','조가선(신설)',400,2),
-        ('connector','커넥터취부',38000,3),
-        ('cable_remove','광케이블(철거/이설)',300,4),
-        ('joga_remove','조가선(철거)',100,5),
-        ('ip_new','IP주(신설)',120000,6),
-        ('ip_remove','IP주(철거)',30000,7),
-        ('ground_b','접지(대지B)',35000,8),
-        ('ground_a','접지(연동A)',6000,9)
+        ('cable_new',    '광케이블 신설',        1100,  1),
+        ('cable_remove', '광케이블 철거',         300,  2),
+        ('cable_move',   '광케이블 이설',        1400,  3),
+        ('조가선신설',   '조가선신설',            400,  4),
+        ('커넥터취부',   '커넥터취부',          38000,  5),
+        ('조가선 철거',  '조가선 철거',           100,  6),
+        ('전주 건식',    '전주 건식',          120000,  7),
+        ('전주 철거',    '전주 철거',           30000,  8),
+        ('B 형접지(대지)','B 형접지(대지)',      35000,  9),
+        ('A 형접지(대지)','A 형접지(대지)',       6000, 10),
+        ('지선신설',     '지선신설',            35000, 11),
+        ('전주세움',     '전주세움',            45000, 12),
+        ('가요전선관',   '가요전선관',            600, 13),
+        ('내관포설',     '내관포설',             400, 14),
+        ('완금설치 (한전주)','완금설치 (한전주)', 28000, 15),
+        ('단순1',        '단순1',             15000, 16),
+        ('단순1-2',      '단순1-2',           29000, 17),
+        ('단순2',        '단순2',             80000, 18)
     `)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_work_reports_task  ON work_reports(task_id)`)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_lines       ON work_report_lines(report_id)`)
@@ -843,6 +852,12 @@ function patchSchema() {
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN proc TEXT DEFAULT ''`)
     // work_report_cables에 remark 컬럼 추가 (특이사항)
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN remark TEXT DEFAULT ''`)
+    // volume_unit_prices 항목을 신규 단가표로 교체 (기존 구버전 키 삭제)
+    const newKeys = ['cable_new','cable_remove','cable_move','조가선신설','커넥터취부','조가선 철거',
+      '전주 건식','전주 철거','B 형접지(대지)','A 형접지(대지)','지선신설','전주세움',
+      '가요전선관','내관포설','완금설치 (한전주)','단순1','단순1-2','단순2']
+    const oldKeys = ['joga_new','connector','joga_remove','ip_new','ip_remove','ground_b','ground_a']
+    oldKeys.forEach(k => { try { rawDb.prepare(`DELETE FROM volume_unit_prices WHERE item_key=?`).run(k) } catch(_){} })
     // 추가입력(공종별 작업량) 테이블 생성
     rawDb.exec(`
       CREATE TABLE IF NOT EXISTS work_report_extras (
@@ -2504,6 +2519,35 @@ app.get('/api/work-reports/volume-stats', async (c) => {
   `).all(...innerParams)
 
   return c.json({ rows, extras, cables })
+})
+
+// GET /api/volume-unit-prices — 단가 목록 조회 (전체 권한 허용, 금액 계산용)
+app.get('/api/volume-unit-prices', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const prices = rawDb.prepare(
+    `SELECT item_key, item_label, unit_price, sort_order FROM volume_unit_prices ORDER BY sort_order`
+  ).all()
+  return c.json({ prices })
+})
+
+// PUT /api/volume-unit-prices — 단가 수정 (시스템관리자 전용)
+app.put('/api/volume-unit-prices', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  // sysadmin 확인: sub_role='sysadmin' 또는 position='시스템관리자'
+  const isSysadmin = user.sub_role === 'sysadmin' || user.position === '시스템관리자'
+  if (!isSysadmin) return c.json({ error: '시스템관리자만 수정할 수 있습니다' }, 403)
+  const { prices } = await c.req.json()
+  if (!Array.isArray(prices)) return c.json({ error: '잘못된 요청' }, 400)
+  const stmt = rawDb.prepare(
+    `UPDATE volume_unit_prices SET unit_price=? WHERE item_key=?`
+  )
+  const update = rawDb.transaction((list: any[]) => {
+    for (const p of list) stmt.run(Number(p.unit_price) || 0, p.item_key)
+  })
+  update(prices)
+  return c.json({ ok: true })
 })
 
 // GET /api/work-reports/task/:taskId

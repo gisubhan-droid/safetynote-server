@@ -1963,6 +1963,9 @@ function renderApp() {
       { id:'work-report',    icon:'fas fa-file-alt',          label:'외선일보 작성' },
       { id:'volume-stats',   icon:'fas fa-table',             label:'물량통계 (외선부분)' },
       { id:'cable-detail',   icon:'fas fa-cable-car',         label:'광케이블 현황' },
+      ...(dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin' ? [
+        { id:'unit-price',   icon:'fas fa-tags',              label:'단가 관리' },
+      ] : []),
     ]},
     { divider: true, label: '관리' },
     { id:'personnel', icon:'fas fa-users', label:'사용자관리', children: [
@@ -2616,7 +2619,7 @@ function getPageTitle(page) {
     'edu-supervisor': '관리감독자교육', 'edu-stats': '교육현황통계',
     'edu': '안전교육',
     'sign-requests': '서명 요청',
-    'work-report': '외선일보 작성', 'field-volume': '현장공량관리', 'volume-stats': '물량통계 (외선부분)', 'cable-detail': '광케이블 현황',
+    'work-report': '외선일보 작성', 'field-volume': '현장공량관리', 'volume-stats': '물량통계 (외선부분)', 'cable-detail': '광케이블 현황', 'unit-price': '단가 관리',
   };
   return map[page] || page;
 }
@@ -2728,6 +2731,7 @@ function navigateTo(page) {
     case 'work-report':  renderWorkReportListPage(content); break;
     case 'volume-stats':  renderVolumeStatsPage(content);  break;
     case 'cable-detail':   renderCableDetailPage(content);  break;
+    case 'unit-price':     renderUnitPricePage(content);    break;
     case 'edu': navigateTo('edu-periodic'); return;
     case 'edu-periodic':   renderEducationPage(content, 'periodic');    break;
     case 'edu-hire':       renderEducationPage(content, 'hire');         break;
@@ -24981,15 +24985,22 @@ let _volumeStatsCache = { rows: [], extras: [], allItemKeys: [] };
 async function renderVolumeStatsPage(container) {
   container.innerHTML = `<div class="max-w-5xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
-    const [statsRes, consRes] = await Promise.all([
+    const [statsRes, consRes, priceRes] = await Promise.all([
       API.get('/work-reports/volume-stats'),
-      API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } }))
+      API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } })),
+      API.get('/volume-unit-prices').catch(() => ({ data: { prices: [] } }))
     ]);
-    const { rows = [], extras = [], prices = [] } = statsRes.data;
+    const { rows = [], extras = [], cables = [] } = statsRes.data;
     // 전역 캐시 저장 (엑셀 다운로드용)
     const constructions = consRes.data.constructions || consRes.data.data || [];
+    const unitPrices    = priceRes.data.prices || [];
+    // 단가 맵: item_key → unit_price
+    const priceMap = {};
+    unitPrices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
+    // 근로자 권한은 단가/금액 숨김
+    const isWorker = currentUser && currentUser.role === 'worker';
 
-    _volumeStatsCache = { rows, extras, allItemKeys: [] };
+    _volumeStatsCache = { rows, extras, cables, allItemKeys: [], priceMap };
 
     // extras를 report_id → { item_key: qty } 맵으로 인덱싱
     const extrasMap = {};
@@ -25066,6 +25077,7 @@ async function renderVolumeStatsPage(container) {
                 <th class="border border-gray-200 px-2 py-2 text-center bg-red-50">철거<br>(M)</th>
                 <th class="border border-gray-200 px-2 py-2 text-center bg-purple-50">이설<br>(M)</th>
                 ${allItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center bg-orange-50">${k}</th>`).join('')}
+                ${!isWorker ? `<th class="border border-gray-200 px-2 py-2 text-center bg-green-50 font-bold">합계금액(원)</th>` : ''}
               </tr>
             </thead>
             <tbody>
@@ -25082,6 +25094,14 @@ async function renderVolumeStatsPage(container) {
                     <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50">${(row.cable_remove_m||0)>0?(row.cable_remove_m||0).toFixed(1):''}</td>
                     <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50">${(row.cable_move_m||0)>0?(row.cable_move_m||0).toFixed(1):''}</td>
                     ${allItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-orange-50">${exMap[k]||''}</td>`).join('')}
+                    ${!isWorker ? (() => {
+                      const rowAmt =
+                        (row.cable_new_m    ||0) * (priceMap['cable_new']    ||0) +
+                        (row.cable_remove_m ||0) * (priceMap['cable_remove'] ||0) +
+                        (row.cable_move_m   ||0) * (priceMap['cable_move']   ||0) +
+                        allItemKeys.reduce((s,k) => s + (exMap[k]||0)*(priceMap[k]||0), 0);
+                      return `<td class="border border-gray-100 px-2 py-1.5 text-right bg-green-50 font-semibold">${rowAmt>0?rowAmt.toLocaleString():''}</td>`;
+                    })() : ''}
                   </tr>`
                 }).join('')
               }
@@ -25094,6 +25114,17 @@ async function renderVolumeStatsPage(container) {
                 <td class="border border-gray-200 px-2 py-2 text-right bg-red-100">${rows.reduce((s,r)=>s+(r.cable_remove_m||0),0).toFixed(1)||''}</td>
                 <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100">${rows.reduce((s,r)=>s+(r.cable_move_m||0),0).toFixed(1)||''}</td>
                 ${allItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-orange-100">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`).join('')}
+                ${!isWorker ? (() => {
+                  const totalAmt =
+                    rows.reduce((s,r)=>s+(r.cable_new_m||0),0)    * (priceMap['cable_new']    ||0) +
+                    rows.reduce((s,r)=>s+(r.cable_remove_m||0),0) * (priceMap['cable_remove'] ||0) +
+                    rows.reduce((s,r)=>s+(r.cable_move_m||0),0)   * (priceMap['cable_move']   ||0) +
+                    allItemKeys.reduce((s,k) => {
+                      const qtySum = extras.filter(ex=>ex.item_key===k).reduce((a,ex)=>a+(ex.qty||0),0);
+                      return s + qtySum * (priceMap[k]||0);
+                    }, 0);
+                  return `<td class="border border-gray-200 px-2 py-2 text-right bg-green-100 text-green-800">${totalAmt>0?totalAmt.toLocaleString():''}</td>`;
+                })() : ''}
               </tr>
             </tfoot>` : ''}
           </table>
@@ -25369,6 +25400,93 @@ function downloadCableDetailCSV() {
   ]);
   const today = new Date().toISOString().slice(0,10);
   downloadCSV(`광케이블현황_${today}.csv`, headers, rows);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 단가 관리 페이지 (시스템관리자 전용)
+// ═══════════════════════════════════════════════════════════════
+async function renderUnitPricePage(container) {
+  // 권한 체크: sysadmin만 접근 가능
+  if (!currentUser || dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) !== 'sysadmin') {
+    container.innerHTML = `<div class="p-8 text-center text-red-500"><i class="fas fa-lock text-4xl mb-3"></i><p class="text-lg font-semibold">시스템관리자만 접근할 수 있습니다</p></div>`;
+    return;
+  }
+  container.innerHTML = `<div class="max-w-xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  try {
+    const res = await API.get('/volume-unit-prices');
+    const prices = res.data.prices || [];
+
+    container.innerHTML = `
+    <div class="max-w-xl mx-auto p-4 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <i class="fas fa-tags text-pink-500"></i> 단가 관리
+        </h2>
+        <span class="text-xs text-gray-400 bg-yellow-50 border border-yellow-200 px-2 py-1 rounded-lg">
+          <i class="fas fa-lock mr-1 text-yellow-500"></i>시스템관리자 전용
+        </span>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
+          * 각 항목의 단가를 수정 후 <strong>저장</strong> 버튼을 눌러주세요. 단가는 물량통계 금액 계산에 반영됩니다.
+        </div>
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-gray-50 text-gray-600 text-xs">
+              <th class="px-4 py-2 text-left border-b border-gray-100">항목</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-40">단가 (원)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${prices.map(p => `
+            <tr class="border-b border-gray-50 hover:bg-gray-50">
+              <td class="px-4 py-2 text-gray-700">${p.item_label}</td>
+              <td class="px-4 py-2 text-right">
+                <input type="number" min="0" step="100"
+                  class="up-input w-36 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
+                  data-key="${p.item_key}" value="${p.unit_price || 0}">
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
+                class="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-200">
+          <i class="fas fa-undo mr-1"></i>초기화
+        </button>
+        <button onclick="_saveUnitPrices()"
+                class="bg-pink-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-pink-600">
+          <i class="fas fa-save mr-1"></i>저장
+        </button>
+      </div>
+      <div id="up-msg" class="text-center text-sm hidden"></div>
+    </div>`;
+  } catch(e) {
+    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+async function _saveUnitPrices() {
+  const inputs = document.querySelectorAll('.up-input');
+  const prices = Array.from(inputs).map(el => ({
+    item_key:   el.dataset.key,
+    unit_price: Number(el.value) || 0
+  }));
+  const msgEl = document.getElementById('up-msg');
+  try {
+    await API.put('/volume-unit-prices', { prices });
+    msgEl.className = 'text-center text-sm text-green-600 bg-green-50 rounded-lg py-2';
+    msgEl.textContent = '✅ 단가가 저장되었습니다.';
+    msgEl.classList.remove('hidden');
+    setTimeout(() => msgEl.classList.add('hidden'), 3000);
+  } catch(e) {
+    msgEl.className = 'text-center text-sm text-red-600 bg-red-50 rounded-lg py-2';
+    msgEl.textContent = '❌ 저장 실패: ' + (e.response?.data?.error || e.message);
+    msgEl.classList.remove('hidden');
+  }
 }
 
 // ── 작업 완료 물량 워크시트 UI 헬퍼 ──────────────────────────────────────────

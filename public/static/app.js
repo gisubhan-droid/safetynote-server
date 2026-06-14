@@ -24662,27 +24662,56 @@ async function _reportWriteCableList(container) {
 async function _reportWriteSpliceList(container) {
   container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
   try {
-    const res = await API.get('/splice-reports');
-    const reports = res.data.reports || [];
-    const pending = reports.filter(r => r.status === 'draft' || !r.status);
+    // 작업 목록 + 접속일보 목록 병렬 조회
+    const [taskRes, spliceRes] = await Promise.all([
+      API.get('/tasks?status=working,work_completed,completed&limit=200'),
+      API.get('/splice-reports')
+    ]);
+    const tasks   = taskRes.data.tasks || [];
+    const reports = spliceRes.data.reports || [];
 
-    const mkCard = (r) => `
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3 hover:shadow-md transition cursor-pointer"
-           onclick="renderSpliceReportForm(document.getElementById('page-content'), ${r.id || 'null'}, null)">
-        <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style="background:#EDE9FE;">
-          <i class="fas fa-plug text-indigo-500"></i>
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-semibold text-gray-800 text-sm truncate">${r.work_date || '날짜미정'}</span>
-            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-600">임시저장</span>
+    // splice_report가 있는 task_id 집합 (draft 포함 모든 상태)
+    const reportedTaskIds = new Set(reports.map(r => r.task_id).filter(Boolean));
+    // draft 상태 보고서의 task_id → report_id 맵
+    const draftMap = {};
+    reports.forEach(r => {
+      if ((r.status === 'draft' || !r.status) && r.task_id) {
+        draftMap[r.task_id] = r.id;
+      }
+    });
+
+    // 작성 대상: 접속일보가 없거나 임시저장 상태인 작업
+    const pending = tasks.filter(t =>
+      !reportedTaskIds.has(t.id) || draftMap[t.id] !== undefined
+    );
+
+    const renderCard = (t) => {
+      const subNum = t.work_number ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number) : t.task_number;
+      const hasDraft = draftMap[t.id] !== undefined;
+      const badge = hasDraft
+        ? `<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">임시저장</span>`
+        : `<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">미작성</span>`;
+      const reportId = hasDraft ? draftMap[t.id] : null;
+      return `
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-indigo-300 hover:shadow transition-all"
+           onclick="renderSpliceReportForm(document.getElementById('page-content'), ${reportId}, ${t.id})">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <span class="font-semibold text-sm text-gray-800 truncate">${t.title||'-'}</span>
+              ${badge}
+            </div>
+            <div class="text-xs text-gray-500 flex flex-wrap gap-2">
+              <span><i class="fas fa-hashtag mr-0.5 text-gray-300"></i>${subNum}</span>
+              ${t.request_no ? `<span><i class="fas fa-file-contract mr-0.5 text-gray-300"></i>${t.request_no}</span>` : ''}
+              ${t.work_completed_at ? `<span><i class="fas fa-calendar-check mr-0.5 text-gray-300"></i>${t.work_completed_at?.slice(0,10)||''}</span>` : ''}
+              ${t.construction_type ? `<span class="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">${t.construction_type}</span>` : ''}
+            </div>
           </div>
-          <div class="text-xs text-gray-500 mt-0.5 truncate">
-            ${r.worker_team || '팀미지정'} · ${r.task_title || '작업없음'} · ${r.item_count || 0}개 공종
-          </div>
+          <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
         </div>
-        <i class="fas fa-chevron-right text-gray-300 text-xs flex-shrink-0"></i>
       </div>`;
+    };
 
     container.innerHTML = `
     <div class="max-w-4xl mx-auto p-4 space-y-3">
@@ -24692,17 +24721,12 @@ async function _reportWriteSpliceList(container) {
           <i class="fas fa-arrow-left text-lg"></i>
         </button>
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <i class="fas fa-plug text-indigo-500"></i> 접속 작업일보 — 작성
+          <i class="fas fa-plug text-indigo-500"></i> 접속 작업일보 — 작성 대상
         </h2>
-        <button onclick="renderSpliceReportForm(document.getElementById('page-content'), null, null)"
-                class="ml-auto text-sm px-4 py-2 rounded-xl text-white font-semibold hover:opacity-90 transition flex items-center gap-1"
-                style="background:linear-gradient(135deg,#685182,#4F46E5);">
-          <i class="fas fa-plus mr-1"></i>신규 작성
-        </button>
       </div>
       ${pending.length === 0
-        ? `<div class="text-center py-8 text-gray-400 text-sm">임시저장된 접속일보가 없습니다.<br>신규 작성을 눌러 작성하세요.</div>`
-        : `<p class="text-xs text-gray-400">임시저장 목록</p>` + pending.map(mkCard).join('')}
+        ? `<div class="text-center py-12 text-gray-400"><i class="fas fa-check-circle text-4xl mb-3 text-green-400 block"></i><p class="text-sm">작성 대상 접속 일보가 없습니다</p></div>`
+        : pending.map(renderCard).join('')}
     </div>`;
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
@@ -25790,7 +25814,7 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     const mkItemRow = (label, unit, has_aerial, saved) => {
       const night  = saved?.is_night  ? 'checked' : '';
       const aerial = saved?.is_aerial ? 'checked' : '';
-      const qty    = saved?.qty || '';
+      const qty    = (saved?.qty != null) ? saved.qty : 0;
       return `
       <tr class="hover:bg-purple-50 sri-row" data-key="${label}">
         <td class="border border-gray-200 px-2 py-1.5 text-xs text-gray-700 font-medium">${label}</td>

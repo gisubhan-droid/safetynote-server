@@ -24150,79 +24150,15 @@ document.addEventListener('DOMContentLoaded', init);
 let _workReportListData = [];
 
 // ═══════════════════════════════════════════════════════════════
-// 공량내역 — 외선/접속 통합 페이지 (상단 탭 전환)
+// 공량내역 — 공사건별 물량/금액 테이블 (물량통계 테이블과 동일 내용)
 // ═══════════════════════════════════════════════════════════════
 async function renderFieldReportPage(container) {
-  // 현재 활성 탭 유지 (DOM에서 읽거나 기본값 'cable')
-  const activeTab = document.getElementById('fr-outer-tab-state')?.value || 'cable';
-
-  // 탭 버튼 렌더
-  const outerTab = (id, icon, label, color, isActive) => {
-    const on  = `bg-white border-b-2 border-${color}-500 text-${color}-600 font-semibold`;
-    const off = `text-gray-400 hover:text-gray-600 bg-gray-50`;
-    return `<button class="flex-1 py-3 text-sm flex items-center justify-center gap-2 transition-all ${isActive ? on : off}"
-              onclick="_frSwitchOuterTab('${id}')">
-              <i class="${icon}"></i>${label}
-            </button>`;
-  };
-
-  // 외부 레이아웃 (탭 바 + 콘텐츠 영역)
-  container.innerHTML = `
-  <div class="max-w-4xl mx-auto">
-    <!-- 상단 외선/접속 탭 -->
-    <div class="flex border-b border-gray-200 bg-white sticky top-0 z-10">
-      ${outerTab('cable',  'fas fa-cable-car',  '외선', 'pink',   activeTab==='cable')}
-      ${outerTab('splice', 'fas fa-plug',        '접속', 'indigo', activeTab==='splice')}
-    </div>
-    <input type="hidden" id="fr-outer-tab-state" value="${activeTab}">
-    <!-- 각 탭 콘텐츠 -->
-    <div id="fr-pane-cable"  class="${activeTab==='cable'  ? '' : 'hidden'}"></div>
-    <div id="fr-pane-splice" class="${activeTab==='splice' ? '' : 'hidden'}"></div>
-  </div>`;
-
-  // 활성 탭 내용 로드
-  if (activeTab === 'cable') {
-    await renderWorkReportListPage(document.getElementById('fr-pane-cable'));
-  } else {
-    await renderSpliceReportListPage(document.getElementById('fr-pane-splice'));
-  }
-}
-
-async function _frSwitchOuterTab(tab) {
-  const stateEl = document.getElementById('fr-outer-tab-state');
-  if (stateEl) stateEl.value = tab;
-
-  ['cable','splice'].forEach(id => {
-    const pane = document.getElementById(`fr-pane-${id}`);
-    if (!pane) return;
-    pane.classList.toggle('hidden', id !== tab);
-  });
-
-  // 탭 버튼 스타일 갱신
-  const colors = { cable:'pink', splice:'indigo' };
-  ['cable','splice'].forEach(id => {
-    const btn = document.querySelector(`button[onclick="_frSwitchOuterTab('${id}')"]`);
-    if (!btn) return;
-    const isActive = id === tab;
-    const c = colors[id];
-    btn.className = btn.className
-      .replace(/bg-white|bg-gray-50|border-b-2|border-\S+-500|text-\S+-600|font-semibold|text-gray-400|hover:text-gray-600/g, '')
-      .trim();
-    if (isActive) {
-      btn.className += ` bg-white border-b-2 border-${c}-500 text-${c}-600 font-semibold`;
-    } else {
-      btn.className += ` text-gray-400 hover:text-gray-600 bg-gray-50`;
-    }
-  });
-
-  // 아직 로드 안 된 탭이면 데이터 로드
-  const pane = document.getElementById(`fr-pane-${tab}`);
-  if (pane && pane.innerHTML.trim() === '') {
-    if (tab === 'cable') {
-      await renderWorkReportListPage(pane);
-    } else {
-      await renderSpliceReportListPage(pane);
-    }
+  // 공량내역 = 물량통계 페이지와 동일 내용을 표시 (타이틀만 교체)
+  await renderVolumeStatsPage(container);
+  // 헤더 타이틀을 "공량내역"으로 교체
+  const h2 = container.querySelector('h2');
+  if (h2 && h2.textContent.includes('물량통계')) {
+    h2.innerHTML = `<i class="fas fa-list-alt text-pink-500"></i> 공량내역`;
   }
 }
 
@@ -24285,10 +24221,8 @@ async function _reportWriteSelectType(type) {
   const content = document.getElementById('page-content');
   if (!content) return;
   if (type === 'cable') {
-    // 외선: 작성대상 목록 표시 (작업 선택 → 폼으로 이동)
     await _reportWriteCableList(content);
   } else {
-    // 접속: 바로 신규 작성 폼 or 목록에서 선택
     await _reportWriteSpliceList(content);
   }
 }
@@ -24397,7 +24331,7 @@ async function _reportWriteSpliceList(container) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 외선 작업일보 목록 페이지 (공량내역 탭 내부용)
+// 외선 작업일보 목록 페이지 (공량내역 탭 내부용 — 작성완료 열람)
 // ═══════════════════════════════════════════════════════════════
 async function renderWorkReportListPage(container) {
   container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;

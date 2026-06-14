@@ -24405,11 +24405,16 @@ async function renderFieldReportPage(container) {
           </button>
         </div>
         <div id="fr-splice-result">
-          <div class="text-center text-gray-400 py-10 text-sm">조회 버튼을 눌러주세요</div>
+          <div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-indigo-400 text-xl"></i></div>
         </div>
       </div><!-- /fr-splice-section -->
 
     </div>`;
+
+    // 접속 탭이 활성이면 즉시 자동 조회
+    if (savedFrTab === 'splice') {
+      _frLoadSpliceStats();
+    }
 
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
@@ -24445,6 +24450,14 @@ function _frSwitchTab(tab) {
     spliceBtn.className = tab === 'splice'
       ? 'flex-1 py-2 text-center transition bg-indigo-50 text-indigo-700'
       : 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50';
+  }
+  // 접속 탭 전환 시 결과가 없으면 자동 조회
+  if (tab === 'splice') {
+    const resultDiv = document.getElementById('fr-splice-result');
+    const isEmpty = !resultDiv || resultDiv.innerHTML.includes('조회 버튼') || resultDiv.innerHTML.includes('fa-spinner');
+    if (isEmpty || !resultDiv?.querySelector('table')) {
+      _frLoadSpliceStats();
+    }
   }
 }
 
@@ -24514,33 +24527,47 @@ async function _frLoadSpliceStats() {
     resultDiv.innerHTML = `
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full text-xs border-collapse" style="min-width:600px">
+        <table class="w-full text-xs border-collapse" style="min-width:700px">
+          <colgroup>
+            <col style="width:88px">
+            <col style="width:90px">
+            <col style="width:110px">
+            <col style="width:72px">
+          </colgroup>
           <thead>
-            <tr class="bg-gray-50 text-gray-600">
-              <th class="border border-gray-200 px-2 py-2 text-center">완료일</th>
-              <th class="border border-gray-200 px-2 py-2 text-center">작업자(팀)</th>
-              <th class="border border-gray-200 px-2 py-2 text-center">요청번호</th>
-              <th class="border border-gray-200 px-2 py-2 text-center">구분</th>
-              ${spliceItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center bg-indigo-50 whitespace-nowrap">${k}</th>`).join('')}
+            <tr class="bg-indigo-700 text-white">
+              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap">완료일</th>
+              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap">작업자(팀)</th>
+              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap">요청번호</th>
+              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap">구분</th>
+              ${spliceItemKeys.map(k=>`<th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap bg-indigo-600">${k}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
-            ${spliceRows.map(row => {
+            ${spliceRows.map((row,ri) => {
               const sm = spliceMap[row.id] || {};
+              const bg = ri % 2 === 0 ? '' : 'bg-slate-50';
               return `
-              <tr class="hover:bg-gray-50 border-b border-gray-100">
-                <td class="border border-gray-100 px-2 py-1.5 text-center">${(row.work_date||'').slice(0,10)||'-'}</td>
-                <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
-                <td class="border border-gray-100 px-2 py-1.5 text-center">${row.request_no||'-'}</td>
-                <td class="border border-gray-100 px-2 py-1.5 text-center">${spliceWcLabel(row.construction_work_class)}</td>
-                ${spliceItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-indigo-50">${sm[k]||''}</td>`).join('')}
+              <tr class="hover:bg-indigo-50 border-b border-gray-100 ${bg}">
+                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap text-gray-700">${(row.work_date||'').slice(0,10)||'-'}</td>
+                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap text-gray-700">${row.worker_team||'-'}</td>
+                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap text-blue-700 font-medium">${row.request_no||'-'}</td>
+                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap">
+                  <span class="inline-block px-1.5 py-0.5 rounded text-xs font-semibold
+                    ${{ relocation:'bg-orange-100 text-orange-700', subscription:'bg-green-100 text-green-700',
+                         conduit:'bg-blue-100 text-blue-700', environment:'bg-purple-100 text-purple-700'
+                       }[row.construction_work_class] || 'bg-gray-100 text-gray-600'}">
+                    ${spliceWcLabel(row.construction_work_class)}
+                  </span>
+                </td>
+                ${spliceItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-1.5 text-right font-medium text-indigo-800">${sm[k]||''}</td>`).join('')}
               </tr>`;
             }).join('')}
           </tbody>
           <tfoot>
-            <tr class="bg-gray-100 font-bold text-gray-700">
-              <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
-              ${spliceItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-indigo-100">${spliceItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)||''}</td>`).join('')}
+            <tr class="bg-indigo-700 text-white font-bold">
+              <td class="border border-indigo-600 px-2 py-2 text-center" colspan="4">합 계</td>
+              ${spliceItemKeys.map(k=>`<td class="border border-indigo-600 px-2 py-2 text-right">${spliceItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)||''}</td>`).join('')}
             </tr>
           </tfoot>
         </table>

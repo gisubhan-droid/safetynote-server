@@ -1,12 +1,17 @@
-// SafetyNOTE Service Worker v7
-const STATIC_CACHE = 'sn-static-v7';
-const API_CACHE    = 'sn-api-v7';
+// SafetyNOTE Service Worker v8
+const STATIC_CACHE = 'sn-static-v8';
+const API_CACHE    = 'sn-api-v8';
 
-const PRECACHE = [
+// Network First 대상: 자주 업데이트되는 파일 (항상 서버에서 최신 버전을 받아옴)
+const NETWORK_FIRST_URLS = [
   '/',
   '/static/app.js',
   '/static/style.css',
   '/static/mobile-app.js',
+];
+
+// Cache First 대상 (거의 변경되지 않는 리소스만 PRECACHE)
+const PRECACHE = [
   '/static/manifest.json',
   '/static/app-icon.png',
   '/static/fonts/LGSmartKR-regular.woff2',
@@ -38,8 +43,8 @@ self.addEventListener('fetch', e => {
   if (url.pathname.startsWith('/sse'))      return;
   if (url.pathname.startsWith('/uploads/')) return;
 
+  // API: Network First (기존과 동일)
   if (url.pathname.startsWith('/api/')) {
-    // Network First
     e.respondWith(
       fetch(e.request)
         .then(res => {
@@ -48,20 +53,34 @@ self.addEventListener('fetch', e => {
         })
         .catch(() => caches.match(e.request).then(r => r || offlineJson()))
     );
-  } else {
-    // Cache First
-    e.respondWith(
-      caches.match(e.request).then(cached => {
-        if (cached) return cached;
-        return fetch(e.request)
-          .then(res => {
-            if (res.ok) caches.open(STATIC_CACHE).then(c => c.put(e.request, res.clone()));
-            return res;
-          })
-          .catch(() => offlinePage());
-      })
-    );
+    return;
   }
+
+  // app.js / style.css / mobile-app.js / 루트(/): Network First (항상 최신 버전)
+  if (NETWORK_FIRST_URLS.includes(url.pathname)) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          if (res.ok) caches.open(STATIC_CACHE).then(c => c.put(e.request, res.clone()));
+          return res;
+        })
+        .catch(() => caches.match(e.request).then(r => r || offlinePage()))
+    );
+    return;
+  }
+
+  // 기타 정적 파일 (폰트, 아이콘, manifest 등): Cache First
+  e.respondWith(
+    caches.match(e.request).then(cached => {
+      if (cached) return cached;
+      return fetch(e.request)
+        .then(res => {
+          if (res.ok) caches.open(STATIC_CACHE).then(c => c.put(e.request, res.clone()));
+          return res;
+        })
+        .catch(() => offlinePage());
+    })
+  );
 });
 
 function offlineJson() {

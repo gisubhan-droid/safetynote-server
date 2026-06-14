@@ -839,7 +839,23 @@ function patchSchema() {
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_lines       ON work_report_lines(report_id)`)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_cables      ON work_report_cables(report_id)`)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_other       ON work_report_other(report_id)`)
-    console.log('[patchSchema] v0.130w 외선작업일보 테이블 준비 완료')
+    // work_report_cables에 proc 컬럼 추가 (공정구분)
+    safeAlter(`ALTER TABLE work_report_cables ADD COLUMN proc TEXT DEFAULT ''`)
+    // work_report_cables에 remark 컬럼 추가 (특이사항)
+    safeAlter(`ALTER TABLE work_report_cables ADD COLUMN remark TEXT DEFAULT ''`)
+    // 추가입력(공종별 작업량) 테이블 생성
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS work_report_extras (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id  INTEGER NOT NULL,
+        set_no     INTEGER DEFAULT 1,
+        item_key   TEXT NOT NULL,
+        qty        REAL DEFAULT 0,
+        FOREIGN KEY (report_id) REFERENCES work_reports(id) ON DELETE CASCADE
+      )
+    `)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_extras ON work_report_extras(report_id)`)
+    console.log('[patchSchema] v0.131w 외선작업일보 proc/extras 컬럼 준비 완료')
   } catch(e: any) {
     if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.130w]', e.message)
   }
@@ -2476,7 +2492,8 @@ app.get('/api/work-reports/task/:taskId', async (c) => {
     SELECT o.*, wt.name, wt.unit, wt.sort_order FROM work_report_other o
     JOIN other_work_types wt ON wt.id=o.other_type_id WHERE o.report_id=? ORDER BY wt.sort_order
   `).all(rid)
-  return c.json({ report, lines, cables, others })
+  const extras = rawDb.prepare(`SELECT set_no, item_key, qty FROM work_report_extras WHERE report_id=? ORDER BY set_no, id`).all(rid)
+  return c.json({ report, lines, cables, others, extras })
 })
 
 // POST /api/work-reports
@@ -2520,10 +2537,25 @@ app.post('/api/work-reports', async (c) => {
   }
   if (Array.isArray(body.cables)) {
     rawDb.prepare(`DELETE FROM work_report_cables WHERE report_id=?`).run(reportId)
-    const cableStmt = rawDb.prepare(`INSERT INTO work_report_cables (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,start_point,end_point,usage_m,cable_kind,cable_code,special_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    const cableStmt = rawDb.prepare(`INSERT INTO work_report_cables (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     for (let i = 0; i < body.cables.length; i++) {
       const cb = body.cables[i]
-      cableStmt.run(reportId,i,cb.lot_no||'',cb.spec||0,cb.maker||'',cb.mfg_year||'',cb.cable_type||'',cb.work_div||'',cb.start_point||'',cb.end_point||'',cb.usage_m||0,cb.cable_kind||'',cb.cable_code||'',cb.special_note||'')
+      cableStmt.run(reportId,i,cb.lot_no||'',cb.spec||0,cb.maker||'',cb.mfg_year||'',cb.cable_type||'',cb.work_div||'',cb.start_point||'',cb.end_point||'',cb.usage_m||0,cb.cable_kind||'',cb.cable_code||'',cb.special_note||'',cb.proc||'',cb.remark||'')
+    }
+  }
+  // cable_sets의 extras(추가입력) 저장
+  if (Array.isArray(body.cable_sets)) {
+    rawDb.prepare(`DELETE FROM work_report_extras WHERE report_id=?`).run(reportId)
+    const extraStmt = rawDb.prepare(`INSERT INTO work_report_extras (report_id, set_no, item_key, qty) VALUES (?,?,?,?)`)
+    for (const cs of body.cable_sets) {
+      const setNo = cs.set_no || 1
+      if (Array.isArray(cs.extras)) {
+        for (const ex of cs.extras) {
+          if (ex.key && ex.qty > 0) {
+            extraStmt.run(reportId, setNo, ex.key, ex.qty)
+          }
+        }
+      }
     }
   }
   return c.json({ ok: true, reportId })

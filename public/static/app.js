@@ -24174,6 +24174,7 @@ async function renderWorkReportForm(container, taskId) {
     const lines   = reportRes.data.lines    || [];
     const cables  = reportRes.data.cables   || [];
     const confirms= reportRes.data.confirms || [];
+    const extras  = reportRes.data.extras   || [];
     const otherTypes = typesRes.data.types  || [];
 
     // 자동입력 값
@@ -24432,6 +24433,18 @@ async function renderWorkReportForm(container, taskId) {
     window._wrReportId   = reportId;
     window._wrTaskId     = taskId;
 
+    // 저장된 extras(추가입력) 값 복원 — set_no=1 기준 (현재 단일 세트 구조)
+    if (extras.length > 0) {
+      extras.forEach(ex => {
+        const sid = `cs${ex.set_no || 1}`;
+        const tbodyExtra = document.getElementById(`${sid}-extra-tbody`);
+        if (!tbodyExtra) return;
+        // data-key 속성으로 해당 입력 필드 찾아서 값 세팅
+        const input = tbodyExtra.querySelector(`.wre-qty[data-key="${ex.item_key}"]`);
+        if (input && ex.qty > 0) input.value = ex.qty;
+      });
+    }
+
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
@@ -24645,7 +24658,7 @@ function _wrAddCableRow(tbodyId) {
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS3}</select></td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS3}</select></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS3}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS3}</select></td>
     <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>

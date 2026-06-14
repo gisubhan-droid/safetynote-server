@@ -24157,6 +24157,16 @@ document.addEventListener('DOMContentLoaded', init);
 // 현장공량관리 — 외선일보 목록 페이지
 // ═══════════════════════════════════════════════════════════════
 let _workReportListData = [];
+// 공량내역 엑셀 다운로드용 전역 캐시
+let _frCacheRows      = [];
+let _frCacheExtras    = [];
+let _frCacheItemKeys  = [];
+let _frCachePriceMap  = {};
+let _frCacheIsWorker  = false;
+// 공량내역 접속탭 엑셀 다운로드용 전역 캐시
+let _frSpliceCacheRows     = [];
+let _frSpliceCacheItems    = [];
+let _frSpliceCacheItemKeys = [];
 
 // ═══════════════════════════════════════════════════════════════
 // 공량내역 — 조회조건 + 데이터 테이블 (요약카드/차트 없음)
@@ -24207,6 +24217,11 @@ async function renderFieldReportPage(container) {
     const priceMap = {};
     unitPrices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
     const isWorker = currentUser && currentUser.role === 'worker';
+    // 전역 캐시 저장 (엑셀 다운로드용)
+    _frCacheRows     = rows;
+    _frCacheExtras   = extras;
+    _frCachePriceMap = priceMap;
+    _frCacheIsWorker = isWorker;
 
     const frYears = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
     const savedFrMode = frMode; const savedFrMVal = frMVal;
@@ -24227,6 +24242,7 @@ async function renderFieldReportPage(container) {
     const existingKeys = new Set(extras.map(ex => ex.item_key));
     const allItemKeys = WR_EXTRA_ORDER.filter(k => existingKeys.has(k));
     extras.forEach(ex => { if (!WR_EXTRA_ORDER.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
+    _frCacheItemKeys = allItemKeys; // 전역 캐시 저장
 
     // ── 접속 통계 데이터 (접속 탭용) ──
     let spliceRows = [], spliceItems = [];
@@ -24486,6 +24502,10 @@ async function _frLoadSpliceStats() {
     const spliceRows  = res.data.rows  || [];
     const spliceItems = res.data.items || [];
     const spliceItemKeys = [...new Set(spliceItems.map(i => i.work_label))];
+    // 접속탭 전역 캐시 저장
+    _frSpliceCacheRows     = spliceRows;
+    _frSpliceCacheItems    = spliceItems;
+    _frSpliceCacheItemKeys = spliceItemKeys;
     const spliceMap = {};
     spliceItems.forEach(it => {
       if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
@@ -24537,8 +24557,101 @@ async function _frLoadSpliceStats() {
 }
 
 function downloadFieldReportCSV() {
-  // 현재 테이블 데이터를 CSV로 다운로드 (volume-stats CSV와 동일 로직)
-  downloadVolumeStatsCSV();
+  // 현재 활성 탭 확인
+  const activeTab = document.getElementById('fr-active-tab')?.value || 'cable';
+  const today = new Date().toISOString().slice(0,10);
+
+  if (activeTab === 'cable') {
+    // ── 외선 탭 CSV ──
+    if (!_frCacheRows || _frCacheRows.length === 0) {
+      alert('다운로드할 데이터가 없습니다. 먼저 조회해 주세요.'); return;
+    }
+    const baseHeaders = ['완료일','작업자(팀)','요청번호','구분','신설(M)','철거(M)','이설(M)'];
+    const extraHeaders = _frCacheItemKeys.slice();
+    const headers = _frCacheIsWorker
+      ? [...baseHeaders, ...extraHeaders]
+      : [...baseHeaders, ...extraHeaders, '합계금액(원)'];
+
+    const extrasMap = {};
+    _frCacheExtras.forEach(ex => {
+      if (!extrasMap[ex.report_id]) extrasMap[ex.report_id] = {};
+      extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
+    });
+
+    const rows = _frCacheRows.map(row => {
+      const exMap = extrasMap[row.report_id] || {};
+      const baseRow = [
+        (row.work_date||'').slice(0,10) || '-',
+        row.worker_team || '-',
+        row.request_no  || '-',
+        row.work_class  || '-',
+        (row.cable_new_m    || 0) > 0 ? (row.cable_new_m   ).toFixed(1) : '0',
+        (row.cable_remove_m || 0) > 0 ? (row.cable_remove_m).toFixed(1) : '0',
+        (row.cable_move_m   || 0) > 0 ? (row.cable_move_m  ).toFixed(1) : '0',
+      ];
+      const extraRow = _frCacheItemKeys.map(k => exMap[k] || 0);
+      if (_frCacheIsWorker) return [...baseRow, ...extraRow];
+      const amt =
+        (row.cable_new_m    ||0) * (_frCachePriceMap['cable_new']    ||0) +
+        (row.cable_remove_m ||0) * (_frCachePriceMap['cable_remove'] ||0) +
+        (row.cable_move_m   ||0) * (_frCachePriceMap['cable_move']   ||0) +
+        _frCacheItemKeys.reduce((s,k) => s + (exMap[k]||0)*(_frCachePriceMap[k]||0), 0);
+      return [...baseRow, ...extraRow, amt];
+    });
+    // 합계 행 추가
+    const totBase = [
+      '합계','','','',
+      _frCacheRows.reduce((s,r)=>s+(r.cable_new_m||0),0).toFixed(1),
+      _frCacheRows.reduce((s,r)=>s+(r.cable_remove_m||0),0).toFixed(1),
+      _frCacheRows.reduce((s,r)=>s+(r.cable_move_m||0),0).toFixed(1),
+    ];
+    const totExtra = _frCacheItemKeys.map(k =>
+      _frCacheExtras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)
+    );
+    if (!_frCacheIsWorker) {
+      const totAmt =
+        _frCacheRows.reduce((s,r)=>s+(r.cable_new_m||0),0)    * (_frCachePriceMap['cable_new']    ||0) +
+        _frCacheRows.reduce((s,r)=>s+(r.cable_remove_m||0),0) * (_frCachePriceMap['cable_remove'] ||0) +
+        _frCacheRows.reduce((s,r)=>s+(r.cable_move_m||0),0)   * (_frCachePriceMap['cable_move']   ||0) +
+        _frCacheItemKeys.reduce((s,k) => {
+          const q = _frCacheExtras.filter(ex=>ex.item_key===k).reduce((a,ex)=>a+(ex.qty||0),0);
+          return s + q*(_frCachePriceMap[k]||0);
+        },0);
+      rows.push([...totBase, ...totExtra, totAmt]);
+    } else {
+      rows.push([...totBase, ...totExtra]);
+    }
+    downloadCSV(`공량내역_외선_${today}.csv`, headers, rows);
+
+  } else {
+    // ── 접속 탭 CSV ──
+    if (!_frSpliceCacheRows || _frSpliceCacheRows.length === 0) {
+      alert('다운로드할 데이터가 없습니다. 먼저 [조회] 버튼을 눌러주세요.'); return;
+    }
+    const headers = ['작업일','작업팀','담당자', ..._frSpliceCacheItemKeys];
+    const spliceMap = {};
+    _frSpliceCacheItems.forEach(it => {
+      if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
+      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0)+(it.qty||0);
+    });
+    const rows = _frSpliceCacheRows.map(row => {
+      const sm = spliceMap[row.id] || {};
+      return [
+        (row.work_date||'').slice(0,10)||'-',
+        row.worker_team  ||'-',
+        row.manager_name ||'-',
+        ..._frSpliceCacheItemKeys.map(k => sm[k]||0)
+      ];
+    });
+    // 합계 행
+    const totRow = ['합계','','',
+      ..._frSpliceCacheItemKeys.map(k=>
+        _frSpliceCacheItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.qty||0),0)
+      )
+    ];
+    rows.push(totRow);
+    downloadCSV(`공량내역_접속_${today}.csv`, headers, rows);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

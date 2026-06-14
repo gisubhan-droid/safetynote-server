@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-14 (세션 21 — 완료)
-> **앱 현재 버전: v1.3.9** ← 최신 (⏳ NAS git pull + pm2 restart 필요)
+> 최종 업데이트: 2026-06-14 (세션 22 — 완료)
+> **앱 현재 버전: v1.4.0** ← 최신 (⏳ NAS git pull + pm2 restart 필요)
 > NAS 배포 버전: v1.3.1 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
 > **다음 작업**: NAS git pull + pm2 restart 적용 후 현장 테스트
 
@@ -37,10 +37,40 @@
 | **v1.3.7** | **2026-06-14** | ✅ **GitHub 배포 완료** | +행추가 버튼 버그 수정(_wrAddCableRow에서 `${SPEC_OPTS}`→`${SPEC_OPTS3}`), 버튼명 '메인 등록'→'제출', getPageTitle에 work-report/field-volume/volume-stats 추가(헤더 타이틀 코드 ID 표시 수정) (캐시 `v=20260612m`) |
 | **v1.3.8** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: `showToast`→`toast` 치환(임시저장/제출/행추가 버튼 완전 무반응 핵심 원인), +케이블추가 버튼 삭제, tasks 조회 범위 확대(working/work_completed/completed), SW 등록경로 `/service-worker.js` 수정 (캐시 `v=20260614a`) |
 | **v1.3.9** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: 외선일보 공정구분(proc) DB 저장, 추가입력(extras) 저장/복원, `YEAR_OPTS3` 오타 수정(행추가 버튼 최종 수정) — `work_report_extras` 테이블 신규 생성, `work_report_cables.proc/remark` 컬럼 추가 (`2e97d32`) |
+| **v1.4.0** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: 외선일보 목록 "완료된 작업 없음" 수정 (tasks.ts 응답 `{ tasks }` 래핑 + `work_reports` JOIN), 물량통계 500 에러 수정 (WHERE 절 `t` 별칭 중복 버그 + extras 기반 통계 재구성) (`8d6f0b6`) |
 
 ---
 
 ## 🔧 이슈별 수정 이력 (전체)
+
+---
+
+### ✅ [v1.4.0 / 세션22] 외선일보 목록 빈 화면 + 물량통계 500 에러 수정
+**날짜**: 2026-06-14  
+**커밋**: `8d6f0b6`  
+
+#### 문제 1: 외선일보 목록 → "완료된 작업이 없습니다" (작업이 있는데도)
+- **원인 1**: `tasks.ts` GET / 응답이 배열 직접 반환(`c.json(tasks)`) → 프론트에서 `res.data.tasks`로 접근 시 `undefined` → 빈 배열로 처리
+- **원인 2**: `tasks.ts` 쿼리에 `work_reports` JOIN 없음 → `report_id` 미반환 → "일보작성완료" 배지 표시 불가
+- **수정**:
+  - `src/routes/tasks.ts`: 반환 형식 `c.json(tasks)` → `c.json({ tasks })` 래핑
+  - `src/routes/tasks.ts`: 두 쿼리(일반/worker 모두) `LEFT JOIN work_reports wr ON wr.task_id = t.id` 추가, `wr.id as report_id` SELECT 추가
+  - `app.js`: `_taskListData = tasksRes.data` → `.tasks || []`, `tasksRes.data || []` → `.tasks || tasksRes.data || []` 3곳 안전 접근으로 수정
+
+#### 문제 2: 물량통계 (외선부분) → "로드 실패: Request failed with status code 500"
+- **원인 1**: `volume-stats` API에서 `otherRows` 쿼리가 `where.replace('WHERE', 'WHERE wr.id IS NOT NULL AND')` 치환 방식 사용 → `construction_id` 조건이 있으면 서브쿼리 내에 `t` 별칭이 이미 있는데 외부 쿼리도 `t`를 사용 → SQLite "ambiguous column name: t" 에러
+- **원인 2**: `work_report_lines.section_dist`, `pole_count` 등 컬럼을 서브쿼리로 참조 (확선내역 삭제 후 이 테이블이 항상 비어있으나 구조 자체는 문제 없음)
+- **수정**:
+  - `node-server.ts`: `otherTypes`, `otherRows`, `prices` 제거 → `extras`(추가입력) 기반으로 통계 재구성
+  - `node-server.ts`: `work_report_lines` 서브쿼리 전부 제거 → `cable_total`(전체 사용량 합계)만 조회
+  - `node-server.ts`: status 조건 `submitted,confirmed` → `draft,submitted,confirmed` (임시저장도 표시)
+  - `node-server.ts`: extras 쿼리에서 WHERE 절을 독립 서브쿼리로 분리 (별칭 충돌 완전 회피)
+  - `app.js`: `renderVolumeStatsPage` 전면 재작성 → extras 기반 동적 컬럼 테이블 (추가입력 항목이 헤더 컬럼으로 자동 표시)
+
+**변경 파일**:
+- `src/routes/tasks.ts`: 응답 래핑, work_reports JOIN 추가
+- `public/static/app.js`: _taskListData/tasks 안전 접근, renderVolumeStatsPage 재작성
+- `node-server.ts`: volume-stats API 재구성
 
 ---
 

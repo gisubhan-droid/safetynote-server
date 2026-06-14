@@ -25099,12 +25099,16 @@ async function renderVolumeStatsPage(container) {
           <!-- 월 선택 -->
           <input type="month" id="vs-period-month" value="${savedVsMVal}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedVsMode!=='month'?'hidden':''}">
           <button onclick="renderVolumeStatsPage(document.getElementById('page-content'))"
-                  class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600">
+                  class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600 vs-no-print">
             <i class="fas fa-search mr-1"></i>조회
           </button>
           <button onclick="downloadVolumeStatsCSV()"
-                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
+                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600 vs-no-print">
             <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
+          </button>
+          <button onclick="printVolumeStats()"
+                  class="bg-gray-600 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-gray-700 vs-no-print">
+            <i class="fas fa-print mr-1"></i>인쇄
           </button>
         </div>
       </div>
@@ -25132,13 +25136,8 @@ async function renderVolumeStatsPage(container) {
         <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
           <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-2">
             <i class="fas fa-chart-bar text-pink-400"></i> 날짜별 팀 현황
+            <span class="text-xs font-normal text-gray-400">(막대: 건수 &nbsp;/&nbsp; 선: 금액)</span>
           </h3>
-          <div class="flex gap-1 text-xs">
-            <button id="vs-chart-cnt" onclick="_vsToggleChart('count')"
-              class="px-3 py-1 rounded-full font-medium transition" style="background:#D70072;color:#fff">건수</button>
-            <button id="vs-chart-amt" onclick="_vsToggleChart('amount')"
-              class="px-3 py-1 rounded-full font-medium transition" style="background:#EDE7F6;color:#685182">금액</button>
-          </div>
         </div>
         <canvas id="vs-chart-main" height="160"></canvas>
       </div>` : ''}
@@ -25252,24 +25251,38 @@ async function renderVolumeStatsPage(container) {
         '#EF4444', '#8B5CF6'
       ];
 
-      // 팀별 dataset 생성 (건수/금액 둘 다 준비)
-      const datasetsCount  = allTeams.map((team, i) => ({
-        label: team,
+      // 팀별 dataset 생성 — 건수(bar, 좌축) + 팀 합산 금액선(line, 우축)
+      // 막대: 팀별 건수 (grouped)
+      const datasetsBar = allTeams.map((team, i) => ({
+        type: 'bar',
+        label: team + ' (건)',
         data: chartDates.map(d => (dateTeamMap[d][team]?.count  || 0)),
-        backgroundColor: TEAM_PALETTE[i % TEAM_PALETTE.length] + 'dd',
+        backgroundColor: TEAM_PALETTE[i % TEAM_PALETTE.length] + 'cc',
         borderColor:     TEAM_PALETTE[i % TEAM_PALETTE.length],
         borderWidth: 1,
         borderRadius: 4,
-        borderSkipped: false
+        borderSkipped: false,
+        yAxisID: 'yLeft',
+        order: 2
       }));
-      const datasetsAmount = allTeams.map((team, i) => ({
-        label: team,
+      // 선: 팀별 금액 (각 팀마다 점선)
+      const datasetsLine = isWorker ? [] : allTeams.map((team, i) => ({
+        type: 'line',
+        label: team + ' (원)',
         data: chartDates.map(d => (dateTeamMap[d][team]?.amount || 0)),
-        backgroundColor: TEAM_PALETTE[i % TEAM_PALETTE.length] + 'dd',
-        borderColor:     TEAM_PALETTE[i % TEAM_PALETTE.length],
-        borderWidth: 1,
-        borderRadius: 4,
-        borderSkipped: false
+        borderColor:          TEAM_PALETTE[i % TEAM_PALETTE.length],
+        backgroundColor:      TEAM_PALETTE[i % TEAM_PALETTE.length] + '22',
+        borderWidth: 2,
+        borderDash: [4, 3],
+        pointBackgroundColor: TEAM_PALETTE[i % TEAM_PALETTE.length],
+        pointBorderColor:     '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        tension: 0.3,
+        fill: false,
+        yAxisID: 'yRight',
+        order: 1
       }));
 
       // Chart.js CDN 동적 로드
@@ -25286,27 +25299,34 @@ async function renderVolumeStatsPage(container) {
       if (window._vsChartMain) { window._vsChartMain.destroy(); }
 
       window._vsChartMain = new Chart(ctxMain, {
-        type: 'bar',
-        data: { labels: chartDateLabels, datasets: datasetsCount },
+        data: {
+          labels: chartDateLabels,
+          datasets: [...datasetsBar, ...datasetsLine]
+        },
         options: {
           responsive: true,
           interaction: { mode: 'index', intersect: false },
           plugins: {
             legend: {
               position: 'bottom',
-              labels: { font: { size: 11 }, padding: 12, usePointStyle: true, pointStyle: 'circle' }
+              labels: {
+                font: { size: 11 }, padding: 10,
+                usePointStyle: true, pointStyle: 'circle',
+                // 금액선 legend 숨김 (isWorker 시 없으므로 항상 동작)
+                filter: item => !item.text.endsWith('(원)')
+              }
             },
             tooltip: {
               mode: 'index',
               intersect: false,
               callbacks: {
-                title: ctx => chartDates[ctx[0].dataIndex] || '',
+                title: ctx => chartDates[ctx[0]?.dataIndex] || '',
                 label: ctx => {
                   const v = ctx.parsed.y;
                   if (!v) return null;
-                  return window._vsChartMode === 'amount'
-                    ? ` ${ctx.dataset.label}: ${v.toLocaleString()}원`
-                    : ` ${ctx.dataset.label}: ${v}건`;
+                  if (ctx.dataset.yAxisID === 'yRight')
+                    return ` ${ctx.dataset.label.replace(' (원)','')} 금액: ${v.toLocaleString()}원`;
+                  return ` ${ctx.dataset.label.replace(' (건)','')} 건수: ${v}건`;
                 }
               }
             }
@@ -25316,24 +25336,34 @@ async function renderVolumeStatsPage(container) {
               grid: { display: false },
               ticks: { font: { size: 11 }, maxRotation: 30, color: '#9CA3AF' }
             },
-            y: {
+            yLeft: {
+              type: 'linear',
+              position: 'left',
               beginAtZero: true,
               grid: { color: '#F5F0F8' },
+              ticks: { font: { size: 10 }, stepSize: 1, callback: v => v + '건' },
+              title: { display: true, text: '건수', font: { size: 10 }, color: '#9CA3AF' }
+            },
+            yRight: {
+              type: 'linear',
+              position: 'right',
+              beginAtZero: true,
+              display: !isWorker,
+              grid: { drawOnChartArea: false },
               ticks: {
                 font: { size: 10 },
-                callback: v => window._vsChartMode === 'amount'
-                  ? (v >= 1000000 ? (v/10000).toLocaleString()+'만' : v.toLocaleString())
-                  : v + '건'
-              }
+                callback: v => v >= 10000 ? (v/10000).toLocaleString()+'만' : v.toLocaleString()
+              },
+              title: { display: !isWorker, text: '금액(원)', font: { size: 10 }, color: '#9CA3AF' }
             }
           }
         }
       });
 
-      // 전환용 데이터 저장
-      window._vsChartMode       = 'count';
-      window._vsChartDsCount    = datasetsCount;
-      window._vsChartDsAmount   = datasetsAmount;
+      // 전환용 데이터 저장 (이후 참조용)
+      window._vsChartMode       = 'both';
+      window._vsChartDsCount    = datasetsBar;
+      window._vsChartDsAmount   = datasetsLine;
       window._vsChartDateLabels = chartDateLabels;
       window._vsChartDates      = chartDates;
       window._vsIsWorker        = isWorker;
@@ -25344,35 +25374,15 @@ async function renderVolumeStatsPage(container) {
   }
 }
 
-// ─── 물량통계 차트 건수/금액 전환 ────────────────────────────────────────────
-function _vsToggleChart(mode) {
-  if (!window._vsChartMain) return;
-  if (mode === 'amount' && window._vsIsWorker) {
-    alert('근로자 계정은 금액 정보를 조회할 수 없습니다.');
-    return;
-  }
-  window._vsChartMode = mode;
-
-  const ds = mode === 'count' ? window._vsChartDsCount : window._vsChartDsAmount;
-  window._vsChartMain.data.datasets = ds;
-  // Y축 tick callback 갱신
-  window._vsChartMain.options.scales.y.ticks.callback = v =>
-    mode === 'amount'
-      ? (v >= 10000 ? (v/10000).toLocaleString()+'만' : v.toLocaleString())
-      : v + '건';
-  window._vsChartMain.update();
-
-  // 버튼 스타일
-  const btnCnt = document.getElementById('vs-chart-cnt');
-  const btnAmt = document.getElementById('vs-chart-amt');
-  if (btnCnt) btnCnt.style.cssText = mode==='count'  ? 'background:#D70072;color:#fff' : 'background:#EDE7F6;color:#685182';
-  if (btnAmt) btnAmt.style.cssText = mode==='amount' ? 'background:#685182;color:#fff' : 'background:#EDE7F6;color:#685182';
-}
+// ─── 물량통계 차트 (레거시 stub — dual-axis 전환 후 미사용) ──────────────────
+function _vsToggleChart(mode) { /* dual-axis로 대체 — 건수+금액 동시 표시 */ }
 
 // ─── 물량통계 엑셀 다운로드 ─────────────────────────────────────────────────
 function downloadVolumeStatsCSV() {
-  const { rows, extras, allItemKeys } = _volumeStatsCache;
+  const { rows, extras, allItemKeys, priceMap } = _volumeStatsCache;
   if (!rows || rows.length === 0) { alert('다운로드할 데이터가 없습니다. 먼저 조회해 주세요.'); return; }
+
+  const isWorker = currentUser && currentUser.role === 'worker';
 
   // extras를 report_id → { item_key: qty } 맵으로 변환
   const extrasMap = {};
@@ -25382,11 +25392,25 @@ function downloadVolumeStatsCSV() {
   });
 
   const fixedHeaders = ['완료일','작업자(팀)','요청번호','구분','신설(M)','철거(M)','이설(M)'];
-  const headers = [...fixedHeaders, ...allItemKeys];
+  const headers = [
+    ...fixedHeaders,
+    ...allItemKeys,
+    ...(!isWorker ? ['합계금액(원)'] : [])
+  ];
+
+  // 행별 금액 계산 함수
+  const calcAmt = (row) => {
+    const exMap = extrasMap[row.report_id] || {};
+    return (row.cable_new_m    ||0) * (priceMap?.['cable_new']    ||0) +
+           (row.cable_remove_m ||0) * (priceMap?.['cable_remove'] ||0) +
+           (row.cable_move_m   ||0) * (priceMap?.['cable_move']   ||0) +
+           allItemKeys.reduce((s,k) => s + (exMap[k]||0)*(priceMap?.[k]||0), 0);
+  };
 
   // 데이터 행
   const dataRows = rows.map(row => {
     const exMap = extrasMap[row.report_id] || {};
+    const amt   = calcAmt(row);
     return [
       (row.work_date||'').slice(0,10) || '-',
       row.worker_team || '-',
@@ -25395,22 +25419,175 @@ function downloadVolumeStatsCSV() {
       (row.cable_new_m    || 0) > 0 ? (row.cable_new_m||0).toFixed(1)    : '',
       (row.cable_remove_m || 0) > 0 ? (row.cable_remove_m||0).toFixed(1) : '',
       (row.cable_move_m   || 0) > 0 ? (row.cable_move_m||0).toFixed(1)   : '',
-      ...allItemKeys.map(k => exMap[k] != null ? exMap[k] : '')
+      ...allItemKeys.map(k => exMap[k] != null ? exMap[k] : ''),
+      ...(!isWorker ? [amt > 0 ? amt : ''] : [])
     ];
   });
 
   // 합계 행
+  const totalAmt = rows.reduce((s,r) => s + calcAmt(r), 0);
   const totals = [
     '합 계', '', '', '',
     rows.reduce((s,r) => s + (r.cable_new_m||0),    0).toFixed(1),
     rows.reduce((s,r) => s + (r.cable_remove_m||0), 0).toFixed(1),
     rows.reduce((s,r) => s + (r.cable_move_m||0),   0).toFixed(1),
-    ...allItemKeys.map(k => extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0) || '')
+    ...allItemKeys.map(k => extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0) || ''),
+    ...(!isWorker ? [totalAmt > 0 ? totalAmt : ''] : [])
   ];
   dataRows.push(totals);
 
   const today = new Date().toISOString().slice(0,10);
   downloadCSV(`물량통계_외선부분_${today}.csv`, headers, dataRows);
+}
+
+// ─── 물량통계 인쇄 ───────────────────────────────────────────────────────────
+function printVolumeStats() {
+  const { rows, extras, allItemKeys, priceMap } = _volumeStatsCache;
+  if (!rows || rows.length === 0) { alert('인쇄할 데이터가 없습니다. 먼저 조회해 주세요.'); return; }
+
+  const isWorker = currentUser && currentUser.role === 'worker';
+
+  // extras 맵
+  const extrasMap = {};
+  extras.forEach(ex => {
+    if (!extrasMap[ex.report_id]) extrasMap[ex.report_id] = {};
+    extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
+  });
+
+  // 금액 계산
+  const calcAmt = (row) => {
+    const exMap = extrasMap[row.report_id] || {};
+    return (row.cable_new_m    ||0)*(priceMap?.['cable_new']   ||0) +
+           (row.cable_remove_m ||0)*(priceMap?.['cable_remove']||0) +
+           (row.cable_move_m   ||0)*(priceMap?.['cable_move']  ||0) +
+           allItemKeys.reduce((s,k)=>s+(exMap[k]||0)*(priceMap?.[k]||0),0);
+  };
+
+  const totalCableNew    = rows.reduce((s,r)=>s+(r.cable_new_m||0),0);
+  const totalCableRemove = rows.reduce((s,r)=>s+(r.cable_remove_m||0),0);
+  const totalCableMove   = rows.reduce((s,r)=>s+(r.cable_move_m||0),0);
+  const totalAmt         = rows.reduce((s,r)=>s+calcAmt(r),0);
+
+  // 그래프 이미지 (canvas → base64)
+  const chartCanvas = document.getElementById('vs-chart-main');
+  const chartImg    = chartCanvas ? chartCanvas.toDataURL('image/png') : null;
+
+  // 조회 조건 텍스트
+  const modeEl  = document.getElementById('vs-period-mode');
+  const modeMap = { month:'월별', quarter:'분기별', year:'연도별', all:'전체' };
+  const modeStr = modeMap[modeEl?.value] || '전체';
+  const consEl  = document.getElementById('vs-construction');
+  const consStr = consEl?.options[consEl.selectedIndex]?.text || '전체 공사';
+  const periodStr = (() => {
+    const m = modeEl?.value;
+    if (m==='month')   return document.getElementById('vs-period-month')?.value || '';
+    if (m==='year')    return document.getElementById('vs-period-year')?.value + '년' || '';
+    if (m==='quarter') {
+      const y = document.getElementById('vs-period-year')?.value;
+      const q = document.getElementById('vs-period-quarter')?.value;
+      return y && q ? `${y}년 Q${q}` : '';
+    }
+    return '전체';
+  })();
+
+  const thStyle  = 'border:1px solid #ccc;padding:4px 6px;background:#f8f8f8;font-size:11px;text-align:center;white-space:nowrap';
+  const tdStyle  = 'border:1px solid #ccc;padding:3px 6px;font-size:11px;text-align:center;white-space:nowrap';
+  const tdRStyle = 'border:1px solid #ccc;padding:3px 6px;font-size:11px;text-align:right;white-space:nowrap';
+  const tfStyle  = 'border:1px solid #ccc;padding:4px 6px;font-size:11px;font-weight:bold;text-align:right;background:#f0f0f0;white-space:nowrap';
+
+  const headerRow = `
+    <th style="${thStyle}">완료일</th>
+    <th style="${thStyle}">작업자(팀)</th>
+    <th style="${thStyle}">요청번호</th>
+    <th style="${thStyle}">구분</th>
+    <th style="${thStyle}">신설(M)</th>
+    <th style="${thStyle}">철거(M)</th>
+    <th style="${thStyle}">이설(M)</th>
+    ${allItemKeys.map(k=>`<th style="${thStyle}">${k}</th>`).join('')}
+    ${!isWorker?`<th style="${thStyle}">합계금액(원)</th>`:''}
+  `;
+
+  const dataRowsHtml = rows.map(row => {
+    const exMap = extrasMap[row.report_id] || {};
+    const amt   = calcAmt(row);
+    return `<tr>
+      <td style="${tdStyle}">${(row.work_date||'').slice(0,10)||'-'}</td>
+      <td style="${tdStyle}">${row.worker_team||'-'}</td>
+      <td style="${tdStyle}">${row.request_no||'-'}</td>
+      <td style="${tdStyle}">${row.work_class||'-'}</td>
+      <td style="${tdRStyle}">${(row.cable_new_m||0)>0?(row.cable_new_m||0).toFixed(1):''}</td>
+      <td style="${tdRStyle}">${(row.cable_remove_m||0)>0?(row.cable_remove_m||0).toFixed(1):''}</td>
+      <td style="${tdRStyle}">${(row.cable_move_m||0)>0?(row.cable_move_m||0).toFixed(1):''}</td>
+      ${allItemKeys.map(k=>`<td style="${tdRStyle}">${exMap[k]||''}</td>`).join('')}
+      ${!isWorker?`<td style="${tdRStyle}">${amt>0?amt.toLocaleString():''}</td>`:''}
+    </tr>`;
+  }).join('');
+
+  const totalRow = `<tr>
+    <td style="${tfStyle}" colspan="4">합 계</td>
+    <td style="${tfStyle}">${totalCableNew.toFixed(1)}</td>
+    <td style="${tfStyle}">${totalCableRemove.toFixed(1)}</td>
+    <td style="${tfStyle}">${totalCableMove.toFixed(1)}</td>
+    ${allItemKeys.map(k=>`<td style="${tfStyle}">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`).join('')}
+    ${!isWorker?`<td style="${tfStyle}">${totalAmt>0?totalAmt.toLocaleString():''}</td>`:''}
+  </tr>`;
+
+  const printDate = new Date().toLocaleDateString('ko-KR');
+
+  const html = `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<title>물량통계 — 외선부분</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Malgun Gothic', sans-serif; font-size: 12px; margin: 0; padding: 16px; color: #111; }
+  h1   { font-size: 16px; font-weight: bold; margin: 0 0 4px; }
+  .meta { font-size: 11px; color: #555; margin-bottom: 12px; }
+  .summary { display: flex; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+  .summary-card { border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; min-width: 110px; }
+  .summary-card .lbl { font-size: 10px; color: #888; }
+  .summary-card .val { font-size: 14px; font-weight: bold; }
+  .chart-wrap { margin-bottom: 14px; page-break-inside: avoid; }
+  .chart-wrap img { max-width: 100%; border: 1px solid #eee; border-radius: 6px; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
+  @media print {
+    @page { size: A4 landscape; margin: 10mm; }
+    body { padding: 0; }
+    button { display: none !important; }
+  }
+</style>
+</head><body>
+  <h1>물량통계 — 외선부분</h1>
+  <div class="meta">
+    조회조건: ${consStr} &nbsp;|&nbsp; ${modeStr} ${periodStr}
+    &nbsp;&nbsp;&nbsp; 인쇄일: ${printDate}
+    &nbsp;&nbsp;&nbsp; 총 ${rows.length}건
+  </div>
+
+  <!-- 요약 카드 -->
+  <div class="summary">
+    <div class="summary-card"><div class="lbl">총 건수</div><div class="val">${rows.length}건</div></div>
+    <div class="summary-card"><div class="lbl">광케이블 신설</div><div class="val">${totalCableNew.toFixed(1)}M</div></div>
+    <div class="summary-card"><div class="lbl">광케이블 철거</div><div class="val">${totalCableRemove.toFixed(1)}M</div></div>
+    ${!isWorker?`<div class="summary-card"><div class="lbl">합계금액</div><div class="val">${totalAmt.toLocaleString()}원</div></div>`:''}
+  </div>
+
+  <!-- 그래프 -->
+  ${chartImg ? `<div class="chart-wrap"><img src="${chartImg}" /></div>` : ''}
+
+  <!-- 데이터 테이블 -->
+  <table>
+    <thead><tr>${headerRow}</tr></thead>
+    <tbody>${dataRowsHtml}</tbody>
+    <tfoot>${totalRow}</tfoot>
+  </table>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=1100,height=800');
+  if (!w) { alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해 주세요.'); return; }
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 600);
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -24313,18 +24313,38 @@ async function renderFieldReportPage(container) {
         <!-- 데이터 테이블 -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="overflow-x-auto">
-            <table class="w-full text-xs border-collapse" style="min-width:700px">
+            <table id="fr-cable-table" class="w-full text-xs border-collapse" style="min-width:700px">
               <thead>
                 <tr class="bg-gray-50 text-gray-600">
-                  <th class="border border-gray-200 px-2 py-2 text-center">완료일</th>
-                  <th class="border border-gray-200 px-2 py-2 text-center">작업자(팀)</th>
-                  <th class="border border-gray-200 px-2 py-2 text-center">요청번호</th>
-                  <th class="border border-gray-200 px-2 py-2 text-center">구분</th>
-                  <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">신설<br>(M)</th>
-                  <th class="border border-gray-200 px-2 py-2 text-center bg-red-50">철거<br>(M)</th>
-                  <th class="border border-gray-200 px-2 py-2 text-center bg-purple-50">이설<br>(M)</th>
-                  ${allItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center bg-orange-50">${k}</th>`).join('')}
-                  ${!isWorker ? `<th class="border border-gray-200 px-2 py-2 text-center bg-green-50 font-bold">합계금액(원)</th>` : ''}
+                  ${(() => {
+                    // 외선 컬럼 숨김 상태
+                    const cableHidden = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
+                    // 컬럼 인덱스: 0:완료일, 1:작업자, 2:요청번호, 3:구분, 4:신설, 5:철거, 6:이설, 7+:공종, 마지막:합계금액
+                    const cableAmtIdx = 7 + allItemKeys.length;
+                    const cHideBtn = ci => `<button onclick="_frCableToggleCol(${ci})" title="이 컬럼 숨기기"
+                      style="margin-left:4px;opacity:0.5;font-size:10px;line-height:1;vertical-align:middle;cursor:pointer;"
+                      onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'">✕</button>`;
+                    const fixedThs = [
+                      { ci:0, cls:'border border-gray-200 px-2 py-2 text-center', lbl:'완료일' },
+                      { ci:1, cls:'border border-gray-200 px-2 py-2 text-center', lbl:'작업자(팀)' },
+                      { ci:2, cls:'border border-gray-200 px-2 py-2 text-center', lbl:'요청번호' },
+                      { ci:3, cls:'border border-gray-200 px-2 py-2 text-center', lbl:'구분' },
+                      { ci:4, cls:'border border-gray-200 px-2 py-2 text-center bg-blue-50', lbl:'신설<br>(M)' },
+                      { ci:5, cls:'border border-gray-200 px-2 py-2 text-center bg-red-50',  lbl:'철거<br>(M)' },
+                      { ci:6, cls:'border border-gray-200 px-2 py-2 text-center bg-purple-50', lbl:'이설<br>(M)' },
+                    ];
+                    return fixedThs.map(({ci,cls,lbl}) =>
+                      `<th class="${cls}" data-col-idx="${ci}"
+                        style="${cableHidden.includes(ci)?'display:none':''}">${lbl}${cHideBtn(ci)}</th>`
+                    ).join('') +
+                    allItemKeys.map((k,ki) => {
+                      const ci = 7 + ki;
+                      return `<th class="border border-gray-200 px-2 py-2 text-center bg-orange-50" data-col-idx="${ci}"
+                        style="${cableHidden.includes(ci)?'display:none':''}">${k}${cHideBtn(ci)}</th>`;
+                    }).join('') +
+                    (!isWorker ? `<th class="border border-gray-200 px-2 py-2 text-center bg-green-50 font-bold" data-col-idx="${cableAmtIdx}"
+                      style="${cableHidden.includes(cableAmtIdx)?'display:none':''}">합계금액(원)${cHideBtn(cableAmtIdx)}</th>` : '');
+                  })()}
                 </tr>
               </thead>
               <tbody>
@@ -24337,43 +24357,64 @@ async function renderFieldReportPage(container) {
                         (row.cable_remove_m ||0) * (priceMap['cable_remove'] ||0) +
                         (row.cable_move_m   ||0) * (priceMap['cable_move']   ||0) +
                         allItemKeys.reduce((s,k) => s + (exMap[k]||0)*(priceMap[k]||0), 0);
+                      const cableHiddenRow = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
+                      const cableAmtIdxRow = 7 + allItemKeys.length;
+                      const ds = ci => cableHiddenRow.includes(ci) ? 'display:none' : '';
                       return `
                       <tr class="hover:bg-gray-50 border-b border-gray-100">
-                        <td class="border border-gray-100 px-2 py-1.5 text-center">${(row.work_date||'').slice(0,10)||'-'}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-center">${row.request_no||'-'}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-center">${row.work_class||'-'}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50">${fmtM(row.cable_new_m)}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50">${fmtM(row.cable_remove_m)}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50">${fmtM(row.cable_move_m)}</td>
-                        ${allItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-orange-50">${exMap[k]||''}</td>`).join('')}
-                        ${!isWorker ? `<td class="border border-gray-100 px-2 py-1.5 text-right bg-green-50 font-semibold">${rowAmt>0?rowAmt.toLocaleString():''}</td>` : ''}
+                        <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="0" style="${ds(0)}">${(row.work_date||'').slice(0,10)||'-'}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="1" style="${ds(1)}">${row.worker_team||'-'}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="2" style="${ds(2)}">${row.request_no||'-'}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="3" style="${ds(3)}">${row.work_class||'-'}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50"  data-col-idx="4" style="${ds(4)}">${fmtM(row.cable_new_m)}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50"   data-col-idx="5" style="${ds(5)}">${fmtM(row.cable_remove_m)}</td>
+                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50" data-col-idx="6" style="${ds(6)}">${fmtM(row.cable_move_m)}</td>
+                        ${allItemKeys.map((k,ki) => {
+                          const ci = 7+ki;
+                          return `<td class="border border-gray-100 px-2 py-1.5 text-right bg-orange-50" data-col-idx="${ci}" style="${ds(ci)}">${exMap[k]||''}</td>`;
+                        }).join('')}
+                        ${!isWorker ? `<td class="border border-gray-100 px-2 py-1.5 text-right bg-green-50 font-semibold" data-col-idx="${cableAmtIdxRow}" style="${ds(cableAmtIdxRow)}">${rowAmt>0?rowAmt.toLocaleString():''}</td>` : ''}
                       </tr>`;
                     }).join('')}
               </tbody>
               ${rows.length > 0 ? `
               <tfoot>
-                <tr class="bg-gray-100 font-bold text-gray-700">
-                  <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
-                  <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_new_m||0),0))}</td>
-                  <td class="border border-gray-200 px-2 py-2 text-right bg-red-100">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_remove_m||0),0))}</td>
-                  <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_move_m||0),0))}</td>
-                  ${allItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right bg-orange-100">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`).join('')}
-                  ${!isWorker ? (() => {
-                    const totalAmt =
-                      rows.reduce((s,r)=>s+(r.cable_new_m||0),0)    * (priceMap['cable_new']    ||0) +
-                      rows.reduce((s,r)=>s+(r.cable_remove_m||0),0) * (priceMap['cable_remove'] ||0) +
-                      rows.reduce((s,r)=>s+(r.cable_move_m||0),0)   * (priceMap['cable_move']   ||0) +
-                      allItemKeys.reduce((s,k) => {
-                        const qtySum = extras.filter(ex=>ex.item_key===k).reduce((a,ex)=>a+(ex.qty||0),0);
-                        return s + qtySum * (priceMap[k]||0);
-                      }, 0);
-                    return `<td class="border border-gray-200 px-2 py-2 text-right bg-green-100 text-green-800">${totalAmt>0?totalAmt.toLocaleString():''}</td>`;
-                  })() : ''}
-                </tr>
+                ${(() => {
+                  const cableHiddenFt = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
+                  const cableAmtIdxFt = 7 + allItemKeys.length;
+                  const dsf = ci => cableHiddenFt.includes(ci) ? 'display:none' : '';
+                  const totalAmt = !isWorker ? (
+                    rows.reduce((s,r)=>s+(r.cable_new_m||0),0)    * (priceMap['cable_new']    ||0) +
+                    rows.reduce((s,r)=>s+(r.cable_remove_m||0),0) * (priceMap['cable_remove'] ||0) +
+                    rows.reduce((s,r)=>s+(r.cable_move_m||0),0)   * (priceMap['cable_move']   ||0) +
+                    allItemKeys.reduce((s,k) => {
+                      const q = extras.filter(ex=>ex.item_key===k).reduce((a,ex)=>a+(ex.qty||0),0);
+                      return s + q * (priceMap[k]||0);
+                    }, 0)
+                  ) : 0;
+                  return `<tr class="bg-gray-100 font-bold text-gray-700">
+                    <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
+                    <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100"  data-col-idx="4" style="${dsf(4)}">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_new_m||0),0))}</td>
+                    <td class="border border-gray-200 px-2 py-2 text-right bg-red-100"   data-col-idx="5" style="${dsf(5)}">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_remove_m||0),0))}</td>
+                    <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100" data-col-idx="6" style="${dsf(6)}">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_move_m||0),0))}</td>
+                    ${allItemKeys.map((k,ki)=>{
+                      const ci=7+ki;
+                      return `<td class="border border-gray-200 px-2 py-2 text-right bg-orange-100" data-col-idx="${ci}" style="${dsf(ci)}">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`;
+                    }).join('')}
+                    ${!isWorker ? `<td class="border border-gray-200 px-2 py-2 text-right bg-green-100 text-green-800" data-col-idx="${cableAmtIdxFt}" style="${dsf(cableAmtIdxFt)}">${totalAmt>0?totalAmt.toLocaleString():''}</td>` : ''}
+                  </tr>`;
+                })()}
               </tfoot>` : ''}
             </table>
           </div>
+          ${(() => {
+            const cableHiddenChk = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
+            return cableHiddenChk.length > 0 ? `
+            <div class="px-3 py-1.5 bg-pink-50 border-t border-pink-100 text-xs text-pink-600 flex items-center gap-2 flex-wrap">
+              <span><i class="fas fa-eye-slash mr-1"></i>숨김 컬럼 있음</span>
+              <button onclick="_frCableShowAllCols()" class="underline hover:text-pink-800">모두 표시</button>
+            </div>` : '';
+          })()}
         </div>
         <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보가 표시됩니다 &nbsp;|
           <button onclick="renderCableDetailPage(document.getElementById('page-content'))" class="text-blue-500 hover:underline ml-1">광케이블 상세 현황 보기 →</button>
@@ -24461,6 +24502,19 @@ function _frSwitchTab(tab) {
   }
 }
 
+// ── 외선 탭 컬럼 숨김 토글 ──
+function _frCableToggleCol(colIdx) {
+  const hidden = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
+  const idx = hidden.indexOf(colIdx);
+  if (idx === -1) hidden.push(colIdx); else hidden.splice(idx, 1);
+  localStorage.setItem('fr_cable_hidden_cols', JSON.stringify(hidden));
+  renderFieldReportPage(document.getElementById('page-content'));
+}
+function _frCableShowAllCols() {
+  localStorage.removeItem('fr_cable_hidden_cols');
+  renderFieldReportPage(document.getElementById('page-content'));
+}
+
 function _frSplicePeriodUI() {
   const mode = document.getElementById('fr-splice-period-mode')?.value;
   if (!mode) return;
@@ -24502,14 +24556,25 @@ async function _frLoadSpliceStats() {
     if (toDate)    params.push(`to_date=${toDate}`);
     const qs = params.length ? '?' + params.join('&') : '';
 
-    const res = await API.get('/splice-reports/stats' + qs);
+    // ── splice-reports/stats + splice-unit-prices 병렬 로드 ──
+    const [res, priceRes] = await Promise.all([
+      API.get('/splice-reports/stats' + qs),
+      API.get('/splice-unit-prices').catch(() => ({ data: { prices: [] } }))
+    ]);
     const spliceRows  = res.data.rows  || [];
     const spliceItems = res.data.items || [];
     const spliceItemKeys = [...new Set(spliceItems.map(i => i.work_label))];
-    // 접속탭 전역 캐시 저장
-    _frSpliceCacheRows     = spliceRows;
-    _frSpliceCacheItems    = spliceItems;
-    _frSpliceCacheItemKeys = spliceItemKeys;
+
+    // splice 단가 맵: item_key(공백 없음) → unit_price
+    const splicePriceMap = {};
+    (priceRes.data.prices || []).forEach(p => { splicePriceMap[p.item_key] = p.unit_price || 0; });
+
+    // 접속탭 전역 캐시 저장 (CSV 다운로드용)
+    _frSpliceCacheRows      = spliceRows;
+    _frSpliceCacheItems     = spliceItems;
+    _frSpliceCacheItemKeys  = spliceItemKeys;
+    _frSpliceCachePriceMap  = splicePriceMap;
+
     const spliceMap = {};
     spliceItems.forEach(it => {
       if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
@@ -24521,38 +24586,86 @@ async function _frLoadSpliceStats() {
       return;
     }
 
-    // 공사종류(work_class) 코드 → 한글 (WC_LABEL과 동일한 매핑)
+    const isWorker = currentUser && currentUser.role === 'worker';
+
+    // 공사종류(work_class) 코드 → 한글
     const spliceWcLabel = wc => ({ relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' }[wc] || wc || '-');
+
+    // work_label(공백 있음) → item_key(공백 없음) 변환 함수
+    const labelToKey = label => (label||'').replace(/ /g,'').replace(/\//g,'');
+
+    // localStorage에서 숨김 컬럼 상태 불러오기
+    const spliceHiddenCols = JSON.parse(localStorage.getItem('fr_splice_hidden_cols') || '[]');
+
+    // 접속 공종 컬럼 인덱스: 4번부터 (0:완료일, 1:작업자, 2:요청번호, 3:구분, 4+:공종, 마지막:합계금액)
+    const amtColIdx = 4 + spliceItemKeys.length; // 합계금액 컬럼 인덱스
+
+    // ── 합계금액 총합 계산 ──
+    let totalAmt = 0;
+    spliceRows.forEach(row => {
+      const sm = spliceMap[row.id] || {};
+      const rowAmt = isWorker ? 0 : spliceItemKeys.reduce((s,k) => s + (sm[k]||0) * (splicePriceMap[labelToKey(k)]||0), 0);
+      totalAmt += rowAmt;
+    });
+
+    // ── 숨김 버튼 헬퍼 ──
+    const hideBtn = (colIdx) =>
+      `<button onclick="_frSpliceToggleCol(${colIdx})" title="이 컬럼 숨기기"
+        style="margin-left:4px;opacity:0.55;font-size:10px;line-height:1;vertical-align:middle;cursor:pointer;"
+        onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.55'">✕</button>`;
 
     resultDiv.innerHTML = `
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full text-xs border-collapse" style="min-width:700px">
+        <table id="fr-splice-table" class="w-full text-xs border-collapse" style="min-width:700px">
           <colgroup>
             <col style="width:88px">
             <col style="width:90px">
             <col style="width:110px">
             <col style="width:72px">
+            ${spliceItemKeys.map(() => `<col style="width:70px">`).join('')}
+            ${!isWorker ? `<col style="width:90px">` : ''}
           </colgroup>
           <thead>
             <tr class="bg-indigo-700 text-white">
-              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap">완료일</th>
-              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap">작업자(팀)</th>
-              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap">요청번호</th>
-              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap">구분</th>
-              ${spliceItemKeys.map(k=>`<th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap bg-indigo-600">${k}</th>`).join('')}
+              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap" data-col-idx="0"
+                style="${spliceHiddenCols.includes(0)?'display:none':''}">
+                완료일${hideBtn(0)}</th>
+              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap" data-col-idx="1"
+                style="${spliceHiddenCols.includes(1)?'display:none':''}">
+                작업자(팀)${hideBtn(1)}</th>
+              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap" data-col-idx="2"
+                style="${spliceHiddenCols.includes(2)?'display:none':''}">
+                요청번호${hideBtn(2)}</th>
+              <th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap" data-col-idx="3"
+                style="${spliceHiddenCols.includes(3)?'display:none':''}">
+                구분${hideBtn(3)}</th>
+              ${spliceItemKeys.map((k,ki) => {
+                const ci = 4 + ki;
+                return `<th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap bg-indigo-600" data-col-idx="${ci}"
+                  style="${spliceHiddenCols.includes(ci)?'display:none':''}">
+                  ${k}${hideBtn(ci)}</th>`;
+              }).join('')}
+              ${!isWorker ? `<th class="border border-indigo-600 px-2 py-2 text-center whitespace-nowrap bg-green-700" data-col-idx="${amtColIdx}"
+                style="${spliceHiddenCols.includes(amtColIdx)?'display:none':''}">
+                합계금액(원)${hideBtn(amtColIdx)}</th>` : ''}
             </tr>
           </thead>
           <tbody>
             ${spliceRows.map((row,ri) => {
               const sm = spliceMap[row.id] || {};
+              const rowAmt = isWorker ? 0 : spliceItemKeys.reduce((s,k) => s + (sm[k]||0) * (splicePriceMap[labelToKey(k)]||0), 0);
               const bg = ri % 2 === 0 ? '' : 'bg-slate-50';
               return `
               <tr class="hover:bg-indigo-50 border-b border-gray-100 ${bg}">
-                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap text-gray-700">${(row.work_date||'').slice(0,10)||'-'}</td>
-                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap text-gray-700">${row.worker_team||'-'}</td>
-                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap text-blue-700 font-medium">${row.request_no||'-'}</td>
-                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap">
+                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap text-gray-700" data-col-idx="0"
+                  style="${spliceHiddenCols.includes(0)?'display:none':''}">${(row.work_date||'').slice(0,10)||'-'}</td>
+                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap text-gray-700" data-col-idx="1"
+                  style="${spliceHiddenCols.includes(1)?'display:none':''}">${row.worker_team||'-'}</td>
+                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap text-blue-700 font-medium" data-col-idx="2"
+                  style="${spliceHiddenCols.includes(2)?'display:none':''}">${row.request_no||'-'}</td>
+                <td class="border border-gray-200 px-2 py-1.5 text-center whitespace-nowrap" data-col-idx="3"
+                  style="${spliceHiddenCols.includes(3)?'display:none':''}">
                   <span class="inline-block px-1.5 py-0.5 rounded text-xs font-semibold
                     ${{ relocation:'bg-orange-100 text-orange-700', subscription:'bg-green-100 text-green-700',
                          conduit:'bg-blue-100 text-blue-700', environment:'bg-purple-100 text-purple-700'
@@ -24560,23 +24673,55 @@ async function _frLoadSpliceStats() {
                     ${spliceWcLabel(row.construction_work_class)}
                   </span>
                 </td>
-                ${spliceItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-1.5 text-right font-medium text-indigo-800">${sm[k]||''}</td>`).join('')}
+                ${spliceItemKeys.map((k,ki) => {
+                  const ci = 4 + ki;
+                  return `<td class="border border-gray-200 px-2 py-1.5 text-right font-medium text-indigo-800" data-col-idx="${ci}"
+                    style="${spliceHiddenCols.includes(ci)?'display:none':''}">${sm[k]||''}</td>`;
+                }).join('')}
+                ${!isWorker ? `<td class="border border-gray-200 px-2 py-1.5 text-right font-semibold text-green-800 bg-green-50" data-col-idx="${amtColIdx}"
+                  style="${spliceHiddenCols.includes(amtColIdx)?'display:none':''}">${rowAmt>0?rowAmt.toLocaleString():''}</td>` : ''}
               </tr>`;
             }).join('')}
           </tbody>
           <tfoot>
             <tr class="bg-indigo-700 text-white font-bold">
-              <td class="border border-indigo-600 px-2 py-2 text-center" colspan="4">합 계</td>
-              ${spliceItemKeys.map(k=>`<td class="border border-indigo-600 px-2 py-2 text-right">${spliceItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)||''}</td>`).join('')}
+              <td class="border border-indigo-600 px-2 py-2 text-center" colspan="4"
+                style="${[0,1,2,3].every(i=>spliceHiddenCols.includes(i))?'display:none':''}">합 계</td>
+              ${spliceItemKeys.map((k,ki) => {
+                const ci = 4 + ki;
+                return `<td class="border border-indigo-600 px-2 py-2 text-right" data-col-idx="${ci}"
+                  style="${spliceHiddenCols.includes(ci)?'display:none':''}">${spliceItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)||''}</td>`;
+              }).join('')}
+              ${!isWorker ? `<td class="border border-indigo-600 px-2 py-2 text-right bg-green-700" data-col-idx="${amtColIdx}"
+                style="${spliceHiddenCols.includes(amtColIdx)?'display:none':''}">${totalAmt>0?totalAmt.toLocaleString():''}</td>` : ''}
             </tr>
           </tfoot>
         </table>
       </div>
+      ${spliceHiddenCols.length > 0 ? `
+      <div class="px-3 py-1.5 bg-indigo-50 border-t border-indigo-100 text-xs text-indigo-600 flex items-center gap-2 flex-wrap">
+        <span><i class="fas fa-eye-slash mr-1"></i>숨김 컬럼 있음</span>
+        <button onclick="_frSpliceShowAllCols()" class="underline hover:text-indigo-800">모두 표시</button>
+      </div>` : ''}
     </div>
     <p class="text-xs text-gray-400 text-right mt-1">* 임시저장 포함 모든 접속일보가 표시됩니다</p>`;
   } catch(e) {
     if (resultDiv) resultDiv.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
+}
+
+// 접속 탭 컬럼 숨김/표시 토글
+function _frSpliceToggleCol(colIdx) {
+  const hidden = JSON.parse(localStorage.getItem('fr_splice_hidden_cols') || '[]');
+  const idx = hidden.indexOf(colIdx);
+  if (idx === -1) hidden.push(colIdx); else hidden.splice(idx, 1);
+  localStorage.setItem('fr_splice_hidden_cols', JSON.stringify(hidden));
+  _frLoadSpliceStats();
+}
+// 접속 탭 모든 컬럼 표시
+function _frSpliceShowAllCols() {
+  localStorage.removeItem('fr_splice_hidden_cols');
+  _frLoadSpliceStats();
 }
 
 function downloadFieldReportCSV() {
@@ -24651,30 +24796,44 @@ function downloadFieldReportCSV() {
     if (!_frSpliceCacheRows || _frSpliceCacheRows.length === 0) {
       alert('다운로드할 데이터가 없습니다. 먼저 [조회] 버튼을 눌러주세요.'); return;
     }
-    const headers = ['완료일','작업자(팀)','요청번호','구분', ..._frSpliceCacheItemKeys];
+    const isWorkerCsv = currentUser && currentUser.role === 'worker';
     const wcLabel = wc => ({ relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' }[wc] || wc || '-');
+    const labelToKeyCsv = label => (label||'').replace(/ /g,'').replace(/\//g,'');
     const spliceMap = {};
     _frSpliceCacheItems.forEach(it => {
       if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
       spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0)+(it.total_qty||it.qty||0);
     });
+    const pm = _frSpliceCachePriceMap || {};
+    const headers = isWorkerCsv
+      ? ['완료일','작업자(팀)','요청번호','구분', ..._frSpliceCacheItemKeys]
+      : ['완료일','작업자(팀)','요청번호','구분', ..._frSpliceCacheItemKeys, '합계금액(원)'];
     const rows = _frSpliceCacheRows.map(row => {
       const sm = spliceMap[row.id] || {};
-      return [
+      const baseRow = [
         (row.work_date||'').slice(0,10)||'-',
         row.worker_team                  ||'-',
         row.request_no                   ||'-',
         wcLabel(row.construction_work_class),
         ..._frSpliceCacheItemKeys.map(k => sm[k]||0)
       ];
+      if (isWorkerCsv) return baseRow;
+      const amt = _frSpliceCacheItemKeys.reduce((s,k) => s + (sm[k]||0) * (pm[labelToKeyCsv(k)]||0), 0);
+      return [...baseRow, amt];
     });
     // 합계 행
-    const totRow = ['합계','','','',
-      ..._frSpliceCacheItemKeys.map(k=>
-        _frSpliceCacheItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)
-      )
-    ];
-    rows.push(totRow);
+    const totItems = _frSpliceCacheItemKeys.map(k =>
+      _frSpliceCacheItems.filter(i=>i.work_label===k).reduce((s,i)=>s+(i.total_qty||i.qty||0),0)
+    );
+    if (isWorkerCsv) {
+      rows.push(['합계','','','',...totItems]);
+    } else {
+      const totAmt = _frSpliceCacheRows.reduce((s,row) => {
+        const sm = spliceMap[row.id] || {};
+        return s + _frSpliceCacheItemKeys.reduce((ss,k) => ss + (sm[k]||0) * (pm[labelToKeyCsv(k)]||0), 0);
+      }, 0);
+      rows.push(['합계','','','',...totItems, totAmt]);
+    }
     downloadCSV(`공량내역_접속_${today}.csv`, headers, rows);
   }
 }

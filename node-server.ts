@@ -2683,9 +2683,13 @@ app.post('/api/work-reports', async (c) => {
   const worker_team  = teamRow?.team_name || task.contractor_name || ''
   const manager_name = task.manager_name || task.lgu_supervisor || ''
   const work_date    = task.work_completed_at || task.work_date || ''
-  const existing = rawDb.prepare(`SELECT id FROM work_reports WHERE task_id=?`).get(task_id) as any
+  const existing = rawDb.prepare(`SELECT id, status FROM work_reports WHERE task_id=?`).get(task_id) as any
   let reportId: number
   if (existing) {
+    // 이미 제출/확인 완료된 일보는 새로 작성 불가
+    if (existing.status === 'submitted' || existing.status === 'confirmed') {
+      return c.json({ error: '이미 제출된 일보가 있습니다.', reportId: existing.id, status: existing.status }, 409)
+    }
     rawDb.prepare(`UPDATE work_reports SET detail_type=?,worker_team=?,manager_name=?,work_date=?,updated_at=CURRENT_TIMESTAMP WHERE task_id=?`)
       .run(detail_type, worker_team, manager_name, work_date, task_id)
     reportId = existing.id
@@ -2961,12 +2965,24 @@ app.post('/api/splice-reports', async (c) => {
   let reportId = body.report_id || null
 
   if (reportId) {
+    // 기존 일보 수정 — status 체크
+    const cur = rawDb.prepare(`SELECT status FROM splice_reports WHERE id=?`).get(reportId) as any
+    if (cur && (cur.status === 'submitted' || cur.status === 'confirmed')) {
+      return c.json({ error: '이미 제출된 일보는 수정할 수 없습니다.', reportId, status: cur.status }, 409)
+    }
     rawDb.prepare(`
       UPDATE splice_reports
       SET task_id=?, work_date=?, worker_team=?, manager_name=?, remark=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=?
     `).run(task_id || null, work_date || '', worker_team || '', manager_name || '', remark || '', reportId)
   } else {
+    // 신규 생성 — task_id 중복 체크
+    if (task_id) {
+      const existing = rawDb.prepare(`SELECT id, status FROM splice_reports WHERE task_id=?`).get(task_id) as any
+      if (existing) {
+        return c.json({ error: '이미 작성된 접속일보가 있습니다.', reportId: existing.id, status: existing.status }, 409)
+      }
+    }
     const res = rawDb.prepare(`
       INSERT INTO splice_reports (task_id, work_date, worker_team, manager_name, remark, status, created_by)
       VALUES (?, ?, ?, ?, ?, 'draft', ?)

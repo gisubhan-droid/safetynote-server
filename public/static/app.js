@@ -26223,6 +26223,18 @@ async function saveWorkReport(taskId) {
       if (content) await renderReportWritePage(content, 'cable', 'draft', 'pending');
     }, 1000);
   } catch(e) {
+    if (e.response?.status === 409) {
+      const existingId = e.response?.data?.reportId;
+      const msg = e.response?.data?.error || '이미 제출된 일보가 있습니다.';
+      toast(msg, 'warning');
+      if (existingId) {
+        setTimeout(async () => {
+          const content = document.getElementById('page-content');
+          if (content) await renderWorkReportForm(content, taskId);
+        }, 1200);
+      }
+      return;
+    }
     toast('저장 실패: ' + e.message, 'error');
   }
 }
@@ -26236,6 +26248,17 @@ async function submitWorkReport(taskId) {
     // 팝업 없이 바로 제출
     await _finalSubmit(reportId, taskId);
   } catch(e) {
+    if (e.response?.status === 409) {
+      const existingId = e.response?.data?.reportId;
+      const msg = e.response?.data?.error || '이미 제출된 일보가 있습니다.';
+      toast(msg, 'warning');
+      if (existingId) {
+        await new Promise(r => setTimeout(r, 1200));
+        const content = document.getElementById('page-content');
+        if (content) await renderWorkReportForm(content, taskId);
+      }
+      return;
+    }
     toast('저장 실패: ' + e.message, 'error');
   }
 }
@@ -26449,6 +26472,18 @@ async function renderSpliceReportForm(container, reportId, taskId) {
       try {
         const tr = await API.get(`/tasks/${tId}`);
         task = tr.data?.task || tr.data || null;
+      } catch(_) {}
+    }
+
+    // ── 신규 작성인데 이미 해당 task에 일보가 있는 경우 → 기존 일보로 리다이렉트 ──
+    if (!reportId && tId) {
+      try {
+        const allReports = await API.get('/splice-reports');
+        const existingReport = (allReports.data.reports || []).find(r => r.task_id == tId);
+        if (existingReport) {
+          // 기존 일보로 자동 이동
+          return renderSpliceReportForm(container, existingReport.id, tId);
+        }
       } catch(_) {}
     }
 
@@ -26712,6 +26747,19 @@ async function saveSpliceReport() {
       if (content) await renderReportWritePage(content, 'splice', 'pending', 'draft');
     }, 1000);
   } catch(e) {
+    // 409: 이미 제출된 일보 존재
+    if (e.response?.status === 409) {
+      const existingId = e.response?.data?.reportId;
+      const msg = e.response?.data?.error || '이미 작성된 일보가 있습니다.';
+      toast(msg, 'warning');
+      if (existingId) {
+        setTimeout(async () => {
+          const content = document.getElementById('page-content');
+          if (content) await renderSpliceReportForm(content, existingId, null);
+        }, 1200);
+      }
+      return;
+    }
     toast('저장 실패: ' + e.message, 'error');
   }
 }
@@ -26745,6 +26793,19 @@ async function submitSpliceReport() {
 
     }
   } catch(e) {
+    // 409: 이미 제출된 일보 존재
+    if (e.response?.status === 409) {
+      const existingId = e.response?.data?.reportId;
+      const msg = e.response?.data?.error || '이미 작성된 일보가 있습니다.';
+      toast(msg, 'warning');
+      if (existingId) {
+        await new Promise(r => setTimeout(r, 1200));
+        const content = document.getElementById('page-content');
+        if (content) await renderSpliceReportForm(content, existingId, null);
+      }
+      if (btn) btn.disabled = false;
+      return;
+    }
     console.error('[submitSpliceReport] 에러:', e);
     toast('제출 실패: ' + (e.response?.data?.error || e.message), 'error');
     if (btn) btn.disabled = false;

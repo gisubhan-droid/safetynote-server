@@ -24982,11 +24982,54 @@ async function _finalSubmit(reportId, taskId) {
 // ═══════════════════════════════════════════════════════════════
 let _volumeStatsCache = { rows: [], extras: [], allItemKeys: [] };
 
+// ─── 물량통계 기간 UI show/hide ──────────────────────────────────────────────
+function _vsUpdatePeriodUI() {
+  const mode = document.getElementById('vs-period-mode')?.value || 'month';
+  document.querySelectorAll('.vs-year-sel').forEach(el => {
+    el.classList.toggle('hidden', mode === 'month' || mode === 'all');
+  });
+  const qSel = document.getElementById('vs-period-quarter');
+  if (qSel) qSel.classList.toggle('hidden', mode !== 'quarter');
+  const mIn = document.getElementById('vs-period-month');
+  if (mIn) mIn.classList.toggle('hidden', mode !== 'month');
+}
+
 async function renderVolumeStatsPage(container) {
   container.innerHTML = `<div class="max-w-5xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
+    // ── 조회 조건 읽기 (광케이블 현황과 동일 방식) ──
+    const vsMode  = document.getElementById('vs-period-mode')?.value  || 'month';
+    const vsMVal  = document.getElementById('vs-period-month')?.value || '';
+    const vsQVal  = document.getElementById('vs-period-quarter')?.value || '';
+    const nowYear = new Date().getFullYear();
+    const vsYVal  = document.getElementById('vs-period-year')?.value  || String(nowYear);
+    const vsConsVal = document.getElementById('vs-construction')?.value || '';
+
+    let vsFromDate = '', vsToDate = '';
+    if (vsMode === 'month' && vsMVal) {
+      vsFromDate = vsMVal + '-01';
+      const d = new Date(vsMVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      vsToDate = d.toISOString().slice(0,10);
+    } else if (vsMode === 'quarter' && vsQVal && vsYVal) {
+      const q = parseInt(vsQVal);
+      const startM = String((q-1)*3+1).padStart(2,'0');
+      const endM   = String(q*3).padStart(2,'0');
+      vsFromDate = `${vsYVal}-${startM}-01`;
+      const d = new Date(`${vsYVal}-${endM}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
+      vsToDate = d.toISOString().slice(0,10);
+    } else if (vsMode === 'year' && vsYVal) {
+      vsFromDate = `${vsYVal}-01-01`;
+      vsToDate   = `${vsYVal}-12-31`;
+    }
+
+    const vsParams = [];
+    if (vsConsVal)  vsParams.push(`construction_id=${vsConsVal}`);
+    if (vsFromDate) vsParams.push(`from_date=${vsFromDate}`);
+    if (vsToDate)   vsParams.push(`to_date=${vsToDate}`);
+    const vsQS = vsParams.length ? '?' + vsParams.join('&') : '';
+
     const [statsRes, consRes, priceRes] = await Promise.all([
-      API.get('/work-reports/volume-stats'),
+      API.get('/work-reports/volume-stats' + vsQS),
       API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } })),
       API.get('/volume-unit-prices').catch(() => ({ data: { prices: [] } }))
     ]);
@@ -24999,6 +25042,11 @@ async function renderVolumeStatsPage(container) {
     unitPrices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
     // 근로자 권한은 단가/금액 숨김
     const isWorker = currentUser && currentUser.role === 'worker';
+
+    // 연도 목록 생성 (2020~현재년)
+    const vsYears = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
+    const savedVsMode = vsMode; const savedVsMVal = vsMVal;
+    const savedVsQVal = vsQVal; const savedVsYVal = vsYVal;
 
     _volumeStatsCache = { rows, extras, cables, allItemKeys: [], priceMap };
 
@@ -25027,14 +25075,29 @@ async function renderVolumeStatsPage(container) {
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
           <i class="fas fa-table text-pink-500"></i> 물량통계 — 외선부분
         </h2>
-        <div class="flex gap-2 flex-wrap">
-          <select id="vs-construction" onchange="renderVolumeStatsPage(document.getElementById('page-content'))"
-                  class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+        <div class="flex gap-2 flex-wrap items-center">
+          <!-- 공사 선택 -->
+          <select id="vs-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
             <option value="">전체 공사</option>
-            ${constructions.map(c=>`<option value="${c.id}">${c.request_no} ${c.title||''}</option>`).join('')}
+            ${constructions.map(c=>`<option value="${c.id}" ${vsConsVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
           </select>
-          <input type="date" id="vs-from" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
-          <input type="date" id="vs-to"   class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
+          <!-- 기간 모드 -->
+          <select id="vs-period-mode" onchange="_vsUpdatePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="month"   ${savedVsMode==='month'  ?'selected':''}>월별</option>
+            <option value="quarter" ${savedVsMode==='quarter'?'selected':''}>분기별</option>
+            <option value="year"    ${savedVsMode==='year'   ?'selected':''}>연도별</option>
+            <option value="all"     ${savedVsMode==='all'    ?'selected':''}>전체</option>
+          </select>
+          <!-- 연도 선택 (분기/연도 모드) -->
+          <select id="vs-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none vs-year-sel ${savedVsMode==='month'||savedVsMode==='all'?'hidden':''}">
+            ${vsYears.map(y=>`<option value="${y}" ${savedVsYVal==y?'selected':''}>${y}년</option>`).join('')}
+          </select>
+          <!-- 분기 선택 -->
+          <select id="vs-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none ${savedVsMode!=='quarter'?'hidden':''}">
+            ${[1,2,3,4].map(q=>`<option value="${q}" ${savedVsQVal==q?'selected':''}>Q${q} (${(q-1)*3+1}~${q*3}월)</option>`).join('')}
+          </select>
+          <!-- 월 선택 -->
+          <input type="month" id="vs-period-month" value="${savedVsMVal}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedVsMode!=='month'?'hidden':''}">
           <button onclick="renderVolumeStatsPage(document.getElementById('page-content'))"
                   class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600">
             <i class="fas fa-search mr-1"></i>조회
@@ -25062,6 +25125,32 @@ async function renderVolumeStatsPage(container) {
           <div class="text-lg font-bold text-gray-800">${c.val}</div>
         </div>`).join('')}
       </div>
+
+      <!-- 팀별/날짜별 그래프 -->
+      ${rows.length > 0 ? `
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <i class="fas fa-chart-bar text-pink-400"></i> 팀별 · 날짜별 현황
+          </h3>
+          <div class="flex gap-1 text-xs">
+            <button id="vs-chart-cnt" onclick="_vsToggleChart('count')"
+              class="px-3 py-1 rounded-full bg-pink-500 text-white font-medium hover:bg-pink-600 transition">건수</button>
+            <button id="vs-chart-amt" onclick="_vsToggleChart('amount')"
+              class="px-3 py-1 rounded-full bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition">금액</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs text-gray-400 mb-1 text-center">팀별 현황</p>
+            <canvas id="vs-chart-team" height="220"></canvas>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400 mb-1 text-center">날짜별 현황</p>
+            <canvas id="vs-chart-date" height="220"></canvas>
+          </div>
+        </div>
+      </div>` : ''}
 
       <!-- 데이터 테이블 -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -25134,8 +25223,173 @@ async function renderVolumeStatsPage(container) {
         <button onclick="renderCableDetailPage(document.getElementById('page-content'))" class="text-blue-500 hover:underline ml-1">광케이블 상세 현황 보기 →</button>
       </p>
     </div>`;
+
+    // ── 그래프 초기화 ──────────────────────────────────────────────────────────
+    if (rows.length > 0) {
+      // 각 행별 합계금액 계산 (isWorker면 0 처리)
+      const rowAmounts = rows.map(row => {
+        const exMap = extrasMap[row.report_id] || {};
+        if (isWorker) return 0;
+        return (row.cable_new_m    ||0) * (priceMap['cable_new']    ||0) +
+               (row.cable_remove_m ||0) * (priceMap['cable_remove'] ||0) +
+               (row.cable_move_m   ||0) * (priceMap['cable_move']   ||0) +
+               allItemKeys.reduce((s,k) => s + (exMap[k]||0)*(priceMap[k]||0), 0);
+      });
+
+      // 팀별 집계
+      const teamCountMap = {}, teamAmtMap = {};
+      rows.forEach((row, i) => {
+        const t = row.worker_team || '미지정';
+        teamCountMap[t] = (teamCountMap[t] || 0) + 1;
+        teamAmtMap[t]   = (teamAmtMap[t]   || 0) + rowAmounts[i];
+      });
+      const teamLabels = Object.keys(teamCountMap).sort();
+      const teamCounts = teamLabels.map(t => teamCountMap[t]);
+      const teamAmts   = teamLabels.map(t => teamAmtMap[t]);
+
+      // 날짜별 집계
+      const dateCountMap = {}, dateAmtMap = {};
+      rows.forEach((row, i) => {
+        const d = (row.work_date||'').slice(0,10) || '미지정';
+        dateCountMap[d] = (dateCountMap[d] || 0) + 1;
+        dateAmtMap[d]   = (dateAmtMap[d]   || 0) + rowAmounts[i];
+      });
+      const dateLabels = Object.keys(dateCountMap).sort();
+      const dateCounts = dateLabels.map(d => dateCountMap[d]);
+      const dateAmts   = dateLabels.map(d => dateAmtMap[d]);
+
+      // Chart.js CDN 동적 로드
+      const loadChart = () => new Promise((resolve) => {
+        if (window.Chart) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+        s.onload = resolve; document.head.appendChild(s);
+      });
+
+      await loadChart();
+
+      // 팀별 차트
+      const ctxTeam = document.getElementById('vs-chart-team');
+      const ctxDate = document.getElementById('vs-chart-date');
+      if (!ctxTeam || !ctxDate) return;
+
+      const COLORS = ['#f472b6','#60a5fa','#34d399','#fb923c','#a78bfa','#facc15','#38bdf8','#4ade80','#f87171','#c084fc'];
+      const teamBgColors = teamLabels.map((_,i)=>COLORS[i%COLORS.length]+'cc');
+      const dateBgColors = dateLabels.map((_,i)=>COLORS[i%COLORS.length]+'cc');
+
+      // 이전 차트 인스턴스 제거
+      if (window._vsChartTeam) { window._vsChartTeam.destroy(); }
+      if (window._vsChartDate) { window._vsChartDate.destroy(); }
+
+      window._vsChartTeam = new Chart(ctxTeam, {
+        type: 'bar',
+        data: {
+          labels: teamLabels,
+          datasets: [{
+            label: '건수',
+            data: teamCounts,
+            backgroundColor: teamBgColors,
+            borderRadius: 5
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  if (window._vsChartMode === 'amount')
+                    return ' ' + (ctx.raw||0).toLocaleString() + '원';
+                  return ' ' + ctx.raw + '건';
+                }
+              }
+            }
+          },
+          scales: {
+            y: { beginAtZero: true, ticks: { font: { size: 11 } } },
+            x: { ticks: { font: { size: 11 } } }
+          }
+        }
+      });
+
+      window._vsChartDate = new Chart(ctxDate, {
+        type: 'bar',
+        data: {
+          labels: dateLabels,
+          datasets: [{
+            label: '건수',
+            data: dateCounts,
+            backgroundColor: dateBgColors,
+            borderRadius: 5
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  if (window._vsChartMode === 'amount')
+                    return ' ' + (ctx.raw||0).toLocaleString() + '원';
+                  return ' ' + ctx.raw + '건';
+                }
+              }
+            }
+          },
+          scales: {
+            y: { beginAtZero: true, ticks: { font: { size: 11 } } },
+            x: { ticks: { font: { size: 10 }, maxRotation: 45 } }
+          }
+        }
+      });
+
+      // 차트 전환용 데이터 저장
+      window._vsChartMode   = 'count';
+      window._vsChartTeamData = { count: teamCounts, amount: teamAmts, labels: teamLabels, bg: teamBgColors };
+      window._vsChartDateData = { count: dateCounts, amount: dateAmts, labels: dateLabels, bg: dateBgColors };
+      window._vsIsWorker = isWorker;
+    }
+
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+// ─── 물량통계 차트 건수/금액 전환 ──────────────────────────────────────────
+function _vsToggleChart(mode) {
+  if (!window._vsChartTeam || !window._vsChartDate) return;
+  if (mode === 'amount' && window._vsIsWorker) {
+    alert('근로자 계정은 금액 정보를 조회할 수 없습니다.');
+    return;
+  }
+  window._vsChartMode = mode;
+
+  const tData = window._vsChartTeamData;
+  const dData = window._vsChartDateData;
+  const vals  = mode === 'count' ? 'count' : 'amount';
+  const lbl   = mode === 'count' ? '건수' : '금액(원)';
+
+  window._vsChartTeam.data.datasets[0].data  = tData[vals];
+  window._vsChartTeam.data.datasets[0].label = lbl;
+  window._vsChartTeam.update();
+
+  window._vsChartDate.data.datasets[0].data  = dData[vals];
+  window._vsChartDate.data.datasets[0].label = lbl;
+  window._vsChartDate.update();
+
+  // 버튼 활성화 스타일
+  const btnCnt = document.getElementById('vs-chart-cnt');
+  const btnAmt = document.getElementById('vs-chart-amt');
+  if (btnCnt && btnAmt) {
+    if (mode === 'count') {
+      btnCnt.className = 'px-3 py-1 rounded-full bg-pink-500 text-white font-medium hover:bg-pink-600 transition text-xs';
+      btnAmt.className = 'px-3 py-1 rounded-full bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition text-xs';
+    } else {
+      btnAmt.className = 'px-3 py-1 rounded-full bg-pink-500 text-white font-medium hover:bg-pink-600 transition text-xs';
+      btnCnt.className = 'px-3 py-1 rounded-full bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition text-xs';
+    }
   }
 }
 

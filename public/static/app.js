@@ -24633,66 +24633,228 @@ function downloadFieldReportCSV() {
 // ═══════════════════════════════════════════════════════════════
 // 작업일보 작성 — 외선/접속 선택 페이지
 // ═══════════════════════════════════════════════════════════════
-async function renderReportWritePage(container) {
-  container.innerHTML = `
-  <div class="max-w-2xl mx-auto p-6">
-    <div class="mb-6">
-      <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+async function renderReportWritePage(container, activeType) {
+  // activeType: 'cable'(기본) | 'splice'
+  activeType = activeType || 'cable';
+  const content = container || document.getElementById('page-content');
+  if (!content) return;
+
+  // ── 외선/접속 두 목록을 병렬로 로드 ──────────────────────────────
+  content.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+
+  // 외선: tasks API
+  let cableTasks = [], spliceReports = [], spliceTasks = [];
+  try {
+    const r = await API.get('/tasks?status=working,work_completed,completed');
+    cableTasks = r.data.tasks || [];
+    spliceTasks = cableTasks; // 동일 task pool
+  } catch(e) { console.error('[report-write] tasks 로드 실패', e.message); }
+  try {
+    const r = await API.get('/splice-reports');
+    spliceReports = r.data.reports || [];
+  } catch(e) { console.error('[report-write] splice-reports 로드 실패', e.message); }
+
+  // ── 외선 탭 분류 ──────────────────────────────────────────────────
+  const cPending   = cableTasks.filter(t => !t.report_id);
+  const cDrafts    = cableTasks.filter(t => t.report_id && t.report_status === 'draft');
+  const cCompleted = cableTasks.filter(t => t.report_id && (t.report_status === 'submitted' || t.report_status === 'confirmed'));
+
+  // ── 접속 탭 분류 ──────────────────────────────────────────────────
+  const reportMap = {};
+  spliceReports.forEach(r => { if (r.task_id) reportMap[r.task_id] = { id: r.id, status: r.status }; });
+  const sPending   = spliceTasks.filter(t => !reportMap[t.id]);
+  const sDrafts    = spliceTasks.filter(t => reportMap[t.id] && (reportMap[t.id].status === 'draft' || !reportMap[t.id].status));
+  const sCompleted = spliceTasks.filter(t => reportMap[t.id] && (reportMap[t.id].status === 'submitted' || reportMap[t.id].status === 'confirmed'));
+
+  // ── 카드 렌더러 ──────────────────────────────────────────────────
+  const makeBadge = (type, rptStatus) => {
+    if (!rptStatus || rptStatus === 'none')
+      return `<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">미작성</span>`;
+    if (rptStatus === 'draft')
+      return `<span class="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">임시저장</span>`;
+    if (rptStatus === 'submitted')
+      return `<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">제출완료</span>`;
+    if (rptStatus === 'confirmed')
+      return `<span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">확인완료</span>`;
+    return '';
+  };
+
+  const renderCableCard = (t) => {
+    const subNum = t.work_number ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number) : t.task_number;
+    const badge = makeBadge('cable', t.report_id ? t.report_status : 'none');
+    return `
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-pink-300 hover:shadow transition-all"
+         onclick="renderWorkReportForm(document.getElementById('page-content'), ${t.id})">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1 flex-wrap">
+            <span class="font-semibold text-sm text-gray-800 truncate">${t.title||'-'}</span>
+            ${badge}
+          </div>
+          <div class="text-xs text-gray-500 flex flex-wrap gap-2">
+            <span><i class="fas fa-hashtag mr-0.5 text-gray-300"></i>${subNum}</span>
+            ${t.request_no ? `<span><i class="fas fa-file-contract mr-0.5 text-gray-300"></i>${t.request_no}</span>` : ''}
+            ${t.work_completed_at ? `<span><i class="fas fa-calendar-check mr-0.5 text-gray-300"></i>${(t.work_completed_at||'').slice(0,10)}</span>` : ''}
+            ${t.construction_type ? `<span class="bg-pink-50 text-pink-600 px-1.5 py-0.5 rounded">${t.construction_type}</span>` : ''}
+          </div>
+        </div>
+        <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
+      </div>
+    </div>`;
+  };
+
+  const renderSpliceCard = (t) => {
+    const subNum = t.work_number ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number) : t.task_number;
+    const rpt = reportMap[t.id];
+    const badge = makeBadge('splice', rpt ? rpt.status || 'draft' : 'none');
+    const reportId = rpt ? rpt.id : null;
+    return `
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer hover:border-indigo-300 hover:shadow transition-all"
+         onclick="renderSpliceReportForm(document.getElementById('page-content'), ${reportId}, ${t.id})">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1 flex-wrap">
+            <span class="font-semibold text-sm text-gray-800 truncate">${t.title||'-'}</span>
+            ${badge}
+          </div>
+          <div class="text-xs text-gray-500 flex flex-wrap gap-2">
+            <span><i class="fas fa-hashtag mr-0.5 text-gray-300"></i>${subNum}</span>
+            ${t.request_no ? `<span><i class="fas fa-file-contract mr-0.5 text-gray-300"></i>${t.request_no}</span>` : ''}
+            ${t.work_completed_at ? `<span><i class="fas fa-calendar-check mr-0.5 text-gray-300"></i>${(t.work_completed_at||'').slice(0,10)}</span>` : ''}
+            ${t.construction_type ? `<span class="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">${t.construction_type}</span>` : ''}
+          </div>
+        </div>
+        <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
+      </div>
+    </div>`;
+  };
+
+  const emptyMsg = (msg) => `<div class="text-center py-10 text-gray-400"><i class="fas fa-check-circle text-4xl mb-3 text-green-400 block"></i><p class="text-sm">${msg}</p></div>`;
+
+  // ── 탭 서브버튼 (작성대상/작성중/작성완료) ─────────────────────────
+  const subTabBtn = (type, id, label, count, color) => {
+    const domId = `rw-sub-${type}-${id}`;
+    return `<button id="${domId}" class="rw-sub-tab px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1"
+      data-type="${type}" data-tab="${id}" data-color="${color}"
+      onclick="_rwSubTab('${type}','${id}')">
+      ${label}
+      <span class="text-xs px-1.5 py-0.5 rounded-full">${count}</span>
+    </button>`;
+  };
+
+  // ── 메인 타입 탭 버튼 ─────────────────────────────────────────────
+  const mainTab = (id, icon, label, color, active) => {
+    const on  = `border-b-2 border-${color}-500 text-${color}-600 bg-white`;
+    const off = `border-b-2 border-transparent text-gray-400 bg-gray-50 hover:text-gray-600`;
+    return `<button class="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold transition-colors ${active ? on : off}"
+      onclick="_rwMainTab('${id}')">
+      <i class="${icon}"></i>${label}
+    </button>`;
+  };
+
+  const cSubActive = document.getElementById('rw-cable-sub-state')?.value || 'pending';
+  const sSubActive = document.getElementById('rw-splice-sub-state')?.value || 'pending';
+
+  content.innerHTML = `
+  <div class="max-w-4xl mx-auto p-4 space-y-0">
+    <!-- 페이지 헤더 -->
+    <div class="mb-3">
+      <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
         <i class="fas fa-pen-to-square text-pink-500"></i> 작업일보 작성
       </h2>
-      <p class="text-sm text-gray-500 mt-1">작성할 일보 유형을 선택하세요.</p>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <!-- 외선 / 접속 메인 탭 -->
+    <div class="flex border-b border-gray-200 mb-0 bg-gray-50 rounded-t-xl overflow-hidden">
+      ${mainTab('cable',  'fas fa-cable-car', '외선 작업일보', 'pink',   activeType==='cable')}
+      ${mainTab('splice', 'fas fa-plug',       '접속 작업일보', 'indigo', activeType==='splice')}
+    </div>
+    <input type="hidden" id="rw-main-tab-state" value="${activeType}">
 
-      <!-- 외선 카드 -->
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 cursor-pointer hover:border-pink-400 hover:shadow-md transition-all group"
-           onclick="_reportWriteSelectType('cable')">
-        <div class="flex flex-col items-center text-center gap-3">
-          <div class="w-16 h-16 rounded-2xl flex items-center justify-center group-hover:scale-105 transition-transform"
-               style="background:linear-gradient(135deg,#FCE7F3,#FBCFE8);">
-            <i class="fas fa-cable-car text-pink-500 text-2xl"></i>
-          </div>
-          <div>
-            <div class="font-bold text-gray-800 text-base">외선 작업일보</div>
-            <div class="text-xs text-gray-500 mt-1">광케이블 포설·설치 공사<br>시공 일보 작성</div>
-          </div>
-          <div class="mt-1 text-xs px-3 py-1 rounded-full bg-pink-50 text-pink-600 font-medium">
-            <i class="fas fa-arrow-right mr-1"></i>선택
-          </div>
-        </div>
+    <!-- ═══ 외선 패널 ═══ -->
+    <div id="rw-panel-cable" class="${activeType==='cable' ? '' : 'hidden'} pt-3">
+      <!-- 서브탭 (작성대상/작성중/작성완료) -->
+      <div class="flex gap-2 mb-3 flex-wrap">
+        ${subTabBtn('cable', 'pending',   '작성 대상', cPending.length,   'pink')}
+        ${subTabBtn('cable', 'draft',     '작성 중',   cDrafts.length,    'orange')}
+        ${subTabBtn('cable', 'completed', '작성 완료', cCompleted.length, 'green')}
       </div>
+      <input type="hidden" id="rw-cable-sub-state" value="${cSubActive}">
+      <div id="rw-cable-pane-pending"   class="${cSubActive==='pending'   ? '' : 'hidden'} space-y-2">${cPending.length   ? cPending.map(renderCableCard).join('')   : emptyMsg('작성 대상 외선 일보가 없습니다')}</div>
+      <div id="rw-cable-pane-draft"     class="${cSubActive==='draft'     ? '' : 'hidden'} space-y-2">${cDrafts.length    ? cDrafts.map(renderCableCard).join('')    : emptyMsg('임시저장된 외선 일보가 없습니다')}</div>
+      <div id="rw-cable-pane-completed" class="${cSubActive==='completed' ? '' : 'hidden'} space-y-2">${cCompleted.length ? cCompleted.map(renderCableCard).join('') : emptyMsg('제출된 외선 일보가 없습니다')}</div>
+    </div>
 
-      <!-- 접속 카드 -->
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 cursor-pointer hover:border-indigo-400 hover:shadow-md transition-all group"
-           onclick="_reportWriteSelectType('splice')">
-        <div class="flex flex-col items-center text-center gap-3">
-          <div class="w-16 h-16 rounded-2xl flex items-center justify-center group-hover:scale-105 transition-transform"
-               style="background:linear-gradient(135deg,#EDE9FE,#DDD6FE);">
-            <i class="fas fa-plug text-indigo-500 text-2xl"></i>
-          </div>
-          <div>
-            <div class="font-bold text-gray-800 text-base">접속 작업일보</div>
-            <div class="text-xs text-gray-500 mt-1">광케이블 코아접속·성단<br>공종별 시공량 입력</div>
-          </div>
-          <div class="mt-1 text-xs px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 font-medium">
-            <i class="fas fa-arrow-right mr-1"></i>선택
-          </div>
-        </div>
+    <!-- ═══ 접속 패널 ═══ -->
+    <div id="rw-panel-splice" class="${activeType==='splice' ? '' : 'hidden'} pt-3">
+      <!-- 서브탭 -->
+      <div class="flex gap-2 mb-3 flex-wrap">
+        ${subTabBtn('splice', 'pending',   '작성 대상', sPending.length,   'indigo')}
+        ${subTabBtn('splice', 'draft',     '작성 중',   sDrafts.length,    'orange')}
+        ${subTabBtn('splice', 'completed', '작성 완료', sCompleted.length, 'green')}
       </div>
-
+      <input type="hidden" id="rw-splice-sub-state" value="${sSubActive}">
+      <div id="rw-splice-pane-pending"   class="${sSubActive==='pending'   ? '' : 'hidden'} space-y-2">${sPending.length   ? sPending.map(renderSpliceCard).join('')   : emptyMsg('작성 대상 접속 일보가 없습니다')}</div>
+      <div id="rw-splice-pane-draft"     class="${sSubActive==='draft'     ? '' : 'hidden'} space-y-2">${sDrafts.length    ? sDrafts.map(renderSpliceCard).join('')    : emptyMsg('임시저장된 접속 일보가 없습니다')}</div>
+      <div id="rw-splice-pane-completed" class="${sSubActive==='completed' ? '' : 'hidden'} space-y-2">${sCompleted.length ? sCompleted.map(renderSpliceCard).join('') : emptyMsg('제출된 접속 일보가 없습니다')}</div>
     </div>
   </div>`;
+
+  // 서브탭 초기 스타일 적용
+  _rwSubTabStyle('cable',  cSubActive);
+  _rwSubTabStyle('splice', sSubActive);
+}
+
+// ── 메인 탭(외선/접속) 전환 ─────────────────────────────────────────────────
+function _rwMainTab(type) {
+  document.getElementById('rw-main-tab-state').value = type;
+  ['cable','splice'].forEach(t => {
+    const panel = document.getElementById(`rw-panel-${t}`);
+    if (panel) panel.classList.toggle('hidden', t !== type);
+  });
+  // 탭 버튼 스타일 갱신
+  document.querySelectorAll('[onclick^="_rwMainTab"]').forEach(btn => {
+    const btnType = btn.getAttribute('onclick').replace("_rwMainTab('","").replace("')","");
+    const isActive = btnType === type;
+    const colorMap = { cable:'pink', splice:'indigo' };
+    const c = colorMap[btnType];
+    btn.className = btn.className
+      .replace(/border-\w+-500|text-\w+-600|bg-white|border-transparent|text-gray-400|bg-gray-50|hover:text-gray-600/g,'').trim();
+    btn.className += isActive ? ` border-b-2 border-${c}-500 text-${c}-600 bg-white` : ` border-b-2 border-transparent text-gray-400 bg-gray-50 hover:text-gray-600`;
+  });
+}
+
+// ── 서브탭(작성대상/작성중/작성완료) 전환 ──────────────────────────────────
+function _rwSubTab(type, tab) {
+  const stateEl = document.getElementById(`rw-${type}-sub-state`);
+  if (stateEl) stateEl.value = tab;
+  ['pending','draft','completed'].forEach(id => {
+    const pane = document.getElementById(`rw-${type}-pane-${id}`);
+    if (pane) pane.classList.toggle('hidden', id !== tab);
+  });
+  _rwSubTabStyle(type, tab);
+}
+
+function _rwSubTabStyle(type, activeTab) {
+  const colorMap = { pending:{ cable:'pink', splice:'indigo' }, draft:{ cable:'orange', splice:'orange' }, completed:{ cable:'green', splice:'green' } };
+  ['pending','draft','completed'].forEach(id => {
+    const btn = document.getElementById(`rw-sub-${type}-${id}`);
+    if (!btn) return;
+    const c = colorMap[id][type];
+    const isActive = id === activeTab;
+    btn.className = `rw-sub-tab px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1 ` +
+      (isActive ? `border-${c}-400 bg-${c}-50 text-${c}-700` : `border-gray-200 bg-white text-gray-500 hover:border-gray-300`);
+    const badge = btn.querySelector('span');
+    if (badge) badge.className = `text-xs px-1.5 py-0.5 rounded-full ` +
+      (isActive ? `bg-${c}-100 text-${c}-700` : `bg-gray-100 text-gray-500`);
+  });
 }
 
 async function _reportWriteSelectType(type) {
+  // 하위 호환 — 직접 호출 시 통합 페이지로 이동
   const content = document.getElementById('page-content');
   if (!content) return;
-  if (type === 'cable') {
-    await _reportWriteCableList(content);
-  } else {
-    await _reportWriteSpliceList(content);
-  }
+  await renderReportWritePage(content, type);
 }
 
 async function _reportWriteCableList(container, activeTab) {
@@ -24901,7 +25063,7 @@ async function _reportWriteSpliceList(container, activeTab) {
     <div class="max-w-4xl mx-auto p-4 space-y-0">
       <!-- 헤더 -->
       <div class="flex items-center gap-3 mb-3">
-        <button onclick="renderReportWritePage(document.getElementById('page-content'))"
+        <button onclick="renderReportWritePage(document.getElementById('page-content'),'splice')"
                 class="text-gray-400 hover:text-gray-600 p-1">
           <i class="fas fa-arrow-left text-lg"></i>
         </button>
@@ -25800,6 +25962,12 @@ async function saveWorkReport(taskId) {
     const res  = await API.post('/work-reports', data);
     window._wrReportId = res.data.reportId;
     toast('임시저장 완료', 'success');
+    // 임시저장 후 작업일보 작성 페이지(외선 탭 > 작성중)로 이동
+    setTimeout(async () => {
+      const content = document.getElementById('page-content');
+      if (content) await renderReportWritePage(content, 'cable');
+      setTimeout(() => _rwSubTab('cable', 'draft'), 100);
+    }, 1000);
   } catch(e) {
     toast('저장 실패: ' + e.message, 'error');
   }
@@ -25886,7 +26054,12 @@ async function _finalSubmit(reportId, taskId) {
   try {
     await API.post(`/work-reports/${reportId}/submit`, {});
     toast('일보 제출 완료!', 'success');
-    setTimeout(() => navigateTo('field-report'), 1200);
+    // 제출 완료 후 작업일보 작성 페이지(외선 탭 > 작성완료)로 이동
+    setTimeout(async () => {
+      const content = document.getElementById('page-content');
+      if (content) await renderReportWritePage(content, 'cable');
+      setTimeout(() => _rwSubTab('cable', 'completed'), 100);
+    }, 1200);
   } catch(e) {
     toast('제출 실패: ' + e.message, 'error');
   }
@@ -26106,7 +26279,7 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     <div class="max-w-3xl mx-auto p-4 space-y-4">
       <!-- 헤더 -->
       <div class="flex items-center gap-3">
-        <button onclick="navigateTo('report-write')" class="text-gray-400 hover:text-gray-600">
+        <button onclick="renderReportWritePage(document.getElementById('page-content'),'splice')" class="text-gray-400 hover:text-gray-600">
           <i class="fas fa-arrow-left text-lg"></i>
         </button>
         <div>
@@ -26279,8 +26452,16 @@ async function saveSpliceReport() {
     const data = _collectSpliceData();
     const res  = await API.post('/splice-reports', data);
     const reportId = res.data.reportId;
-    document.getElementById('sr-report-id').value = reportId;
+    const idEl = document.getElementById('sr-report-id');
+    if (idEl) idEl.value = reportId;
     toast('접속일보 임시저장 완료', 'success');
+    // 임시저장 후 작업일보 작성 페이지(접속 탭 > 작성중)로 이동
+    setTimeout(async () => {
+      const content = document.getElementById('page-content');
+      if (content) await renderReportWritePage(content, 'splice');
+      // 서브탭을 '작성 중'으로 전환
+      setTimeout(() => _rwSubTab('splice', 'draft'), 100);
+    }, 1000);
   } catch(e) {
     toast('저장 실패: ' + e.message, 'error');
   }
@@ -26293,10 +26474,12 @@ async function submitSpliceReport() {
     const reportId = res.data.reportId;
     await API.post(`/splice-reports/${reportId}/submit`, {});
     toast('접속일보 제출 완료!', 'success');
-    // 제출 완료 후 접속 작업일보 목록(완료 탭)으로 이동
+    // 제출 완료 후 작업일보 작성 페이지(접속 탭 > 작성완료)로 이동
     setTimeout(async () => {
       const content = document.getElementById('page-content');
-      if (content) await _reportWriteSpliceList(content, 'completed');
+      if (content) await renderReportWritePage(content, 'splice');
+      // 서브탭을 '작성 완료'로 전환
+      setTimeout(() => _rwSubTab('splice', 'completed'), 100);
     }, 1200);
   } catch(e) {
     toast('제출 실패: ' + e.message, 'error');

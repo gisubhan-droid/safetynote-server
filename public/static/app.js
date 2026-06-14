@@ -25138,18 +25138,14 @@ async function renderVolumeStatsPage(container) {
               class="px-3 py-1 rounded-full bg-pink-500 text-white font-medium hover:bg-pink-600 transition">건수</button>
             <button id="vs-chart-amt" onclick="_vsToggleChart('amount')"
               class="px-3 py-1 rounded-full bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition">금액</button>
+            <span class="inline-block w-px bg-gray-200 mx-1"></span>
+            <button id="vs-view-team" onclick="_vsToggleView('team')"
+              class="px-3 py-1 rounded-full bg-blue-500 text-white font-medium hover:bg-blue-600 transition">팀별</button>
+            <button id="vs-view-date" onclick="_vsToggleView('date')"
+              class="px-3 py-1 rounded-full bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition">날짜별</button>
           </div>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p class="text-xs text-gray-400 mb-1 text-center">팀별 현황</p>
-            <canvas id="vs-chart-team" height="220"></canvas>
-          </div>
-          <div>
-            <p class="text-xs text-gray-400 mb-1 text-center">날짜별 현황</p>
-            <canvas id="vs-chart-date" height="220"></canvas>
-          </div>
-        </div>
+        <canvas id="vs-chart-main" height="180"></canvas>
       </div>` : ''}
 
       <!-- 데이터 테이블 -->
@@ -25269,19 +25265,17 @@ async function renderVolumeStatsPage(container) {
       await loadChart();
 
       // 팀별 차트
-      const ctxTeam = document.getElementById('vs-chart-team');
-      const ctxDate = document.getElementById('vs-chart-date');
-      if (!ctxTeam || !ctxDate) return;
+      const ctxMain = document.getElementById('vs-chart-main');
+      if (!ctxMain) return;
 
       const COLORS = ['#f472b6','#60a5fa','#34d399','#fb923c','#a78bfa','#facc15','#38bdf8','#4ade80','#f87171','#c084fc'];
       const teamBgColors = teamLabels.map((_,i)=>COLORS[i%COLORS.length]+'cc');
       const dateBgColors = dateLabels.map((_,i)=>COLORS[i%COLORS.length]+'cc');
 
       // 이전 차트 인스턴스 제거
-      if (window._vsChartTeam) { window._vsChartTeam.destroy(); }
-      if (window._vsChartDate) { window._vsChartDate.destroy(); }
+      if (window._vsChartMain) { window._vsChartMain.destroy(); }
 
-      window._vsChartTeam = new Chart(ctxTeam, {
+      window._vsChartMain = new Chart(ctxMain, {
         type: 'bar',
         data: {
           labels: teamLabels,
@@ -25289,7 +25283,8 @@ async function renderVolumeStatsPage(container) {
             label: '건수',
             data: teamCounts,
             backgroundColor: teamBgColors,
-            borderRadius: 5
+            borderRadius: 6,
+            borderSkipped: false
           }]
         },
         options: {
@@ -25308,45 +25303,14 @@ async function renderVolumeStatsPage(container) {
           },
           scales: {
             y: { beginAtZero: true, ticks: { font: { size: 11 } } },
-            x: { ticks: { font: { size: 11 } } }
-          }
-        }
-      });
-
-      window._vsChartDate = new Chart(ctxDate, {
-        type: 'bar',
-        data: {
-          labels: dateLabels,
-          datasets: [{
-            label: '건수',
-            data: dateCounts,
-            backgroundColor: dateBgColors,
-            borderRadius: 5
-          }]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label: ctx => {
-                  if (window._vsChartMode === 'amount')
-                    return ' ' + (ctx.raw||0).toLocaleString() + '원';
-                  return ' ' + ctx.raw + '건';
-                }
-              }
-            }
-          },
-          scales: {
-            y: { beginAtZero: true, ticks: { font: { size: 11 } } },
-            x: { ticks: { font: { size: 10 }, maxRotation: 45 } }
+            x: { ticks: { font: { size: 11 }, maxRotation: 30 } }
           }
         }
       });
 
       // 차트 전환용 데이터 저장
       window._vsChartMode   = 'count';
+      window._vsChartView   = 'team';
       window._vsChartTeamData = { count: teamCounts, amount: teamAmts, labels: teamLabels, bg: teamBgColors };
       window._vsChartDateData = { count: dateCounts, amount: dateAmts, labels: dateLabels, bg: dateBgColors };
       window._vsIsWorker = isWorker;
@@ -25357,39 +25321,55 @@ async function renderVolumeStatsPage(container) {
   }
 }
 
+// ─── 물량통계 차트 업데이트 공통 함수 ──────────────────────────────────────
+function _vsApplyChart() {
+  if (!window._vsChartMain) return;
+  const mode = window._vsChartMode || 'count';
+  const view = window._vsChartView || 'team';
+  const src  = view === 'team' ? window._vsChartTeamData : window._vsChartDateData;
+  const vals = mode === 'count' ? 'count' : 'amount';
+  const lbl  = mode === 'count' ? '건수' : '금액(원)';
+
+  window._vsChartMain.data.labels                    = src.labels;
+  window._vsChartMain.data.datasets[0].data          = src[vals];
+  window._vsChartMain.data.datasets[0].label         = lbl;
+  window._vsChartMain.data.datasets[0].backgroundColor = src.bg;
+  window._vsChartMain.update();
+}
+
 // ─── 물량통계 차트 건수/금액 전환 ──────────────────────────────────────────
 function _vsToggleChart(mode) {
-  if (!window._vsChartTeam || !window._vsChartDate) return;
+  if (!window._vsChartMain) return;
   if (mode === 'amount' && window._vsIsWorker) {
     alert('근로자 계정은 금액 정보를 조회할 수 없습니다.');
     return;
   }
   window._vsChartMode = mode;
+  _vsApplyChart();
 
-  const tData = window._vsChartTeamData;
-  const dData = window._vsChartDateData;
-  const vals  = mode === 'count' ? 'count' : 'amount';
-  const lbl   = mode === 'count' ? '건수' : '금액(원)';
-
-  window._vsChartTeam.data.datasets[0].data  = tData[vals];
-  window._vsChartTeam.data.datasets[0].label = lbl;
-  window._vsChartTeam.update();
-
-  window._vsChartDate.data.datasets[0].data  = dData[vals];
-  window._vsChartDate.data.datasets[0].label = lbl;
-  window._vsChartDate.update();
-
-  // 버튼 활성화 스타일
   const btnCnt = document.getElementById('vs-chart-cnt');
   const btnAmt = document.getElementById('vs-chart-amt');
   if (btnCnt && btnAmt) {
-    if (mode === 'count') {
-      btnCnt.className = 'px-3 py-1 rounded-full bg-pink-500 text-white font-medium hover:bg-pink-600 transition text-xs';
-      btnAmt.className = 'px-3 py-1 rounded-full bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition text-xs';
-    } else {
-      btnAmt.className = 'px-3 py-1 rounded-full bg-pink-500 text-white font-medium hover:bg-pink-600 transition text-xs';
-      btnCnt.className = 'px-3 py-1 rounded-full bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition text-xs';
-    }
+    const on  = 'px-3 py-1 rounded-full bg-pink-500 text-white font-medium hover:bg-pink-600 transition text-xs';
+    const off = 'px-3 py-1 rounded-full bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition text-xs';
+    btnCnt.className = mode === 'count' ? on : off;
+    btnAmt.className = mode === 'amount' ? on : off;
+  }
+}
+
+// ─── 물량통계 차트 팀별/날짜별 전환 ────────────────────────────────────────
+function _vsToggleView(view) {
+  if (!window._vsChartMain) return;
+  window._vsChartView = view;
+  _vsApplyChart();
+
+  const btnTeam = document.getElementById('vs-view-team');
+  const btnDate = document.getElementById('vs-view-date');
+  if (btnTeam && btnDate) {
+    const on  = 'px-3 py-1 rounded-full bg-blue-500 text-white font-medium hover:bg-blue-600 transition text-xs';
+    const off = 'px-3 py-1 rounded-full bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition text-xs';
+    btnTeam.className = view === 'team' ? on : off;
+    btnDate.className = view === 'date' ? on : off;
   }
 }
 

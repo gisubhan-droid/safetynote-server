@@ -2861,26 +2861,38 @@ app.get('/api/splice-reports/stats', async (c) => {
     }
   }
 
-  // ③ tasks JOIN: request_no, task_title 병합 (실패해도 무시)
+  // ③ tasks + constructions JOIN: request_no, task_title, work_class(공사종류) 병합 (실패해도 무시)
   if (rows.length > 0) {
     try {
       const ids = rows.map((r: any) => r.id)
       const placeholders = ids.map(() => '?').join(',')
       const taskInfo = rawDb.prepare(`
-        SELECT sr.id, t.request_no, t.title AS task_title
+        SELECT sr.id,
+               t.request_no,
+               t.title        AS task_title,
+               cs.work_class  AS construction_work_class,
+               (SELECT tm.name
+                FROM task_assignments ta
+                JOIN teams tm ON tm.id = ta.team_id
+                WHERE ta.task_id = t.id
+                LIMIT 1)      AS team_name
         FROM splice_reports sr
-        LEFT JOIN tasks t ON sr.task_id = t.id
+        LEFT JOIN tasks t        ON sr.task_id = t.id
+        LEFT JOIN constructions cs ON cs.id = t.construction_id
         WHERE sr.id IN (${placeholders})
       `).all(...ids) as any[]
       const taskMap: Record<number, any> = {}
       taskInfo.forEach((r: any) => { taskMap[r.id] = r })
       rows = rows.map((r: any) => ({
         ...r,
-        request_no: taskMap[r.id]?.request_no || '',
-        task_title: taskMap[r.id]?.task_title || '',
+        request_no:             taskMap[r.id]?.request_no             || '',
+        task_title:             taskMap[r.id]?.task_title             || '',
+        construction_work_class:taskMap[r.id]?.construction_work_class|| '',
+        // 실제 팀명이 있으면 우선, 없으면 기존 worker_team 유지
+        worker_team: taskMap[r.id]?.team_name || r.worker_team || '',
       }))
     } catch(joinErr: any) {
-      console.warn('[GET /api/splice-reports/stats] tasks JOIN 실패 (무시):', joinErr.message)
+      console.warn('[GET /api/splice-reports/stats] tasks/constructions JOIN 실패 (무시):', joinErr.message)
     }
   }
 
@@ -2904,20 +2916,21 @@ app.get('/api/splice-reports/stats', async (c) => {
     `).all(...reportIds) as any[]
   }
 
-  // ⑤ stats: 프론트가 기대하는 flat 구조 (report_id별 worker_team + request_no 포함)
+  // ⑤ stats: 프론트가 기대하는 flat 구조 (report_id별 worker_team + request_no + work_class 포함)
   const rowMap: Record<number, any> = {}
   rows.forEach((r: any) => { rowMap[r.id] = r })
   const stats = items.map((it: any) => ({
-    work_label:  it.work_label,
-    unit:        it.unit,
-    total_qty:   it.total_qty || 0,
-    worker_team: rowMap[it.report_id]?.worker_team || '',
-    request_no:  rowMap[it.report_id]?.request_no  || '',
-    task_title:  rowMap[it.report_id]?.task_title  || '',
-    status:      rowMap[it.report_id]?.status       || '',
-    is_night:    it.is_night,
-    is_aerial:   it.is_aerial,
-    report_id:   it.report_id,
+    work_label:               it.work_label,
+    unit:                     it.unit,
+    total_qty:                it.total_qty || 0,
+    worker_team:              rowMap[it.report_id]?.worker_team              || '',
+    request_no:               rowMap[it.report_id]?.request_no               || '',
+    task_title:               rowMap[it.report_id]?.task_title               || '',
+    construction_work_class:  rowMap[it.report_id]?.construction_work_class  || '',
+    status:                   rowMap[it.report_id]?.status                   || '',
+    is_night:                 it.is_night,
+    is_aerial:                it.is_aerial,
+    report_id:                it.report_id,
   }))
 
   return c.json({ stats, rows, items })

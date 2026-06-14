@@ -24508,8 +24508,8 @@ async function _frLoadSpliceStats() {
       return;
     }
 
-    // status → 구분 한글 변환
-    const spliceStatusLabel = s => s === 'confirmed' ? '확정' : s === 'submitted' ? '제출' : '작성중';
+    // 공사종류(work_class) 코드 → 한글 (WC_LABEL과 동일한 매핑)
+    const spliceWcLabel = wc => ({ relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' }[wc] || wc || '-');
 
     resultDiv.innerHTML = `
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -24532,7 +24532,7 @@ async function _frLoadSpliceStats() {
                 <td class="border border-gray-100 px-2 py-1.5 text-center">${(row.work_date||'').slice(0,10)||'-'}</td>
                 <td class="border border-gray-100 px-2 py-1.5 text-center">${row.worker_team||'-'}</td>
                 <td class="border border-gray-100 px-2 py-1.5 text-center">${row.request_no||'-'}</td>
-                <td class="border border-gray-100 px-2 py-1.5 text-center">${spliceStatusLabel(row.status)}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-center">${spliceWcLabel(row.construction_work_class)}</td>
                 ${spliceItemKeys.map(k=>`<td class="border border-gray-100 px-2 py-1.5 text-right bg-indigo-50">${sm[k]||''}</td>`).join('')}
               </tr>`;
             }).join('')}
@@ -24625,7 +24625,7 @@ function downloadFieldReportCSV() {
       alert('다운로드할 데이터가 없습니다. 먼저 [조회] 버튼을 눌러주세요.'); return;
     }
     const headers = ['완료일','작업자(팀)','요청번호','구분', ..._frSpliceCacheItemKeys];
-    const statusLabel = s => s === 'confirmed' ? '확정' : s === 'submitted' ? '제출' : '작성중';
+    const wcLabel = wc => ({ relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' }[wc] || wc || '-');
     const spliceMap = {};
     _frSpliceCacheItems.forEach(it => {
       if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
@@ -24635,9 +24635,9 @@ function downloadFieldReportCSV() {
       const sm = spliceMap[row.id] || {};
       return [
         (row.work_date||'').slice(0,10)||'-',
-        row.worker_team  ||'-',
-        row.request_no   ||'-',
-        statusLabel(row.status),
+        row.worker_team                  ||'-',
+        row.request_no                   ||'-',
+        wcLabel(row.construction_work_class),
         ..._frSpliceCacheItemKeys.map(k => sm[k]||0)
       ];
     });

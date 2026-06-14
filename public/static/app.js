@@ -24109,11 +24109,9 @@ document.addEventListener('DOMContentLoaded', init);
 async function renderWorkReportListPage(container) {
   container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
-    // 작업 목록 중 work_class가 외선 계열인 것만 (또는 전체 완료 작업)
-    const res = await API.get('/tasks?status=completed,work_completed&limit=100');
-    const tasks = (res.data.tasks || []).filter(t =>
-      !t.work_class || t.work_class.includes('외선') || t.construction_type?.includes('외선') || true
-    );
+    // 작업완료(일지대기) + 완료 상태 작업 목록 조회 (work_completed, completed)
+    const res = await API.get('/tasks?status=working,work_completed,completed&limit=200');
+    const tasks = (res.data.tasks || []);
 
     container.innerHTML = `
     <div class="max-w-4xl mx-auto p-4 space-y-4">
@@ -24375,10 +24373,6 @@ async function renderWorkReportForm(container, taskId) {
           <i class="fas fa-file-alt text-pink-500"></i> 외 선 작 업 일 보
         </h2>
         ${report?.status === 'submitted' ? `<span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">제출완료</span>` : ''}
-        <!-- 케이블 추가 버튼 -->
-        <button onclick="_wrAddCableSet()" class="ml-auto text-xs bg-blue-500 text-white rounded-lg px-4 py-2 hover:bg-blue-600 font-semibold shadow">
-          <i class="fas fa-plus mr-1"></i>케이블 추가
-        </button>
       </div>
 
       <!-- ── 상단 자동입력 영역 ── -->
@@ -24832,9 +24826,9 @@ async function saveWorkReport(taskId) {
     const data = _collectWrData(taskId);
     const res  = await API.post('/work-reports', data);
     window._wrReportId = res.data.reportId;
-    showToast('임시저장 완료', 'success');
+    toast('임시저장 완료', 'success');
   } catch(e) {
-    showToast('저장 실패: ' + e.message, 'error');
+    toast('저장 실패: ' + e.message, 'error');
   }
 }
 
@@ -24847,7 +24841,7 @@ async function submitWorkReport(taskId) {
     // 팝업 없이 바로 제출
     await _finalSubmit(reportId, taskId);
   } catch(e) {
-    showToast('저장 실패: ' + e.message, 'error');
+    toast('저장 실패: ' + e.message, 'error');
   }
 }
 
@@ -24911,17 +24905,17 @@ async function _saveOtherWorks(reportId, taskId) {
     document.getElementById('wr-other-popup')?.remove();
     await _finalSubmit(reportId, taskId);
   } catch(e) {
-    showToast('기타공종 저장 실패: ' + e.message, 'error');
+    toast('기타공종 저장 실패: ' + e.message, 'error');
   }
 }
 
 async function _finalSubmit(reportId, taskId) {
   try {
     await API.post(`/work-reports/${reportId}/submit`, {});
-    showToast('일보 제출 완료!', 'success');
+    toast('일보 제출 완료!', 'success');
     setTimeout(() => navigateTo('work-report'), 1200);
   } catch(e) {
-    showToast('제출 실패: ' + e.message, 'error');
+    toast('제출 실패: ' + e.message, 'error');
   }
 }
 

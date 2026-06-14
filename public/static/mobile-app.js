@@ -12,7 +12,7 @@
   // ── 1. Service Worker 등록 ────────────────────────────────────────
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/static/service-worker.js', { scope: '/' })
+      navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
         .then(reg => {
           reg.addEventListener('updatefound', () => {
             const nw = reg.installing;

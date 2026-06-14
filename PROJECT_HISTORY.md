@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-14 (세션 19 — 완료)
-> **앱 현재 버전: v1.3.7** ← 최신 (⏳ NAS git pull + pm2 restart 필요)
+> 최종 업데이트: 2026-06-14 (세션 20 — 완료)
+> **앱 현재 버전: v1.3.8** ← 최신 (⏳ NAS git pull + pm2 restart 필요)
 > NAS 배포 버전: v1.3.1 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
 > **다음 작업**: NAS git pull + pm2 restart 적용 후 현장 테스트
 
@@ -35,10 +35,40 @@
 | **v1.3.5** | **2026-06-12** | ✅ **GitHub 배포 완료** | 확선내역/작업내역 섹션 전체 삭제, 섹션명 변경(→작업 케이블정보/추가입력), 추가입력 1컬럼 15행, 규격/케이블종류/공정구분/제조사 옵션 변경, _collectWrData `.wrc-kind` 드롭다운 수집 (캐시 `v=20260612k`) |
 | **v1.3.6** | **2026-06-12** | ✅ **GitHub 배포 완료** | **bugfix**: renderWorkReportForm 스코프 내 YEAR_OPTS 누락 복구(sed 치환 오작동) (캐시 `v=20260612l`) |
 | **v1.3.7** | **2026-06-14** | ✅ **GitHub 배포 완료** | +행추가 버튼 버그 수정(_wrAddCableRow에서 `${SPEC_OPTS}`→`${SPEC_OPTS3}`), 버튼명 '메인 등록'→'제출', getPageTitle에 work-report/field-volume/volume-stats 추가(헤더 타이틀 코드 ID 표시 수정) (캐시 `v=20260612m`) |
+| **v1.3.8** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: `showToast`→`toast` 치환(임시저장/제출/행추가 버튼 완전 무반응 핵심 원인), +케이블추가 버튼 삭제, tasks 조회 범위 확대(working/work_completed/completed), SW 등록경로 `/service-worker.js` 수정 (캐시 `v=20260614a`) |
 
 ---
 
 ## 🔧 이슈별 수정 이력 (전체)
+
+---
+
+### ✅ [v1.3.8 / 세션20] 외선일보 버튼 무반응 근본 원인 수정 + 기타 버그
+**날짜**: 2026-06-14  
+**커밋**: `(현재 세션)`  
+**캐시버전**: `v=20260614a`
+
+#### 문제 1: 임시저장/제출/행추가 버튼 완전 무반응 — 핵심 원인
+- **원인**: `saveWorkReport`, `submitWorkReport`, `_finalSubmit` 등에서 `showToast()` 호출 — 이 함수명은 앱에 존재하지 않음 (실제 함수명은 `toast`)
+- **흐름**: 버튼 클릭 → API 성공 → `showToast('임시저장 완료', 'success')` 호출 → `ReferenceError: showToast is not defined` → catch 블록 진입 → catch 내에서도 `showToast('저장 실패')` 호출 → 동일 에러 → 완전 무반응
+- **수정**: `sed -i 's/showToast(/toast(/g'` 로 전체 6곳 치환
+
+#### 문제 2: + 케이블 추가 버튼 불필요
+- 외선일보는 1개 작업에 1개 세트만 작성하므로 추가 불필요
+- 헤더 영역의 파란색 `+ 케이블 추가` 버튼 완전 삭제
+
+#### 문제 3: 사이드메뉴 외선일보 작성 → 완료된 작업이 없습니다
+- **원인**: `/tasks?status=completed,work_completed` → 실제 DB에는 `working` 상태도 있음
+- **수정**: 조회 status를 `working,work_completed,completed`로 확대, limit도 200으로 증가
+
+#### 문제 4: Service Worker 스코프 에러
+- **원인**: `mobile-app.js`에서 `/static/service-worker.js`로 등록하면서 `scope: '/'` 요청 → 브라우저가 스코프 거부
+- **수정**: 등록 경로를 `/service-worker.js`(루트)로 변경 (서버에 이미 해당 라우트 + `Service-Worker-Allowed: /` 헤더 있음)
+
+**변경 파일**:
+- `public/static/app.js`: `showToast→toast` 치환 6곳, +케이블추가 버튼 삭제, tasks API 쿼리 수정
+- `public/static/mobile-app.js`: SW 등록 경로 수정
+- `node-server.ts`: 캐시버전 `v=20260612m` → `v=20260614a`
 
 ---
 

@@ -8403,35 +8403,7 @@ async function showWorkLogForm(taskId) {
           <textarea id="logWorkVolume" class="form-control" rows="2"
             placeholder="완료 물량을 입력하세요 (예: 케이블 포설 50m, 접속 2점 등)"></textarea>
         </div>
-        <!-- 접속 선택 시 공종별 입력 테이블 -->
-        <div id="workVolSpliceArea" class="hidden mb-2">
-          <div class="rounded-xl border overflow-hidden" style="border-color:#DDD6FE;">
-            <div class="flex items-center justify-between px-3 py-2" style="background:#F8F5FF;">
-              <span class="text-xs font-semibold text-indigo-700"><i class="fas fa-plug mr-1"></i>접속 공종 입력</span>
-              <button type="button" onclick="_spliceAddRow()"
-                class="text-xs px-2 py-1 rounded-lg font-medium transition"
-                style="background:#685182;color:#fff;border:none;">
-                <i class="fas fa-plus mr-1"></i>행 추가
-              </button>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="w-full text-xs border-collapse" style="min-width:520px">
-                <thead>
-                  <tr style="background:#EDE9FE;">
-                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold w-32">공종</th>
-                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold w-10">야간</th>
-                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold w-10">가공</th>
-                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold">시공량</th>
-                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold w-14">단위</th>
-                    <th class="border border-gray-200 px-1 py-1.5 text-center w-6"></th>
-                  </tr>
-                </thead>
-                <tbody id="splice-work-tbody">
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        <!-- 접속 공종 입력 테이블 제거됨 (접속작업일보 화면에서만 입력) -->
         <!-- 외선 선택 시 일보작성 버튼 -->
         <div id="workVolCableAction" class="hidden">
           <button type="button" onclick="goToWorkReport(_currentWorklogTaskId)"
@@ -27573,16 +27545,9 @@ function selectWorkVolType(btn, type) {
   const cableAction  = document.getElementById('workVolCableAction');
   const spliceAction = document.getElementById('workVolSpliceAction');
 
-  if (type === 'splice') {
-    if (inputArea)  inputArea.classList.add('hidden');
-    if (spliceArea) {
-      spliceArea.classList.remove('hidden');
-      _spliceInitRows(); // 기본 공종 행이 없으면 초기화
-    }
-  } else {
-    if (inputArea)  inputArea.classList.remove('hidden');
-    if (spliceArea) spliceArea.classList.add('hidden');
-  }
+  // 접속 포함 모든 타입에서 textarea 입력 영역 표시
+  if (inputArea)  inputArea.classList.remove('hidden');
+  if (spliceArea) spliceArea.classList.add('hidden'); // spliceArea 미사용
 
   // 외선 선택 → 외선일보 작성 버튼, 접속 선택 → 접속일보 작성 버튼
   if (cableAction)  cableAction.classList.toggle('hidden',  type !== 'cable');

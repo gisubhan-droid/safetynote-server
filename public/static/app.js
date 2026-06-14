@@ -8392,10 +8392,39 @@ async function showWorkLogForm(taskId) {
             <i class="fas fa-tools mr-1"></i>장비
           </button>
         </div>
-        <!-- 공통 입력 영역 -->
+        <!-- 공통 입력 영역 (외선/관로/장비) -->
         <div id="workVolInputArea" class="hidden p-3 rounded-xl border mb-2" style="background:#F8F5FF;border-color:#DDD6FE;">
           <textarea id="logWorkVolume" class="form-control" rows="2"
             placeholder="완료 물량을 입력하세요 (예: 케이블 포설 50m, 접속 2점 등)"></textarea>
+        </div>
+        <!-- 접속 선택 시 공종별 입력 테이블 -->
+        <div id="workVolSpliceArea" class="hidden mb-2">
+          <div class="rounded-xl border overflow-hidden" style="border-color:#DDD6FE;">
+            <div class="flex items-center justify-between px-3 py-2" style="background:#F8F5FF;">
+              <span class="text-xs font-semibold text-indigo-700"><i class="fas fa-plug mr-1"></i>접속 공종 입력</span>
+              <button type="button" onclick="_spliceAddRow()"
+                class="text-xs px-2 py-1 rounded-lg font-medium transition"
+                style="background:#685182;color:#fff;border:none;">
+                <i class="fas fa-plus mr-1"></i>행 추가
+              </button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs border-collapse" style="min-width:520px">
+                <thead>
+                  <tr style="background:#EDE9FE;">
+                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold w-32">공종</th>
+                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold w-10">야간</th>
+                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold w-10">가공</th>
+                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold">시공량</th>
+                    <th class="border border-gray-200 px-2 py-1.5 text-center text-gray-600 font-semibold w-14">단위</th>
+                    <th class="border border-gray-200 px-1 py-1.5 text-center w-6"></th>
+                  </tr>
+                </thead>
+                <tbody id="splice-work-tbody">
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <!-- 외선 선택 시 일보작성 버튼 -->
         <div id="workVolCableAction" class="hidden">
@@ -26101,10 +26130,21 @@ function selectWorkVolType(btn, type) {
   btn.style.background = '#FDE8F3';
   btn.style.color = '#D70072';
 
-  // 입력 영역 표시
-  const inputArea = document.getElementById('workVolInputArea');
+  // 입력 영역 표시 (splice는 별도 테이블, 나머지는 textarea)
+  const inputArea   = document.getElementById('workVolInputArea');
+  const spliceArea  = document.getElementById('workVolSpliceArea');
   const cableAction = document.getElementById('workVolCableAction');
-  if (inputArea) inputArea.classList.remove('hidden');
+
+  if (type === 'splice') {
+    if (inputArea)  inputArea.classList.add('hidden');
+    if (spliceArea) {
+      spliceArea.classList.remove('hidden');
+      _spliceInitRows(); // 기본 공종 행이 없으면 초기화
+    }
+  } else {
+    if (inputArea)  inputArea.classList.remove('hidden');
+    if (spliceArea) spliceArea.classList.add('hidden');
+  }
 
   // 외선 선택 시 일보작성 버튼 표시, 나머지는 숨김
   if (cableAction) {
@@ -26129,6 +26169,74 @@ function selectWorkVolType(btn, type) {
 }
 
 // 외선일보 작성 화면으로 이동 (작업일지 모달 닫고 이동)
+// ── 접속 공종 기본 항목 정의 ────────────────────────────────────────────────
+const SPLICE_DEFAULT_ITEMS = [
+  { label: '함체작업',              night: true,  aerial: true,  unit: '개소' },
+  { label: '중간분기',              night: true,  aerial: true,  unit: '개소' },
+  { label: '선번확인',              night: true,  aerial: true,  unit: '개소' },
+  { label: '광케이블 코아접속',     night: true,  aerial: true,  unit: '코어' },
+  { label: '광케이블 성단',         night: true,  aerial: true,  unit: '코어' },
+  { label: '광탭작업',              night: true,  aerial: true,  unit: '개소' },
+  { label: '광탭 중간분기',         night: true,  aerial: true,  unit: '개소' },
+  { label: '광커넥터 현장조립/취부', night: true, aerial: true,  unit: '개소' },
+  { label: '광탭 결합/고정 작업',   night: true,  aerial: true,  unit: '개소' },
+  { label: 'FTTH 레벨 측정시험',    night: true,  aerial: true,  unit: '코어' },
+  { label: '신호수배치',            night: true,  aerial: false, unit: '건'   },
+];
+
+// 접속 공종 tbody 초기화 (처음 한 번만 기본 항목 채움)
+function _spliceInitRows() {
+  const tbody = document.getElementById('splice-work-tbody');
+  if (!tbody || tbody.rows.length > 0) return; // 이미 행 있으면 skip
+  SPLICE_DEFAULT_ITEMS.forEach(item => _spliceAppendRow(tbody, item));
+}
+
+// 행 추가 버튼 클릭
+function _spliceAddRow() {
+  const tbody = document.getElementById('splice-work-tbody');
+  if (!tbody) return;
+  _spliceAppendRow(tbody, { label: '', night: false, aerial: false, unit: '' });
+}
+
+// 실제 행 DOM 생성
+function _spliceAppendRow(tbody, item) {
+  const tr = document.createElement('tr');
+  tr.className = 'hover:bg-purple-50';
+  const isCustom = !item.label; // 사용자 추가 행 여부 (label 없으면 커스텀)
+  tr.innerHTML = `
+    <td class="border border-gray-200 p-0.5">
+      ${isCustom
+        ? `<input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none splice-label" placeholder="공종명 입력">`
+        : `<span class="px-2 py-1 block text-xs text-gray-700 splice-label-text">${item.label}<input type="hidden" class="splice-label" value="${item.label}"></span>`
+      }
+    </td>
+    <td class="border border-gray-200 px-2 py-1 text-center">
+      ${item.aerial !== false
+        ? `<input type="checkbox" class="splice-night w-4 h-4 accent-indigo-600" ${item.night ? '' : ''}>`
+        : `<span class="text-gray-300 text-xs">—</span>`}
+    </td>
+    <td class="border border-gray-200 px-2 py-1 text-center">
+      ${item.aerial !== false
+        ? `<input type="checkbox" class="splice-aerial w-4 h-4 accent-indigo-600" ${item.aerial ? '' : ''}>`
+        : `<span class="text-gray-300 text-xs">—</span>`}
+    </td>
+    <td class="border border-gray-200 p-0.5">
+      <input type="number" step="1" min="0" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right splice-qty" placeholder="0">
+    </td>
+    <td class="border border-gray-200 px-2 py-1 text-center text-xs text-gray-500">
+      ${isCustom
+        ? `<input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-center splice-unit" placeholder="단위">`
+        : `<span class="splice-unit-text">${item.unit}</span><input type="hidden" class="splice-unit" value="${item.unit}">`
+      }
+    </td>
+    <td class="border border-gray-200 px-1 py-1 text-center">
+      ${isCustom
+        ? `<button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button>`
+        : `<span class="text-gray-200 text-xs px-1">—</span>`}
+    </td>`;
+  tbody.appendChild(tr);
+}
+
 function goToWorkReport(taskId) {
   if (!taskId) { toast('작업 정보를 찾을 수 없습니다.', 'error'); return; }
   // 모달 전체 닫기

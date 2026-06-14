@@ -2940,72 +2940,7 @@ app.get('/api/splice-reports/stats', async (c) => {
   return c.json({ stats, rows, items })
 })
 
-// GET /api/splice-reports/debug — 데이터 구조 진단용 (개발/디버그 전용)
-app.get('/api/splice-reports/debug', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-
-  const results: any = { tables: {}, sample: {} }
-
-  // splice_reports 최근 3건
-  try {
-    results.sample.splice_reports = rawDb.prepare(
-      `SELECT id, task_id, work_date, worker_team, manager_name, status FROM splice_reports ORDER BY id DESC LIMIT 3`
-    ).all()
-  } catch(e: any) { results.sample.splice_reports_err = e.message }
-
-  // 최근 splice_report의 task 정보
-  try {
-    const sr = results.sample.splice_reports?.[0]
-    if (sr?.task_id) {
-      results.sample.task_for_sr = rawDb.prepare(
-        `SELECT id, request_no, title, construction_id, contractor_name FROM tasks WHERE id=?`
-      ).get(sr.task_id)
-    }
-  } catch(e: any) { results.sample.task_err = e.message }
-
-  // constructions JOIN 방식 테스트
-  try {
-    results.sample.constructions_join_test = rawDb.prepare(`
-      SELECT sr.id, sr.task_id,
-             t.request_no, t.construction_id,
-             cs1.work_class AS wc_by_id,
-             cs2.work_class AS wc_by_reqno
-      FROM splice_reports sr
-      LEFT JOIN tasks t ON sr.task_id = t.id
-      LEFT JOIN constructions cs1 ON cs1.id = t.construction_id
-      LEFT JOIN constructions cs2 ON cs2.request_no = t.request_no
-      ORDER BY sr.id DESC LIMIT 3
-    `).all()
-  } catch(e: any) { results.sample.constructions_join_err = e.message }
-
-  // 팀 정보 조회 테스트
-  try {
-    const sr = results.sample.splice_reports?.[0]
-    if (sr?.task_id) {
-      results.sample.team_for_task = rawDb.prepare(`
-        SELECT ta.worker_id, u.name AS user_name, u.team_id, tm.name AS team_name
-        FROM task_assignments ta
-        JOIN users u  ON u.id  = ta.worker_id
-        LEFT JOIN teams tm ON tm.id = u.team_id
-        WHERE ta.task_id = ?
-        LIMIT 5
-      `).all(sr.task_id)
-    }
-  } catch(e: any) { results.sample.team_err = e.message }
-
-  // tasks 컬럼 목록
-  try {
-    results.tables.tasks_columns = rawDb.prepare(`PRAGMA table_info(tasks)`).all()
-  } catch(e: any) { results.tables.tasks_err = e.message }
-
-  // constructions 컬럼 목록
-  try {
-    results.tables.constructions_columns = rawDb.prepare(`PRAGMA table_info(constructions)`).all()
-  } catch(e: any) { results.tables.constructions_err = e.message }
-
-  return c.json(results)
-})
+// GET /api/splice-reports/:id — 단건 상세 (items 포함)
 app.get('/api/splice-reports/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)

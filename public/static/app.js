@@ -1960,11 +1960,12 @@ function renderApp() {
     { id:'sign-requests', icon:'fas fa-pen-fancy', label:'서명요청', group:'안전관리' },
     { divider: true, label: '현장공량관리' },
     { id:'field-volume', icon:'fas fa-chart-line', label:'현장공량관리', group:'현장공량관리', children: [
-      { id:'work-report',    icon:'fas fa-file-alt',          label:'외선일보 작성' },
-      { id:'volume-stats',   icon:'fas fa-table',             label:'물량통계 (외선부분)' },
-      { id:'cable-detail',   icon:'fas fa-cable-car',         label:'광케이블 현황' },
+      { id:'volume-stats',     icon:'fas fa-chart-bar',        label:'물량통계' },
+      { id:'work-report',      icon:'fas fa-file-alt',         label:'공량내역 — 외선' },
+      { id:'splice-report',    icon:'fas fa-plug',             label:'공량내역 — 접속' },
+      { id:'cable-detail',     icon:'fas fa-cable-car',        label:'광케이블 현황' },
       ...(dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin' ? [
-        { id:'unit-price',   icon:'fas fa-tags',              label:'단가 관리' },
+        { id:'unit-price',     icon:'fas fa-tags',             label:'단가 관리' },
       ] : []),
     ]},
     { divider: true, label: '관리' },
@@ -2619,7 +2620,8 @@ function getPageTitle(page) {
     'edu-supervisor': '관리감독자교육', 'edu-stats': '교육현황통계',
     'edu': '안전교육',
     'sign-requests': '서명 요청',
-    'work-report': '외선일보 작성', 'field-volume': '현장공량관리', 'volume-stats': '물량통계 (외선부분)', 'cable-detail': '광케이블 현황', 'unit-price': '단가 관리',
+    'work-report': '공량내역 — 외선', 'splice-report': '공량내역 — 접속',
+    'field-volume': '현장공량관리', 'volume-stats': '물량통계', 'cable-detail': '광케이블 현황', 'unit-price': '단가 관리',
   };
   return map[page] || page;
 }
@@ -2727,9 +2729,10 @@ function navigateTo(page) {
     case 'periodic-risk': renderRiskPeriodicPage(content); break;
     case 'checklist-risk': renderChecklistRiskPage(content); break;
     case 'legal-notices': renderLegalNoticesPage(content); break;
-    case 'field-volume': navigateTo('work-report'); return;
-    case 'work-report':  renderWorkReportListPage(content); break;
-    case 'volume-stats':  renderVolumeStatsPage(content);  break;
+    case 'field-volume': navigateTo('volume-stats'); return;
+    case 'work-report':    renderWorkReportListPage(content); break;
+    case 'splice-report':  renderSpliceReportListPage(content); break;
+    case 'volume-stats':   renderVolumeStatsPage(content);  break;
     case 'cable-detail':   renderCableDetailPage(content);  break;
     case 'unit-price':     renderUnitPricePage(content);    break;
     case 'edu': navigateTo('edu-periodic'); return;
@@ -25076,6 +25079,391 @@ async function _finalSubmit(reportId, taskId) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 접속일보 — 목록 페이지
+// ═══════════════════════════════════════════════════════════════
+async function renderSpliceReportListPage(container) {
+  container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
+  try {
+    const res = await API.get('/splice-reports');
+    const reports = res.data.reports || [];
+
+    // 탭 분류 (외선일보와 동일 패턴)
+    const pending   = reports.filter(r => r.status === 'draft' || !r.status);
+    const completed = reports.filter(r => r.status === 'submitted' || r.status === 'confirmed');
+
+    const statusBadge = (s) => {
+      if (s === 'confirmed') return `<span class="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">확인완료</span>`;
+      if (s === 'submitted') return `<span class="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">제출완료</span>`;
+      return `<span class="text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-600">임시저장</span>`;
+    };
+
+    const mkCard = (r) => `
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3 hover:shadow-md transition cursor-pointer"
+           onclick="renderSpliceReportForm(document.getElementById('page-content'), ${r.id || 'null'}, null)">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style="background:#EDE9FE;">
+          <i class="fas fa-plug text-indigo-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-semibold text-gray-800 text-sm truncate">${r.work_date || '날짜미정'}</span>
+            ${statusBadge(r.status)}
+          </div>
+          <div class="text-xs text-gray-500 mt-0.5 truncate">
+            ${r.worker_team || '팀미지정'} · ${r.task_title || '작업없음'} · ${r.item_count || 0}개 공종
+          </div>
+        </div>
+        <i class="fas fa-chevron-right text-gray-300 text-xs flex-shrink-0"></i>
+      </div>`;
+
+    container.innerHTML = `
+    <div class="max-w-4xl mx-auto p-4 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <i class="fas fa-plug text-indigo-500"></i> 공량내역 — 접속
+        </h2>
+        <button onclick="renderSpliceReportForm(document.getElementById('page-content'), null, null)"
+                class="text-sm px-4 py-2 rounded-xl text-white font-semibold hover:opacity-90 transition flex items-center gap-1"
+                style="background:linear-gradient(135deg,#685182,#4F46E5);">
+          <i class="fas fa-plus mr-1"></i>신규 작성
+        </button>
+      </div>
+
+      <!-- 탭 -->
+      <div class="flex rounded-xl overflow-hidden border border-gray-200 text-sm font-medium">
+        <button id="sr-tab-pending-btn" onclick="_srSwitchTab('pending')"
+          class="flex-1 py-2 text-center transition bg-indigo-50 text-indigo-700 border-r border-gray-200">
+          작성대상 <span class="ml-1 bg-indigo-100 text-indigo-600 text-xs px-1.5 py-0.5 rounded-full">${pending.length}</span>
+        </button>
+        <button id="sr-tab-completed-btn" onclick="_srSwitchTab('completed')"
+          class="flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50">
+          작성완료 <span class="ml-1 bg-gray-100 text-gray-500 text-xs px-1.5 py-0.5 rounded-full">${completed.length}</span>
+        </button>
+      </div>
+      <input type="hidden" id="sr-tab-state" value="pending">
+
+      <!-- 작성대상 목록 -->
+      <div id="sr-list-pending" class="space-y-2">
+        ${pending.length === 0
+          ? `<div class="text-center text-gray-400 py-10 text-sm"><i class="fas fa-check-circle text-3xl mb-2 block text-green-300"></i>작성 대상이 없습니다</div>`
+          : pending.map(mkCard).join('')}
+      </div>
+      <!-- 작성완료 목록 -->
+      <div id="sr-list-completed" class="space-y-2 hidden">
+        ${completed.length === 0
+          ? `<div class="text-center text-gray-400 py-10 text-sm"><i class="fas fa-inbox text-3xl mb-2 block text-gray-300"></i>작성완료 내역이 없습니다</div>`
+          : completed.map(mkCard).join('')}
+      </div>
+    </div>`;
+  } catch(e) {
+    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+function _srSwitchTab(tab) {
+  const stateEl = document.getElementById('sr-tab-state');
+  if (stateEl) stateEl.value = tab;
+  ['pending','completed'].forEach(id => {
+    const listEl = document.getElementById(`sr-list-${id}`);
+    const btnEl  = document.getElementById(`sr-tab-${id}-btn`);
+    if (!listEl || !btnEl) return;
+    if (id === tab) {
+      listEl.classList.remove('hidden');
+      btnEl.className = 'flex-1 py-2 text-center transition bg-indigo-50 text-indigo-700 border-r border-gray-200';
+    } else {
+      listEl.classList.add('hidden');
+      btnEl.className = 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50';
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 접속일보 — 입력 폼 페이지
+// ═══════════════════════════════════════════════════════════════
+const SPLICE_ITEMS_DEF = [
+  { key:'함체작업',              label:'함체작업',              has_aerial:true,  unit:'개소' },
+  { key:'중간분기',              label:'중간분기',              has_aerial:true,  unit:'개소' },
+  { key:'선번확인',              label:'선번확인',              has_aerial:true,  unit:'개소' },
+  { key:'광케이블코아접속',       label:'광케이블 코아접속',     has_aerial:true,  unit:'코어' },
+  { key:'광케이블성단',           label:'광케이블 성단',         has_aerial:true,  unit:'코어' },
+  { key:'광탭작업',              label:'광탭작업',              has_aerial:true,  unit:'개소' },
+  { key:'광탭중간분기',           label:'광탭 중간분기',         has_aerial:true,  unit:'개소' },
+  { key:'광커넥터현장조립',        label:'광커넥터 현장조립/취부',has_aerial:true,  unit:'개소' },
+  { key:'광탭결합고정',           label:'광탭 결합/고정 작업',  has_aerial:true,  unit:'개소' },
+  { key:'FTTH레벨측정',           label:'FTTH 레벨 측정시험',   has_aerial:true,  unit:'코어' },
+  { key:'신호수배치',             label:'신호수배치',            has_aerial:false, unit:'건'   },
+];
+
+async function renderSpliceReportForm(container, reportId, taskId) {
+  container.innerHTML = `<div class="max-w-3xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
+  try {
+    let report = null;
+    let savedItems = [];
+
+    if (reportId) {
+      const res = await API.get(`/splice-reports/${reportId}`);
+      report    = res.data.report;
+      savedItems = res.data.items || [];
+    }
+
+    // 작업 정보 (taskId 또는 report.task_id로 로드)
+    const tId = taskId || report?.task_id;
+    let task = null;
+    if (tId) {
+      try { task = (await API.get(`/tasks/${tId}`)).data?.task || null; } catch(_) {}
+    }
+
+    const workDate   = report?.work_date   || (task?.work_completed_at || '').slice(0,10) || '';
+    const workerTeam = report?.worker_team || task?.contractor_name || '';
+    const managerName= report?.manager_name|| task?.lgu_supervisor  || '';
+    const remark     = report?.remark      || '';
+    const status     = report?.status      || 'draft';
+
+    // 기존 저장 데이터를 key→item 맵으로
+    const savedMap = {};
+    savedItems.forEach(it => { savedMap[it.work_label] = it; });
+
+    // 공종 행 생성 (기본항목 + 저장된 커스텀 항목)
+    const defaultKeys = new Set(SPLICE_ITEMS_DEF.map(d => d.key));
+    const customItems = savedItems.filter(it => !defaultKeys.has(it.work_label));
+
+    const mkItemRow = (label, unit, has_aerial, saved) => {
+      const night  = saved?.is_night  ? 'checked' : '';
+      const aerial = saved?.is_aerial ? 'checked' : '';
+      const qty    = saved?.qty || '';
+      return `
+      <tr class="hover:bg-purple-50 sri-row" data-key="${label}">
+        <td class="border border-gray-200 px-2 py-1.5 text-xs text-gray-700 font-medium">${label}</td>
+        <td class="border border-gray-200 px-2 py-1.5 text-center">
+          <input type="checkbox" class="sri-night w-4 h-4 accent-indigo-600" ${night}>
+        </td>
+        <td class="border border-gray-200 px-2 py-1.5 text-center">
+          ${has_aerial
+            ? `<input type="checkbox" class="sri-aerial w-4 h-4 accent-indigo-600" ${aerial}>`
+            : `<span class="text-gray-300 text-xs">—</span>`}
+        </td>
+        <td class="border border-gray-200 p-0.5">
+          <input type="number" step="1" min="0" value="${qty}"
+            class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right sri-qty" placeholder="0">
+        </td>
+        <td class="border border-gray-200 px-2 py-1.5 text-center text-xs text-gray-500 sri-unit">${unit}
+          <input type="hidden" class="sri-unit-val" value="${unit}">
+        </td>
+        <td class="border border-gray-200 px-1 py-1 text-center">
+          <span class="text-gray-200 text-xs">—</span>
+        </td>
+      </tr>`;
+    };
+
+    const mkCustomRow = (it) => `
+      <tr class="hover:bg-purple-50 sri-row sri-custom-row" data-key="">
+        <td class="border border-gray-200 p-0.5">
+          <input type="text" value="${it?.work_label||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none sri-label" placeholder="공종명">
+        </td>
+        <td class="border border-gray-200 px-2 py-1.5 text-center">
+          <input type="checkbox" class="sri-night w-4 h-4 accent-indigo-600" ${it?.is_night?'checked':''}>
+        </td>
+        <td class="border border-gray-200 px-2 py-1.5 text-center">
+          <input type="checkbox" class="sri-aerial w-4 h-4 accent-indigo-600" ${it?.is_aerial?'checked':''}>
+        </td>
+        <td class="border border-gray-200 p-0.5">
+          <input type="number" step="1" min="0" value="${it?.qty||''}"
+            class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right sri-qty" placeholder="0">
+        </td>
+        <td class="border border-gray-200 p-0.5">
+          <input type="text" value="${it?.unit||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-center sri-unit-val" placeholder="단위">
+        </td>
+        <td class="border border-gray-200 px-1 py-1 text-center">
+          <button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button>
+        </td>
+      </tr>`;
+
+    const defaultRows = SPLICE_ITEMS_DEF.map(d =>
+      mkItemRow(d.label, d.unit, d.has_aerial, savedMap[d.label] || savedMap[d.key])
+    ).join('');
+    const customRows = customItems.map(it => mkCustomRow(it)).join('');
+
+    container.innerHTML = `
+    <div class="max-w-3xl mx-auto p-4 space-y-4">
+      <!-- 헤더 -->
+      <div class="flex items-center gap-3">
+        <button onclick="navigateTo('splice-report')" class="text-gray-400 hover:text-gray-600">
+          <i class="fas fa-arrow-left text-lg"></i>
+        </button>
+        <div>
+          <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <i class="fas fa-plug text-indigo-500"></i> 접속일보 작성
+          </h2>
+          <p class="text-xs text-gray-400">${task?.title || '직접 작성'}</p>
+        </div>
+        ${status === 'submitted' ? `<span class="ml-auto text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">제출완료</span>` : ''}
+        ${status === 'confirmed' ? `<span class="ml-auto text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">확인완료</span>` : ''}
+      </div>
+
+      <!-- 기본정보 -->
+      <div class="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
+        <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">작업일 <span class="text-xs text-blue-400">(자동/수정가능)</span></label>
+            <input id="sr-work-date" type="date" value="${workDate}"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400">
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">작업팀 <span class="text-xs text-blue-400">(자동/수정가능)</span></label>
+            <input id="sr-worker-team" type="text" value="${workerTeam}"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400"
+              placeholder="팀명 입력">
+          </div>
+          <div class="col-span-2">
+            <label class="text-xs text-gray-400 block mb-1">담당공무(작업지시자) <span class="text-xs text-blue-400">(자동/수정가능)</span></label>
+            <input id="sr-manager-name" type="text" value="${managerName}"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400"
+              placeholder="담당자명">
+          </div>
+          <div class="col-span-2">
+            <label class="text-xs text-gray-400 block mb-1">특이사항</label>
+            <textarea id="sr-remark" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400" rows="2" placeholder="특이사항 입력">${remark}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- 공종 입력 테이블 -->
+      <div class="bg-white rounded-2xl shadow-sm border border-indigo-100">
+        <div class="flex items-center justify-between px-4 pt-3 pb-2">
+          <span class="font-semibold text-gray-700 text-sm">
+            <i class="fas fa-list-check text-indigo-400 mr-1"></i> 공종별 작업량
+          </span>
+          <button onclick="_srAddCustomRow()"
+            class="text-xs px-3 py-1 rounded-lg font-medium transition"
+            style="background:#685182;color:#fff;">
+            <i class="fas fa-plus mr-1"></i>행 추가
+          </button>
+        </div>
+        <div class="overflow-x-auto pb-2">
+          <table class="w-full text-xs border-collapse" style="min-width:480px">
+            <thead>
+              <tr style="background:#EDE9FE;">
+                <th class="border border-gray-200 px-2 py-2 text-center text-gray-600 font-semibold w-36">공종</th>
+                <th class="border border-gray-200 px-2 py-2 text-center text-gray-600 font-semibold w-12">야간</th>
+                <th class="border border-gray-200 px-2 py-2 text-center text-gray-600 font-semibold w-12">가공</th>
+                <th class="border border-gray-200 px-2 py-2 text-center text-gray-600 font-semibold">시공량</th>
+                <th class="border border-gray-200 px-2 py-2 text-center text-gray-600 font-semibold w-14">단위</th>
+                <th class="border border-gray-200 px-1 py-2 w-7"></th>
+              </tr>
+            </thead>
+            <tbody id="sr-items-tbody">
+              ${defaultRows}
+              ${customRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <input type="hidden" id="sr-report-id" value="${reportId || ''}">
+      <input type="hidden" id="sr-task-id"   value="${tId || ''}">
+
+      <!-- 저장/제출 버튼 -->
+      <div class="flex gap-3 pb-6">
+        <button onclick="saveSpliceReport()" class="flex-1 py-3 text-sm font-semibold rounded-xl text-white hover:opacity-90 transition" style="background:#685182;">
+          <i class="fas fa-save mr-1"></i> 임시저장
+        </button>
+        <button onclick="submitSpliceReport()" class="flex-1 py-3 text-sm font-semibold rounded-xl bg-green-500 text-white hover:bg-green-600 transition">
+          <i class="fas fa-paper-plane mr-1"></i> 제출
+        </button>
+      </div>
+    </div>`;
+
+  } catch(e) {
+    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+// 커스텀 행 추가 (접속일보 폼)
+function _srAddCustomRow() {
+  const tbody = document.getElementById('sr-items-tbody');
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  tr.className = 'hover:bg-purple-50 sri-row sri-custom-row';
+  tr.dataset.key = '';
+  tr.innerHTML = `
+    <td class="border border-gray-200 p-0.5">
+      <input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none sri-label" placeholder="공종명">
+    </td>
+    <td class="border border-gray-200 px-2 py-1.5 text-center">
+      <input type="checkbox" class="sri-night w-4 h-4 accent-indigo-600">
+    </td>
+    <td class="border border-gray-200 px-2 py-1.5 text-center">
+      <input type="checkbox" class="sri-aerial w-4 h-4 accent-indigo-600">
+    </td>
+    <td class="border border-gray-200 p-0.5">
+      <input type="number" step="1" min="0" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right sri-qty" placeholder="0">
+    </td>
+    <td class="border border-gray-200 p-0.5">
+      <input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-center sri-unit-val" placeholder="단위">
+    </td>
+    <td class="border border-gray-200 px-1 py-1 text-center">
+      <button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button>
+    </td>`;
+  tbody.appendChild(tr);
+}
+
+// 접속일보 데이터 수집
+function _collectSpliceData() {
+  const reportId   = parseInt(document.getElementById('sr-report-id')?.value) || null;
+  const taskId     = parseInt(document.getElementById('sr-task-id')?.value)   || null;
+  const work_date  = document.getElementById('sr-work-date')?.value    || '';
+  const worker_team= document.getElementById('sr-worker-team')?.value  || '';
+  const manager_name=document.getElementById('sr-manager-name')?.value || '';
+  const remark     = document.getElementById('sr-remark')?.value       || '';
+
+  const items = [];
+  document.querySelectorAll('#sr-items-tbody .sri-row').forEach(tr => {
+    // 기본 항목: data-key가 있거나 label 텍스트셀
+    const isCustom = tr.classList.contains('sri-custom-row');
+    const label = isCustom
+      ? (tr.querySelector('.sri-label')?.value || '').trim()
+      : (tr.dataset.key || tr.querySelector('.sri-label')?.textContent?.trim() || '');
+    if (!label) return;
+    const qty = parseInt(tr.querySelector('.sri-qty')?.value) || 0;
+    const unit = isCustom
+      ? (tr.querySelector('.sri-unit-val')?.value || '')
+      : (tr.querySelector('.sri-unit-val')?.value || tr.querySelector('.sri-unit')?.textContent?.trim() || '');
+    items.push({
+      work_label: label,
+      is_night:   tr.querySelector('.sri-night')?.checked  ? 1 : 0,
+      is_aerial:  tr.querySelector('.sri-aerial')?.checked ? 1 : 0,
+      qty,
+      unit,
+    });
+  });
+
+  return { report_id: reportId, task_id: taskId, work_date, worker_team, manager_name, remark, items };
+}
+
+async function saveSpliceReport() {
+  try {
+    const data = _collectSpliceData();
+    const res  = await API.post('/splice-reports', data);
+    const reportId = res.data.reportId;
+    document.getElementById('sr-report-id').value = reportId;
+    toast('접속일보 임시저장 완료', 'success');
+  } catch(e) {
+    toast('저장 실패: ' + e.message, 'error');
+  }
+}
+
+async function submitSpliceReport() {
+  try {
+    const data = _collectSpliceData();
+    const res  = await API.post('/splice-reports', data);
+    const reportId = res.data.reportId;
+    await API.post(`/splice-reports/${reportId}/submit`, {});
+    toast('접속일보 제출 완료!', 'success');
+    setTimeout(() => navigateTo('splice-report'), 1200);
+  } catch(e) {
+    toast('제출 실패: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 물량통계 페이지 (종합통계 > 외선부분)
 // ═══════════════════════════════════════════════════════════════
 let _volumeStatsCache = { rows: [], extras: [], allItemKeys: [] };
@@ -25171,8 +25559,26 @@ async function renderVolumeStatsPage(container) {
     <div class="max-w-5xl mx-auto p-4 space-y-4">
       <div class="flex items-center justify-between flex-wrap gap-2">
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <i class="fas fa-table text-pink-500"></i> 물량통계 — 외선부분
+          <i class="fas fa-chart-bar text-pink-500"></i> 물량통계
         </h2>
+      </div>
+
+      <!-- 외선 / 접속 탭 -->
+      <div class="flex rounded-xl overflow-hidden border border-gray-200 text-sm font-medium vs-no-print">
+        <button id="vs-tab-cable-btn" onclick="_vsSwitchTab('cable')"
+          class="flex-1 py-2 text-center transition bg-pink-50 text-pink-700 border-r border-gray-200">
+          <i class="fas fa-ethernet mr-1"></i>외선
+        </button>
+        <button id="vs-tab-splice-btn" onclick="_vsSwitchTab('splice')"
+          class="flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50">
+          <i class="fas fa-plug mr-1"></i>접속
+        </button>
+      </div>
+      <input type="hidden" id="vs-active-tab" value="cable">
+
+      <!-- ── 외선 섹션 ── -->
+      <div id="vs-cable-section">
+      <div class="flex items-center justify-between flex-wrap gap-2">
         <div class="flex gap-2 flex-wrap items-center">
           <!-- 공사 선택 -->
           <select id="vs-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
@@ -25310,6 +25716,36 @@ async function renderVolumeStatsPage(container) {
       <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보가 표시됩니다 &nbsp;|
         <button onclick="renderCableDetailPage(document.getElementById('page-content'))" class="text-blue-500 hover:underline ml-1">광케이블 상세 현황 보기 →</button>
       </p>
+      </div><!-- /vs-cable-section -->
+
+      <!-- ── 접속 통계 섹션 (기본 숨김) ── -->
+      <div id="vs-splice-section" class="hidden space-y-4">
+        <div class="flex gap-2 flex-wrap items-center vs-no-print">
+          <select id="vs-splice-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="">전체 공사</option>
+            ${constructions.map(c=>`<option value="${c.id}">${c.request_no} ${c.title||''}</option>`).join('')}
+          </select>
+          <select id="vs-splice-period-mode" onchange="_vsSplicePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="month">월별</option><option value="quarter">분기별</option>
+            <option value="year">연도별</option><option value="all">전체</option>
+          </select>
+          <select id="vs-splice-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none hidden">
+            ${vsYears.map(y=>`<option value="${y}">${y}년</option>`).join('')}
+          </select>
+          <select id="vs-splice-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none hidden">
+            ${[1,2,3,4].map(q=>`<option value="${q}">Q${q}</option>`).join('')}
+          </select>
+          <input type="month" id="vs-splice-period-month" value="${new Date().toISOString().slice(0,7)}"
+            class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
+          <button onclick="_vsLoadSpliceStats()"
+            class="bg-indigo-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-indigo-600">
+            <i class="fas fa-search mr-1"></i>조회
+          </button>
+        </div>
+        <div id="vs-splice-result">
+          <div class="text-center text-gray-400 py-10 text-sm">조회 버튼을 눌러주세요</div>
+        </div>
+      </div>
     </div>`;
 
     // ── 그래프 초기화 ──────────────────────────────────────────────────────────
@@ -25469,6 +25905,157 @@ async function renderVolumeStatsPage(container) {
 
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+  }
+}
+
+// ─── 물량통계 탭 전환 ────────────────────────────────────────────────────────
+function _vsSwitchTab(tab) {
+  const activeEl = document.getElementById('vs-active-tab');
+  if (activeEl) activeEl.value = tab;
+  const cableSection  = document.getElementById('vs-cable-section');
+  const spliceSection = document.getElementById('vs-splice-section');
+  const cableBtn      = document.getElementById('vs-tab-cable-btn');
+  const spliceBtn     = document.getElementById('vs-tab-splice-btn');
+  if (tab === 'cable') {
+    cableSection?.classList.remove('hidden');
+    spliceSection?.classList.add('hidden');
+    if (cableBtn)  { cableBtn.className  = 'flex-1 py-2 text-center transition bg-pink-50 text-pink-700 border-r border-gray-200'; }
+    if (spliceBtn) { spliceBtn.className = 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50'; }
+  } else {
+    cableSection?.classList.add('hidden');
+    spliceSection?.classList.remove('hidden');
+    if (spliceBtn) { spliceBtn.className = 'flex-1 py-2 text-center transition bg-indigo-50 text-indigo-700 border-r border-gray-200'; }
+    if (cableBtn)  { cableBtn.className  = 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50'; }
+    _vsLoadSpliceStats(); // 접속 탭 클릭 시 자동 조회
+  }
+}
+
+function _vsSplicePeriodUI() {
+  const mode = document.getElementById('vs-splice-period-mode')?.value || 'month';
+  document.getElementById('vs-splice-period-year')?.classList.toggle('hidden', mode === 'month' || mode === 'all');
+  document.getElementById('vs-splice-period-quarter')?.classList.toggle('hidden', mode !== 'quarter');
+  document.getElementById('vs-splice-period-month')?.classList.toggle('hidden', mode !== 'month');
+}
+
+async function _vsLoadSpliceStats() {
+  const resultEl = document.getElementById('vs-splice-result');
+  if (!resultEl) return;
+  resultEl.innerHTML = `<div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-indigo-400 text-xl"></i></div>`;
+
+  try {
+    const mode = document.getElementById('vs-splice-period-mode')?.value || 'month';
+    const cons  = document.getElementById('vs-splice-construction')?.value || '';
+    let from = '', to = '';
+    const nowY = new Date().getFullYear();
+    if (mode === 'month') {
+      const mv = document.getElementById('vs-splice-period-month')?.value || new Date().toISOString().slice(0,7);
+      from = mv + '-01'; to = mv + '-31';
+    } else if (mode === 'quarter') {
+      const y = parseInt(document.getElementById('vs-splice-period-year')?.value || nowY);
+      const q = parseInt(document.getElementById('vs-splice-period-quarter')?.value || 1);
+      from = `${y}-${String((q-1)*3+1).padStart(2,'0')}-01`;
+      to   = `${y}-${String(q*3).padStart(2,'0')}-31`;
+    } else if (mode === 'year') {
+      const y = parseInt(document.getElementById('vs-splice-period-year')?.value || nowY);
+      from = `${y}-01-01`; to = `${y}-12-31`;
+    }
+    let qs = '?';
+    if (cons) qs += `construction_id=${cons}&`;
+    if (from) qs += `from_date=${from}&to_date=${to}&`;
+
+    const [statsRes, priceRes] = await Promise.all([
+      API.get('/splice-reports/stats' + qs),
+      API.get('/splice-unit-prices').catch(() => ({ data: { prices: [] } }))
+    ]);
+    const stats  = statsRes.data.stats   || [];
+    const prices = priceRes.data.prices  || [];
+    const priceMap = {};
+    prices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
+
+    if (stats.length === 0) {
+      resultEl.innerHTML = `<div class="text-center text-gray-400 py-10 text-sm"><i class="fas fa-inbox text-3xl mb-2 block text-gray-300"></i>해당 기간에 데이터가 없습니다</div>`;
+      return;
+    }
+
+    // 공종별 집계
+    const labelMap = {}; // label → { total_qty, unit, amount }
+    stats.forEach(s => {
+      if (!labelMap[s.work_label]) labelMap[s.work_label] = { qty: 0, unit: s.unit };
+      labelMap[s.work_label].qty += (s.total_qty || 0);
+    });
+
+    // 팀별 집계
+    const teamMap = {};
+    stats.forEach(s => {
+      if (!teamMap[s.worker_team]) teamMap[s.worker_team] = {};
+      if (!teamMap[s.worker_team][s.work_label]) teamMap[s.worker_team][s.work_label] = 0;
+      teamMap[s.worker_team][s.work_label] += (s.total_qty || 0);
+    });
+    const allTeams  = [...new Set(stats.map(s => s.worker_team))].sort();
+    const allLabels = [...new Set(stats.map(s => s.work_label))];
+
+    const isWorker = currentUser && currentUser.role === 'worker';
+
+    resultEl.innerHTML = `
+    <div class="space-y-4">
+      <!-- 공종별 합계 -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-4 pt-3 pb-1 text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <i class="fas fa-list text-indigo-400"></i> 공종별 집계
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr class="bg-indigo-50 text-gray-600">
+                <th class="border border-gray-200 px-3 py-2 text-left">공종</th>
+                <th class="border border-gray-200 px-3 py-2 text-right">시공량</th>
+                <th class="border border-gray-200 px-3 py-2 text-center">단위</th>
+                ${!isWorker ? `<th class="border border-gray-200 px-3 py-2 text-right">단가</th><th class="border border-gray-200 px-3 py-2 text-right">금액(원)</th>` : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(labelMap).map(([label, v]) => {
+                const up = priceMap[label.replace(/ /g,'').replace(/\//g,'')] || 0;
+                const amt = v.qty * up;
+                return `<tr class="border-b border-gray-50 hover:bg-indigo-50">
+                  <td class="border border-gray-200 px-3 py-1.5 text-gray-700">${label}</td>
+                  <td class="border border-gray-200 px-3 py-1.5 text-right font-semibold">${v.qty.toLocaleString()}</td>
+                  <td class="border border-gray-200 px-3 py-1.5 text-center text-gray-500">${v.unit}</td>
+                  ${!isWorker ? `<td class="border border-gray-200 px-3 py-1.5 text-right text-gray-400">${up.toLocaleString()}</td>
+                                 <td class="border border-gray-200 px-3 py-1.5 text-right text-green-700 font-medium">${amt>0?amt.toLocaleString():''}</td>` : ''}
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <!-- 팀별 내역 -->
+      ${allTeams.length > 0 ? `
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-4 pt-3 pb-1 text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <i class="fas fa-users text-indigo-400"></i> 팀별 내역
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr class="bg-indigo-50 text-gray-600">
+                <th class="border border-gray-200 px-3 py-2 text-left">팀명</th>
+                ${allLabels.map(l=>`<th class="border border-gray-200 px-2 py-2 text-center">${l}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${allTeams.map(team => `
+              <tr class="border-b border-gray-50 hover:bg-indigo-50">
+                <td class="border border-gray-200 px-3 py-1.5 font-medium text-gray-700">${team||'미지정'}</td>
+                ${allLabels.map(label => `<td class="border border-gray-200 px-2 py-1.5 text-right">${(teamMap[team]?.[label]||0)>0?(teamMap[team]?.[label]||0).toLocaleString():''}</td>`).join('')}
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>` : ''}
+    </div>`;
+  } catch(e) {
+    resultEl.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
 }
 
@@ -26029,7 +26616,7 @@ function downloadCableDetailCSV() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 단가 관리 페이지 (시스템관리자 전용)
+// 단가 관리 페이지 (시스템관리자 전용) — 외선/접속 탭
 // ═══════════════════════════════════════════════════════════════
 async function renderUnitPricePage(container) {
   // 권한 체크: sysadmin만 접근 가능
@@ -26039,8 +26626,22 @@ async function renderUnitPricePage(container) {
   }
   container.innerHTML = `<div class="max-w-xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
-    const res = await API.get('/volume-unit-prices');
-    const prices = res.data.prices || [];
+    const [cableRes, spliceRes] = await Promise.all([
+      API.get('/volume-unit-prices'),
+      API.get('/splice-unit-prices').catch(() => ({ data: { prices: [] } }))
+    ]);
+    const cablePrices  = cableRes.data.prices  || [];
+    const splicePrices = spliceRes.data.prices || [];
+
+    const mkPriceRows = (prices, cls) => prices.map(p => `
+      <tr class="border-b border-gray-50 hover:bg-gray-50">
+        <td class="px-4 py-2 text-gray-700">${p.item_label}</td>
+        <td class="px-4 py-2 text-right">
+          <input type="number" min="0" step="100"
+            class="${cls} w-36 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
+            data-key="${p.item_key}" value="${p.unit_price || 0}">
+        </td>
+      </tr>`).join('');
 
     container.innerHTML = `
     <div class="max-w-xl mx-auto p-4 space-y-4">
@@ -26053,50 +26654,97 @@ async function renderUnitPricePage(container) {
         </span>
       </div>
 
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
-          * 각 항목의 단가를 수정 후 <strong>저장</strong> 버튼을 눌러주세요. 단가는 물량통계 금액 계산에 반영됩니다.
-        </div>
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="bg-gray-50 text-gray-600 text-xs">
-              <th class="px-4 py-2 text-left border-b border-gray-100">항목</th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-40">단가 (원)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${prices.map(p => `
-            <tr class="border-b border-gray-50 hover:bg-gray-50">
-              <td class="px-4 py-2 text-gray-700">${p.item_label}</td>
-              <td class="px-4 py-2 text-right">
-                <input type="number" min="0" step="100"
-                  class="up-input w-36 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
-                  data-key="${p.item_key}" value="${p.unit_price || 0}">
-              </td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
+      <!-- 탭 -->
+      <div class="flex rounded-xl overflow-hidden border border-gray-200 text-sm font-medium">
+        <button id="up-tab-cable-btn" onclick="_upSwitchTab('cable')"
+          class="flex-1 py-2 text-center transition bg-pink-50 text-pink-700 border-r border-gray-200">
+          <i class="fas fa-ethernet mr-1"></i>외선
+        </button>
+        <button id="up-tab-splice-btn" onclick="_upSwitchTab('splice')"
+          class="flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50">
+          <i class="fas fa-plug mr-1"></i>접속
+        </button>
       </div>
 
-      <div class="flex justify-end gap-2">
-        <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
-                class="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-200">
-          <i class="fas fa-undo mr-1"></i>초기화
-        </button>
-        <button onclick="_saveUnitPrices()"
-                class="bg-pink-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-pink-600">
-          <i class="fas fa-save mr-1"></i>저장
-        </button>
+      <!-- 외선 단가 -->
+      <div id="up-cable-section">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
+            * 외선 항목의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 금액 계산에 반영됩니다.
+          </div>
+          <table class="w-full text-sm">
+            <thead><tr class="bg-gray-50 text-gray-600 text-xs">
+              <th class="px-4 py-2 text-left border-b border-gray-100">항목</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-40">단가 (원)</th>
+            </tr></thead>
+            <tbody>${mkPriceRows(cablePrices, 'up-cable-input')}</tbody>
+          </table>
+        </div>
+        <div class="flex justify-end gap-2 mt-3">
+          <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
+                  class="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-200">
+            <i class="fas fa-undo mr-1"></i>초기화
+          </button>
+          <button onclick="_saveUnitPrices()"
+                  class="bg-pink-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-pink-600">
+            <i class="fas fa-save mr-1"></i>저장
+          </button>
+        </div>
+        <div id="up-msg" class="text-center text-sm hidden mt-2"></div>
       </div>
-      <div id="up-msg" class="text-center text-sm hidden"></div>
+
+      <!-- 접속 단가 -->
+      <div id="up-splice-section" class="hidden">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
+            * 접속 공종의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 접속 금액 계산에 반영됩니다.
+          </div>
+          <table class="w-full text-sm">
+            <thead><tr class="bg-gray-50 text-gray-600 text-xs">
+              <th class="px-4 py-2 text-left border-b border-gray-100">공종</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-40">단가 (원)</th>
+            </tr></thead>
+            <tbody>${mkPriceRows(splicePrices, 'up-splice-input')}</tbody>
+          </table>
+        </div>
+        <div class="flex justify-end gap-2 mt-3">
+          <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
+                  class="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-200">
+            <i class="fas fa-undo mr-1"></i>초기화
+          </button>
+          <button onclick="_saveSpliceUnitPrices()"
+                  class="bg-indigo-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-indigo-600">
+            <i class="fas fa-save mr-1"></i>저장
+          </button>
+        </div>
+        <div id="up-splice-msg" class="text-center text-sm hidden mt-2"></div>
+      </div>
     </div>`;
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
 }
 
+function _upSwitchTab(tab) {
+  const cableSection  = document.getElementById('up-cable-section');
+  const spliceSection = document.getElementById('up-splice-section');
+  const cableBtn      = document.getElementById('up-tab-cable-btn');
+  const spliceBtn     = document.getElementById('up-tab-splice-btn');
+  if (tab === 'cable') {
+    cableSection?.classList.remove('hidden');
+    spliceSection?.classList.add('hidden');
+    if (cableBtn)  cableBtn.className  = 'flex-1 py-2 text-center transition bg-pink-50 text-pink-700 border-r border-gray-200';
+    if (spliceBtn) spliceBtn.className = 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50';
+  } else {
+    cableSection?.classList.add('hidden');
+    spliceSection?.classList.remove('hidden');
+    if (spliceBtn) spliceBtn.className = 'flex-1 py-2 text-center transition bg-indigo-50 text-indigo-700 border-r border-gray-200';
+    if (cableBtn)  cableBtn.className  = 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50';
+  }
+}
+
 async function _saveUnitPrices() {
-  const inputs = document.querySelectorAll('.up-input');
+  const inputs = document.querySelectorAll('.up-cable-input');
   const prices = Array.from(inputs).map(el => ({
     item_key:   el.dataset.key,
     unit_price: Number(el.value) || 0
@@ -26105,7 +26753,27 @@ async function _saveUnitPrices() {
   try {
     await API.put('/volume-unit-prices', { prices });
     msgEl.className = 'text-center text-sm text-green-600 bg-green-50 rounded-lg py-2';
-    msgEl.textContent = '✅ 단가가 저장되었습니다.';
+    msgEl.textContent = '✅ 외선 단가가 저장되었습니다.';
+    msgEl.classList.remove('hidden');
+    setTimeout(() => msgEl.classList.add('hidden'), 3000);
+  } catch(e) {
+    msgEl.className = 'text-center text-sm text-red-600 bg-red-50 rounded-lg py-2';
+    msgEl.textContent = '❌ 저장 실패: ' + (e.response?.data?.error || e.message);
+    msgEl.classList.remove('hidden');
+  }
+}
+
+async function _saveSpliceUnitPrices() {
+  const inputs = document.querySelectorAll('.up-splice-input');
+  const prices = Array.from(inputs).map(el => ({
+    item_key:   el.dataset.key,
+    unit_price: Number(el.value) || 0
+  }));
+  const msgEl = document.getElementById('up-splice-msg');
+  try {
+    await API.put('/splice-unit-prices', { prices });
+    msgEl.className = 'text-center text-sm text-green-600 bg-green-50 rounded-lg py-2';
+    msgEl.textContent = '✅ 접속 단가가 저장되었습니다.';
     msgEl.classList.remove('hidden');
     setTimeout(() => msgEl.classList.add('hidden'), 3000);
   } catch(e) {

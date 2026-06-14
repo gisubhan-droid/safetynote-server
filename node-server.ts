@@ -871,6 +871,62 @@ function patchSchema() {
     `)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_extras ON work_report_extras(report_id)`)
     console.log('[patchSchema] v0.131w 외선작업일보 proc/extras 컬럼 준비 완료')
+
+    // ── v0.132w: 접속일보 테이블 ───────────────────────────────────────────────
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS splice_reports (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id      INTEGER,
+        work_date    TEXT DEFAULT '',
+        worker_team  TEXT DEFAULT '',
+        manager_name TEXT DEFAULT '',
+        remark       TEXT DEFAULT '',
+        status       TEXT DEFAULT 'draft' CHECK(status IN ('draft','submitted','confirmed')),
+        created_by   INTEGER REFERENCES users(id),
+        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS splice_work_items (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id   INTEGER NOT NULL,
+        item_order  INTEGER DEFAULT 0,
+        work_label  TEXT DEFAULT '',
+        is_night    INTEGER DEFAULT 0,
+        is_aerial   INTEGER DEFAULT 0,
+        qty         INTEGER DEFAULT 0,
+        unit        TEXT DEFAULT '',
+        remark      TEXT DEFAULT '',
+        FOREIGN KEY (report_id) REFERENCES splice_reports(id) ON DELETE CASCADE
+      )
+    `)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_splice_items ON splice_work_items(report_id)`)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS splice_unit_prices (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_key   TEXT NOT NULL UNIQUE,
+        item_label TEXT NOT NULL,
+        unit       TEXT DEFAULT '',
+        unit_price INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0
+      )
+    `)
+    rawDb.exec(`
+      INSERT OR IGNORE INTO splice_unit_prices (item_key, item_label, unit, unit_price, sort_order) VALUES
+        ('함체작업',              '함체작업',              '개소', 0, 1),
+        ('중간분기',              '중간분기',              '개소', 0, 2),
+        ('선번확인',              '선번확인',              '개소', 0, 3),
+        ('광케이블코아접속',       '광케이블 코아접속',      '코어', 0, 4),
+        ('광케이블성단',           '광케이블 성단',          '코어', 0, 5),
+        ('광탭작업',              '광탭작업',              '개소', 0, 6),
+        ('광탭중간분기',           '광탭 중간분기',          '개소', 0, 7),
+        ('광커넥터현장조립',        '광커넥터 현장조립/취부', '개소', 0, 8),
+        ('광탭결합고정',           '광탭 결합/고정 작업',   '개소', 0, 9),
+        ('FTTH레벨측정',           'FTTH 레벨 측정시험',    '코어', 0, 10),
+        ('신호수배치',             '신호수배치',            '건',   0, 11)
+    `)
+    console.log('[patchSchema] v0.132w 접속일보 테이블 준비 완료')
   } catch(e: any) {
     if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.130w]', e.message)
   }
@@ -2662,6 +2718,173 @@ app.post('/api/work-reports/:reportId/other-works', async (c) => {
     stmt.run(reportId, item.other_type_id, item.quantity)
   }
   return c.json({ ok: true })
+})
+
+// ═══════════════════════════════════════════════════════════════
+// 접속일보 API  /api/splice-reports
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/splice-reports — 목록 (작업 정보 포함)
+app.get('/api/splice-reports', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const { construction_id, from_date, to_date } = c.req.query()
+
+  let where = `WHERE 1=1`
+  const params: any[] = []
+
+  if (construction_id) {
+    where += ` AND t.request_no=(SELECT request_no FROM constructions WHERE id=?)`
+    params.push(construction_id)
+  }
+  if (from_date) { where += ` AND sr.work_date >= ?`; params.push(from_date) }
+  if (to_date)   { where += ` AND sr.work_date <= ?`; params.push(to_date) }
+
+  // 권한: sysadmin/manager는 전체, 일반은 본인 팀
+  const roleUi = dbRoleToUi(user.role, user.position, user.sub_role)
+  if (roleUi !== 'sysadmin' && roleUi !== 'manager') {
+    where += ` AND sr.created_by=?`
+    params.push(user.id)
+  }
+
+  const rows = rawDb.prepare(`
+    SELECT sr.*,
+           t.title      AS task_title,
+           t.request_no AS request_no,
+           ct.name      AS team_name,
+           (SELECT COUNT(*) FROM splice_work_items WHERE report_id=sr.id AND qty>0) AS item_count
+    FROM splice_reports sr
+    LEFT JOIN tasks      t  ON sr.task_id  = t.id
+    LEFT JOIN contractor_teams ct ON sr.worker_team = ct.name
+    ${where}
+    ORDER BY sr.work_date DESC, sr.id DESC
+  `).all(...params)
+
+  return c.json({ reports: rows })
+})
+
+// GET /api/splice-reports/:id — 단건 상세 (items 포함)
+app.get('/api/splice-reports/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  const report = rawDb.prepare(`SELECT * FROM splice_reports WHERE id=?`).get(id) as any
+  if (!report) return c.json({ error: '없음' }, 404)
+  const items = rawDb.prepare(`SELECT * FROM splice_work_items WHERE report_id=? ORDER BY item_order`).all(id)
+  return c.json({ report, items })
+})
+
+// POST /api/splice-reports — 저장(임시저장)
+app.post('/api/splice-reports', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const body = await c.req.json() as any
+  const { task_id, work_date, worker_team, manager_name, remark, items } = body
+
+  let reportId = body.report_id || null
+
+  if (reportId) {
+    rawDb.prepare(`
+      UPDATE splice_reports
+      SET task_id=?, work_date=?, worker_team=?, manager_name=?, remark=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=?
+    `).run(task_id || null, work_date || '', worker_team || '', manager_name || '', remark || '', reportId)
+  } else {
+    const res = rawDb.prepare(`
+      INSERT INTO splice_reports (task_id, work_date, worker_team, manager_name, remark, status, created_by)
+      VALUES (?, ?, ?, ?, ?, 'draft', ?)
+    `).run(task_id || null, work_date || '', worker_team || '', manager_name || '', remark || '', user.id) as any
+    reportId = res.lastInsertRowid
+  }
+
+  // items 저장
+  rawDb.prepare(`DELETE FROM splice_work_items WHERE report_id=?`).run(reportId)
+  const stmt = rawDb.prepare(`
+    INSERT INTO splice_work_items (report_id, item_order, work_label, is_night, is_aerial, qty, unit, remark)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  let order = 0
+  for (const it of (items || [])) {
+    if (!it.work_label) continue
+    stmt.run(reportId, order++, it.work_label, it.is_night ? 1 : 0, it.is_aerial ? 1 : 0,
+             parseInt(it.qty) || 0, it.unit || '', it.remark || '')
+  }
+
+  return c.json({ ok: true, reportId })
+})
+
+// POST /api/splice-reports/:id/submit — 제출
+app.post('/api/splice-reports/:id/submit', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  rawDb.prepare(`UPDATE splice_reports SET status='submitted', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id)
+  return c.json({ ok: true })
+})
+
+// DELETE /api/splice-reports/:id — 삭제
+app.delete('/api/splice-reports/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  rawDb.prepare(`DELETE FROM splice_reports WHERE id=?`).run(id)
+  return c.json({ ok: true })
+})
+
+// GET /api/splice-unit-prices — 접속 단가 목록
+app.get('/api/splice-unit-prices', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rows = rawDb.prepare(`SELECT * FROM splice_unit_prices ORDER BY sort_order`).all()
+  return c.json({ prices: rows })
+})
+
+// PUT /api/splice-unit-prices — 접속 단가 수정 (sysadmin)
+app.put('/api/splice-unit-prices', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const roleUi = dbRoleToUi(user.role, user.position, user.sub_role)
+  if (roleUi !== 'sysadmin') return c.json({ error: '권한 없음' }, 403)
+  const { prices } = await c.req.json() as any
+  const stmt = rawDb.prepare(`UPDATE splice_unit_prices SET unit_price=? WHERE item_key=?`)
+  for (const p of (prices || [])) stmt.run(p.unit_price || 0, p.item_key)
+  return c.json({ ok: true })
+})
+
+// GET /api/splice-reports/stats — 물량통계 (접속)
+app.get('/api/splice-reports/stats', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const { construction_id, from_date, to_date } = c.req.query()
+
+  let where = `WHERE sr.status IN ('draft','submitted','confirmed')`
+  const params: any[] = []
+
+  if (construction_id) {
+    where += ` AND t.request_no=(SELECT request_no FROM constructions WHERE id=?)`
+    params.push(construction_id)
+  }
+  if (from_date) { where += ` AND sr.work_date >= ?`; params.push(from_date) }
+  if (to_date)   { where += ` AND sr.work_date <= ?`; params.push(to_date) }
+
+  const rows = rawDb.prepare(`
+    SELECT
+      sr.work_date,
+      sr.worker_team,
+      swi.work_label,
+      swi.unit,
+      swi.is_night,
+      swi.is_aerial,
+      SUM(swi.qty) AS total_qty
+    FROM splice_reports sr
+    JOIN splice_work_items swi ON swi.report_id = sr.id
+    LEFT JOIN tasks t ON sr.task_id = t.id
+    ${where}
+    GROUP BY sr.work_date, sr.worker_team, swi.work_label, swi.unit, swi.is_night, swi.is_aerial
+    ORDER BY sr.work_date, sr.worker_team
+  `).all(...params)
+
+  return c.json({ stats: rows })
 })
 
 // GET /api/admin/folders - 저장 폴더 용량 및 파일 종류별 집계 조회

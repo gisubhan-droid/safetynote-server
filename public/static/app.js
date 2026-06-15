@@ -2000,6 +2000,7 @@ function renderApp() {
     { id:'dashboard',   icon:'fas fa-tasks',                label:'작업현황' },
     { id:'tasks',       icon:'fas fa-clipboard-list',       label:'작업관리' },
     { id:'inspections', icon:'fas fa-search',               label:'현장점검' },
+    { id:'site-map',    icon:'fas fa-map-marked-alt',       label:'현장위치 지도' },
     { id:'hazards',     icon:'fas fa-exclamation-triangle', label:'위험(아차사고)신고' },
     { divider: true, label: '안전관리' },
     { id:'stats', icon:'fas fa-chart-bar', label:'작업안전현황', group:'안전관리', children: [

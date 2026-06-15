@@ -2450,13 +2450,8 @@ app.get('/api/geocode/reverse', async (c) => {
             jibunAddr = parts.join(' ')
           }
 
-          // 표시 주소: 도로명 있으면 "도로명 (지번)" 형태, 없으면 지번만
-          let address = ''
-          if (roadAddr && jibunAddr) {
-            address = `${roadAddr} (${jibunAddr})`
-          } else {
-            address = roadAddr || jibunAddr || `${parseFloat(lat).toFixed(5)}, ${parseFloat(lon).toFixed(5)}`
-          }
+          // 표시 주소: 지번 우선, 없으면 도로명, 둘 다 없으면 좌표
+          const address = jibunAddr || roadAddr || `${parseFloat(lat).toFixed(5)}, ${parseFloat(lon).toFixed(5)}`
 
           return c.json({ address, road_address: roadAddr, jibun_address: jibunAddr, source: 'kakao' })
         }

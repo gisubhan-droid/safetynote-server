@@ -9,17 +9,21 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { task_id, assessment_type } = c.req.query()
-  let q = `SELECT ra.*, t.title as task_title, u.name as assessor_name,
-    wt.name as work_type_name
+  const { task_id, assessment_type, date_from, date_to } = c.req.query()
+  let q = `SELECT ra.*, t.title as task_title, t.status as task_status,
+    t.gps_lat, t.gps_lon, t.gps_address,
+    t.confirmed_address, t.work_order_address, t.location as task_location,
+    u.name as assessor_name, wt.name as work_type_name
     FROM risk_assessments ra
     LEFT JOIN tasks t ON t.id = ra.task_id
     LEFT JOIN work_types wt ON wt.id = t.work_type_id
     LEFT JOIN users u ON u.id = ra.assessor_id`
   const params: any[] = []
   const conditions: string[] = []
-  if (task_id) { conditions.push('ra.task_id = ?'); params.push(task_id) }
-  if (assessment_type) { conditions.push('ra.assessment_type = ?'); params.push(assessment_type) }
+  if (task_id)        { conditions.push('ra.task_id = ?');         params.push(task_id) }
+  if (assessment_type){ conditions.push('ra.assessment_type = ?'); params.push(assessment_type) }
+  if (date_from)      { conditions.push("date(ra.created_at) >= ?"); params.push(date_from) }
+  if (date_to)        { conditions.push("date(ra.created_at) <= ?"); params.push(date_to) }
   if (conditions.length) q += ' WHERE ' + conditions.join(' AND ')
   q += ' ORDER BY ra.created_at DESC'
   const result = await c.env.DB.prepare(q).bind(...params).all<any>()

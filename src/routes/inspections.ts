@@ -64,7 +64,8 @@ app.get('/', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const { status, hazard_level, task_id, date_from, date_to } = c.req.query()
   let q = `SELECT si.*, u.name as inspector_name,
-              t.title as task_title, t.task_number,
+              t.title as task_title, t.task_number, t.status as task_status,
+              t.gps_lat, t.gps_lon, t.gps_address,
               t.confirmed_address as task_confirmed_address,
               t.confirmed_address_source as task_confirmed_address_source,
               t.work_order_address as task_work_order_address

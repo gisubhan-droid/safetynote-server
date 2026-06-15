@@ -276,6 +276,79 @@ rawDb.pragma('foreign_keys = ON')
     try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
   }
 
+  // ── tasks CHECK 제약 완화 ('paused' 추가) ─────────────────────────────────────
+  // 기존: CHECK(status IN ('unassigned','assigned','in_progress','tbm_done','working','completed','cancelled'))
+  // → 작업중지(paused) 처리 시 CHECK 실패 → 테이블 재생성으로 제약 제거
+  try {
+    const tSql: any = rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'").get()
+    const needsFix = tSql?.sql && tSql.sql.includes("CHECK(status IN") && !tSql.sql.includes("'paused'")
+    if (needsFix) {
+      console.log('[AutoMigrate] tasks CHECK 제약 제거 중 (paused 미포함)...')
+      rawDb.pragma('foreign_keys = OFF')
+      const fixTasks = rawDb.transaction(() => {
+        const existingCols: any[] = rawDb.prepare("PRAGMA table_info(tasks)").all()
+        const colNames = existingCols.map((c: any) => c.name).join(', ')
+        rawDb.exec('ALTER TABLE tasks RENAME TO tasks_old')
+        rawDb.exec(`
+          CREATE TABLE tasks (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            construction_id           INTEGER NOT NULL,
+            task_type_id              INTEGER,
+            title                     TEXT NOT NULL DEFAULT '',
+            description               TEXT DEFAULT '',
+            status                    TEXT NOT NULL DEFAULT 'unassigned',
+            priority                  TEXT DEFAULT 'normal',
+            assigned_to               INTEGER,
+            created_by                INTEGER,
+            location                  TEXT DEFAULT '',
+            floor                     TEXT DEFAULT '',
+            area                      TEXT DEFAULT '',
+            planned_start             DATE,
+            planned_end               DATE,
+            actual_start              DATETIME,
+            actual_end                DATETIME,
+            quantity                  REAL DEFAULT 0,
+            quantity_unit             TEXT DEFAULT '개',
+            progress                  INTEGER DEFAULT 0,
+            tbm_required              INTEGER DEFAULT 1,
+            tbm_done_at               DATETIME,
+            notes                     TEXT DEFAULT '',
+            confirmed_address         TEXT DEFAULT '',
+            confirmed_address_source  TEXT DEFAULT '',
+            confirmed_address_at      DATETIME,
+            created_at                DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at                DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (construction_id) REFERENCES constructions(id) ON DELETE CASCADE,
+            FOREIGN KEY (task_type_id)    REFERENCES task_types(id),
+            FOREIGN KEY (assigned_to)     REFERENCES users(id),
+            FOREIGN KEY (created_by)      REFERENCES users(id)
+          )
+        `)
+        // 기존 컬럼 중 새 테이블에도 있는 것만 복사
+        const newColNames = ['id','construction_id','task_type_id','title','description',
+          'status','priority','assigned_to','created_by','location','floor','area',
+          'planned_start','planned_end','actual_start','actual_end',
+          'quantity','quantity_unit','progress','tbm_required','tbm_done_at','notes',
+          'confirmed_address','confirmed_address_source','confirmed_address_at',
+          'created_at','updated_at']
+        const copyColNames = existingCols.map((c: any) => c.name).filter((n: string) => newColNames.includes(n)).join(', ')
+        rawDb.exec(`INSERT INTO tasks (${copyColNames}) SELECT ${copyColNames} FROM tasks_old`)
+        rawDb.exec('DROP TABLE tasks_old')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_construction ON tasks(construction_id)')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to)')
+      })
+      fixTasks()
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[AutoMigrate] ✅ tasks CHECK 제약 제거 완료 (paused 허용)')
+    } else {
+      console.log('[AutoMigrate] tasks CHECK 제약 이미 제거됨 또는 paused 포함 (skip)')
+    }
+  } catch(e: any) {
+    console.warn('[AutoMigrate] tasks CHECK 제약 제거 실패 (무시):', e.message)
+    try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+  }
+
   const colCache: Record<string, string[]> = { tasks: taskCols, tbm_records: tbmCols }
 
   for (const p of patches) {

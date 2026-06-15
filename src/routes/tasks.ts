@@ -1097,17 +1097,37 @@ app.post('/:id/stop', async (c) => {
 
   const stop_reason = stop_detail || '작업취소'
 
-  // task_stops 이력 저장
-  await c.env.DB.prepare(
-    `INSERT INTO task_stops (task_id, reported_by, stop_category, stop_detail, stop_reason, notes, photo_data, stopped_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
-  ).bind(id, user.id, stop_category, stop_detail || '작업취소', stop_reason, notes || null, photo_data || null).run()
-
   // 작업취소 → cancelled(종료) / 나머지 → paused(일시중지)
   const newStatus = stop_category === '작업취소' ? 'cancelled' : 'paused'
-  await c.env.DB.prepare(
-    `UPDATE tasks SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
-  ).bind(newStatus, id).run()
+
+  // task_stops 이력 저장 (컬럼 없을 경우 fallback: stop_reason만으로 INSERT)
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO task_stops (task_id, reported_by, stop_category, stop_detail, stop_reason, notes, photo_data, stopped_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+    ).bind(id, user.id, stop_category, stop_detail || '작업취소', stop_reason, notes || null, photo_data || null).run()
+  } catch(insertErr: any) {
+    console.warn('[tasks/stop] task_stops 상세 INSERT 실패, 기본 컬럼으로 재시도:', insertErr.message)
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO task_stops (task_id, stop_reason, notes, stopped_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
+      ).bind(id, stop_reason, notes || null).run()
+    } catch(fallbackErr: any) {
+      // task_stops 저장 실패는 무시하고 status 업데이트는 진행
+      console.error('[tasks/stop] task_stops fallback INSERT도 실패 (무시):', fallbackErr.message)
+    }
+  }
+
+  // tasks.status 업데이트 (CHECK 제약 문제 시 상세 에러 반환)
+  try {
+    await c.env.DB.prepare(
+      `UPDATE tasks SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+    ).bind(newStatus, id).run()
+  } catch(statusErr: any) {
+    console.error('[tasks/stop] tasks.status 업데이트 실패:', statusErr.message)
+    return c.json({ error: `작업 상태 업데이트 실패: ${statusErr.message}` }, 500)
+  }
 
   // 작업취소 시 공사 완료 여부 재계산
   if (stop_category === '작업취소') {

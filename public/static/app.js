@@ -29041,15 +29041,7 @@ async function renderSiteMapPage(container) {
       </div>
 
       <!-- 지도 영역 -->
-      <div id="kakaoMapContainer" style="width:100%;height:500px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;">
-        <div id="kakaoMapLoading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;background:#f3f4f6;">
-          <div class="text-center text-gray-400">
-            <i class="fas fa-spinner fa-spin text-3xl mb-2"></i>
-            <div class="text-sm">지도 로딩 중...</div>
-          </div>
-        </div>
-        <div id="kakaoMap" style="width:100%;height:100%;"></div>
-      </div>
+      <div id="leafletMap" style="width:100%;height:500px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;"></div>
 
       <!-- 범례 -->
       <div class="flex gap-4 mt-3 text-sm text-gray-600">
@@ -29062,86 +29054,69 @@ async function renderSiteMapPage(container) {
     </div>
   `;
 
-  await loadKakaoMapScript();
+  await loadLeafletMap();
 }
 
-// 카카오맵 SDK 동적 로드
-async function loadKakaoMapScript() {
-  try {
-    const res = await API.get('/geocode/config');
-    const jsKey = res.data?.kakao_js_api_key || '';
-    if (!jsKey) {
-      document.getElementById('kakaoMapLoading').innerHTML = `
-        <div class="text-center text-gray-500 p-8">
-          <i class="fas fa-exclamation-triangle text-3xl text-yellow-400 mb-3"></i>
-          <div class="font-bold mb-1">카카오 JS API 키 미설정</div>
-          <div class="text-sm">관리자 설정 → GPS 주소 변환 설정에서 JavaScript API 키를 입력해 주세요.</div>
-        </div>`;
-      return;
-    }
+// Leaflet 지도 로드 (OpenStreetMap 기반 — 외부 차단 없음)
+async function loadLeafletMap() {
+  // Leaflet CSS 동적 추가
+  if (!document.getElementById('leaflet-css')) {
+    const link = document.createElement('link');
+    link.id = 'leaflet-css';
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+  }
 
-    // 이미 로드된 경우
-    if (window.kakao && window.kakao.maps) {
-      initKakaoMapWithData();
-      return;
-    }
-
-    // SDK 동적 로드 (서버 프록시 경유 — 브라우저 직접 차단 우회)
+  // Leaflet JS 동적 로드
+  if (!window.L) {
     await new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = `/api/geocode/kakaomap-sdk`;
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
       script.onload = resolve;
-      script.onerror = () => reject(new Error('카카오맵 SDK 로드 실패\n현재 도메인: ' + location.origin));
+      script.onerror = reject;
       document.head.appendChild(script);
     });
-
-    // autoload 없이 로드되므로 바로 초기화
-    await initKakaoMapWithData();
-  } catch(e) {
-    document.getElementById('kakaoMapLoading').innerHTML = `
-      <div class="text-center text-red-400 p-8">
-        <i class="fas fa-times-circle text-3xl mb-3"></i>
-        <div class="font-bold">지도 로드 실패</div>
-        <div class="text-sm mt-1" style="white-space:pre-line">${e.message || '알 수 없는 오류'}</div>
-        <div class="mt-3 text-xs text-gray-500">
-          <b>해결 방법:</b><br>
-          1. <a href="https://developers.kakao.com/console/app" target="_blank" class="text-blue-400 underline">카카오 개발자 콘솔</a> 접속<br>
-          2. 앱 선택 → 플랫폼 → Web<br>
-          3. 사이트 도메인에 <b>${location.origin}</b> 추가
-        </div>
-      </div>`;
   }
-}
 
-async function initKakaoMapWithData() {
-  const mapEl = document.getElementById('kakaoMap');
+  const mapEl = document.getElementById('leafletMap');
   if (!mapEl) return;
 
+  // 기존 지도 제거
+  if (_kakaoMapInstance) {
+    _kakaoMapInstance.remove();
+    _kakaoMapInstance = null;
+  }
+
   // 지도 생성 (한국 중심)
-  const map = new window.kakao.maps.Map(mapEl, {
-    center: new window.kakao.maps.LatLng(36.5, 127.5),
-    level: 12
-  });
+  const map = window.L.map('leafletMap').setView([36.5, 127.5], 7);
+  window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(map);
+
   _kakaoMapInstance = map;
-
-  document.getElementById('kakaoMapLoading').style.display = 'none';
-
   await loadSiteMapMarkers(map);
 }
 
 async function refreshSiteMap() {
-  if (!_kakaoMapInstance) return;
-  // 기존 마커 제거를 위해 페이지 재렌더
   const content = document.getElementById('page-content');
   if (content) renderSiteMapPage(content);
 }
 
 async function loadSiteMapMarkers(map) {
+  const L = window.L;
   const filter = document.getElementById('siteMapFilter')?.value || 'all';
   const listEl = document.getElementById('siteMapList');
-  const bounds = new window.kakao.maps.LatLngBounds();
-  let markerCount = 0;
+  const latLngs = [];
   let listItems = [];
+
+  // 커스텀 마커 아이콘 생성
+  const makeIcon = (color, label) => L.divIcon({
+    html: `<div style="background:${color};color:#fff;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);transform:translateX(-50%)">${label}</div>`,
+    className: '',
+    iconAnchor: [0, 0]
+  });
 
   try {
     // TBM 데이터 로드
@@ -29154,44 +29129,15 @@ async function loadSiteMapMarkers(map) {
         const lon = parseFloat(tbm.gps_lon);
         if (isNaN(lat) || isNaN(lon)) continue;
 
-        const pos = new window.kakao.maps.LatLng(lat, lon);
-        const marker = new window.kakao.maps.Marker({
-          map,
-          position: pos,
-          image: new window.kakao.maps.MarkerImage(
-            'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png',
-            new window.kakao.maps.Size(24, 35)
-          )
-        });
-
-        // 커스텀 마커 (보라색)
-        const customMarker = new window.kakao.maps.CustomOverlay({
-          map,
-          position: pos,
-          content: `<div style="background:#685182;color:#fff;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3)">
-            <i class="fas fa-hard-hat" style="margin-right:3px"></i>TBM
-          </div>`,
-          yAnchor: 2.2
-        });
-        marker.setMap(null); // 기본 마커 숨기고 커스텀만 사용
-        customMarker.setMap(map);
-
-        // 인포윈도우
-        const infoContent = `
-          <div style="padding:10px 14px;min-width:180px;font-size:13px;">
-            <div style="font-weight:700;color:#685182;margin-bottom:4px">
-              <i class="fas fa-hard-hat mr-1"></i>TBM
-            </div>
-            <div style="color:#374151">${tbm.work_date || ''} ${tbm.work_name || tbm.construction_name || ''}</div>
+        const marker = L.marker([lat, lon], { icon: makeIcon('#685182', '🦺 TBM') }).addTo(map);
+        marker.bindPopup(`
+          <div style="min-width:180px;font-size:13px;">
+            <div style="font-weight:700;color:#685182;margin-bottom:4px">TBM</div>
+            <div>${tbm.work_date || ''} ${tbm.work_name || tbm.construction_name || ''}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">${tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`}</div>
-          </div>`;
-        const infoWindow = new window.kakao.maps.InfoWindow({ content: infoContent, removable: true });
-        window.kakao.maps.event.addListener(customMarker, 'click', () => {
-          infoWindow.open(map, new window.kakao.maps.Marker({ position: pos }));
-        });
+          </div>`);
 
-        bounds.extend(pos);
-        markerCount++;
+        latLngs.push([lat, lon]);
         listItems.push({
           type: 'tbm', color: '#685182', icon: 'fa-hard-hat',
           date: tbm.work_date || '',
@@ -29212,31 +29158,15 @@ async function loadSiteMapMarkers(map) {
         const lon = parseFloat(insp.gps_lon);
         if (isNaN(lat) || isNaN(lon)) continue;
 
-        const pos = new window.kakao.maps.LatLng(lat, lon);
-        const customMarker = new window.kakao.maps.CustomOverlay({
-          map,
-          position: pos,
-          content: `<div style="background:#10B981;color:#fff;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3)">
-            <i class="fas fa-search" style="margin-right:3px"></i>점검
-          </div>`,
-          yAnchor: 2.2
-        });
-
-        const infoContent = `
-          <div style="padding:10px 14px;min-width:180px;font-size:13px;">
-            <div style="font-weight:700;color:#10B981;margin-bottom:4px">
-              <i class="fas fa-search mr-1"></i>현장점검
-            </div>
-            <div style="color:#374151">${insp.inspection_date || ''} ${insp.title || insp.construction_name || ''}</div>
+        const marker = L.marker([lat, lon], { icon: makeIcon('#10B981', '🔍 점검') }).addTo(map);
+        marker.bindPopup(`
+          <div style="min-width:180px;font-size:13px;">
+            <div style="font-weight:700;color:#10B981;margin-bottom:4px">현장점검</div>
+            <div>${insp.inspection_date || ''} ${insp.title || insp.construction_name || ''}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">${insp.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`}</div>
-          </div>`;
-        const infoWindow = new window.kakao.maps.InfoWindow({ content: infoContent, removable: true });
-        window.kakao.maps.event.addListener(customMarker, 'click', () => {
-          infoWindow.open(map, new window.kakao.maps.Marker({ position: pos }));
-        });
+          </div>`);
 
-        bounds.extend(pos);
-        markerCount++;
+        latLngs.push([lat, lon]);
         listItems.push({
           type: 'inspection', color: '#10B981', icon: 'fa-search',
           date: insp.inspection_date || '',
@@ -29248,8 +29178,8 @@ async function loadSiteMapMarkers(map) {
     }
 
     // 마커 있으면 지도 범위 자동 조정
-    if (markerCount > 0) {
-      map.setBounds(bounds);
+    if (latLngs.length > 0) {
+      map.fitBounds(latLngs, { padding: [40, 40] });
     }
 
     // 목록 렌더링
@@ -29289,6 +29219,5 @@ async function loadSiteMapMarkers(map) {
 // 지도 특정 위치로 이동
 function _moveSiteMapTo(lat, lon) {
   if (!_kakaoMapInstance) return;
-  _kakaoMapInstance.setCenter(new window.kakao.maps.LatLng(lat, lon));
-  _kakaoMapInstance.setLevel(3);
+  _kakaoMapInstance.setView([lat, lon], 16);
 }

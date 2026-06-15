@@ -2416,7 +2416,7 @@ app.get('/api/geocode/kakaomap-sdk', async (c) => {
   const jsKey = getSetting('kakao_js_api_key') || ''
   if (!jsKey) return c.text('JS API 키 미설정', 400)
   try {
-    const sdkRes = await fetch(`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${jsKey}`)
+    const sdkRes = await fetch(`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${jsKey}&autoload=false`)
     if (!sdkRes.ok) return c.text(`카카오 SDK 응답 오류: ${sdkRes.status}`, 502)
     const sdkText = await sdkRes.text()
     return new Response(sdkText, {

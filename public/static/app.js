@@ -294,6 +294,7 @@ const MENU_DEFINITIONS = [
   { id:'edu-supervisor',   label:'관리감독자교육',    icon:'fas fa-user-tie',           group:'안전교육' },
   { id:'edu-stats',        label:'교육현황통계',      icon:'fas fa-chart-bar',          group:'안전교육' },
   { id:'teams',            label:'현장팀관리',        icon:'fas fa-people-group',      group:'사용자관리' },
+  { id:'site-map',         label:'현장위치 지도',      icon:'fas fa-map-marked-alt',    group:'메인' },
   { id:'admin-settings',   label:'시스템 설정',       icon:'fas fa-cogs',              group:'시스템' },
   { id:'legal-notices',    label:'법령안내 관리',      icon:'fas fa-balance-scale',     group:'시스템' },
 ];
@@ -2784,6 +2785,7 @@ function navigateTo(page) {
     case 'my-stats': renderMyStatsPage(content); break;
     case 'my-profile': renderMyProfilePage(content); break;
     case 'hazard-report': renderHazardReportPage(content); break;
+    case 'site-map': renderSiteMapPage(content); break;
     case 'admin-settings': renderAdminSettingsPage(content); break;
     case 'risk': navigateTo('risk-periodic'); return;
     case 'risk-periodic': renderRiskPeriodicPage(content); break;
@@ -13995,6 +13997,20 @@ async function renderAdminSettingsPage(container) {
               <strong class="text-gray-600">Web 플랫폼에 서버 IP/도메인 등록</strong>이 필요합니다.
             </p>
           </div>
+          <div>
+            <label class="form-label">카카오 JavaScript API 키 <span class="text-xs font-normal text-gray-400">(지도 표시용)</span></label>
+            <div class="flex gap-2">
+              <input id="set-kakao-js-key" type="password" class="form-control flex-1"
+                value="${sv.kakao_js_api_key||''}"
+                placeholder="카카오 개발자 콘솔 → JavaScript 키">
+              <button type="button" onclick="document.getElementById('set-kakao-js-key').type=document.getElementById('set-kakao-js-key').type==='password'?'text':'password'" class="btn btn-outline btn-sm flex-shrink-0">
+                <i class="fas fa-eye"></i>
+              </button>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">
+              현장 위치 지도 표시에 사용합니다. 카카오 개발자 콘솔 → <strong>JavaScript 키</strong>를 입력하세요.
+            </p>
+          </div>
         </div>
         <div class="mt-4 flex gap-2">
           <button onclick="saveAdminSettings()" class="btn btn-primary">
@@ -14349,6 +14365,7 @@ async function saveAdminSettings() {
       attach_total_mb:   String(totalMbNum),
       attach_allowed_ext: attachExt || 'pdf,doc,docx,xls,xlsx,ppt,pptx,hwp,txt,jpg,jpeg,png,gif,webp,heic,mp4,zip',
       kakao_rest_api_key: kakaoRestKey,
+      kakao_js_api_key: (document.getElementById('set-kakao-js-key')?.value || '').trim(),
       ...stagePayload,
     });
     toast(`설정이 저장되었습니다. 유효 경로: ${res.data.effectiveUploadRoot}`);
@@ -28995,4 +29012,275 @@ function goToSpliceReport(taskId) {
     const navItem = document.querySelector('.nav-item[data-page="report-write"]');
     if (navItem) navItem.classList.add('active');
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 현장위치 지도 페이지  /site-map
+// ═══════════════════════════════════════════════════════════════
+
+let _kakaoMapInstance = null;  // 카카오맵 인스턴스 재사용
+
+async function renderSiteMapPage(container) {
+  container.innerHTML = `
+    <div class="max-w-5xl mx-auto">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+          <i class="fas fa-map-marked-alt" style="color:#685182"></i> 현장위치 지도
+        </h2>
+        <div class="flex gap-2">
+          <select id="siteMapFilter" onchange="refreshSiteMap()" class="form-control text-sm" style="width:auto">
+            <option value="all">전체</option>
+            <option value="tbm">TBM</option>
+            <option value="inspection">현장점검</option>
+          </select>
+          <button onclick="refreshSiteMap()" class="btn btn-outline btn-sm">
+            <i class="fas fa-sync-alt mr-1"></i>새로고침
+          </button>
+        </div>
+      </div>
+
+      <!-- 지도 영역 -->
+      <div id="kakaoMapContainer" style="width:100%;height:500px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;">
+        <div id="kakaoMapLoading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;background:#f3f4f6;">
+          <div class="text-center text-gray-400">
+            <i class="fas fa-spinner fa-spin text-3xl mb-2"></i>
+            <div class="text-sm">지도 로딩 중...</div>
+          </div>
+        </div>
+        <div id="kakaoMap" style="width:100%;height:100%;"></div>
+      </div>
+
+      <!-- 범례 -->
+      <div class="flex gap-4 mt-3 text-sm text-gray-600">
+        <span class="flex items-center gap-1"><span style="display:inline-block;width:12px;height:12px;background:#685182;border-radius:50%"></span> TBM</span>
+        <span class="flex items-center gap-1"><span style="display:inline-block;width:12px;height:12px;background:#10B981;border-radius:50%"></span> 현장점검</span>
+      </div>
+
+      <!-- 목록 -->
+      <div id="siteMapList" class="mt-4 space-y-2"></div>
+    </div>
+  `;
+
+  await loadKakaoMapScript();
+}
+
+// 카카오맵 SDK 동적 로드
+async function loadKakaoMapScript() {
+  try {
+    const res = await API.get('/geocode/config');
+    const jsKey = res.data?.kakao_js_api_key || '';
+    if (!jsKey) {
+      document.getElementById('kakaoMapLoading').innerHTML = `
+        <div class="text-center text-gray-500 p-8">
+          <i class="fas fa-exclamation-triangle text-3xl text-yellow-400 mb-3"></i>
+          <div class="font-bold mb-1">카카오 JS API 키 미설정</div>
+          <div class="text-sm">관리자 설정 → GPS 주소 변환 설정에서 JavaScript API 키를 입력해 주세요.</div>
+        </div>`;
+      return;
+    }
+
+    // 이미 로드된 경우
+    if (window.kakao && window.kakao.maps) {
+      initKakaoMapWithData();
+      return;
+    }
+
+    // SDK 동적 로드
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${jsKey}&autoload=false`;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+
+    window.kakao.maps.load(() => initKakaoMapWithData());
+  } catch(e) {
+    document.getElementById('kakaoMapLoading').innerHTML = `
+      <div class="text-center text-red-400 p-8">
+        <i class="fas fa-times-circle text-3xl mb-3"></i>
+        <div class="font-bold">지도 로드 실패</div>
+        <div class="text-sm mt-1">${e.message || '알 수 없는 오류'}</div>
+      </div>`;
+  }
+}
+
+async function initKakaoMapWithData() {
+  const mapEl = document.getElementById('kakaoMap');
+  if (!mapEl) return;
+
+  // 지도 생성 (한국 중심)
+  const map = new window.kakao.maps.Map(mapEl, {
+    center: new window.kakao.maps.LatLng(36.5, 127.5),
+    level: 12
+  });
+  _kakaoMapInstance = map;
+
+  document.getElementById('kakaoMapLoading').style.display = 'none';
+
+  await loadSiteMapMarkers(map);
+}
+
+async function refreshSiteMap() {
+  if (!_kakaoMapInstance) return;
+  // 기존 마커 제거를 위해 페이지 재렌더
+  const content = document.getElementById('page-content');
+  if (content) renderSiteMapPage(content);
+}
+
+async function loadSiteMapMarkers(map) {
+  const filter = document.getElementById('siteMapFilter')?.value || 'all';
+  const listEl = document.getElementById('siteMapList');
+  const bounds = new window.kakao.maps.LatLngBounds();
+  let markerCount = 0;
+  let listItems = [];
+
+  try {
+    // TBM 데이터 로드
+    if (filter === 'all' || filter === 'tbm') {
+      const res = await API.get('/tbm?limit=200');
+      const tbmList = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.tbms || []);
+      for (const tbm of tbmList) {
+        if (!tbm.gps_lat || !tbm.gps_lon) continue;
+        const lat = parseFloat(tbm.gps_lat);
+        const lon = parseFloat(tbm.gps_lon);
+        if (isNaN(lat) || isNaN(lon)) continue;
+
+        const pos = new window.kakao.maps.LatLng(lat, lon);
+        const marker = new window.kakao.maps.Marker({
+          map,
+          position: pos,
+          image: new window.kakao.maps.MarkerImage(
+            'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png',
+            new window.kakao.maps.Size(24, 35)
+          )
+        });
+
+        // 커스텀 마커 (보라색)
+        const customMarker = new window.kakao.maps.CustomOverlay({
+          map,
+          position: pos,
+          content: `<div style="background:#685182;color:#fff;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3)">
+            <i class="fas fa-hard-hat" style="margin-right:3px"></i>TBM
+          </div>`,
+          yAnchor: 2.2
+        });
+        marker.setMap(null); // 기본 마커 숨기고 커스텀만 사용
+        customMarker.setMap(map);
+
+        // 인포윈도우
+        const infoContent = `
+          <div style="padding:10px 14px;min-width:180px;font-size:13px;">
+            <div style="font-weight:700;color:#685182;margin-bottom:4px">
+              <i class="fas fa-hard-hat mr-1"></i>TBM
+            </div>
+            <div style="color:#374151">${tbm.work_date || ''} ${tbm.work_name || tbm.construction_name || ''}</div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">${tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`}</div>
+          </div>`;
+        const infoWindow = new window.kakao.maps.InfoWindow({ content: infoContent, removable: true });
+        window.kakao.maps.event.addListener(customMarker, 'click', () => {
+          infoWindow.open(map, new window.kakao.maps.Marker({ position: pos }));
+        });
+
+        bounds.extend(pos);
+        markerCount++;
+        listItems.push({
+          type: 'tbm', color: '#685182', icon: 'fa-hard-hat',
+          date: tbm.work_date || '',
+          name: tbm.work_name || tbm.construction_name || 'TBM',
+          address: tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`,
+          lat, lon
+        });
+      }
+    }
+
+    // 현장점검 데이터 로드
+    if (filter === 'all' || filter === 'inspection') {
+      const res = await API.get('/inspections?limit=200');
+      const inspList = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.inspections || []);
+      for (const insp of inspList) {
+        if (!insp.gps_lat || !insp.gps_lon) continue;
+        const lat = parseFloat(insp.gps_lat);
+        const lon = parseFloat(insp.gps_lon);
+        if (isNaN(lat) || isNaN(lon)) continue;
+
+        const pos = new window.kakao.maps.LatLng(lat, lon);
+        const customMarker = new window.kakao.maps.CustomOverlay({
+          map,
+          position: pos,
+          content: `<div style="background:#10B981;color:#fff;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3)">
+            <i class="fas fa-search" style="margin-right:3px"></i>점검
+          </div>`,
+          yAnchor: 2.2
+        });
+
+        const infoContent = `
+          <div style="padding:10px 14px;min-width:180px;font-size:13px;">
+            <div style="font-weight:700;color:#10B981;margin-bottom:4px">
+              <i class="fas fa-search mr-1"></i>현장점검
+            </div>
+            <div style="color:#374151">${insp.inspection_date || ''} ${insp.title || insp.construction_name || ''}</div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">${insp.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`}</div>
+          </div>`;
+        const infoWindow = new window.kakao.maps.InfoWindow({ content: infoContent, removable: true });
+        window.kakao.maps.event.addListener(customMarker, 'click', () => {
+          infoWindow.open(map, new window.kakao.maps.Marker({ position: pos }));
+        });
+
+        bounds.extend(pos);
+        markerCount++;
+        listItems.push({
+          type: 'inspection', color: '#10B981', icon: 'fa-search',
+          date: insp.inspection_date || '',
+          name: insp.title || insp.construction_name || '현장점검',
+          address: insp.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`,
+          lat, lon
+        });
+      }
+    }
+
+    // 마커 있으면 지도 범위 자동 조정
+    if (markerCount > 0) {
+      map.setBounds(bounds);
+    }
+
+    // 목록 렌더링
+    if (listEl) {
+      if (listItems.length === 0) {
+        listEl.innerHTML = `<div class="text-center text-gray-400 py-6">
+          <i class="fas fa-map-pin text-2xl mb-2"></i>
+          <div class="text-sm">GPS 좌표가 기록된 데이터가 없습니다.<br>TBM/점검 작성 시 GPS 버튼을 눌러 위치를 기록해 주세요.</div>
+        </div>`;
+      } else {
+        // 날짜 최신순 정렬
+        listItems.sort((a, b) => b.date.localeCompare(a.date));
+        listEl.innerHTML = `
+          <div class="text-sm font-bold text-gray-600 mb-2">위치 기록 ${listItems.length}건</div>
+          ${listItems.map(item => `
+            <div class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 cursor-pointer hover:bg-gray-50"
+              onclick="_moveSiteMapTo(${item.lat}, ${item.lon})">
+              <div style="width:32px;height:32px;background:${item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i class="fas ${item.icon} text-white text-xs"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-gray-800 text-sm truncate">${item.name}</div>
+                <div class="text-xs text-gray-400 truncate">${item.date} · ${item.address}</div>
+              </div>
+              <i class="fas fa-chevron-right text-gray-300"></i>
+            </div>
+          `).join('')}`;
+      }
+    }
+
+  } catch(e) {
+    console.error('[SiteMap]', e);
+    if (listEl) listEl.innerHTML = `<div class="text-center text-red-400 py-4 text-sm">데이터 로드 실패: ${e.message}</div>`;
+  }
+}
+
+// 지도 특정 위치로 이동
+function _moveSiteMapTo(lat, lon) {
+  if (!_kakaoMapInstance) return;
+  _kakaoMapInstance.setCenter(new window.kakao.maps.LatLng(lat, lon));
+  _kakaoMapInstance.setLevel(3);
 }

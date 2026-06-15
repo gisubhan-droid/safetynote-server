@@ -998,6 +998,7 @@ async function loadSystemSettings(db: any): Promise<void> {
         ('attach_other_total_mb',      '',    '05_기타 총 한도(MB)', '비워두면 공통값 사용'),
         ('attach_other_allowed_ext',   '',    '05_기타 허용 확장자', '비워두면 공통값 사용'),
         ('kakao_rest_api_key',         '',    '카카오 REST API 키', 'GPS 역지오코딩(지번주소 포함)에 사용. 없으면 Nominatim(도로명만) 사용'),
+        ('kakao_js_api_key',           '',    '카카오 JavaScript API 키', '카카오맵 지도 표시에 사용. 카카오 개발자 콘솔 → JavaScript 키'),
         ('apk_version',                '',    'APK 버전', '현재 배포 중인 Android APK 버전 (예: 1.2.0)'),
         ('apk_url',                    '',    'APK 다운로드 URL', 'APK 파일 URL. NAS 경로(/static/apk/safetynote.apk) 또는 외부 URL'),
         ('apk_release_note',           '',    'APK 업데이트 내역', '사용자에게 표시할 버전 업데이트 내용'),
@@ -2402,6 +2403,14 @@ app.get('/static/style.css', (c) => {
 app.use('/static/*', serveStatic({ root: './public' }))
 
 // ─── 관리자 시스템 설정 API ────────────────────────────────────────────
+// GET /api/geocode/config - 카카오맵 JS API 키 반환 (프론트엔드에서 지도 로드용)
+app.get('/api/geocode/config', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const jsKey = getSetting('kakao_js_api_key') || ''
+  return c.json({ kakao_js_api_key: jsKey })
+})
+
 // GET /api/geocode/reverse - 역지오코딩 프록시 (카카오 우선, 없으면 Nominatim fallback)
 app.get('/api/geocode/reverse', async (c) => {
   const user = getUser(c)

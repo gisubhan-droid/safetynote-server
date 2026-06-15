@@ -145,35 +145,51 @@ rawDb.pragma('foreign_keys = ON')
 
 // ─── 자동 스키마 패치 (마이그레이션 누락분 보완) ──────────────────────
 ;(function autoMigrate() {
-  // tasks 테이블 컬럼 목록 조회
-  let taskCols: string[] = []
-  try {
-    const info = rawDb.prepare("PRAGMA table_info(tasks)").all() as any[]
-    taskCols = info.map((r: any) => r.name)
-    console.log('[AutoMigrate] tasks columns:', taskCols.join(', '))
-  } catch(e: any) {
-    console.error('[AutoMigrate] PRAGMA 조회 실패:', e.message)
-    return
+  // 테이블별 컬럼 목록 조회 헬퍼
+  function getCols(table: string): string[] {
+    try {
+      const info = rawDb.prepare(`PRAGMA table_info(${table})`).all() as any[]
+      return info.map((r: any) => r.name)
+    } catch(_) { return [] }
   }
 
+  const taskCols = getCols('tasks')
+  const tbmCols  = getCols('tbm_records')
+  console.log('[AutoMigrate] tasks cols:', taskCols.join(', '))
+  console.log('[AutoMigrate] tbm_records cols:', tbmCols.join(', '))
+
   const patches: { table: string; column: string; def: string }[] = [
-    { table: 'tasks', column: 'gps_address',             def: 'TEXT    DEFAULT NULL' },
-    { table: 'tasks', column: 'gps_lat',                 def: 'REAL    DEFAULT NULL' },
-    { table: 'tasks', column: 'gps_lon',                 def: 'REAL    DEFAULT NULL' },
-    { table: 'tasks', column: 'confirmed_address',        def: "TEXT    DEFAULT ''"  },
-    { table: 'tasks', column: 'confirmed_address_source', def: "TEXT    DEFAULT ''"  },
-    { table: 'tasks', column: 'confirmed_address_at',     def: 'DATETIME DEFAULT NULL' },
-    { table: 'tasks', column: 'work_order_address',       def: 'TEXT    DEFAULT NULL' },
-    { table: 'tasks', column: 'high_subtypes',            def: "TEXT    DEFAULT '[]'" },
-    { table: 'tasks', column: 'sub_task_number',          def: "TEXT    DEFAULT ''"  },
+    // tasks GPS 컬럼
+    { table: 'tasks', column: 'gps_address',              def: 'TEXT    DEFAULT NULL' },
+    { table: 'tasks', column: 'gps_lat',                  def: 'REAL    DEFAULT NULL' },
+    { table: 'tasks', column: 'gps_lon',                  def: 'REAL    DEFAULT NULL' },
+    // tasks 주소 컬럼
+    { table: 'tasks', column: 'confirmed_address',         def: "TEXT    DEFAULT ''"   },
+    { table: 'tasks', column: 'confirmed_address_source',  def: "TEXT    DEFAULT ''"   },
+    { table: 'tasks', column: 'confirmed_address_at',      def: 'DATETIME DEFAULT NULL' },
+    { table: 'tasks', column: 'work_order_address',        def: 'TEXT    DEFAULT NULL' },
+    // tasks 기타
+    { table: 'tasks', column: 'high_subtypes',             def: "TEXT    DEFAULT '[]'" },
+    { table: 'tasks', column: 'sub_task_number',           def: "TEXT    DEFAULT ''"   },
+    { table: 'tasks', column: 'contractor_name',           def: "TEXT    DEFAULT ''"   },
+    // tbm_records GPS 컬럼 (0018 이전 버전 DB 대비)
+    { table: 'tbm_records', column: 'gps_address', def: 'TEXT DEFAULT NULL' },
+    { table: 'tbm_records', column: 'gps_lat',     def: 'REAL DEFAULT NULL' },
+    { table: 'tbm_records', column: 'gps_lon',     def: 'REAL DEFAULT NULL' },
   ]
+
+  const colCache: Record<string, string[]> = { tasks: taskCols, tbm_records: tbmCols }
+
   for (const p of patches) {
-    if (taskCols.includes(p.column)) continue   // 이미 있으면 건너뜀
+    const cols = colCache[p.table] ?? getCols(p.table)
+    colCache[p.table] = cols
+    if (cols.includes(p.column)) continue
     try {
       rawDb.exec(`ALTER TABLE ${p.table} ADD COLUMN ${p.column} ${p.def}`)
       console.log(`[AutoMigrate] ✅ Added ${p.table}.${p.column}`)
+      colCache[p.table] = getCols(p.table) // 갱신
     } catch(e: any) {
-      console.error(`[AutoMigrate] ❌ Failed to add ${p.table}.${p.column}: ${e.message}`)
+      console.error(`[AutoMigrate] ❌ Failed ${p.table}.${p.column}: ${e.message}`)
     }
   }
   console.log('[AutoMigrate] 완료')

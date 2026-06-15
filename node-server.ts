@@ -145,19 +145,38 @@ rawDb.pragma('foreign_keys = ON')
 
 // ─── 자동 스키마 패치 (마이그레이션 누락분 보완) ──────────────────────
 ;(function autoMigrate() {
+  // tasks 테이블 컬럼 목록 조회
+  let taskCols: string[] = []
+  try {
+    const info = rawDb.prepare("PRAGMA table_info(tasks)").all() as any[]
+    taskCols = info.map((r: any) => r.name)
+    console.log('[AutoMigrate] tasks columns:', taskCols.join(', '))
+  } catch(e: any) {
+    console.error('[AutoMigrate] PRAGMA 조회 실패:', e.message)
+    return
+  }
+
   const patches: { table: string; column: string; def: string }[] = [
-    { table: 'tasks', column: 'gps_address', def: 'TEXT DEFAULT NULL' },
-    { table: 'tasks', column: 'gps_lat',     def: 'REAL DEFAULT NULL' },
-    { table: 'tasks', column: 'gps_lon',     def: 'REAL DEFAULT NULL' },
+    { table: 'tasks', column: 'gps_address',             def: 'TEXT    DEFAULT NULL' },
+    { table: 'tasks', column: 'gps_lat',                 def: 'REAL    DEFAULT NULL' },
+    { table: 'tasks', column: 'gps_lon',                 def: 'REAL    DEFAULT NULL' },
+    { table: 'tasks', column: 'confirmed_address',        def: "TEXT    DEFAULT ''"  },
+    { table: 'tasks', column: 'confirmed_address_source', def: "TEXT    DEFAULT ''"  },
+    { table: 'tasks', column: 'confirmed_address_at',     def: 'DATETIME DEFAULT NULL' },
+    { table: 'tasks', column: 'work_order_address',       def: 'TEXT    DEFAULT NULL' },
+    { table: 'tasks', column: 'high_subtypes',            def: "TEXT    DEFAULT '[]'" },
+    { table: 'tasks', column: 'sub_task_number',          def: "TEXT    DEFAULT ''"  },
   ]
   for (const p of patches) {
+    if (taskCols.includes(p.column)) continue   // 이미 있으면 건너뜀
     try {
       rawDb.exec(`ALTER TABLE ${p.table} ADD COLUMN ${p.column} ${p.def}`)
-      console.log(`[AutoMigrate] Added ${p.table}.${p.column}`)
-    } catch(_) {
-      // 이미 존재하는 컬럼이면 무시 (SQLite: "duplicate column name" 에러)
+      console.log(`[AutoMigrate] ✅ Added ${p.table}.${p.column}`)
+    } catch(e: any) {
+      console.error(`[AutoMigrate] ❌ Failed to add ${p.table}.${p.column}: ${e.message}`)
     }
   }
+  console.log('[AutoMigrate] 완료')
 })()
 
 function makeD1(db: Database.Database) {

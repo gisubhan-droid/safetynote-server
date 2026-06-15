@@ -63,34 +63,46 @@ app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const { status, hazard_level, task_id, date_from, date_to, user_id } = c.req.query()
-  let q = `SELECT si.*, u.name as inspector_name,
-              t.title as task_title, t.task_number, t.status as task_status,
-              t.gps_lat, t.gps_lon, t.gps_address,
-              t.confirmed_address as task_confirmed_address,
-              t.confirmed_address_source as task_confirmed_address_source,
-              t.work_order_address as task_work_order_address
-           FROM site_inspections si
-           LEFT JOIN users u ON u.id = si.inspector_id
-           LEFT JOIN tasks t ON t.id = si.task_id`
   const params: any[] = []
   const wheres: string[] = []
   if (status)      { wheres.push('si.status = ?');        params.push(status) }
   if (hazard_level){ wheres.push('si.hazard_level = ?');  params.push(hazard_level) }
   if (task_id)     { wheres.push('si.task_id = ?');       params.push(task_id) }
   if (user_id)     { wheres.push('si.inspector_id = ?');  params.push(user_id) }
-  // 날짜 필터: inspection_date_only 우선, 없으면 created_at 날짜 사용
-  if (date_from) {
-    wheres.push(`date(COALESCE(si.inspection_date_only, si.created_at)) >= ?`)
-    params.push(date_from)
+  if (date_from)   { wheres.push(`date(COALESCE(si.inspection_date_only, si.created_at)) >= ?`); params.push(date_from) }
+  if (date_to)     { wheres.push(`date(COALESCE(si.inspection_date_only, si.created_at)) <= ?`); params.push(date_to) }
+  const where = wheres.length ? ' WHERE ' + wheres.join(' AND ') : ''
+  const order = ' ORDER BY si.created_at DESC'
+
+  // GPS 컬럼 포함 쿼리 먼저 시도 — 컬럼 없으면 fallback
+  let rows: any[] = []
+  try {
+    const q = `SELECT si.*, u.name as inspector_name,
+                t.title as task_title, t.task_number, t.status as task_status,
+                t.gps_lat, t.gps_lon, t.gps_address,
+                t.confirmed_address as task_confirmed_address,
+                t.confirmed_address_source as task_confirmed_address_source,
+                t.work_order_address as task_work_order_address
+             FROM site_inspections si
+             LEFT JOIN users u ON u.id = si.inspector_id
+             LEFT JOIN tasks t ON t.id = si.task_id${where}${order}`
+    const result = await c.env.DB.prepare(q).bind(...params).all<any>()
+    rows = result.results || []
+  } catch(_) {
+    // GPS 컬럼 없는 구버전 DB — NULL 로 채워 반환
+    const q = `SELECT si.*, u.name as inspector_name,
+                t.title as task_title, t.task_number, t.status as task_status,
+                NULL as gps_lat, NULL as gps_lon, NULL as gps_address,
+                t.confirmed_address as task_confirmed_address,
+                t.confirmed_address_source as task_confirmed_address_source,
+                t.work_order_address as task_work_order_address
+             FROM site_inspections si
+             LEFT JOIN users u ON u.id = si.inspector_id
+             LEFT JOIN tasks t ON t.id = si.task_id${where}${order}`
+    const result = await c.env.DB.prepare(q).bind(...params).all<any>()
+    rows = result.results || []
   }
-  if (date_to) {
-    wheres.push(`date(COALESCE(si.inspection_date_only, si.created_at)) <= ?`)
-    params.push(date_to)
-  }
-  if (wheres.length) q += ' WHERE ' + wheres.join(' AND ')
-  q += ' ORDER BY si.created_at DESC'
-  const result = await c.env.DB.prepare(q).bind(...params).all<any>()
-  return c.json(result.results || [])
+  return c.json(rows)
 })
 
 // 현장 점검 상세

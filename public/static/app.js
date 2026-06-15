@@ -1378,7 +1378,10 @@ async function _loadLoginApkSection() {
 function _loginApkDownload() {
   const info = window._loginApkInfo;
   if (!info?.apk_url) { toast('다운로드 URL이 설정되지 않았습니다.', 'warning'); return; }
-  doApkDownload(resolveApkUrl(info.apk_url), info.version);
+  // 클릭 즉시 사용자에게 피드백 (다운로드 시작 안내)
+  toast('APK 다운로드를 시작합니다...', 'info');
+  const url = resolveApkUrl(info.apk_url);
+  doApkDownload(url, info.version);
 }
 
 /** 로그인 아이디 필드 지우기 버튼 */
@@ -24540,14 +24543,18 @@ function doApkDownload(url, newVersion) {
       window.location.href = url;
     }
   } else {
-    // 일반 브라우저
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'safetynote.apk';
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => document.body.removeChild(a), 500);
+    // 일반 브라우저 (PC/모바일 크롬 등)
+    // 1차: window.open — 새 탭 열기 방식 (팝업 차단 없으면 가장 안정적)
+    try {
+      const opened = window.open(url, '_blank');
+      if (!opened) {
+        // 팝업 차단된 경우 location.href 로 fallback (같은 탭 다운로드)
+        window.location.href = url;
+      }
+    } catch(e) {
+      // 예외 시 location.href fallback
+      window.location.href = url;
+    }
   }
 }
 

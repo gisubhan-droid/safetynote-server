@@ -2757,17 +2757,26 @@ app.get('/api/dist/apk/download', (c) => {
     return c.redirect(apkUrl, 302)
   }
 
-  // NAS 로컬 파일 서빙: apk_url이 /static/apk/... 경로면 해당 파일,
-  // 없거나 비어있으면 기본 저장 경로(uploadRoot/apk/safetynote.apk) 시도
+  // NAS 로컬 파일 서빙
+  // apk_url이 '/api/dist/apk/download' (자기 자신) 이거나 비어있으면 → 기본 업로드 경로
+  // apk_url이 '/static/apk/...' 같은 실제 파일 경로면 → public 디렉터리에서 탐색
   let filePath: string
-  if (apkUrl && apkUrl.startsWith('/')) {
-    // /static/apk/safetynote.apk → __dirname/public/static/apk/safetynote.apk
+  if (!apkUrl || apkUrl === '/api/dist/apk/download' || apkUrl.startsWith('/api/')) {
+    // 기본 저장 경로: uploadRoot/apk/safetynote.apk
+    filePath = getApkFilePath()
+  } else if (apkUrl.startsWith('/')) {
+    // /static/apk/safetynote.apk → public 디렉터리 기준
     filePath = join(__dirname, 'public', apkUrl)
+    // public 경로에 없으면 uploadRoot로 fallback
+    if (!existsSync(filePath)) {
+      filePath = getApkFilePath()
+    }
   } else {
     filePath = getApkFilePath()
   }
 
   if (!existsSync(filePath)) {
+    console.warn(`[APK Download] 파일 없음: ${filePath} (apk_url=${apkUrl})`)
     return c.json({ error: 'APK 파일이 서버에 없습니다. 관리자 설정에서 APK를 업로드하거나 URL을 입력하세요.' }, 404)
   }
 
@@ -2777,6 +2786,7 @@ app.get('/api/dist/apk/download', (c) => {
   c.header('Content-Disposition', 'attachment; filename="safetynote.apk"')
   c.header('Content-Length', String(stat.size))
   c.header('Cache-Control', 'no-cache')
+  console.log(`[APK Download] 서빙: ${filePath} (${(stat.size/1024/1024).toFixed(1)} MB)`)
   return c.body(fileBuffer)
 })
 

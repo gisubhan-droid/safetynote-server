@@ -10664,42 +10664,61 @@ async function renderMyTasksPage(container) {
 // ======= 현장 점검 =======
 async function renderInspectionsPage(container) {
   try {
-    // 날짜/상태 필터 — 전역값 기준 (DOM 의존 제거)
+    // ── 전역 필터 상태 초기화 ──────────────────────────────────
     const _today = new Date().toISOString().split('T')[0];
-    // 첫 진입 시에만 기본값 설정 (당일)
-    if (window._insDateFrom === undefined) window._insDateFrom = _today;
-    if (window._insDateTo   === undefined) window._insDateTo   = _today;
-    if (window._insStatusFilter === undefined) window._insStatusFilter = '';
+    // 첫 진입 기본값: 당일 점검, 작업탭 = 현장진행중
+    if (window._insDateFrom     === undefined) window._insDateFrom     = _today;
+    if (window._insDateTo       === undefined) window._insDateTo       = _today;
+    if (window._insStatusFilter === undefined) window._insStatusFilter = '';   // 점검 처리상태 (open/in_progress/closed/'' 전체)
+    if (window._insTaskTab      === undefined) window._insTaskTab      = 'active'; // 작업상태 탭
 
-    const _df = window._insDateFrom;
-    const _dt = window._insDateTo;
-    const _sf = window._insStatusFilter;
+    const _df  = window._insDateFrom;
+    const _dt  = window._insDateTo;
+    const _sf  = window._insStatusFilter;
+    const _tab = window._insTaskTab;
 
-    // API 쿼리 파라미터 구성
+    // ── 작업상태 탭 정의 ──────────────────────────────────────
+    // active  : TBM완료 + 작업중 (현장 진행중) ← 기본
+    // progress: 배정완료 ~ 작업완료 전 (작업진행 전체)
+    // done    : 작업완료 + 일지완료 (종료된 작업)
+    // all     : 취소 제외 전체
+    const ACTIVE_STATUSES    = ['tbm_done', 'working'];
+    const PROGRESS_STATUSES  = ['assigned', 'in_progress', 'tbm_done', 'working', 'work_completed'];
+    const DONE_STATUSES      = ['work_completed', 'completed'];
+
+    // ── API 쿼리 파라미터 ─────────────────────────────────────
     const insParams = new URLSearchParams();
     if (_df) insParams.set('date_from', _df);
     if (_dt) insParams.set('date_to',   _dt);
     if (_sf) insParams.set('status',    _sf);
-    insParams.set('limit', '500');
 
-    // 작업 목록 + 점검 내역 병렬 로드
+    // ── 데이터 로드 ───────────────────────────────────────────
     const [tasksRes, insRes] = await Promise.all([
       API.get('/tasks'),
       API.get(`/inspections?${insParams.toString()}`),
     ]);
-    const tasks       = tasksRes.data.tasks || tasksRes.data || [];
-    const inspections = insRes.data   || [];
+    const allTasks    = tasksRes.data.tasks || tasksRes.data || [];
+    const inspections = insRes.data || [];
 
-    // 모달용 작업자 맵 미리 구성 → showCreateInspectionModal 재호출 방지
+    // ── 작업상태 탭 기준 필터링 ───────────────────────────────
+    const filterByTab = (t) => {
+      if (_tab === 'active')   return ACTIVE_STATUSES.includes(t.status);
+      if (_tab === 'progress') return PROGRESS_STATUSES.includes(t.status);
+      if (_tab === 'done')     return DONE_STATUSES.includes(t.status);
+      return t.status !== 'cancelled'; // all
+    };
+    const tasks = allTasks.filter(filterByTab);
+
+    // ── 모달용 작업자 맵 ──────────────────────────────────────
     _insTaskWorkersMap = {};
-    for (const t of tasks) {
+    for (const t of allTasks) {
       if (Array.isArray(t.assigned_workers) && t.assigned_workers.length > 0) {
         _insTaskWorkersMap[t.id] = t.assigned_workers.map(w => ({ id: w.id, name: w.name, position: w.position || '' }));
       }
     }
-    window._insTasksCache = tasks;  // 모달에서 재사용
+    window._insTasksCache = allTasks;
 
-    // task_id → 점검 목록 맵핑
+    // ── task_id → 점검 목록 맵핑 (날짜 필터 적용된 점검) ─────
     const insMap = {};
     inspections.forEach(i => {
       const tid = i.task_id || '__none__';
@@ -10707,20 +10726,21 @@ async function renderInspectionsPage(container) {
       insMap[tid].push(i);
     });
 
-    // 상태 표시 헬퍼
+    // ── 상태 표시 헬퍼 ───────────────────────────────────────
     const TASK_STATUS = {
-      unassigned: { label:'미배정',   cls:'bg-gray-100 text-gray-500' },
-      assigned:   { label:'배정완료', cls:'bg-blue-100 text-blue-600' },
-      in_progress:{ label:'준비중',   cls:'bg-yellow-100 text-yellow-700' },
-      tbm_done:   { label:'TBM완료',  cls:'bg-purple-100 text-purple-700' },
-      working:    { label:'작업중',   cls:'bg-green-100 text-green-700' },
-      completed:  { label:'완료',     cls:'bg-gray-100 text-gray-500' },
-      cancelled:  { label:'취소',     cls:'bg-red-100 text-red-400' },
+      unassigned:     { label:'미배정',       cls:'bg-gray-100 text-gray-500',    dot:'#9CA3AF' },
+      assigned:       { label:'배정완료',     cls:'bg-blue-100 text-blue-600',    dot:'#3B82F6' },
+      in_progress:    { label:'체크리스트완료', cls:'bg-yellow-100 text-yellow-700', dot:'#F59E0B' },
+      tbm_done:       { label:'TBM완료',      cls:'bg-purple-100 text-purple-700', dot:'#7C3AED' },
+      working:        { label:'작업진행중',    cls:'bg-green-100 text-green-700',   dot:'#10B981' },
+      work_completed: { label:'작업완료',     cls:'bg-teal-100 text-teal-700',    dot:'#0D9488' },
+      completed:      { label:'일지완료',     cls:'bg-gray-200 text-gray-600',    dot:'#6B7280' },
+      cancelled:      { label:'취소',         cls:'bg-red-100 text-red-400',      dot:'#F87171' },
     };
     const INS_STATUS = {
-      open:       { label:'미처리', cls:'bg-yellow-100 text-yellow-700', icon:'fas fa-exclamation-circle' },
-      in_progress:{ label:'처리중', cls:'bg-blue-100 text-blue-700',    icon:'fas fa-spinner' },
-      closed:     { label:'완료',   cls:'bg-green-100 text-green-700',   icon:'fas fa-check-circle' },
+      open:        { label:'미처리', cls:'bg-yellow-100 text-yellow-700', icon:'fas fa-exclamation-circle' },
+      in_progress: { label:'처리중', cls:'bg-blue-100 text-blue-700',    icon:'fas fa-spinner' },
+      closed:      { label:'완료',   cls:'bg-green-100 text-green-700',   icon:'fas fa-check-circle' },
     };
     const HAZARD_CLS = {
       critical:'bg-red-100 text-red-700', high:'bg-orange-100 text-orange-700',
@@ -10729,16 +10749,24 @@ async function renderInspectionsPage(container) {
     const HAZARD_LBL = { critical:'긴급', high:'높음', medium:'보통', low:'낮음' };
     const INS_TYPE_LBL = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' };
 
-    // 필터 상태 (전역) — 작업 그룹 탭
-    window._insFilter = window._insFilter || 'all';
+    // ── 탭별 카운트 ───────────────────────────────────────────
+    const cnt = (statuses) => allTasks.filter(t => statuses.includes(t.status)).length;
+    const cntAll = allTasks.filter(t => t.status !== 'cancelled').length;
 
-    // 점검 건수 집계
-    const totalIns = inspections.length;
+    // ── 점검 필터 (점검있음/없음) ─────────────────────────────
+    window._insSubFilter = window._insSubFilter || 'all';
 
-    // 날짜 범위 표시
+    // ── 날짜 범위 표시 ────────────────────────────────────────
     const dateRangeLabel = (_df === _dt && _df)
       ? _df
       : (_df || _dt) ? `${_df || '처음'} ~ ${_dt || '오늘'}` : '전체 기간';
+
+    const TAB_DEFS = [
+      { key:'active',   label:'🟢 현장진행중', desc:'TBM완료·작업중',       statuses: ACTIVE_STATUSES },
+      { key:'progress', label:'📋 작업진행',   desc:'배정완료~작업완료',     statuses: PROGRESS_STATUSES },
+      { key:'done',     label:'✅ 완료',        desc:'작업완료·일지완료',     statuses: DONE_STATUSES },
+      { key:'all',      label:'전체',          desc:'취소 제외 전체',        statuses: null },
+    ];
 
     container.innerHTML = `
     <div class="max-w-5xl mx-auto">
@@ -10746,156 +10774,164 @@ async function renderInspectionsPage(container) {
       <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div>
           <h2 class="text-xl font-black text-gray-900" style="border-left:4px solid #685182;padding-left:10px">현장점검</h2>
-          <p class="text-xs text-gray-400 mt-0.5 pl-3">${dateRangeLabel} · ${totalIns}건</p>
+          <p class="text-xs text-gray-400 mt-0.5 pl-3">${dateRangeLabel} · 점검 ${inspections.length}건</p>
         </div>
         <button onclick="showCreateInspectionModal()" class="btn btn-primary">
           <i class="fas fa-plus mr-1"></i>점검 등록
         </button>
       </div>
 
-      <!-- 검색 필터 바 -->
+      <!-- ① 작업상태 탭 (주 필터) -->
+      <div class="flex gap-1 mb-3 flex-wrap">
+        ${TAB_DEFS.map(tab => {
+          const tabCnt = tab.statuses ? cnt(tab.statuses) : cntAll;
+          const isActive = _tab === tab.key;
+          return `<button
+            onclick="window._insTaskTab='${tab.key}';window._insSubFilter='all';renderInspectionsPage(document.getElementById('page-content'))"
+            style="padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;border:2px solid ${isActive?'#685182':'#D8D0DC'};
+                   background:${isActive?'#685182':'white'};color:${isActive?'white':'#685182'};cursor:pointer;transition:all .15s;white-space:nowrap">
+            ${tab.label}
+            <span style="background:${isActive?'rgba(255,255,255,0.25)':'#F5F0F8'};border-radius:999px;padding:0 6px;font-size:11px;margin-left:3px;color:${isActive?'white':'#685182'}">${tabCnt}</span>
+          </button>`;
+        }).join('')}
+      </div>
+
+      <!-- ② 점검일 + 처리상태 필터 바 -->
       <div class="card p-3 mb-3" style="background:#F5F0F8;border:1px solid #D8D0DC">
         <div class="flex flex-wrap items-center gap-2">
-          <!-- 작업진행 단계 (status) 필터 -->
+          <!-- 점검 처리상태 -->
           <div class="flex items-center gap-1">
-            <label class="text-xs font-bold text-gray-600 whitespace-nowrap">진행단계</label>
-            <select id="insStatusFilter" class="form-control text-sm" style="width:auto;min-width:90px">
-              <option value=""           ${_sf===''?'selected':''}>전체</option>
-              <option value="open"       ${_sf==='open'?'selected':''}>미처리</option>
-              <option value="in_progress"${_sf==='in_progress'?'selected':''}>처리중</option>
-              <option value="closed"     ${_sf==='closed'?'selected':''}>완료</option>
+            <label class="text-xs font-bold text-gray-600 whitespace-nowrap">점검상태</label>
+            <select id="insStatusFilter" class="form-control text-sm" style="width:auto;min-width:85px">
+              <option value=""            ${_sf===''           ?'selected':''}>전체</option>
+              <option value="open"        ${_sf==='open'       ?'selected':''}>미처리</option>
+              <option value="in_progress" ${_sf==='in_progress'?'selected':''}>처리중</option>
+              <option value="closed"      ${_sf==='closed'     ?'selected':''}>완료</option>
             </select>
           </div>
           <!-- 날짜 범위 -->
           <div class="flex items-center gap-1">
             <label class="text-xs font-bold text-gray-600 whitespace-nowrap">점검일</label>
-            <input type="date" id="insDateFrom" value="${_df}"
-              class="form-control text-sm" style="width:135px">
+            <input type="date" id="insDateFrom" value="${_df}" class="form-control text-sm" style="width:135px">
             <span class="text-gray-400 text-sm">~</span>
-            <input type="date" id="insDateTo" value="${_dt}"
-              class="form-control text-sm" style="width:135px">
+            <input type="date" id="insDateTo"   value="${_dt}" class="form-control text-sm" style="width:135px">
           </div>
           <!-- 빠른 날짜 선택 -->
           <div class="flex gap-1">
-            <button onclick="_setInsDateRange('today')"
-              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">오늘</button>
-            <button onclick="_setInsDateRange('week')"
-              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">7일</button>
-            <button onclick="_setInsDateRange('month')"
-              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">30일</button>
-            <button onclick="_setInsDateRange('all')"
-              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">전체</button>
+            <button onclick="_setInsDateRange('today')"  class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">오늘</button>
+            <button onclick="_setInsDateRange('week')"   class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">7일</button>
+            <button onclick="_setInsDateRange('month')"  class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">30일</button>
+            <button onclick="_setInsDateRange('all')"    class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">전체</button>
           </div>
-          <!-- 조회 버튼 -->
-          <button onclick="_applyInsFilters()"
-            class="btn btn-sm ml-auto" style="background:#685182;color:white;border:none">
+          <button onclick="_applyInsFilters()" class="btn btn-sm ml-auto" style="background:#685182;color:white;border:none">
             <i class="fas fa-search mr-1"></i>조회
           </button>
         </div>
       </div>
 
-      <!-- 필터 탭 -->
-      <div class="tab-bar mb-4" id="insFilterBar">
+      <!-- ③ 점검있음/없음 서브탭 -->
+      <div class="tab-bar mb-3" id="insFilterBar">
         ${[
-          ['all',      '전체',          tasks.length],
-          ['has_ins',  '점검있음',       tasks.filter(t => insMap[t.id]?.length).length],
-          ['no_ins',   '미점검',         tasks.filter(t => !insMap[t.id]?.length).length],
-        ].map(([key, lbl, cnt]) =>
-          `<div class="tab-item ${window._insFilter===key?'active':''}"
-               onclick="window._insFilter='${key}';renderInspectionsPage(document.getElementById('page-content'))">
-             ${lbl} <span style="background:rgba(0,0,0,0.08);border-radius:999px;padding:0 6px;font-size:11px;margin-left:3px">${cnt}</span>
+          ['all',     '전체',   tasks.length],
+          ['has_ins', '점검있음', tasks.filter(t => insMap[t.id]?.length).length],
+          ['no_ins',  '미점검',  tasks.filter(t => !insMap[t.id]?.length).length],
+        ].map(([key, lbl, c]) =>
+          `<div class="tab-item ${window._insSubFilter===key?'active':''}"
+               onclick="window._insSubFilter='${key}';renderInspectionsPage(document.getElementById('page-content'))">
+             ${lbl} <span style="background:rgba(0,0,0,0.08);border-radius:999px;padding:0 6px;font-size:11px;margin-left:3px">${c}</span>
            </div>`
         ).join('')}
       </div>
 
-      <!-- 작업 기반 리스트 테이블 -->
+      <!-- ④ 작업 리스트 -->
       <div class="card p-0 overflow-hidden">
-        <!-- 테이블 헤더 -->
-        <div style="display:grid;grid-template-columns:2fr 80px 100px 1fr 80px;background:#F5F0F8;border-bottom:1px solid #D8D0DC;padding:8px 14px;font-size:11px;font-weight:700;color:#C6C6C6;text-transform:uppercase;letter-spacing:.5px">
-          <div>작업명</div>
-          <div>작업상태</div>
-          <div>점검</div>
-          <div>최근점검내용</div>
-          <div style="text-align:right">액션</div>
+        <div style="display:grid;grid-template-columns:2fr 90px 90px 1fr 80px;background:#F5F0F8;border-bottom:1px solid #D8D0DC;padding:8px 14px;font-size:11px;font-weight:700;color:#9CA3AF;text-transform:uppercase;letter-spacing:.5px">
+          <div>작업명</div><div>작업상태</div><div>점검</div><div>최근점검내용</div><div style="text-align:right">액션</div>
         </div>
-
-        <!-- 작업 행 -->
         <div id="insTaskList">
           ${(() => {
             const filtered = tasks.filter(t => {
               const ins = insMap[t.id] || [];
-              if (window._insFilter === 'has_ins')  return ins.length > 0;
-              if (window._insFilter === 'no_ins')   return ins.length === 0;
+              if (window._insSubFilter === 'has_ins') return ins.length > 0;
+              if (window._insSubFilter === 'no_ins')  return ins.length === 0;
               return true;
             });
 
             if (filtered.length === 0) return `
-              <div style="padding:40px;text-align:center;color:#C6C6C6">
-                <i class="fas fa-search" style="font-size:2rem;margin-bottom:10px;display:block;opacity:.3"></i>
-                해당하는 작업이 없습니다.
+              <div style="padding:48px;text-align:center;color:#C6C6C6">
+                <i class="fas fa-hard-hat" style="font-size:2.5rem;margin-bottom:12px;display:block;opacity:.2"></i>
+                <div style="font-size:13px;font-weight:600;color:#9CA3AF;margin-bottom:4px">해당하는 작업이 없습니다</div>
+                <div style="font-size:11px;color:#C6C6C6">${_tab==='active'?'현장 진행중(TBM완료·작업중) 작업이 없습니다':''}</div>
               </div>`;
 
             return filtered.map(t => {
-              const ins = (insMap[t.id] || []).sort((a,b) => b.id - a.id);
+              const ins    = (insMap[t.id] || []).sort((a,b) => b.id - a.id);
               const latest = ins[0];
-              const ts = TASK_STATUS[t.status] || TASK_STATUS.unassigned;
+              const ts     = TASK_STATUS[t.status] || TASK_STATUS.unassigned;
+              // 점검 등록 가능 여부: 취소·일지완료는 불가, 작업완료는 열람만
+              const canRegister = !['cancelled', 'completed'].includes(t.status);
+              const isReadOnly  = t.status === 'work_completed';
 
               return `
-              <!-- 작업 행 -->
-              <div style="border-bottom:1px solid #F5F0F8">
-                <div style="display:grid;grid-template-columns:2fr 80px 100px 1fr 80px;padding:10px 14px;align-items:center;gap:6px"
-                     class="hover:bg-gray-50 transition-colors">
+              <div style="border-bottom:1px solid #F0ECF5">
+                <div style="display:grid;grid-template-columns:2fr 90px 90px 1fr 80px;padding:10px 14px;align-items:center;gap:6px;background:${isReadOnly?'#FAFAFA':'white'}"
+                     class="hover:bg-purple-50 transition-colors">
                   <!-- 작업명 -->
                   <div>
-                    <div style="font-weight:700;font-size:13px;color:#685182;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;text-decoration:underline"
+                    <div style="font-weight:700;font-size:13px;color:#685182;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer"
                          onclick="event.stopPropagation();showTaskDetail(${t.id})"
                          title="작업 상세 보기">${t.title}</div>
-                    <div style="font-size:11px;color:#C6C6C6;margin-top:1px">
-                      ${t.task_number ? `<span style="color:#C6C6C6">${t.task_number}</span> · ` : ''}
-                      ${t.planned_date || t.work_date || '-'}
-                      ${t.location ? ` · <i class="fas fa-map-marker-alt"></i> ${t.location}` : ''}
+                    <div style="font-size:11px;color:#9CA3AF;margin-top:2px;display:flex;align-items:center;gap:4px">
+                      ${t.task_number ? `<span>${t.task_number}</span><span style="color:#D8D0DC">·</span>` : ''}
+                      <span>${t.planned_date || t.work_date || '-'}</span>
+                      ${t.location ? `<span style="color:#D8D0DC">·</span><i class="fas fa-map-marker-alt" style="color:#C6C6C6"></i><span>${t.location}</span>` : ''}
                     </div>
                   </div>
                   <!-- 작업상태 -->
                   <div>
-                    <span style="font-size:11px;padding:2px 7px;border-radius:999px;font-weight:600" class="${ts.cls}">${ts.label}</span>
+                    <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600" class="${ts.cls}">
+                      <span style="width:6px;height:6px;border-radius:50%;background:${ts.dot};flex-shrink:0"></span>
+                      ${ts.label}
+                    </span>
                   </div>
                   <!-- 점검 현황 -->
                   <div>
                     ${ins.length === 0
                       ? `<span style="font-size:11px;color:#C6C6C6"><i class="fas fa-minus-circle mr-1"></i>없음</span>`
-                      : `<span style="font-size:11px;padding:2px 7px;border-radius:999px;background:#F5F0F8;color:#685182;font-weight:600">
+                      : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;background:#EDE9F6;color:#685182;font-weight:700;cursor:pointer"
+                              onclick="showTaskInspectionList(${t.id},'${t.title.replace(/'/g,'&#39;')}')">
                            <i class="fas fa-clipboard-check mr-1"></i>${ins.length}건
                          </span>`
                     }
                   </div>
                   <!-- 최근 점검 내용 -->
-                  <div style="font-size:11px;color:#C6C6C6;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+                  <div style="font-size:11px;color:#9CA3AF;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
                     ${latest ? (() => {
                       const _lm2 = { 'excellent':'우수','good':'양호','pass':'적정','fail':'불량','우수':'우수','양호':'양호','적정':'적정','불량':'불량' };
                       const _cm2 = { '불량':'#D70072','적정':'#D70072','양호':'#685182','우수':'#685182' };
                       const _bm2 = { '불량':'#FDE8F3','적정':'#FDE8F3','양호':'#F5F0F8','우수':'#F5F0F8' };
-                      const krR = latest.inspection_result && latest.inspection_result !== 'none' ? (_lm2[latest.inspection_result] || latest.inspection_result) : null;
-                      const rBadge = krR
-                        ? `<span style="padding:1px 5px;border-radius:999px;font-size:10px;font-weight:700;margin-right:4px;color:${_cm2[krR]||'#C6C6C6'};background:${_bm2[krR]||'#F5F0F8'};border:1px solid ${_cm2[krR]||'#C6C6C6'}55">${krR}</span>`
-                        : '';
+                      const krR    = latest.inspection_result && latest.inspection_result !== 'none' ? (_lm2[latest.inspection_result] || latest.inspection_result) : null;
+                      const rBadge = krR ? `<span style="padding:1px 5px;border-radius:999px;font-size:10px;font-weight:700;margin-right:4px;color:${_cm2[krR]||'#9CA3AF'};background:${_bm2[krR]||'#F5F0F8'};border:1px solid ${_cm2[krR]||'#C6C6C6'}55">${krR}</span>` : '';
                       return `${rBadge}<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:600;margin-right:4px" class="${INS_STATUS[latest.status]?.cls||''}">${INS_STATUS[latest.status]?.label||''}</span>${latest.findings ? latest.findings.substring(0,30)+(latest.findings.length>30?'…':'') : latest.location || '-'}`;
-                    })() : '<span style="color:#C6C6C6">점검 없음</span>'}
+                    })() : '<span style="color:#D1D5DB">-</span>'}
                   </div>
                   <!-- 액션 버튼 -->
                   <div style="display:flex;gap:4px;justify-content:flex-end">
                     ${ins.length > 0
                       ? `<button onclick="showTaskInspectionList(${t.id},'${t.title.replace(/'/g,'&#39;')}')"
-                           style="font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid #C6C6C6;background:white;cursor:pointer;color:#4E3A63;font-weight:600"
+                           style="font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid #D8D0DC;background:white;cursor:pointer;color:#685182;font-weight:600"
                            onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background='white'">
                            <i class="fas fa-list mr-1"></i>내역
                          </button>`
                       : ''}
-                    <button onclick="showCreateInspectionModal(${t.id})"
-                      style="font-size:11px;padding:3px 8px;border-radius:6px;border:none;background:#685182;cursor:pointer;color:white;font-weight:600"
-                      onmouseover="this.style.background='#685182'" onmouseout="this.style.background='#685182'">
-                      <i class="fas fa-plus"></i>
-                    </button>
+                    ${canRegister
+                      ? `<button onclick="showCreateInspectionModal(${t.id})"
+                           style="font-size:11px;padding:3px 8px;border-radius:6px;border:none;background:#685182;cursor:pointer;color:white;font-weight:600"
+                           title="점검 등록">
+                           <i class="fas fa-plus"></i>
+                         </button>`
+                      : `<span style="font-size:10px;color:#C6C6C6;padding:3px 6px" title="일지완료 작업">-</span>`
+                    }
                   </div>
                 </div>
                 <!-- 점검 내역 인라인 (토글) -->
@@ -10944,28 +10980,26 @@ function showTaskInspectionList(taskId, taskTitle) {
 
 // 현장점검 필터 적용 (조회 버튼 클릭)
 function _applyInsFilters() {
-  // DOM에서 현재 입력값을 전역에 저장 후 재렌더링
+  // DOM → 전역 저장 후 재렌더링
   window._insDateFrom     = document.getElementById('insDateFrom')?.value     ?? window._insDateFrom ?? '';
   window._insDateTo       = document.getElementById('insDateTo')?.value       ?? window._insDateTo   ?? '';
   window._insStatusFilter = document.getElementById('insStatusFilter')?.value ?? window._insStatusFilter ?? '';
   renderInspectionsPage(document.getElementById('page-content'));
 }
 
-// 현장점검 빠른 날짜 범위 선택 — 전역값 직접 수정 후 재렌더링
+// 현장점검 빠른 날짜 선택 — 전역 직접 수정 후 재렌더링
 function _setInsDateRange(range) {
   const today = new Date().toISOString().split('T')[0];
   if (range === 'today') {
-    window._insDateFrom = today;
-    window._insDateTo   = today;
+    window._insDateFrom = today; window._insDateTo = today;
   } else if (range === 'week') {
-    window._insDateFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    window._insDateFrom = new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0];
     window._insDateTo   = today;
   } else if (range === 'month') {
-    window._insDateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    window._insDateFrom = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
     window._insDateTo   = today;
   } else if (range === 'all') {
-    window._insDateFrom = '';
-    window._insDateTo   = '';
+    window._insDateFrom = ''; window._insDateTo = '';
   }
   renderInspectionsPage(document.getElementById('page-content'));
 }

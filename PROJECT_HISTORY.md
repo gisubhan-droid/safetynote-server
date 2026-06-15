@@ -1,9 +1,72 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-14 (세션 22 — 완료)
-> **앱 현재 버전: v1.4.0** ← 최신 (⏳ NAS git pull + pm2 restart 필요)
-> NAS 배포 버전: v1.3.1 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
-> **다음 작업**: NAS git pull + pm2 restart 적용 후 현장 테스트
+> 최종 업데이트: 2026-06-15 (세션 23 — 진행중)
+> **서버 현재 버전: aac6ce3** ← 최신 (⏳ NAS git pull 진행중)
+> NAS 배포 버전: b91ce65 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅)
+> **다음 작업**: git pull 완료 후 npm rebuild → pm2 restart → APK 설정
+
+---
+
+## 🚨 세션 23 — NAS 장애 복구 (2026-06-15)
+
+### 발생한 문제
+| 문제 | 원인 | 해결 |
+|------|------|------|
+| 로그인 실패 | 빈 `safety.db`(32KB) 사용 중 | `data/safety.db`(6.8MB) 심볼릭 링크 연결 |
+| 서버 크래시 반복 | `better-sqlite3` 바이너리 없음 (`node_modules` 미설치) | gcc/make로 소스 빌드 성공 |
+| 패키지 설치 불가 | `/dev/md0` 시스템 파티션 100% 꽉 참 | `space-preserve` 497MB 삭제 → 457MB 확보 |
+| npm 명령 오류 | 시스템 PATH가 Node.js v12 가리킴 | `export PATH=/volume1/@appstore/Node.js_v18/...` |
+
+### DB 파일 구조 (중요)
+```
+/volume1/safetynote/safety.db          → 심볼릭 링크 (실제 DB 아님)
+/volume1/safetynote/data/safety.db     → 실제 운영 DB (6.8MB) ✅
+/volume1/safetynote/data/safetynote.db → 빈 파일 (32KB, 무시)
+```
+
+### NAS 환경 정보
+| 항목 | 내용 |
+|------|------|
+| OS | Synology DSM (Linux 4.4.180+) |
+| Node.js | v18.18.2 (`/volume1/@appstore/Node.js_v18`) |
+| gcc/make | `/opt/bin/` (Entware 설치됨) |
+| glibc | 2.26 (GitHub prebuilt 바이너리 미호환 → 소스빌드 필요) |
+| 시스템 파티션 | `/dev/md0` 2.3GB, 현재 80% 사용 |
+| 데이터 파티션 | `/volume1` 11TB, 53% 사용 |
+| PM2 앱명 | `safetynote` (PORT=3443) |
+
+### 복구 후 필수 작업 (재부팅 대비)
+```bash
+# 1. PATH 영구 설정
+echo 'export PATH=/opt/bin:/opt/sbin:/volume1/@appstore/Node.js_v18/usr/local/bin:$PATH' >> /root/.profile
+
+# 2. DB_PATH 영구 설정
+echo "DB_PATH=/volume1/safetynote/data/safety.db" >> /volume1/safetynote/.env
+
+# 3. pm2 자동시작
+pm2 save && pm2 startup
+
+# 4. git pull 후 매번 실행 필요
+export PATH=/opt/bin:/opt/sbin:/volume1/@appstore/Node.js_v18/usr/local/bin:$PATH
+npm rebuild better-sqlite3
+```
+
+### 완료된 개발 작업 (이번 세션)
+- ✅ `GET /api/dist/apk/version` — 기존 앱 `checkApkVersion()` 호환 API
+- ✅ `GET /api/dist/apk/download` — APK 파일 서빙 (외부URL 리다이렉트 / 로컬파일 스트리밍)
+- ✅ `POST /api/dist/apk/upload` — 관리자 APK 파일 업로드 (multipart, admin only)
+- ✅ 관리자 APK 섹션 파일 업로드 버튼 추가 (`_apkFileUpload()`)
+- ✅ `better-sqlite3` v9.6.0 → package.json 반영 (Node 18 호환)
+
+### APK 배포 방법 (git pull 완료 후)
+1. 관리자 설정 → Android APK 배포 관리
+2. APK 버전 입력 (예: 1.2.0)
+3. **파일 선택** → `.apk` 파일 선택 → **업로드** 클릭
+4. URL 필드에 `/api/dist/apk/download` 자동 입력 확인
+5. **APK 설정 저장** 클릭
+6. 로그인 화면 새로고침 → 하단 다운로드 버튼 표시 확인
+
+---
 
 ## 💾 NAS 백업 기록
 
@@ -38,6 +101,7 @@
 | **v1.3.8** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: `showToast`→`toast` 치환(임시저장/제출/행추가 버튼 완전 무반응 핵심 원인), +케이블추가 버튼 삭제, tasks 조회 범위 확대(working/work_completed/completed), SW 등록경로 `/service-worker.js` 수정 (캐시 `v=20260614a`) |
 | **v1.3.9** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: 외선일보 공정구분(proc) DB 저장, 추가입력(extras) 저장/복원, `YEAR_OPTS3` 오타 수정(행추가 버튼 최종 수정) — `work_report_extras` 테이블 신규 생성, `work_report_cables.proc/remark` 컬럼 추가 (`2e97d32`) |
 | **v1.4.0** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: 외선일보 목록 "완료된 작업 없음" 수정 (tasks.ts 응답 `{ tasks }` 래핑 + `work_reports` JOIN), 물량통계 500 에러 수정 (WHERE 절 `t` 별칭 중복 버그 + extras 기반 통계 재구성) (`8d6f0b6`) |
+| **v1.4.1** | **2026-06-15** | ✅ **GitHub 배포 완료** | 물량통계 4가지 개선(달성금액 막대그래프·주간조회·팀별내역테이블·접속탭 그래프+현황표), DB초기화 기능(시스템관리자), APK 배포 관리(로그인화면 다운로드버튼·관리자 업로드UI·`/api/dist/apk/*` API 3개), `better-sqlite3` v9.6.0 다운그레이드 (`aac6ce3`) |
 
 ---
 

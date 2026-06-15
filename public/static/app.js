@@ -29147,73 +29147,90 @@ function goToSpliceReport(taskId) {
 let _kakaoMapInstance = null;  // 카카오맵 인스턴스 재사용
 
 async function renderSiteMapPage(container) {
-  // 날짜 기본값: 최근 30일
-  const _today = new Date().toISOString().split('T')[0];
-  const _monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-  // 이미 입력된 값 유지 (새로고침 시 보존)
-  const _prevFrom = document.getElementById('siteMapDateFrom')?.value || _monthAgo;
-  const _prevTo   = document.getElementById('siteMapDateTo')?.value   || _today;
-  const _prevType = document.getElementById('siteMapFilter')?.value   || 'all';
+  // ── 전역 필터 상태 초기화 (첫 진입: 최근 30일, 구분: 전체) ──
+  const _today    = new Date().toISOString().split('T')[0];
+  const _monthAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+  if (window._smTab      === undefined) window._smTab      = 'all';   // 구분 탭
+  if (window._smDateFrom === undefined) window._smDateFrom = _monthAgo;
+  if (window._smDateTo   === undefined) window._smDateTo   = _today;
+
+  const _tab  = window._smTab;
+  const _df   = window._smDateFrom;
+  const _dt   = window._smDateTo;
+
+  const dateRangeLabel = (_df === _dt && _df)
+    ? _df
+    : (_df || _dt) ? `${_df || '처음'} ~ ${_dt || '오늘'}` : '전체 기간';
+
+  // ── 탭 정의 (현장점검과 동일 디자인) ──
+  const TAB_DEFS = [
+    { key:'all',        label:'전체',     dot:'',        desc:'TBM + 현장점검' },
+    { key:'tbm',        label:'🦺 TBM',   dot:'#685182', desc:'TBM 위치만' },
+    { key:'inspection', label:'🔍 현장점검', dot:'#10B981', desc:'점검 위치만' },
+  ];
 
   container.innerHTML = `
     <div class="max-w-5xl mx-auto">
+
+      <!-- 헤더 -->
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fas fa-map-marked-alt" style="color:#685182"></i> 현장위치 지도
-        </h2>
+        <h2 class="text-xl font-black text-gray-900" style="border-left:4px solid #685182;padding-left:10px">현장위치 지도</h2>
+        <p class="text-xs text-gray-400">${dateRangeLabel}</p>
       </div>
 
-      <!-- 필터 바 -->
+      <!-- ① 구분 탭 (라운드 버튼 — 현장점검과 동일 디자인) -->
+      <div class="flex gap-1 mb-3 flex-wrap">
+        ${TAB_DEFS.map(tab => {
+          const isActive = _tab === tab.key;
+          return `<button
+            onclick="window._smTab='${tab.key}';_applySiteMapFilters()"
+            style="padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;
+                   border:2px solid ${isActive?'#685182':'#D8D0DC'};
+                   background:${isActive?'#685182':'white'};
+                   color:${isActive?'white':'#685182'};
+                   cursor:pointer;transition:all .15s;white-space:nowrap">
+            ${tab.label}
+          </button>`;
+        }).join('')}
+      </div>
+
+      <!-- ② 날짜 필터 바 -->
       <div class="card p-3 mb-3" style="background:#F5F0F8;border:1px solid #D8D0DC">
         <div class="flex flex-wrap items-center gap-2">
-          <!-- 구분 필터 -->
-          <div class="flex items-center gap-1">
-            <label class="text-xs font-bold text-gray-600 whitespace-nowrap">구분</label>
-            <select id="siteMapFilter" onchange="refreshSiteMap()" class="form-control text-sm" style="width:auto;min-width:90px">
-              <option value="all"        ${_prevType==='all'?'selected':''}>전체</option>
-              <option value="tbm"        ${_prevType==='tbm'?'selected':''}>TBM</option>
-              <option value="inspection" ${_prevType==='inspection'?'selected':''}>현장점검</option>
-            </select>
-          </div>
-          <!-- 날짜 범위 -->
           <div class="flex items-center gap-1">
             <label class="text-xs font-bold text-gray-600 whitespace-nowrap">등록일</label>
-            <input type="date" id="siteMapDateFrom" value="${_prevFrom}"
-              onchange="refreshSiteMap()"
+            <input type="date" id="siteMapDateFrom" value="${_df}"
               class="form-control text-sm" style="width:135px">
             <span class="text-gray-400 text-sm">~</span>
-            <input type="date" id="siteMapDateTo" value="${_prevTo}"
-              onchange="refreshSiteMap()"
+            <input type="date" id="siteMapDateTo" value="${_dt}"
               class="form-control text-sm" style="width:135px">
           </div>
-          <!-- 빠른 선택 -->
           <div class="flex gap-1">
-            <button onclick="_setSiteMapDateRange('today')"
-              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">오늘</button>
-            <button onclick="_setSiteMapDateRange('week')"
-              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">7일</button>
-            <button onclick="_setSiteMapDateRange('month')"
-              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">30일</button>
-            <button onclick="_setSiteMapDateRange('all')"
-              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">전체</button>
+            <button onclick="_setSiteMapDateRange('today')"  class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">오늘</button>
+            <button onclick="_setSiteMapDateRange('week')"   class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">7일</button>
+            <button onclick="_setSiteMapDateRange('month')"  class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">30일</button>
+            <button onclick="_setSiteMapDateRange('all')"    class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">전체</button>
           </div>
-          <!-- 새로고침 -->
-          <button onclick="refreshSiteMap()" class="btn btn-sm ml-auto" style="background:#685182;color:white;border:none">
+          <button onclick="_applySiteMapFilters()" class="btn btn-sm ml-auto" style="background:#685182;color:white;border:none">
             <i class="fas fa-search mr-1"></i>조회
           </button>
         </div>
       </div>
 
-      <!-- 지도 영역 -->
+      <!-- ③ 지도 -->
       <div id="leafletMap" style="width:100%;height:500px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;"></div>
 
-      <!-- 범례 -->
-      <div class="flex gap-4 mt-3 text-sm text-gray-600">
-        <span class="flex items-center gap-1"><span style="display:inline-block;width:12px;height:12px;background:#685182;border-radius:50%"></span> TBM</span>
-        <span class="flex items-center gap-1"><span style="display:inline-block;width:12px;height:12px;background:#10B981;border-radius:50%"></span> 현장점검</span>
+      <!-- ④ 범례 -->
+      <div class="flex gap-4 mt-3 text-sm text-gray-500">
+        <span class="flex items-center gap-1">
+          <span style="display:inline-block;width:10px;height:10px;background:#685182;border-radius:50%"></span> TBM
+        </span>
+        <span class="flex items-center gap-1">
+          <span style="display:inline-block;width:10px;height:10px;background:#10B981;border-radius:50%"></span> 현장점검
+        </span>
       </div>
 
-      <!-- 목록 -->
+      <!-- ⑤ 위치 목록 -->
       <div id="siteMapList" class="mt-4 space-y-2"></div>
     </div>
   `;
@@ -29221,24 +29238,28 @@ async function renderSiteMapPage(container) {
   await loadLeafletMap();
 }
 
-// 빠른 날짜 범위 선택
+// 날짜 입력값 → 전역 저장 후 재렌더링
+function _applySiteMapFilters() {
+  window._smDateFrom = document.getElementById('siteMapDateFrom')?.value ?? window._smDateFrom ?? '';
+  window._smDateTo   = document.getElementById('siteMapDateTo')?.value   ?? window._smDateTo   ?? '';
+  renderSiteMapPage(document.getElementById('page-content'));
+}
+
+// 빠른 날짜 선택 — 전역 직접 수정 후 재렌더링
 function _setSiteMapDateRange(range) {
   const today = new Date().toISOString().split('T')[0];
-  const fromEl = document.getElementById('siteMapDateFrom');
-  const toEl   = document.getElementById('siteMapDateTo');
-  if (!fromEl || !toEl) return;
   if (range === 'today') {
-    fromEl.value = today; toEl.value = today;
+    window._smDateFrom = today; window._smDateTo = today;
   } else if (range === 'week') {
-    fromEl.value = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    toEl.value = today;
+    window._smDateFrom = new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0];
+    window._smDateTo   = today;
   } else if (range === 'month') {
-    fromEl.value = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    toEl.value = today;
+    window._smDateFrom = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+    window._smDateTo   = today;
   } else if (range === 'all') {
-    fromEl.value = ''; toEl.value = '';
+    window._smDateFrom = ''; window._smDateTo = '';
   }
-  refreshSiteMap();
+  renderSiteMapPage(document.getElementById('page-content'));
 }
 
 // Leaflet 지도 로드 (OpenStreetMap 기반 — 외부 차단 없음)
@@ -29284,15 +29305,14 @@ async function loadLeafletMap() {
 }
 
 async function refreshSiteMap() {
-  const content = document.getElementById('page-content');
-  if (content) renderSiteMapPage(content);
+  renderSiteMapPage(document.getElementById('page-content'));
 }
 
 async function loadSiteMapMarkers(map) {
-  const L = window.L;
-  const filter   = document.getElementById('siteMapFilter')?.value   || 'all';
-  const dateFrom = document.getElementById('siteMapDateFrom')?.value || '';
-  const dateTo   = document.getElementById('siteMapDateTo')?.value   || '';
+  const L        = window.L;
+  const filter   = window._smTab      || 'all';
+  const dateFrom = window._smDateFrom || '';
+  const dateTo   = window._smDateTo   || '';
   const listEl   = document.getElementById('siteMapList');
   const latLngs  = [];
   let listItems  = [];

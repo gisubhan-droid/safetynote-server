@@ -1,9 +1,30 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-15 (세션 24)
-> **서버 현재 버전: de3910e** ← 최신
-> NAS 배포 버전: de3910e (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, DEPLOY_WEBHOOK_SECRET ✅)
-> **다음 작업**: v1.4.2 자동 배포 테스트 빌드 진행 중
+> 최종 업데이트: 2026-06-15 (세션 25)
+> **서버 현재 버전: 0b80f69** ← 최신
+> NAS 배포 버전: 0b80f69 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, DEPLOY_WEBHOOK_SECRET ✅)
+> **APK 자동 배포**: ✅ 완전 작동 확인 (v1.4.2 DB 반영 완료)
+
+---
+
+## 🐛 세션 25 — Webhook DB 업데이트 버그 수정 + v1.4.2 자동 배포 최종 확인 (2026-06-15)
+
+### 완료된 작업
+- ✅ **원인 파악**: `DB.prepare().run()` (Cloudflare D1 비동기 래퍼) → NAS에서 await 없이 호출 시 Promise 미완료로 DB 저장 안 됨
+- ✅ **코드 수정**: Webhook 핸들러 upsert를 `rawDb.prepare().run()` (better-sqlite3 동기) 방식으로 교체
+  - 정상 경로 (APK 다운로드 성공) + fallback 경로 (다운로드 실패) 모두 수정
+- ✅ **빌드**: `npm run build` → `dist/_worker.js 219.31 kB` ✅
+- ✅ **GitHub 커밋 + 푸시**: `0b80f69` — "fix: Webhook DB 업데이트 rawDb 동기 방식으로 수정"
+- ✅ **NAS git pull + pm2 restart** — `0b80f69` 반영
+- ✅ **Webhook 재테스트 성공** — `apk_version = 1.4.2` DB 확인 완료 🎉
+
+### 버그 요약
+| 항목 | 내용 |
+|------|------|
+| **증상** | v1.4.2 Webhook 호출 성공 (HTTP 200) 인데 DB에 버전 미반영 |
+| **원인** | `DB = makeD1(rawDb)` 비동기 래퍼의 `.run()`이 Promise 반환 — await 없으면 저장 안 됨 |
+| **해결** | `rawDb.prepare().run()` (better-sqlite3 동기) 사용 — 즉시 동기 저장 |
+| **수정 커밋** | `0b80f69` |
 
 ---
 
@@ -16,7 +37,7 @@
 - ✅ pm2 환경변수 영구 저장 (`pm2 save`)
 - ✅ v1.4.1 APK Webhook 테스트 성공 (5.7MB 자동 다운로드)
 - ✅ 로그인 화면 다운로드 버튼 활성화 확인
-- ⏳ v1.4.2 자동 배포 최종 테스트 빌드 진행 중
+- ✅ v1.4.2 자동 배포 최종 확인 완료 (DB apk_version = 1.4.2 ✅)
 
 ### 자동 배포 흐름 (완성)
 ```
@@ -177,7 +198,7 @@ npm rebuild better-sqlite3
 | **v1.3.9** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: 외선일보 공정구분(proc) DB 저장, 추가입력(extras) 저장/복원, `YEAR_OPTS3` 오타 수정(행추가 버튼 최종 수정) — `work_report_extras` 테이블 신규 생성, `work_report_cables.proc/remark` 컬럼 추가 (`2e97d32`) |
 | **v1.4.0** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: 외선일보 목록 "완료된 작업 없음" 수정 (tasks.ts 응답 `{ tasks }` 래핑 + `work_reports` JOIN), 물량통계 500 에러 수정 (WHERE 절 `t` 별칭 중복 버그 + extras 기반 통계 재구성) (`8d6f0b6`) |
 | **v1.4.1** | **2026-06-15** | ✅ **NAS 자동 배포 완료** | 물량통계 4가지 개선(달성금액 막대그래프·주간조회·팀별내역테이블·접속탭 그래프+현황표), DB초기화 기능(시스템관리자), APK 배포 관리(로그인화면 다운로드버튼·관리자 업로드UI·`/api/dist/apk/*` API 3개), `better-sqlite3` v9.6.0 다운그레이드 (`c71ae99`) |
-| **v1.4.2** | **2026-06-15** | ⏳ **자동 배포 테스트 빌드 중** | APK 완전 자동 배포 시스템 구축 (GitHub Actions → NAS Webhook → 로컬 저장 → DB 자동 업데이트) (`de3910e`) |
+| **v1.4.2** | **2026-06-15** | ✅ **자동 배포 완전 작동** | APK 완전 자동 배포 시스템 구축 (GitHub Actions → NAS Webhook → 로컬 저장 → DB 자동 업데이트) + **Webhook DB 버그 수정** (`DB.prepare()` D1 래퍼 → `rawDb.prepare()` better-sqlite3 동기로 교체) (`0b80f69`) |
 
 ---
 

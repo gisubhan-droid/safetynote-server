@@ -10664,19 +10664,16 @@ async function renderMyTasksPage(container) {
 // ======= 현장 점검 =======
 async function renderInspectionsPage(container) {
   try {
-    // 날짜/상태 필터 상태 유지 (전역)
+    // 날짜/상태 필터 — 전역값 기준 (DOM 의존 제거)
     const _today = new Date().toISOString().split('T')[0];
-    // 첫 진입 시 기본값: 당일
+    // 첫 진입 시에만 기본값 설정 (당일)
     if (window._insDateFrom === undefined) window._insDateFrom = _today;
     if (window._insDateTo   === undefined) window._insDateTo   = _today;
     if (window._insStatusFilter === undefined) window._insStatusFilter = '';
-    // DOM에서 값 읽기 (이미 렌더링된 경우 유지)
-    const _df  = document.getElementById('insDateFrom')?.value     ?? window._insDateFrom;
-    const _dt  = document.getElementById('insDateTo')?.value       ?? window._insDateTo;
-    const _sf  = document.getElementById('insStatusFilter')?.value ?? window._insStatusFilter;
-    window._insDateFrom     = _df;
-    window._insDateTo       = _dt;
-    window._insStatusFilter = _sf;
+
+    const _df = window._insDateFrom;
+    const _dt = window._insDateTo;
+    const _sf = window._insStatusFilter;
 
     // API 쿼리 파라미터 구성
     const insParams = new URLSearchParams();
@@ -10947,35 +10944,30 @@ function showTaskInspectionList(taskId, taskTitle) {
 
 // 현장점검 필터 적용 (조회 버튼 클릭)
 function _applyInsFilters() {
-  const df = document.getElementById('insDateFrom')?.value || '';
-  const dt = document.getElementById('insDateTo')?.value   || '';
-  const sf = document.getElementById('insStatusFilter')?.value || '';
-  window._insDateFrom     = df;
-  window._insDateTo       = dt;
-  window._insStatusFilter = sf;
+  // DOM에서 현재 입력값을 전역에 저장 후 재렌더링
+  window._insDateFrom     = document.getElementById('insDateFrom')?.value     ?? window._insDateFrom ?? '';
+  window._insDateTo       = document.getElementById('insDateTo')?.value       ?? window._insDateTo   ?? '';
+  window._insStatusFilter = document.getElementById('insStatusFilter')?.value ?? window._insStatusFilter ?? '';
   renderInspectionsPage(document.getElementById('page-content'));
 }
 
-// 현장점검 빠른 날짜 범위 선택
+// 현장점검 빠른 날짜 범위 선택 — 전역값 직접 수정 후 재렌더링
 function _setInsDateRange(range) {
   const today = new Date().toISOString().split('T')[0];
-  const fromEl = document.getElementById('insDateFrom');
-  const toEl   = document.getElementById('insDateTo');
   if (range === 'today') {
-    if (fromEl) fromEl.value = today;
-    if (toEl)   toEl.value   = today;
+    window._insDateFrom = today;
+    window._insDateTo   = today;
   } else if (range === 'week') {
-    if (fromEl) fromEl.value = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    if (toEl)   toEl.value   = today;
+    window._insDateFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    window._insDateTo   = today;
   } else if (range === 'month') {
-    if (fromEl) fromEl.value = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    if (toEl)   toEl.value   = today;
+    window._insDateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    window._insDateTo   = today;
   } else if (range === 'all') {
-    if (fromEl) fromEl.value = '';
-    if (toEl)   toEl.value   = '';
+    window._insDateFrom = '';
+    window._insDateTo   = '';
   }
-  // 빠른 선택은 즉시 조회
-  _applyInsFilters();
+  renderInspectionsPage(document.getElementById('page-content'));
 }
 
 // 모달용 전역 변수 — 작업별 배정 작업자 맵

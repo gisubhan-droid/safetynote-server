@@ -62,7 +62,7 @@ async function resolveInspectionDir(db: D1Database, taskId: number | null): Prom
 app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { status, hazard_level, task_id } = c.req.query()
+  const { status, hazard_level, task_id, date_from, date_to } = c.req.query()
   let q = `SELECT si.*, u.name as inspector_name,
               t.title as task_title, t.task_number,
               t.confirmed_address as task_confirmed_address,
@@ -76,6 +76,15 @@ app.get('/', async (c) => {
   if (status)      { wheres.push('si.status = ?');       params.push(status) }
   if (hazard_level){ wheres.push('si.hazard_level = ?'); params.push(hazard_level) }
   if (task_id)     { wheres.push('si.task_id = ?');      params.push(task_id) }
+  // 날짜 필터: inspection_date_only 우선, 없으면 created_at 날짜 사용
+  if (date_from) {
+    wheres.push(`date(COALESCE(si.inspection_date_only, si.created_at)) >= ?`)
+    params.push(date_from)
+  }
+  if (date_to) {
+    wheres.push(`date(COALESCE(si.inspection_date_only, si.created_at)) <= ?`)
+    params.push(date_to)
+  }
   if (wheres.length) q += ' WHERE ' + wheres.join(' AND ')
   q += ' ORDER BY si.created_at DESC'
   const result = await c.env.DB.prepare(q).bind(...params).all<any>()

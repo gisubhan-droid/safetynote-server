@@ -10664,10 +10664,31 @@ async function renderMyTasksPage(container) {
 // ======= 현장 점검 =======
 async function renderInspectionsPage(container) {
   try {
+    // 날짜/상태 필터 상태 유지 (전역)
+    const _today = new Date().toISOString().split('T')[0];
+    // 첫 진입 시 기본값: 당일
+    if (window._insDateFrom === undefined) window._insDateFrom = _today;
+    if (window._insDateTo   === undefined) window._insDateTo   = _today;
+    if (window._insStatusFilter === undefined) window._insStatusFilter = '';
+    // DOM에서 값 읽기 (이미 렌더링된 경우 유지)
+    const _df  = document.getElementById('insDateFrom')?.value     ?? window._insDateFrom;
+    const _dt  = document.getElementById('insDateTo')?.value       ?? window._insDateTo;
+    const _sf  = document.getElementById('insStatusFilter')?.value ?? window._insStatusFilter;
+    window._insDateFrom     = _df;
+    window._insDateTo       = _dt;
+    window._insStatusFilter = _sf;
+
+    // API 쿼리 파라미터 구성
+    const insParams = new URLSearchParams();
+    if (_df) insParams.set('date_from', _df);
+    if (_dt) insParams.set('date_to',   _dt);
+    if (_sf) insParams.set('status',    _sf);
+    insParams.set('limit', '500');
+
     // 작업 목록 + 점검 내역 병렬 로드
     const [tasksRes, insRes] = await Promise.all([
       API.get('/tasks'),
-      API.get('/inspections'),
+      API.get(`/inspections?${insParams.toString()}`),
     ]);
     const tasks       = tasksRes.data.tasks || tasksRes.data || [];
     const inspections = insRes.data   || [];
@@ -10711,24 +10732,69 @@ async function renderInspectionsPage(container) {
     const HAZARD_LBL = { critical:'긴급', high:'높음', medium:'보통', low:'낮음' };
     const INS_TYPE_LBL = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' };
 
-    // 필터 상태 (전역)
+    // 필터 상태 (전역) — 작업 그룹 탭
     window._insFilter = window._insFilter || 'all';
 
-    // 작업별 점검 수
+    // 점검 건수 집계
     const totalIns = inspections.length;
-    const openIns  = inspections.filter(i => i.status !== 'closed').length;
+
+    // 날짜 범위 표시
+    const dateRangeLabel = (_df === _dt && _df)
+      ? _df
+      : (_df || _dt) ? `${_df || '처음'} ~ ${_dt || '오늘'}` : '전체 기간';
 
     container.innerHTML = `
     <div class="max-w-5xl mx-auto">
       <!-- 헤더 -->
-      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div>
           <h2 class="text-xl font-black text-gray-900" style="border-left:4px solid #685182;padding-left:10px">현장점검</h2>
-          <p class="text-xs text-gray-400 mt-0.5 pl-3">전체 ${totalIns}건 등록</p>
+          <p class="text-xs text-gray-400 mt-0.5 pl-3">${dateRangeLabel} · ${totalIns}건</p>
         </div>
         <button onclick="showCreateInspectionModal()" class="btn btn-primary">
           <i class="fas fa-plus mr-1"></i>점검 등록
         </button>
+      </div>
+
+      <!-- 검색 필터 바 -->
+      <div class="card p-3 mb-3" style="background:#F5F0F8;border:1px solid #D8D0DC">
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- 작업진행 단계 (status) 필터 -->
+          <div class="flex items-center gap-1">
+            <label class="text-xs font-bold text-gray-600 whitespace-nowrap">진행단계</label>
+            <select id="insStatusFilter" class="form-control text-sm" style="width:auto;min-width:90px">
+              <option value=""           ${_sf===''?'selected':''}>전체</option>
+              <option value="open"       ${_sf==='open'?'selected':''}>미처리</option>
+              <option value="in_progress"${_sf==='in_progress'?'selected':''}>처리중</option>
+              <option value="closed"     ${_sf==='closed'?'selected':''}>완료</option>
+            </select>
+          </div>
+          <!-- 날짜 범위 -->
+          <div class="flex items-center gap-1">
+            <label class="text-xs font-bold text-gray-600 whitespace-nowrap">점검일</label>
+            <input type="date" id="insDateFrom" value="${_df}"
+              class="form-control text-sm" style="width:135px">
+            <span class="text-gray-400 text-sm">~</span>
+            <input type="date" id="insDateTo" value="${_dt}"
+              class="form-control text-sm" style="width:135px">
+          </div>
+          <!-- 빠른 날짜 선택 -->
+          <div class="flex gap-1">
+            <button onclick="_setInsDateRange('today')"
+              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">오늘</button>
+            <button onclick="_setInsDateRange('week')"
+              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">7일</button>
+            <button onclick="_setInsDateRange('month')"
+              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">30일</button>
+            <button onclick="_setInsDateRange('all')"
+              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">전체</button>
+          </div>
+          <!-- 조회 버튼 -->
+          <button onclick="_applyInsFilters()"
+            class="btn btn-sm ml-auto" style="background:#685182;color:white;border:none">
+            <i class="fas fa-search mr-1"></i>조회
+          </button>
+        </div>
       </div>
 
       <!-- 필터 탭 -->
@@ -10877,6 +10943,39 @@ function showTaskInspectionList(taskId, taskTitle) {
   if (!el) return;
   const isOpen = el.style.display !== 'none';
   el.style.display = isOpen ? 'none' : 'block';
+}
+
+// 현장점검 필터 적용 (조회 버튼 클릭)
+function _applyInsFilters() {
+  const df = document.getElementById('insDateFrom')?.value || '';
+  const dt = document.getElementById('insDateTo')?.value   || '';
+  const sf = document.getElementById('insStatusFilter')?.value || '';
+  window._insDateFrom     = df;
+  window._insDateTo       = dt;
+  window._insStatusFilter = sf;
+  renderInspectionsPage(document.getElementById('page-content'));
+}
+
+// 현장점검 빠른 날짜 범위 선택
+function _setInsDateRange(range) {
+  const today = new Date().toISOString().split('T')[0];
+  const fromEl = document.getElementById('insDateFrom');
+  const toEl   = document.getElementById('insDateTo');
+  if (range === 'today') {
+    if (fromEl) fromEl.value = today;
+    if (toEl)   toEl.value   = today;
+  } else if (range === 'week') {
+    if (fromEl) fromEl.value = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    if (toEl)   toEl.value   = today;
+  } else if (range === 'month') {
+    if (fromEl) fromEl.value = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    if (toEl)   toEl.value   = today;
+  } else if (range === 'all') {
+    if (fromEl) fromEl.value = '';
+    if (toEl)   toEl.value   = '';
+  }
+  // 빠른 선택은 즉시 조회
+  _applyInsFilters();
 }
 
 // 모달용 전역 변수 — 작업별 배정 작업자 맵
@@ -29022,20 +29121,59 @@ function goToSpliceReport(taskId) {
 let _kakaoMapInstance = null;  // 카카오맵 인스턴스 재사용
 
 async function renderSiteMapPage(container) {
+  // 날짜 기본값: 최근 30일
+  const _today = new Date().toISOString().split('T')[0];
+  const _monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  // 이미 입력된 값 유지 (새로고침 시 보존)
+  const _prevFrom = document.getElementById('siteMapDateFrom')?.value || _monthAgo;
+  const _prevTo   = document.getElementById('siteMapDateTo')?.value   || _today;
+  const _prevType = document.getElementById('siteMapFilter')?.value   || 'all';
+
   container.innerHTML = `
     <div class="max-w-5xl mx-auto">
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center justify-between mb-3">
         <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fas fa-map-marked-alt" style="color:#685182"></i> 현장위치 지도
         </h2>
-        <div class="flex gap-2">
-          <select id="siteMapFilter" onchange="refreshSiteMap()" class="form-control text-sm" style="width:auto">
-            <option value="all">전체</option>
-            <option value="tbm">TBM</option>
-            <option value="inspection">현장점검</option>
-          </select>
-          <button onclick="refreshSiteMap()" class="btn btn-outline btn-sm">
-            <i class="fas fa-sync-alt mr-1"></i>새로고침
+      </div>
+
+      <!-- 필터 바 -->
+      <div class="card p-3 mb-3" style="background:#F5F0F8;border:1px solid #D8D0DC">
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- 구분 필터 -->
+          <div class="flex items-center gap-1">
+            <label class="text-xs font-bold text-gray-600 whitespace-nowrap">구분</label>
+            <select id="siteMapFilter" onchange="refreshSiteMap()" class="form-control text-sm" style="width:auto;min-width:90px">
+              <option value="all"        ${_prevType==='all'?'selected':''}>전체</option>
+              <option value="tbm"        ${_prevType==='tbm'?'selected':''}>TBM</option>
+              <option value="inspection" ${_prevType==='inspection'?'selected':''}>현장점검</option>
+            </select>
+          </div>
+          <!-- 날짜 범위 -->
+          <div class="flex items-center gap-1">
+            <label class="text-xs font-bold text-gray-600 whitespace-nowrap">등록일</label>
+            <input type="date" id="siteMapDateFrom" value="${_prevFrom}"
+              onchange="refreshSiteMap()"
+              class="form-control text-sm" style="width:135px">
+            <span class="text-gray-400 text-sm">~</span>
+            <input type="date" id="siteMapDateTo" value="${_prevTo}"
+              onchange="refreshSiteMap()"
+              class="form-control text-sm" style="width:135px">
+          </div>
+          <!-- 빠른 선택 -->
+          <div class="flex gap-1">
+            <button onclick="_setSiteMapDateRange('today')"
+              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">오늘</button>
+            <button onclick="_setSiteMapDateRange('week')"
+              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">7일</button>
+            <button onclick="_setSiteMapDateRange('month')"
+              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">30일</button>
+            <button onclick="_setSiteMapDateRange('all')"
+              class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">전체</button>
+          </div>
+          <!-- 새로고침 -->
+          <button onclick="refreshSiteMap()" class="btn btn-sm ml-auto" style="background:#685182;color:white;border:none">
+            <i class="fas fa-search mr-1"></i>조회
           </button>
         </div>
       </div>
@@ -29055,6 +29193,26 @@ async function renderSiteMapPage(container) {
   `;
 
   await loadLeafletMap();
+}
+
+// 빠른 날짜 범위 선택
+function _setSiteMapDateRange(range) {
+  const today = new Date().toISOString().split('T')[0];
+  const fromEl = document.getElementById('siteMapDateFrom');
+  const toEl   = document.getElementById('siteMapDateTo');
+  if (!fromEl || !toEl) return;
+  if (range === 'today') {
+    fromEl.value = today; toEl.value = today;
+  } else if (range === 'week') {
+    fromEl.value = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    toEl.value = today;
+  } else if (range === 'month') {
+    fromEl.value = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    toEl.value = today;
+  } else if (range === 'all') {
+    fromEl.value = ''; toEl.value = '';
+  }
+  refreshSiteMap();
 }
 
 // Leaflet 지도 로드 (OpenStreetMap 기반 — 외부 차단 없음)
@@ -29106,10 +29264,21 @@ async function refreshSiteMap() {
 
 async function loadSiteMapMarkers(map) {
   const L = window.L;
-  const filter = document.getElementById('siteMapFilter')?.value || 'all';
-  const listEl = document.getElementById('siteMapList');
-  const latLngs = [];
-  let listItems = [];
+  const filter   = document.getElementById('siteMapFilter')?.value   || 'all';
+  const dateFrom = document.getElementById('siteMapDateFrom')?.value || '';
+  const dateTo   = document.getElementById('siteMapDateTo')?.value   || '';
+  const listEl   = document.getElementById('siteMapList');
+  const latLngs  = [];
+  let listItems  = [];
+
+  // 날짜 범위 필터 헬퍼 — 등록일(created_at 앞 10자 or tbm_date/inspection_date_only) 기준
+  const inDateRange = (dateStr) => {
+    if (!dateStr) return true; // 날짜 없으면 항상 포함
+    const d = dateStr.substring(0, 10); // YYYY-MM-DD
+    if (dateFrom && d < dateFrom) return false;
+    if (dateTo   && d > dateTo)   return false;
+    return true;
+  };
 
   // 커스텀 마커 아이콘 생성
   const makeIcon = (color, label) => L.divIcon({
@@ -29118,10 +29287,13 @@ async function loadSiteMapMarkers(map) {
     iconAnchor: [0, 0]
   });
 
+  // 로딩 표시
+  if (listEl) listEl.innerHTML = `<div class="text-center text-gray-400 py-4 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>위치 데이터 로드 중...</div>`;
+
   try {
     // TBM 데이터 로드
     if (filter === 'all' || filter === 'tbm') {
-      const res = await API.get('/tbm?limit=200');
+      const res = await API.get('/tbm?limit=500');
       const tbmList = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.tbms || []);
       for (const tbm of tbmList) {
         if (!tbm.gps_lat || !tbm.gps_lon) continue;
@@ -29129,18 +29301,28 @@ async function loadSiteMapMarkers(map) {
         const lon = parseFloat(tbm.gps_lon);
         if (isNaN(lat) || isNaN(lon)) continue;
 
+        // 등록일 기준 날짜 필터 (tbm_date → work_date → created_at 순)
+        const regDate = tbm.tbm_date || tbm.work_date || tbm.created_at || '';
+        if (!inDateRange(regDate)) continue;
+
+        const displayDate = (tbm.tbm_date || tbm.work_date || '').substring(0, 10);
         const marker = L.marker([lat, lon], { icon: makeIcon('#685182', '🦺 TBM') }).addTo(map);
         marker.bindPopup(`
-          <div style="min-width:180px;font-size:13px;">
-            <div style="font-weight:700;color:#685182;margin-bottom:4px">TBM</div>
-            <div>${tbm.work_date || ''} ${tbm.work_name || tbm.construction_name || ''}</div>
-            <div style="color:#6B7280;font-size:11px;margin-top:2px">${tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`}</div>
+          <div style="min-width:200px;font-size:13px;">
+            <div style="font-weight:700;color:#685182;margin-bottom:4px">🦺 TBM</div>
+            <div style="font-weight:600">${tbm.work_name || tbm.construction_name || '-'}</div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
+            </div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-map-marker-alt mr-1"></i>${tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`}
+            </div>
           </div>`);
 
         latLngs.push([lat, lon]);
         listItems.push({
           type: 'tbm', color: '#685182', icon: 'fa-hard-hat',
-          date: tbm.work_date || '',
+          date: displayDate,
           name: tbm.work_name || tbm.construction_name || 'TBM',
           address: tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`,
           lat, lon
@@ -29150,7 +29332,7 @@ async function loadSiteMapMarkers(map) {
 
     // 현장점검 데이터 로드
     if (filter === 'all' || filter === 'inspection') {
-      const res = await API.get('/inspections?limit=200');
+      const res = await API.get('/inspections?limit=500');
       const inspList = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.inspections || []);
       for (const insp of inspList) {
         if (!insp.gps_lat || !insp.gps_lon) continue;
@@ -29158,19 +29340,29 @@ async function loadSiteMapMarkers(map) {
         const lon = parseFloat(insp.gps_lon);
         if (isNaN(lat) || isNaN(lon)) continue;
 
+        // 등록일 기준 날짜 필터 (inspection_date_only → created_at 순)
+        const regDate = insp.inspection_date_only || insp.created_at || '';
+        if (!inDateRange(regDate)) continue;
+
+        const displayDate = (insp.inspection_date_only || insp.created_at || '').substring(0, 10);
         const marker = L.marker([lat, lon], { icon: makeIcon('#10B981', '🔍 점검') }).addTo(map);
         marker.bindPopup(`
-          <div style="min-width:180px;font-size:13px;">
-            <div style="font-weight:700;color:#10B981;margin-bottom:4px">현장점검</div>
-            <div>${insp.inspection_date || ''} ${insp.title || insp.construction_name || ''}</div>
-            <div style="color:#6B7280;font-size:11px;margin-top:2px">${insp.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`}</div>
+          <div style="min-width:200px;font-size:13px;">
+            <div style="font-weight:700;color:#10B981;margin-bottom:4px">🔍 현장점검</div>
+            <div style="font-weight:600">${insp.location || insp.title || '-'}</div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
+            </div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-map-marker-alt mr-1"></i>${insp.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`}
+            </div>
           </div>`);
 
         latLngs.push([lat, lon]);
         listItems.push({
           type: 'inspection', color: '#10B981', icon: 'fa-search',
-          date: insp.inspection_date || '',
-          name: insp.title || insp.construction_name || '현장점검',
+          date: displayDate,
+          name: insp.location || insp.title || '현장점검',
           address: insp.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`,
           lat, lon
         });
@@ -29182,27 +29374,42 @@ async function loadSiteMapMarkers(map) {
       map.fitBounds(latLngs, { padding: [40, 40] });
     }
 
+    // 날짜 범위 표시 레이블
+    const dateRangeLabel = (dateFrom || dateTo)
+      ? `${dateFrom || '처음'} ~ ${dateTo || '오늘'}`
+      : '전체 기간';
+
     // 목록 렌더링
     if (listEl) {
       if (listItems.length === 0) {
         listEl.innerHTML = `<div class="text-center text-gray-400 py-6">
-          <i class="fas fa-map-pin text-2xl mb-2"></i>
-          <div class="text-sm">GPS 좌표가 기록된 데이터가 없습니다.<br>TBM/점검 작성 시 GPS 버튼을 눌러 위치를 기록해 주세요.</div>
+          <i class="fas fa-map-pin text-2xl mb-2 block opacity-30"></i>
+          <div class="text-sm font-medium text-gray-500">해당 기간에 GPS 기록이 없습니다</div>
+          <div class="text-xs text-gray-400 mt-1">조회 기간: ${dateRangeLabel}</div>
+          <div class="text-xs text-gray-400 mt-1">TBM/점검 작성 시 GPS 버튼을 눌러 위치를 기록해 주세요.</div>
         </div>`;
       } else {
         // 날짜 최신순 정렬
         listItems.sort((a, b) => b.date.localeCompare(a.date));
         listEl.innerHTML = `
-          <div class="text-sm font-bold text-gray-600 mb-2">위치 기록 ${listItems.length}건</div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm font-bold text-gray-600">
+              <i class="fas fa-map-pin mr-1" style="color:#685182"></i>위치 기록 ${listItems.length}건
+            </div>
+            <div class="text-xs text-gray-400">${dateRangeLabel}</div>
+          </div>
           ${listItems.map(item => `
-            <div class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 cursor-pointer hover:bg-gray-50"
+            <div class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
               onclick="_moveSiteMapTo(${item.lat}, ${item.lon})">
               <div style="width:32px;height:32px;background:${item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">
                 <i class="fas ${item.icon} text-white text-xs"></i>
               </div>
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-gray-800 text-sm truncate">${item.name}</div>
-                <div class="text-xs text-gray-400 truncate">${item.date} · ${item.address}</div>
+                <div class="text-xs text-gray-400 truncate">
+                  <i class="fas fa-calendar-alt mr-1"></i>${item.date || '-'}
+                  · <i class="fas fa-map-marker-alt mr-1"></i>${item.address}
+                </div>
               </div>
               <i class="fas fa-chevron-right text-gray-300"></i>
             </div>
@@ -29212,7 +29419,7 @@ async function loadSiteMapMarkers(map) {
 
   } catch(e) {
     console.error('[SiteMap]', e);
-    if (listEl) listEl.innerHTML = `<div class="text-center text-red-400 py-4 text-sm">데이터 로드 실패: ${e.message}</div>`;
+    if (listEl) listEl.innerHTML = `<div class="text-center text-red-400 py-4 text-sm"><i class="fas fa-exclamation-circle mr-1"></i>데이터 로드 실패: ${e.message}</div>`;
   }
 }
 

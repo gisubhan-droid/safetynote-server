@@ -2546,6 +2546,119 @@ app.get('/api/app-version', (c) => {
 })
 
 // ═══════════════════════════════════════════════════════════════
+// APK 배포 API  /api/dist/apk
+// ─ 기존 앱(checkApkVersion, resolveApkUrl)과 완전 호환
+// ═══════════════════════════════════════════════════════════════
+
+/** APK 파일 저장 경로: {uploadRoot}/apk/safetynote.apk */
+function getApkFilePath(): string {
+  return join(getUploadRoot(), 'apk', 'safetynote.apk')
+}
+
+// GET /api/dist/apk/version
+// ── 앱의 checkApkVersion()에서 호출 (인증 불필요)
+// ── /api/app-version 과 동일한 데이터, 필드명만 앱 코드에 맞게 호환
+app.get('/api/dist/apk/version', (c) => {
+  const version     = getSetting('apk_version')     || ''
+  const apkUrl      = getSetting('apk_url')          || ''
+  const releaseNote = getSetting('apk_release_note') || ''
+  const forceUpdate = getSetting('apk_force_update') || '0'
+  if (!version && !apkUrl) return c.json({ available: false, version: '' })
+  return c.json({
+    available:    true,
+    version,
+    apk_url:      apkUrl,
+    release_note: releaseNote,
+    force_update: forceUpdate === '1',
+  })
+})
+
+// GET /api/dist/apk/download
+// ── resolveApkUrl(null) 기본값으로 참조됨 (인증 불필요)
+// ── apk_url 이 외부 URL이면 리다이렉트, NAS 로컬 파일이면 스트리밍
+app.get('/api/dist/apk/download', (c) => {
+  const apkUrl = getSetting('apk_url') || ''
+
+  // 외부 URL인 경우 리다이렉트
+  if (apkUrl.startsWith('http://') || apkUrl.startsWith('https://')) {
+    return c.redirect(apkUrl, 302)
+  }
+
+  // NAS 로컬 파일 서빙: apk_url이 /static/apk/... 경로면 해당 파일,
+  // 없거나 비어있으면 기본 저장 경로(uploadRoot/apk/safetynote.apk) 시도
+  let filePath: string
+  if (apkUrl && apkUrl.startsWith('/')) {
+    // /static/apk/safetynote.apk → __dirname/public/static/apk/safetynote.apk
+    filePath = join(__dirname, 'public', apkUrl)
+  } else {
+    filePath = getApkFilePath()
+  }
+
+  if (!existsSync(filePath)) {
+    return c.json({ error: 'APK 파일이 서버에 없습니다. 관리자 설정에서 APK를 업로드하거나 URL을 입력하세요.' }, 404)
+  }
+
+  const stat = statSync(filePath)
+  const fileBuffer = readFileSync(filePath)
+  c.header('Content-Type', 'application/vnd.android.package-archive')
+  c.header('Content-Disposition', 'attachment; filename="safetynote.apk"')
+  c.header('Content-Length', String(stat.size))
+  c.header('Cache-Control', 'no-cache')
+  return c.body(fileBuffer)
+})
+
+// POST /api/dist/apk/upload
+// ── 관리자가 APK 파일을 업로드 (admin only)
+// ── 업로드 후 apk_url 자동 업데이트 → /api/dist/apk/download 로 서빙
+app.post('/api/dist/apk/upload', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const formData = await c.req.formData()
+  const file = formData.get('apk') as File | null
+  const version = (formData.get('version') as string || '').trim()
+  const releaseNote = (formData.get('release_note') as string || '').trim()
+  const forceUpdate = (formData.get('force_update') as string || '0')
+
+  if (!file || typeof file === 'string') {
+    return c.json({ error: 'APK 파일이 없습니다. 필드명: apk' }, 400)
+  }
+  if (!file.name.toLowerCase().endsWith('.apk')) {
+    return c.json({ error: '.apk 파일만 업로드 가능합니다.' }, 400)
+  }
+
+  // 저장 디렉터리 생성 및 파일 저장
+  const apkDir = join(getUploadRoot(), 'apk')
+  mkdirSync(apkDir, { recursive: true })
+  const filePath = join(apkDir, 'safetynote.apk')
+  writeFileSync(filePath, Buffer.from(await file.arrayBuffer()))
+
+  // system_settings 업데이트: apk_url → /api/dist/apk/download (내부 서빙)
+  const newUrl = '/api/dist/apk/download'
+  await DB.prepare(`UPDATE system_settings SET value = ? WHERE key = 'apk_url'`).bind(newUrl).run()
+  if (version) {
+    await DB.prepare(`UPDATE system_settings SET value = ? WHERE key = 'apk_version'`).bind(version).run()
+  }
+  if (releaseNote !== '') {
+    await DB.prepare(`UPDATE system_settings SET value = ? WHERE key = 'apk_release_note'`).bind(releaseNote).run()
+  }
+  await DB.prepare(`UPDATE system_settings SET value = ? WHERE key = 'apk_force_update'`).bind(forceUpdate === '1' ? '1' : '0').run()
+
+  // 캐시 재로드
+  await loadSystemSettings(DB)
+
+  const stat = statSync(filePath)
+  return c.json({
+    success:    true,
+    file_path:  filePath,
+    file_size:  stat.size,
+    apk_url:    newUrl,
+    version:    version || getSetting('apk_version') || '',
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════
 // 외선작업일보 API  /api/work-reports
 // ═══════════════════════════════════════════════════════════════
 

@@ -14039,7 +14039,34 @@ async function renderAdminSettingsPage(container) {
               class="form-control" placeholder="1.0.0">
           </div>
 
-          <!-- APK 다운로드 URL -->
+          <!-- APK 파일 직접 업로드 -->
+          <div class="p-3 bg-blue-50 border border-blue-100 rounded-xl">
+            <label class="form-label flex items-center gap-1 mb-2">
+              <i class="fas fa-upload text-blue-500 text-xs"></i> APK 파일 직접 업로드
+              <span class="text-xs font-normal text-gray-400">(서버에 파일 저장 후 URL 자동 설정)</span>
+            </label>
+            <div class="flex gap-2 items-center flex-wrap">
+              <label class="flex-1 flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors min-w-0">
+                <i class="fas fa-file-archive text-blue-400"></i>
+                <span id="apk-file-label" class="text-xs text-gray-500 truncate">파일 선택 (.apk)</span>
+                <input type="file" id="apk-file-input" accept=".apk" class="hidden"
+                  onchange="document.getElementById('apk-file-label').textContent = this.files[0]?.name || '파일 선택 (.apk)'">
+              </label>
+              <button onclick="_apkFileUpload()" id="apk-upload-btn"
+                class="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all"
+                style="background:linear-gradient(135deg,#3b82f6,#1d4ed8)">
+                <i class="fas fa-cloud-upload-alt"></i> 업로드
+              </button>
+            </div>
+            <div id="apk-upload-progress" class="hidden mt-2">
+              <div class="flex items-center gap-2 text-xs text-blue-600">
+                <i class="fas fa-spinner fa-spin"></i> 업로드 중...
+              </div>
+            </div>
+            <div id="apk-upload-result" class="hidden mt-2 text-xs"></div>
+          </div>
+
+          <!-- APK 다운로드 URL (직접 입력 또는 업로드 후 자동 설정) -->
           <div>
             <label class="form-label flex items-center gap-1">
               <i class="fas fa-link text-green-400 text-xs"></i> APK 다운로드 URL
@@ -14048,7 +14075,7 @@ async function renderAdminSettingsPage(container) {
             <div class="flex gap-2">
               <input type="text" id="set-apk-url" value="${sv['apk_url']||''}"
                 class="form-control flex-1 font-mono text-xs"
-                placeholder="/static/apk/safetynote.apk  또는  https://...">
+                placeholder="/api/dist/apk/download  또는  https://...">
               ${sv['apk_url'] ? `
               <a href="${sv['apk_url']}" target="_blank"
                 class="flex-shrink-0 flex items-center gap-1 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700 hover:bg-green-100">
@@ -14057,7 +14084,7 @@ async function renderAdminSettingsPage(container) {
             </div>
             <p class="text-xs text-gray-400 mt-1">
               <i class="fas fa-info-circle mr-1"></i>
-              NAS 로컬: <code class="bg-gray-100 px-1 rounded">/static/apk/safetynote.apk</code> (파일을 <code class="bg-gray-100 px-1 rounded">/volume1/safetynote/public/static/apk/</code>에 저장)
+              위 업로드 버튼 사용 시 자동 입력됩니다. 외부 URL 직접 입력도 가능합니다.
             </p>
           </div>
 
@@ -14357,6 +14384,69 @@ async function saveApkSettings() {
     setTimeout(() => renderAdminSettingsPage(document.getElementById('page-content')), 800);
   } catch(e) {
     toast(e.response?.data?.error || 'APK 설정 저장 실패', 'error');
+  }
+}
+
+/**
+ * APK 파일 직접 업로드
+ * POST /api/dist/apk/upload (multipart/form-data, 필드명: apk)
+ * 업로드 성공 시 apk_url 자동 설정 → 설정 저장까지 자동 처리
+ */
+async function _apkFileUpload() {
+  const fileInput = document.getElementById('apk-file-input');
+  const file = fileInput?.files?.[0];
+  if (!file) { toast('업로드할 APK 파일을 선택하세요.', 'warning'); return; }
+  if (!file.name.toLowerCase().endsWith('.apk')) { toast('.apk 파일만 업로드 가능합니다.', 'error'); return; }
+
+  const version     = (document.getElementById('set-apk-version')?.value     || '').trim();
+  const releaseNote = (document.getElementById('set-apk-release-note')?.value|| '').trim();
+  const forceUpdate = document.getElementById('set-apk-force-update')?.checked ? '1' : '0';
+
+  // 진행 상태 표시
+  const progressEl = document.getElementById('apk-upload-progress');
+  const resultEl   = document.getElementById('apk-upload-result');
+  const uploadBtn  = document.getElementById('apk-upload-btn');
+  progressEl?.classList.remove('hidden');
+  resultEl?.classList.add('hidden');
+  if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 업로드 중...'; }
+
+  try {
+    const fd = new FormData();
+    fd.append('apk', file);
+    if (version)     fd.append('version',      version);
+    if (releaseNote) fd.append('release_note',  releaseNote);
+    fd.append('force_update', forceUpdate);
+
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/dist/apk/upload', {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: fd,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '업로드 실패');
+
+    // URL 입력 필드 자동 업데이트
+    const urlInput = document.getElementById('set-apk-url');
+    if (urlInput) urlInput.value = data.apk_url || '/api/dist/apk/download';
+
+    const sizeMB = data.file_size ? (data.file_size / 1024 / 1024).toFixed(1) + ' MB' : '';
+    if (resultEl) {
+      resultEl.className = 'mt-2 text-xs text-green-600 flex items-center gap-1';
+      resultEl.innerHTML = `<i class="fas fa-check-circle"></i> 업로드 완료 ${sizeMB ? '(' + sizeMB + ')' : ''} — URL 자동 설정됨`;
+      resultEl.classList.remove('hidden');
+    }
+    toast(`APK 업로드 완료${sizeMB ? ' (' + sizeMB + ')' : ''}. 아래 [APK 설정 저장] 버튼을 눌러 반영하세요.`, 'success');
+  } catch(e) {
+    if (resultEl) {
+      resultEl.className = 'mt-2 text-xs text-red-500 flex items-center gap-1';
+      resultEl.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${e.message || '업로드 실패'}`;
+      resultEl.classList.remove('hidden');
+    }
+    toast(e.message || 'APK 업로드 실패', 'error');
+  } finally {
+    progressEl?.classList.add('hidden');
+    if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> 업로드'; }
   }
 }
 

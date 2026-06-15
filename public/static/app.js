@@ -29091,7 +29091,7 @@ async function loadKakaoMapScript() {
       const script = document.createElement('script');
       script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${jsKey}&autoload=false`;
       script.onload = resolve;
-      script.onerror = reject;
+      script.onerror = () => reject(new Error('카카오맵 SDK 로드 실패 — 카카오 개발자 콘솔에서 Web 플랫폼에 현재 도메인을 등록했는지 확인하세요.\n현재 도메인: ' + location.origin));
       document.head.appendChild(script);
     });
 
@@ -29101,7 +29101,13 @@ async function loadKakaoMapScript() {
       <div class="text-center text-red-400 p-8">
         <i class="fas fa-times-circle text-3xl mb-3"></i>
         <div class="font-bold">지도 로드 실패</div>
-        <div class="text-sm mt-1">${e.message || '알 수 없는 오류'}</div>
+        <div class="text-sm mt-1" style="white-space:pre-line">${e.message || '알 수 없는 오류'}</div>
+        <div class="mt-3 text-xs text-gray-500">
+          <b>해결 방법:</b><br>
+          1. <a href="https://developers.kakao.com/console/app" target="_blank" class="text-blue-400 underline">카카오 개발자 콘솔</a> 접속<br>
+          2. 앱 선택 → 플랫폼 → Web<br>
+          3. 사이트 도메인에 <b>${location.origin}</b> 추가
+        </div>
       </div>`;
   }
 }

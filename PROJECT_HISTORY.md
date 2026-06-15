@@ -1,17 +1,55 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-06-15 (세션 24)
-> **서버 현재 버전: c71ae99** ← 최신
-> NAS 배포 버전: c71ae99 (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, git pull 완료 ✅)
-> **다음 작업**: GitHub Actions v1.4.1 APK 빌드 완료 후 → 관리자 설정에서 URL 입력 → 저장
+> **서버 현재 버전: de3910e** ← 최신
+> NAS 배포 버전: de3910e (PORT=3443 ✅, HTTPS ✅, PM2 online ✅, DEPLOY_WEBHOOK_SECRET ✅)
+> **다음 작업**: v1.4.2 자동 배포 테스트 빌드 진행 중
 
 ---
 
-## 📱 세션 24 — APK v1.4.1 배포 설정 (2026-06-15)
+## 📱 세션 24 — APK 완전 자동 배포 시스템 구축 (2026-06-15)
 
-### 진행 내용
-- GitHub Actions로 v1.4.1 APK 빌드 시작 (`safetynote-android` 저장소)
-- 빌드 완료 후 관리자 웹 UI에서 URL 설정 예정
+### 완료된 작업
+- ✅ `POST /api/dist/apk/webhook` — GitHub Actions → NAS 자동 배포 API 추가
+- ✅ `build-apk.yml` — 빌드 완료 후 NAS Webhook 자동 호출 step 추가
+- ✅ NAS `.env` — `DEPLOY_WEBHOOK_SECRET=safetynote-nas-2026` 설정
+- ✅ pm2 환경변수 영구 저장 (`pm2 save`)
+- ✅ v1.4.1 APK Webhook 테스트 성공 (5.7MB 자동 다운로드)
+- ✅ 로그인 화면 다운로드 버튼 활성화 확인
+- ⏳ v1.4.2 자동 배포 최종 테스트 빌드 진행 중
+
+### 자동 배포 흐름 (완성)
+```
+GitHub Actions → Run workflow → 버전 입력
+         ↓ 빌드 완료 (10~20분)
+Webhook → POST /api/dist/apk/webhook
+         ↓ 자동 처리
+APK 파일 NAS 로컬 저장 + DB 업데이트
+         ↓
+로그인 화면 다운로드 버튼 자동 활성화 🎉
+```
+
+### GitHub Secrets (safetynote-android 저장소)
+| Secret | 값 |
+|--------|-----|
+| `DEPLOY_WEBHOOK_SECRET` | `safetynote-nas-2026` |
+| `NAS_WEBHOOK_URL` | `https://linkmax.myds.me:3443/api/dist/apk/webhook` |
+
+### NAS 환경변수 (.env)
+```
+DEPLOY_WEBHOOK_SECRET=safetynote-nas-2026
+```
+
+### 담당자 APK 배포 매뉴얼 (최종)
+```
+1. https://github.com/gisubhan-droid/safetynote-android/actions
+   → "Safety NOTE APK Build and Deploy" → Run workflow → 버전 입력
+
+2. 빌드 완료 대기 (10~20분)
+   → Actions 로그에 "✅ NAS 자동 배포 완료!" 확인
+
+3. 끝! 로그인 화면에서 새 버전 확인
+```
 
 ### APK 배포 표준 절차 (차후 담당자용)
 
@@ -138,7 +176,8 @@ npm rebuild better-sqlite3
 | **v1.3.8** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: `showToast`→`toast` 치환(임시저장/제출/행추가 버튼 완전 무반응 핵심 원인), +케이블추가 버튼 삭제, tasks 조회 범위 확대(working/work_completed/completed), SW 등록경로 `/service-worker.js` 수정 (캐시 `v=20260614a`) |
 | **v1.3.9** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: 외선일보 공정구분(proc) DB 저장, 추가입력(extras) 저장/복원, `YEAR_OPTS3` 오타 수정(행추가 버튼 최종 수정) — `work_report_extras` 테이블 신규 생성, `work_report_cables.proc/remark` 컬럼 추가 (`2e97d32`) |
 | **v1.4.0** | **2026-06-14** | ✅ **GitHub 배포 완료** | **bugfix**: 외선일보 목록 "완료된 작업 없음" 수정 (tasks.ts 응답 `{ tasks }` 래핑 + `work_reports` JOIN), 물량통계 500 에러 수정 (WHERE 절 `t` 별칭 중복 버그 + extras 기반 통계 재구성) (`8d6f0b6`) |
-| **v1.4.1** | **2026-06-15** | ⏳ **GitHub Actions 빌드 중** | 물량통계 4가지 개선(달성금액 막대그래프·주간조회·팀별내역테이블·접속탭 그래프+현황표), DB초기화 기능(시스템관리자), APK 배포 관리(로그인화면 다운로드버튼·관리자 업로드UI·`/api/dist/apk/*` API 3개), `better-sqlite3` v9.6.0 다운그레이드 (`c71ae99`) |
+| **v1.4.1** | **2026-06-15** | ✅ **NAS 자동 배포 완료** | 물량통계 4가지 개선(달성금액 막대그래프·주간조회·팀별내역테이블·접속탭 그래프+현황표), DB초기화 기능(시스템관리자), APK 배포 관리(로그인화면 다운로드버튼·관리자 업로드UI·`/api/dist/apk/*` API 3개), `better-sqlite3` v9.6.0 다운그레이드 (`c71ae99`) |
+| **v1.4.2** | **2026-06-15** | ⏳ **자동 배포 테스트 빌드 중** | APK 완전 자동 배포 시스템 구축 (GitHub Actions → NAS Webhook → 로컬 저장 → DB 자동 업데이트) (`de3910e`) |
 
 ---
 

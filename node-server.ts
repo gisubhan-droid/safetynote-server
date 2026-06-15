@@ -2658,6 +2658,102 @@ app.post('/api/dist/apk/upload', async (c) => {
   })
 })
 
+// POST /api/dist/apk/webhook
+// ── GitHub Actions 빌드 완료 후 자동 호출 (secret 검증)
+// ── APK 파일을 서버에 다운로드 저장 + DB 자동 업데이트
+// ── 인증 불필요 (secret으로 보호)
+app.post('/api/dist/apk/webhook', async (c) => {
+  // 1. Secret 검증
+  const body = await c.req.json() as {
+    secret?: string
+    version?: string
+    apk_url?: string
+    release_note?: string
+    force_update?: string
+  }
+
+  const expectedSecret = process.env.DEPLOY_WEBHOOK_SECRET || ''
+  if (!expectedSecret) {
+    console.error('[APK Webhook] DEPLOY_WEBHOOK_SECRET 환경변수가 설정되지 않았습니다.')
+    return c.json({ error: 'Webhook이 비활성화되어 있습니다. 서버에 DEPLOY_WEBHOOK_SECRET을 설정하세요.' }, 503)
+  }
+  if (!body.secret || body.secret !== expectedSecret) {
+    console.warn('[APK Webhook] Secret 불일치 — 요청 거부')
+    return c.json({ error: '인증 실패' }, 401)
+  }
+
+  const version     = (body.version      || '').trim()
+  const apkUrl      = (body.apk_url      || '').trim()
+  const releaseNote = (body.release_note || '').trim()
+  const forceUpdate = body.force_update === 'true' || body.force_update === '1' ? '1' : '0'
+
+  if (!apkUrl) return c.json({ error: 'apk_url 필드가 없습니다.' }, 400)
+  if (!version)  return c.json({ error: 'version 필드가 없습니다.' }, 400)
+
+  console.log(`[APK Webhook] 요청 수신 — v${version} / ${apkUrl}`)
+
+  // 2. APK 파일 다운로드 (GitHub Release → NAS 로컬 저장)
+  const apkDir  = join(getUploadRoot(), 'apk')
+  const apkPath = join(apkDir, 'safetynote.apk')
+  mkdirSync(apkDir, { recursive: true })
+
+  try {
+    // fetch → ArrayBuffer → 파일 저장 (Node 18 내장 fetch 사용)
+    const res = await fetch(apkUrl, {
+      headers: { 'User-Agent': 'SafetyNOTE-Server/1.0' },
+      redirect: 'follow',
+    })
+    if (!res.ok) throw new Error(`APK 다운로드 실패: HTTP ${res.status}`)
+    const buf = await res.arrayBuffer()
+    if (buf.byteLength < 1024 * 100) throw new Error(`APK 크기가 너무 작습니다: ${buf.byteLength} bytes`)
+    writeFileSync(apkPath, Buffer.from(buf))
+    const sizeMB = (buf.byteLength / 1024 / 1024).toFixed(1)
+    console.log(`[APK Webhook] 다운로드 완료 — ${sizeMB} MB → ${apkPath}`)
+  } catch (err: any) {
+    console.error('[APK Webhook] 다운로드 오류:', err.message)
+    // 다운로드 실패해도 URL은 외부 URL로 DB에 저장 (fallback)
+    const upsert = (key: string, val: string) =>
+      DB.prepare(`INSERT INTO system_settings(key,value) VALUES(?,?)
+                  ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`).run(key, val)
+    upsert('apk_url',          apkUrl)
+    upsert('apk_version',      version)
+    upsert('apk_release_note', releaseNote)
+    upsert('apk_force_update', forceUpdate)
+    await loadSystemSettings(DB)
+    return c.json({
+      success:  true,
+      warning:  `APK 로컬 저장 실패 (${err.message}). 외부 URL로 대체 설정됨.`,
+      apk_url:  apkUrl,
+      version,
+    })
+  }
+
+  // 3. DB 업데이트: apk_url → /api/dist/apk/download (로컬 서빙)
+  const localUrl = '/api/dist/apk/download'
+  const upsert = (key: string, val: string) =>
+    DB.prepare(`INSERT INTO system_settings(key,value) VALUES(?,?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`).run(key, val)
+
+  upsert('apk_url',          localUrl)
+  upsert('apk_version',      version)
+  upsert('apk_release_note', releaseNote)
+  upsert('apk_force_update', forceUpdate)
+
+  // 4. 캐시 재로드
+  await loadSystemSettings(DB)
+
+  const stat = statSync(apkPath)
+  console.log(`[APK Webhook] DB 업데이트 완료 — v${version} / ${localUrl}`)
+
+  return c.json({
+    success:   true,
+    version,
+    apk_url:   localUrl,
+    file_size: stat.size,
+    message:   `v${version} APK가 서버에 저장되었습니다. 로그인 화면에 다운로드 버튼이 표시됩니다.`,
+  })
+})
+
 // ═══════════════════════════════════════════════════════════════
 // 외선작업일보 API  /api/work-reports
 // ═══════════════════════════════════════════════════════════════

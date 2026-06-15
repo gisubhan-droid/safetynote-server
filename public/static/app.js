@@ -10665,8 +10665,8 @@ async function renderMyTasksPage(container) {
 async function renderInspectionsPage(container) {
   try {
     // ── 전역 필터 상태 초기화 ──────────────────────────────────
-    const _today = new Date().toISOString().split('T')[0];
-    // 첫 진입 기본값: 당일 점검, 작업탭 = 현장진행중
+    const _today = getKSTDate(); // KST 기준 오늘 날짜
+    // 첫 진입 기본값: 당일 점검(KST), 작업탭 = 현장진행중
     if (window._insDateFrom     === undefined) window._insDateFrom     = _today;
     if (window._insDateTo       === undefined) window._insDateTo       = _today;
     if (window._insStatusFilter === undefined) window._insStatusFilter = '';   // 점검 처리상태 (open/in_progress/closed/'' 전체)
@@ -10989,14 +10989,16 @@ function _applyInsFilters() {
 
 // 현장점검 빠른 날짜 선택 — 전역 직접 수정 후 재렌더링
 function _setInsDateRange(range) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getKSTDate(); // KST 기준 오늘
   if (range === 'today') {
     window._insDateFrom = today; window._insDateTo = today;
   } else if (range === 'week') {
-    window._insDateFrom = new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0];
+    const d = getKSTNow(); d.setUTCDate(d.getUTCDate() - 7);
+    window._insDateFrom = d.toISOString().split('T')[0];
     window._insDateTo   = today;
   } else if (range === 'month') {
-    window._insDateFrom = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+    const d = getKSTNow(); d.setUTCDate(d.getUTCDate() - 30);
+    window._insDateFrom = d.toISOString().split('T')[0];
     window._insDateTo   = today;
   } else if (range === 'all') {
     window._insDateFrom = ''; window._insDateTo = '';
@@ -11044,7 +11046,7 @@ async function showCreateInspectionModal(presetTaskId) {
          <i class="fas fa-info-circle mr-1 text-blue-400"></i>등록된 작업이 없습니다.
        </div>`;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getKSTDate(); // KST 기준 오늘
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
@@ -11363,7 +11365,7 @@ async function submitInspection() {
   const taskId = taskIdEl ? (taskIdEl.value ? parseInt(taskIdEl.value) : null) : null;
   const insResult = document.getElementById('insResult')?.value || '';
   const insReason = document.getElementById('insReason')?.value || '';
-  const insDateOnly = document.getElementById('insDateOnly')?.value || new Date().toISOString().split('T')[0];
+  const insDateOnly = document.getElementById('insDateOnly')?.value || getKSTDate();
 
   // 1단계: 점검 데이터를 JSON으로 wrangler API에 저장 (사진 제외)
   const input = document.getElementById('insPhotoInput');
@@ -29147,12 +29149,11 @@ function goToSpliceReport(taskId) {
 let _kakaoMapInstance = null;  // 카카오맵 인스턴스 재사용
 
 async function renderSiteMapPage(container) {
-  // ── 전역 필터 초기화 (첫 진입: 최근 30일, 탭: 위험성체크) ──
-  const _today    = new Date().toISOString().split('T')[0];
-  const _monthAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+  // ── 전역 필터 초기화 (첫 진입: 오늘(KST), 탭: 위험성체크) ──
+  const _today = getKSTDate(); // KST 기준 오늘
   if (window._smTab      === undefined) window._smTab      = 'risk';
-  if (window._smDateFrom === undefined) window._smDateFrom = _monthAgo;
-  if (window._smDateTo   === undefined) window._smDateTo   = _today;
+  if (window._smDateFrom === undefined) window._smDateFrom = _today;  // 기본: 오늘
+  if (window._smDateTo   === undefined) window._smDateTo   = _today;  // 기본: 오늘
   if (window._smUserId   === undefined) window._smUserId   = '';   // 전체 사용자
   if (window._smUserList === undefined) window._smUserList = [];   // 사용자 목록 캐시
 
@@ -29284,10 +29285,10 @@ function _applySiteMapFilters() {
 
 // 빠른 날짜 선택: 전역 직접 수정 후 재렌더링
 function _setSiteMapDateRange(range) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getKSTDate(); // KST 기준 오늘
   if (range === 'today')      { window._smDateFrom = today; window._smDateTo = today; }
-  else if (range === 'week')  { window._smDateFrom = new Date(Date.now()-7*24*60*60*1000).toISOString().split('T')[0]; window._smDateTo = today; }
-  else if (range === 'month') { window._smDateFrom = new Date(Date.now()-30*24*60*60*1000).toISOString().split('T')[0]; window._smDateTo = today; }
+  else if (range === 'week')  { const d = getKSTNow(); d.setUTCDate(d.getUTCDate()-7);  window._smDateFrom = d.toISOString().split('T')[0]; window._smDateTo = today; }
+  else if (range === 'month') { const d = getKSTNow(); d.setUTCDate(d.getUTCDate()-30); window._smDateFrom = d.toISOString().split('T')[0]; window._smDateTo = today; }
   else if (range === 'all')   { window._smDateFrom = ''; window._smDateTo = ''; }
   renderSiteMapPage(document.getElementById('page-content'));
 }

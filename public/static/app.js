@@ -29089,7 +29089,7 @@ async function loadKakaoMapScript() {
     // SDK 동적 로드
     await new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${jsKey}&autoload=false`;
+      script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${jsKey}&autoload=false`;
       script.onload = resolve;
       script.onerror = () => reject(new Error('카카오맵 SDK 로드 실패 — 카카오 개발자 콘솔에서 Web 플랫폼에 현재 도메인을 등록했는지 확인하세요.\n현재 도메인: ' + location.origin));
       document.head.appendChild(script);

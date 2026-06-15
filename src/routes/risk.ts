@@ -9,7 +9,7 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { task_id, assessment_type, date_from, date_to } = c.req.query()
+  const { task_id, assessment_type, date_from, date_to, user_id } = c.req.query()
   let q = `SELECT ra.*, t.title as task_title, t.status as task_status,
     t.gps_lat, t.gps_lon, t.gps_address,
     t.confirmed_address, t.work_order_address, t.location as task_location,
@@ -22,6 +22,7 @@ app.get('/', async (c) => {
   const conditions: string[] = []
   if (task_id)        { conditions.push('ra.task_id = ?');         params.push(task_id) }
   if (assessment_type){ conditions.push('ra.assessment_type = ?'); params.push(assessment_type) }
+  if (user_id)        { conditions.push('ra.assessor_id = ?');     params.push(user_id) }
   if (date_from)      { conditions.push("date(ra.created_at) >= ?"); params.push(date_from) }
   if (date_to)        { conditions.push("date(ra.created_at) <= ?"); params.push(date_to) }
   if (conditions.length) q += ' WHERE ' + conditions.join(' AND ')

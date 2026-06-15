@@ -10,7 +10,7 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { task_id, date_from, date_to } = c.req.query()
+  const { task_id, date_from, date_to, user_id } = c.req.query()
   let q = `SELECT tbm.*, t.title as task_title, t.task_number, t.contractor_name,
                    u.name as conductor_name, u.position as conductor_position
     FROM tbm_records tbm
@@ -18,7 +18,8 @@ app.get('/', async (c) => {
     LEFT JOIN users u ON u.id = tbm.conductor_id`
   const params: any[] = []
   const wheres: string[] = []
-  if (task_id)  { wheres.push('tbm.task_id = ?'); params.push(task_id) }
+  if (task_id)  { wheres.push('tbm.task_id = ?');      params.push(task_id) }
+  if (user_id)  { wheres.push('tbm.conductor_id = ?'); params.push(user_id) }
   // 날짜 필터: tbm_date 우선, 없으면 work_date → created_at 기준
   if (date_from) { wheres.push(`date(COALESCE(tbm.tbm_date, tbm.work_date, tbm.created_at)) >= ?`); params.push(date_from) }
   if (date_to)   { wheres.push(`date(COALESCE(tbm.tbm_date, tbm.work_date, tbm.created_at)) <= ?`); params.push(date_to) }

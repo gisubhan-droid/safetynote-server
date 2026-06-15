@@ -29153,10 +29153,13 @@ async function renderSiteMapPage(container) {
   if (window._smTab      === undefined) window._smTab      = 'risk';
   if (window._smDateFrom === undefined) window._smDateFrom = _monthAgo;
   if (window._smDateTo   === undefined) window._smDateTo   = _today;
+  if (window._smUserId   === undefined) window._smUserId   = '';   // 전체 사용자
+  if (window._smUserList === undefined) window._smUserList = [];   // 사용자 목록 캐시
 
-  const _tab = window._smTab;
-  const _df  = window._smDateFrom;
-  const _dt  = window._smDateTo;
+  const _tab    = window._smTab;
+  const _df     = window._smDateFrom;
+  const _dt     = window._smDateTo;
+  const _userId = window._smUserId;
 
   const dateRangeLabel = (_df === _dt && _df)
     ? _df : (_df || _dt) ? `${_df||'처음'} ~ ${_dt||'오늘'}` : '전체 기간';
@@ -29168,6 +29171,19 @@ async function renderSiteMapPage(container) {
     { key:'working',    label:'🟢 진행',       color:'#10B981', desc:'작업진행중 점검 위치' },
     { key:'completed',  label:'✅ 완료',       color:'#6B7280', desc:'완료 작업 점검 위치' },
   ];
+
+  // ── 사용자 목록 로드 (캐시) ──
+  if (window._smUserList.length === 0) {
+    try {
+      const r = await API.get('/users?limit=200');
+      window._smUserList = Array.isArray(r.data) ? r.data : (r.data?.users || r.data?.items || []);
+    } catch(e) { window._smUserList = []; }
+  }
+  const userList = window._smUserList;
+
+  // 현재 선택된 사용자 이름
+  const selUser = userList.find(u => String(u.id) === String(_userId));
+  const userLabel = selUser ? selUser.name : '전체 사용자';
 
   container.innerHTML = `
     <div class="max-w-5xl mx-auto">
@@ -29195,37 +29211,58 @@ async function renderSiteMapPage(container) {
         }).join('')}
       </div>
 
-      <!-- ② 날짜 필터 바 -->
+      <!-- ② 필터 바 (날짜 + 사용자) -->
       <div class="card p-3 mb-3" style="background:#F5F0F8;border:1px solid #D8D0DC">
         <div class="flex flex-wrap items-center gap-2">
+
+          <!-- 날짜 -->
           <div class="flex items-center gap-1">
             <label class="text-xs font-bold text-gray-600 whitespace-nowrap">등록일</label>
-            <input type="date" id="siteMapDateFrom" value="${_df}" class="form-control text-sm" style="width:135px">
+            <input type="date" id="siteMapDateFrom" value="${_df}" class="form-control text-sm" style="width:130px">
             <span class="text-gray-400 text-sm">~</span>
-            <input type="date" id="siteMapDateTo"   value="${_dt}" class="form-control text-sm" style="width:135px">
+            <input type="date" id="siteMapDateTo"   value="${_dt}" class="form-control text-sm" style="width:130px">
           </div>
+          <!-- 빠른 날짜 -->
           <div class="flex gap-1">
             <button onclick="_setSiteMapDateRange('today')" class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">오늘</button>
             <button onclick="_setSiteMapDateRange('week')"  class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">7일</button>
             <button onclick="_setSiteMapDateRange('month')" class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">30일</button>
             <button onclick="_setSiteMapDateRange('all')"   class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">전체</button>
           </div>
-          <button onclick="_applySiteMapFilters()" class="btn btn-sm ml-auto" style="background:#685182;color:white;border:none">
+
+          <!-- 사용자 선택 드롭다운 -->
+          <div class="flex items-center gap-1 ml-auto">
+            <i class="fas fa-user text-xs" style="color:#685182"></i>
+            <select id="siteMapUserId"
+              onchange="window._smUserId=this.value;_applySiteMapFilters()"
+              class="form-control text-sm" style="width:130px;padding:4px 6px;border-radius:8px;border:1px solid #D8D0DC">
+              <option value="" ${!_userId ? 'selected' : ''}>전체 사용자</option>
+              ${userList.map(u =>
+                `<option value="${u.id}" ${String(u.id)===String(_userId)?'selected':''}>${u.name}${u.position?` (${u.position})`:''}</option>`
+              ).join('')}
+            </select>
+          </div>
+
+          <!-- 조회 버튼 -->
+          <button onclick="_applySiteMapFilters()" class="btn btn-sm" style="background:#685182;color:white;border:none">
             <i class="fas fa-search mr-1"></i>조회
           </button>
         </div>
       </div>
 
       <!-- ③ 지도 -->
-      <div id="leafletMap" style="width:100%;height:500px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;"></div>
+      <div id="leafletMap" style="width:100%;height:460px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;"></div>
 
-      <!-- ④ 범례 (탭별 색상) -->
+      <!-- ④ 범례 -->
       <div class="flex gap-4 mt-3 text-sm flex-wrap" id="siteMapLegend">
         ${TAB_DEFS.map(t => `
           <span class="flex items-center gap-1" style="color:#6B7280">
             <span style="display:inline-block;width:10px;height:10px;background:${t.color};border-radius:50%"></span>
             ${t.label}
           </span>`).join('')}
+        ${_userId ? `<span class="flex items-center gap-1 ml-2" style="color:#685182;font-weight:600">
+          <i class="fas fa-user" style="font-size:10px"></i> ${userLabel}
+        </span>` : ''}
       </div>
 
       <!-- ⑤ 위치 목록 -->
@@ -29240,6 +29277,8 @@ async function renderSiteMapPage(container) {
 function _applySiteMapFilters() {
   window._smDateFrom = document.getElementById('siteMapDateFrom')?.value ?? window._smDateFrom ?? '';
   window._smDateTo   = document.getElementById('siteMapDateTo')?.value   ?? window._smDateTo   ?? '';
+  const selEl = document.getElementById('siteMapUserId');
+  if (selEl) window._smUserId = selEl.value;
   renderSiteMapPage(document.getElementById('page-content'));
 }
 
@@ -29304,6 +29343,7 @@ async function loadSiteMapMarkers(map) {
   const filter   = window._smTab      || 'risk';  // 기본: 위험성체크
   const dateFrom = window._smDateFrom || '';
   const dateTo   = window._smDateTo   || '';
+  const userId   = window._smUserId   || '';
   const listEl   = document.getElementById('siteMapList');
   const latLngs  = [];
   let listItems  = [];
@@ -29327,13 +29367,14 @@ async function loadSiteMapMarkers(map) {
   // 로딩 표시
   if (listEl) listEl.innerHTML = `<div class="text-center text-gray-400 py-4 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>위치 데이터 로드 중...</div>`;
 
-  // 날짜 쿼리스트링 생성 헬퍼
+  // 쿼리스트링 생성 헬퍼 (날짜 + 사용자 포함)
   const dateParams = () => {
     const p = new URLSearchParams();
     if (dateFrom) p.set('date_from', dateFrom);
     if (dateTo)   p.set('date_to',   dateTo);
+    if (userId)   p.set('user_id',   userId);
     p.set('limit', '500');
-    return p.toString() ? `?${p.toString()}` : '?limit=500';
+    return `?${p.toString()}`;
   };
 
   try {
@@ -29359,6 +29400,9 @@ async function loadSiteMapMarkers(map) {
             <div style="font-weight:700;color:${meta.color};margin-bottom:4px">⚠️ 위험성체크</div>
             <div style="font-weight:600">${name}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-user mr-1"></i>${ra.assessor_name || '-'}
+            </div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-tag mr-1"></i>${ra.assessment_type || '-'}
             </div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
@@ -29370,7 +29414,8 @@ async function loadSiteMapMarkers(map) {
           </div>`);
 
         latLngs.push([lat, lon]);
-        listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name, address: addr, lat, lon });
+        listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
+          author: ra.assessor_name || '', address: addr, lat, lon });
       }
     }
 
@@ -29385,7 +29430,7 @@ async function loadSiteMapMarkers(map) {
         if (isNaN(lat) || isNaN(lon)) continue;
 
         const displayDate = (tbm.tbm_date || tbm.work_date || tbm.created_at || '').substring(0, 10);
-        const name = tbm.work_name || tbm.construction_name || 'TBM';
+        const name = tbm.task_title || tbm.work_name || tbm.construction_name || 'TBM';
         const addr = tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
         const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, '🦺 TBM') }).addTo(map);
@@ -29393,6 +29438,9 @@ async function loadSiteMapMarkers(map) {
           <div style="min-width:200px;font-size:13px;">
             <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🦺 TBM</div>
             <div style="font-weight:600">${name}</div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-user mr-1"></i>${tbm.conductor_name || '-'}
+            </div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
             </div>
@@ -29402,7 +29450,8 @@ async function loadSiteMapMarkers(map) {
           </div>`);
 
         latLngs.push([lat, lon]);
-        listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name, address: addr, lat, lon });
+        listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
+          author: tbm.conductor_name || '', address: addr, lat, lon });
       }
     }
 
@@ -29411,7 +29460,6 @@ async function loadSiteMapMarkers(map) {
       const res = await API.get(`/inspections${dateParams()}`);
       const list = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.inspections || []);
       for (const insp of list) {
-        // task_status가 'working'인 것만
         if (insp.task_status !== 'working') continue;
         if (!insp.gps_lat || !insp.gps_lon) continue;
         const lat = parseFloat(insp.gps_lat);
@@ -29428,6 +29476,9 @@ async function loadSiteMapMarkers(map) {
             <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🟢 진행중</div>
             <div style="font-weight:600">${name}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-user mr-1"></i>${insp.inspector_name || '-'}
+            </div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-clipboard-check mr-1"></i>${insp.location || '-'}
             </div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
@@ -29439,7 +29490,8 @@ async function loadSiteMapMarkers(map) {
           </div>`);
 
         latLngs.push([lat, lon]);
-        listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name, address: addr, lat, lon });
+        listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
+          author: insp.inspector_name || '', address: addr, lat, lon });
       }
     }
 
@@ -29465,6 +29517,9 @@ async function loadSiteMapMarkers(map) {
             <div style="font-weight:700;color:${meta.color};margin-bottom:4px">✅ 완료</div>
             <div style="font-weight:600">${name}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-user mr-1"></i>${insp.inspector_name || '-'}
+            </div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-clipboard-check mr-1"></i>${insp.location || '-'}
             </div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
@@ -29476,7 +29531,8 @@ async function loadSiteMapMarkers(map) {
           </div>`);
 
         latLngs.push([lat, lon]);
-        listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name, address: addr, lat, lon });
+        listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
+          author: insp.inspector_name || '', address: addr, lat, lon });
       }
     }
 
@@ -29495,7 +29551,7 @@ async function loadSiteMapMarkers(map) {
       if (listItems.length === 0) {
         listEl.innerHTML = `<div class="text-center text-gray-400 py-6">
           <i class="fas fa-map-pin text-2xl mb-2 block opacity-30"></i>
-          <div class="text-sm font-medium text-gray-500">해당 기간에 GPS 기록이 없습니다</div>
+          <div class="text-sm font-medium text-gray-500">GPS 기록이 없습니다</div>
           <div class="text-xs text-gray-400 mt-1">조회 기간: ${dateRangeLabel}</div>
           <div class="text-xs text-gray-400 mt-1">${meta.emptyMsg}</div>
         </div>`;
@@ -29503,7 +29559,7 @@ async function loadSiteMapMarkers(map) {
         // 날짜 최신순 정렬
         listItems.sort((a, b) => b.date.localeCompare(a.date));
         listEl.innerHTML = `
-          <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center justify-between mb-2 px-1">
             <div class="text-sm font-bold text-gray-600">
               <i class="fas fa-map-pin mr-1" style="color:${meta.color}"></i>${meta.label} ${listItems.length}건
             </div>
@@ -29512,17 +29568,20 @@ async function loadSiteMapMarkers(map) {
           ${listItems.map(item => `
             <div class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
               onclick="_moveSiteMapTo(${item.lat}, ${item.lon})">
-              <div style="width:32px;height:32px;background:${item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <div style="width:36px;height:36px;background:${item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">
                 <i class="fas ${item.icon} text-white text-xs"></i>
               </div>
               <div class="flex-1 min-w-0">
-                <div class="font-medium text-gray-800 text-sm truncate">${item.name}</div>
-                <div class="text-xs text-gray-400 truncate">
+                <div class="font-semibold text-gray-800 text-sm truncate">${item.name}</div>
+                ${item.author ? `<div class="text-xs font-medium truncate" style="color:${item.color}">
+                  <i class="fas fa-user mr-1"></i>${item.author}
+                </div>` : ''}
+                <div class="text-xs text-gray-400 truncate mt-0.5">
                   <i class="fas fa-calendar-alt mr-1"></i>${item.date || '-'}
-                  · <i class="fas fa-map-marker-alt mr-1"></i>${item.address}
+                  &nbsp;·&nbsp;<i class="fas fa-map-marker-alt mr-1"></i>${item.address}
                 </div>
               </div>
-              <i class="fas fa-chevron-right text-gray-300"></i>
+              <i class="fas fa-chevron-right text-gray-300 flex-shrink-0"></i>
             </div>
           `).join('')}`;
       }

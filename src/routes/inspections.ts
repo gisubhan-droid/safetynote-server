@@ -62,7 +62,7 @@ async function resolveInspectionDir(db: D1Database, taskId: number | null): Prom
 app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { status, hazard_level, task_id, date_from, date_to } = c.req.query()
+  const { status, hazard_level, task_id, date_from, date_to, user_id } = c.req.query()
   let q = `SELECT si.*, u.name as inspector_name,
               t.title as task_title, t.task_number, t.status as task_status,
               t.gps_lat, t.gps_lon, t.gps_address,
@@ -74,9 +74,10 @@ app.get('/', async (c) => {
            LEFT JOIN tasks t ON t.id = si.task_id`
   const params: any[] = []
   const wheres: string[] = []
-  if (status)      { wheres.push('si.status = ?');       params.push(status) }
-  if (hazard_level){ wheres.push('si.hazard_level = ?'); params.push(hazard_level) }
-  if (task_id)     { wheres.push('si.task_id = ?');      params.push(task_id) }
+  if (status)      { wheres.push('si.status = ?');        params.push(status) }
+  if (hazard_level){ wheres.push('si.hazard_level = ?');  params.push(hazard_level) }
+  if (task_id)     { wheres.push('si.task_id = ?');       params.push(task_id) }
+  if (user_id)     { wheres.push('si.inspector_id = ?');  params.push(user_id) }
   // 날짜 필터: inspection_date_only 우선, 없으면 created_at 날짜 사용
   if (date_from) {
     wheres.push(`date(COALESCE(si.inspection_date_only, si.created_at)) >= ?`)

@@ -2411,10 +2411,8 @@ app.get('/api/geocode/config', async (c) => {
   return c.json({ kakao_js_api_key: jsKey })
 })
 
-// GET /api/geocode/kakaomap-sdk - 카카오맵 SDK 프록시 (브라우저 차단 우회)
+// GET /api/geocode/kakaomap-sdk - 카카오맵 SDK 프록시 (인증 불필요 — script 태그로 로드)
 app.get('/api/geocode/kakaomap-sdk', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.text('인증 필요', 401)
   const jsKey = getSetting('kakao_js_api_key') || ''
   if (!jsKey) return c.text('JS API 키 미설정', 400)
   try {

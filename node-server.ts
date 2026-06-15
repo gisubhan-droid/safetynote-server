@@ -159,23 +159,32 @@ rawDb.pragma('foreign_keys = ON')
   console.log('[AutoMigrate] tbm_records cols:', tbmCols.join(', '))
 
   const patches: { table: string; column: string; def: string }[] = [
-    // tasks GPS 컬럼
-    { table: 'tasks', column: 'gps_address',              def: 'TEXT    DEFAULT NULL' },
-    { table: 'tasks', column: 'gps_lat',                  def: 'REAL    DEFAULT NULL' },
-    { table: 'tasks', column: 'gps_lon',                  def: 'REAL    DEFAULT NULL' },
-    // tasks 주소 컬럼
-    { table: 'tasks', column: 'confirmed_address',         def: "TEXT    DEFAULT ''"   },
-    { table: 'tasks', column: 'confirmed_address_source',  def: "TEXT    DEFAULT ''"   },
-    { table: 'tasks', column: 'confirmed_address_at',      def: 'DATETIME DEFAULT NULL' },
-    { table: 'tasks', column: 'work_order_address',        def: 'TEXT    DEFAULT NULL' },
-    // tasks 기타
-    { table: 'tasks', column: 'high_subtypes',             def: "TEXT    DEFAULT '[]'" },
-    { table: 'tasks', column: 'sub_task_number',           def: "TEXT    DEFAULT ''"   },
-    { table: 'tasks', column: 'contractor_name',           def: "TEXT    DEFAULT ''"   },
-    // tbm_records GPS 컬럼 (0018 이전 버전 DB 대비)
+    // ── tasks GPS 컬럼
+    { table: 'tasks', column: 'gps_address',              def: 'TEXT     DEFAULT NULL' },
+    { table: 'tasks', column: 'gps_lat',                  def: 'REAL     DEFAULT NULL' },
+    { table: 'tasks', column: 'gps_lon',                  def: 'REAL     DEFAULT NULL' },
+    // ── tasks 주소/공사 컬럼
+    { table: 'tasks', column: 'confirmed_address',         def: "TEXT     DEFAULT ''"   },
+    { table: 'tasks', column: 'confirmed_address_source',  def: "TEXT     DEFAULT ''"   },
+    { table: 'tasks', column: 'confirmed_address_at',      def: 'DATETIME DEFAULT NULL'  },
+    { table: 'tasks', column: 'work_order_address',        def: 'TEXT     DEFAULT NULL'  },
+    { table: 'tasks', column: 'construction_id',           def: 'INTEGER  DEFAULT NULL'  },
+    // ── tasks 기타
+    { table: 'tasks', column: 'high_subtypes',             def: "TEXT     DEFAULT '[]'"  },
+    { table: 'tasks', column: 'sub_task_number',           def: "TEXT     DEFAULT ''"    },
+    { table: 'tasks', column: 'contractor_name',           def: "TEXT     DEFAULT ''"    },
+    { table: 'tasks', column: 'work_log_required',         def: 'INTEGER  DEFAULT 0'     },
+    // ── tbm_records GPS 컬럼
     { table: 'tbm_records', column: 'gps_address', def: 'TEXT DEFAULT NULL' },
     { table: 'tbm_records', column: 'gps_lat',     def: 'REAL DEFAULT NULL' },
     { table: 'tbm_records', column: 'gps_lon',     def: 'REAL DEFAULT NULL' },
+    // ── work_logs GPS 컬럼 (0050 미적용 대비)
+    { table: 'work_logs', column: 'gps_lat',         def: 'REAL     DEFAULT NULL' },
+    { table: 'work_logs', column: 'gps_lon',         def: 'REAL     DEFAULT NULL' },
+    { table: 'work_logs', column: 'gps_recorded_at', def: 'DATETIME DEFAULT NULL' },
+    // ── work_logs 기타 (0027 미적용 대비)
+    { table: 'work_logs', column: 'work_location',   def: "TEXT     DEFAULT ''"   },
+    { table: 'work_logs', column: 'tomorrow_plan',   def: "TEXT     DEFAULT ''"   },
   ]
 
   const colCache: Record<string, string[]> = { tasks: taskCols, tbm_records: tbmCols }

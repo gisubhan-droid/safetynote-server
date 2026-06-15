@@ -48,69 +48,84 @@ app.post('/', async (c) => {
   ).bind(task_id, user.id, log_date).first<any>()
 
   if (existing) {
-    await c.env.DB.prepare(
-      `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
-       work_location=?, work_description=?, issues=?, tomorrow_plan=?, status=?,
-       gps_lat=?, gps_lon=?, gps_recorded_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
-    ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
-      work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
-      gps_lat ?? null, gps_lon ?? null, gps_recorded_at, existing.id
-    ).run()
-
-    // ── 기존 일지 수정 시에도 work_completed → completed 전환 체크 ──────────
-    const taskRow2 = await c.env.DB.prepare(
-      'SELECT status, construction_id FROM tasks WHERE id=?'
-    ).bind(task_id).first<any>()
-    if (taskRow2?.status === 'work_completed') {
+    // GPS 컬럼 포함 UPDATE 시도 → 없으면 GPS 제외 fallback
+    try {
       await c.env.DB.prepare(
-        "UPDATE tasks SET status='completed', work_log_required=0, updated_at=CURRENT_TIMESTAMP WHERE id=?"
-      ).bind(task_id).run()
-      // 공사 상태 자동 갱신
-      if (taskRow2.construction_id) {
-        try { await refreshConstructionStatus(c.env.DB, taskRow2.construction_id) } catch(_) {}
-      }
+        `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
+         work_location=?, work_description=?, issues=?, tomorrow_plan=?, status=?,
+         gps_lat=?, gps_lon=?, gps_recorded_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
+        work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
+        gps_lat ?? null, gps_lon ?? null, gps_recorded_at, existing.id
+      ).run()
+    } catch(_) {
+      await c.env.DB.prepare(
+        `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
+         work_description=?, issues=?, status=?,
+         updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
+        work_description || '', issues || '', status || 'working', existing.id
+      ).run()
     }
+
+    // work_completed → completed 전환 체크
+    try {
+      const taskRow2 = await c.env.DB.prepare(
+        'SELECT status, construction_id FROM tasks WHERE id=?'
+      ).bind(task_id).first<any>()
+      if (taskRow2?.status === 'work_completed') {
+        await c.env.DB.prepare(
+          "UPDATE tasks SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE id=?"
+        ).bind(task_id).run()
+        if (taskRow2.construction_id) {
+          try { await refreshConstructionStatus(c.env.DB, taskRow2.construction_id) } catch(_) {}
+        }
+      }
+    } catch(_) {}
 
     return c.json({ success: true, id: existing.id, updated: true })
   }
 
-  const result = await c.env.DB.prepare(
-    `INSERT INTO work_logs (task_id, worker_id, log_date, start_time, end_time, actual_quantity,
-     quantity_unit, work_location, work_description, issues, tomorrow_plan, status,
-     gps_lat, gps_lon, gps_recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(task_id, user.id, log_date, start_time || '', end_time || '', actual_quantity || 0,
-    quantity_unit || '개', work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
-    gps_lat ?? null, gps_lon ?? null, gps_recorded_at
-  ).run()
-
-  // 작업 일지 저장 후 작업 상태를 'completed'로 전환 (work_completed → completed)
-  const wlNow = new Date()
-  const wlKst = new Date(wlNow.getTime() + 9 * 60 * 60 * 1000)
-  const wlTs = wlKst.toISOString().replace('T', ' ').slice(0, 19)
-
-  // 현재 작업 상태 확인
-  const taskRow = await c.env.DB.prepare(
-    'SELECT status, work_started_at FROM tasks WHERE id=?'
-  ).bind(task_id).first<any>()
-
-  if (taskRow?.status === 'work_completed') {
-    // 작업완료 후 일지 작성 → 최종 완료 처리
-    await c.env.DB.prepare(
-      "UPDATE tasks SET status='completed', work_log_required=0, updated_at=CURRENT_TIMESTAMP WHERE id=?"
-    ).bind(task_id).run()
-    // 공사 상태 자동 갱신
-    const conRow = await c.env.DB.prepare(
-      'SELECT construction_id FROM tasks WHERE id=?'
-    ).bind(task_id).first<any>()
-    if (conRow?.construction_id) {
-      try { await refreshConstructionStatus(c.env.DB, conRow.construction_id) } catch(_) {}
-    }
-  } else if (taskRow?.status === 'working') {
-    // 작업중 상태에서 일지 작성 시 그대로 유지 (working)
-    // 별도 처리 없음
+  // INSERT — GPS 컬럼 포함 시도 → 없으면 GPS 제외 fallback
+  let insertId: any = null
+  try {
+    const result = await c.env.DB.prepare(
+      `INSERT INTO work_logs (task_id, worker_id, log_date, start_time, end_time, actual_quantity,
+       quantity_unit, work_location, work_description, issues, tomorrow_plan, status,
+       gps_lat, gps_lon, gps_recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(task_id, user.id, log_date, start_time || '', end_time || '', actual_quantity || 0,
+      quantity_unit || '개', work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
+      gps_lat ?? null, gps_lon ?? null, gps_recorded_at
+    ).run()
+    insertId = result.meta.last_row_id
+  } catch(_) {
+    // GPS/work_location/tomorrow_plan 컬럼 없는 구버전 DB fallback
+    const result = await c.env.DB.prepare(
+      `INSERT INTO work_logs (task_id, worker_id, log_date, start_time, end_time, actual_quantity,
+       quantity_unit, work_description, issues, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(task_id, user.id, log_date, start_time || '', end_time || '', actual_quantity || 0,
+      quantity_unit || '개', work_description || '', issues || '', status || 'working'
+    ).run()
+    insertId = result.meta.last_row_id
   }
 
-  return c.json({ success: true, id: result.meta.last_row_id })
+  // 작업 상태 전환 (work_completed → completed)
+  try {
+    const taskRow = await c.env.DB.prepare(
+      'SELECT status, construction_id FROM tasks WHERE id=?'
+    ).bind(task_id).first<any>()
+
+    if (taskRow?.status === 'work_completed') {
+      await c.env.DB.prepare(
+        "UPDATE tasks SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE id=?"
+      ).bind(task_id).run()
+      if (taskRow.construction_id) {
+        try { await refreshConstructionStatus(c.env.DB, taskRow.construction_id) } catch(_) {}
+      }
+    }
+  } catch(_) {}
+
+  return c.json({ success: true, id: insertId })
 })
 
 // 작업 일지 수정
@@ -130,29 +145,47 @@ app.put('/:id', async (c) => {
     'SELECT task_id FROM work_logs WHERE id=?'
   ).bind(id).first<any>()
 
-  await c.env.DB.prepare(
-    `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
-     work_location=?, work_description=?, issues=?, tomorrow_plan=?, status=?,
-     gps_lat=?, gps_lon=?, gps_recorded_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
-  ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
-    work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
-    gps_lat ?? null, gps_lon ?? null, gps_recorded_at, id
-  ).run()
+  // GPS 컬럼 포함 UPDATE 시도 → 없으면 GPS 제외 fallback
+  try {
+    await c.env.DB.prepare(
+      `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
+       work_location=?, work_description=?, issues=?, tomorrow_plan=?, status=?,
+       gps_lat=?, gps_lon=?, gps_recorded_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+    ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
+      work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
+      gps_lat ?? null, gps_lon ?? null, gps_recorded_at, id
+    ).run()
+  } catch(_) {
+    // GPS/work_location/tomorrow_plan 컬럼 없는 구버전 DB fallback
+    try {
+      await c.env.DB.prepare(
+        `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
+         work_description=?, issues=?, status=?,
+         updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
+        work_description || '', issues || '', status || 'working', id
+      ).run()
+    } catch(e2: any) {
+      return c.json({ error: e2.message }, 500)
+    }
+  }
 
   // ── 일지 수정 시 work_completed → completed 전환 체크 ────────────────────
   if (logRow?.task_id) {
-    const taskRow = await c.env.DB.prepare(
-      'SELECT status, construction_id FROM tasks WHERE id=?'
-    ).bind(logRow.task_id).first<any>()
-    if (taskRow?.status === 'work_completed') {
-      await c.env.DB.prepare(
-        "UPDATE tasks SET status='completed', work_log_required=0, updated_at=CURRENT_TIMESTAMP WHERE id=?"
-      ).bind(logRow.task_id).run()
-      // 공사 상태 자동 갱신
-      if (taskRow.construction_id) {
-        try { await refreshConstructionStatus(c.env.DB, taskRow.construction_id) } catch(_) {}
+    try {
+      const taskRow = await c.env.DB.prepare(
+        'SELECT status, construction_id FROM tasks WHERE id=?'
+      ).bind(logRow.task_id).first<any>()
+      if (taskRow?.status === 'work_completed') {
+        await c.env.DB.prepare(
+          "UPDATE tasks SET status='completed', work_log_required=0, updated_at=CURRENT_TIMESTAMP WHERE id=?"
+        ).bind(logRow.task_id).run()
+        // 공사 상태 자동 갱신
+        if (taskRow.construction_id) {
+          try { await refreshConstructionStatus(c.env.DB, taskRow.construction_id) } catch(_) {}
+        }
       }
-    }
+    } catch(_) {}
   }
 
   return c.json({ success: true })

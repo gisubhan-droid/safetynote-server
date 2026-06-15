@@ -1228,4 +1228,21 @@ app.delete('/:id/workers/:workerId', async (c) => {
   return c.json({ success: true })
 })
 
+// ── 작업 단계(steps) API — task_steps 테이블이 없는 경우 빈 배열 반환 ──────────
+// NAS 구버전 앱에서 GET /api/tasks/:id/steps 를 호출하는 경우 500 방지
+app.get('/:id/steps', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT * FROM task_steps WHERE task_id = ? ORDER BY step_order ASC, id ASC`
+    ).bind(id).all<any>()
+    return c.json(rows.results || [])
+  } catch(_) {
+    // task_steps 테이블이 없는 경우 빈 배열 반환
+    return c.json([])
+  }
+})
+
 export default app

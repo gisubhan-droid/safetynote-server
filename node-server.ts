@@ -143,6 +143,23 @@ const rawDb = new Database(DB_FILE)
 rawDb.pragma('journal_mode = WAL')
 rawDb.pragma('foreign_keys = ON')
 
+// ─── 자동 스키마 패치 (마이그레이션 누락분 보완) ──────────────────────
+;(function autoMigrate() {
+  const patches: { table: string; column: string; def: string }[] = [
+    { table: 'tasks', column: 'gps_address', def: 'TEXT DEFAULT NULL' },
+    { table: 'tasks', column: 'gps_lat',     def: 'REAL DEFAULT NULL' },
+    { table: 'tasks', column: 'gps_lon',     def: 'REAL DEFAULT NULL' },
+  ]
+  for (const p of patches) {
+    try {
+      rawDb.exec(`ALTER TABLE ${p.table} ADD COLUMN ${p.column} ${p.def}`)
+      console.log(`[AutoMigrate] Added ${p.table}.${p.column}`)
+    } catch(_) {
+      // 이미 존재하는 컬럼이면 무시 (SQLite: "duplicate column name" 에러)
+    }
+  }
+})()
+
 function makeD1(db: Database.Database) {
   function makeStmt(query: string, params: any[] = []) {
     return {

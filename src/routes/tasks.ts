@@ -233,52 +233,59 @@ app.get('/stops', async (c) => {
     const kw = `%${search}%`; globalBinds.push(kw, kw, kw)
   }
 
-  // ── 3개 쿼리 병렬 실행 ──
+  // ── 3개 쿼리 병렬 실행 (task_stops 테이블/컬럼 없는 경우 빈 결과 fallback) ──
   // photo_data 제외: 목록에는 has_photo(boolean) 만 전달 → 페이로드 10MB → ~8KB
-  const [stopsRes, catStatsRes, detailStatsRes] = await Promise.all([
-    c.env.DB.prepare(`
-      SELECT
-        ts.id,
-        ts.task_id,
-        ts.stop_category,
-        ts.stop_detail,
-        ts.stop_reason,
-        ts.notes,
-        CASE WHEN ts.photo_data IS NOT NULL AND ts.photo_data != '' THEN 1 ELSE 0 END AS has_photo,
-        ts.stopped_at,
-        t.title    AS task_title,
-        t.status   AS task_status,
-        t.location AS task_location,
-        u.name     AS reporter_name,
-        u.position AS reporter_position
-      FROM task_stops ts
-      LEFT JOIN tasks t ON t.id = ts.task_id
-      LEFT JOIN users u ON u.id = ts.reported_by
-      ${where}
-      ORDER BY ts.stopped_at DESC
-      LIMIT 200
-    `).bind(...binds).all<any>(),
+  let stopsRes: any = { results: [] }
+  let catStatsRes: any = { results: [] }
+  let detailStatsRes: any = { results: [] }
+  try {
+    ;[stopsRes, catStatsRes, detailStatsRes] = await Promise.all([
+      c.env.DB.prepare(`
+        SELECT
+          ts.id,
+          ts.task_id,
+          ts.stop_category,
+          ts.stop_detail,
+          ts.stop_reason,
+          ts.notes,
+          CASE WHEN ts.photo_data IS NOT NULL AND ts.photo_data != '' THEN 1 ELSE 0 END AS has_photo,
+          ts.stopped_at,
+          t.title    AS task_title,
+          t.status   AS task_status,
+          t.location AS task_location,
+          u.name     AS reporter_name,
+          u.position AS reporter_position
+        FROM task_stops ts
+        LEFT JOIN tasks t ON t.id = ts.task_id
+        LEFT JOIN users u ON u.id = ts.reported_by
+        ${where}
+        ORDER BY ts.stopped_at DESC
+        LIMIT 200
+      `).bind(...binds).all<any>(),
 
-    // 카테고리별 집계 (전체 기준 — 카드 숫자용)
-    c.env.DB.prepare(`
-      SELECT stop_category, COUNT(*) as cnt
-      FROM task_stops ts
-      LEFT JOIN tasks t ON t.id = ts.task_id
-      LEFT JOIN users u ON u.id = ts.reported_by
-      ${globalWhere}
-      GROUP BY stop_category
-    `).bind(...globalBinds).all<any>(),
+      // 카테고리별 집계 (전체 기준 — 카드 숫자용)
+      c.env.DB.prepare(`
+        SELECT stop_category, COUNT(*) as cnt
+        FROM task_stops ts
+        LEFT JOIN tasks t ON t.id = ts.task_id
+        LEFT JOIN users u ON u.id = ts.reported_by
+        ${globalWhere}
+        GROUP BY stop_category
+      `).bind(...globalBinds).all<any>(),
 
-    // 세부사유별 집계 (현재 필터 기준)
-    c.env.DB.prepare(`
-      SELECT stop_category, stop_detail, COUNT(*) as cnt
-      FROM task_stops ts
-      LEFT JOIN tasks t ON t.id = ts.task_id
-      LEFT JOIN users u ON u.id = ts.reported_by
-      ${where}
-      GROUP BY stop_category, stop_detail
-    `).bind(...binds).all<any>(),
-  ])
+      // 세부사유별 집계 (현재 필터 기준)
+      c.env.DB.prepare(`
+        SELECT stop_category, stop_detail, COUNT(*) as cnt
+        FROM task_stops ts
+        LEFT JOIN tasks t ON t.id = ts.task_id
+        LEFT JOIN users u ON u.id = ts.reported_by
+        ${where}
+        GROUP BY stop_category, stop_detail
+      `).bind(...binds).all<any>(),
+    ])
+  } catch(e: any) {
+    console.warn('[tasks/stops] task_stops 쿼리 실패 (테이블/컬럼 없음):', e.message)
+  }
 
   const catStats: Record<string, number> = {}
   for (const row of (catStatsRes.results || [])) {
@@ -1145,15 +1152,19 @@ app.get('/:id/stops', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const id = c.req.param('id')
-  const stops = await c.env.DB.prepare(
-    `SELECT ts.*, u.name as reporter_name, u.position as reporter_position
-     FROM task_stops ts
-     LEFT JOIN users u ON u.id = ts.reported_by
-     WHERE ts.task_id = ?
-     ORDER BY ts.stopped_at DESC`
-  ).bind(id).all<any>()
-
-  return c.json(stops.results || [])
+  try {
+    const stops = await c.env.DB.prepare(
+      `SELECT ts.*, u.name as reporter_name, u.position as reporter_position
+       FROM task_stops ts
+       LEFT JOIN users u ON u.id = ts.reported_by
+       WHERE ts.task_id = ?
+       ORDER BY ts.stopped_at DESC`
+    ).bind(id).all<any>()
+    return c.json(stops.results || [])
+  } catch(e: any) {
+    console.warn('[tasks/:id/stops] task_stops 쿼리 실패:', e.message)
+    return c.json([])
+  }
 })
 
 // ── 작업자 개별 추가 (관리자/감독자 전용) ─────────────────────────────────────

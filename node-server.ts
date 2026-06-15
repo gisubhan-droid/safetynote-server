@@ -185,7 +185,37 @@ rawDb.pragma('foreign_keys = ON')
     // ── work_logs 기타 (0027 미적용 대비)
     { table: 'work_logs', column: 'work_location',   def: "TEXT     DEFAULT ''"   },
     { table: 'work_logs', column: 'tomorrow_plan',   def: "TEXT     DEFAULT ''"   },
+    // ── task_stops 컬럼 (0033/0035 미적용 대비)
+    { table: 'task_stops', column: 'stop_category',  def: "TEXT DEFAULT '위험작업중지'" },
+    { table: 'task_stops', column: 'stop_detail',    def: 'TEXT DEFAULT NULL' },
+    { table: 'task_stops', column: 'reported_by',    def: 'INTEGER DEFAULT NULL' },
+    { table: 'task_stops', column: 'photo_data',     def: 'TEXT DEFAULT NULL' },
   ]
+
+  // ── task_stops 테이블 없으면 자동 생성 (0033 migration 미적용 대비) ──────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS task_stops (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id       INTEGER NOT NULL,
+        reported_by   INTEGER DEFAULT NULL,
+        stop_reason   TEXT    NOT NULL DEFAULT '',
+        stop_category TEXT    DEFAULT '위험작업중지',
+        stop_detail   TEXT    DEFAULT NULL,
+        notes         TEXT,
+        photo_data    TEXT,
+        stopped_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )
+    `)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_task_stops_task_id   ON task_stops(task_id)`)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_task_stops_stopped_at ON task_stops(stopped_at DESC)`)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_task_stops_category   ON task_stops(stop_category)`)
+    console.log('[AutoMigrate] task_stops 테이블 준비 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('already exists')) console.warn('[AutoMigrate] task_stops 생성 실패:', e.message)
+  }
 
   const colCache: Record<string, string[]> = { tasks: taskCols, tbm_records: tbmCols }
 

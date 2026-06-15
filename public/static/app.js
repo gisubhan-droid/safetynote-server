@@ -10467,8 +10467,8 @@ async function renderMyTasksPage(container) {
       API.get('/tasks'),
       API.get('/tasks/unassigned-list')
     ]);
-    const myTasks  = myRes.data || [];
-    const unassigned = (unassignedRes.data || []).filter(t => !myTasks.find(m => m.id === t.id));
+    const myTasks  = Array.isArray(myRes.data) ? myRes.data : (myRes.data?.tasks || []);
+    const unassigned = (Array.isArray(unassignedRes.data) ? unassignedRes.data : (unassignedRes.data?.tasks || [])).filter(t => !myTasks.find(m => m.id === t.id));
 
     // ── 필터별 표시 작업 선택 ──────────────────────────────
     // logs/quantity 필터는 통계 API에서 task_id 목록이 필요하므로 추가 로드

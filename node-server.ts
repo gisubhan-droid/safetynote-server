@@ -997,7 +997,11 @@ async function loadSystemSettings(db: any): Promise<void> {
         ('attach_other_max_mb',        '',    '05_기타 파일 1개 최대(MB)', '비워두면 공통값 사용'),
         ('attach_other_total_mb',      '',    '05_기타 총 한도(MB)', '비워두면 공통값 사용'),
         ('attach_other_allowed_ext',   '',    '05_기타 허용 확장자', '비워두면 공통값 사용'),
-        ('kakao_rest_api_key',         '',    '카카오 REST API 키', 'GPS 역지오코딩(지번주소 포함)에 사용. 없으면 Nominatim(도로명만) 사용');
+        ('kakao_rest_api_key',         '',    '카카오 REST API 키', 'GPS 역지오코딩(지번주소 포함)에 사용. 없으면 Nominatim(도로명만) 사용'),
+        ('apk_version',                '',    'APK 버전', '현재 배포 중인 Android APK 버전 (예: 1.2.0)'),
+        ('apk_url',                    '',    'APK 다운로드 URL', 'APK 파일 URL. NAS 경로(/static/apk/safetynote.apk) 또는 외부 URL'),
+        ('apk_release_note',           '',    'APK 업데이트 내역', '사용자에게 표시할 버전 업데이트 내용'),
+        ('apk_force_update',           '0',   'APK 강제 업데이트', '1이면 구버전 앱에서 강제 업데이트 팝업 표시');
     `)
     const rows = await db.prepare('SELECT key, value FROM system_settings').all()
     for (const row of (rows.results || [])) {
@@ -2521,6 +2525,24 @@ app.patch('/api/admin/settings', async (c) => {
   // 설정 재로드
   await loadSystemSettings(DB)
   return c.json({ success: true, effectiveUploadRoot: getUploadRoot() })
+})
+
+// GET /api/app-version — 앱 버전 정보 공개 API (인증 불필요)
+// 로그인 화면에서 APK 다운로드 링크 표시에 사용
+app.get('/api/app-version', (c) => {
+  const version      = getSetting('apk_version')      || ''
+  const apkUrl       = getSetting('apk_url')           || ''
+  const releaseNote  = getSetting('apk_release_note')  || ''
+  const forceUpdate  = getSetting('apk_force_update')  || '0'
+  // apk_url이 설정되지 않은 경우 다운로드 버튼 숨김
+  if (!apkUrl) return c.json({ available: false })
+  return c.json({
+    available:    true,
+    version,
+    apk_url:      apkUrl,
+    release_note: releaseNote,
+    force_update: forceUpdate === '1'
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════

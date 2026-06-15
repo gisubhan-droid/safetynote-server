@@ -1289,6 +1289,11 @@ function renderLogin() {
             <i class="fas fa-info-circle mr-1"></i>가입 신청 후 관리자 승인 시 로그인 가능합니다
           </p>
         </div>
+
+        <!-- APK 다운로드 (apk_url 설정 시 표시) -->
+        <div id="login-apk-section" class="hidden mt-4 pt-4" style="border-top:1px dashed #E5E7EB">
+          <div id="login-apk-inner"></div>
+        </div>
       </div>
     </div>
   </div>`;
@@ -1316,6 +1321,63 @@ function renderLogin() {
   } else {
     setTimeout(() => { document.getElementById('loginUsername').focus(); }, 100);
   }
+
+  // APK 다운로드 버튼 비동기 로드 (설정된 경우에만 표시)
+  _loadLoginApkSection();
+}
+
+/** 로그인 화면 APK 다운로드 섹션 렌더링 */
+async function _loadLoginApkSection() {
+  try {
+    const res = await fetch('/api/app-version');
+    if (!res.ok) return;
+    const info = await res.json();
+    if (!info.available || !info.apk_url) return;
+
+    const section = document.getElementById('login-apk-section');
+    const inner   = document.getElementById('login-apk-inner');
+    if (!section || !inner) return;
+
+    const ua = navigator.userAgent || '';
+    const isAndroid = /Android/i.test(ua);
+
+    inner.innerHTML = `
+      <div class="text-center">
+        <p class="text-xs text-gray-500 mb-2 flex items-center justify-center gap-1">
+          <i class="fab fa-android text-green-500"></i>
+          Android 앱 다운로드
+          ${info.version ? `<span class="text-gray-400">v${info.version}</span>` : ''}
+        </p>
+        <button onclick="_loginApkDownload()"
+          class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold text-white transition-all"
+          style="background:linear-gradient(135deg,#22c55e,#16a34a);box-shadow:0 2px 8px rgba(34,197,94,0.35)">
+          <i class="fab fa-android text-lg"></i>
+          <span>APK 설치 파일 다운로드</span>
+          <i class="fas fa-download text-xs opacity-80"></i>
+        </button>
+        ${info.release_note ? `
+        <p class="text-xs text-gray-400 mt-2 leading-relaxed text-left bg-gray-50 rounded-lg px-3 py-2">
+          <i class="fas fa-clipboard-list mr-1 text-gray-300"></i>${info.release_note}
+        </p>` : ''}
+        ${!isAndroid ? `
+        <p class="text-xs text-orange-400 mt-1.5 flex items-center justify-center gap-1">
+          <i class="fas fa-exclamation-triangle"></i> Android 기기에서 접속 후 다운로드하세요
+        </p>` : ''}
+      </div>`;
+    section.classList.remove('hidden');
+
+    // 전역에 저장 (doLogin 후 업데이트 체크용)
+    window._loginApkInfo = info;
+  } catch(e) {
+    // 조용히 무시 (APK 미설정 or 서버 에러)
+  }
+}
+
+/** 로그인 화면 APK 다운로드 실행 */
+function _loginApkDownload() {
+  const info = window._loginApkInfo;
+  if (!info?.apk_url) { toast('다운로드 URL이 설정되지 않았습니다.', 'warning'); return; }
+  doApkDownload(resolveApkUrl(info.apk_url), info.version);
 }
 
 /** 로그인 아이디 필드 지우기 버튼 */
@@ -13941,6 +14003,97 @@ async function renderAdminSettingsPage(container) {
         </div>
       </div>
 
+      <!-- ── Android APK 배포 관리 ── -->
+      <div class="bg-white rounded-2xl shadow-sm p-5 border border-green-100">
+        <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <i class="fab fa-android text-green-500"></i> Android APK 배포 관리
+        </h3>
+        <p class="text-xs text-gray-400 mb-4">
+          APK URL을 설정하면 로그인 화면 하단에 다운로드 버튼이 자동으로 표시됩니다.
+        </p>
+
+        <!-- 현재 배포 상태 미리보기 -->
+        <div id="apk-preview-card" class="mb-4 p-3 rounded-xl border ${sv['apk_url'] ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}">
+          ${sv['apk_url'] ? `
+          <div class="flex items-center gap-2 mb-1">
+            <span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+            <span class="text-xs font-semibold text-green-700">배포 중</span>
+            ${sv['apk_version'] ? `<span class="text-xs text-gray-500">v${sv['apk_version']}</span>` : ''}
+          </div>
+          <p class="text-xs text-gray-500 truncate">${sv['apk_url']}</p>
+          ` : `
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-gray-400 inline-block"></span>
+            <span class="text-xs text-gray-400">APK URL 미설정 — 로그인 화면에 버튼이 표시되지 않습니다</span>
+          </div>`}
+        </div>
+
+        <div class="space-y-3">
+          <!-- APK 버전 -->
+          <div>
+            <label class="form-label flex items-center gap-1">
+              <i class="fas fa-tag text-green-400 text-xs"></i> APK 버전
+              <span class="text-xs font-normal text-gray-400">(예: 1.2.0)</span>
+            </label>
+            <input type="text" id="set-apk-version" value="${sv['apk_version']||''}"
+              class="form-control" placeholder="1.0.0">
+          </div>
+
+          <!-- APK 다운로드 URL -->
+          <div>
+            <label class="form-label flex items-center gap-1">
+              <i class="fas fa-link text-green-400 text-xs"></i> APK 다운로드 URL
+              <span class="text-red-400 ml-0.5">*</span>
+            </label>
+            <div class="flex gap-2">
+              <input type="text" id="set-apk-url" value="${sv['apk_url']||''}"
+                class="form-control flex-1 font-mono text-xs"
+                placeholder="/static/apk/safetynote.apk  또는  https://...">
+              ${sv['apk_url'] ? `
+              <a href="${sv['apk_url']}" target="_blank"
+                class="flex-shrink-0 flex items-center gap-1 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700 hover:bg-green-100">
+                <i class="fas fa-external-link-alt"></i> 확인
+              </a>` : ''}
+            </div>
+            <p class="text-xs text-gray-400 mt-1">
+              <i class="fas fa-info-circle mr-1"></i>
+              NAS 로컬: <code class="bg-gray-100 px-1 rounded">/static/apk/safetynote.apk</code> (파일을 <code class="bg-gray-100 px-1 rounded">/volume1/safetynote/public/static/apk/</code>에 저장)
+            </p>
+          </div>
+
+          <!-- 업데이트 내역 -->
+          <div>
+            <label class="form-label flex items-center gap-1">
+              <i class="fas fa-clipboard-list text-green-400 text-xs"></i> 업데이트 내역
+              <span class="text-xs font-normal text-gray-400">(로그인 화면에 표시)</span>
+            </label>
+            <textarea id="set-apk-release-note" rows="2"
+              class="form-control text-sm resize-none"
+              placeholder="예) 버그 수정 및 성능 개선">${sv['apk_release_note']||''}</textarea>
+          </div>
+
+          <!-- 강제 업데이트 -->
+          <div class="flex items-center gap-3 p-3 bg-orange-50 border border-orange-100 rounded-xl">
+            <label class="flex items-center gap-2 cursor-pointer flex-1">
+              <input type="checkbox" id="set-apk-force-update" ${sv['apk_force_update']==='1'?'checked':''}
+                class="w-4 h-4 accent-orange-500">
+              <span class="text-sm font-medium text-gray-700">강제 업데이트 활성화</span>
+            </label>
+            <span class="text-xs text-orange-500">구버전 앱에서 강제 팝업 표시</span>
+          </div>
+        </div>
+
+        <div class="mt-4 flex gap-2 flex-wrap">
+          <button onclick="saveApkSettings()" class="btn btn-primary" style="background:#16a34a;border-color:#16a34a">
+            <i class="fas fa-save"></i> APK 설정 저장
+          </button>
+          <button onclick="_apkClearSettings()"
+            class="btn btn-outline text-sm" style="color:#dc2626;border-color:#fca5a5">
+            <i class="fas fa-times mr-1"></i> URL 초기화 (숨김)
+          </button>
+        </div>
+      </div>
+
       <!-- 폴더 현황 — 요약 카드 -->
       <div class="bg-white rounded-2xl shadow-sm p-5">
         <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
@@ -14175,6 +14328,49 @@ async function saveAdminSettings() {
     setTimeout(() => renderAdminSettingsPage(document.getElementById('page-content')), 800);
   } catch(e) {
     toast(e.response?.data?.error || '저장 실패', 'error');
+  }
+}
+
+// ─── APK 배포 관리 함수들 ──────────────────────────────────────────────────────
+
+/** APK 설정 저장 */
+async function saveApkSettings() {
+  const version     = (document.getElementById('set-apk-version')?.value     || '').trim();
+  const url         = (document.getElementById('set-apk-url')?.value         || '').trim();
+  const releaseNote = (document.getElementById('set-apk-release-note')?.value|| '').trim();
+  const forceUpdate = document.getElementById('set-apk-force-update')?.checked ? '1' : '0';
+
+  if (!url) {
+    toast('APK 다운로드 URL을 입력하세요.', 'warning');
+    document.getElementById('set-apk-url')?.focus();
+    return;
+  }
+
+  try {
+    await API.patch('/admin/settings', {
+      apk_version:      version,
+      apk_url:          url,
+      apk_release_note: releaseNote,
+      apk_force_update: forceUpdate,
+    });
+    toast('APK 설정이 저장되었습니다. 로그인 화면에 다운로드 버튼이 표시됩니다.', 'success');
+    setTimeout(() => renderAdminSettingsPage(document.getElementById('page-content')), 800);
+  } catch(e) {
+    toast(e.response?.data?.error || 'APK 설정 저장 실패', 'error');
+  }
+}
+
+/** APK URL 초기화 (로그인 화면에서 버튼 숨김) */
+async function _apkClearSettings() {
+  if (!confirm('APK 다운로드 URL을 초기화하면 로그인 화면의 다운로드 버튼이 사라집니다.\n계속하시겠습니까?')) return;
+  try {
+    await API.patch('/admin/settings', {
+      apk_version: '', apk_url: '', apk_release_note: '', apk_force_update: '0'
+    });
+    toast('APK 설정이 초기화되었습니다.', 'success');
+    setTimeout(() => renderAdminSettingsPage(document.getElementById('page-content')), 600);
+  } catch(e) {
+    toast(e.response?.data?.error || '초기화 실패', 'error');
   }
 }
 

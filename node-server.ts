@@ -217,6 +217,65 @@ rawDb.pragma('foreign_keys = ON')
     if (!e.message?.includes('already exists')) console.warn('[AutoMigrate] task_stops 생성 실패:', e.message)
   }
 
+  // ── work_logs CHECK 제약 완화 (status 'work_completed' 허용) ─────────────────
+  // 기존: CHECK(status IN ('working','completed','paused'))
+  // → 앱이 'work_completed' 전송 시 CHECK 실패 → 테이블 재생성으로 제약 제거
+  try {
+    const wlSql: any = rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='work_logs'").get()
+    if (wlSql?.sql && wlSql.sql.includes("CHECK(status IN")) {
+      console.log('[AutoMigrate] work_logs CHECK 제약 제거 중...')
+      rawDb.pragma('foreign_keys = OFF')
+      const fixWL = rawDb.transaction(() => {
+        // 기존 컬럼 목록 동적 조회
+        const existingCols: any[] = rawDb.prepare("PRAGMA table_info(work_logs)").all()
+        const colNames = existingCols.map((c: any) => c.name).join(', ')
+        rawDb.exec('ALTER TABLE work_logs RENAME TO work_logs_old')
+        rawDb.exec(`
+          CREATE TABLE work_logs (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id          INTEGER NOT NULL,
+            worker_id        INTEGER NOT NULL,
+            log_date         DATE NOT NULL,
+            start_time       TIME,
+            end_time         TIME,
+            actual_quantity  REAL DEFAULT 0,
+            quantity_unit    TEXT DEFAULT '개',
+            work_description TEXT,
+            issues           TEXT,
+            tomorrow_plan    TEXT DEFAULT '',
+            status           TEXT DEFAULT 'working',
+            work_location    TEXT DEFAULT '',
+            gps_lat          REAL DEFAULT NULL,
+            gps_lon          REAL DEFAULT NULL,
+            gps_recorded_at  DATETIME DEFAULT NULL,
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (task_id)   REFERENCES tasks(id),
+            FOREIGN KEY (worker_id) REFERENCES users(id)
+          )
+        `)
+        // 기존 컬럼 중 새 테이블에도 있는 것만 복사
+        const newCols = ['id','task_id','worker_id','log_date','start_time','end_time',
+          'actual_quantity','quantity_unit','work_description','issues','tomorrow_plan',
+          'status','work_location','gps_lat','gps_lon','gps_recorded_at','created_at','updated_at']
+        const copyColNames = existingCols.map((c: any) => c.name).filter((n: string) => newCols.includes(n)).join(', ')
+        rawDb.exec(`INSERT INTO work_logs (${copyColNames}) SELECT ${copyColNames} FROM work_logs_old`)
+        rawDb.exec('DROP TABLE work_logs_old')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_work_logs_task   ON work_logs(task_id)')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_work_logs_worker ON work_logs(worker_id)')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_work_logs_date   ON work_logs(log_date)')
+      })
+      fixWL()
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[AutoMigrate] ✅ work_logs CHECK 제약 제거 완료')
+    } else {
+      console.log('[AutoMigrate] work_logs CHECK 제약 이미 제거됨 (skip)')
+    }
+  } catch(e: any) {
+    console.warn('[AutoMigrate] work_logs CHECK 제약 제거 실패 (무시):', e.message)
+    try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+  }
+
   const colCache: Record<string, string[]> = { tasks: taskCols, tbm_records: tbmCols }
 
   for (const p of patches) {

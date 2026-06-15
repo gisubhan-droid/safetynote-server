@@ -40,12 +40,26 @@ app.post('/', async (c) => {
   catch(e: any) { return c.json({ error: `요청 본문 파싱 실패: ${e.message}` }, 400) }
 
   const { task_id, log_date, start_time, end_time, actual_quantity, quantity_unit,
-    work_location, work_description, issues, tomorrow_plan, status,
+    work_location, work_description, issues, tomorrow_plan,
     gps_lat, gps_lon } = body
 
   // 필수값 검증
   if (!task_id) return c.json({ error: 'task_id 필수' }, 400)
   if (!log_date) return c.json({ error: 'log_date 필수' }, 400)
+
+  // status 정규화: work_logs CHECK('working','completed','paused') 제약 대응
+  // 앱이 'work_completed' 전송 시 → 'completed' 로 변환
+  const rawStatus = body.status || 'working'
+  const VALID_LOG_STATUS: Record<string, string> = {
+    working:        'working',
+    completed:      'completed',
+    work_completed: 'completed',   // 앱 호환
+    paused:         'paused',
+    '작업중':       'working',
+    '작업완료':     'completed',
+    '중지':         'paused',
+  }
+  const status = VALID_LOG_STATUS[rawStatus] ?? 'working'
 
   const gps_recorded_at = (gps_lat != null && gps_lon != null)
     ? new Date(Date.now() + 9*60*60*1000).toISOString().replace('T',' ').slice(0,19)
@@ -169,8 +183,16 @@ app.put('/:id', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = c.req.param('id')
   const body = await c.req.json()
-  const { start_time, end_time, actual_quantity, quantity_unit, work_location, work_description, issues, tomorrow_plan, status,
+  const { start_time, end_time, actual_quantity, quantity_unit, work_location, work_description, issues, tomorrow_plan,
     gps_lat, gps_lon } = body
+
+  // status 정규화
+  const rawStatus = body.status || 'working'
+  const VALID_LOG_STATUS: Record<string, string> = {
+    working: 'working', completed: 'completed', work_completed: 'completed', paused: 'paused',
+    '작업중': 'working', '작업완료': 'completed', '중지': 'paused',
+  }
+  const status = VALID_LOG_STATUS[rawStatus] ?? 'working'
   const gps_recorded_at = (gps_lat != null && gps_lon != null)
     ? new Date(Date.now() + 9*60*60*1000).toISOString().replace('T',' ').slice(0,19)
     : null

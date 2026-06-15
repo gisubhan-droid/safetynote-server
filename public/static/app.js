@@ -29095,7 +29095,8 @@ async function loadKakaoMapScript() {
       document.head.appendChild(script);
     });
 
-    window.kakao.maps.load(() => initKakaoMapWithData());
+    // autoload 없이 로드되므로 바로 초기화
+    await initKakaoMapWithData();
   } catch(e) {
     document.getElementById('kakaoMapLoading').innerHTML = `
       <div class="text-center text-red-400 p-8">

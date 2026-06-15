@@ -34,21 +34,36 @@ app.get('/', async (c) => {
 app.post('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const body = await c.req.json()
+
+  let body: any = {}
+  try { body = await c.req.json() }
+  catch(e: any) { return c.json({ error: `요청 본문 파싱 실패: ${e.message}` }, 400) }
+
   const { task_id, log_date, start_time, end_time, actual_quantity, quantity_unit,
     work_location, work_description, issues, tomorrow_plan, status,
     gps_lat, gps_lon } = body
+
+  // 필수값 검증
+  if (!task_id) return c.json({ error: 'task_id 필수' }, 400)
+  if (!log_date) return c.json({ error: 'log_date 필수' }, 400)
+
   const gps_recorded_at = (gps_lat != null && gps_lon != null)
     ? new Date(Date.now() + 9*60*60*1000).toISOString().replace('T',' ').slice(0,19)
     : null
 
   // 같은 날 같은 작업 일지 있으면 업데이트
-  const existing = await c.env.DB.prepare(
-    'SELECT id FROM work_logs WHERE task_id = ? AND worker_id = ? AND log_date = ?'
-  ).bind(task_id, user.id, log_date).first<any>()
+  let existing: any = null
+  try {
+    existing = await c.env.DB.prepare(
+      'SELECT id FROM work_logs WHERE task_id = ? AND worker_id = ? AND log_date = ?'
+    ).bind(task_id, user.id, log_date).first<any>()
+  } catch(e: any) {
+    return c.json({ error: `일지 조회 실패: ${e.message}` }, 500)
+  }
 
   if (existing) {
     // GPS 컬럼 포함 UPDATE 시도 → 없으면 GPS 제외 fallback
+    let updateOk = false
     try {
       await c.env.DB.prepare(
         `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
@@ -58,14 +73,23 @@ app.post('/', async (c) => {
         work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
         gps_lat ?? null, gps_lon ?? null, gps_recorded_at, existing.id
       ).run()
-    } catch(_) {
-      await c.env.DB.prepare(
-        `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
-         work_description=?, issues=?, status=?,
-         updated_at=CURRENT_TIMESTAMP WHERE id=?`
-      ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
-        work_description || '', issues || '', status || 'working', existing.id
-      ).run()
+      updateOk = true
+    } catch(e1: any) {
+      console.warn('[worklogs POST update-gps] fallback:', e1.message)
+    }
+
+    if (!updateOk) {
+      try {
+        await c.env.DB.prepare(
+          `UPDATE work_logs SET start_time=?, end_time=?, actual_quantity=?, quantity_unit=?,
+           work_description=?, issues=?, status=?,
+           updated_at=CURRENT_TIMESTAMP WHERE id=?`
+        ).bind(start_time || '', end_time || '', actual_quantity || 0, quantity_unit || '개',
+          work_description || '', issues || '', status || 'working', existing.id
+        ).run()
+      } catch(e2: any) {
+        return c.json({ error: `일지 수정 실패: ${e2.message}` }, 500)
+      }
     }
 
     // work_completed → completed 전환 체크
@@ -88,25 +112,36 @@ app.post('/', async (c) => {
 
   // INSERT — GPS 컬럼 포함 시도 → 없으면 GPS 제외 fallback
   let insertId: any = null
+  let insertOk = false
   try {
     const result = await c.env.DB.prepare(
       `INSERT INTO work_logs (task_id, worker_id, log_date, start_time, end_time, actual_quantity,
        quantity_unit, work_location, work_description, issues, tomorrow_plan, status,
        gps_lat, gps_lon, gps_recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(task_id, user.id, log_date, start_time || '', end_time || '', actual_quantity || 0,
-      quantity_unit || '개', work_location || '', work_description || '', issues || '', tomorrow_plan || '', status || 'working',
+      quantity_unit || '개', work_location || '', work_description || '', issues || '',
+      tomorrow_plan || '', status || 'working',
       gps_lat ?? null, gps_lon ?? null, gps_recorded_at
     ).run()
     insertId = result.meta.last_row_id
-  } catch(_) {
+    insertOk = true
+  } catch(e1: any) {
+    console.warn('[worklogs POST insert-gps] fallback:', e1.message)
+  }
+
+  if (!insertOk) {
     // GPS/work_location/tomorrow_plan 컬럼 없는 구버전 DB fallback
-    const result = await c.env.DB.prepare(
-      `INSERT INTO work_logs (task_id, worker_id, log_date, start_time, end_time, actual_quantity,
-       quantity_unit, work_description, issues, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(task_id, user.id, log_date, start_time || '', end_time || '', actual_quantity || 0,
-      quantity_unit || '개', work_description || '', issues || '', status || 'working'
-    ).run()
-    insertId = result.meta.last_row_id
+    try {
+      const result = await c.env.DB.prepare(
+        `INSERT INTO work_logs (task_id, worker_id, log_date, start_time, end_time, actual_quantity,
+         quantity_unit, work_description, issues, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(task_id, user.id, log_date, start_time || '', end_time || '', actual_quantity || 0,
+        quantity_unit || '개', work_description || '', issues || '', status || 'working'
+      ).run()
+      insertId = result.meta.last_row_id
+    } catch(e2: any) {
+      return c.json({ error: `일지 저장 실패: ${e2.message}` }, 500)
+    }
   }
 
   // 작업 상태 전환 (work_completed → completed)

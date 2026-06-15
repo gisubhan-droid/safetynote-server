@@ -2411,6 +2411,27 @@ app.get('/api/geocode/config', async (c) => {
   return c.json({ kakao_js_api_key: jsKey })
 })
 
+// GET /api/geocode/kakaomap-sdk - 카카오맵 SDK 프록시 (브라우저 차단 우회)
+app.get('/api/geocode/kakaomap-sdk', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.text('인증 필요', 401)
+  const jsKey = getSetting('kakao_js_api_key') || ''
+  if (!jsKey) return c.text('JS API 키 미설정', 400)
+  try {
+    const sdkRes = await fetch(`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${jsKey}&autoload=false`)
+    if (!sdkRes.ok) return c.text(`카카오 SDK 응답 오류: ${sdkRes.status}`, 502)
+    const sdkText = await sdkRes.text()
+    return new Response(sdkText, {
+      headers: {
+        'Content-Type': 'application/javascript; charset=utf-8',
+        'Cache-Control': 'public, max-age=3600'
+      }
+    })
+  } catch(e: any) {
+    return c.text(`SDK 프록시 오류: ${e.message}`, 502)
+  }
+})
+
 // GET /api/geocode/reverse - 역지오코딩 프록시 (카카오 우선, 없으면 Nominatim fallback)
 app.get('/api/geocode/reverse', async (c) => {
   const user = getUser(c)

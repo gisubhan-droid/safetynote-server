@@ -2712,13 +2712,14 @@ app.post('/api/dist/apk/webhook', async (c) => {
   } catch (err: any) {
     console.error('[APK Webhook] 다운로드 오류:', err.message)
     // 다운로드 실패해도 URL은 외부 URL로 DB에 저장 (fallback)
-    const upsert = (key: string, val: string) =>
-      DB.prepare(`INSERT INTO system_settings(key,value) VALUES(?,?)
-                  ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`).run(key, val)
-    upsert('apk_url',          apkUrl)
-    upsert('apk_version',      version)
-    upsert('apk_release_note', releaseNote)
-    upsert('apk_force_update', forceUpdate)
+    // rawDb (better-sqlite3 동기) 사용 — D1 래퍼 대신 직접 저장
+    const upsertSync = (key: string, val: string) =>
+      rawDb.prepare(`INSERT INTO system_settings(key,value) VALUES(?,?)
+                     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`).run(key, val)
+    upsertSync('apk_url',          apkUrl)
+    upsertSync('apk_version',      version)
+    upsertSync('apk_release_note', releaseNote)
+    upsertSync('apk_force_update', forceUpdate)
     await loadSystemSettings(DB)
     return c.json({
       success:  true,
@@ -2729,15 +2730,16 @@ app.post('/api/dist/apk/webhook', async (c) => {
   }
 
   // 3. DB 업데이트: apk_url → /api/dist/apk/download (로컬 서빙)
+  // rawDb (better-sqlite3 동기) 사용 — D1 래퍼는 NAS에서 비동기 미반영 문제 있음
   const localUrl = '/api/dist/apk/download'
-  const upsert = (key: string, val: string) =>
-    DB.prepare(`INSERT INTO system_settings(key,value) VALUES(?,?)
-                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`).run(key, val)
+  const upsertSync = (key: string, val: string) =>
+    rawDb.prepare(`INSERT INTO system_settings(key,value) VALUES(?,?)
+                   ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`).run(key, val)
 
-  upsert('apk_url',          localUrl)
-  upsert('apk_version',      version)
-  upsert('apk_release_note', releaseNote)
-  upsert('apk_force_update', forceUpdate)
+  upsertSync('apk_url',          localUrl)
+  upsertSync('apk_version',      version)
+  upsertSync('apk_release_note', releaseNote)
+  upsertSync('apk_force_update', forceUpdate)
 
   // 4. 캐시 재로드
   await loadSystemSettings(DB)

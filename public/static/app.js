@@ -26996,27 +26996,49 @@ let _volumeStatsCache = { rows: [], extras: [], allItemKeys: [] };
 function _vsUpdatePeriodUI() {
   const mode = document.getElementById('vs-period-mode')?.value || 'month';
   document.querySelectorAll('.vs-year-sel').forEach(el => {
-    el.classList.toggle('hidden', mode === 'month' || mode === 'all');
+    el.classList.toggle('hidden', mode === 'month' || mode === 'all' || mode === 'week');
   });
   const qSel = document.getElementById('vs-period-quarter');
   if (qSel) qSel.classList.toggle('hidden', mode !== 'quarter');
   const mIn = document.getElementById('vs-period-month');
   if (mIn) mIn.classList.toggle('hidden', mode !== 'month');
+  const wIn = document.getElementById('vs-period-week');
+  if (wIn) wIn.classList.toggle('hidden', mode !== 'week');
+}
+
+// ─── 주간 날짜 범위 계산 헬퍼 ────────────────────────────────────────────────
+function _vsWeekRange(weekVal) {
+  // weekVal: "2025-W23" 형식
+  if (!weekVal) return { from: '', to: '' };
+  const [yr, wk] = weekVal.split('-W').map(Number);
+  // ISO 주차 → 월요일 계산
+  const jan4 = new Date(yr, 0, 4);
+  const dayOfWeek = jan4.getDay() || 7;
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - (dayOfWeek - 1) + (wk - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = d => d.toISOString().slice(0, 10);
+  return { from: fmt(monday), to: fmt(sunday) };
 }
 
 async function renderVolumeStatsPage(container) {
   container.innerHTML = `<div class="max-w-5xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
-    // ── 조회 조건 읽기 (광케이블 현황과 동일 방식) ──
+    // ── 조회 조건 읽기 ──
     const vsMode  = document.getElementById('vs-period-mode')?.value  || 'month';
     const vsMVal  = document.getElementById('vs-period-month')?.value || '';
+    const vsWVal  = document.getElementById('vs-period-week')?.value  || '';
     const vsQVal  = document.getElementById('vs-period-quarter')?.value || '';
     const nowYear = new Date().getFullYear();
     const vsYVal  = document.getElementById('vs-period-year')?.value  || String(nowYear);
     const vsConsVal = document.getElementById('vs-construction')?.value || '';
 
     let vsFromDate = '', vsToDate = '';
-    if (vsMode === 'month' && vsMVal) {
+    if (vsMode === 'week' && vsWVal) {
+      const wr = _vsWeekRange(vsWVal);
+      vsFromDate = wr.from; vsToDate = wr.to;
+    } else if (vsMode === 'month' && vsMVal) {
       vsFromDate = vsMVal + '-01';
       const d = new Date(vsMVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
       vsToDate = d.toISOString().slice(0,10);
@@ -27115,13 +27137,14 @@ async function renderVolumeStatsPage(container) {
           </select>
           <!-- 기간 모드 -->
           <select id="vs-period-mode" onchange="_vsUpdatePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="week"    ${savedVsMode==='week'   ?'selected':''}>주간</option>
             <option value="month"   ${savedVsMode==='month'  ?'selected':''}>월별</option>
             <option value="quarter" ${savedVsMode==='quarter'?'selected':''}>분기별</option>
             <option value="year"    ${savedVsMode==='year'   ?'selected':''}>연도별</option>
             <option value="all"     ${savedVsMode==='all'    ?'selected':''}>전체</option>
           </select>
           <!-- 연도 선택 (분기/연도 모드) -->
-          <select id="vs-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none vs-year-sel ${savedVsMode==='month'||savedVsMode==='all'?'hidden':''}">
+          <select id="vs-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none vs-year-sel ${savedVsMode==='month'||savedVsMode==='all'||savedVsMode==='week'?'hidden':''}">
             ${vsYears.map(y=>`<option value="${y}" ${savedVsYVal==y?'selected':''}>${y}년</option>`).join('')}
           </select>
           <!-- 분기 선택 -->
@@ -27130,6 +27153,8 @@ async function renderVolumeStatsPage(container) {
           </select>
           <!-- 월 선택 -->
           <input type="month" id="vs-period-month" value="${savedVsMVal}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedVsMode!=='month'?'hidden':''}">
+          <!-- 주간 선택 -->
+          <input type="week" id="vs-period-week" value="${savedVsMode==='week'?document.getElementById('vs-period-week')?.value||'':''}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedVsMode!=='week'?'hidden':''}">
           <button onclick="renderVolumeStatsPage(document.getElementById('page-content'))"
                   class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600 vs-no-print">
             <i class="fas fa-search mr-1"></i>조회
@@ -27168,11 +27193,14 @@ async function renderVolumeStatsPage(container) {
         <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
           <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-2">
             <i class="fas fa-chart-bar text-pink-400"></i> 날짜별 팀 현황
-            <span class="text-xs font-normal text-gray-400">(막대: 건수 &nbsp;/&nbsp; 선: 금액)</span>
+            <span class="text-xs font-normal text-gray-400">(분홍 막대: 건수 &nbsp;/&nbsp; 보라 막대: 금액)</span>
           </h3>
         </div>
-        <canvas id="vs-chart-main" height="160"></canvas>
+        <canvas id="vs-chart-main" height="180"></canvas>
       </div>` : ''}
+
+      <!-- 팀별 작업물량 내역 테이블 -->
+      ${rows.length > 0 ? `<div id="vs-team-detail-section"></div>` : ''}
 
       </div><!-- /vs-cable-section -->
 
@@ -27184,6 +27212,7 @@ async function renderVolumeStatsPage(container) {
             ${constructions.map(c=>`<option value="${c.id}">${c.request_no} ${c.title||''}</option>`).join('')}
           </select>
           <select id="vs-splice-period-mode" onchange="_vsSplicePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            <option value="week">주간</option>
             <option value="month">월별</option><option value="quarter">분기별</option>
             <option value="year">연도별</option><option value="all">전체</option>
           </select>
@@ -27194,6 +27223,8 @@ async function renderVolumeStatsPage(container) {
             ${[1,2,3,4].map(q=>`<option value="${q}">Q${q}</option>`).join('')}
           </select>
           <input type="month" id="vs-splice-period-month" value="${new Date().toISOString().slice(0,7)}"
+            class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none hidden">
+          <input type="week" id="vs-splice-period-week"
             class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
           <button onclick="_vsLoadSpliceStats()"
             class="bg-indigo-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-indigo-600">
@@ -27236,45 +27267,45 @@ async function renderVolumeStatsPage(container) {
       // 팀 목록 (등장 순서 기준, 정렬)
       const allTeams = [...new Set(rows.map(r => r.worker_team || '미지정'))].sort();
 
-      // 브랜드 팔레트 — 기존 차트와 동일 계열
-      const TEAM_PALETTE = [
-        '#D70072', '#685182', '#FF349E', '#A78BFA',
-        '#F97316', '#10B981', '#3B82F6', '#FBBF24',
-        '#EF4444', '#8B5CF6'
+      // 브랜드 팔레트 — 건수(분홍계열) / 금액(보라계열)
+      const TEAM_PALETTE_CNT = [
+        '#D70072', '#FF349E', '#F97316', '#EF4444',
+        '#10B981', '#3B82F6', '#FBBF24', '#8B5CF6',
+        '#06B6D4', '#EC4899'
+      ];
+      const TEAM_PALETTE_AMT = [
+        '#685182', '#A78BFA', '#7C3AED', '#4F46E5',
+        '#0F766E', '#1D4ED8', '#B45309', '#6D28D9',
+        '#0E7490', '#9D174D'
       ];
 
-      // 팀별 dataset 생성 — 건수(bar, 좌축) + 팀 합산 금액선(line, 우축)
-      // 막대: 팀별 건수 (grouped)
+      // 팀별 dataset — 건수 막대(좌축) + 금액 막대(우축) stacked grouped
       const datasetsBar = allTeams.map((team, i) => ({
         type: 'bar',
         label: team + ' (건)',
         data: chartDates.map(d => (dateTeamMap[d][team]?.count  || 0)),
-        backgroundColor: TEAM_PALETTE[i % TEAM_PALETTE.length] + 'cc',
-        borderColor:     TEAM_PALETTE[i % TEAM_PALETTE.length],
+        backgroundColor: TEAM_PALETTE_CNT[i % TEAM_PALETTE_CNT.length] + 'cc',
+        borderColor:     TEAM_PALETTE_CNT[i % TEAM_PALETTE_CNT.length],
         borderWidth: 1,
         borderRadius: 4,
         borderSkipped: false,
         yAxisID: 'yLeft',
-        order: 2
+        order: 1,
+        stack: 'count'
       }));
-      // 선: 팀별 금액 (각 팀마다 점선)
-      const datasetsLine = isWorker ? [] : allTeams.map((team, i) => ({
-        type: 'line',
+      // 금액 막대 (우측 Y축)
+      const datasetsAmt = isWorker ? [] : allTeams.map((team, i) => ({
+        type: 'bar',
         label: team + ' (원)',
         data: chartDates.map(d => (dateTeamMap[d][team]?.amount || 0)),
-        borderColor:          TEAM_PALETTE[i % TEAM_PALETTE.length],
-        backgroundColor:      TEAM_PALETTE[i % TEAM_PALETTE.length] + '22',
-        borderWidth: 2,
-        borderDash: [4, 3],
-        pointBackgroundColor: TEAM_PALETTE[i % TEAM_PALETTE.length],
-        pointBorderColor:     '#fff',
-        pointBorderWidth: 2,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        tension: 0.3,
-        fill: false,
+        backgroundColor: TEAM_PALETTE_AMT[i % TEAM_PALETTE_AMT.length] + '99',
+        borderColor:     TEAM_PALETTE_AMT[i % TEAM_PALETTE_AMT.length],
+        borderWidth: 1,
+        borderRadius: 4,
+        borderSkipped: false,
         yAxisID: 'yRight',
-        order: 1
+        order: 2,
+        stack: 'amount'
       }));
 
       // Chart.js CDN 동적 로드
@@ -27293,7 +27324,7 @@ async function renderVolumeStatsPage(container) {
       window._vsChartMain = new Chart(ctxMain, {
         data: {
           labels: chartDateLabels,
-          datasets: [...datasetsBar, ...datasetsLine]
+          datasets: [...datasetsBar, ...datasetsAmt]
         },
         options: {
           responsive: true,
@@ -27302,9 +27333,8 @@ async function renderVolumeStatsPage(container) {
             legend: {
               position: 'bottom',
               labels: {
-                font: { size: 11 }, padding: 10,
-                usePointStyle: true, pointStyle: 'circle',
-                // 금액선 legend 숨김 (isWorker 시 없으므로 항상 동작)
+                font: { size: 11 }, padding: 8,
+                usePointStyle: true, pointStyle: 'rect',
                 filter: item => !item.text.endsWith('(원)')
               }
             },
@@ -27346,16 +27376,94 @@ async function renderVolumeStatsPage(container) {
                 font: { size: 10 },
                 callback: v => v >= 10000 ? (v/10000).toLocaleString()+'만' : v.toLocaleString()
               },
-              title: { display: !isWorker, text: '금액(원)', font: { size: 10 }, color: '#9CA3AF' }
+              title: { display: !isWorker, text: '달성금액(원)', font: { size: 10 }, color: '#9CA3AF' }
             }
           }
         }
       });
 
+      // ── 팀별 작업물량 내역 테이블 렌더링 ─────────────────────────────────────
+      const teamDetailEl = document.getElementById('vs-team-detail-section');
+      if (teamDetailEl) {
+        // 팀별 집계: 신설M, 철거M, 이설M, 추가공종, 합계금액, 건수
+        const teamSummary = {};
+        rows.forEach((row, idx) => {
+          const team = row.worker_team || '미지정';
+          if (!teamSummary[team]) teamSummary[team] = { count:0, new_m:0, remove_m:0, move_m:0, extras:{}, amount:0 };
+          const ts = teamSummary[team];
+          ts.count++;
+          ts.new_m    += row.cable_new_m    || 0;
+          ts.remove_m += row.cable_remove_m || 0;
+          ts.move_m   += row.cable_move_m   || 0;
+          ts.amount   += rowAmounts[idx];
+          const exMap = extrasMap[row.report_id] || {};
+          allItemKeys.forEach(k => { ts.extras[k] = (ts.extras[k]||0) + (exMap[k]||0); });
+        });
+        const teamList = Object.keys(teamSummary).sort();
+        // 합계행
+        const totals = { count:0, new_m:0, remove_m:0, move_m:0, extras:{}, amount:0 };
+        teamList.forEach(t => {
+          totals.count   += teamSummary[t].count;
+          totals.new_m   += teamSummary[t].new_m;
+          totals.remove_m+= teamSummary[t].remove_m;
+          totals.move_m  += teamSummary[t].move_m;
+          totals.amount  += teamSummary[t].amount;
+          allItemKeys.forEach(k => { totals.extras[k] = (totals.extras[k]||0) + (teamSummary[t].extras[k]||0); });
+        });
+        const fmM = v => v > 0 ? v.toFixed(1) : '';
+        const fmA = v => v > 0 ? v.toLocaleString() : '';
+        teamDetailEl.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div class="px-4 pt-3 pb-1 text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <i class="fas fa-users text-pink-400"></i> 팀별 작업물량 내역
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs border-collapse">
+              <thead>
+                <tr class="bg-pink-50 text-gray-600">
+                  <th class="border border-gray-200 px-3 py-2 text-left sticky left-0 bg-pink-50">팀명</th>
+                  <th class="border border-gray-200 px-2 py-2 text-center">건수</th>
+                  <th class="border border-gray-200 px-2 py-2 text-right">신설(M)</th>
+                  <th class="border border-gray-200 px-2 py-2 text-right">철거(M)</th>
+                  <th class="border border-gray-200 px-2 py-2 text-right">이설(M)</th>
+                  ${allItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center">${k}</th>`).join('')}
+                  ${!isWorker ? `<th class="border border-gray-200 px-3 py-2 text-right bg-yellow-50">달성금액(원)</th>` : ''}
+                </tr>
+              </thead>
+              <tbody>
+                ${teamList.map(team => {
+                  const ts = teamSummary[team];
+                  return `<tr class="border-b border-gray-50 hover:bg-pink-50">
+                    <td class="border border-gray-200 px-3 py-1.5 font-medium text-gray-700 sticky left-0 bg-white">${team}</td>
+                    <td class="border border-gray-200 px-2 py-1.5 text-center font-semibold text-pink-600">${ts.count}</td>
+                    <td class="border border-gray-200 px-2 py-1.5 text-right">${fmM(ts.new_m)}</td>
+                    <td class="border border-gray-200 px-2 py-1.5 text-right">${fmM(ts.remove_m)}</td>
+                    <td class="border border-gray-200 px-2 py-1.5 text-right">${fmM(ts.move_m)}</td>
+                    ${allItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-1.5 text-right">${ts.extras[k]>0?ts.extras[k]:''}</td>`).join('')}
+                    ${!isWorker ? `<td class="border border-gray-200 px-3 py-1.5 text-right font-semibold text-indigo-600 bg-yellow-50">${fmA(ts.amount)}</td>` : ''}
+                  </tr>`;
+                }).join('')}
+              </tbody>
+              <tfoot>
+                <tr class="bg-gray-50 font-bold text-gray-700">
+                  <td class="border border-gray-200 px-3 py-2 sticky left-0 bg-gray-50">합계</td>
+                  <td class="border border-gray-200 px-2 py-2 text-center text-pink-600">${totals.count}</td>
+                  <td class="border border-gray-200 px-2 py-2 text-right">${fmM(totals.new_m)}</td>
+                  <td class="border border-gray-200 px-2 py-2 text-right">${fmM(totals.remove_m)}</td>
+                  <td class="border border-gray-200 px-2 py-2 text-right">${fmM(totals.move_m)}</td>
+                  ${allItemKeys.map(k=>`<td class="border border-gray-200 px-2 py-2 text-right">${totals.extras[k]>0?totals.extras[k]:''}</td>`).join('')}
+                  ${!isWorker ? `<td class="border border-gray-200 px-3 py-2 text-right text-indigo-700 bg-yellow-50">${fmA(totals.amount)}</td>` : ''}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>`;
+      }
+
       // 전환용 데이터 저장 (이후 참조용)
       window._vsChartMode       = 'both';
       window._vsChartDsCount    = datasetsBar;
-      window._vsChartDsAmount   = datasetsLine;
+      window._vsChartDsAmount   = datasetsAmt;
       window._vsChartDateLabels = chartDateLabels;
       window._vsChartDates      = chartDates;
       window._vsIsWorker        = isWorker;
@@ -27389,10 +27497,11 @@ function _vsSwitchTab(tab) {
 }
 
 function _vsSplicePeriodUI() {
-  const mode = document.getElementById('vs-splice-period-mode')?.value || 'month';
-  document.getElementById('vs-splice-period-year')?.classList.toggle('hidden', mode === 'month' || mode === 'all');
+  const mode = document.getElementById('vs-splice-period-mode')?.value || 'week';
+  document.getElementById('vs-splice-period-year')?.classList.toggle('hidden', mode === 'month' || mode === 'all' || mode === 'week');
   document.getElementById('vs-splice-period-quarter')?.classList.toggle('hidden', mode !== 'quarter');
   document.getElementById('vs-splice-period-month')?.classList.toggle('hidden', mode !== 'month');
+  document.getElementById('vs-splice-period-week')?.classList.toggle('hidden', mode !== 'week');
 }
 
 async function _vsLoadSpliceStats() {
@@ -27401,18 +27510,24 @@ async function _vsLoadSpliceStats() {
   resultEl.innerHTML = `<div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-indigo-400 text-xl"></i></div>`;
 
   try {
-    const mode = document.getElementById('vs-splice-period-mode')?.value || 'month';
+    const mode = document.getElementById('vs-splice-period-mode')?.value || 'week';
     const cons  = document.getElementById('vs-splice-construction')?.value || '';
     let from = '', to = '';
     const nowY = new Date().getFullYear();
-    if (mode === 'month') {
+    if (mode === 'week') {
+      const wv = document.getElementById('vs-splice-period-week')?.value || '';
+      if (wv) { const wr = _vsWeekRange(wv); from = wr.from; to = wr.to; }
+    } else if (mode === 'month') {
       const mv = document.getElementById('vs-splice-period-month')?.value || new Date().toISOString().slice(0,7);
-      from = mv + '-01'; to = mv + '-31';
+      from = mv + '-01';
+      const d = new Date(mv + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      to = d.toISOString().slice(0,10);
     } else if (mode === 'quarter') {
       const y = parseInt(document.getElementById('vs-splice-period-year')?.value || nowY);
       const q = parseInt(document.getElementById('vs-splice-period-quarter')?.value || 1);
       from = `${y}-${String((q-1)*3+1).padStart(2,'0')}-01`;
-      to   = `${y}-${String(q*3).padStart(2,'0')}-31`;
+      const d = new Date(`${y}-${String(q*3).padStart(2,'0')}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
+      to = d.toISOString().slice(0,10);
     } else if (mode === 'year') {
       const y = parseInt(document.getElementById('vs-splice-period-year')?.value || nowY);
       from = `${y}-01-01`; to = `${y}-12-31`;
@@ -27426,37 +27541,156 @@ async function _vsLoadSpliceStats() {
       API.get('/splice-unit-prices').catch(() => ({ data: { prices: [] } }))
     ]);
     const stats  = statsRes.data.stats   || [];
+    const rows   = statsRes.data.rows    || [];
     const prices = priceRes.data.prices  || [];
     const priceMap = {};
     prices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
+
+    const isWorker = currentUser && currentUser.role === 'worker';
+    const labelToKey = label => (label||'').replace(/ /g,'').replace(/\//g,'');
 
     if (stats.length === 0) {
       resultEl.innerHTML = `<div class="text-center text-gray-400 py-10 text-sm"><i class="fas fa-inbox text-3xl mb-2 block text-gray-300"></i>해당 기간에 데이터가 없습니다</div>`;
       return;
     }
 
-    // 공종별 집계
-    const labelMap = {}; // label → { total_qty, unit, amount }
+    // ── 공종별 집계 ──────────────────────────────────────────────────────────
+    const labelMap = {};
     stats.forEach(s => {
       if (!labelMap[s.work_label]) labelMap[s.work_label] = { qty: 0, unit: s.unit };
       labelMap[s.work_label].qty += (s.total_qty || 0);
     });
 
-    // 팀별 집계
+    // ── 팀별 집계 (공종별 수량 + 달성금액) ──────────────────────────────────
     const teamMap = {};
     stats.forEach(s => {
-      if (!teamMap[s.worker_team]) teamMap[s.worker_team] = {};
-      if (!teamMap[s.worker_team][s.work_label]) teamMap[s.worker_team][s.work_label] = 0;
-      teamMap[s.worker_team][s.work_label] += (s.total_qty || 0);
+      if (!teamMap[s.worker_team]) teamMap[s.worker_team] = { labels: {}, amount: 0 };
+      if (!teamMap[s.worker_team].labels[s.work_label]) teamMap[s.worker_team].labels[s.work_label] = 0;
+      teamMap[s.worker_team].labels[s.work_label] += (s.total_qty || 0);
+      if (!isWorker) {
+        const up = priceMap[labelToKey(s.work_label)] || 0;
+        teamMap[s.worker_team].amount += (s.total_qty || 0) * up;
+      }
     });
     const allTeams  = [...new Set(stats.map(s => s.worker_team))].sort();
     const allLabels = [...new Set(stats.map(s => s.work_label))];
 
-    const isWorker = currentUser && currentUser.role === 'worker';
+    // ── 날짜×팀 그래프 데이터 ────────────────────────────────────────────────
+    const dateTeamMapSp = {};
+    stats.forEach(s => {
+      // rows에서 work_date 찾기
+      const rowInfo = rows.find(r => r.id === s.report_id || (r.worker_team === s.worker_team));
+      // stats에 work_date가 없으면 rows에서 매핑
+    });
+    // rows 기반으로 날짜×팀 매핑
+    const rowDateMap = {};
+    rows.forEach(r => { rowDateMap[r.id] = (r.work_date||'').slice(0,10) || '미지정'; });
+    stats.forEach(s => {
+      const d = rowDateMap[s.report_id] || '미지정';
+      const t = s.worker_team || '미지정';
+      if (!dateTeamMapSp[d]) dateTeamMapSp[d] = {};
+      if (!dateTeamMapSp[d][t]) dateTeamMapSp[d][t] = { count: 0, amount: 0 };
+      dateTeamMapSp[d][t].count = 1; // 일보 단위 (중복 방지 위해 아래에서 처리)
+      if (!isWorker) {
+        const up = priceMap[labelToKey(s.work_label)] || 0;
+        dateTeamMapSp[d][t].amount += (s.total_qty || 0) * up;
+      }
+    });
+    // 건수: 날짜×팀별 report_id 고유 카운트
+    const dateTeamCountSp = {};
+    rows.forEach(r => {
+      const d = (r.work_date||'').slice(0,10) || '미지정';
+      const t = r.worker_team || '미지정';
+      if (!dateTeamCountSp[d]) dateTeamCountSp[d] = {};
+      dateTeamCountSp[d][t] = (dateTeamCountSp[d][t] || 0) + 1;
+    });
+    // amount는 dateTeamMapSp 사용, count는 dateTeamCountSp 사용
+    const chartDatesSp = [...new Set([...Object.keys(dateTeamCountSp), ...Object.keys(dateTeamMapSp)])].sort();
+    const chartDateLabelsSp = chartDatesSp.map(d => d.slice(5).replace('-', '/'));
+
+    // ── 함체작업 / 광탭 작업 완료건 요약 ────────────────────────────────────
+    const ENCLOSURE_LABELS = ['함체작업'];
+    const TAPTAP_LABELS    = ['광탭작업','광탭중간분기','광탭 중간분기','광탭결합고정','광탭 결합/고정 작업'];
+    const encQty  = ENCLOSURE_LABELS.reduce((s, l) => s + (labelMap[l]?.qty || 0), 0);
+    const tapQty  = TAPTAP_LABELS.reduce((s, l) => s + (labelMap[l]?.qty || 0), 0);
+    const totalReports = rows.length;
+    const totalAmt = isWorker ? 0 : Object.values(teamMap).reduce((s, t) => s + (t.amount||0), 0);
+
+    // ── 공종별 합계금액 총계 ─────────────────────────────────────────────────
+    const totalLabelAmt = Object.entries(labelMap).reduce((s, [label, v]) => {
+      return s + v.qty * (priceMap[labelToKey(label)] || 0);
+    }, 0);
+
+    // ── 팀별 합계행 ─────────────────────────────────────────────────────────
+    const teamTotals = { labels: {}, amount: 0 };
+    allTeams.forEach(t => {
+      allLabels.forEach(l => { teamTotals.labels[l] = (teamTotals.labels[l]||0) + (teamMap[t]?.labels[l]||0); });
+      teamTotals.amount += teamMap[t]?.amount || 0;
+    });
 
     resultEl.innerHTML = `
     <div class="space-y-4">
-      <!-- 공종별 합계 -->
+
+      <!-- ① 완료 현황 요약 카드 -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        ${[
+          { label:'완료 일보 수',   val: totalReports+'건',        icon:'fas fa-file-alt',       color:'indigo' },
+          { label:'함체작업 완료',  val: encQty > 0 ? encQty+'개소' : '-', icon:'fas fa-box',    color:'blue'   },
+          { label:'광탭 작업 완료', val: tapQty > 0 ? tapQty+'개소' : '-', icon:'fas fa-satellite-dish', color:'purple' },
+          ...(!isWorker ? [{ label:'달성금액', val: totalAmt > 0 ? Math.round(totalAmt/10000).toLocaleString()+'만원' : '-', icon:'fas fa-won-sign', color:'green' }] : [{ label:'참여팀수', val: allTeams.length+'팀', icon:'fas fa-users', color:'teal' }]),
+        ].map(c=>`
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+          <div class="flex items-center gap-2 mb-1">
+            <i class="${c.icon} text-${c.color}-400 text-sm"></i>
+            <span class="text-xs text-gray-500">${c.label}</span>
+          </div>
+          <div class="text-lg font-bold text-gray-800">${c.val}</div>
+        </div>`).join('')}
+      </div>
+
+      <!-- ② 함체작업 / 광탭작업 상세 현황표 -->
+      <div class="bg-white rounded-2xl shadow-sm border border-indigo-100 overflow-hidden">
+        <div class="px-4 pt-3 pb-1 text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <i class="fas fa-table text-indigo-400"></i> 함체작업 / 광탭작업 현황
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr class="bg-indigo-50 text-gray-600">
+                <th class="border border-gray-200 px-3 py-2 text-left">구분</th>
+                ${allTeams.map(t=>`<th class="border border-gray-200 px-3 py-2 text-center">${t||'미지정'}</th>`).join('')}
+                <th class="border border-gray-200 px-3 py-2 text-center font-bold">합계</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${[...ENCLOSURE_LABELS, ...TAPTAP_LABELS].filter(l => labelMap[l]?.qty > 0).map(label => {
+                const rowTotal = allTeams.reduce((s,t) => s+(teamMap[t]?.labels[label]||0), 0);
+                return `<tr class="border-b border-gray-50 hover:bg-indigo-50">
+                  <td class="border border-gray-200 px-3 py-1.5 font-medium text-gray-700">${label}</td>
+                  ${allTeams.map(t=>`<td class="border border-gray-200 px-3 py-1.5 text-center">${(teamMap[t]?.labels[label]||0)>0?(teamMap[t]?.labels[label]||0):''}</td>`).join('')}
+                  <td class="border border-gray-200 px-3 py-1.5 text-center font-bold text-indigo-600">${rowTotal > 0 ? rowTotal : ''}</td>
+                </tr>`;
+              }).join('')}
+              ${[...ENCLOSURE_LABELS, ...TAPTAP_LABELS].filter(l => labelMap[l]?.qty > 0).length === 0
+                ? `<tr><td colspan="${allTeams.length+2}" class="px-3 py-4 text-center text-gray-400 text-xs">함체/광탭 작업 데이터 없음</td></tr>` : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ③ 날짜별 팀 현황 차트 -->
+      ${chartDatesSp.length > 0 ? `
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <i class="fas fa-chart-bar text-indigo-400"></i> 날짜별 팀 현황
+            <span class="text-xs font-normal text-gray-400">(하늘 막대: 건수 &nbsp;/&nbsp; 보라 막대: 금액)</span>
+          </h3>
+        </div>
+        <canvas id="vs-splice-chart" height="180"></canvas>
+      </div>` : ''}
+
+      <!-- ④ 공종별 집계 -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="px-4 pt-3 pb-1 text-sm font-semibold text-gray-700 flex items-center gap-2">
           <i class="fas fa-list text-indigo-400"></i> 공종별 집계
@@ -27468,50 +27702,145 @@ async function _vsLoadSpliceStats() {
                 <th class="border border-gray-200 px-3 py-2 text-left">공종</th>
                 <th class="border border-gray-200 px-3 py-2 text-right">시공량</th>
                 <th class="border border-gray-200 px-3 py-2 text-center">단위</th>
-                ${!isWorker ? `<th class="border border-gray-200 px-3 py-2 text-right">단가</th><th class="border border-gray-200 px-3 py-2 text-right">금액(원)</th>` : ''}
+                ${!isWorker ? `<th class="border border-gray-200 px-3 py-2 text-right">단가</th><th class="border border-gray-200 px-3 py-2 text-right bg-yellow-50">금액(원)</th>` : ''}
               </tr>
             </thead>
             <tbody>
               ${Object.entries(labelMap).map(([label, v]) => {
-                const up = priceMap[label.replace(/ /g,'').replace(/\//g,'')] || 0;
+                const up = priceMap[labelToKey(label)] || 0;
                 const amt = v.qty * up;
                 return `<tr class="border-b border-gray-50 hover:bg-indigo-50">
                   <td class="border border-gray-200 px-3 py-1.5 text-gray-700">${label}</td>
                   <td class="border border-gray-200 px-3 py-1.5 text-right font-semibold">${v.qty.toLocaleString()}</td>
                   <td class="border border-gray-200 px-3 py-1.5 text-center text-gray-500">${v.unit}</td>
                   ${!isWorker ? `<td class="border border-gray-200 px-3 py-1.5 text-right text-gray-400">${up.toLocaleString()}</td>
-                                 <td class="border border-gray-200 px-3 py-1.5 text-right text-green-700 font-medium">${amt>0?amt.toLocaleString():''}</td>` : ''}
+                                 <td class="border border-gray-200 px-3 py-1.5 text-right text-green-700 font-medium bg-yellow-50">${amt>0?amt.toLocaleString():''}</td>` : ''}
                 </tr>`;
               }).join('')}
             </tbody>
+            ${!isWorker ? `<tfoot><tr class="bg-gray-50 font-bold">
+              <td class="border border-gray-200 px-3 py-2" colspan="3">합계</td>
+              <td class="border border-gray-200 px-3 py-2 text-right text-gray-400">-</td>
+              <td class="border border-gray-200 px-3 py-2 text-right text-indigo-700 bg-yellow-50">${totalLabelAmt > 0 ? totalLabelAmt.toLocaleString() : ''}</td>
+            </tr></tfoot>` : ''}
           </table>
         </div>
       </div>
-      <!-- 팀별 내역 -->
+
+      <!-- ⑤ 팀별 작업물량 내역 -->
       ${allTeams.length > 0 ? `
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="px-4 pt-3 pb-1 text-sm font-semibold text-gray-700 flex items-center gap-2">
-          <i class="fas fa-users text-indigo-400"></i> 팀별 내역
+          <i class="fas fa-users text-indigo-400"></i> 팀별 작업물량 내역
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-xs border-collapse">
             <thead>
               <tr class="bg-indigo-50 text-gray-600">
-                <th class="border border-gray-200 px-3 py-2 text-left">팀명</th>
+                <th class="border border-gray-200 px-3 py-2 text-left sticky left-0 bg-indigo-50">팀명</th>
                 ${allLabels.map(l=>`<th class="border border-gray-200 px-2 py-2 text-center">${l}</th>`).join('')}
+                ${!isWorker ? `<th class="border border-gray-200 px-3 py-2 text-right bg-yellow-50">달성금액(원)</th>` : ''}
               </tr>
             </thead>
             <tbody>
               ${allTeams.map(team => `
               <tr class="border-b border-gray-50 hover:bg-indigo-50">
-                <td class="border border-gray-200 px-3 py-1.5 font-medium text-gray-700">${team||'미지정'}</td>
-                ${allLabels.map(label => `<td class="border border-gray-200 px-2 py-1.5 text-right">${(teamMap[team]?.[label]||0)>0?(teamMap[team]?.[label]||0).toLocaleString():''}</td>`).join('')}
+                <td class="border border-gray-200 px-3 py-1.5 font-medium text-gray-700 sticky left-0 bg-white">${team||'미지정'}</td>
+                ${allLabels.map(label => `<td class="border border-gray-200 px-2 py-1.5 text-right">${(teamMap[team]?.labels[label]||0)>0?(teamMap[team]?.labels[label]||0).toLocaleString():''}</td>`).join('')}
+                ${!isWorker ? `<td class="border border-gray-200 px-3 py-1.5 text-right font-semibold text-indigo-600 bg-yellow-50">${(teamMap[team]?.amount||0)>0?(teamMap[team]?.amount||0).toLocaleString():''}</td>` : ''}
               </tr>`).join('')}
             </tbody>
+            <tfoot>
+              <tr class="bg-gray-50 font-bold text-gray-700">
+                <td class="border border-gray-200 px-3 py-2 sticky left-0 bg-gray-50">합계</td>
+                ${allLabels.map(l=>`<td class="border border-gray-200 px-2 py-2 text-right">${(teamTotals.labels[l]||0)>0?(teamTotals.labels[l]||0).toLocaleString():''}</td>`).join('')}
+                ${!isWorker ? `<td class="border border-gray-200 px-3 py-2 text-right text-indigo-700 bg-yellow-50">${teamTotals.amount>0?teamTotals.amount.toLocaleString():''}</td>` : ''}
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>` : ''}
     </div>`;
+
+    // ── 접속 탭 그래프 초기화 ────────────────────────────────────────────────
+    if (chartDatesSp.length > 0) {
+      const loadChart = () => new Promise((resolve) => {
+        if (window.Chart) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+        s.onload = resolve; document.head.appendChild(s);
+      });
+      await loadChart();
+
+      const SPLICE_PAL_CNT = ['#06B6D4','#3B82F6','#10B981','#F97316','#EF4444','#8B5CF6','#EC4899','#FBBF24','#0EA5E9','#14B8A6'];
+      const SPLICE_PAL_AMT = ['#6D28D9','#4F46E5','#0F766E','#B45309','#9D174D','#1D4ED8','#7C3AED','#D97706','#0369A1','#047857'];
+
+      const dsBars = allTeams.map((team, i) => ({
+        type: 'bar',
+        label: team + ' (건)',
+        data: chartDatesSp.map(d => dateTeamCountSp[d]?.[team] || 0),
+        backgroundColor: SPLICE_PAL_CNT[i % SPLICE_PAL_CNT.length] + 'cc',
+        borderColor:     SPLICE_PAL_CNT[i % SPLICE_PAL_CNT.length],
+        borderWidth: 1, borderRadius: 4, borderSkipped: false,
+        yAxisID: 'yLeft', order: 1, stack: 'count'
+      }));
+      const dsAmts = isWorker ? [] : allTeams.map((team, i) => ({
+        type: 'bar',
+        label: team + ' (원)',
+        data: chartDatesSp.map(d => dateTeamMapSp[d]?.[team]?.amount || 0),
+        backgroundColor: SPLICE_PAL_AMT[i % SPLICE_PAL_AMT.length] + '99',
+        borderColor:     SPLICE_PAL_AMT[i % SPLICE_PAL_AMT.length],
+        borderWidth: 1, borderRadius: 4, borderSkipped: false,
+        yAxisID: 'yRight', order: 2, stack: 'amount'
+      }));
+
+      const ctxSp = document.getElementById('vs-splice-chart');
+      if (ctxSp) {
+        if (window._vsChartSplice) window._vsChartSplice.destroy();
+        window._vsChartSplice = new Chart(ctxSp, {
+          data: { labels: chartDateLabelsSp, datasets: [...dsBars, ...dsAmts] },
+          options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: { font: { size: 11 }, padding: 8, usePointStyle: true, pointStyle: 'rect',
+                  filter: item => !item.text.endsWith('(원)') }
+              },
+              tooltip: {
+                mode: 'index', intersect: false,
+                callbacks: {
+                  title: ctx => chartDatesSp[ctx[0]?.dataIndex] || '',
+                  label: ctx => {
+                    const v = ctx.parsed.y; if (!v) return null;
+                    return ctx.dataset.yAxisID === 'yRight'
+                      ? ` ${ctx.dataset.label.replace(' (원)','')} 금액: ${v.toLocaleString()}원`
+                      : ` ${ctx.dataset.label.replace(' (건)','')} 건수: ${v}건`;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 30, color: '#9CA3AF' } },
+              yLeft: {
+                type: 'linear', position: 'left', beginAtZero: true,
+                grid: { color: '#EEF2FF' },
+                ticks: { font: { size: 10 }, stepSize: 1, callback: v => v + '건' },
+                title: { display: true, text: '건수', font: { size: 10 }, color: '#9CA3AF' }
+              },
+              yRight: {
+                type: 'linear', position: 'right', beginAtZero: true, display: !isWorker,
+                grid: { drawOnChartArea: false },
+                ticks: { font: { size: 10 }, callback: v => v >= 10000 ? (v/10000).toLocaleString()+'만' : v.toLocaleString() },
+                title: { display: !isWorker, text: '달성금액(원)', font: { size: 10 }, color: '#9CA3AF' }
+              }
+            }
+          }
+        });
+      }
+    }
+
   } catch(e) {
     resultEl.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }

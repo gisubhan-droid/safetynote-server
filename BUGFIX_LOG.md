@@ -1163,3 +1163,79 @@ cd /volume1/safetynote
 git pull origin main
 pm2 restart safetynote
 ```
+
+---
+
+## [BUG-018] 케이블 저장 버그 완전 해결 — spec REAL 타입 문제 (2026-06)
+
+### 증상
+- 케이블 정보(LOT NO, 규격, 제조사, 시작점 등) 작성 후 저장/제출 시
+  성공 메시지는 뜨지만 DB에 케이블 데이터가 저장되지 않음
+
+### 근본 원인 (BUG-017에서 미해결 부분)
+
+#### 원인 1 ★★★ — `work_report_cables.spec` 컬럼 타입이 `REAL`
+```sql
+-- 기존 DDL (잘못됨)
+spec REAL DEFAULT 0
+-- 프론트에서 '1C', '12C', '72C' 같은 문자열 전송
+-- SQLite: REAL 컬럼에 문자열 → 0.0으로 변환 (저장은 됨)
+-- 실제 영향: spec 값이 무조건 0으로 저장되어 표시 불가
+```
+
+#### 원인 2 — `proc`, `remark` 컬럼 누락
+- 기존 NAS DB: `work_report_cables`에 `proc`, `remark` 컬럼 없음
+- safeAlter로 추가 코드는 있었으나 **NAS pm2 restart 전** 상태라면 미적용
+- INSERT 시 없는 컬럼에 바인딩 → `table work_report_cables has no column named proc` 에러
+- 에러는 try-catch로 무시되어 성공 응답이 반환됨 → "저장됐는데 안 보임" 현상
+
+#### 원인 3 — 테이블 재생성 없이는 `spec REAL → TEXT` 변환 불가
+- SQLite는 `ALTER TABLE ... MODIFY COLUMN` 지원 안 함
+- 기존 NAS DB에서 `spec REAL`을 `TEXT`로 바꾸려면 테이블 재생성 필요
+
+### 수정 내용
+
+#### `node-server.ts` — patchSchema 테이블 재생성 로직
+1. **DDL 수정**: `CREATE TABLE IF NOT EXISTS work_report_cables` — `spec REAL` → `spec TEXT`, `proc/remark` 컬럼 기본 포함
+2. **테이블 재생성**: patchSchema 실행 시 DDL에 `spec REAL` 또는 `proc` 누락 감지하면 자동 재생성
+   - 기존 데이터 보존 (`INSERT INTO ... SELECT ... CAST(spec AS TEXT)`)
+   - 트랜잭션으로 안전하게 처리
+3. **INSERT 안정화**:
+   - `specVal = cb.spec != null ? String(cb.spec) : ''` — 타입 명확화
+   - `sp = String(cb.start_point)`, `ep = String(cb.end_point)` — TEXT 컬럼에 맞게
+   - hasData 조건 간결화
+
+### 수정 파일
+| 파일 | 수정 내용 |
+|------|-----------|
+| `node-server.ts` | `work_report_cables` DDL에 `spec TEXT` + `proc/remark` 추가; patchSchema에 테이블 재생성 로직; INSERT specVal TEXT 처리 |
+
+### 롤백 정보
+- **안전 커밋**: `00f80c4` (BUG-017)
+- **롤백 태그**: `rollback/pre-bugfix-018`
+- **롤백 명령**:
+  ```bash
+  git push origin 00f80c4:main --force
+  # NAS:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  ```
+
+### ⚠️ NAS 반영 명령 (필수 — pm2 restart로 patchSchema 자동 실행)
+```bash
+cd /volume1/safetynote
+git pull origin main
+pm2 restart safetynote
+# 확인: 로그에 "[patchSchema] work_report_cables 재생성 완료" 표시 확인
+tail -20 /root/.pm2/logs/safetynote-out.log | grep -i "patchSchema\|cables"
+```
+
+### ⚠️ patchSchema 실행 확인 방법
+```bash
+# NAS에서 직접 DB 컬럼 확인
+node -e "
+const db = require('better-sqlite3')('/volume1/safetynote/data/safety.db');
+console.log(db.prepare(\"SELECT sql FROM sqlite_master WHERE name='work_report_cables'\").get());
+db.close();
+"
+# spec TEXT, proc TEXT, remark TEXT 가 포함되어야 정상
+```

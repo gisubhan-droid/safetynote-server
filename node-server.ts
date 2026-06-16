@@ -1255,7 +1255,7 @@ function patchSchema() {
         report_id    INTEGER NOT NULL,
         cable_order  INTEGER DEFAULT 0,
         lot_no       TEXT DEFAULT '',
-        spec         REAL DEFAULT 0,
+        spec         TEXT DEFAULT '',
         maker        TEXT DEFAULT '',
         mfg_year     TEXT DEFAULT '',
         cable_type   TEXT DEFAULT '',
@@ -1266,6 +1266,8 @@ function patchSchema() {
         cable_kind   TEXT DEFAULT '',
         cable_code   TEXT DEFAULT '',
         special_note TEXT DEFAULT '',
+        proc         TEXT DEFAULT '',
+        remark       TEXT DEFAULT '',
         FOREIGN KEY (report_id) REFERENCES work_reports(id) ON DELETE CASCADE
       )
     `)
@@ -1331,10 +1333,59 @@ function patchSchema() {
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_lines       ON work_report_lines(report_id)`)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_cables      ON work_report_cables(report_id)`)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_other       ON work_report_other(report_id)`)
-    // work_report_cables에 proc 컬럼 추가 (공정구분)
+    // ── BUG-018: work_report_cables spec 컬럼 타입 수정 + proc/remark 보증 ──────
+    // spec 컬럼이 REAL이면 '1C','12C' 같은 문자열이 0으로 저장됨 → TEXT로 재생성
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN proc TEXT DEFAULT ''`)
-    // work_report_cables에 remark 컬럼 추가 (특이사항)
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN remark TEXT DEFAULT ''`)
+    // spec 컬럼 타입 확인 후 REAL이면 테이블 재생성 (데이터 보존)
+    try {
+      const cablesDDL = (rawDb.prepare(`SELECT sql FROM sqlite_master WHERE name='work_report_cables'`).get() as any)?.sql || ''
+      if (cablesDDL.includes('spec') && (cablesDDL.match(/spec\s+REAL/i) || !cablesDDL.match(/proc\s+TEXT/i))) {
+        console.log('[patchSchema] work_report_cables 재생성 시작 (spec REAL→TEXT, proc/remark 추가)')
+        rawDb.exec(`
+          BEGIN;
+          CREATE TABLE IF NOT EXISTS work_report_cables_new (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id    INTEGER NOT NULL,
+            cable_order  INTEGER DEFAULT 0,
+            lot_no       TEXT DEFAULT '',
+            spec         TEXT DEFAULT '',
+            maker        TEXT DEFAULT '',
+            mfg_year     TEXT DEFAULT '',
+            cable_type   TEXT DEFAULT '',
+            work_div     TEXT DEFAULT '',
+            start_point  TEXT DEFAULT '',
+            end_point    TEXT DEFAULT '',
+            usage_m      REAL DEFAULT 0,
+            cable_kind   TEXT DEFAULT '',
+            cable_code   TEXT DEFAULT '',
+            special_note TEXT DEFAULT '',
+            proc         TEXT DEFAULT '',
+            remark       TEXT DEFAULT ''
+          );
+          INSERT INTO work_report_cables_new
+            (id,report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,
+             start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark)
+          SELECT
+            id,report_id,cable_order,lot_no,
+            CAST(spec AS TEXT),
+            maker,mfg_year,
+            COALESCE(cable_type,''), COALESCE(work_div,''),
+            COALESCE(start_point,''), COALESCE(end_point,''),
+            COALESCE(usage_m,0),
+            COALESCE(cable_kind,''), COALESCE(cable_code,''), COALESCE(special_note,''),
+            COALESCE(proc,''), COALESCE(remark,'')
+          FROM work_report_cables;
+          DROP TABLE work_report_cables;
+          ALTER TABLE work_report_cables_new RENAME TO work_report_cables;
+          COMMIT;
+        `)
+        rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_cables ON work_report_cables(report_id)`)
+        console.log('[patchSchema] work_report_cables 재생성 완료 (spec TEXT)')
+      }
+    } catch(rebuildErr: any) {
+      console.error('[patchSchema] work_report_cables 재생성 실패 (무시):', rebuildErr.message)
+    }
     // ── BUG-016: work_report_lines 컬럼 누락 보정 (구버전 NAS DB 호환) ──────
     // CREATE TABLE IF NOT EXISTS는 기존 테이블에 컬럼을 추가하지 않으므로
     // 초기 DB에 없는 컬럼들을 safeAlter로 보정
@@ -1356,7 +1407,7 @@ function patchSchema() {
     safeAlter(`ALTER TABLE work_report_lines ADD COLUMN grounding    TEXT DEFAULT ''`)
     safeAlter(`ALTER TABLE work_report_lines ADD COLUMN other_work   TEXT DEFAULT ''`)
     safeAlter(`ALTER TABLE work_report_lines ADD COLUMN remark       TEXT DEFAULT ''`)
-    // work_report_cables 추가 컬럼 보정
+    // work_report_cables 추가 컬럼 보정 (재생성 실패 fallback용)
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN cable_type  TEXT DEFAULT ''`)
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN work_div    TEXT DEFAULT ''`)
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN cable_code  TEXT DEFAULT ''`)
@@ -3624,34 +3675,48 @@ app.post('/api/work-reports', async (c) => {
       reportId = ins.lastInsertRowid as number
     }
 
-    // [BUG-017] 수신 데이터 로그 (cables 개수 확인용)
-    console.log(`[work-reports POST] body.cables=${JSON.stringify(body.cables?.length)}, cable_sets=${body.cable_sets?.length}`)
+    // [BUG-018] 수신 데이터 로그
+    console.log(`[work-reports POST] reportId=${reportId}, cables=${body.cables?.length}, cable_sets=${body.cable_sets?.length}`)
 
     // 케이블 데이터 저장 — 빈 행 제외 후 INSERT
     if (Array.isArray(body.cables)) {
       try {
         rawDb.prepare(`DELETE FROM work_report_cables WHERE report_id=?`).run(reportId)
-        const cableStmt = rawDb.prepare(`INSERT INTO work_report_cables (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        // proc/remark 포함 16컬럼 INSERT
+        const cableStmt = rawDb.prepare(`
+          INSERT INTO work_report_cables
+            (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,
+             start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
         let cableOrder = 0
         for (let i = 0; i < body.cables.length; i++) {
           const cb = body.cables[i]
-          // BUG-017: start_point/end_point=0 도 유효한 값이므로 null 체크로 변경
-          // 모든 식별 필드가 비어있는 행은 건너뜀 (빈 기본행 저장 방지)
-          const hasData = (cb.lot_no||cb.maker||cb.cable_kind||cb.proc||cb.remark) ||
-                          (cb.spec && cb.spec !== '') ||
-                          (cb.usage_m != null && cb.usage_m !== 0) ||
-                          (cb.start_point != null) ||
-                          (cb.end_point != null)
+          // 빈 기본행 필터링: 식별 가능한 값이 하나라도 있어야 저장
+          const hasData = !!(cb.lot_no || cb.maker || cb.cable_kind || cb.proc || cb.remark || cb.spec ||
+                             (cb.usage_m && cb.usage_m !== 0) ||
+                             cb.start_point != null || cb.end_point != null)
           if (!hasData) continue
           try {
-            // start_point/end_point: null이면 '' 저장, 숫자면 숫자로 저장 (0 포함)
-            const sp = cb.start_point != null ? cb.start_point : ''
-            const ep = cb.end_point   != null ? cb.end_point   : ''
-            cableStmt.run(reportId,cableOrder++,cb.lot_no||'',cb.spec||'',cb.maker||'',cb.mfg_year||'','','' ,sp,ep,cb.usage_m||0,cb.cable_kind||'','','',cb.proc||'',cb.remark||'')
-          } catch(rowErr: any) { console.error('[work-reports POST] cable row 저장 실패:', rowErr.message, JSON.stringify(cb)) }
+            const sp = cb.start_point != null ? String(cb.start_point) : ''
+            const ep = cb.end_point   != null ? String(cb.end_point)   : ''
+            const specVal = cb.spec != null ? String(cb.spec) : ''  // spec → TEXT (BUG-018)
+            cableStmt.run(
+              reportId, cableOrder++,
+              cb.lot_no||'', specVal, cb.maker||'', cb.mfg_year||'',
+              '', '',  // cable_type, work_div (UI없음)
+              sp, ep,
+              cb.usage_m||0,
+              cb.cable_kind||'', '', '',  // cable_kind, cable_code, special_note
+              cb.proc||'', cb.remark||''
+            )
+          } catch(rowErr: any) {
+            console.error('[work-reports POST] cable row 저장 실패:', rowErr.message, JSON.stringify(cb))
+          }
         }
-        console.log(`[work-reports POST] cables 저장 완료: reportId=${reportId}, 저장행수=${cableOrder}/${body.cables.length}`)
-      } catch(cableErr: any) { console.error('[work-reports POST] cables 저장 실패:', cableErr.message) }
+        console.log(`[work-reports POST] cables 저장 완료: reportId=${reportId}, 저장=${cableOrder}/${body.cables.length}`)
+      } catch(cableErr: any) {
+        console.error('[work-reports POST] cables 저장 실패:', cableErr.message)
+      }
     }
 
     // cable_sets의 extras(추가입력) 저장 (오류 무시)

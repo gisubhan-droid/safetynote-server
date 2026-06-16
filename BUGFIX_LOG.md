@@ -197,7 +197,8 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `79c414b` | 현장위치 지도 탭별 작업 상태 구분 표시 (BUG-008) |
 | `cd23c6d` | 진행탭 마커 미표시 수정 + KST 시간 표시 (BUG-009) |
 | `048bdf2` | work_logs GPS fallback 추가 (FEAT-010) |
-| *(다음커밋)* | 진행/완료탭 tasks API 기반 전면 재작성 (FEAT-011) |
+| `bc8b047` | 진행/완료탭 tasks API 기반 전면 재작성 (FEAT-011) |
+| *(다음커밋)* | GPS 없을 때 상태변경 시각 displayDate fallback (FEAT-012) |
 
 ---
 
@@ -680,6 +681,73 @@ NAS DB 직접 조회로 확인한 결과: **`tbm_records` 테이블에 해당 `w
 - **롤백 명령**:
   ```bash
   git push origin 048bdf2:main --force
+  # NAS:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  ```
+
+---
+
+## [FEAT-012] GPS 없을 때 상태변경 시각을 displayDate로 표시 (2026-06)
+
+### 배경 / 근본 원인
+FEAT-011에서 GPS 좌표가 없는 작업은 마커를 skip 처리하는데,
+GPS가 있어도 `tbmG.date`(TBM 날짜)가 날짜만(`YYYY-MM-DD`) 기록된 경우 시각 정보가 없었음.
+→ 팝업의 날짜/하단 리스트의 날짜가 공백(`-`)으로 표시됨
+
+### 핵심 문제
+| 경우 | 기존 처리 | 증상 |
+|------|----------|------|
+| TBM GPS 있음, tbm_date가 날짜만 | `_toKSTDateTime(tbmG.date)` | 시각 없이 날짜만 표시 |
+| work_logs GPS 있음, gps_recorded_at 없음 | `wlG.date \|\| task.planned_date \|\| task.created_at` | 예정일/등록일(잘못된 기준) 표시 |
+| GPS 완전 없음 | `continue`(skip) → displayDate 미설정 | 시각 정보 전혀 없음 |
+
+### 해결 — `public/static/app.js` `loadSiteMapMarkers()` displayDate 계산 수정
+
+**진행탭 (`filter === 'working'`):**
+```javascript
+// 상태변경 시각 fallback
+const statusTime = task.work_started_at || task.updated_at || '';
+
+if (tbmG) {
+  displayDate = _toKSTDateTime(tbmG.date || statusTime);   // tbm_date 없으면 work_started_at
+} else if (wlG) {
+  displayDate = _toKSTDateTime(wlG.date || statusTime);    // gps_recorded_at 없으면 work_started_at
+} else {
+  displayDate = _toKSTDateTime(statusTime);                // GPS 없음 → work_started_at (마커 skip)
+}
+```
+
+**완료탭 (`filter === 'completed'`):**
+```javascript
+// 상태변경 시각 fallback
+const statusTime = task.work_completed_at || task.updated_at || '';
+
+if (tbmG) {
+  displayDate = _toKSTDateTime(tbmG.date || statusTime);   // tbm_date 없으면 work_completed_at
+} else if (wlG) {
+  displayDate = _toKSTDateTime(wlG.date || statusTime);    // gps_recorded_at 없으면 work_completed_at
+} else {
+  displayDate = _toKSTDateTime(statusTime);                // GPS 없음 → work_completed_at (마커 skip)
+}
+```
+
+### 상태변경 시각 컬럼 근거 (`src/routes/tasks.ts`)
+```sql
+-- working 전환 시 (최초 1회)
+UPDATE tasks SET status=?, work_started_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+-- work_completed 전환 시
+UPDATE tasks SET status=?, work_completed_at=?, work_log_required=1, updated_at=CURRENT_TIMESTAMP WHERE id=?
+-- completed 전환 시
+UPDATE tasks SET status=?, work_log_required=0, updated_at=CURRENT_TIMESTAMP WHERE id=?
+```
+→ `/api/tasks` GET 응답에 `t.*`로 모든 컬럼 포함 확인됨
+
+### 롤백 정보
+- **안전 커밋**: `bc8b047` (FEAT-011)
+- **롤백 태그**: `rollback/pre-feat-011`
+- **롤백 명령**:
+  ```bash
+  git push origin bc8b047:main --force
   # NAS:
   cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
   ```

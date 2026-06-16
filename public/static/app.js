@@ -29795,16 +29795,22 @@ async function loadSiteMapMarkers(map) {
           const tbmG = tbmGpsCache[task.id];
           const wlG  = wlGpsCache[task.id];
 
+          // 상태변경 시각 fallback (GPS 날짜 없을 때 또는 GPS 자체 없을 때)
+          const statusTime = task.work_started_at || task.updated_at || '';
+
           if (tbmG) {
             lat = tbmG.lat; lon = tbmG.lon;
             addr = tbmG.addr || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-            displayDate = _toKSTDateTime(tbmG.date);
+            displayDate = _toKSTDateTime(tbmG.date || statusTime);
             gpsSource = 'tbm';
           } else if (wlG) {
             lat = wlG.lat; lon = wlG.lon;
             addr = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-            displayDate = _toKSTDateTime(wlG.date || task.planned_date || task.created_at || '');
+            displayDate = _toKSTDateTime(wlG.date || statusTime);
             gpsSource = 'worklog';
+          } else {
+            // GPS 기록 없음 — 마커는 skip하지만 displayDate는 상태변경 시각으로 설정
+            displayDate = _toKSTDateTime(statusTime);
           }
 
           if (!lat || !lon || isNaN(lat) || isNaN(lon)) continue;
@@ -29901,16 +29907,22 @@ async function loadSiteMapMarkers(map) {
           const tbmG = tbmGpsCache[task.id];
           const wlG  = wlGpsCache[task.id];
 
+          // 상태변경 시각 fallback (GPS 날짜 없을 때 또는 GPS 자체 없을 때)
+          const statusTime = task.work_completed_at || task.updated_at || '';
+
           if (tbmG) {
             lat = tbmG.lat; lon = tbmG.lon;
             addr = tbmG.addr || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-            displayDate = _toKSTDateTime(tbmG.date);
+            displayDate = _toKSTDateTime(tbmG.date || statusTime);
             gpsSource = 'tbm';
           } else if (wlG) {
             lat = wlG.lat; lon = wlG.lon;
             addr = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-            displayDate = _toKSTDateTime(wlG.date || task.planned_date || task.created_at || '');
+            displayDate = _toKSTDateTime(wlG.date || statusTime);
             gpsSource = 'worklog';
+          } else {
+            // GPS 기록 없음 — 마커는 skip하지만 displayDate는 상태변경 시각으로 설정
+            displayDate = _toKSTDateTime(statusTime);
           }
 
           if (!lat || !lon || isNaN(lat) || isNaN(lon)) continue;

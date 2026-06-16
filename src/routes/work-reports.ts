@@ -140,14 +140,15 @@ app.post('/', async (c) => {
           await db.prepare(`
             INSERT INTO work_report_cables
               (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,
-               start_point,end_point,usage_m,cable_kind,cable_code,special_note)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
           `).bind(
             reportId, i,
             cb.lot_no||'', cb.spec||0, cb.maker||'', cb.mfg_year||'',
             cb.cable_type||'', cb.work_div||'',
             cb.start_point||'', cb.end_point||'', cb.usage_m||0,
-            cb.cable_kind||'', cb.cable_code||'', cb.special_note||''
+            cb.cable_kind||'', cb.cable_code||'', cb.special_note||'',
+            cb.proc||'', cb.remark||''
           ).run()
         }
       } catch (cableErr: any) {

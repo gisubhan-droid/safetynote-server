@@ -199,7 +199,8 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `048bdf2` | work_logs GPS fallback 추가 (FEAT-010) |
 | `bc8b047` | 진행/완료탭 tasks API 기반 전면 재작성 (FEAT-011) |
 | `fe8991e` | GPS 없을 때 상태변경 시각 displayDate fallback (FEAT-012) |
-| *(다음커밋)* | 내작업 탭 클릭 이동 수정 + 작업일보 500 에러 수정 (BUG-013/014) |
+| `63d0c8c` | 내작업 탭 클릭 이동 수정 + 작업일보 500 에러 수정 (BUG-013/014) |
+| *(다음커밋)* | 외선 작업일보 작성내역 미저장 수정 (BUG-015) |
 
 ---
 
@@ -821,3 +822,99 @@ try {
   # NAS:
   cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
   ```
+
+---
+
+## [BUG-015] 외선 작업일보 작성 내용 미저장 — lines 항상 빈 배열 (2026-06)
+
+### 증상
+- 외선 작업일보 화면에서 내용 작성 후 "임시저장" / "제출" 실행 시
+  작성된 내용(작업내역 섹션)이 DB에 저장되지 않음
+- 500 에러가 아님 — `{ ok: true }` 응답 반환되지만 `work_report_lines` 테이블에 데이터 없음
+
+### 근본 원인 (4가지)
+
+#### 원인 1 — `mkCableSetHTML`에 `line-tbody` 섹션 자체 누락
+```javascript
+// mkCableSetHTML(n, cableData, lineData)
+// lnRows를 파라미터로 받지만 HTML 템플릿에 line-tbody가 없었음
+// 케이블 세트 = cable-tbody + extra-tbody 만 존재
+// → _collectWrData()에서 getElementById(`cs1-line-tbody`) → null
+// → lines 배열 항상 빈 배열 → DB에 라인 데이터 미저장
+```
+
+#### 원인 2 — `_wrAddCableSet()` 동적 추가 함수에도 line-tbody 누락
+- `lineRows3` HTML 변수를 선언하지만 `div.innerHTML`에 포함하지 않음
+
+#### 원인 3 — `_wrRenumberSets()` tbody 인덱스 오매핑
+```javascript
+// 수정 전 (잘못됨) — line-tbody 없어서 tbodies[1] = extra-tbody
+if (tbodies[1]) tbodies[1].id = `${sid}-line-tbody`;   // ❌ 실제로 extra-tbody
+if (tbodies[2]) tbodies[2].id = `${sid}-extra-tbody`;  // ❌ undefined
+```
+
+#### 원인 4 — 프론트 수집 필드 vs DB 컬럼 완전 불일치
+| 기존 프론트 필드 | DB work_report_lines 컬럼 |
+|----------------|--------------------------|
+| maker, od, id_val, purpose, start_point, end_point, usage_length, optical_city, base_no, mat_qty | mgmt_zone, mgmt_no, line_name, line_no, digital_no, section_dist, pole_count, ip_pole, grounding, remark |
+
+### 수정 내용
+
+#### 1. `mkCableSetHTML` — `${sid}-line-tbody` 섹션 추가 (DB 컬럼 기준 UI)
+- 작업내역 섹션: `구분, 관리구간, 관리번호, 선로명, 선번, 디지털번호, 구간거리(M), 전주수, IP전주, 접지, 비고`
+- `lnRows` 데이터로 초기값 복원 가능
+
+#### 2. `_wrAddCableSet()` — `div.innerHTML`에 line-tbody 섹션 추가
+- `lineRows3`(DB 컬럼 기준) 활용, 케이블 세트 추가 시 작업내역 섹션도 같이 생성
+
+#### 3. `_wrAddLineRow()` — DB 컬럼 기준으로 재작성
+- 클래스명: `wrl-work-div, wrl-mgmt-zone, wrl-mgmt-no, wrl-line-name, wrl-line-no, wrl-digital-no, wrl-section-dist, wrl-pole-count, wrl-ip-pole, wrl-grounding, wrl-remark`
+
+#### 4. `_wrRenumberSets()` — tbody 인덱스 재조정 + 버튼 셀렉터 개선
+```javascript
+// 수정 후 — 3개 tbody 순서: cable(0), line(1), extra(2)
+if (tbodies[0]) tbodies[0].id = `${sid}-cable-tbody`;  // ✅
+if (tbodies[1]) tbodies[1].id = `${sid}-line-tbody`;   // ✅
+if (tbodies[2]) tbodies[2].id = `${sid}-extra-tbody`;  // ✅
+// 버튼 onclick 속성으로 찾음 (인덱스 대신)
+const cBtn = Array.from(allBtns).find(b => b.getAttribute('onclick')?.includes('_wrAddCableRow'));
+const lBtn = Array.from(allBtns).find(b => b.getAttribute('onclick')?.includes('_wrAddLineRow'));
+```
+
+#### 5. `_collectWrData()` — lines 수집 필드를 DB 컬럼명 기준으로 수정
+```javascript
+lines.push({
+  work_div, mgmt_zone, mgmt_no, line_name, line_no, digital_no,
+  section_dist, pole_count, ip_pole, grounding, remark
+});
+```
+
+#### 6. `src/routes/work-reports.ts` — cables INSERT에 `proc`, `remark` 추가 (D1용)
+- `work_report_cables` 테이블에 컬럼 있었으나 D1 INSERT 바인딩에서 누락됨
+- `node-server.ts`는 이미 포함 (정상)
+
+### 수정 파일
+- `public/static/app.js`: `mkCableSetHTML`, `_wrAddCableSet`, `_wrAddLineRow`, `_wrRenumberSets`, `_collectWrData`
+- `src/routes/work-reports.ts`: `POST /` cables INSERT — `proc`, `remark` 추가
+
+### DOM 구조 (수정 후)
+```
+.wr-cable-set[data-set="N"]
+  ├─ .border-blue-100   — 케이블 정보 섹션 → tbody#csN-cable-tbody
+  ├─ .border-green-100  — 작업내역 섹션   → tbody#csN-line-tbody  ← NEW
+  └─ .border-orange-100 — 추가입력 섹션   → tbody#csN-extra-tbody
+```
+
+### 롤백 정보
+- **안전 커밋**: `63d0c8c` (BUG-013/014)
+- **롤백 태그**: `rollback/pre-bugfix-015`
+- **롤백 명령**:
+  ```bash
+  git push origin 63d0c8c:main --force
+  # NAS:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  ```
+
+### ⚠️ 주의사항
+- `work_report_lines` DB 컬럼 중 `bind_wire, hanger, hardware, cabinet, name_tag, warning_sign, other_work`는 현재 UI에서 미입력 → 서버 INSERT 시 빈 값으로 저장
+- 기존에 저장된 lines 데이터(구버전 필드 기준)는 새 UI에서 빈 값으로 표시됨 (재입력 필요)

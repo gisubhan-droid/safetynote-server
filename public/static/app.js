@@ -26590,6 +26590,56 @@ async function renderWorkReportForm(container, taskId) {
             </table>
           </div>
         </div>
+        <!-- N번 작업내역 (선로 내역) -->
+        <div class="bg-white rounded-2xl shadow-sm border border-green-100">
+          <div class="flex items-center justify-between px-4 pt-3 pb-2">
+            <span class="font-semibold text-gray-700 text-sm">
+              <i class="fas fa-list-alt text-green-500 mr-1"></i>
+              작업내역 <span class="wr-set-line-title text-gray-400 font-normal">${n}번</span>
+            </span>
+            <button onclick="_wrAddLineRow('${sid}-line-tbody')" class="text-xs bg-green-50 text-green-600 border border-green-200 rounded-lg px-3 py-1 hover:bg-green-100">
+              <i class="fas fa-plus mr-1"></i>행 추가
+            </button>
+          </div>
+          <div class="overflow-x-auto pb-2">
+            <table class="w-full text-xs border-collapse" style="min-width:900px">
+              <thead>
+                <tr class="bg-green-50 text-gray-600 text-center">
+                  <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-16">구분</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-20">관리구간</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-20">관리번호</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-24">선로명</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-20">선번</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-20">디지털번호</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-18">구간거리(M)</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-14">전주수</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-16">IP전주</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-14">접지</th>
+                  <th class="border border-gray-200 px-1 py-1.5">비고</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
+                </tr>
+              </thead>
+              <tbody id="${sid}-line-tbody">
+                ${lnRows.map((ln,i) => `<tr class="hover:bg-gray-50">
+                  <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
+                  <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-work-div"><option value="">선택</option><option value="신설" ${ln.work_div==='신설'?'selected':''}>신설</option><option value="철거" ${ln.work_div==='철거'?'selected':''}>철거</option><option value="이설" ${ln.work_div==='이설'?'selected':''}>이설</option></select></td>
+                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-zone" value="${ln.mgmt_zone||''}" placeholder="관리구간"></td>
+                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-no" value="${ln.mgmt_no||''}" placeholder="관리번호"></td>
+                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-name" value="${ln.line_name||''}" placeholder="선로명"></td>
+                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-no" value="${ln.line_no||''}" placeholder="선번"></td>
+                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-digital-no" value="${ln.digital_no||''}" placeholder="디지털번호"></td>
+                  <td class="border border-gray-200 p-0.5"><input type="number" step="0.1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-section-dist" value="${ln.section_dist||''}" placeholder="0"></td>
+                  <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-pole-count" value="${ln.pole_count||''}" placeholder="0"></td>
+                  <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-ip-pole"><option value="">-</option><option value="신설" ${ln.ip_pole==='신설'?'selected':''}>신설</option><option value="철거" ${ln.ip_pole==='철거'?'selected':''}>철거</option><option value="해당없음" ${ln.ip_pole==='해당없음'?'selected':''}>해당없음</option></select></td>
+                  <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-grounding"><option value="">-</option><option value="A" ${ln.grounding==='A'?'selected':''}>A형</option><option value="B" ${ln.grounding==='B'?'selected':''}>B형</option><option value="해당없음" ${ln.grounding==='해당없음'?'selected':''}>해당없음</option></select></td>
+                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-remark" value="${ln.remark||''}" placeholder="비고"></td>
+                  <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
         <!-- N번 추가입력 (공종별 작업량) -->
         <div class="bg-white rounded-2xl shadow-sm border border-orange-100">
           <div class="flex items-center px-4 pt-3 pb-2">
@@ -26780,22 +26830,22 @@ function _wrAddCableSet() {
       <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
     </tr>`;
   }
-  // 작업내역 3행 기본 생성
+  // 작업내역 3행 기본 생성 (DB 컬럼 기준)
   let lineRows3 = '';
   for (let r = 0; r < 3; r++) {
     lineRows3 += `<tr class="hover:bg-gray-50">
       <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${r+1}</td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-div">${DIV_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-maker">${MAKER_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-od">${OD_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-id">${ID_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-purpose">${PURPOSE_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-start-point" placeholder="시작(M)" oninput="_calcLineUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-end-point" placeholder="종료(M)" oninput="_calcLineUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-usage-length bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-center wrl-optical-city" placeholder="광도시(S)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-base-no" placeholder="기초번호"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-mat-qty" placeholder="0"></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-work-div"><option value="">선택</option><option value="신설">신설</option><option value="철거">철거</option><option value="이설">이설</option></select></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-zone" placeholder="관리구간"></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-no" placeholder="관리번호"></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-name" placeholder="선로명"></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-no" placeholder="선번"></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-digital-no" placeholder="디지털번호"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="0.1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-section-dist" placeholder="0"></td>
+      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-pole-count" placeholder="0"></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-ip-pole"><option value="">-</option><option value="신설">신설</option><option value="철거">철거</option><option value="해당없음">해당없음</option></select></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-grounding"><option value="">-</option><option value="A">A형</option><option value="B">B형</option><option value="해당없음">해당없음</option></select></td>
+      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-remark" placeholder="비고"></td>
       <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
     </tr>`;
   }
@@ -26833,6 +26883,40 @@ function _wrAddCableSet() {
             </tr>
           </thead>
           <tbody id="${sid}-cable-tbody">${cableRows3}</tbody>
+        </table>
+      </div>
+    </div>
+    <!-- ${n}번 작업내역 (선로 내역) -->
+    <div class="bg-white rounded-2xl shadow-sm border border-green-100">
+      <div class="flex items-center justify-between px-4 pt-3 pb-2">
+        <span class="font-semibold text-gray-700 text-sm">
+          <i class="fas fa-list-alt text-green-500 mr-1"></i>
+          작업내역 <span class="wr-set-line-title text-gray-400 font-normal">${n}번</span>
+        </span>
+        <button onclick="_wrAddLineRow('${sid}-line-tbody')" class="text-xs bg-green-50 text-green-600 border border-green-200 rounded-lg px-3 py-1 hover:bg-green-100">
+          <i class="fas fa-plus mr-1"></i>행 추가
+        </button>
+      </div>
+      <div class="overflow-x-auto pb-2">
+        <table class="w-full text-xs border-collapse" style="min-width:900px">
+          <thead>
+            <tr class="bg-green-50 text-gray-600 text-center">
+              <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-16">구분</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-20">관리구간</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-20">관리번호</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-24">선로명</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-20">선번</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-20">디지털번호</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-18">구간거리(M)</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-14">전주수</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-16">IP전주</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-14">접지</th>
+              <th class="border border-gray-200 px-1 py-1.5">비고</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
+            </tr>
+          </thead>
+          <tbody id="${sid}-line-tbody">${lineRows3}</tbody>
         </table>
       </div>
     </div>
@@ -26887,15 +26971,18 @@ function _wrRenumberSets() {
     if (ct) ct.textContent = `${n}번`;
     if (lt) lt.textContent = `${n}번`;
     if (et) et.textContent = `${n}번`;
-    // tbody id 재설정
+    // tbody id 재설정 — 케이블(0), 작업내역(1), 추가입력(2) 순서
     const sid = `cs${n}`;
     const tbodies = el.querySelectorAll('tbody');
     if (tbodies[0]) tbodies[0].id = `${sid}-cable-tbody`;
     if (tbodies[1]) tbodies[1].id = `${sid}-line-tbody`;
     if (tbodies[2]) tbodies[2].id = `${sid}-extra-tbody`;
-    // + 추가 버튼 onclick 갱신
-    const cBtn = el.querySelectorAll('button')[0];
-    const lBtn = el.querySelectorAll('button')[2];
+    // 행 추가 버튼 onclick 갱신 (케이블=첫번째 버튼, 작업내역=두번째 버튼)
+    const allBtns = el.querySelectorAll('button');
+    // 케이블 섹션 "행 추가" 버튼: _wrAddCableRow
+    const cBtn = Array.from(allBtns).find(b => b.getAttribute('onclick')?.includes('_wrAddCableRow'));
+    // 작업내역 섹션 "행 추가" 버튼: _wrAddLineRow
+    const lBtn = Array.from(allBtns).find(b => b.getAttribute('onclick')?.includes('_wrAddLineRow'));
     if (cBtn) cBtn.setAttribute('onclick', `_wrAddCableRow('${sid}-cable-tbody')`);
     if (lBtn) lBtn.setAttribute('onclick', `_wrAddLineRow('${sid}-line-tbody')`);
   });
@@ -26928,31 +27015,26 @@ function _wrAddCableRow(tbodyId) {
   tbody.appendChild(tr);
 }
 
-// 특정 tbody에 작업내역 행 추가
+// 특정 tbody에 작업내역 행 추가 (DB 컬럼 기준)
 function _wrAddLineRow(tbodyId) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
   const i = tbody.rows.length;
-  const DIV_OPTS     = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
-  const MAKER_OPTS   = ['','LS','대한','일진','가온','기타'].map(v=>`<option value="${v}">${v||'제조사'}</option>`).join('');
-  const OD_OPTS      = ['','32','50','63','75','100','125','150','200'].map(v=>`<option value="${v}">${v||'외경'}</option>`).join('');
-  const ID_OPTS      = ['','26','42','51','63','82','101','127','170'].map(v=>`<option value="${v}">${v||'내경'}</option>`).join('');
-  const PURPOSE_OPTS = ['','가공','관로','포설(기존)','포설(신규)','가공+포설','기타'].map(v=>`<option value="${v}">${v||'용도'}</option>`).join('');
   const tr = document.createElement('tr');
   tr.className = 'hover:bg-gray-50';
   tr.innerHTML = `
     <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-div">${DIV_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-maker">${MAKER_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-od">${OD_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-id">${ID_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-purpose">${PURPOSE_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-start-point" placeholder="시작(M)" oninput="_calcLineUsage(this)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-end-point" placeholder="종료(M)" oninput="_calcLineUsage(this)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-usage-length bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-center wrl-optical-city" placeholder="광도시(S)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-base-no" placeholder="기초번호"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-mat-qty" placeholder="0"></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-work-div"><option value="">선택</option><option value="신설">신설</option><option value="철거">철거</option><option value="이설">이설</option></select></td>
+    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-zone" placeholder="관리구간"></td>
+    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-no" placeholder="관리번호"></td>
+    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-name" placeholder="선로명"></td>
+    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-no" placeholder="선번"></td>
+    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-digital-no" placeholder="디지털번호"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" step="0.1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-section-dist" placeholder="0"></td>
+    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-pole-count" placeholder="0"></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-ip-pole"><option value="">-</option><option value="신설">신설</option><option value="철거">철거</option><option value="해당없음">해당없음</option></select></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-grounding"><option value="">-</option><option value="A">A형</option><option value="B">B형</option><option value="해당없음">해당없음</option></select></td>
+    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-remark" placeholder="비고"></td>
     <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>`;
   tbody.appendChild(tr);
 }
@@ -27059,18 +27141,19 @@ function _collectWrData(taskId) {
     const tbodyLine = document.getElementById(`${sid}-line-tbody`);
     if (tbodyLine) {
       tbodyLine.querySelectorAll('tr').forEach(tr => {
+        // DB work_report_lines 컬럼 기준으로 수집
         lines.push({
-          work_div:     tr.querySelector('.wrl-div')?.value || '',
-          maker:        tr.querySelector('.wrl-maker')?.value || '',
-          od:           tr.querySelector('.wrl-od')?.value || '',
-          id_val:       tr.querySelector('.wrl-id')?.value || '',
-          purpose:      tr.querySelector('.wrl-purpose')?.value || '',
-          start_point:  parseInt(tr.querySelector('.wrl-start-point')?.value) || 0,
-          end_point:    parseInt(tr.querySelector('.wrl-end-point')?.value) || 0,
-          usage_length: parseInt(tr.querySelector('.wrl-usage-length')?.value) || 0,
-          optical_city: tr.querySelector('.wrl-optical-city')?.value || '',
-          base_no:      tr.querySelector('.wrl-base-no')?.value || '',
-          mat_qty:      parseInt(tr.querySelector('.wrl-mat-qty')?.value) || 0,
+          work_div:     tr.querySelector('.wrl-work-div')?.value || '',
+          mgmt_zone:    tr.querySelector('.wrl-mgmt-zone')?.value || '',
+          mgmt_no:      tr.querySelector('.wrl-mgmt-no')?.value || '',
+          line_name:    tr.querySelector('.wrl-line-name')?.value || '',
+          line_no:      tr.querySelector('.wrl-line-no')?.value || '',
+          digital_no:   tr.querySelector('.wrl-digital-no')?.value || '',
+          section_dist: parseFloat(tr.querySelector('.wrl-section-dist')?.value) || 0,
+          pole_count:   parseInt(tr.querySelector('.wrl-pole-count')?.value) || 0,
+          ip_pole:      tr.querySelector('.wrl-ip-pole')?.value || '',
+          grounding:    tr.querySelector('.wrl-grounding')?.value || '',
+          remark:       tr.querySelector('.wrl-remark')?.value || '',
         });
       });
     }

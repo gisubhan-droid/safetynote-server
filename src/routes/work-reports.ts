@@ -89,10 +89,18 @@ app.post('/', async (c) => {
     const work_date    = task.work_completed_at || task.work_date || task.task_work_date || ''
 
     // upsert work_reports
-    const existing = await db.prepare(`SELECT id FROM work_reports WHERE task_id = ?`).bind(task_id).first() as any
+    const existing = await db.prepare(`SELECT id, status FROM work_reports WHERE task_id = ?`).bind(task_id).first() as any
 
     let reportId: number
     if (existing) {
+      // 확정된 일보는 수정 불가
+      if (existing.status === 'confirmed') {
+        return c.json({ error: '확정된 일보는 수정할 수 없습니다.', reportId: existing.id, status: existing.status }, 409)
+      }
+      // submitted 상태에서 직접 저장 시도 시 revert 안내
+      if (existing.status === 'submitted') {
+        return c.json({ error: '이미 제출된 일보가 있습니다. 수정하기 버튼을 먼저 눌러주세요.', reportId: existing.id, status: existing.status }, 409)
+      }
       await db.prepare(`
         UPDATE work_reports SET detail_type=?, worker_team=?, manager_name=?, work_date=?, updated_at=CURRENT_TIMESTAMP
         WHERE task_id=?
@@ -176,6 +184,25 @@ app.post('/:reportId/submit', async (c) => {
   } catch (e: any) {
     console.error('[work-reports POST /:reportId/submit]', e.message)
     return c.json({ error: e.message || '일보 제출 실패' }, 500)
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════
+// POST /api/work-reports/:reportId/revert
+// 제출완료 → 임시저장으로 되돌리기 (submitted → draft)
+// ═══════════════════════════════════════════════════════════════
+app.post('/:reportId/revert', async (c) => {
+  const db       = getDB(c)
+  const reportId = Number(c.req.param('reportId'))
+  try {
+    const existing = await db.prepare(`SELECT id, status FROM work_reports WHERE id=?`).bind(reportId).first<{ id: number; status: string }>()
+    if (!existing) return c.json({ error: '일보를 찾을 수 없습니다.' }, 404)
+    if (existing.status === 'confirmed') return c.json({ error: '확정된 일보는 수정할 수 없습니다.' }, 403)
+    await db.prepare(`UPDATE work_reports SET status='draft', updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(reportId).run()
+    return c.json({ ok: true })
+  } catch (e: any) {
+    console.error('[work-reports POST /:reportId/revert]', e.message)
+    return c.json({ error: e.message || '일보 되돌리기 실패' }, 500)
   }
 })
 

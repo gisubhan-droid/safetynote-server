@@ -2090,6 +2090,7 @@ function renderApp() {
 
   const menuItems = isLguPlus ? lguPlusMenuItems : isWorker ? [
     { id:'my-tasks',         icon:'fas fa-tasks',                 label:'내 작업' },
+    { id:'report-write',     icon:'fas fa-pen-to-square',         label:'작업일보 작성' },
     { id:'sign-requests',   icon:'fas fa-pen-fancy',             label:'서명요청' },
     { id:'my-stats',        icon:'fas fa-chart-bar',             label:'나의작업현황' },
     { id:'hazard-report',   icon:'fas fa-exclamation-triangle',  label:'위험신고' },
@@ -26676,13 +26677,14 @@ async function renderWorkReportForm(container, taskId) {
 
       <!-- ── 헤더 ── -->
       <div class="flex items-center gap-3">
-        <button onclick="navigateTo('field-report')" class="text-gray-400 hover:text-gray-600">
+        <button onclick="navigateTo(currentUser?.role==='worker'?'report-write':'field-report')" class="text-gray-400 hover:text-gray-600">
           <i class="fas fa-arrow-left text-lg"></i>
         </button>
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
           <i class="fas fa-file-alt text-pink-500"></i> 외 선 작 업 일 보
         </h2>
-        ${report?.status === 'submitted' ? `<span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">제출완료</span>` : ''}
+        ${report?.status === 'submitted' ? `<span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">제출완료</span>` : ''}
+        ${report?.status === 'confirmed' ? `<span class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">확정</span>` : ''}
       </div>
 
       <!-- ── 상단 자동입력 영역 ── -->
@@ -26727,6 +26729,19 @@ async function renderWorkReportForm(container, taskId) {
       </div>
 
       <!-- ── 저장 버튼 ── -->
+      ${report?.status === 'submitted' || report?.status === 'confirmed' ? `
+      <div class="flex gap-3 pb-6">
+        <button onclick="navigateTo(currentUser?.role==='worker'?'report-write':'field-report')" class="flex-1 py-3 text-sm font-semibold rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition">
+          <i class="fas fa-arrow-left mr-1"></i> 목록으로
+        </button>
+        ${report?.status !== 'confirmed' ? `
+        <button onclick="_revertWorkReport(${reportId}, ${taskId})" class="flex-1 py-3 text-sm font-semibold rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition">
+          <i class="fas fa-edit mr-1"></i> 수정하기
+        </button>` : `
+        <button disabled class="flex-1 py-3 text-sm font-semibold rounded-xl bg-gray-200 text-gray-400 cursor-not-allowed">
+          <i class="fas fa-lock mr-1"></i> 확정됨 (수정불가)
+        </button>`}
+      </div>` : `
       <div class="flex gap-3 pb-6">
         <button onclick="saveWorkReport(${taskId})" class="flex-1 py-3 text-sm font-semibold rounded-xl text-white hover:opacity-90 transition" style="background:#685182;">
           <i class="fas fa-save mr-1"></i> 임시저장
@@ -26734,7 +26749,7 @@ async function renderWorkReportForm(container, taskId) {
         <button onclick="submitWorkReport(${taskId})" class="flex-1 py-3 text-sm font-semibold rounded-xl bg-green-500 text-white hover:bg-green-600 transition">
           <i class="fas fa-paper-plane mr-1"></i> 제출
         </button>
-      </div>
+      </div>`}
     </div>`;
 
     // 전역 상태 저장
@@ -27224,6 +27239,24 @@ async function submitWorkReport(taskId) {
       return;
     }
     toast('저장 실패: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 제출완료 작업일보 수정하기 (revert: submitted → draft)
+// ═══════════════════════════════════════════════════════════════
+async function _revertWorkReport(reportId, taskId) {
+  if (!reportId) { toast('일보 ID가 없습니다.', 'error'); return; }
+  const ok = confirm('제출완료 상태를 임시저장으로 되돌리고 수정 모드로 전환합니다.\n계속하시겠습니까?');
+  if (!ok) return;
+  try {
+    await API.post(`/work-reports/${reportId}/revert`);
+    toast('수정 모드로 전환되었습니다.', 'success');
+    await new Promise(r => setTimeout(r, 600));
+    const content = document.getElementById('page-content');
+    if (content) await renderWorkReportForm(content, taskId);
+  } catch(e) {
+    toast('전환 실패: ' + (e.response?.data?.error || e.message), 'error');
   }
 }
 

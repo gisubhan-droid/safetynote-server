@@ -200,7 +200,8 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `bc8b047` | 진행/완료탭 tasks API 기반 전면 재작성 (FEAT-011) |
 | `fe8991e` | GPS 없을 때 상태변경 시각 displayDate fallback (FEAT-012) |
 | `63d0c8c` | 내작업 탭 클릭 이동 수정 + 작업일보 500 에러 수정 (BUG-013/014) |
-| *(다음커밋)* | 외선 작업일보 작성내역 미저장 수정 (BUG-015) |
+| `5bde50f` | 외선 작업일보 작성내역 미저장 수정 (BUG-015) |
+| *(다음커밋)* | 근로자 작업일보 접근 + 제출완료 일보 수정 기능 (FEAT-016) |
 
 ---
 
@@ -918,3 +919,94 @@ lines.push({
 ### ⚠️ 주의사항
 - `work_report_lines` DB 컬럼 중 `bind_wire, hanger, hardware, cabinet, name_tag, warning_sign, other_work`는 현재 UI에서 미입력 → 서버 INSERT 시 빈 값으로 저장
 - 기존에 저장된 lines 데이터(구버전 필드 기준)는 새 UI에서 빈 값으로 표시됨 (재입력 필요)
+
+---
+
+## [FEAT-016] 근로자 작업일보 접근 + 제출완료 일보 수정 기능 (2026-06)
+
+### 요구사항
+1. **FEAT-016A**: 작업일보 작성 사이드메뉴를 근로자도 접근 가능하도록 변경 (소속팀 해당건만)
+2. **FEAT-016B**: 기존 제출 완료된 작업일보에 수정 기능 추가
+
+### 구현 내용
+
+#### FEAT-016A — 근로자 사이드메뉴 접근
+1. **근로자 메뉴 배열에 `report-write` 추가** (`app.js` L.2093):
+   ```javascript
+   { id:'report-write', icon:'fas fa-pen-to-square', label:'작업일보 작성' }
+   ```
+
+2. **`renderWorkReportForm` 뒤로가기 버튼 분기** (`app.js`):
+   ```javascript
+   // 수정 전
+   onclick="navigateTo('field-report')"
+   // 수정 후 — 근로자는 report-write로, 나머지는 field-report로
+   onclick="navigateTo(currentUser?.role==='worker'?'report-write':'field-report')"
+   ```
+
+3. **tasks API 필터링**: `src/routes/tasks.ts`에서 근로자 역할 시 `INNER JOIN task_assignments`로 소속 작업만 반환 — 이미 구현됨, 추가 작업 불필요
+
+4. **헤더 상태 배지 개선**:
+   - `submitted` → 초록 배지 `제출완료`
+   - `confirmed` → 파란 배지 `확정` (신규)
+
+#### FEAT-016B — 제출완료 일보 수정 기능
+
+**서버 side — `node-server.ts` (NAS)**:
+- `POST /api/work-reports/:reportId/revert` 엔드포인트 추가:
+  - `confirmed` 상태 → 403 (수정 불가)
+  - `submitted` 상태 → `draft`로 전환, 200 반환
+- `POST /api/work-reports` 차단 로직 수정:
+  - `confirmed` → 409 유지
+  - `submitted` → 409 + "수정하기 버튼을 먼저 눌러주세요" 메시지 (revert 후 draft 상태에서만 저장 가능)
+
+**서버 side — `src/routes/work-reports.ts` (D1/Cloudflare)**:
+- 동일 `POST /:reportId/revert` 엔드포인트 추가 (D1 비동기 방식)
+- `POST /` 핸들러: `SELECT id, status`로 쿼리 변경 + confirmed/submitted 차단 로직 추가
+
+**프론트 side — `app.js`**:
+
+1. **저장 버튼 영역 상태별 분기**:
+   - `draft` 상태: 기존 임시저장/제출 버튼
+   - `submitted` 상태: 목록으로 버튼 + **수정하기** 버튼 (amber색)
+   - `confirmed` 상태: 목록으로 버튼 + 확정됨(수정불가) 버튼 (비활성)
+
+2. **`_revertWorkReport(reportId, taskId)` 함수 추가**:
+   ```javascript
+   async function _revertWorkReport(reportId, taskId) {
+     // 확인 다이얼로그 → POST /api/work-reports/:reportId/revert 호출
+     // 성공 시 toast + renderWorkReportForm 재로드 (draft 상태로 표시)
+   }
+   ```
+
+### 수정 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | 근로자 사이드메뉴 report-write 추가; 뒤로가기 버튼 role 분기; 상태별 버튼 UI 분기; `_revertWorkReport` 함수 신규 추가; 헤더 배지 개선 |
+| `node-server.ts` | `POST /revert` 엔드포인트 추가; submitted 차단 메시지 개선 |
+| `src/routes/work-reports.ts` | `POST /:reportId/revert` 엔드포인트 추가; `POST /` 핸들러 status 체크 추가 |
+
+### 상태 흐름
+```
+draft ──[제출]──▶ submitted ──[수정하기]──▶ draft
+                     │
+                  [확정처리]
+                     │
+                     ▼
+                 confirmed (수정 불가)
+```
+
+### 롤백 정보
+- **안전 커밋**: `5bde50f` (BUG-015)
+- **롤백 태그**: `rollback/pre-feat-016`
+- **롤백 명령**:
+  ```bash
+  git push origin 5bde50f:main --force
+  # NAS:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  ```
+
+### ⚠️ 주의사항
+- revert(수정하기)는 `submitted` 상태에서만 가능. `confirmed`는 불가
+- revert 후 폼이 재로드되면서 draft 상태로 전환되어 임시저장/제출 버튼이 다시 표시됨
+- tasks API 근로자 필터링은 `task_assignments` 기반 — 팀 배정이 안 된 작업은 표시되지 않음

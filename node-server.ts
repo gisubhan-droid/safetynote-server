@@ -3581,9 +3581,13 @@ app.post('/api/work-reports', async (c) => {
     let reportId: number
 
     if (existing) {
-      // 이미 제출/확인 완료된 일보는 새로 작성 불가
-      if (existing.status === 'submitted' || existing.status === 'confirmed') {
-        return c.json({ error: '이미 제출된 일보가 있습니다.', reportId: existing.id, status: existing.status }, 409)
+      // 확정된 일보는 수정 불가 (submitted는 revert 후 draft로 전환하여 수정 가능)
+      if (existing.status === 'confirmed') {
+        return c.json({ error: '확정된 일보는 수정할 수 없습니다.', reportId: existing.id, status: existing.status }, 409)
+      }
+      // submitted 상태에서 직접 저장 시도 시 revert 안내
+      if (existing.status === 'submitted') {
+        return c.json({ error: '이미 제출된 일보가 있습니다. 수정하기 버튼을 먼저 눌러주세요.', reportId: existing.id, status: existing.status }, 409)
       }
       rawDb.prepare(`UPDATE work_reports SET detail_type=?,worker_team=?,manager_name=?,work_date=?,updated_at=CURRENT_TIMESTAMP WHERE task_id=?`)
         .run(detail_type, worker_team, manager_name, work_date, task_id)
@@ -3654,6 +3658,18 @@ app.post('/api/work-reports/:reportId/submit', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const reportId = Number(c.req.param('reportId'))
   rawDb.prepare(`UPDATE work_reports SET status='submitted', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(reportId)
+  return c.json({ ok: true })
+})
+
+// POST /api/work-reports/:reportId/revert  (제출완료 → 임시저장으로 되돌리기)
+app.post('/api/work-reports/:reportId/revert', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const reportId = Number(c.req.param('reportId'))
+  const existing = rawDb.prepare(`SELECT id, status FROM work_reports WHERE id=?`).get(reportId) as any
+  if (!existing) return c.json({ error: '일보를 찾을 수 없습니다.' }, 404)
+  if (existing.status === 'confirmed') return c.json({ error: '확정된 일보는 수정할 수 없습니다.' }, 403)
+  rawDb.prepare(`UPDATE work_reports SET status='draft', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(reportId)
   return c.json({ ok: true })
 })
 

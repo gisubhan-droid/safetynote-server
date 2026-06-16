@@ -1081,3 +1081,85 @@ await renderWorkReportForm(content, taskId);
 ### ⚠️ 중요: NAS 재시작 필수
 - `pm2 restart safetynote` 시 `patchSchema()`가 실행되어 누락 컬럼이 자동 추가됨
 - DB 재생성 불필요 — 기존 데이터 유지
+
+---
+
+## [BUG-017] 작업일보 저장 여전히 안 됨 + 작업내역 섹션 삭제 (2026-06)
+
+### 증상
+1. LOT NO. / 규격 / 시작점 등 케이블 입력 후 저장해도 저장 안 됨 (성공 메시지는 뜸)
+2. 화면에 "작업내역" 섹션(구분/관리구간/관리번호/선로명/선번/디지털번호/구간거리/전주수/IP전주/접지/비고) 표시
+
+### 원인 분석
+
+#### 원인 1 — cables 프론트 수집 데이터 누락 ★핵심 저장 버그
+- `_collectWrData` 에서 `start_point`, `end_point` 수집 시:
+  ```javascript
+  // 기존 (버그): 값이 0이어도 0||0 = 0, 빈 값이면 0으로 변환됨 — 문제없음
+  // 실제 문제: hasData 조건에서 cb.start_point && cb.start_point !== 0 → start_point=0이면 falsy!
+  ```
+- `hasData` 조건: `cb.start_point && cb.start_point !== 0` → `start_point=0`이면 `0 && true = false` → 유효한 데이터임에도 빈 행으로 판정하여 저장 스킵
+
+#### 원인 2 — start_point/end_point null vs 0 혼동
+- 프론트: `parseInt(value) || 0` → 빈 입력도 0으로 변환 → hasData 조건에서 0은 falsy
+- 수정: 빈 입력은 `null`로 전송, 0 입력은 `0`으로 전송하여 명확히 구분
+- 서버 INSERT: `null → ''`, `0 → 0` 으로 정확히 저장
+
+#### 원인 3 — D1 라우트 extras 미저장
+- `src/routes/work-reports.ts` POST / 핸들러에 `cable_sets` extras 저장 로직 없었음
+- NAS(node-server.ts)에는 있었으나 D1에는 누락
+
+### 수정 내용
+
+#### `public/static/app.js` — 작업내역 섹션 전체 삭제
+- `mkCableSetHTML`: 작업내역 div 블록 (선로내역 테이블) 제거
+- `_wrAddCableSet`: 동일 블록 제거, `lineRows3` 생성 코드 제거
+- `_wrRenumberSets`: `tbodies[1]` line-tbody 처리 제거, lt(line title) 참조 제거
+  - 이제 tbody[0]=cable, tbody[1]=extra (2개만)
+- `_collectWrData`: lines 수집 코드 전체 제거, `cable_sets[0].lines` / `body.lines` 참조 제거
+  - start_point/end_point: `parseInt(value) || 0` → 빈 값이면 `null`, 숫자면 그대로
+  - hasData 조건 제거 (서버 측에서 처리)
+- `_wrAddLineRow` 함수 전체 제거
+- `_wrAddLine` 하위호환 함수 전체 제거
+
+#### `node-server.ts` — cables INSERT + lines INSERT 제거
+- lines INSERT 블록 전체 제거 (작업내역 섹션 UI 삭제에 따른 정리)
+- cables hasData 조건 수정:
+  ```typescript
+  // 기존 (버그)
+  (cb.start_point && cb.start_point !== 0)  // start_point=0 → false → 저장 스킵
+  // 수정
+  (cb.start_point != null)  // null이 아닌 모든 값(0 포함) → true → 저장
+  ```
+- cables INSERT: `cb.start_point||''` → `cb.start_point != null ? cb.start_point : ''`
+  - 0이 빈 문자열로 저장되던 버그 수정
+- request body 수신 로그 추가
+
+#### `src/routes/work-reports.ts` — D1 라우트 정리
+- lines INSERT 블록 전체 제거
+- cables INSERT: 동일 패턴으로 hasData + null 처리 수정
+- extras (cable_sets) 저장 로직 신규 추가
+
+### 수정 파일
+| 파일 | 수정 내용 |
+|------|-----------|
+| `public/static/app.js` | 작업내역 섹션 삭제, cables 수집 null 처리, lines 수집 제거 |
+| `node-server.ts` | lines INSERT 제거, cables hasData+null 수정, 로그 추가 |
+| `src/routes/work-reports.ts` | lines INSERT 제거, cables 수정, extras 추가 |
+
+### 롤백 정보
+- **안전 커밋**: `c90536a` (BUG-016)
+- **롤백 태그**: `rollback/pre-bugfix-017`
+- **롤백 명령**:
+  ```bash
+  git push origin c90536a:main --force
+  # NAS:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  ```
+
+### ⚠️ NAS 반영 명령
+```bash
+cd /volume1/safetynote
+git pull origin main
+pm2 restart safetynote
+```

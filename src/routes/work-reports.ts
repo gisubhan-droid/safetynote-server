@@ -114,53 +114,63 @@ app.post('/', async (c) => {
       reportId = (ins.meta as any).last_row_id
     }
 
-    // 라인 데이터 교체
-    if (Array.isArray(body.lines)) {
-      try {
-        await db.prepare(`DELETE FROM work_report_lines WHERE report_id=?`).bind(reportId).run()
-        for (let i = 0; i < body.lines.length; i++) {
-          const l = body.lines[i]
-          await db.prepare(`
-            INSERT INTO work_report_lines
-              (report_id,line_order,work_div,mgmt_zone,mgmt_no,line_name,line_no,digital_no,
-               section_dist,pole_count,ip_pole,bind_wire,hanger,hardware,cabinet,
-               name_tag,warning_sign,grounding,other_work,remark)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-          `).bind(
-            reportId, i,
-            l.work_div||'', l.mgmt_zone||'', l.mgmt_no||'', l.line_name||'', l.line_no||'', l.digital_no||'',
-            l.section_dist||0, l.pole_count||0,
-            l.ip_pole||'', l.bind_wire||'', l.hanger||'', l.hardware||'', l.cabinet||'',
-            l.name_tag||0, l.warning_sign||0, l.grounding||'', l.other_work||'', l.remark||''
-          ).run()
-        }
-      } catch (lineErr: any) {
-        console.warn('[work-reports POST /] 라인 데이터 저장 실패 (무시):', lineErr.message)
-      }
-    }
-
-    // 케이블 데이터 교체
+    // [BUG-017] 작업내역(lines) 섹션 UI 제거됨 — lines INSERT 스킵
+    // 케이블 데이터 교체 (BUG-017: start_point/end_point null 처리 수정)
     if (Array.isArray(body.cables)) {
       try {
         await db.prepare(`DELETE FROM work_report_cables WHERE report_id=?`).bind(reportId).run()
+        let cableOrder = 0
         for (let i = 0; i < body.cables.length; i++) {
           const cb = body.cables[i]
+          // 빈 기본 행 필터링 (식별 가능한 데이터가 하나라도 있어야 저장)
+          const hasData = (cb.lot_no||cb.maker||cb.cable_kind||cb.proc||cb.remark) ||
+                          (cb.spec && cb.spec !== '') ||
+                          (cb.usage_m != null && cb.usage_m !== 0) ||
+                          (cb.start_point != null) ||
+                          (cb.end_point != null)
+          if (!hasData) continue
+          // start_point/end_point: null이면 '' 저장, 숫자면 숫자 그대로 (0 포함)
+          const sp = cb.start_point != null ? cb.start_point : ''
+          const ep = cb.end_point   != null ? cb.end_point   : ''
           await db.prepare(`
             INSERT INTO work_report_cables
               (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,
                start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
           `).bind(
-            reportId, i,
-            cb.lot_no||'', cb.spec||0, cb.maker||'', cb.mfg_year||'',
-            cb.cable_type||'', cb.work_div||'',
-            cb.start_point||'', cb.end_point||'', cb.usage_m||0,
-            cb.cable_kind||'', cb.cable_code||'', cb.special_note||'',
+            reportId, cableOrder++,
+            cb.lot_no||'', cb.spec||'', cb.maker||'', cb.mfg_year||'',
+            '', '',
+            sp, ep, cb.usage_m||0,
+            cb.cable_kind||'', '', '',
             cb.proc||'', cb.remark||''
           ).run()
         }
+        console.log(`[work-reports D1 POST] cables 저장 완료: reportId=${reportId}, 저장행수=${cableOrder}/${body.cables.length}`)
       } catch (cableErr: any) {
         console.warn('[work-reports POST /] 케이블 데이터 저장 실패 (무시):', cableErr.message)
+      }
+    }
+
+    // extras(추가입력) 저장
+    if (Array.isArray(body.cable_sets)) {
+      try {
+        await db.prepare(`DELETE FROM work_report_extras WHERE report_id=?`).bind(reportId).run()
+        for (const cs of body.cable_sets) {
+          const setNo = cs.set_no || 1
+          if (Array.isArray(cs.extras)) {
+            for (const ex of cs.extras) {
+              if (ex.key && ex.qty > 0) {
+                try {
+                  await db.prepare(`INSERT INTO work_report_extras (report_id, set_no, item_key, qty) VALUES (?,?,?,?)`)
+                    .bind(reportId, setNo, ex.key, ex.qty).run()
+                } catch (_) { /* 무시 */ }
+              }
+            }
+          }
+        }
+      } catch (extrasErr: any) {
+        console.warn('[work-reports POST /] extras 저장 실패 (무시):', extrasErr.message)
       }
     }
 

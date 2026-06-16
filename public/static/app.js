@@ -26547,9 +26547,8 @@ async function renderWorkReportForm(container, taskId) {
     </tr>`};
 
     // ── 케이블 세트 HTML 생성 헬퍼 (번호 n: 1부터) ──────────────────────────
-    const mkCableSetHTML = (n, cableData, lineData) => {
+    const mkCableSetHTML = (n, cableData) => {
       const cbRows = (cableData && cableData.length > 0) ? cableData : Array(3).fill(null).map(() => ({}));
-      const lnRows = (lineData  && lineData.length  > 0) ? lineData  : Array(3).fill(null).map(() => ({}));
       const sid = `cs${n}`; // 세트 ID 접두사
       return `
       <div class="wr-cable-set space-y-3" data-set="${n}">
@@ -26587,56 +26586,6 @@ async function renderWorkReportForm(container, taskId) {
               </thead>
               <tbody id="${sid}-cable-tbody">
                 ${cbRows.map((cb,i) => mkCable(cb, i)).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <!-- N번 작업내역 (선로 내역) -->
-        <div class="bg-white rounded-2xl shadow-sm border border-green-100">
-          <div class="flex items-center justify-between px-4 pt-3 pb-2">
-            <span class="font-semibold text-gray-700 text-sm">
-              <i class="fas fa-list-alt text-green-500 mr-1"></i>
-              작업내역 <span class="wr-set-line-title text-gray-400 font-normal">${n}번</span>
-            </span>
-            <button onclick="_wrAddLineRow('${sid}-line-tbody')" class="text-xs bg-green-50 text-green-600 border border-green-200 rounded-lg px-3 py-1 hover:bg-green-100">
-              <i class="fas fa-plus mr-1"></i>행 추가
-            </button>
-          </div>
-          <div class="overflow-x-auto pb-2">
-            <table class="w-full text-xs border-collapse" style="min-width:900px">
-              <thead>
-                <tr class="bg-green-50 text-gray-600 text-center">
-                  <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-16">구분</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-20">관리구간</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-20">관리번호</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-24">선로명</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-20">선번</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-20">디지털번호</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-18">구간거리(M)</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-14">전주수</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-16">IP전주</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-14">접지</th>
-                  <th class="border border-gray-200 px-1 py-1.5">비고</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
-                </tr>
-              </thead>
-              <tbody id="${sid}-line-tbody">
-                ${lnRows.map((ln,i) => `<tr class="hover:bg-gray-50">
-                  <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
-                  <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-work-div"><option value="">선택</option><option value="신설" ${ln.work_div==='신설'?'selected':''}>신설</option><option value="철거" ${ln.work_div==='철거'?'selected':''}>철거</option><option value="이설" ${ln.work_div==='이설'?'selected':''}>이설</option></select></td>
-                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-zone" value="${ln.mgmt_zone||''}" placeholder="관리구간"></td>
-                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-no" value="${ln.mgmt_no||''}" placeholder="관리번호"></td>
-                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-name" value="${ln.line_name||''}" placeholder="선로명"></td>
-                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-no" value="${ln.line_no||''}" placeholder="선번"></td>
-                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-digital-no" value="${ln.digital_no||''}" placeholder="디지털번호"></td>
-                  <td class="border border-gray-200 p-0.5"><input type="number" step="0.1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-section-dist" value="${ln.section_dist||''}" placeholder="0"></td>
-                  <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-pole-count" value="${ln.pole_count||''}" placeholder="0"></td>
-                  <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-ip-pole"><option value="">-</option><option value="신설" ${ln.ip_pole==='신설'?'selected':''}>신설</option><option value="철거" ${ln.ip_pole==='철거'?'selected':''}>철거</option><option value="해당없음" ${ln.ip_pole==='해당없음'?'selected':''}>해당없음</option></select></td>
-                  <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-grounding"><option value="">-</option><option value="A" ${ln.grounding==='A'?'selected':''}>A형</option><option value="B" ${ln.grounding==='B'?'selected':''}>B형</option><option value="해당없음" ${ln.grounding==='해당없음'?'selected':''}>해당없음</option></select></td>
-                  <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-remark" value="${ln.remark||''}" placeholder="비고"></td>
-                  <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
-                </tr>`).join('')}
               </tbody>
             </table>
           </div>
@@ -26725,7 +26674,7 @@ async function renderWorkReportForm(container, taskId) {
 
       <!-- ── 케이블 세트 컨테이너 (동적 추가 영역) ── -->
       <div id="wr-cable-sets" class="space-y-4">
-        ${mkCableSetHTML(1, cableRows, lineRows)}
+        ${mkCableSetHTML(1, cableRows)}
       </div>
 
       <!-- ── 저장 버튼 ── -->
@@ -26845,25 +26794,6 @@ function _wrAddCableSet() {
       <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
     </tr>`;
   }
-  // 작업내역 3행 기본 생성 (DB 컬럼 기준)
-  let lineRows3 = '';
-  for (let r = 0; r < 3; r++) {
-    lineRows3 += `<tr class="hover:bg-gray-50">
-      <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${r+1}</td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-work-div"><option value="">선택</option><option value="신설">신설</option><option value="철거">철거</option><option value="이설">이설</option></select></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-zone" placeholder="관리구간"></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-no" placeholder="관리번호"></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-name" placeholder="선로명"></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-no" placeholder="선번"></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-digital-no" placeholder="디지털번호"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="0.1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-section-dist" placeholder="0"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-pole-count" placeholder="0"></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-ip-pole"><option value="">-</option><option value="신설">신설</option><option value="철거">철거</option><option value="해당없음">해당없음</option></select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-grounding"><option value="">-</option><option value="A">A형</option><option value="B">B형</option><option value="해당없음">해당없음</option></select></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-remark" placeholder="비고"></td>
-      <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
-    </tr>`;
-  }
   div.innerHTML = `
     <!-- ${n}번 작업 케이블정보 -->
     <div class="bg-white rounded-2xl shadow-sm border border-blue-100">
@@ -26898,40 +26828,6 @@ function _wrAddCableSet() {
             </tr>
           </thead>
           <tbody id="${sid}-cable-tbody">${cableRows3}</tbody>
-        </table>
-      </div>
-    </div>
-    <!-- ${n}번 작업내역 (선로 내역) -->
-    <div class="bg-white rounded-2xl shadow-sm border border-green-100">
-      <div class="flex items-center justify-between px-4 pt-3 pb-2">
-        <span class="font-semibold text-gray-700 text-sm">
-          <i class="fas fa-list-alt text-green-500 mr-1"></i>
-          작업내역 <span class="wr-set-line-title text-gray-400 font-normal">${n}번</span>
-        </span>
-        <button onclick="_wrAddLineRow('${sid}-line-tbody')" class="text-xs bg-green-50 text-green-600 border border-green-200 rounded-lg px-3 py-1 hover:bg-green-100">
-          <i class="fas fa-plus mr-1"></i>행 추가
-        </button>
-      </div>
-      <div class="overflow-x-auto pb-2">
-        <table class="w-full text-xs border-collapse" style="min-width:900px">
-          <thead>
-            <tr class="bg-green-50 text-gray-600 text-center">
-              <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-16">구분</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-20">관리구간</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-20">관리번호</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-24">선로명</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-20">선번</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-20">디지털번호</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-18">구간거리(M)</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-14">전주수</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-16">IP전주</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-14">접지</th>
-              <th class="border border-gray-200 px-1 py-1.5">비고</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
-            </tr>
-          </thead>
-          <tbody id="${sid}-line-tbody">${lineRows3}</tbody>
         </table>
       </div>
     </div>
@@ -26981,25 +26877,18 @@ function _wrRenumberSets() {
     const n = idx + 1;
     el.dataset.set = n;
     const ct = el.querySelector('.wr-set-cable-title');
-    const lt = el.querySelector('.wr-set-line-title');
     const et = el.querySelector('.wr-set-extra-title');
     if (ct) ct.textContent = `${n}번`;
-    if (lt) lt.textContent = `${n}번`;
     if (et) et.textContent = `${n}번`;
-    // tbody id 재설정 — 케이블(0), 작업내역(1), 추가입력(2) 순서
+    // tbody id 재설정 — 케이블(0), 추가입력(1) 순서 (작업내역 섹션 제거됨)
     const sid = `cs${n}`;
     const tbodies = el.querySelectorAll('tbody');
     if (tbodies[0]) tbodies[0].id = `${sid}-cable-tbody`;
-    if (tbodies[1]) tbodies[1].id = `${sid}-line-tbody`;
-    if (tbodies[2]) tbodies[2].id = `${sid}-extra-tbody`;
-    // 행 추가 버튼 onclick 갱신 (케이블=첫번째 버튼, 작업내역=두번째 버튼)
+    if (tbodies[1]) tbodies[1].id = `${sid}-extra-tbody`;
+    // 케이블 섹션 "행 추가" 버튼 onclick 갱신
     const allBtns = el.querySelectorAll('button');
-    // 케이블 섹션 "행 추가" 버튼: _wrAddCableRow
     const cBtn = Array.from(allBtns).find(b => b.getAttribute('onclick')?.includes('_wrAddCableRow'));
-    // 작업내역 섹션 "행 추가" 버튼: _wrAddLineRow
-    const lBtn = Array.from(allBtns).find(b => b.getAttribute('onclick')?.includes('_wrAddLineRow'));
     if (cBtn) cBtn.setAttribute('onclick', `_wrAddCableRow('${sid}-cable-tbody')`);
-    if (lBtn) lBtn.setAttribute('onclick', `_wrAddLineRow('${sid}-line-tbody')`);
   });
 }
 
@@ -27030,32 +26919,6 @@ function _wrAddCableRow(tbodyId) {
   tbody.appendChild(tr);
 }
 
-// 특정 tbody에 작업내역 행 추가 (DB 컬럼 기준)
-function _wrAddLineRow(tbodyId) {
-  const tbody = document.getElementById(tbodyId);
-  if (!tbody) return;
-  const i = tbody.rows.length;
-  const tr = document.createElement('tr');
-  tr.className = 'hover:bg-gray-50';
-  tr.innerHTML = `
-    <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-work-div"><option value="">선택</option><option value="신설">신설</option><option value="철거">철거</option><option value="이설">이설</option></select></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-zone" placeholder="관리구간"></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-mgmt-no" placeholder="관리번호"></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-name" placeholder="선로명"></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-line-no" placeholder="선번"></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-digital-no" placeholder="디지털번호"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" step="0.1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-section-dist" placeholder="0"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrl-pole-count" placeholder="0"></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-ip-pole"><option value="">-</option><option value="신설">신설</option><option value="철거">철거</option><option value="해당없음">해당없음</option></select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-grounding"><option value="">-</option><option value="A">A형</option><option value="B">B형</option><option value="해당없음">해당없음</option></select></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrl-remark" placeholder="비고"></td>
-    <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>`;
-  tbody.appendChild(tr);
-}
-
-// 하위호환: _wrAddLine → cs1 세트의 작업내역 첫번째 tbody에 추가
-function _wrAddLine() { _wrAddLineRow('cs1-line-tbody'); }
 // 하위호환: _wrAddCable → cs1 세트의 케이블 첫번째 tbody에 추가
 function _wrAddCable() { _wrAddCableRow('cs1-cable-tbody'); }
 
@@ -27129,7 +26992,7 @@ function _collectWrData(taskId) {
     });
   });
 
-  // 케이블 세트들 (동적 N개): 각 세트에서 cables + lines + extras 수집
+  // 케이블 세트들 (동적 N개): 각 세트에서 cables + extras 수집 (작업내역 섹션 제거됨 BUG-017)
   const cable_sets = [];
   document.querySelectorAll('#wr-cable-sets .wr-cable-set').forEach((setEl, si) => {
     const setNo = parseInt(setEl.dataset.set || (si + 1));
@@ -27138,37 +27001,20 @@ function _collectWrData(taskId) {
     const tbodyCable = document.getElementById(`${sid}-cable-tbody`);
     if (tbodyCable) {
       tbodyCable.querySelectorAll('tr').forEach(tr => {
+        // 시작점/종단점: 빈 문자열이면 null, 아니면 숫자로 변환 (0도 유효값)
+        const spRaw = tr.querySelector('.wrc-start-point')?.value;
+        const epRaw = tr.querySelector('.wrc-end-point')?.value;
         cables.push({
           lot_no:      tr.querySelector('.wrc-lot-no')?.value || '',
           spec:        tr.querySelector('.wrc-spec')?.value || '',
           maker:       tr.querySelector('.wrc-maker')?.value || '',
           mfg_year:    tr.querySelector('.wrc-mfg-year')?.value || '',
-          cable_kind:  tr.querySelector('.wrc-kind')?.value || '',
+          cable_kind:  tr.querySelector('.wrc-kind')?.value || '',   // DB: cable_kind
           proc:        tr.querySelector('.wrc-proc')?.value || '',
-          start_point: parseInt(tr.querySelector('.wrc-start-point')?.value) || 0,
-          end_point:   parseInt(tr.querySelector('.wrc-end-point')?.value) || 0,
+          start_point: spRaw !== '' && spRaw != null ? parseInt(spRaw) : null,
+          end_point:   epRaw !== '' && epRaw != null ? parseInt(epRaw) : null,
           usage_m:     parseInt(tr.querySelector('.wrc-usage-m')?.value) || 0,
           remark:      tr.querySelector('.wrc-remark')?.value || '',
-        });
-      });
-    }
-    const lines = [];
-    const tbodyLine = document.getElementById(`${sid}-line-tbody`);
-    if (tbodyLine) {
-      tbodyLine.querySelectorAll('tr').forEach(tr => {
-        // DB work_report_lines 컬럼 기준으로 수집
-        lines.push({
-          work_div:     tr.querySelector('.wrl-work-div')?.value || '',
-          mgmt_zone:    tr.querySelector('.wrl-mgmt-zone')?.value || '',
-          mgmt_no:      tr.querySelector('.wrl-mgmt-no')?.value || '',
-          line_name:    tr.querySelector('.wrl-line-name')?.value || '',
-          line_no:      tr.querySelector('.wrl-line-no')?.value || '',
-          digital_no:   tr.querySelector('.wrl-digital-no')?.value || '',
-          section_dist: parseFloat(tr.querySelector('.wrl-section-dist')?.value) || 0,
-          pole_count:   parseInt(tr.querySelector('.wrl-pole-count')?.value) || 0,
-          ip_pole:      tr.querySelector('.wrl-ip-pole')?.value || '',
-          grounding:    tr.querySelector('.wrl-grounding')?.value || '',
-          remark:       tr.querySelector('.wrl-remark')?.value || '',
         });
       });
     }
@@ -27176,19 +27022,18 @@ function _collectWrData(taskId) {
     const tbodyExtra = document.getElementById(`${sid}-extra-tbody`);
     if (tbodyExtra) {
       tbodyExtra.querySelectorAll('tr').forEach(tr => {
-        const qty = parseInt(tr.querySelector('.wre-qty')?.value) || 0;
+        const qty = parseFloat(tr.querySelector('.wre-qty')?.value) || 0;
         const key = tr.querySelector('.wre-qty')?.dataset.key || '';
         if (qty > 0) extras.push({ key, qty });
       });
     }
-    cable_sets.push({ set_no: setNo, cables, lines, extras });
+    cable_sets.push({ set_no: setNo, cables, extras });
   });
 
-  // 하위호환: 기존 API가 lines/cables를 기대하는 경우 첫 번째 세트 데이터 사용
-  const lines  = cable_sets[0]?.lines  || [];
+  // 하위호환: 기존 API가 cables를 기대하는 경우 첫 번째 세트 데이터 사용
   const cables = cable_sets[0]?.cables || [];
 
-  return { task_id: taskId, detail_type, confirms, cable_sets, lines, cables };
+  return { task_id: taskId, detail_type, confirms, cable_sets, cables };
 }
 
 async function saveWorkReport(taskId) {

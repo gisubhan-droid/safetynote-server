@@ -217,6 +217,24 @@ rawDb.pragma('foreign_keys = ON')
     if (!e.message?.includes('already exists')) console.warn('[AutoMigrate] task_stops 생성 실패:', e.message)
   }
 
+  // ── task_types 테이블 자동 생성 (buggy 커밋에서 FOREIGN KEY 삽입된 경우 대비) ──
+  // tasks 테이블에 task_type_id REFERENCES task_types(id) FK가 있을 수 있음
+  // task_types 테이블이 없으면 foreign_keys=ON 상태에서 INSERT 시 500 에러 발생
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS task_types (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT    NOT NULL DEFAULT '',
+        code       TEXT    DEFAULT NULL,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    console.log('[AutoMigrate] task_types 테이블 준비 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('already exists')) console.warn('[AutoMigrate] task_types 생성 실패:', e.message)
+  }
+
   // ── work_logs CHECK 제약 완화 (status 'work_completed' 허용) ─────────────────
   // 기존: CHECK(status IN ('working','completed','paused'))
   // → 앱이 'work_completed' 전송 시 CHECK 실패 → 테이블 재생성으로 제약 제거
@@ -295,10 +313,12 @@ rawDb.pragma('foreign_keys = ON')
         //    (컬럼 정의는 그대로 유지 → 컬럼 누락 없음)
         const oldSql: string = tSql.sql
         // status 컬럼의 CHECK 제약만 제거 (다른 CHECK는 유지)
+        // + task_type_id FOREIGN KEY → task_types 미존재 시 FK 오류 방지용 제거
         const newSql = oldSql
           .replace(/CREATE TABLE tasks/i, 'CREATE TABLE tasks_new')
           .replace(/\bstatus\s+TEXT[^,\n]*CHECK\s*\(status\s+IN\s*\([^)]+\)\)[^,\n]*/gi,
             "status TEXT NOT NULL DEFAULT 'unassigned'")
+          .replace(/,?\s*FOREIGN KEY\s*\(task_type_id\)[^\n,)]*(\n|,)?/gi, '$1')
 
         rawDb.exec('ALTER TABLE tasks RENAME TO tasks_old')
         rawDb.exec(newSql)

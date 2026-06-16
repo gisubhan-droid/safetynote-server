@@ -468,8 +468,9 @@ app.post('/', async (c) => {
     ).run()
   } catch(insertErr: any) {
     console.error('[tasks/POST] INSERT 실패:', insertErr.message)
-    // 컬럼 없음 에러: 최소 컬럼으로 재시도
-    if (insertErr.message?.includes('no column') || insertErr.message?.includes('table tasks has no column')) {
+    // 컬럼 없음 또는 FK 참조 테이블 없음 에러: 최소 컬럼으로 재시도
+    if (insertErr.message?.includes('no column') || insertErr.message?.includes('table tasks has no column')
+        || insertErr.message?.includes('no such table') || insertErr.message?.includes('FOREIGN KEY')) {
       try {
         result = await c.env.DB.prepare(
           `INSERT INTO tasks (task_number, title, description, location,

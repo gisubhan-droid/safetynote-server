@@ -1744,37 +1744,64 @@ app.route('/api/tasks', taskRoutes)
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
 // TBM 서명 조회
+// tbm_signatures 테이블 보장 (없으면 생성)
+function ensureTbmSignaturesTable() {
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS tbm_signatures (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      tbm_id      INTEGER NOT NULL,
+      user_id     INTEGER,
+      user_name   TEXT NOT NULL DEFAULT '',
+      position    TEXT DEFAULT '',
+      role        TEXT DEFAULT 'attendee',
+      signed_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      sign_method TEXT DEFAULT 'account',
+      sign_data   TEXT
+    )
+  `)
+  try { rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_sig_tbm  ON tbm_signatures(tbm_id)`) } catch(_) {}
+  try { rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_sig_name ON tbm_signatures(tbm_id, user_name)`) } catch(_) {}
+}
+
 app.get('/api/tbm/:id/signatures', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-  const id = c.req.param('id')
-  const rows = rawDb.prepare(
-    `SELECT ts.*, u.name as user_name_from_users, u.position
-     FROM tbm_signatures ts
-     LEFT JOIN users u ON u.id = ts.user_id
-     WHERE ts.tbm_id = ?
-     ORDER BY ts.signed_at ASC`
-  ).all(Number(id))
-  return c.json(rows)
+  try {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    const id = c.req.param('id')
+    ensureTbmSignaturesTable()
+    const rows = rawDb.prepare(
+      `SELECT ts.*, u.name as user_name_from_users, u.position
+       FROM tbm_signatures ts
+       LEFT JOIN users u ON u.id = ts.user_id
+       WHERE ts.tbm_id = ?
+       ORDER BY ts.signed_at ASC`
+    ).all(Number(id))
+    return c.json(rows)
+  } catch(e: any) {
+    console.error('[GET /tbm/:id/signatures] 에러:', e?.message, e?.stack)
+    return c.json({ error: e?.message || '서명 목록 조회 실패' }, 500)
+  }
 })
 
 // TBM 서명 등록 (본인 계정 또는 서명 패드)
 // signer_name: 현장 순차 서명 시 참가자 이름으로 저장 (비계정 서명)
 app.post('/api/tbm/:id/signatures', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-  const id = c.req.param('id')
-  const body = await c.req.json().catch(() => ({})) as any
-  const role = body.role || 'attendee'
-  const signData = body.sign_data || null
-  const signMethod = signData ? 'pad' : 'account'
-  const isNamedSign = !!(body.signer_name && String(body.signer_name).trim())
-  const signerName = isNamedSign ? String(body.signer_name).trim() : user.name
   try {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    const id = c.req.param('id')
+    const body = await c.req.json().catch(() => ({})) as any
+    const role       = body.role || 'attendee'
+    const signData   = body.sign_data   || null
+    const signMethod = signData ? 'pad' : 'account'
+    const isNamedSign = !!(body.signer_name && String(body.signer_name).trim())
+    const signerName  = isNamedSign ? String(body.signer_name).trim() : (user.name || '')
+
+    ensureTbmSignaturesTable()
     let resultId: any = null
+
     if (isNamedSign) {
-      // 이름 기반 서명 (현장 순차 서명): user_id=NULL, user_name=signerName
-      // 동일 tbm_id + user_name + user_id IS NULL 이면 기존 서명 업데이트
+      // 이름 기반 서명: user_id=NULL, user_name=signerName
       const existing = rawDb.prepare(
         `SELECT id FROM tbm_signatures WHERE tbm_id=? AND user_name=? AND user_id IS NULL`
       ).get(Number(id), signerName) as any
@@ -1786,47 +1813,54 @@ app.post('/api/tbm/:id/signatures', async (c) => {
       } else {
         const info = rawDb.prepare(
           `INSERT INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
-           VALUES (?, NULL, ?, '', ?, CURRENT_TIMESTAMP, ?, ?)`
-        ).run(Number(id), signerName, role, signMethod, signData)
+           VALUES (?, NULL, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
+        ).run(Number(id), signerName, '', role, signMethod, signData)
         resultId = info.lastInsertRowid
       }
     } else {
-      // 계정 기반 서명: (tbm_id, user_id) UNIQUE 기준으로 upsert
+      // 계정 기반 서명: (tbm_id, user_id, role) 기준 upsert
       const existing = rawDb.prepare(
-        `SELECT id FROM tbm_signatures WHERE tbm_id=? AND user_id=?`
-      ).get(Number(id), user.id) as any
+        `SELECT id FROM tbm_signatures WHERE tbm_id=? AND user_id=? AND role=?`
+      ).get(Number(id), user.id, role) as any
       if (existing) {
         rawDb.prepare(
-          `UPDATE tbm_signatures SET sign_data=?, sign_method=?, role=?, signed_at=CURRENT_TIMESTAMP WHERE id=?`
-        ).run(signData, signMethod, role, existing.id)
+          `UPDATE tbm_signatures SET sign_data=?, sign_method=?, signed_at=CURRENT_TIMESTAMP WHERE id=?`
+        ).run(signData, signMethod, existing.id)
         resultId = existing.id
       } else {
         const info = rawDb.prepare(
           `INSERT INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
-        ).run(Number(id), user.id, user.name, user.position || '', role, signMethod, signData)
+        ).run(Number(id), user.id, user.name || '', user.position || '', role, signMethod, signData)
         resultId = info.lastInsertRowid
       }
     }
     return c.json({ success: true, id: resultId })
   } catch(e: any) {
-    return c.json({ error: (e as any).message }, 500)
+    console.error('[POST /tbm/:id/signatures] 에러:', e?.message, e?.stack)
+    return c.json({ error: e?.message || '서명 등록 실패' }, 500)
   }
 })
 
 // TBM 서명 삭제 (본인만)
 app.delete('/api/tbm/:id/signatures/:sigId', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { id, sigId } = c.req.param()
-  const sig = rawDb.prepare(
-    'SELECT * FROM tbm_signatures WHERE id=? AND tbm_id=?'
-  ).get(Number(sigId), Number(id))
-  if (!sig) return c.json({ error: '서명을 찾을 수 없습니다.' }, 404)
-  if ((sig as any).user_id !== user.id && user.role !== 'admin')
-    return c.json({ error: '본인 서명만 삭제할 수 있습니다.' }, 403)
-  rawDb.prepare('DELETE FROM tbm_signatures WHERE id=?').run(Number(sigId))
-  return c.json({ success: true })
+  try {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    const { id, sigId } = c.req.param()
+    ensureTbmSignaturesTable()
+    const sig = rawDb.prepare(
+      'SELECT * FROM tbm_signatures WHERE id=? AND tbm_id=?'
+    ).get(Number(sigId), Number(id))
+    if (!sig) return c.json({ error: '서명을 찾을 수 없습니다.' }, 404)
+    if ((sig as any).user_id !== user.id && user.role !== 'admin')
+      return c.json({ error: '본인 서명만 삭제할 수 있습니다.' }, 403)
+    rawDb.prepare('DELETE FROM tbm_signatures WHERE id=?').run(Number(sigId))
+    return c.json({ success: true })
+  } catch(e: any) {
+    console.error('[DELETE /tbm/:id/signatures/:sigId] 에러:', e?.message)
+    return c.json({ error: e?.message || '서명 삭제 실패' }, 500)
+  }
 })
 
 // ─── TBM 결재 서명 ─────────────────────────────────────────────────────────────
@@ -1835,28 +1869,32 @@ app.delete('/api/tbm/:id/signatures/:sigId', async (c) => {
 
 // GET: 결재 서명 현황 조회
 app.get('/api/tbm/:id/approval-status', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-  const id = Number(c.req.param('id'))
-
-  // tbm_signatures에서 approval_* role로 저장된 결재 서명 조회
-  const sigs = rawDb.prepare(`
-    SELECT ts.*, u.name as user_display_name
-    FROM tbm_signatures ts
-    LEFT JOIN users u ON u.id = ts.user_id
-    WHERE ts.tbm_id = ? AND ts.role IN ('approval_general','approval_ceo','approval_safety')
-    ORDER BY ts.signed_at ASC
-  `).all(id) as any[]
-
-  return c.json({
-    approval_general: sigs.find(s => s.role === 'approval_general') || null,
-    approval_ceo:     sigs.find(s => s.role === 'approval_ceo')     || null,
-    approval_safety:  sigs.find(s => s.role === 'approval_safety')  || null,
-  })
+  try {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    const id = Number(c.req.param('id'))
+    ensureTbmSignaturesTable()
+    const sigs = rawDb.prepare(`
+      SELECT ts.*, u.name as user_display_name
+      FROM tbm_signatures ts
+      LEFT JOIN users u ON u.id = ts.user_id
+      WHERE ts.tbm_id = ? AND ts.role IN ('approval_general','approval_ceo','approval_safety')
+      ORDER BY ts.signed_at ASC
+    `).all(id) as any[]
+    return c.json({
+      approval_general: sigs.find(s => s.role === 'approval_general') || null,
+      approval_ceo:     sigs.find(s => s.role === 'approval_ceo')     || null,
+      approval_safety:  sigs.find(s => s.role === 'approval_safety')  || null,
+    })
+  } catch(e: any) {
+    console.error('[GET /tbm/:id/approval-status] 에러:', e?.message)
+    return c.json({ approval_general: null, approval_ceo: null, approval_safety: null })
+  }
 })
 
 // POST: 결재 서명 처리 + 다음 단계 알림 연쇄
 app.post('/api/tbm/:id/approval-sign', async (c) => {
+  try {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = Number(c.req.param('id'))
@@ -1867,6 +1905,7 @@ app.post('/api/tbm/:id/approval-sign', async (c) => {
   if (!validRoles.includes(approval_role))
     return c.json({ error: '유효하지 않은 결재 역할' }, 400)
 
+  ensureTbmSignaturesTable()
   const tbm = rawDb.prepare(`
     SELECT tr.*, t.title as task_title
     FROM tbm_records tr LEFT JOIN tasks t ON t.id = tr.task_id
@@ -1892,7 +1931,7 @@ app.post('/api/tbm/:id/approval-sign', async (c) => {
   rawDb.prepare(`
     INSERT INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
-  `).run(id, user.id, user.name, user.position || '', approval_role, signMethod, sign_data || null)
+  `).run(id, user.id, user.name || '', user.position || '', approval_role, signMethod, sign_data || null)
 
   const tbmTitle = `TBM: ${tbm.task_title || tbm.id}`
 
@@ -1996,6 +2035,10 @@ app.post('/api/tbm/:id/approval-sign', async (c) => {
   }
 
   return c.json({ success: true, approval_role, signer: user.name })
+  } catch(e: any) {
+    console.error('[POST /tbm/:id/approval-sign] 에러:', e?.message, e?.stack)
+    return c.json({ error: e?.message || '결재 서명 처리 실패' }, 500)
+  }
 })
 app.route('/api/tbm', tbmRoutes)
 app.route('/api/stats', statsRoutes)

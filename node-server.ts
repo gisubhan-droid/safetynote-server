@@ -1743,89 +1743,6 @@ app.route('/api/auth', authRoutes)
 app.route('/api/tasks', taskRoutes)
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
-app.route('/api/tbm', tbmRoutes)
-app.route('/api/stats', statsRoutes)
-
-// 점검 사진/동영상 서빙 - inspectionRoutes보다 먼저 등록해야 인증 없이 <img> 서빙 가능
-app.get('/api/inspections/photo/:id/img', async (c) => {
-  const photo: any = await DB.prepare(
-    'SELECT file_path, file_data, mime_type, file_name FROM inspection_photos WHERE id = ?'
-  ).bind(c.req.param('id')).first()
-  if (!photo) return c.json({ error: '미디어 없음' }, 404)
-  if (photo.file_path && existsSync(photo.file_path)) {
-    const mimeType = photo.mime_type || getMimeType(photo.file_path, 'image/jpeg')
-    const rangeHeader = c.req.header('Range') || null
-    return serveFileWithRange(photo.file_path, rangeHeader, mimeType)
-  }
-  if (photo.file_data) {
-    return new Response(Buffer.from(photo.file_data, 'base64'), {
-      headers: { 'Content-Type': photo.mime_type || 'image/jpeg' }
-    })
-  }
-  return c.json({ error: '데이터 없음' }, 404)
-})
-
-app.route('/api/inspections', inspectionRoutes)
-app.route('/api/hazards', hazardRoutes)
-app.route('/api/worklogs', worklogRoutes)
-app.route('/api/checklist', checklistRoutes)
-app.route('/api/teams', teamRoutes)
-app.route('/api/education', educationRoutes)
-app.route('/api/constructions', constructionRoutes)
-app.route('/api/notifications', notificationRoutes)
-
-// ─── 서명 API ─────────────────────────────────────────────────────────────────
-// 위험성평가 서명 조회
-app.get('/api/risk/:id/signatures', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-  const id = c.req.param('id')
-  const rows = rawDb.prepare(
-    `SELECT ras.*, u.name as user_name_from_users, u.position
-     FROM risk_assessment_signatures ras
-     LEFT JOIN users u ON u.id = ras.user_id
-     WHERE ras.assessment_id = ?
-     ORDER BY ras.signed_at ASC`
-  ).all(Number(id))
-  return c.json(rows)
-})
-
-// 위험성평가 서명 등록 (본인 계정 또는 서명 패드)
-app.post('/api/risk/:id/signatures', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-  const id = c.req.param('id')
-  const body = await c.req.json().catch(() => ({})) as any
-  const role = body.role || 'member'
-  const signData = body.sign_data || null   // base64 서명 이미지
-  const signMethod = signData ? 'pad' : 'account'
-  try {
-    const info = rawDb.prepare(
-      `INSERT OR REPLACE INTO risk_assessment_signatures
-       (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
-       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
-    ).run(Number(id), user.id, user.name, user.position || '', role, signMethod, signData)
-    return c.json({ success: true, id: info.lastInsertRowid })
-  } catch(e: any) {
-    return c.json({ error: e.message }, 500)
-  }
-})
-
-// 위험성평가 서명 삭제 (본인만)
-app.delete('/api/risk/:id/signatures/:sigId', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { id, sigId } = c.req.param()
-  const sig = rawDb.prepare(
-    'SELECT * FROM risk_assessment_signatures WHERE id=? AND assessment_id=?'
-  ).get(Number(sigId), Number(id))
-  if (!sig) return c.json({ error: '서명을 찾을 수 없습니다.' }, 404)
-  if ((sig as any).user_id !== user.id && user.role !== 'admin')
-    return c.json({ error: '본인 서명만 삭제할 수 있습니다.' }, 403)
-  rawDb.prepare('DELETE FROM risk_assessment_signatures WHERE id=?').run(Number(sigId))
-  return c.json({ success: true })
-})
-
 // TBM 서명 조회
 app.get('/api/tbm/:id/signatures', async (c) => {
   const user = getUser(c)
@@ -2080,6 +1997,89 @@ app.post('/api/tbm/:id/approval-sign', async (c) => {
 
   return c.json({ success: true, approval_role, signer: user.name })
 })
+app.route('/api/tbm', tbmRoutes)
+app.route('/api/stats', statsRoutes)
+
+// 점검 사진/동영상 서빙 - inspectionRoutes보다 먼저 등록해야 인증 없이 <img> 서빙 가능
+app.get('/api/inspections/photo/:id/img', async (c) => {
+  const photo: any = await DB.prepare(
+    'SELECT file_path, file_data, mime_type, file_name FROM inspection_photos WHERE id = ?'
+  ).bind(c.req.param('id')).first()
+  if (!photo) return c.json({ error: '미디어 없음' }, 404)
+  if (photo.file_path && existsSync(photo.file_path)) {
+    const mimeType = photo.mime_type || getMimeType(photo.file_path, 'image/jpeg')
+    const rangeHeader = c.req.header('Range') || null
+    return serveFileWithRange(photo.file_path, rangeHeader, mimeType)
+  }
+  if (photo.file_data) {
+    return new Response(Buffer.from(photo.file_data, 'base64'), {
+      headers: { 'Content-Type': photo.mime_type || 'image/jpeg' }
+    })
+  }
+  return c.json({ error: '데이터 없음' }, 404)
+})
+
+app.route('/api/inspections', inspectionRoutes)
+app.route('/api/hazards', hazardRoutes)
+app.route('/api/worklogs', worklogRoutes)
+app.route('/api/checklist', checklistRoutes)
+app.route('/api/teams', teamRoutes)
+app.route('/api/education', educationRoutes)
+app.route('/api/constructions', constructionRoutes)
+app.route('/api/notifications', notificationRoutes)
+
+// ─── 서명 API ─────────────────────────────────────────────────────────────────
+// 위험성평가 서명 조회
+app.get('/api/risk/:id/signatures', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const rows = rawDb.prepare(
+    `SELECT ras.*, u.name as user_name_from_users, u.position
+     FROM risk_assessment_signatures ras
+     LEFT JOIN users u ON u.id = ras.user_id
+     WHERE ras.assessment_id = ?
+     ORDER BY ras.signed_at ASC`
+  ).all(Number(id))
+  return c.json(rows)
+})
+
+// 위험성평가 서명 등록 (본인 계정 또는 서명 패드)
+app.post('/api/risk/:id/signatures', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const body = await c.req.json().catch(() => ({})) as any
+  const role = body.role || 'member'
+  const signData = body.sign_data || null   // base64 서명 이미지
+  const signMethod = signData ? 'pad' : 'account'
+  try {
+    const info = rawDb.prepare(
+      `INSERT OR REPLACE INTO risk_assessment_signatures
+       (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
+    ).run(Number(id), user.id, user.name, user.position || '', role, signMethod, signData)
+    return c.json({ success: true, id: info.lastInsertRowid })
+  } catch(e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// 위험성평가 서명 삭제 (본인만)
+app.delete('/api/risk/:id/signatures/:sigId', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const { id, sigId } = c.req.param()
+  const sig = rawDb.prepare(
+    'SELECT * FROM risk_assessment_signatures WHERE id=? AND assessment_id=?'
+  ).get(Number(sigId), Number(id))
+  if (!sig) return c.json({ error: '서명을 찾을 수 없습니다.' }, 404)
+  if ((sig as any).user_id !== user.id && user.role !== 'admin')
+    return c.json({ error: '본인 서명만 삭제할 수 있습니다.' }, 403)
+  rawDb.prepare('DELETE FROM risk_assessment_signatures WHERE id=?').run(Number(sigId))
+  return c.json({ success: true })
+})
+
 
 // TBM 레코드 삭제
 // - admin 또는 작성자(conductor_id)만 삭제 가능

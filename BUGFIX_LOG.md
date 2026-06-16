@@ -188,3 +188,79 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `d7a1b15` | TDZ 에러 수정 (let → patchSchema 앞으로 이동) |
 | `9e18cde` | TDZ 완전 해결 (let → var) |
 | `d8d4f04` | patchSchema에 tbm_signatures FK 자동 교정 추가 |
+| `2fe2696` | BUGFIX_LOG.md 생성 |
+| `75d6029` | tbm-info API attendees 추가 + NAS 전용 라우트 |
+| `d658198` | attendees 비어있을 때 task_assignments 폴백 |
+
+---
+
+## [BUG-004] 알람센터 알람 미수신 (2026-06)
+
+### 증상
+- 작업 상태 변경 시 알람센터에 알람이 도달하지 않음
+- SSE 실시간 알림은 동작하지만 DB 저장(영구 알림) 미작동
+
+### 원인 (2가지)
+
+#### 1. `makeD1` 래퍼에 `batch()` 메서드 누락
+- `tasks.ts`의 `PATCH /:id/status` 알림 로직이 `c.env.DB.batch([...])` 호출
+- NAS의 `makeD1` 래퍼에 `batch()` 미구현 → 호출 시 TypeError 발생
+- 상위 `try { ... } catch(_) {}` 로 조용히 무시 → notifications 테이블 저장 전혀 안 됨
+- **해결**: `makeD1` 래퍼에 `batch()` 메서드 추가 (SQLite 트랜잭션으로 일괄 실행)
+
+#### 2. `sendToUsers` import 누락 (`node-server.ts`)
+- `sse.ts`에 `sendToUsers(userIds, payload)` 함수 export 존재
+- `node-server.ts` import 라인에 `sendToUsers` 미포함
+  ```typescript
+  // 수정 전 (누락)
+  import { sseClients, sendToUser, broadcastAll, broadcastToRoles, getConnectionCount } from './src/sse'
+  // 수정 후 (추가)
+  import { sseClients, sendToUser, sendToUsers, broadcastAll, broadcastToRoles, getConnectionCount } from './src/sse'
+  ```
+- `tasks.ts`는 `../sse`를 직접 import해서 `sendToUsers`를 사용 → Cloudflare에선 정상
+- NAS에서 `taskRoutes`가 `makeD1(rawDb)`로 주입된 `c.env.DB`를 사용하므로
+  `sendToUsers`가 `node-server.ts` 컨텍스트에서도 필요함
+
+### 해결 (batch() 구현)
+```typescript
+async batch(stmts: any[]) {
+  const tx = db.transaction((items: any[]) => {
+    const results: any[] = []
+    for (const s of items) {
+      try {
+        const info = db.prepare(s._query).run(...(s._params || []))
+        results.push({ success: true, meta: { last_row_id: info.lastInsertRowid, changes: info.changes } })
+      } catch(e: any) {
+        results.push({ success: false, error: e.message })
+      }
+    }
+    return results
+  })
+  return tx(stmts)
+}
+```
+
+### ⚠️ 규칙 추가
+- `makeD1` 래퍼 수정 시 D1 API 메서드 목록 전체 확인: `prepare`, `exec`, `batch`
+- `tasks.ts` 등 라우트 파일이 `c.env.DB.batch()` 호출 시 NAS에서도 동작해야 함
+- `sse.ts`에 새 함수 추가 시 `node-server.ts` import 라인도 동기화 필수
+
+---
+
+## [BUG-005] TBM 서명 미완료 팝업 → 작업화면 이동 (2026-06)
+
+### 증상
+- TBM 서명 미완료 시 새 팝업(모달)이 생성되어 사용자가 별도 버튼 클릭 필요
+- 요청: 팝업 없이 바로 작업화면(TBM 탭)으로 이동
+
+### 해결 (`public/static/app.js`)
+```javascript
+// 수정 전: 새 팝업 생성 후 "TBM 탭으로 이동" 버튼 제공
+// 수정 후:
+if (blocked) {
+  document.querySelectorAll('.modal-overlay').forEach(el => el.remove()); // 모달 전체 닫기
+  toast(`TBM 서명 미완료 — N명 미서명 (미서명: 이름...)`, 'error');     // 토스트만 표시
+  showTaskDetail(taskId, true);                                            // TBM 탭으로 직접 이동
+  return;
+}
+```

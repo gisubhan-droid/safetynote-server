@@ -7015,45 +7015,13 @@ function changeTaskStatus(taskId, newStatus) {
             const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length === 0;
 
             if (blocked) {
-              m.remove(); // 확인 모달 닫기
-              const unsignedMsg = unsignedList.length > 0
-                ? `<div style="margin-top:10px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;font-size:12px;color:#92400E">
-                    <b>미서명 참석자 (${unsignedList.length}명):</b><br>
-                    <span style="line-height:1.8">${unsignedList.map(n => `<span style="display:inline-block;background:#FDE68A;border-radius:4px;padding:1px 6px;margin:1px">${n}</span>`).join(' ')}</span>
-                  </div>`
-                : '';
-              const bm = document.createElement('div');
-              bm.className = 'modal-overlay';
-              bm.innerHTML = `
-              <div class="modal" style="max-width:400px">
-                <div class="modal-header" style="background:linear-gradient(135deg,#D70072,#FF349E);color:white">
-                  <div class="flex items-center gap-2">
-                    <i class="fas fa-exclamation-triangle text-lg"></i>
-                    <h3 class="font-bold">TBM 서명 미완료</h3>
-                  </div>
-                  <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;opacity:0.8">×</button>
-                </div>
-                <div class="modal-body">
-                  <div style="background:#FFF0F5;border:1.5px solid #FFAACB;border-radius:12px;padding:14px 16px;color:#8B0040;font-size:13px;line-height:1.7">
-                    <i class="fas fa-pen-fancy mr-2" style="color:#D70072"></i>
-                    <strong>참석자 전원이 서명해야 작업을 개시할 수 있습니다.</strong><br>
-                    서명 ${sigs.length}명 완료 / 전체 ${attendees.length}명 중 미서명 ${attendees.length > 0 ? unsignedList.length : (sigs.length === 0 ? '전원' : '?')}명 남음
-                  </div>
-                  ${unsignedMsg}
-                  <div style="background:#F5F0F8;border:1px solid #D8D0DC;border-radius:8px;padding:10px 14px;font-size:12px;color:#685182;margin-top:10px">
-                    <i class="fas fa-info-circle mr-1"></i>
-                    TBM 탭 → 상세보기에서 서명을 추가하거나 서명 요청을 보내세요.
-                  </div>
-                </div>
-                <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
-                  <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">닫기</button>
-                  <button onclick="this.closest('.modal-overlay').remove();showTaskDetail(${taskId},true)"
-                    class="btn font-bold" style="background:linear-gradient(135deg,#685182,#8E72A8);color:white;border:none">
-                    <i class="fas fa-clipboard-list mr-1"></i>TBM 탭으로 이동
-                  </button>
-                </div>
-              </div>`;
-              document.body.appendChild(bm);
+              // ── 열린 모달 전체 닫기 → 작업 상세(TBM 탭)로 직접 이동 ──
+              document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+              // 미서명자 정보 토스트 메시지
+              const unsignedNames = unsignedList.length > 0 ? ` (미서명: ${unsignedList.join(', ')})` : '';
+              toast(`TBM 서명 미완료 — ${attendees.length > 0 ? unsignedList.length : '전원'  }명 미서명${unsignedNames}`, 'error');
+              // 작업 상세 화면 TBM 탭으로 직접 이동
+              showTaskDetail(taskId, true);
               return; // 작업 개시 차단
             }
           }

@@ -59,7 +59,7 @@ import * as https from 'node:https'
 import * as http from 'node:http'
 
 // SSE 공유 모듈
-import { sseClients, sendToUser, broadcastAll, broadcastToRoles, getConnectionCount } from './src/sse'
+import { sseClients, sendToUser, sendToUsers, broadcastAll, broadcastToRoles, getConnectionCount } from './src/sse'
 
 // 라우트 임포트
 import authRoutes from './src/routes/auth'
@@ -536,7 +536,30 @@ function makeD1(db: Database.Database) {
   }
   return {
     prepare(query: string) { return makeStmt(query) },
-    async exec(query: string) { db.exec(query); return { success: true } }
+    async exec(query: string) { db.exec(query); return { success: true } },
+    // ── batch(): D1 호환 메서드 — 트랜잭션으로 일괄 실행 ──────────────────
+    // tasks.ts 등에서 c.env.DB.batch([stmt1, stmt2, ...]) 형태로 호출
+    // NAS makeD1 래퍼에 없으면 notifications 알림 저장이 조용히 실패함
+    async batch(stmts: any[]) {
+      const tx = db.transaction((items: any[]) => {
+        const results: any[] = []
+        for (const s of items) {
+          try {
+            const info = db.prepare(s._query).run(...(s._params || []))
+            results.push({ success: true, meta: { last_row_id: info.lastInsertRowid, changes: info.changes } })
+          } catch(e: any) {
+            results.push({ success: false, error: e.message })
+          }
+        }
+        return results
+      })
+      try {
+        const results = tx(stmts)
+        return results
+      } catch(e: any) {
+        throw new Error(`D1_BATCH_ERROR: ${e.message}`)
+      }
+    }
   }
 }
 

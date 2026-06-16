@@ -131,6 +131,36 @@ db.close();
 
 ---
 
+## [BUG-003] TBM 미서명 상태에서 작업 개시 가능 (2026-06)
+
+### 증상
+- 참석자 전원이 서명하지 않아도 "작업 개시" 버튼이 활성화됨
+
+### 원인
+- `GET /api/tasks/:id/tbm-info` 응답에 `attendees` 필드가 없었음
+- 프론트엔드 서명 체크 로직: `attendees.length === 0` → `sigs.length === 0` 조건만 확인
+  → 서명이 1명이라도 있으면 `attendees` 없이 통과
+- `node-server.ts`에 `/api/tasks/:id/tbm-info` NAS 전용 라우트 없어서
+  `taskRoutes`(Cloudflare용)로 넘어가 `c.env.DB=undefined` 가능성
+
+### 해결 (커밋 `75d6029`)
+1. `src/routes/tasks.ts` — `tbm-info` 쿼리에 `attendees` 컬럼 추가 + JSON 파싱 후 응답
+2. `node-server.ts` — `/api/tasks/:id/tbm-info` NAS 전용 라우트 추가 (attendees 포함)
+   - `app.route('/api/tasks', taskRoutes)` **앞**에 등록
+
+### 프론트엔드 서명 체크 로직 (app.js:7002~7060)
+```javascript
+// attendees 있을 때: 전원 서명 필수
+// attendees 없을 때: 최소 1명 서명 필수
+const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length === 0;
+```
+
+### ⚠️ 주의
+- `/api/tasks/:id/tbm-info` 처럼 특정 리소스의 서브경로 API는
+  NAS 전용 라우트를 **반드시 `taskRoutes` 마운트 앞에** 등록할 것
+
+---
+
 ## [BUG-002] 사진 탭 그룹 표시 미반영 (미해결, 2026-06)
 
 ### 증상

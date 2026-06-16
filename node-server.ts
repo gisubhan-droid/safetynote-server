@@ -187,6 +187,67 @@ rawDb.pragma('foreign_keys = ON')
     try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
   }
 
+  // ── [영구수정] tasks_old FK 참조 자식 테이블 자동 복구 ─────────────────────────
+  // 이전 buggy autoMigrate(tasks RENAME → tasks_old)가 자식 테이블 FK를
+  // "tasks_old"(id) 참조로 남겨두는 버그가 있었음.
+  // 서버 시작 시마다 감지하여 tasks(id) 참조로 교체.
+  //
+  // 대상 테이블 11개:
+  //   site_inspections, risk_assessments, checklist_assessments,
+  //   task_assignments, tbm_records, task_work_types, task_photos,
+  //   hazard_reports, task_stops, work_reports, work_logs
+  try {
+    // tasks_old 참조가 남아있는 테이블 목록 조회
+    const badTables: string[] = (rawDb.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%tasks_old%'`
+    ).all() as any[]).map((r: any) => r.name)
+
+    if (badTables.length > 0) {
+      console.warn(`[AutoMigrate] ⚠️ tasks_old FK 참조 테이블 발견: ${badTables.join(', ')}`)
+      rawDb.pragma('foreign_keys = OFF')
+
+      // 각 테이블의 CREATE SQL에서 "tasks_old" → tasks 로 교체 후 재생성
+      const fixFkTx = rawDb.transaction(() => {
+        for (const tbl of badTables) {
+          try {
+            const row: any = rawDb.prepare(
+              `SELECT sql FROM sqlite_master WHERE type='table' AND name=?`
+            ).get(tbl)
+            if (!row?.sql) continue
+
+            // "tasks_old" 참조를 tasks 로 교체
+            const newSql = row.sql
+              .replace(new RegExp(`REFERENCES\\s+"tasks_old"`, 'gi'), 'REFERENCES tasks')
+              .replace(new RegExp(`"tasks_old"\\s*\\(`, 'gi'), 'tasks(')
+              .replace(new RegExp(`CREATE TABLE "${tbl}"`, 'i'), `CREATE TABLE ${tbl}_fixed`)
+              .replace(new RegExp(`CREATE TABLE ${tbl}\\b`, 'i'), `CREATE TABLE ${tbl}_fixed`)
+
+            // 기존 컬럼 목록 (INSERT SELECT 용)
+            const cols = (rawDb.prepare(`PRAGMA table_info(${tbl})`).all() as any[])
+              .map((c: any) => c.name).join(', ')
+
+            rawDb.exec(`ALTER TABLE ${tbl} RENAME TO ${tbl}_fk_old`)
+            rawDb.exec(newSql)
+            rawDb.exec(`INSERT INTO ${tbl}_fixed (${cols}) SELECT ${cols} FROM ${tbl}_fk_old`)
+            rawDb.exec(`DROP TABLE ${tbl}_fk_old`)
+            rawDb.exec(`ALTER TABLE ${tbl}_fixed RENAME TO ${tbl}`)
+            console.log(`[AutoMigrate] ✅ FK 복구 완료: ${tbl} (tasks_old → tasks)`)
+          } catch(tblErr: any) {
+            console.warn(`[AutoMigrate] FK 복구 실패 (${tbl}):`, tblErr.message)
+          }
+        }
+      })
+      fixFkTx()
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[AutoMigrate] ✅ tasks_old FK 참조 전체 복구 완료')
+    } else {
+      console.log('[AutoMigrate] tasks_old FK 참조 없음 (정상)')
+    }
+  } catch(e: any) {
+    console.warn('[AutoMigrate] tasks_old FK 복구 실패 (무시):', e.message)
+    try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+  }
+
   const taskCols = getCols('tasks')
   const tbmCols  = getCols('tbm_records')
   console.log('[AutoMigrate] tasks cols:', taskCols.join(', '))

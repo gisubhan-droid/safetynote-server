@@ -3165,8 +3165,10 @@ async function showConstructionDetail(conId) {
           ? `<div class="text-center py-6 text-gray-400 text-sm"><i class="fas fa-clipboard text-2xl block mb-2 opacity-30"></i>등록된 작업이 없습니다</div>`
           : `<div style="display:flex;flex-direction:column;gap:6px">
             ${tasks.map(t => {
-              const dispNum = t.work_number
-                ? (t.sub_task_number ? `${t.work_number}-${t.sub_task_number}` : t.work_number)
+              // work_number: tasks 자체 값 → 없으면 공사의 work_number(con.work_number) fallback
+              const effWorkNum = t.work_number || con.work_number || '';
+              const dispNum = effWorkNum
+                ? (t.sub_task_number ? `${effWorkNum}-${t.sub_task_number}` : effWorkNum)
                 : (t.sub_task_number ? t.sub_task_number : t.task_number);
               return `
               <div class="flex items-center justify-between p-3 rounded-xl cursor-pointer hover:shadow-sm"
@@ -5707,7 +5709,7 @@ async function showTaskDetail(id, openTbmTab) {
           ${statusBadge(task.status)}
           ${riskLevelBadge(task.risk_level || 'normal', task.high_subtypes)}
           ${task.construction_type ? `<span class="badge text-xs" style="background:#FDE8F3;color:#D70072"><i class="fas fa-hard-hat mr-0.5"></i>${task.construction_type}</span>` : ''}
-          ${task.request_no ? `<span class="badge text-xs" style="background:#EDE7F6;color:#685182"><i class="fas fa-hashtag mr-0.5"></i>${task.request_no}</span>` : ''}
+          ${(task.request_no||task.con_request_no) ? `<span class="badge text-xs" style="background:#EDE7F6;color:#685182"><i class="fas fa-hashtag mr-0.5"></i>${task.request_no||task.con_request_no}</span>` : ''}
           <span class="text-xs text-gray-400">${task.task_number}</span>
         </div>
       </div>
@@ -5789,7 +5791,7 @@ async function showTaskDetail(id, openTbmTab) {
                 <i class="fas fa-file-alt text-xs text-purple-400"></i>
                 <span class="text-gray-500 text-xs font-semibold">공사요청번호</span>
               </div>
-              <span class="font-medium ${task.request_no ? 'text-purple-700' : 'text-gray-400'}">${task.request_no||'-'}</span>
+              <span class="font-medium ${(task.request_no||task.con_request_no) ? 'text-purple-700' : 'text-gray-400'}">${task.request_no||task.con_request_no||'-'}</span>
             </div>
             <div class="bg-indigo-50 rounded-lg p-3 border border-indigo-200">
               <div class="flex items-center gap-1 mb-1">
@@ -5797,9 +5799,9 @@ async function showTaskDetail(id, openTbmTab) {
                 <span class="text-indigo-600 text-xs font-semibold">서브작업번호</span>
               </div>
               <span class="font-mono font-bold text-indigo-800 tracking-wide">
-                ${task.work_number
-                  ? (task.sub_task_number ? `${task.work_number}-${task.sub_task_number}` : task.work_number)
-                  : (task.sub_task_number ? `-${task.sub_task_number}` : '-')}
+                ${(task.work_number||task.con_work_number)
+                  ? (task.sub_task_number ? `${task.work_number||task.con_work_number}-${task.sub_task_number}` : (task.work_number||task.con_work_number))
+                  : (task.sub_task_number ? task.sub_task_number : '-')}
               </span>
             </div>
           </div>

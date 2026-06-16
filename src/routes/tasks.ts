@@ -432,21 +432,68 @@ app.post('/', async (c) => {
   const kstDate = new Date(now.getTime() + kstOffset)
   const workDate = kstDate.toISOString().slice(0, 10) // YYYY-MM-DD
 
-  const result = await c.env.DB.prepare(
-    `INSERT INTO tasks (task_number, title, description, category_id, work_type_id, location,
-     planned_date, planned_quantity, quantity_unit, supervisor_id, priority, notes, created_by, status, work_class_new,
-     work_date, work_order_address, construction_type, request_no, contractor_name, risk_level, high_subtypes, lgu_supervisor, work_number,
-     construction_id, sub_task_number)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(taskNumber, title, description || '', category_id || null, primaryTypeId,
-    location || '', planned_date || null, planned_quantity || 0, quantity_unit || '개',
-    supervisor_id || null, priority || 'normal', notes || '', user.id,
-    worker_ids && worker_ids.length > 0 ? 'assigned' : 'unassigned', workClass,
-    workDate, work_order_address || location || '',
-    construction_type || '', request_no || '', contractor_name || '',
-    risk_level || 'normal', high_subtypes || '[]', lgu_supervisor || '', work_number || '',
-    construction_id || null, sub_task_number || ''
-  ).run()
+  // construction_id가 있으면 공사 테이블에서 request_no / work_number 자동 연동
+  // (tasks.request_no가 비어 있는 경우 공사 정보로 채움)
+  if (construction_id && !request_no) {
+    try {
+      const conRow = await c.env.DB.prepare(
+        'SELECT request_no, work_number FROM constructions WHERE id = ?'
+      ).bind(construction_id).first<any>()
+      if (conRow?.request_no) {
+        // body의 request_no / work_number에 공사 정보 반영
+        body.request_no = conRow.request_no
+        body.work_number = body.work_number || conRow.work_number || ''
+      }
+    } catch(_) {}
+  }
+  const finalRequestNo = body.request_no || request_no || ''
+  const finalWorkNumber = body.work_number || work_number || ''
+
+  let result: any
+  try {
+    result = await c.env.DB.prepare(
+      `INSERT INTO tasks (task_number, title, description, category_id, work_type_id, location,
+       planned_date, planned_quantity, quantity_unit, supervisor_id, priority, notes, created_by, status, work_class_new,
+       work_date, work_order_address, construction_type, request_no, contractor_name, risk_level, high_subtypes, lgu_supervisor, work_number,
+       construction_id, sub_task_number)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(taskNumber, title, description || '', category_id || null, primaryTypeId,
+      location || '', planned_date || null, planned_quantity || 0, quantity_unit || '개',
+      supervisor_id || null, priority || 'normal', notes || '', user.id,
+      worker_ids && worker_ids.length > 0 ? 'assigned' : 'unassigned', workClass,
+      workDate, work_order_address || location || '',
+      construction_type || '', finalRequestNo, contractor_name || '',
+      risk_level || 'normal', high_subtypes || '[]', lgu_supervisor || '', finalWorkNumber,
+      construction_id || null, sub_task_number || ''
+    ).run()
+  } catch(insertErr: any) {
+    console.error('[tasks/POST] INSERT 실패:', insertErr.message)
+    // 컬럼 없음 에러: 최소 컬럼으로 재시도
+    if (insertErr.message?.includes('no column') || insertErr.message?.includes('table tasks has no column')) {
+      try {
+        result = await c.env.DB.prepare(
+          `INSERT INTO tasks (task_number, title, description, location,
+           planned_date, quantity_unit, supervisor_id, priority, notes, created_by, status,
+           work_date, work_order_address, construction_type, request_no, risk_level,
+           construction_id, sub_task_number)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(taskNumber, title, description || '', location || '',
+          planned_date || null, quantity_unit || '개',
+          supervisor_id || null, priority || 'normal', notes || '', user.id,
+          worker_ids && worker_ids.length > 0 ? 'assigned' : 'unassigned',
+          workDate, work_order_address || location || '',
+          construction_type || '', finalRequestNo, risk_level || 'normal',
+          construction_id || null, sub_task_number || ''
+        ).run()
+        console.warn('[tasks/POST] 최소 컬럼으로 재시도 성공')
+      } catch(fallbackErr: any) {
+        console.error('[tasks/POST] 최소 컬럼 재시도도 실패:', fallbackErr.message)
+        return c.json({ error: `작업 저장 실패: ${fallbackErr.message}` }, 500)
+      }
+    } else {
+      return c.json({ error: `작업 저장 실패: ${insertErr.message}` }, 500)
+    }
+  }
 
   const taskId = result.meta.last_row_id as number
 

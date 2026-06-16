@@ -614,7 +614,6 @@ function ensureTbmSignaturesTable() {
 // ─── 스키마 안전 패치 (컬럼 없으면 자동 추가) ─────────────────────────────────
 function patchSchema() {
   // ── 맨 먼저: tbm_records_old 참조 잔여 트리거 강제 제거 ──────────────────────
-  // (ensureTbmSignaturesTable 보다 앞서 실행되어야 INSERT 시 에러 방지)
   try {
     const badTriggers = rawDb.prepare(
       `SELECT name FROM sqlite_master WHERE type='trigger' AND (
@@ -629,6 +628,45 @@ function patchSchema() {
       } catch(e: any) { console.warn(`[patchSchema] 트리거 제거 실패(무시): ${t.name}`, e?.message) }
     }
   } catch(e: any) { console.warn('[patchSchema] 트리거 조회 실패(무시):', e?.message) }
+
+  // ── tbm_signatures FK 자동 수정: tbm_records_old 참조 → tbm_records 참조 ────
+  // (이전 마이그레이션 오류로 잘못된 FK가 생성된 경우 자동 교정)
+  try {
+    const sigDdl = rawDb.prepare(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name='tbm_signatures'`
+    ).get() as any
+    if (sigDdl?.sql?.includes('tbm_records_old')) {
+      console.log('[patchSchema] tbm_signatures FK 오류 감지 — 테이블 재생성 시작')
+      rawDb.exec('PRAGMA foreign_keys = OFF')
+      rawDb.exec('BEGIN')
+      try {
+        rawDb.exec('CREATE TABLE IF NOT EXISTS tbm_signatures_backup AS SELECT * FROM tbm_signatures')
+        rawDb.exec('DROP TABLE tbm_signatures')
+        rawDb.exec(`CREATE TABLE tbm_signatures (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          tbm_id      INTEGER NOT NULL REFERENCES tbm_records(id) ON DELETE CASCADE,
+          user_id     INTEGER REFERENCES users(id),
+          user_name   TEXT NOT NULL DEFAULT '',
+          position    TEXT DEFAULT '',
+          role        TEXT DEFAULT 'attendee',
+          signed_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+          sign_method TEXT DEFAULT 'account',
+          sign_data   TEXT
+        )`)
+        rawDb.exec(`INSERT INTO tbm_signatures
+          SELECT id,tbm_id,user_id,user_name,position,role,signed_at,sign_method,sign_data
+          FROM tbm_signatures_backup`)
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tbm_sig_tbm  ON tbm_signatures(tbm_id)')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tbm_sig_name ON tbm_signatures(tbm_id, user_name)')
+        rawDb.exec('COMMIT')
+        console.log('[patchSchema] tbm_signatures FK 재생성 완료 (tbm_records_old → tbm_records)')
+      } catch(e: any) {
+        rawDb.exec('ROLLBACK')
+        console.error('[patchSchema] tbm_signatures 재생성 실패:', e?.message)
+      }
+      rawDb.exec('PRAGMA foreign_keys = ON')
+    }
+  } catch(e: any) { console.warn('[patchSchema] tbm_signatures FK 확인 실패(무시):', e?.message) }
   // ────────────────────────────────────────────────────────────────────────────
 
   const safeAlter = (sql: string) => {

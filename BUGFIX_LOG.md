@@ -196,7 +196,8 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `5169f21` | 사진 탭 부분 갱신 `_refreshPhotoTab()` (BUG-007) |
 | `79c414b` | 현장위치 지도 탭별 작업 상태 구분 표시 (BUG-008) |
 | `cd23c6d` | 진행탭 마커 미표시 수정 + KST 시간 표시 (BUG-009) |
-| *(다음커밋)* | work_logs GPS fallback 추가 (FEAT-010) |
+| `048bdf2` | work_logs GPS fallback 추가 (FEAT-010) |
+| *(다음커밋)* | 진행/완료탭 tasks API 기반 전면 재작성 (FEAT-011) |
 
 ---
 
@@ -639,3 +640,46 @@ await Promise.all(noGpsTaskIds.map(async (tid) => {
 - `/api/worklogs?task_id=xxx` 호출은 **tbm GPS null인 건에 한해서만** 실행 (불필요한 호출 최소화)
 - `Promise.all` 병렬 처리로 다수 건도 지연 최소화
 - work_logs도 GPS null이면 최종적으로 마커 생략 (GPS 완전 거부 케이스 — 정상)
+
+---
+
+## [FEAT-011] 현장위치 진행/완료탭 tasks API 기반 전면 재작성 (2026-06)
+
+### 배경 / 근본 원인
+FEAT-010까지도 진행/완료 탭 마커 미표시가 지속됨.
+NAS DB 직접 조회로 확인한 결과: **`tbm_records` 테이블에 해당 `working` 작업의 TBM 레코드 자체가 없음**
+→ TBM 없이 작업개시(`working`)된 경우 `/api/tbm` 기반으로는 마커 표시 불가능
+
+### 핵심 문제
+| 방식 | 문제 |
+|------|------|
+| BUG-008: `/api/tasks?status=working` | `tasks.gps_lat` 대부분 null |
+| BUG-009~FEAT-010: `/api/tbm` + task_status 필터 | TBM 자체가 없는 작업은 조회 불가 |
+| **FEAT-011: `/api/tasks` 기반으로 복귀** | tasks 목록 확보 후 TBM/work_logs GPS 매핑 |
+
+### 해결 — `public/static/app.js` `loadSiteMapMarkers()` 전면 재작성
+
+**진행/완료탭 공통 로직:**
+```
+① /api/tasks?status=working(또는 work_completed,completed) → 작업 목록 확보
+② /api/tbm?limit=500 → TBM GPS 캐시 생성 { task_id → gps }
+③ TBM GPS 없는 task_id만 → /api/worklogs?task_id= 병렬 조회 → work_logs GPS 캐시
+④ 작업 목록 순회하며 GPS 우선순위대로 마커 생성
+```
+
+**GPS 우선순위 (최종):**
+```
+1순위: tbm_records.gps_lat/lon  (TBM 작성 시)
+2순위: work_logs.gps_lat/lon    (일지 저장 시)
+미표시: 둘 다 null              (GPS 완전 거부)
+```
+
+### 롤백 정보
+- **안전 커밋**: `048bdf2` (FEAT-010)
+- **롤백 태그**: `rollback/pre-feat-011`
+- **롤백 명령**:
+  ```bash
+  git push origin 048bdf2:main --force
+  # NAS:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  ```

@@ -7062,6 +7062,124 @@ function changeTaskStatus(taskId, newStatus) {
   };
 }
 
+// ─── 사진 탭 부분 갱신 (전체 모달 재로드 없이 사진 탭만 즉시 갱신) ─────────
+// 사진 업로드/삭제 후 호출 → dtab-photo 내용 + 사진 탭 뱃지 카운트 동시 갱신
+async function _refreshPhotoTab(taskId) {
+  const photoTab = document.getElementById('dtab-photo');
+  if (!photoTab) return; // 모달 없으면 무시
+
+  // 스켈레톤 로딩 표시
+  photoTab.innerHTML = `
+    <div class="flex flex-col items-center justify-center py-10 text-gray-300">
+      <div class="w-8 h-8 border-4 border-gray-200 rounded-full mb-3" style="border-top-color:#685182;animation:spin .8s linear infinite"></div>
+      <p class="text-sm">사진 목록 갱신 중...</p>
+    </div>`;
+
+  try {
+    const photosRes = await API.get('/photos', { params: { task_id: taskId } });
+    const photos = photosRes.data || [];
+
+    // ── 사진 탭 뱃지 카운트 갱신 ─────────────────────────────────────────
+    const photoTabBtn = document.querySelector('[onclick*="switchDetailTab"][onclick*="photo"]');
+    if (photoTabBtn) {
+      photoTabBtn.textContent = `사진(${photos.length})`;
+    }
+
+    // ── 사진 렌더링 (showTaskDetail 내부 로직과 동일) ─────────────────────
+    const TYPE_ORDER = { before: 0, progress: 1, after: 2 };
+    const TYPE_LABEL = { before: '작업 전', progress: '작업 중', after: '작업 후' };
+    const TYPE_COLOR = { before: 'bg-blue-500', progress: 'bg-yellow-500', after: 'bg-green-500' };
+
+    function renderThumb(p) {
+      const cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
+      if (isVideo) {
+        return `<div class="photo-thumb relative cursor-pointer" onclick="showVideoData(${p.id},'${cap}')">
+          <video src="/api/photos/${p.id}/img" class="w-full h-full object-cover" muted preload="metadata"></video>
+          <div class="overlay"><i class="fas fa-play text-2xl"></i></div>
+          <div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>
+          <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
+            <span class="truncate">${cap || '-'}</span>
+            <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>
+          </div>
+        </div>`;
+      } else {
+        return `<div class="photo-thumb" onclick="showPhotoData(${p.id},'${cap}')">
+          <img src="/api/photos/${p.id}/img" alt="${p.caption||p.file_name}" onerror="this.style.opacity='0.3';this.title='이미지 로드 실패'">
+          <div class="overlay"><i class="fas fa-expand text-lg"></i></div>
+          <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
+            <span class="truncate">${cap || '-'}</span>
+            <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>
+          </div>
+        </div>`;
+      }
+    }
+
+    let html = '';
+    if (photos.length === 0) {
+      html = '<p class="text-gray-400 text-sm text-center py-8">등록된 미디어가 없습니다.</p>';
+    } else {
+      const typeGroups = {};
+      for (const p of photos) {
+        const t = p.photo_type || 'progress';
+        if (!typeGroups[t]) typeGroups[t] = [];
+        typeGroups[t].push(p);
+      }
+      const sortedTypes = Object.keys(typeGroups).sort((a, b) => {
+        const oa = TYPE_ORDER[a] ?? 99, ob = TYPE_ORDER[b] ?? 99;
+        return oa !== ob ? oa - ob : a.localeCompare(b);
+      });
+      for (const type of sortedTypes) {
+        const list = typeGroups[type];
+        const typeLabel = TYPE_LABEL[type] || type;
+        const badgeColor = TYPE_COLOR[type] || 'bg-gray-500';
+        const capGroups = {};
+        for (const p of list) {
+          const capKey = (p.caption || '').trim() || '__none__';
+          if (!capGroups[capKey]) capGroups[capKey] = [];
+          capGroups[capKey].push(p);
+        }
+        const sortedCaps = Object.keys(capGroups).sort((a, b) => {
+          if (a === '__none__') return -1;
+          if (b === '__none__') return 1;
+          return 0;
+        });
+        html += `<div class="mb-5">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-white text-xs font-bold ${badgeColor}">
+              <i class="fas fa-camera text-xs"></i> ${typeLabel}
+            </span>
+            <span class="text-xs text-gray-400">${list.length}장</span>
+          </div>`;
+        for (const capKey of sortedCaps) {
+          const capList = capGroups[capKey];
+          const capLabel = capKey === '__none__' ? '' : capKey;
+          if (capLabel) {
+            html += `<div class="text-xs text-gray-500 font-medium mb-1 pl-1 border-l-2 border-gray-300">${capLabel} <span class="text-gray-400">(${capList.length})</span></div>`;
+          }
+          html += `<div class="photo-grid mb-3">${capList.map(renderThumb).join('')}</div>`;
+        }
+        html += `</div>`;
+      }
+    }
+
+    // 등록 버튼 유지
+    html += `<button onclick="showPhotoUpload(${taskId})" class="btn btn-primary w-full mt-2">
+      <i class="fas fa-camera"></i> 사진/동영상 등록
+    </button>`;
+
+    photoTab.innerHTML = html;
+
+  } catch(e) {
+    console.error('[_refreshPhotoTab] 오류:', e);
+    photoTab.innerHTML = `
+      <p class="text-red-400 text-sm text-center py-8">사진 목록 갱신 실패 — 새로고침 해주세요</p>
+      <button onclick="showPhotoUpload(${taskId})" class="btn btn-primary w-full mt-2">
+        <i class="fas fa-camera"></i> 사진/동영상 등록
+      </button>`;
+  }
+}
+
 function switchDetailTab(name, el) {
   document.querySelectorAll('.detail-tab').forEach(t => t.classList.add('hidden'));
   document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
@@ -7389,23 +7507,29 @@ function deleteMedia(photoId, caption, closeModal) {
       // ② 사진/동영상 뷰어 모달만 닫기 (있을 경우)
       if (closeModal) closeModal.remove();
 
-      // ③ taskId가 있으면 작업 상세 모달을 새로 로드하고 사진 탭 유지
-      if (taskId) {
-        // 기존 작업 상세 모달 닫기
-        document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
-        await showTaskDetail(taskId);
-        setTimeout(() => {
-          const photoTab = document.querySelector('[onclick*="switchDetailTab"][onclick*="photo"]');
-          if (photoTab) photoTab.click();
-          else {
-            document.querySelectorAll('.detail-tab').forEach(t => t.classList.add('hidden'));
-            const tab = document.getElementById('dtab-photo');
-            if (tab) tab.classList.remove('hidden');
-          }
-        }, 200);
+      // ③ 사진 탭만 부분 갱신 (전체 모달 재로드 없이 즉시 반영)
+      if (taskId && document.getElementById('dtab-photo')) {
+        await _refreshPhotoTab(taskId);
+        // 사진 탭 활성화 유지
+        const photoTabBtn = document.querySelector('[onclick*="switchDetailTab"][onclick*="photo"]');
+        if (photoTabBtn) photoTabBtn.click();
+        else {
+          document.querySelectorAll('.detail-tab').forEach(t => t.classList.add('hidden'));
+          const tab = document.getElementById('dtab-photo');
+          if (tab) tab.classList.remove('hidden');
+        }
       } else {
-        // taskId를 못 찾은 경우 모든 모달만 닫기
-        document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+        // 작업 상세 모달이 없으면 전체 재로드
+        if (taskId) {
+          document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+          await showTaskDetail(taskId);
+          setTimeout(() => {
+            const photoTabBtn = document.querySelector('[onclick*="switchDetailTab"][onclick*="photo"]');
+            if (photoTabBtn) photoTabBtn.click();
+          }, 200);
+        } else {
+          document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+        }
       }
     } else {
       throw new Error(data.error || '삭제 실패');
@@ -8782,21 +8906,21 @@ async function showPhotoUpload(taskId) {
   </div>`;
   document.body.appendChild(modal);
 
-  // 닫기/닫기 버튼: 업로드된 사진이 있으면 작업 상세 사진탭으로 이동
+  // 닫기/완료(닫기) 버튼: 업로드 이력 있으면 사진 탭만 부분 갱신
   const closeHandler = async () => {
-    modal.remove();
     const uploadedCount = parseInt(document.getElementById('uploadedPhotoCount')?.textContent || '0');
+    modal.remove();
     if (uploadedCount > 0) {
-      await showTaskDetail(taskId);
-      setTimeout(() => {
-        const photoTab = document.querySelector('[onclick*="switchDetailTab"][onclick*="photo"]');
-        if (photoTab) { photoTab.click(); }
-        else {
-          document.querySelectorAll('.detail-tab').forEach(t => t.classList.add('hidden'));
-          const tab = document.getElementById('dtab-photo');
-          if (tab) tab.classList.remove('hidden');
-        }
-      }, 300);
+      // 전체 모달 재로드 없이 사진 탭만 갱신
+      await _refreshPhotoTab(taskId);
+      // 사진 탭이 현재 보이도록 활성화
+      const photoTabBtn = document.querySelector('[onclick*="switchDetailTab"][onclick*="photo"]');
+      if (photoTabBtn) { photoTabBtn.click(); }
+      else {
+        document.querySelectorAll('.detail-tab').forEach(t => t.classList.add('hidden'));
+        const tab = document.getElementById('dtab-photo');
+        if (tab) tab.classList.remove('hidden');
+      }
     }
   };
   modal.querySelector('#photoModalCloseBtn').onclick = closeHandler;
@@ -9053,6 +9177,12 @@ async function submitPhotos(taskId) {
         cancelBtn.disabled = false;
         cancelBtn.innerHTML = '<i class="fas fa-check mr-1"></i>완료 (닫기)';
         cancelBtn.className = 'btn btn-primary';
+      }
+
+      // ── 사진 탭 즉시 갱신 (업로드 모달 열려있는 상태에서도 탭 갱신) ───────
+      // dtab-photo가 DOM에 있으면 바로 갱신 (작업 상세 모달이 열려있는 경우)
+      if (document.getElementById('dtab-photo')) {
+        _refreshPhotoTab(taskId).catch(() => {});
       }
     } else {
       throw new Error(result.data?.error || `업로드 실패 (${result.status})`);

@@ -191,6 +191,9 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `2fe2696` | BUGFIX_LOG.md 생성 |
 | `75d6029` | tbm-info API attendees 추가 + NAS 전용 라우트 |
 | `d658198` | attendees 비어있을 때 task_assignments 폴백 |
+| `e0c55a6` | 알람센터 미수신(makeD1 batch+sendToUsers) + TBM미서명 팝업→작업화면이동 |
+| `b95ab27` | 사진 등록 완료 후 즉시 썸네일 표시 (BUG-006) |
+| *(다음커밋)* | 사진 탭 부분 갱신 `_refreshPhotoTab()` (BUG-007) |
 
 ---
 
@@ -307,3 +310,93 @@ if (blocked) {
 - `submitPhotos()` 함수 (업로드 실행 핵심 로직)
 - 교육 사진(`_uploadEduPhotos`): 기존 `_reloadEduPhotos` 방식 유지 (정상 동작)
 - 점검 사진(`showInspectionDetail`): 기존 재호출 방식 유지 (정상 동작)
+
+---
+
+## [BUG-007] 사진 탭 업로드/삭제 시 전체 모달 재로드 문제 (2026-06)
+
+### 증상
+- 작업 상세 모달 `사진(N)` 탭에서 사진 업로드/삭제 완료 후
+  전체 모달을 닫고 `showTaskDetail()` 전체 재호출 → 화면 깜빡임, 스크롤 위치 초기화
+- 사진 탭 외 다른 탭(기본정보, TBM 등) 데이터도 불필요하게 재조회
+
+### 원인
+- `deleteMedia()` 완료 처리: 전체 모달 닫기 → `showTaskDetail(taskId)` 재호출 → 200ms 후 사진 탭 클릭
+- `showPhotoUpload()` 닫기 핸들러: `showTaskDetail(taskId)` 전체 재호출 후 setTimeout으로 사진탭 이동
+- 모달 전체 재생성 없이 `dtab-photo` div 내용만 교체하는 방법이 없었음
+
+### 해결 (`public/static/app.js`)
+
+#### 1. `_refreshPhotoTab(taskId)` 신규 함수 추가 (7067번 라인, `switchDetailTab` 앞)
+```javascript
+async function _refreshPhotoTab(taskId) {
+  const photoTab = document.getElementById('dtab-photo');
+  if (!photoTab) return; // 모달 없으면 무시 (폴백 불필요)
+
+  // 스켈레톤 로딩 표시
+  photoTab.innerHTML = `<스피너>사진 목록 갱신 중...</div>`;
+
+  try {
+    const photosRes = await API.get('/photos', { params: { task_id: taskId } });
+    const photos = photosRes.data || [];
+
+    // 사진 탭 뱃지 카운트 즉시 갱신
+    const photoTabBtn = document.querySelector('[onclick*="switchDetailTab"][onclick*="photo"]');
+    if (photoTabBtn) photoTabBtn.textContent = `사진(${photos.length})`;
+
+    // showTaskDetail 내부와 완전히 동일한 렌더링 로직
+    // photo_type 1차 그룹 (before→progress→after 순)
+    // caption 2차 그룹 (소제목별 분리)
+    photoTab.innerHTML = html;
+  } catch(e) {
+    // 에러 메시지 + 등록 버튼 표시
+  }
+}
+```
+
+#### 2. `deleteMedia()` 완료 처리 변경 (7510번 라인)
+```javascript
+// 수정 전: showTaskDetail() 전체 재로드
+// 수정 후:
+if (taskId && document.getElementById('dtab-photo')) {
+  await _refreshPhotoTab(taskId);           // 사진 탭만 부분 갱신
+  photoTabBtn?.click();                      // 탭 활성화 유지
+} else {
+  // 폴백: dtab-photo 없으면(모달 닫힌 경우) 전체 재로드
+}
+```
+
+#### 3. `showPhotoUpload()` 닫기 핸들러 변경 (8915번 라인)
+```javascript
+// 수정 전: showTaskDetail() 전체 재호출
+// 수정 후:
+await _refreshPhotoTab(taskId);   // 전체 재로드 없이 사진 탭만 갱신
+photoTabBtn?.click();              // 사진 탭 활성화 유지
+```
+
+#### 4. `submitPhotos()` 완료 후 추가 (9185번 라인)
+```javascript
+// dtab-photo가 DOM에 있으면 업로드 모달 열린 상태에서도 백그라운드 갱신
+if (document.getElementById('dtab-photo')) {
+  _refreshPhotoTab(taskId).catch(() => {});
+}
+```
+
+### 동작 흐름 (수정 후)
+```
+사진 삭제 클릭 → 삭제 API 완료
+→ dtab-photo 있으면: _refreshPhotoTab() → 스피너 → API 재조회 → 사진 탭만 교체
+→ dtab-photo 없으면(뷰어만 열린 경우): 뷰어 모달만 닫기
+
+사진 업로드 완료 → submitPhotos()
+→ 즉시 썸네일 모달 내 표시 (BUG-006 처리)
+→ 백그라운드로 _refreshPhotoTab() 호출 (탭 뱃지 카운트 갱신)
+→ "완료(닫기)" 클릭 시 _refreshPhotoTab() → 사진 탭 전환
+```
+
+### ⚠️ 주의사항
+- `_refreshPhotoTab()` 내부 `renderThumb()` 함수는 `showTaskDetail()` 내부와 완전히 동일하게 유지할 것
+  (두 곳 중 하나만 수정하면 표시 불일치 발생)
+- `photoTabBtn` 셀렉터: `[onclick*="switchDetailTab"][onclick*="photo"]`
+  — 탭 버튼 텍스트 변경 시 이 셀렉터에는 영향 없음 (onclick 속성 기반)
+- 에러 발생 시 폴백으로 "새로고침 해주세요" 메시지 표시 (전체 모달 재로드 강제 없음)

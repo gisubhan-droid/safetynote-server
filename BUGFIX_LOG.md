@@ -195,7 +195,8 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `b95ab27` | 사진 등록 완료 후 즉시 썸네일 표시 (BUG-006) |
 | `5169f21` | 사진 탭 부분 갱신 `_refreshPhotoTab()` (BUG-007) |
 | `79c414b` | 현장위치 지도 탭별 작업 상태 구분 표시 (BUG-008) |
-| *(다음커밋)* | 진행탭 마커 미표시 수정 + KST 시간 표시 (BUG-009) |
+| `cd23c6d` | 진행탭 마커 미표시 수정 + KST 시간 표시 (BUG-009) |
+| *(다음커밋)* | work_logs GPS fallback 추가 (FEAT-010) |
 
 ---
 
@@ -581,3 +582,60 @@ for (const tbm of list) {
 - **TBM GPS 없는 작업**: TBM 작성 시 GPS 권한 거부한 경우 `tbm_records.gps_lat/lon` null → 마커 생략 (정상)
 - **`task_status` 신뢰성**: `tbm.ts` JOIN 쿼리에서 `t.status as task_status` 제공 (BUG-008에서 추가)
 - **날짜 필터 파라미터**: `/api/tbm`은 `date_from`/`date_to` 파라미터 사용 (`dateParams()` 헬퍼로 통일됨)
+
+---
+
+## [FEAT-010] work_logs GPS fallback — 현장위치 지도 GPS 커버리지 확대 (2026-06)
+
+### 배경
+BUG-009 수정 후에도 TBM 작성 시 GPS 권한을 거부한 경우
+`tbm_records.gps_lat/gps_lon`이 null → 진행/완료 탭 마커 여전히 미표시 가능
+
+### GPS 저장 현황 (검증 완료)
+| 저장 시점 | 테이블.컬럼 | 저장 여부 | 비고 |
+|-----------|------------|---------|------|
+| TBM 작성 시 | `tbm_records.gps_lat/lon` | ✅ 저장 | GPS 허용 시 |
+| 작업개시 시 | `tasks.confirmed_address` | 텍스트만 | 좌표 없음 |
+| **작업일지 저장 시** | **`work_logs.gps_lat/lon`** | **✅ 저장** | **submitWorkLog()에서 자동 취득** |
+| patchSchema 자동 컬럼 추가 | `work_logs.gps_lat/lon/gps_recorded_at` | ✅ | 구버전 DB 대비 |
+
+### 해결 — `public/static/app.js` `loadSiteMapMarkers()` GPS 우선순위 추가
+
+**진행/완료 탭 GPS 우선순위:**
+```
+1순위: tbm_records.gps_lat/lon (TBM 작성 시 취득)
+2순위: work_logs.gps_lat/lon  (작업일지 저장 시 취득) ← FEAT-010 추가
+미표시: 둘 다 null (GPS 권한 완전 거부 케이스)
+```
+
+**구현 방식:**
+```javascript
+// tbm GPS null인 task_id만 추출 → 병렬로 /api/worklogs?task_id=xxx 조회
+const noGpsTaskIds = workingItems.filter(tbm => !tbm.gps_lat || !tbm.gps_lon).map(tbm => tbm.task_id);
+const wlGpsCache = {};
+await Promise.all(noGpsTaskIds.map(async (tid) => {
+  const wlRes = await API.get(`/worklogs?task_id=${tid}`);
+  const found = wlRes.data.find(wl => wl.gps_lat && wl.gps_lon);  // GPS 있는 최신 일지
+  if (found) wlGpsCache[tid] = { lat: parseFloat(found.gps_lat), lon: parseFloat(found.gps_lon) };
+}));
+// 마커 생성 시 tbm GPS → wlGpsCache[task_id] 순서로 선택
+```
+
+**팝업 표시**: GPS 출처가 work_logs인 경우 "작업일지 GPS 기준" 안내 문구 표시
+
+### 롤백 정보
+- **안전 커밋**: `cd23c6d` (BUG-009)
+- **롤백 태그**: `rollback/pre-feat-010`
+- **롤백 명령**:
+  ```bash
+  git revert HEAD --no-edit && git push origin main
+  # NAS 반영:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  # 또는 강제 다운그레이드:
+  git push origin cd23c6d:main --force
+  ```
+
+### ⚠️ 주의사항
+- `/api/worklogs?task_id=xxx` 호출은 **tbm GPS null인 건에 한해서만** 실행 (불필요한 호출 최소화)
+- `Promise.all` 병렬 처리로 다수 건도 지연 최소화
+- work_logs도 GPS null이면 최종적으로 마커 생략 (GPS 완전 거부 케이스 — 정상)

@@ -504,6 +504,33 @@ function getKSTTime() {
   return `${hh}:${mm}`;
 }
 
+// UTC 날짜/시각 문자열 → KST 기준 "YYYY-MM-DD HH:MM" 변환 (현장위치 지도용)
+// 입력: ISO8601 문자열('2026-06-16T05:30:00Z', '2026-06-16 05:30:00' 등) 또는 날짜만('2026-06-16')
+// 출력: "2026-06-16 14:30" (KST) 또는 날짜만 있으면 "2026-06-16"
+function _toKSTDateTime(raw) {
+  if (!raw) return '';
+  try {
+    // 날짜만 있는 경우(10자리): 시간 변환 불필요 — 그대로 반환
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) return raw.trim().substring(0, 10);
+    // 공백 구분자를 T로 교체 후 파싱
+    const iso = raw.trim().replace(' ', 'T');
+    // 'Z' 없으면 UTC로 가정하여 +00:00 붙이기
+    const isoUtc = iso.endsWith('Z') || iso.includes('+') ? iso : iso + '+00:00';
+    const d = new Date(isoUtc);
+    if (isNaN(d.getTime())) return raw.substring(0, 10); // 파싱 실패 시 날짜만 반환
+    // UTC → KST (+9h)
+    const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+    const yy = kst.getUTCFullYear();
+    const mo = String(kst.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(kst.getUTCDate()).padStart(2, '0');
+    const hh = String(kst.getUTCHours()).padStart(2, '0');
+    const mm = String(kst.getUTCMinutes()).padStart(2, '0');
+    return `${yy}-${mo}-${dd} ${hh}:${mm}`;
+  } catch (_) {
+    return raw.substring(0, 10);
+  }
+}
+
 // ─── GPS 기반 날씨 자동 입력 ─────────────────────────────────────────────────
 // Open-Meteo API (무료, API 키 불필요) → 현재 날씨 데이터 반환
 // 반환: { weather: '맑음', temperature: 22, humidity: 55, wind_speed: 3.2 } 또는 { error: '...' }
@@ -29638,7 +29665,7 @@ async function loadSiteMapMarkers(map) {
         const lon = parseFloat(ra.gps_lon);
         if (isNaN(lat) || isNaN(lon)) continue;
 
-        const displayDate = (ra.created_at || '').substring(0, 10);
+        const displayDate = _toKSTDateTime(ra.created_at || '');
         const name = ra.task_title || ra.work_type_name || '위험성평가';
         const addr = ra.gps_address || ra.confirmed_address || ra.task_location || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
@@ -29681,7 +29708,7 @@ async function loadSiteMapMarkers(map) {
         const lon = parseFloat(tbm.gps_lon);
         if (isNaN(lat) || isNaN(lon)) continue;
 
-        const displayDate = (tbm.tbm_date || tbm.work_date || tbm.created_at || '').substring(0, 10);
+        const displayDate = _toKSTDateTime(tbm.tbm_date || tbm.work_date || tbm.created_at || '');
         const name = tbm.task_title || tbm.work_name || tbm.construction_name || 'TBM';
         const addr = tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
@@ -29708,47 +29735,36 @@ async function loadSiteMapMarkers(map) {
     }
 
     // ── ③ 진행 탭 (task_status = 'working') ──────────────────────
-    // tasks API로 status=working 인 작업만 조회 → confirmed_address GPS 사용
-    // (작업개시 시 브라우저 GPS → confirmed_address 에 저장됨)
+    // [BUG-009 수정] /api/tbm 기반으로 변경
+    // 이유: tasks.gps_lat/gps_lon은 작업 생성 시 수동 입력 — 대부분 null
+    //       tbm_records.gps_lat/gps_lon = TBM 작성 시 취득한 실좌표 (신뢰 가능)
     if (filter === 'working') {
-      // tasks API 파라미터: status=working, start_date/end_date(planned_date 기준)
-      const p = new URLSearchParams();
-      p.set('status', 'working');
-      if (dateFrom) p.set('start_date', dateFrom);
-      if (dateTo)   p.set('end_date',   dateTo);
-      if (userId)   p.set('worker_id',  userId);
-      p.set('limit', '500');
-      const res = await API.get(`/tasks?${p.toString()}`);
-      const list = Array.isArray(res.data) ? res.data : (res.data?.tasks || res.data?.items || []);
-      for (const task of list) {
-        // GPS 우선순위: confirmed_address 좌표 → tbm GPS 좌표 → 스킵
-        // confirmed_address_source = 'working' 이면 작업개시 시 GPS
-        // confirmed_address_source = 'tbm' 이면 TBM 시 GPS
-        let lat = null, lon = null, addr = '';
-        if (task.gps_lat && task.gps_lon) {
-          lat = parseFloat(task.gps_lat);
-          lon = parseFloat(task.gps_lon);
-          addr = task.confirmed_address || task.work_start_address || task.location || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-        } else if (task.confirmed_address) {
-          // 좌표 없고 주소만 있는 경우 — 지도 마커 불가, 목록에만 표시
-          addr = task.confirmed_address;
-        }
-        if (!lat || !lon || isNaN(lat) || isNaN(lon)) continue;
+      const res = await API.get(`/tbm${dateParams()}`);
+      const list = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.tbms || []);
+      for (const tbm of list) {
+        // task_status가 'working' 인 것만 (tbm_done은 TBM탭, 완료는 완료탭에서 표시)
+        if (!tbm.task_status || tbm.task_status !== 'working') continue;
+        if (!tbm.gps_lat || !tbm.gps_lon) continue;
+        const lat = parseFloat(tbm.gps_lat);
+        const lon = parseFloat(tbm.gps_lon);
+        if (isNaN(lat) || isNaN(lon)) continue;
 
-        const displayDate = (task.planned_date || task.work_started_at || task.created_at || '').substring(0, 10);
-        const name = task.title || '작업';
-        const workers = Array.isArray(task.workers) ? task.workers.map((w) => w.name).join(', ') : '';
+        // KST 변환: tbm_date 또는 created_at → KST 기준 날짜+시간
+        const rawDt = tbm.tbm_date || tbm.work_date || tbm.created_at || '';
+        const displayDate = _toKSTDateTime(rawDt);
+        const name = tbm.task_title || tbm.work_name || tbm.construction_name || '작업';
+        const addr = tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
         const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, '🟢 진행') }).addTo(map);
         marker.bindPopup(`
           <div style="min-width:200px;font-size:13px;">
             <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🟢 작업 진행중</div>
             <div style="font-weight:600">${name}</div>
-            ${task.task_number ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-hashtag mr-1"></i>${task.task_number}
+            ${tbm.task_number ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-hashtag mr-1"></i>${tbm.task_number}
             </div>` : ''}
-            ${workers ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-user-hard-hat mr-1"></i>${workers}
+            ${tbm.conductor_name ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-user-hard-hat mr-1"></i>${tbm.conductor_name}
             </div>` : ''}
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
@@ -29760,47 +29776,44 @@ async function loadSiteMapMarkers(map) {
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: workers || task.supervisor_name || '', address: addr, lat, lon,
-          taskId: task.id });
+          author: tbm.conductor_name || tbm.contractor_name || '', address: addr, lat, lon,
+          taskId: tbm.task_id || null });
       }
     }
 
     // ── ④ 완료 탭 (task_status = 'work_completed' | 'completed') ──
-    // tasks API로 완료 상태 작업만 조회 → confirmed_address GPS 사용
+    // [BUG-009 수정] /api/tbm 기반으로 변경 (tbm_records.gps_lat/lon 사용)
+    // 이유: tasks.gps_lat/gps_lon이 null인 경우가 많아 마커 미표시 발생
     if (filter === 'completed') {
-      const p = new URLSearchParams();
-      p.set('status', 'work_completed,completed');
-      if (dateFrom) p.set('start_date', dateFrom);
-      if (dateTo)   p.set('end_date',   dateTo);
-      if (userId)   p.set('worker_id',  userId);
-      p.set('limit', '500');
-      const res = await API.get(`/tasks?${p.toString()}`);
-      const list = Array.isArray(res.data) ? res.data : (res.data?.tasks || res.data?.items || []);
-      for (const task of list) {
-        let lat = null, lon = null, addr = '';
-        if (task.gps_lat && task.gps_lon) {
-          lat = parseFloat(task.gps_lat);
-          lon = parseFloat(task.gps_lon);
-          addr = task.confirmed_address || task.work_start_address || task.location || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-        }
-        if (!lat || !lon || isNaN(lat) || isNaN(lon)) continue;
+      const res = await API.get(`/tbm${dateParams()}`);
+      const list = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.tbms || []);
+      for (const tbm of list) {
+        // task_status가 work_completed 또는 completed 인 것만
+        const st = tbm.task_status || '';
+        if (st !== 'work_completed' && st !== 'completed') continue;
+        if (!tbm.gps_lat || !tbm.gps_lon) continue;
+        const lat = parseFloat(tbm.gps_lat);
+        const lon = parseFloat(tbm.gps_lon);
+        if (isNaN(lat) || isNaN(lon)) continue;
 
-        const displayDate = (task.planned_date || task.work_started_at || task.created_at || '').substring(0, 10);
-        const name = task.title || '작업';
-        const workers = Array.isArray(task.workers) ? task.workers.map((w) => w.name).join(', ') : '';
+        // KST 변환
+        const rawDt = tbm.tbm_date || tbm.work_date || tbm.created_at || '';
+        const displayDate = _toKSTDateTime(rawDt);
+        const name = tbm.task_title || tbm.work_name || tbm.construction_name || '작업';
+        const addr = tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
         // 상태 레이블
-        const doneLabel = task.status === 'completed' ? '✅ 일지완료' : '✅ 작업완료';
+        const doneLabel = st === 'completed' ? '✅ 일지완료' : '✅ 작업완료';
 
         const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, doneLabel) }).addTo(map);
         marker.bindPopup(`
           <div style="min-width:200px;font-size:13px;">
             <div style="font-weight:700;color:${meta.color};margin-bottom:4px">${doneLabel}</div>
             <div style="font-weight:600">${name}</div>
-            ${task.task_number ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-hashtag mr-1"></i>${task.task_number}
+            ${tbm.task_number ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-hashtag mr-1"></i>${tbm.task_number}
             </div>` : ''}
-            ${workers ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-user-hard-hat mr-1"></i>${workers}
+            ${tbm.conductor_name ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-user-hard-hat mr-1"></i>${tbm.conductor_name}
             </div>` : ''}
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
@@ -29812,8 +29825,8 @@ async function loadSiteMapMarkers(map) {
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: workers || task.supervisor_name || '', address: addr, lat, lon,
-          taskId: task.id });
+          author: tbm.conductor_name || tbm.contractor_name || '', address: addr, lat, lon,
+          taskId: tbm.task_id || null });
       }
     }
 

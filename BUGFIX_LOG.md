@@ -194,7 +194,8 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `e0c55a6` | 알람센터 미수신(makeD1 batch+sendToUsers) + TBM미서명 팝업→작업화면이동 |
 | `b95ab27` | 사진 등록 완료 후 즉시 썸네일 표시 (BUG-006) |
 | `5169f21` | 사진 탭 부분 갱신 `_refreshPhotoTab()` (BUG-007) |
-| *(다음커밋)* | 현장위치 지도 탭별 작업 상태 구분 표시 (BUG-008) |
+| `79c414b` | 현장위치 지도 탭별 작업 상태 구분 표시 (BUG-008) |
+| *(다음커밋)* | 진행탭 마커 미표시 수정 + KST 시간 표시 (BUG-009) |
 
 ---
 
@@ -476,3 +477,107 @@ const res = await API.get(`/tasks?status=work_completed,completed&...`);
   → `if (tbm.task_status && tbm.task_status !== 'tbm_done') continue;`
   → null이면 필터 통과 (하위 호환)
 - **위험성체크 탭**: 변경 없음 (기존 `/api/risk` 유지)
+
+---
+
+## [BUG-009] 현장위치 지도 진행탭 마커 미표시 + KST 시간 표시 (2026-06)
+
+### 증상
+1. **진행 탭 마커 미표시**: `working` 상태 작업이 있는데 진행 탭 지도에 마커가 전혀 안 보임
+2. **완료 탭 마커 미표시**: 동일 원인
+3. **하단 리스트 시간 UTC 표시**: 위치 기록 하단 목록의 날짜/시간이 UTC 기준으로 표시
+
+### 원인 분석
+
+#### 진행/완료 탭 마커 미표시
+BUG-008에서 진행/완료 탭 데이터 소스를 `/api/tasks?status=working`으로 변경했으나:
+```javascript
+// BUG-008에서 작성된 코드 (오류 있음)
+const res = await API.get(`/tasks?${p.toString()}`);
+for (const task of list) {
+  if (task.gps_lat && task.gps_lon) {  // ← tasks.gps_lat 대부분 null
+    lat = parseFloat(task.gps_lat);
+    ...
+  }
+  if (!lat || !lon || ...) continue;   // ← 전부 skip → 마커 없음
+}
+```
+- `tasks.gps_lat/gps_lon`: 작업 생성 시 수동 입력 필드 → **대부분 null**
+- 작업개시 시 GPS는 `tasks.confirmed_address`(텍스트)에만 저장됨 → 좌표 없음
+- `tbm_records.gps_lat/gps_lon`: TBM 작성 시 브라우저 GPS로 취득 → **실좌표 있음**
+
+#### KST 시간 미적용
+`displayDate` 계산 시 `.substring(0, 10)`만 사용 → UTC 기준 날짜/시간 그대로 표시
+
+### 해결
+
+#### 1. `public/static/app.js` — `_toKSTDateTime()` 헬퍼 함수 추가
+```javascript
+// UTC 날짜/시각 문자열 → KST 기준 "YYYY-MM-DD HH:MM" 변환
+function _toKSTDateTime(raw) {
+  if (!raw) return '';
+  // 날짜만(10자리)이면 그대로 반환
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) return raw.trim().substring(0, 10);
+  const isoUtc = raw.trim().replace(' ', 'T');
+  const iso = isoUtc.endsWith('Z') || isoUtc.includes('+') ? isoUtc : isoUtc + '+00:00';
+  const d = new Date(iso);
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000); // UTC+9
+  return `${kst.getUTCFullYear()}-${...}-${...} ${HH}:${MM}`;
+}
+```
+
+#### 2. 진행/완료 탭 데이터 소스 변경: `/api/tasks` → `/api/tbm`
+
+**진행 탭** (`filter === 'working'`):
+```javascript
+// 변경 전: /api/tasks?status=working (tasks.gps_lat = null → 마커 없음)
+// 변경 후: /api/tbm + task_status 필터
+const res = await API.get(`/tbm${dateParams()}`);
+for (const tbm of list) {
+  if (!tbm.task_status || tbm.task_status !== 'working') continue;
+  // tbm_records.gps_lat/gps_lon 사용 (TBM 작성 시 실좌표)
+  const lat = parseFloat(tbm.gps_lat);
+  const lon = parseFloat(tbm.gps_lon);
+  const displayDate = _toKSTDateTime(tbm.tbm_date || tbm.created_at || '');
+}
+```
+
+**완료 탭** (`filter === 'completed'`):
+```javascript
+// 변경 전: /api/tasks?status=work_completed,completed (gps null → 마커 없음)
+// 변경 후: /api/tbm + task_status 필터
+const res = await API.get(`/tbm${dateParams()}`);
+for (const tbm of list) {
+  const st = tbm.task_status || '';
+  if (st !== 'work_completed' && st !== 'completed') continue;
+  // tbm_records.gps_lat/gps_lon 사용
+}
+```
+
+#### 3. 전체 탭 `displayDate` KST 변환 통일
+- 위험성체크(risk) 탭: `_toKSTDateTime(ra.created_at)`
+- TBM 탭: `_toKSTDateTime(tbm.tbm_date || tbm.created_at)`
+- 진행/완료 탭: `_toKSTDateTime(tbm.tbm_date || tbm.created_at)`
+
+### 탭별 GPS 데이터 소스 최종 정리
+| 탭 | API | GPS 컬럼 | 비고 |
+|----|-----|----------|------|
+| 위험성체크 | `/api/risk` | `risk_assessments.gps_lat/lon` | 변경 없음 |
+| TBM | `/api/tbm` + `task_status=tbm_done` | `tbm_records.gps_lat/lon` | BUG-008 |
+| **진행** | `/api/tbm` + `task_status=working` | `tbm_records.gps_lat/lon` | **BUG-009 수정** |
+| **완료** | `/api/tbm` + `task_status=work_completed\|completed` | `tbm_records.gps_lat/lon` | **BUG-009 수정** |
+
+### 롤백 정보
+- **안전 커밋**: `5169f21` (사진 탭 즉시 갱신)
+- **롤백 태그**: `rollback/pre-bugfix-008`
+- **롤백 명령**:
+  ```bash
+  git revert 79c414b --no-edit && git push origin main
+  # 또는 강제 다운그레이드
+  git push origin 5169f21:main --force
+  ```
+
+### ⚠️ 주의사항
+- **TBM GPS 없는 작업**: TBM 작성 시 GPS 권한 거부한 경우 `tbm_records.gps_lat/lon` null → 마커 생략 (정상)
+- **`task_status` 신뢰성**: `tbm.ts` JOIN 쿼리에서 `t.status as task_status` 제공 (BUG-008에서 추가)
+- **날짜 필터 파라미터**: `/api/tbm`은 `date_from`/`date_to` 파라미터 사용 (`dateParams()` 헬퍼로 통일됨)

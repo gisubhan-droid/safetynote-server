@@ -8715,12 +8715,26 @@ async function showPhotoUpload(taskId) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.innerHTML = `
-  <div class="modal" style="max-width:500px">
+  <div class="modal" style="max-width:520px;max-height:92vh;overflow-y:auto">
     <div class="modal-header">
-      <h3 class="font-bold text-lg">사진 등록</h3>
-      <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 text-xl"><i class="fas fa-times"></i></button>
+      <div>
+        <h3 class="font-bold text-lg">사진 등록</h3>
+        <div id="photoUploadSubtitle" class="text-xs text-gray-400 mt-0.5">사진/동영상을 선택 후 업로드하세요</div>
+      </div>
+      <button id="photoModalCloseBtn" class="text-gray-400 text-xl"><i class="fas fa-times"></i></button>
     </div>
     <div class="modal-body">
+      <!-- ── 업로드 완료 사진 즉시 표시 영역 ── -->
+      <div id="uploadedPhotoList" class="hidden mb-4">
+        <div class="flex items-center gap-2 mb-2">
+          <i class="fas fa-check-circle text-green-500"></i>
+          <span class="text-sm font-semibold text-green-700">업로드 완료 <span id="uploadedPhotoCount">0</span>개</span>
+        </div>
+        <div id="uploadedPhotoGrid" class="grid gap-2" style="grid-template-columns:repeat(auto-fill,minmax(90px,1fr))"></div>
+      </div>
+      <!-- ── 구분선 (완료 사진 있을 때만) ── -->
+      <div id="uploadedDivider" class="hidden border-t border-gray-100 mb-4"></div>
+
       <div class="form-group">
         <label class="form-label">사진 유형</label>
         <select id="photoType" class="form-control">
@@ -8760,13 +8774,33 @@ async function showPhotoUpload(taskId) {
       </div>
     </div>
     <div class="modal-footer">
-      <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline" id="uploadCancelBtn">취소</button>
+      <button id="uploadCancelBtn" class="btn btn-outline">닫기</button>
       <button onclick="submitPhotos(${taskId})" class="btn btn-primary" id="uploadBtn">
         <i class="fas fa-upload"></i> 업로드
       </button>
     </div>
   </div>`;
   document.body.appendChild(modal);
+
+  // 닫기/닫기 버튼: 업로드된 사진이 있으면 작업 상세 사진탭으로 이동
+  const closeHandler = async () => {
+    modal.remove();
+    const uploadedCount = parseInt(document.getElementById('uploadedPhotoCount')?.textContent || '0');
+    if (uploadedCount > 0) {
+      await showTaskDetail(taskId);
+      setTimeout(() => {
+        const photoTab = document.querySelector('[onclick*="switchDetailTab"][onclick*="photo"]');
+        if (photoTab) { photoTab.click(); }
+        else {
+          document.querySelectorAll('.detail-tab').forEach(t => t.classList.add('hidden'));
+          const tab = document.getElementById('dtab-photo');
+          if (tab) tab.classList.remove('hidden');
+        }
+      }, 300);
+    }
+  };
+  modal.querySelector('#photoModalCloseBtn').onclick = closeHandler;
+  modal.querySelector('#uploadCancelBtn').onclick    = closeHandler;
 }
 
 // compressImage: 이미지 파일을 Canvas로 리사이즈·압축 후 File 객체로 반환
@@ -8969,21 +9003,57 @@ async function submitPhotos(taskId) {
     setProgress(100, '완료!');
     _hideUploadToast();
     if (result.status >= 200 && result.status < 300 && result.data.success) {
+      const uploadedIds  = result.data.ids || [];
       const countMsg = result.data.count > 0 ? `${result.data.count}개 파일 업로드 완료` : '업로드 완료';
       const compMsg  = imgCount > 0 && savedPct > 5 ? ` (${savedPct}% 압축)` : '';
       toast(countMsg + compMsg);
-      document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
-      await showTaskDetail(taskId);
-      setTimeout(() => {
-        const photoTab = document.querySelector('[onclick*="switchDetailTab"][onclick*="photo"]');
-        if (photoTab) {
-          photoTab.click();
-        } else {
-          document.querySelectorAll('.detail-tab').forEach(t => t.classList.add('hidden'));
-          const tab = document.getElementById('dtab-photo');
-          if (tab) tab.classList.remove('hidden');
+
+      // ── 업로드 완료 사진 즉시 표시 (모달 내) ─────────────────────────────
+      const listWrap   = document.getElementById('uploadedPhotoList');
+      const grid       = document.getElementById('uploadedPhotoGrid');
+      const countEl    = document.getElementById('uploadedPhotoCount');
+      const divider    = document.getElementById('uploadedDivider');
+      const subtitle   = document.getElementById('photoUploadSubtitle');
+      if (listWrap && grid && uploadedIds.length > 0) {
+        const prevCount = parseInt(countEl?.textContent || '0');
+        const newCount  = prevCount + uploadedIds.length;
+        if (countEl) countEl.textContent = String(newCount);
+
+        for (const photoId of uploadedIds) {
+          const isVideo = false; // photos API는 사진 id 반환
+          const thumb = document.createElement('div');
+          thumb.className = 'relative rounded-lg overflow-hidden border border-green-200 bg-green-50';
+          thumb.style.cssText = 'aspect-ratio:1;cursor:pointer';
+          thumb.innerHTML = `
+            <img src="/api/photos/${photoId}/img"
+                 class="w-full h-full object-cover"
+                 onerror="this.parentElement.innerHTML='<div class=\'w-full h-full flex items-center justify-center text-gray-300\'><i class=\'fas fa-film text-2xl\'></i></div>'">
+            <div class="absolute top-1 right-1 bg-green-500 text-white rounded-full" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:8px">
+              <i class="fas fa-check"></i>
+            </div>`;
+          grid.appendChild(thumb);
         }
-      }, 300);
+        listWrap.classList.remove('hidden');
+        if (divider)  divider.classList.remove('hidden');
+        if (subtitle) subtitle.textContent = `${newCount}개 등록 완료 — 추가 등록 가능`;
+      }
+
+      // ── 입력 폼 초기화 (추가 등록 가능 상태) ────────────────────────────
+      const previewEl = document.getElementById('photoPreview');
+      const inputEl   = document.getElementById('photoInput');
+      const captionEl = document.getElementById('photoCaption');
+      if (previewEl) previewEl.innerHTML = '';
+      if (inputEl)   inputEl.value = '';
+      if (captionEl) captionEl.value = '';
+      if (progWrap)  progWrap.classList.add('hidden');
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-upload"></i> 추가 업로드';
+      if (cancelBtn) {
+        cancelBtn.disabled = false;
+        cancelBtn.innerHTML = '<i class="fas fa-check mr-1"></i>완료 (닫기)';
+        cancelBtn.className = 'btn btn-primary';
+      }
     } else {
       throw new Error(result.data?.error || `업로드 실패 (${result.status})`);
     }

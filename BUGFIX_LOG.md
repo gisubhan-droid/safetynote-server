@@ -198,7 +198,8 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `cd23c6d` | 진행탭 마커 미표시 수정 + KST 시간 표시 (BUG-009) |
 | `048bdf2` | work_logs GPS fallback 추가 (FEAT-010) |
 | `bc8b047` | 진행/완료탭 tasks API 기반 전면 재작성 (FEAT-011) |
-| *(다음커밋)* | GPS 없을 때 상태변경 시각 displayDate fallback (FEAT-012) |
+| `fe8991e` | GPS 없을 때 상태변경 시각 displayDate fallback (FEAT-012) |
+| *(다음커밋)* | 내작업 탭 클릭 이동 수정 + 작업일보 500 에러 수정 (BUG-013/014) |
 
 ---
 
@@ -748,6 +749,75 @@ UPDATE tasks SET status=?, work_log_required=0, updated_at=CURRENT_TIMESTAMP WHE
 - **롤백 명령**:
   ```bash
   git push origin bc8b047:main --force
+  # NAS:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  ```
+
+---
+
+## [BUG-013] 내작업 상단 탭(내작업/진행중/완료) 클릭 시 화면 이동 안 됨 (2026-06)
+
+### 증상
+- 외선(근로자) 접속 화면의 "내 작업목록" 페이지에서 상단 카드(6 내작업 / 0 진행중 / 1 완료) 클릭 시 아무 반응 없음
+- 근로자 외 접속 화면(관리자/감독자)의 동일 구조 카드는 정상 작동
+
+### 근본 원인
+`applyMyTasksFilter()` 함수 내에서 컨테이너 DOM을 `getElementById('main-content')`로 조회하는데, 실제 페이지 컨테이너 ID는 `'page-content'`여서 항상 `null` 반환 → `renderMyTasksPage()` 미호출
+
+```javascript
+// ❌ 기존 (잘못된 ID)
+const content = document.getElementById('main-content');
+if (content) renderMyTasksPage(content);  // content === null → 실행 안 됨
+
+// ✅ 수정 (올바른 ID, 구버전 fallback 포함)
+const content = document.getElementById('page-content') || document.getElementById('main-content');
+if (content) renderMyTasksPage(content);
+```
+
+### 수정 파일
+- `public/static/app.js`: `applyMyTasksFilter()` 함수 — ID `'main-content'` → `'page-content'` 우선
+
+### 왜 다른 화면에서는 정상?
+- 관리자/감독자의 카드(공사현황)는 `navigateToTasksWithFilter()` → `navigateTo()` 흐름 사용 (DOM ID 의존 없음)
+- 근로자의 카드만 `applyMyTasksFilter()` 사용 — 버그 범위 한정
+
+---
+
+## [BUG-014] 외선 작업일보 제출 시 POST /api/work-reports 500 에러 (2026-06)
+
+### 증상
+- 작업일보 작성 후 "제출" 클릭 시 `POST https://.../api/work-reports 500 (Internal Server Error)` 발생
+- 저장 실패 토스트 표시
+
+### 근본 원인
+`node-server.ts`의 `POST /api/work-reports` 핸들러 전체에 try-catch가 없음 → 내부 쿼리 중 어느 곳에서든 예외 발생 시 unhandled 500 에러 반환. 특히:
+1. `teams` 테이블 JOIN 쿼리 (`task_assignments → users → teams`) — `teams` 미구성 시 에러
+2. `work_report_lines` / `work_report_cables` INSERT — 구버전 DB 컬럼 불일치 시 에러
+3. `work_report_extras` DELETE/INSERT — 테이블 미생성 시 에러
+
+### 수정 내용 (`node-server.ts`)
+```typescript
+// ✅ 전체 핸들러를 try-catch로 감쌈
+try {
+  // ... 모든 DB 로직 ...
+  return c.json({ ok: true, reportId })
+} catch (e: any) {
+  console.error('[work-reports POST /] 오류:', e.message, e.stack)
+  return c.json({ error: e.message || '일보 저장 실패' }, 500)
+}
+```
+추가로 각 세부 작업(lines/cables/extras 저장)에도 개별 try-catch 추가:
+- 세부 데이터 저장 실패 시 헤더(work_reports 레코드)는 정상 저장되고 경고만 로깅
+- `teams` JOIN 쿼리 실패(구버전 DB) 시 `contractor_name` fallback 유지
+
+### 수정 파일
+- `node-server.ts`: `POST /api/work-reports` 핸들러 — 전체 try-catch + 세부 try-catch 추가
+
+### 롤백 정보
+- **롤백 태그**: `rollback/pre-bugfix-013` (= `fe8991e`)
+- **롤백 명령**:
+  ```bash
+  git push origin fe8991e:main --force
   # NAS:
   cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
   ```

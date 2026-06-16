@@ -3549,69 +3549,103 @@ app.get('/api/work-reports/task/:taskId', async (c) => {
 app.post('/api/work-reports', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const body = await c.req.json()
+
+  let body: any
+  try { body = await c.req.json() } catch(_) { return c.json({ error: '요청 형식 오류' }, 400) }
+
   const { task_id, detail_type = '' } = body
   if (!task_id) return c.json({ error: 'task_id 필수' }, 400)
-  const task = rawDb.prepare(`
-    SELECT t.*, cs.manager_name FROM tasks t
-    LEFT JOIN constructions cs ON cs.request_no=t.request_no WHERE t.id=?
-  `).get(task_id) as any
-  if (!task) return c.json({ error: '작업 없음' }, 404)
-  const teamRow = rawDb.prepare(`
-    SELECT DISTINCT tm.name AS team_name FROM task_assignments ta
-    JOIN users u ON u.id=ta.worker_id JOIN teams tm ON tm.id=u.team_id
-    WHERE ta.task_id=? LIMIT 1
-  `).get(task_id) as any
-  const worker_team  = teamRow?.team_name || task.contractor_name || ''
-  const manager_name = task.manager_name || task.lgu_supervisor || ''
-  const work_date    = task.work_completed_at || task.work_date || ''
-  const existing = rawDb.prepare(`SELECT id, status FROM work_reports WHERE task_id=?`).get(task_id) as any
-  let reportId: number
-  if (existing) {
-    // 이미 제출/확인 완료된 일보는 새로 작성 불가
-    if (existing.status === 'submitted' || existing.status === 'confirmed') {
-      return c.json({ error: '이미 제출된 일보가 있습니다.', reportId: existing.id, status: existing.status }, 409)
+
+  try {
+    const task = rawDb.prepare(`
+      SELECT t.*, cs.manager_name FROM tasks t
+      LEFT JOIN constructions cs ON cs.request_no=t.request_no WHERE t.id=?
+    `).get(task_id) as any
+    if (!task) return c.json({ error: '작업 없음' }, 404)
+
+    // 작업팀 조회 — teams 테이블 없는 구버전 DB 방어
+    let worker_team = task.contractor_name || ''
+    try {
+      const teamRow = rawDb.prepare(`
+        SELECT DISTINCT tm.name AS team_name FROM task_assignments ta
+        JOIN users u ON u.id=ta.worker_id JOIN teams tm ON tm.id=u.team_id
+        WHERE ta.task_id=? LIMIT 1
+      `).get(task_id) as any
+      if (teamRow?.team_name) worker_team = teamRow.team_name
+    } catch(_) { /* teams 테이블 없는 구버전 DB 무시 */ }
+
+    const manager_name = task.manager_name || task.lgu_supervisor || ''
+    const work_date    = task.work_completed_at || task.work_date || ''
+
+    const existing = rawDb.prepare(`SELECT id, status FROM work_reports WHERE task_id=?`).get(task_id) as any
+    let reportId: number
+
+    if (existing) {
+      // 이미 제출/확인 완료된 일보는 새로 작성 불가
+      if (existing.status === 'submitted' || existing.status === 'confirmed') {
+        return c.json({ error: '이미 제출된 일보가 있습니다.', reportId: existing.id, status: existing.status }, 409)
+      }
+      rawDb.prepare(`UPDATE work_reports SET detail_type=?,worker_team=?,manager_name=?,work_date=?,updated_at=CURRENT_TIMESTAMP WHERE task_id=?`)
+        .run(detail_type, worker_team, manager_name, work_date, task_id)
+      reportId = existing.id
+    } else {
+      const ins = rawDb.prepare(`INSERT INTO work_reports (task_id,detail_type,worker_team,manager_name,work_date,status,created_by) VALUES (?,?,?,?,?,'draft',?)`)
+        .run(task_id, detail_type, worker_team, manager_name, work_date, user.id)
+      reportId = ins.lastInsertRowid as number
     }
-    rawDb.prepare(`UPDATE work_reports SET detail_type=?,worker_team=?,manager_name=?,work_date=?,updated_at=CURRENT_TIMESTAMP WHERE task_id=?`)
-      .run(detail_type, worker_team, manager_name, work_date, task_id)
-    reportId = existing.id
-  } else {
-    const ins = rawDb.prepare(`INSERT INTO work_reports (task_id,detail_type,worker_team,manager_name,work_date,status,created_by) VALUES (?,?,?,?,?,'draft',?)`)
-      .run(task_id, detail_type, worker_team, manager_name, work_date, user.id)
-    reportId = ins.lastInsertRowid as number
-  }
-  if (Array.isArray(body.lines)) {
-    rawDb.prepare(`DELETE FROM work_report_lines WHERE report_id=?`).run(reportId)
-    const lineStmt = rawDb.prepare(`INSERT INTO work_report_lines (report_id,line_order,work_div,mgmt_zone,mgmt_no,line_name,line_no,digital_no,section_dist,pole_count,ip_pole,bind_wire,hanger,hardware,cabinet,name_tag,warning_sign,grounding,other_work,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    for (let i = 0; i < body.lines.length; i++) {
-      const l = body.lines[i]
-      lineStmt.run(reportId,i,l.work_div||'',l.mgmt_zone||'',l.mgmt_no||'',l.line_name||'',l.line_no||'',l.digital_no||'',l.section_dist||0,l.pole_count||0,l.ip_pole||'',l.bind_wire||'',l.hanger||'',l.hardware||'',l.cabinet||'',l.name_tag||0,l.warning_sign||0,l.grounding||'',l.other_work||'',l.remark||'')
+
+    // 라인 데이터 저장 (오류 무시 — 구버전 DB 컬럼 호환 방어)
+    if (Array.isArray(body.lines)) {
+      try {
+        rawDb.prepare(`DELETE FROM work_report_lines WHERE report_id=?`).run(reportId)
+        const lineStmt = rawDb.prepare(`INSERT INTO work_report_lines (report_id,line_order,work_div,mgmt_zone,mgmt_no,line_name,line_no,digital_no,section_dist,pole_count,ip_pole,bind_wire,hanger,hardware,cabinet,name_tag,warning_sign,grounding,other_work,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        for (let i = 0; i < body.lines.length; i++) {
+          const l = body.lines[i]
+          try {
+            lineStmt.run(reportId,i,l.work_div||'',l.mgmt_zone||'',l.mgmt_no||'',l.line_name||'',l.line_no||'',l.digital_no||'',l.section_dist||0,l.pole_count||0,l.ip_pole||'',l.bind_wire||'',l.hanger||'',l.hardware||'',l.cabinet||'',l.name_tag||0,l.warning_sign||0,l.grounding||'',l.other_work||'',l.remark||'')
+          } catch(rowErr: any) { console.warn('[work-reports POST] line row 저장 실패(무시):', rowErr.message) }
+        }
+      } catch(lineErr: any) { console.warn('[work-reports POST] lines 저장 실패(무시):', lineErr.message) }
     }
-  }
-  if (Array.isArray(body.cables)) {
-    rawDb.prepare(`DELETE FROM work_report_cables WHERE report_id=?`).run(reportId)
-    const cableStmt = rawDb.prepare(`INSERT INTO work_report_cables (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    for (let i = 0; i < body.cables.length; i++) {
-      const cb = body.cables[i]
-      cableStmt.run(reportId,i,cb.lot_no||'',cb.spec||0,cb.maker||'',cb.mfg_year||'',cb.cable_type||'',cb.work_div||'',cb.start_point||'',cb.end_point||'',cb.usage_m||0,cb.cable_kind||'',cb.cable_code||'',cb.special_note||'',cb.proc||'',cb.remark||'')
+
+    // 케이블 데이터 저장 (오류 무시)
+    if (Array.isArray(body.cables)) {
+      try {
+        rawDb.prepare(`DELETE FROM work_report_cables WHERE report_id=?`).run(reportId)
+        const cableStmt = rawDb.prepare(`INSERT INTO work_report_cables (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        for (let i = 0; i < body.cables.length; i++) {
+          const cb = body.cables[i]
+          try {
+            cableStmt.run(reportId,i,cb.lot_no||'',cb.spec||0,cb.maker||'',cb.mfg_year||'',cb.cable_type||'',cb.work_div||'',cb.start_point||'',cb.end_point||'',cb.usage_m||0,cb.cable_kind||'',cb.cable_code||'',cb.special_note||'',cb.proc||'',cb.remark||'')
+          } catch(rowErr: any) { console.warn('[work-reports POST] cable row 저장 실패(무시):', rowErr.message) }
+        }
+      } catch(cableErr: any) { console.warn('[work-reports POST] cables 저장 실패(무시):', cableErr.message) }
     }
-  }
-  // cable_sets의 extras(추가입력) 저장
-  if (Array.isArray(body.cable_sets)) {
-    rawDb.prepare(`DELETE FROM work_report_extras WHERE report_id=?`).run(reportId)
-    const extraStmt = rawDb.prepare(`INSERT INTO work_report_extras (report_id, set_no, item_key, qty) VALUES (?,?,?,?)`)
-    for (const cs of body.cable_sets) {
-      const setNo = cs.set_no || 1
-      if (Array.isArray(cs.extras)) {
-        for (const ex of cs.extras) {
-          if (ex.key && ex.qty > 0) {
-            extraStmt.run(reportId, setNo, ex.key, ex.qty)
+
+    // cable_sets의 extras(추가입력) 저장 (오류 무시)
+    if (Array.isArray(body.cable_sets)) {
+      try {
+        rawDb.prepare(`DELETE FROM work_report_extras WHERE report_id=?`).run(reportId)
+        const extraStmt = rawDb.prepare(`INSERT INTO work_report_extras (report_id, set_no, item_key, qty) VALUES (?,?,?,?)`)
+        for (const cs of body.cable_sets) {
+          const setNo = cs.set_no || 1
+          if (Array.isArray(cs.extras)) {
+            for (const ex of cs.extras) {
+              if (ex.key && ex.qty > 0) {
+                try { extraStmt.run(reportId, setNo, ex.key, ex.qty) } catch(_) {}
+              }
+            }
           }
         }
-      }
+      } catch(extrasErr: any) { console.warn('[work-reports POST] extras 저장 실패(무시):', extrasErr.message) }
     }
+
+    return c.json({ ok: true, reportId })
+
+  } catch (e: any) {
+    console.error('[work-reports POST /] 오류:', e.message, e.stack)
+    return c.json({ error: e.message || '일보 저장 실패' }, 500)
   }
-  return c.json({ ok: true, reportId })
 })
 
 // POST /api/work-reports/:reportId/submit

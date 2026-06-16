@@ -10725,7 +10725,8 @@ function navigateMyTasksWithFilter(filterType) {
 // 내 작업 페이지 내부에서 즉시 필터 재렌더링 (페이지 이동 없이 카드 클릭)
 function applyMyTasksFilter(filterType) {
   _myTasksFilter = filterType;
-  const content = document.getElementById('main-content');
+  // 실제 컨테이너 ID는 'page-content' (main-content 아님)
+  const content = document.getElementById('page-content') || document.getElementById('main-content');
   if (content) renderMyTasksPage(content);
 }
 

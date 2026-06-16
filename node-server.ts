@@ -1335,6 +1335,32 @@ function patchSchema() {
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN proc TEXT DEFAULT ''`)
     // work_report_cables에 remark 컬럼 추가 (특이사항)
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN remark TEXT DEFAULT ''`)
+    // ── BUG-016: work_report_lines 컬럼 누락 보정 (구버전 NAS DB 호환) ──────
+    // CREATE TABLE IF NOT EXISTS는 기존 테이블에 컬럼을 추가하지 않으므로
+    // 초기 DB에 없는 컬럼들을 safeAlter로 보정
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN work_div     TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN mgmt_zone    TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN mgmt_no      TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN line_name    TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN line_no      TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN digital_no   TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN section_dist REAL DEFAULT 0`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN pole_count   INTEGER DEFAULT 0`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN ip_pole      TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN bind_wire    TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN hanger       TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN hardware     TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN cabinet      TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN name_tag     INTEGER DEFAULT 0`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN warning_sign INTEGER DEFAULT 0`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN grounding    TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN other_work   TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_lines ADD COLUMN remark       TEXT DEFAULT ''`)
+    // work_report_cables 추가 컬럼 보정
+    safeAlter(`ALTER TABLE work_report_cables ADD COLUMN cable_type  TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_cables ADD COLUMN work_div    TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_cables ADD COLUMN cable_code  TEXT DEFAULT ''`)
+    safeAlter(`ALTER TABLE work_report_cables ADD COLUMN special_note TEXT DEFAULT ''`)
     // volume_unit_prices 항목을 신규 단가표로 교체 (기존 구버전 키 삭제)
     const newKeys = ['cable_new','cable_remove','cable_move','조가선신설','커넥터취부','조가선 철거',
       '전주 건식','전주 철거','B 형접지(대지)','A 형접지(대지)','지선신설','전주세움',
@@ -3598,32 +3624,48 @@ app.post('/api/work-reports', async (c) => {
       reportId = ins.lastInsertRowid as number
     }
 
-    // 라인 데이터 저장 (오류 무시 — 구버전 DB 컬럼 호환 방어)
+    // 라인 데이터 저장 — 빈 행 제외 후 INSERT
     if (Array.isArray(body.lines)) {
       try {
         rawDb.prepare(`DELETE FROM work_report_lines WHERE report_id=?`).run(reportId)
         const lineStmt = rawDb.prepare(`INSERT INTO work_report_lines (report_id,line_order,work_div,mgmt_zone,mgmt_no,line_name,line_no,digital_no,section_dist,pole_count,ip_pole,bind_wire,hanger,hardware,cabinet,name_tag,warning_sign,grounding,other_work,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        let lineOrder = 0
         for (let i = 0; i < body.lines.length; i++) {
           const l = body.lines[i]
+          // 모든 텍스트 필드가 비어있고 숫자 필드도 0인 행은 건너뜀 (빈 기본행 저장 방지)
+          const hasData = (l.work_div||l.mgmt_zone||l.mgmt_no||l.line_name||l.line_no||l.digital_no||l.ip_pole||l.grounding||l.remark) ||
+                          (l.section_dist && l.section_dist !== 0) ||
+                          (l.pole_count && l.pole_count !== 0)
+          if (!hasData) continue
           try {
-            lineStmt.run(reportId,i,l.work_div||'',l.mgmt_zone||'',l.mgmt_no||'',l.line_name||'',l.line_no||'',l.digital_no||'',l.section_dist||0,l.pole_count||0,l.ip_pole||'',l.bind_wire||'',l.hanger||'',l.hardware||'',l.cabinet||'',l.name_tag||0,l.warning_sign||0,l.grounding||'',l.other_work||'',l.remark||'')
-          } catch(rowErr: any) { console.warn('[work-reports POST] line row 저장 실패(무시):', rowErr.message) }
+            lineStmt.run(reportId,lineOrder++,l.work_div||'',l.mgmt_zone||'',l.mgmt_no||'',l.line_name||'',l.line_no||'',l.digital_no||'',l.section_dist||0,l.pole_count||0,l.ip_pole||'',l.bind_wire||'',l.hanger||'',l.hardware||'',l.cabinet||'',l.name_tag||0,l.warning_sign||0,l.grounding||'',l.other_work||'',l.remark||'')
+          } catch(rowErr: any) { console.error('[work-reports POST] line row 저장 실패:', rowErr.message, JSON.stringify(l)) }
         }
-      } catch(lineErr: any) { console.warn('[work-reports POST] lines 저장 실패(무시):', lineErr.message) }
+        console.log(`[work-reports POST] lines 저장 완료: reportId=${reportId}, 저장행수=${lineOrder}/${body.lines.length}`)
+      } catch(lineErr: any) { console.error('[work-reports POST] lines 저장 실패:', lineErr.message) }
     }
 
-    // 케이블 데이터 저장 (오류 무시)
+    // 케이블 데이터 저장 — 빈 행 제외 후 INSERT
     if (Array.isArray(body.cables)) {
       try {
         rawDb.prepare(`DELETE FROM work_report_cables WHERE report_id=?`).run(reportId)
         const cableStmt = rawDb.prepare(`INSERT INTO work_report_cables (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        let cableOrder = 0
         for (let i = 0; i < body.cables.length; i++) {
           const cb = body.cables[i]
+          // 모든 식별 필드가 비어있는 행은 건너뜀 (빈 기본행 저장 방지)
+          const hasData = (cb.lot_no||cb.maker||cb.cable_kind||cb.proc||cb.remark) ||
+                          (cb.spec && cb.spec !== '' && cb.spec !== '0') ||
+                          (cb.usage_m && cb.usage_m !== 0) ||
+                          (cb.start_point && cb.start_point !== 0) ||
+                          (cb.end_point && cb.end_point !== 0)
+          if (!hasData) continue
           try {
-            cableStmt.run(reportId,i,cb.lot_no||'',cb.spec||0,cb.maker||'',cb.mfg_year||'',cb.cable_type||'',cb.work_div||'',cb.start_point||'',cb.end_point||'',cb.usage_m||0,cb.cable_kind||'',cb.cable_code||'',cb.special_note||'',cb.proc||'',cb.remark||'')
-          } catch(rowErr: any) { console.warn('[work-reports POST] cable row 저장 실패(무시):', rowErr.message) }
+            cableStmt.run(reportId,cableOrder++,cb.lot_no||'',cb.spec||'',cb.maker||'',cb.mfg_year||'',cb.cable_type||'',cb.work_div||'',cb.start_point||'',cb.end_point||'',cb.usage_m||0,cb.cable_kind||'',cb.cable_code||'',cb.special_note||'',cb.proc||'',cb.remark||'')
+          } catch(rowErr: any) { console.error('[work-reports POST] cable row 저장 실패:', rowErr.message, JSON.stringify(cb)) }
         }
-      } catch(cableErr: any) { console.warn('[work-reports POST] cables 저장 실패(무시):', cableErr.message) }
+        console.log(`[work-reports POST] cables 저장 완료: reportId=${reportId}, 저장행수=${cableOrder}/${body.cables.length}`)
+      } catch(cableErr: any) { console.error('[work-reports POST] cables 저장 실패:', cableErr.message) }
     }
 
     // cable_sets의 extras(추가입력) 저장 (오류 무시)

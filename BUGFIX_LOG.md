@@ -1010,3 +1010,74 @@ draft ──[제출]──▶ submitted ──[수정하기]──▶ draft
 - revert(수정하기)는 `submitted` 상태에서만 가능. `confirmed`는 불가
 - revert 후 폼이 재로드되면서 draft 상태로 전환되어 임시저장/제출 버튼이 다시 표시됨
 - tasks API 근로자 필터링은 `task_assignments` 기반 — 팀 배정이 안 된 작업은 표시되지 않음
+
+---
+
+## [BUG-016] 작업일보 내용 저장 안 됨 (2026-06)
+
+### 증상
+- 작업일보 작성 후 임시저장/제출 시 "완료" 메시지는 표시됨
+- 다시 열면 저장된 내용이 없음 (빈 폼)
+
+### 원인 분석
+
+#### 원인 1 — `work_report_lines` 컬럼 누락 (NAS DB 구버전 호환 문제) ★핵심
+- `CREATE TABLE IF NOT EXISTS`는 **기존 테이블에 컬럼을 추가하지 않음**
+- NAS DB가 초기 스키마로 생성된 경우, 이후 추가된 컬럼들이 실제 테이블에 없음
+- INSERT 시 "no such column" 에러 발생 → `try/catch(무시)`로 조용히 실패 → `ok:true` 반환
+- 영향 컬럼: `work_div, mgmt_zone, mgmt_no, line_name, line_no, digital_no, section_dist, pole_count, ip_pole, bind_wire, hanger, hardware, cabinet, name_tag, warning_sign, grounding, other_work, remark`
+- `work_report_cables` 일부도 동일: `cable_type, work_div, cable_code, special_note`
+
+#### 원인 2 — 빈 기본 3행 무조건 저장
+- 입력 없는 기본 3행이 항상 저장되어 데이터로 착각될 수 있음
+- (수정: 유효 데이터가 있는 행만 저장)
+
+#### 원인 3 — 임시저장 후 목록으로 이동
+- 저장 성공 후 `renderReportWritePage`로 이동 → 사용자가 다시 클릭해야 내용 확인
+- (수정: 폼 재로드로 즉시 저장 내용 확인)
+
+### 수정 내용
+
+#### 1. `node-server.ts` — patchSchema에 컬럼 보정 ALTER TABLE 추가
+```javascript
+// work_report_lines 전체 컬럼 safeAlter (중복 시 무시)
+safeAlter(`ALTER TABLE work_report_lines ADD COLUMN work_div TEXT DEFAULT ''`)
+safeAlter(`ALTER TABLE work_report_lines ADD COLUMN mgmt_zone TEXT DEFAULT ''`)
+// ... (총 18개 컬럼)
+// work_report_cables 추가 컬럼 보정
+safeAlter(`ALTER TABLE work_report_cables ADD COLUMN cable_type TEXT DEFAULT ''`)
+safeAlter(`ALTER TABLE work_report_cables ADD COLUMN work_div TEXT DEFAULT ''`)
+safeAlter(`ALTER TABLE work_report_cables ADD COLUMN cable_code TEXT DEFAULT ''`)
+safeAlter(`ALTER TABLE work_report_cables ADD COLUMN special_note TEXT DEFAULT ''`)
+```
+
+#### 2. `node-server.ts` — lines/cables INSERT 개선
+- 빈 행 필터링: 모든 필드가 기본값인 행은 INSERT 건너뜀
+- 에러 로그 강화: `console.warn` → `console.error` + 행 데이터 출력
+- 저장 완료 로그 추가: `[work-reports POST] lines 저장 완료: reportId=N, 저장행수=M/K`
+
+#### 3. `public/static/app.js` — saveWorkReport 성공 후 처리 변경
+```javascript
+// 수정 전: 목록 페이지로 이동
+await renderReportWritePage(content, 'cable', 'draft', 'pending');
+// 수정 후: 폼 재로드 (저장 내용 즉시 확인 가능)
+await renderWorkReportForm(content, taskId);
+```
+
+### 수정 파일
+- `node-server.ts`: patchSchema 컬럼 보정, lines/cables INSERT 개선
+- `public/static/app.js`: saveWorkReport 목록이동 → 폼재로드
+
+### 롤백 정보
+- **안전 커밋**: `16fe707` (FEAT-016)
+- **롤백 태그**: `rollback/pre-bugfix-016b`
+- **롤백 명령**:
+  ```bash
+  git push origin 16fe707:main --force
+  # NAS:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  ```
+
+### ⚠️ 중요: NAS 재시작 필수
+- `pm2 restart safetynote` 시 `patchSchema()`가 실행되어 누락 컬럼이 자동 추가됨
+- DB 재생성 불필요 — 기존 데이터 유지

@@ -27197,20 +27197,19 @@ async function saveWorkReport(taskId) {
     const res  = await API.post('/work-reports', data);
     window._wrReportId = res.data.reportId;
     toast('임시저장 완료', 'success');
-    setTimeout(async () => {
-      const content = document.getElementById('page-content');
-      if (content) await renderReportWritePage(content, 'cable', 'draft', 'pending');
-    }, 1000);
+    // 목록으로 이동하지 않고 폼을 재로드하여 저장된 내용 확인 가능
+    await new Promise(r => setTimeout(r, 600));
+    const content = document.getElementById('page-content');
+    if (content) await renderWorkReportForm(content, taskId);
   } catch(e) {
     if (e.response?.status === 409) {
       const existingId = e.response?.data?.reportId;
       const msg = e.response?.data?.error || '이미 제출된 일보가 있습니다.';
       toast(msg, 'warning');
       if (existingId) {
-        setTimeout(async () => {
-          const content = document.getElementById('page-content');
-          if (content) await renderWorkReportForm(content, taskId);
-        }, 1200);
+        await new Promise(r => setTimeout(r, 1200));
+        const content = document.getElementById('page-content');
+        if (content) await renderWorkReportForm(content, taskId);
       }
       return;
     }

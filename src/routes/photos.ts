@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { getUser, buildStoragePath, type StageKey, PHOTO_TYPE_DIRS } from '../utils'
+import { getUser, buildStoragePath, type StageKey, PHOTO_TYPE_DIRS, captionToFolderName } from '../utils'
 
 type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
@@ -195,6 +195,7 @@ app.post('/', async (c) => {
           workType:     task.construction_type,
           stage,
           photoType:    photoType,   // before/progress/after → 하위 폴더 분리
+          caption:      caption,     // 설명 입력값 → 추가 하위 폴더 생성
         })
         await fs.mkdir(pathInfo.uploadDir, { recursive: true })
 

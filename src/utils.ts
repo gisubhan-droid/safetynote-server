@@ -47,6 +47,21 @@ export const PHOTO_TYPE_DIRS: Record<string, string> = {
   after:    '03_작업 후',
 }
 
+/**
+ * caption(설명) 값을 폴더명으로 변환
+ * - 비어있으면 null 반환 (하위 폴더 생성 안 함)
+ * - 파일시스템 금지 문자 제거, 최대 40자 제한
+ */
+export function captionToFolderName(caption: string | null | undefined): string | null {
+  if (!caption || !caption.trim()) return null
+  const cleaned = caption.trim()
+    .replace(/[\\/:*?"<>|\r\n\t]/g, '_')  // 금지 문자 → _
+    .replace(/\s+/g, ' ')                  // 연속 공백 → 단일 공백
+    .slice(0, 40)                           // 최대 40자
+    .trimEnd()
+  return cleaned || null
+}
+
 /** 파일시스템에 사용할 수 없는 문자를 '_'로 치환 */
 function safeName(s: string): string {
   return (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim()
@@ -81,6 +96,7 @@ export interface StoragePathInfo {
  * @param opts.workType     작업 종류      (task.construction_type)
  * @param opts.stage        파일 단계      ('order'|'tbm'|'photo'|'inspection'|'other')
  * @param opts.photoType    사진 유형      ('before'|'progress'|'after') — photo 단계일 때 하위 폴더 생성
+ * @param opts.caption      사진 설명      — 입력값 있으면 photo_type 폴더 아래 추가 하위 폴더 생성
  */
 export function buildStoragePath(opts: {
   uploadRoot?:   string
@@ -91,6 +107,7 @@ export function buildStoragePath(opts: {
   workType?:     string | null
   stage?:        StageKey
   photoType?:    string | null
+  caption?:      string | null
 }): StoragePathInfo {
   const root      = (opts.uploadRoot || './public/uploads').replace(/\/+$/, '')
   const stage     = opts.stage || 'other'
@@ -112,7 +129,12 @@ export function buildStoragePath(opts: {
   let uploadDir = `${root}/${conFolder}/${taskFolder}/${stageDir}`
   if (stage === 'photo' && opts.photoType) {
     const subDir = PHOTO_TYPE_DIRS[opts.photoType]
-    if (subDir) uploadDir = `${uploadDir}/${subDir}`
+    if (subDir) {
+      uploadDir = `${uploadDir}/${subDir}`
+      // caption(설명) 있으면 photo_type 폴더 아래 추가 하위 폴더 생성
+      const captionFolder = captionToFolderName(opts.caption)
+      if (captionFolder) uploadDir = `${uploadDir}/${captionFolder}`
+    }
   }
 
   return { uploadRoot: root, conFolder, taskFolder, stageDir, uploadDir }

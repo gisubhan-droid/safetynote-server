@@ -6225,36 +6225,106 @@ async function showTaskDetail(id, openTbmTab) {
 
       <!-- 사진/동영상 탭 -->
       <div id="dtab-photo" class="detail-tab hidden">
-        <div class="photo-grid mb-4">
-          ${photos.length === 0
-            ? '<p class="col-span-full text-gray-400 text-sm text-center py-8">등록된 미디어가 없습니다.</p>'
-            : photos.map(p => {
-                const cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-                const isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
-                if (isVideo) {
-                  return `<div class="photo-thumb relative cursor-pointer" onclick="showVideoData(${p.id},'${cap}')">
-                    <video src="/api/photos/${p.id}/img" class="w-full h-full object-cover" muted preload="metadata"></video>
-                    <div class="overlay"><i class="fas fa-play text-2xl"></i></div>
-                    <div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>
-                    <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
-                      <span>${p.photo_type}</span>
-                      <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100"><i class="fas fa-trash"></i></button>
-                    </div>
-                  </div>`;
-                } else {
-                  return `<div class="photo-thumb" onclick="showPhotoData(${p.id},'${cap}')">
-                    <img src="/api/photos/${p.id}/img" alt="${p.caption||p.file_name}" onerror="this.style.opacity='0.3';this.title='이미지 로드 실패'">
-                    <div class="overlay"><i class="fas fa-expand text-lg"></i></div>
-                    <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
-                      <span>${p.photo_type}</span>
-                      <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100"><i class="fas fa-trash"></i></button>
-                    </div>
-                  </div>`;
-                }
-              }).join('')
+        ${(() => {
+          if (photos.length === 0) {
+            return '<p class="text-gray-400 text-sm text-center py-8">등록된 미디어가 없습니다.</p>';
           }
-        </div>
-        <button onclick="showPhotoUpload(${task.id})" class="btn btn-primary w-full">
+          // ── 정렬 순서 정의 ──────────────────────────────────────────
+          const TYPE_ORDER = { before: 0, progress: 1, after: 2 };
+          const TYPE_LABEL = { before: '작업 전', progress: '작업 중', after: '작업 후' };
+          const TYPE_COLOR = {
+            before:   'bg-blue-500',
+            progress: 'bg-yellow-500',
+            after:    'bg-green-500',
+          };
+
+          // ── photo_type 기준 1차 그룹핑 ─────────────────────────────
+          const typeGroups = {};
+          for (const p of photos) {
+            const t = p.photo_type || 'progress';
+            if (!typeGroups[t]) typeGroups[t] = [];
+            typeGroups[t].push(p);
+          }
+
+          // photo_type 정렬: before → progress → after → 기타(알파벳순)
+          const sortedTypes = Object.keys(typeGroups).sort((a, b) => {
+            const oa = TYPE_ORDER[a] ?? 99;
+            const ob = TYPE_ORDER[b] ?? 99;
+            return oa !== ob ? oa - ob : a.localeCompare(b);
+          });
+
+          // ── 각 photo_type 그룹을 caption 기준 2차 그룹핑 ──────────
+          function renderThumb(p) {
+            const cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            const isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
+            if (isVideo) {
+              return `<div class="photo-thumb relative cursor-pointer" onclick="showVideoData(${p.id},'${cap}')">
+                <video src="/api/photos/${p.id}/img" class="w-full h-full object-cover" muted preload="metadata"></video>
+                <div class="overlay"><i class="fas fa-play text-2xl"></i></div>
+                <div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>
+                <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
+                  <span class="truncate">${cap || '-'}</span>
+                  <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>
+                </div>
+              </div>`;
+            } else {
+              return `<div class="photo-thumb" onclick="showPhotoData(${p.id},'${cap}')">
+                <img src="/api/photos/${p.id}/img" alt="${p.caption||p.file_name}" onerror="this.style.opacity='0.3';this.title='이미지 로드 실패'">
+                <div class="overlay"><i class="fas fa-expand text-lg"></i></div>
+                <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
+                  <span class="truncate">${cap || '-'}</span>
+                  <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>
+                </div>
+              </div>`;
+            }
+          }
+
+          let html = '';
+          for (const type of sortedTypes) {
+            const list = typeGroups[type];
+            const typeLabel = TYPE_LABEL[type] || type;
+            const badgeColor = TYPE_COLOR[type] || 'bg-gray-500';
+            const total = list.length;
+
+            // caption 기준 2차 그룹핑
+            const capGroups = {};
+            for (const p of list) {
+              const capKey = (p.caption || '').trim() || '__none__';
+              if (!capGroups[capKey]) capGroups[capKey] = [];
+              capGroups[capKey].push(p);
+            }
+            // caption 없는 것 먼저, 있는 것은 입력순(첫 번째 사진 created_at 기준)
+            const sortedCaps = Object.keys(capGroups).sort((a, b) => {
+              if (a === '__none__') return -1;
+              if (b === '__none__') return 1;
+              return 0;
+            });
+            const hasMultipleCaps = sortedCaps.length > 1 || (sortedCaps.length === 1 && sortedCaps[0] !== '__none__');
+
+            // photo_type 섹션 헤더
+            html += `<div class="mb-5">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-white text-xs font-bold ${badgeColor}">
+                  <i class="fas fa-camera text-xs"></i> ${typeLabel}
+                </span>
+                <span class="text-xs text-gray-400">${total}장</span>
+              </div>`;
+
+            for (const capKey of sortedCaps) {
+              const capList = capGroups[capKey];
+              const capLabel = capKey === '__none__' ? '' : capKey;
+
+              // caption 소제목 (caption 있는 그룹이 여럿이거나 caption이 있을 때만 표시)
+              if (capLabel) {
+                html += `<div class="text-xs text-gray-500 font-medium mb-1 pl-1 border-l-2 border-gray-300">${capLabel} <span class="text-gray-400">(${capList.length})</span></div>`;
+              }
+              html += `<div class="photo-grid mb-3">${capList.map(renderThumb).join('')}</div>`;
+            }
+            html += `</div>`;
+          }
+          return html;
+        })()}
+        <button onclick="showPhotoUpload(${task.id})" class="btn btn-primary w-full mt-2">
           <i class="fas fa-camera"></i> 사진/동영상 등록
         </button>
       </div>

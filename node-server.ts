@@ -1408,6 +1408,17 @@ const PHOTO_TYPE_DIRS: Record<string, string> = {
   after:    '03_작업 후',
 }
 
+/** caption(설명) 값을 폴더명으로 변환 — 비어있으면 null */
+function captionToFolderName(caption: string | null | undefined): string | null {
+  if (!caption || !caption.trim()) return null
+  const cleaned = caption.trim()
+    .replace(/[\\/:*?"<>|\r\n\t]/g, '_')
+    .replace(/\s+/g, ' ')
+    .slice(0, 40)
+    .trimEnd()
+  return cleaned || null
+}
+
 function safeFsName(s: string): string {
   return (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim()
 }
@@ -1422,6 +1433,7 @@ function fmtDateStr(d: string | null | undefined): string {
  * @param task      tasks + constructions JOIN 결과 (또는 하위호환용 문자열)
  * @param stage     'order'|'tbm'|'photo'|'inspection'|'other'
  * @param photoType 'before'|'progress'|'after' — photo 단계일 때 하위 폴더 생성
+ * @param caption   사진 설명 — 입력값 있으면 photo_type 폴더 아래 추가 하위 폴더 생성
  */
 function getUploadDir(
   task: {
@@ -1431,7 +1443,8 @@ function getUploadDir(
     con_request_no?: string | null; con_title?: string | null
   } | string,
   stage: string = 'photo',
-  photoType?: string
+  photoType?: string,
+  caption?: string
 ): string {
   const root = getUploadRoot()
 
@@ -1441,6 +1454,8 @@ function getUploadDir(
     let dir = join(root, '미분류', safeFsName(task), stageDir)
     if (stage === 'photo' && photoType && PHOTO_TYPE_DIRS[photoType]) {
       dir = join(dir, PHOTO_TYPE_DIRS[photoType])
+      const captionFolder = captionToFolderName(caption)
+      if (captionFolder) dir = join(dir, captionFolder)
     }
     mkdirSync(dir, { recursive: true })
     return dir
@@ -1456,11 +1471,14 @@ function getUploadDir(
   const taskFolder = `${taskNum}_${workDate}_${workType}`
   const stageDir   = STAGE_DIRS[stage] || STAGE_DIRS.other
 
-  // photo 단계 + photoType이 있으면 하위 폴더 추가
+  // photo 단계 + photoType → 하위 폴더 추가
   // before → 01_작업 전 / progress → 02_작업 중 / after → 03_작업 후
+  // caption 입력 시 → photo_type 폴더 아래 설명명 폴더 추가 생성
   let dir = join(root, conFolder, taskFolder, stageDir)
   if (stage === 'photo' && photoType && PHOTO_TYPE_DIRS[photoType]) {
     dir = join(dir, PHOTO_TYPE_DIRS[photoType])
+    const captionFolder = captionToFolderName(caption)
+    if (captionFolder) dir = join(dir, captionFolder)
   }
 
   mkdirSync(dir, { recursive: true })
@@ -2584,10 +2602,13 @@ photoApp.post('/', async (c) => {
       if (!file || typeof file === 'string') continue
       const originalName = file.name || 'media.jpg'
       const fileName = generateFileName(originalName)
-      // photoType(before/progress/after)에 따라 03_작업사진 하위 폴더 분리
+      // photoType(before/progress/after) + caption에 따라 03_작업사진 하위 폴더 분리
       const uploadDir = task
-        ? getUploadDir(task, 'photo', photoType)
-        : join(getUploadRoot(), '미분류', `task_${taskId}`, STAGE_DIRS.photo, PHOTO_TYPE_DIRS[photoType] || '')
+        ? getUploadDir(task, 'photo', photoType, caption)
+        : join(getUploadRoot(), '미분류', `task_${taskId}`, STAGE_DIRS.photo,
+            PHOTO_TYPE_DIRS[photoType] || '',
+            captionToFolderName(caption) || ''
+          )
       mkdirSync(uploadDir, { recursive: true })
       const filePath = join(uploadDir, fileName)
       writeFileSync(filePath, Buffer.from(await file.arrayBuffer()))

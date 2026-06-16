@@ -153,6 +153,40 @@ rawDb.pragma('foreign_keys = ON')
     } catch(_) { return [] }
   }
 
+  // ── [긴급복구] tasks 재생성 트랜잭션 중단 잔해 자동 정리 ─────────────────────
+  // tasks RENAME → tasks_old 이후 실패 시 tasks 테이블이 사라지고 tasks_old만 남음
+  // tasks_new 가 남아있을 경우도 정리
+  try {
+    const tables: string[] = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[]).map((r: any) => r.name)
+    const hasTasksOld  = tables.includes('tasks_old')
+    const hasTasksNew  = tables.includes('tasks_new')
+    const hasTasks     = tables.includes('tasks')
+
+    if (hasTasksOld && !hasTasks) {
+      // tasks가 없고 tasks_old만 있음 → 트랜잭션 중단 잔해: tasks_old → tasks 복원
+      console.warn('[AutoMigrate] ⚠️ tasks 테이블 없음! tasks_old → tasks 로 복원합니다...')
+      rawDb.pragma('foreign_keys = OFF')
+      if (hasTasksNew) rawDb.exec('DROP TABLE IF EXISTS tasks_new')
+      rawDb.exec('ALTER TABLE tasks_old RENAME TO tasks')
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[AutoMigrate] ✅ tasks 복원 완료 (tasks_old → tasks)')
+    } else if (hasTasksOld && hasTasks) {
+      // tasks도 있고 tasks_old도 남아있음 → 잔해만 정리
+      console.warn('[AutoMigrate] ⚠️ tasks_old 잔해 발견, 정리합니다...')
+      rawDb.exec('DROP TABLE IF EXISTS tasks_old')
+      console.log('[AutoMigrate] ✅ tasks_old 잔해 제거 완료')
+    }
+    if (hasTasksNew && hasTasks) {
+      // tasks도 있고 tasks_new도 남아있음 → 잔해만 정리
+      console.warn('[AutoMigrate] ⚠️ tasks_new 잔해 발견, 정리합니다...')
+      rawDb.exec('DROP TABLE IF EXISTS tasks_new')
+      console.log('[AutoMigrate] ✅ tasks_new 잔해 제거 완료')
+    }
+  } catch(e: any) {
+    console.warn('[AutoMigrate] tasks 잔해 정리 실패 (무시):', e.message)
+    try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+  }
+
   const taskCols = getCols('tasks')
   const tbmCols  = getCols('tbm_records')
   console.log('[AutoMigrate] tasks cols:', taskCols.join(', '))

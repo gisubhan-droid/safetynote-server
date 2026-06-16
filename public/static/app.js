@@ -7037,7 +7037,7 @@ function changeTaskStatus(taskId, newStatus) {
                   <div style="background:#FFF0F5;border:1.5px solid #FFAACB;border-radius:12px;padding:14px 16px;color:#8B0040;font-size:13px;line-height:1.7">
                     <i class="fas fa-pen-fancy mr-2" style="color:#D70072"></i>
                     <strong>참석자 전원이 서명해야 작업을 개시할 수 있습니다.</strong><br>
-                    서명 ${sigs.length}명 완료 / 미서명 ${unsignedList.length > 0 ? unsignedList.length : '?'}명 남음
+                    서명 ${sigs.length}명 완료 / 전체 ${attendees.length}명 중 미서명 ${attendees.length > 0 ? unsignedList.length : (sigs.length === 0 ? '전원' : '?')}명 남음
                   </div>
                   ${unsignedMsg}
                   <div style="background:#F5F0F8;border:1px solid #D8D0DC;border-radius:8px;padding:10px 14px;font-size:12px;color:#685182;margin-top:10px">

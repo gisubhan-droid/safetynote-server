@@ -1863,6 +1863,19 @@ app.get('/api/tasks/:id/tbm-info', async (c) => {
     let attendees: string[] = []
     try { attendees = tbm.attendees ? JSON.parse(tbm.attendees) : [] } catch(_) {}
 
+    // attendees가 비어있으면 task_assignments에서 배정 근로자 이름으로 대체
+    // (TBM 등록 시 attendees를 별도로 입력하지 않은 경우)
+    if (attendees.length === 0) {
+      try {
+        const assigned = rawDb.prepare(
+          `SELECT u.name FROM task_assignments ta
+           JOIN users u ON u.id = ta.worker_id
+           WHERE ta.task_id = ?`
+        ).all(Number(id)) as any[]
+        attendees = assigned.map((r: any) => r.name).filter(Boolean)
+      } catch(_) {}
+    }
+
     // created_at KST 변환
     let tbmDate = '', tbmTime = ''
     if (tbm.created_at) {
@@ -1882,7 +1895,7 @@ app.get('/api/tasks/:id/tbm-info', async (c) => {
         tbm_date: tbmDate,
         tbm_time: tbmTime,
         created_at: tbm.created_at,
-        attendees  // ← 서명 완료 체크에 필요
+        attendees  // ← tbm_records.attendees 또는 task_assignments 배정 근로자 이름
       }
     })
   } catch(e: any) {

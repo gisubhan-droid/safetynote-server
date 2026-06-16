@@ -838,6 +838,18 @@ app.get('/:id/tbm-info', async (c) => {
   let attendees: string[] = []
   try { attendees = tbm.attendees ? JSON.parse(tbm.attendees) : [] } catch(_) {}
 
+  // attendees가 비어있으면 task_assignments에서 배정 근로자 이름으로 대체
+  if (attendees.length === 0) {
+    try {
+      const assigned = await c.env.DB.prepare(
+        `SELECT u.name FROM task_assignments ta
+         JOIN users u ON u.id = ta.worker_id
+         WHERE ta.task_id = ?`
+      ).bind(id).all<any>()
+      attendees = (assigned.results || []).map((r: any) => r.name).filter(Boolean)
+    } catch(_) {}
+  }
+
   return c.json({
     tbm: {
       id: tbm.id,
@@ -845,7 +857,7 @@ app.get('/:id/tbm-info', async (c) => {
       tbm_date: tbmDate,
       tbm_time: tbmTime,
       created_at: tbm.created_at,
-      attendees  // ← 서명 완료 체크에 필요
+      attendees  // ← tbm_records.attendees 또는 task_assignments 배정 근로자 이름
     }
   })
 })

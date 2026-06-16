@@ -22,15 +22,25 @@ async function getWorkTypes(db: D1Database, taskId: number) {
 
 // ─── helper: task_work_types 동기화 ─────────────────────────────────────────
 async function syncWorkTypes(db: D1Database, taskId: number, workTypeIds: number[], userId: number) {
-  await db.prepare('DELETE FROM task_work_types WHERE task_id = ?').bind(taskId).run()
-  for (const wtId of workTypeIds) {
-    await db.prepare(
-      'INSERT OR IGNORE INTO task_work_types (task_id, work_type_id) VALUES (?, ?)'
-    ).bind(taskId, wtId).run()
+  // task_work_types 테이블이 없을 수 있으므로 개별 try/catch
+  try {
+    await db.prepare('DELETE FROM task_work_types WHERE task_id = ?').bind(taskId).run()
+    for (const wtId of workTypeIds) {
+      await db.prepare(
+        'INSERT OR IGNORE INTO task_work_types (task_id, work_type_id) VALUES (?, ?)'
+      ).bind(taskId, wtId).run()
+    }
+  } catch(e: any) {
+    if (!e.message?.includes('no such table')) throw e
+    console.warn('[syncWorkTypes] task_work_types 테이블 없음 (무시):', e.message)
   }
   // tasks.work_type_id를 첫 번째 값으로 유지 (하위 호환)
   const primary = workTypeIds.length > 0 ? workTypeIds[0] : null
-  await db.prepare('UPDATE tasks SET work_type_id = ? WHERE id = ?').bind(primary, taskId).run()
+  try {
+    await db.prepare('UPDATE tasks SET work_type_id = ? WHERE id = ?').bind(primary, taskId).run()
+  } catch(e: any) {
+    console.warn('[syncWorkTypes] work_type_id UPDATE 실패 (무시):', e.message)
+  }
 }
 
 // 작업 목록 조회
@@ -612,72 +622,92 @@ app.put('/:id', async (c) => {
   // 수정 후 body에 포함된 새 공사 ID
   const newConId: number | null = (body.construction_id != null) ? Number(body.construction_id) : oldConId
 
-  await c.env.DB.prepare(
-    `UPDATE tasks SET title=?, description=?, category_id=?, work_type_id=?, location=?,
-     planned_date=?, planned_quantity=?, quantity_unit=?, supervisor_id=?, status=?,
-     priority=?, notes=?, work_class_new=?,
-     construction_type=?, request_no=?, contractor_name=?, risk_level=?, high_subtypes=?, lgu_supervisor=?, work_number=?,
-     updated_at=CURRENT_TIMESTAMP WHERE id=?`
-    /* work_date, work_order_address 는 의도적으로 제외 → 수정 불가 */
-  ).bind(title, description || '', category_id || null, primaryTypeId, location || '',
-    planned_date || null, planned_quantity || 0, quantity_unit || '개', supervisor_id || null,
-    finalStatus, priority || 'normal', notes || '', finalWorkClass,
-    construction_type || '', request_no || '', contractor_name || '',
-    risk_level || 'normal', high_subtypes || '[]', lgu_supervisor || '', work_number || '', id
-  ).run()
+  try {
+    await c.env.DB.prepare(
+      `UPDATE tasks SET title=?, description=?, category_id=?, work_type_id=?, location=?,
+       planned_date=?, planned_quantity=?, quantity_unit=?, supervisor_id=?, status=?,
+       priority=?, notes=?, work_class_new=?,
+       construction_type=?, request_no=?, contractor_name=?, risk_level=?, high_subtypes=?, lgu_supervisor=?, work_number=?,
+       updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      /* work_date, work_order_address 는 의도적으로 제외 → 수정 불가 */
+    ).bind(title, description || '', category_id || null, primaryTypeId, location || '',
+      planned_date || null, planned_quantity || 0, quantity_unit || '개', supervisor_id || null,
+      finalStatus, priority || 'normal', notes || '', finalWorkClass,
+      construction_type || '', request_no || '', contractor_name || '',
+      risk_level || 'normal', high_subtypes || '[]', lgu_supervisor || '', work_number || '', id
+    ).run()
+  } catch(updateErr: any) {
+    console.error('[tasks/PUT] UPDATE 실패:', updateErr.message)
+    return c.json({ error: `수정 저장 실패: ${updateErr.message}` }, 500)
+  }
 
-  // 다중 작업 유형 동기화
-  await syncWorkTypes(c.env.DB, parseInt(id), typeIds, user.id)
+  // 다중 작업 유형 동기화 (task_work_types 테이블 없으면 무시)
+  try {
+    await syncWorkTypes(c.env.DB, parseInt(id), typeIds, user.id)
+  } catch(syncErr: any) {
+    console.warn('[tasks/PUT] syncWorkTypes 실패 (무시):', syncErr.message)
+  }
 
   // 작업자 재배정 (팀장 배정 시 팀원 자동 포함) — N+1 → 배치 쿼리
   if (worker_ids !== undefined) {
-    await c.env.DB.prepare('DELETE FROM task_assignments WHERE task_id = ?').bind(id).run()
+    try {
+      await c.env.DB.prepare('DELETE FROM task_assignments WHERE task_id = ?').bind(id).run()
+    } catch(e: any) { console.warn('[tasks/PUT] task_assignments DELETE 실패 (무시):', e.message) }
+
     let finalWorkerIds: number[] = [...worker_ids]
 
     if (worker_ids.length > 0) {
-      // 팀장 정보 일괄 조회 (N+1 → 1회 IN 쿼리)
-      const leaderPlaceholders = worker_ids.map(() => '?').join(',')
-      const leadersRes = await c.env.DB.prepare(
-        `SELECT id, team_id FROM users WHERE id IN (${leaderPlaceholders}) AND is_leader = 1 AND team_id IS NOT NULL`
-      ).bind(...worker_ids).all<any>()
-      const leaderTeamIds = (leadersRes.results || []).map((r: any) => r.team_id)
+      try {
+        // 팀장 정보 일괄 조회 (N+1 → 1회 IN 쿼리)
+        const leaderPlaceholders = worker_ids.map(() => '?').join(',')
+        const leadersRes = await c.env.DB.prepare(
+          `SELECT id, team_id FROM users WHERE id IN (${leaderPlaceholders}) AND is_leader = 1 AND team_id IS NOT NULL`
+        ).bind(...worker_ids).all<any>()
+        const leaderTeamIds = (leadersRes.results || []).map((r: any) => r.team_id)
 
-      if (leaderTeamIds.length > 0) {
-        // 팀원 일괄 조회
-        const teamPlaceholders = leaderTeamIds.map(() => '?').join(',')
-        const memberExcludes   = worker_ids.map(() => '?').join(',')
-        const membersRes = await c.env.DB.prepare(
-          `SELECT id FROM users WHERE team_id IN (${teamPlaceholders}) AND is_active = 1 AND id NOT IN (${memberExcludes})`
-        ).bind(...leaderTeamIds, ...worker_ids).all<any>()
-        for (const tm of (membersRes.results || [])) {
-          if (!finalWorkerIds.includes(tm.id)) finalWorkerIds.push(tm.id)
+        if (leaderTeamIds.length > 0) {
+          const teamPlaceholders = leaderTeamIds.map(() => '?').join(',')
+          const memberExcludes   = worker_ids.map(() => '?').join(',')
+          const membersRes = await c.env.DB.prepare(
+            `SELECT id FROM users WHERE team_id IN (${teamPlaceholders}) AND is_active = 1 AND id NOT IN (${memberExcludes})`
+          ).bind(...leaderTeamIds, ...worker_ids).all<any>()
+          for (const tm of (membersRes.results || [])) {
+            if (!finalWorkerIds.includes(tm.id)) finalWorkerIds.push(tm.id)
+          }
         }
+
+        // INSERT 배치 처리
+        const assignPlaceholders = finalWorkerIds.map(() => '(?, ?, ?)').join(', ')
+        const assignBinds: any[] = []
+        for (const wid of finalWorkerIds) assignBinds.push(id, wid, user.id)
+        await c.env.DB.prepare(
+          `INSERT OR IGNORE INTO task_assignments (task_id, worker_id, assigned_by) VALUES ${assignPlaceholders}`
+        ).bind(...assignBinds).run()
+
+        // 상태 보정: unassigned 상태인 경우 → assigned 로 전환
+        await c.env.DB.prepare(
+          `UPDATE tasks SET status='assigned', updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='unassigned'`
+        ).bind(id).run()
+      } catch(assignErr: any) {
+        console.warn('[tasks/PUT] task_assignments INSERT 실패 (무시):', assignErr.message)
       }
-
-      // INSERT 배치 처리
-      const assignPlaceholders = finalWorkerIds.map(() => '(?, ?, ?)').join(', ')
-      const assignBinds: any[] = []
-      for (const wid of finalWorkerIds) assignBinds.push(id, wid, user.id)
-      await c.env.DB.prepare(
-        `INSERT OR IGNORE INTO task_assignments (task_id, worker_id, assigned_by) VALUES ${assignPlaceholders}`
-      ).bind(...assignBinds).run()
-
-      // 상태 보정: unassigned 상태인 경우 → assigned 로 전환
-      await c.env.DB.prepare(
-        `UPDATE tasks SET status='assigned', updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='unassigned'`
-      ).bind(id).run()
     } else {
-      // worker_ids = [] (전원 제거): 배정 없으면 unassigned로 되돌림
-      // 단, in_progress 이상으로 진행 중인 경우는 건드리지 않음
-      await c.env.DB.prepare(
-        `UPDATE tasks SET status='unassigned', updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='assigned'`
-      ).bind(id).run()
+      try {
+        // worker_ids = [] (전원 제거): 배정 없으면 unassigned로 되돌림
+        await c.env.DB.prepare(
+          `UPDATE tasks SET status='unassigned', updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='assigned'`
+        ).bind(id).run()
+      } catch(e: any) { console.warn('[tasks/PUT] unassigned 상태 복귀 실패 (무시):', e.message) }
     }
   }
 
   // 공사 상태 자동 갱신 (기존 공사 + 새 공사)
-  const conIds = new Set<number>([oldConId, newConId].filter(Boolean) as number[])
-  for (const cid of conIds) await refreshConstructionStatus(c.env.DB, cid)
+  try {
+    const conIds = new Set<number>([oldConId, newConId].filter(Boolean) as number[])
+    for (const cid of conIds) await refreshConstructionStatus(c.env.DB, cid)
+  } catch(conErr: any) {
+    console.warn('[tasks/PUT] refreshConstructionStatus 실패 (무시):', conErr.message)
+  }
 
   return c.json({ success: true })
 })

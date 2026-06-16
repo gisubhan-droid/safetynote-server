@@ -569,8 +569,8 @@ function getSetting(key: string): string {
 }
 
 // ─── TBM 서명 테이블 보장 + 잔여 트리거 제거 ───────────────────────────────────
-// patchSchema() 보다 먼저 선언해야 함 (let TDZ 방지)
-let _tbmSigTableEnsured = false
+// var 사용: let/const 와 달리 TDZ 없음 → 선언 위치 무관하게 호이스팅됨
+var _tbmSigTableEnsured = false
 function ensureTbmSignaturesTable() {
   if (_tbmSigTableEnsured) return
   _tbmSigTableEnsured = true
@@ -613,6 +613,24 @@ function ensureTbmSignaturesTable() {
 
 // ─── 스키마 안전 패치 (컬럼 없으면 자동 추가) ─────────────────────────────────
 function patchSchema() {
+  // ── 맨 먼저: tbm_records_old 참조 잔여 트리거 강제 제거 ──────────────────────
+  // (ensureTbmSignaturesTable 보다 앞서 실행되어야 INSERT 시 에러 방지)
+  try {
+    const badTriggers = rawDb.prepare(
+      `SELECT name FROM sqlite_master WHERE type='trigger' AND (
+         sql LIKE '%tbm_records_old%' OR
+         tbl_name='tbm_signatures' OR tbl_name='tbm_records'
+       )`
+    ).all() as any[]
+    for (const t of badTriggers) {
+      try {
+        rawDb.exec(`DROP TRIGGER IF EXISTS "${t.name}"`)
+        console.log(`[patchSchema] 잔여 트리거 제거: ${t.name}`)
+      } catch(e: any) { console.warn(`[patchSchema] 트리거 제거 실패(무시): ${t.name}`, e?.message) }
+    }
+  } catch(e: any) { console.warn('[patchSchema] 트리거 조회 실패(무시):', e?.message) }
+  // ────────────────────────────────────────────────────────────────────────────
+
   const safeAlter = (sql: string) => {
     try { rawDb.exec(sql) } catch(e: any) {
       // "duplicate column name" 은 이미 있는 것이므로 무시

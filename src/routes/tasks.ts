@@ -1041,32 +1041,50 @@ app.delete('/:id', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
   const id = c.req.param('id')
+
+  // 테이블이 없을 수 있으므로 각 DELETE를 개별 try/catch로 처리
+  // (마이그레이션 미적용 NAS 환경 대비)
+  async function safeDelete(sql: string, ...params: any[]) {
+    try {
+      await c.env.DB.prepare(sql).bind(...params).run()
+    } catch(e: any) {
+      // 테이블 없음 / 컬럼 없음 에러는 무시, 그 외는 경고만
+      if (!e.message?.includes('no such table') && !e.message?.includes('no such column')) {
+        console.warn(`[task delete] safeDelete 경고: ${e.message} | SQL: ${sql.slice(0,80)}`)
+      }
+    }
+  }
+
   try {
     // 연관 데이터 모두 삭제 (순서 중요)
     // tbm_photo_sections는 checklist_assessments(assessment_id)에 연결됨
-    await c.env.DB.prepare('DELETE FROM tbm_photo_items WHERE section_id IN (SELECT id FROM tbm_photo_sections WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?))').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM tbm_photo_sections WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?)').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM checklist_responses WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?)').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM checklist_assessments WHERE task_id = ?').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM tbm_records WHERE task_id = ?').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM risk_assessment_details WHERE assessment_id IN (SELECT id FROM risk_assessments WHERE task_id=?)').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM risk_assessments WHERE task_id = ?').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM work_logs WHERE task_id = ?').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM task_photos WHERE task_id = ?').bind(id).run()
+    await safeDelete('DELETE FROM tbm_photo_items WHERE section_id IN (SELECT id FROM tbm_photo_sections WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?))', id)
+    await safeDelete('DELETE FROM tbm_photo_sections WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?)', id)
+    await safeDelete('DELETE FROM checklist_responses WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?)', id)
+    await safeDelete('DELETE FROM checklist_assessments WHERE task_id = ?', id)
+    await safeDelete('DELETE FROM tbm_records WHERE task_id = ?', id)
+    await safeDelete('DELETE FROM task_stops WHERE task_id = ?', id)
+    await safeDelete('DELETE FROM risk_assessment_details WHERE assessment_id IN (SELECT id FROM risk_assessments WHERE task_id=?)', id)
+    await safeDelete('DELETE FROM risk_assessments WHERE task_id = ?', id)
+    await safeDelete('DELETE FROM work_logs WHERE task_id = ?', id)
+    await safeDelete('DELETE FROM task_photos WHERE task_id = ?', id)
     // 첨부파일 물리 삭제 후 DB 삭제
-    const attRows = await c.env.DB.prepare('SELECT file_path FROM task_attachments WHERE task_id = ?').bind(id).all<any>()
-    for (const att of (attRows.results || [])) {
-      if (att.file_path) {
-        try {
-          // @ts-ignore
-          const fs = await import('node:fs/promises')
-          await fs.unlink(att.file_path)
-        } catch (_) {}
+    try {
+      const attRows = await c.env.DB.prepare('SELECT file_path FROM task_attachments WHERE task_id = ?').bind(id).all<any>()
+      for (const att of (attRows.results || [])) {
+        if (att.file_path) {
+          try {
+            // @ts-ignore
+            const fs = await import('node:fs/promises')
+            await fs.unlink(att.file_path)
+          } catch (_) {}
+        }
       }
-    }
-    await c.env.DB.prepare('DELETE FROM task_attachments WHERE task_id = ?').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM task_assignments WHERE task_id = ?').bind(id).run()
-    await c.env.DB.prepare('DELETE FROM task_work_types WHERE task_id = ?').bind(id).run()
+    } catch(_) {}
+    await safeDelete('DELETE FROM task_attachments WHERE task_id = ?', id)
+    await safeDelete('DELETE FROM task_assignments WHERE task_id = ?', id)
+    await safeDelete('DELETE FROM task_work_types WHERE task_id = ?', id)
+    // tasks 자체 삭제 — 이것만 실패하면 에러 반환
     await c.env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(id).run()
     return c.json({ success: true })
   } catch (e: any) {

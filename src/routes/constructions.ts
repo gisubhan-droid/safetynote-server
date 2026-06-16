@@ -10,50 +10,54 @@ app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { status, start_date, end_date, year, month, keyword } = c.req.query()
-  const params: any[] = []
-  const wheres: string[] = []
+  try {
+    const { status, start_date, end_date, year, month, keyword } = c.req.query()
+    const params: any[] = []
+    const wheres: string[] = []
 
-  if (status) { wheres.push('c.status = ?'); params.push(status) }
+    if (status) { wheres.push('c.status = ?'); params.push(status) }
 
-  // 기간 필터: 월 기준 or 범위
-  if (year && month) {
-    const y = year, m = String(month).padStart(2, '0')
-    wheres.push("strftime('%Y-%m', c.created_at) = ?")
-    params.push(`${y}-${m}`)
-  } else if (year) {
-    wheres.push("strftime('%Y', c.created_at) = ?")
-    params.push(year)
-  } else if (start_date && end_date) {
-    wheres.push("date(c.created_at) BETWEEN ? AND ?")
-    params.push(start_date, end_date)
+    // 기간 필터: 월 기준 or 범위
+    if (year && month) {
+      const y = year, m = String(month).padStart(2, '0')
+      wheres.push("strftime('%Y-%m', c.created_at) = ?")
+      params.push(`${y}-${m}`)
+    } else if (year) {
+      wheres.push("strftime('%Y', c.created_at) = ?")
+      params.push(year)
+    } else if (start_date && end_date) {
+      wheres.push("date(c.created_at) BETWEEN ? AND ?")
+      params.push(start_date, end_date)
+    }
+
+    if (keyword) {
+      wheres.push('(c.request_no LIKE ? OR c.title LIKE ? OR c.work_number LIKE ?)')
+      const kw = `%${keyword}%`
+      params.push(kw, kw, kw)
+    }
+
+    const where = wheres.length ? 'WHERE ' + wheres.join(' AND ') : ''
+
+    const rows = await c.env.DB.prepare(`
+      SELECT c.*,
+        u.name  AS manager_display_name,
+        cb.name AS created_by_name,
+        COUNT(t.id)                             AS task_total,
+        SUM(CASE WHEN t.status NOT IN ('completed','cancelled') AND t.status IS NOT NULL THEN 1 ELSE 0 END) AS task_in_progress,
+        SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) AS task_completed
+      FROM constructions c
+      LEFT JOIN users u  ON u.id  = c.manager_id
+      LEFT JOIN users cb ON cb.id = c.created_by
+      LEFT JOIN tasks t  ON t.construction_id = c.id
+      ${where}
+      GROUP BY c.id
+      ORDER BY c.created_at DESC
+    `).bind(...params).all<any>()
+
+    return c.json(rows.results || [])
+  } catch (e: any) {
+    return c.json({ error: e.message || '공사 목록 조회 실패' }, 500)
   }
-
-  if (keyword) {
-    wheres.push('(c.request_no LIKE ? OR c.title LIKE ? OR c.work_number LIKE ?)')
-    const kw = `%${keyword}%`
-    params.push(kw, kw, kw)
-  }
-
-  const where = wheres.length ? 'WHERE ' + wheres.join(' AND ') : ''
-
-  const rows = await c.env.DB.prepare(`
-    SELECT c.*,
-      u.name  AS manager_display_name,
-      cb.name AS created_by_name,
-      COUNT(t.id)                             AS task_total,
-      SUM(CASE WHEN t.status NOT IN ('completed','cancelled') AND t.status IS NOT NULL THEN 1 ELSE 0 END) AS task_in_progress,
-      SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) AS task_completed
-    FROM constructions c
-    LEFT JOIN users u  ON u.id  = c.manager_id
-    LEFT JOIN users cb ON cb.id = c.created_by
-    LEFT JOIN tasks t  ON t.construction_id = c.id
-    ${where}
-    GROUP BY c.id
-    ORDER BY c.created_at DESC
-  `).bind(...params).all<any>()
-
-  return c.json(rows.results || [])
 })
 
 // ─── 공사 단건 조회 (+ 연결된 작업 목록 포함) ───────────────────────────────
@@ -62,34 +66,38 @@ app.get('/:id', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = c.req.param('id')
 
-  const con = await c.env.DB.prepare(`
-    SELECT c.*,
-      u.name  AS manager_display_name,
-      cb.name AS created_by_name
-    FROM constructions c
-    LEFT JOIN users u  ON u.id  = c.manager_id
-    LEFT JOIN users cb ON cb.id = c.created_by
-    WHERE c.id = ?
-  `).bind(id).first<any>()
+  try {
+    const con = await c.env.DB.prepare(`
+      SELECT c.*,
+        u.name  AS manager_display_name,
+        cb.name AS created_by_name
+      FROM constructions c
+      LEFT JOIN users u  ON u.id  = c.manager_id
+      LEFT JOIN users cb ON cb.id = c.created_by
+      WHERE c.id = ?
+    `).bind(id).first<any>()
 
-  if (!con) return c.json({ error: '공사 없음' }, 404)
+    if (!con) return c.json({ error: '공사 없음' }, 404)
 
-  // 연결된 작업 목록
-  const tasks = await c.env.DB.prepare(`
-    SELECT t.id, t.task_number, t.sub_task_number, t.title, t.status,
-           t.work_order_address, t.work_class_new, t.risk_level,
-           t.planned_date, t.created_at,
-           wt.name AS work_type_name,
-           u.name  AS supervisor_name
-    FROM tasks t
-    LEFT JOIN work_types wt ON wt.id = t.work_type_id
-    LEFT JOIN users u       ON u.id  = t.supervisor_id
-    WHERE t.construction_id = ?
-    ORDER BY t.sub_task_number ASC, t.id ASC
-  `).bind(id).all<any>()
+    // 연결된 작업 목록
+    const tasks = await c.env.DB.prepare(`
+      SELECT t.id, t.task_number, t.sub_task_number, t.title, t.status,
+             t.work_order_address, t.work_class_new, t.risk_level,
+             t.planned_date, t.created_at,
+             wt.name AS work_type_name,
+             u.name  AS supervisor_name
+      FROM tasks t
+      LEFT JOIN work_types wt ON wt.id = t.work_type_id
+      LEFT JOIN users u       ON u.id  = t.supervisor_id
+      WHERE t.construction_id = ?
+      ORDER BY t.sub_task_number ASC, t.id ASC
+    `).bind(id).all<any>()
 
-  con.tasks = tasks.results || []
-  return c.json(con)
+    con.tasks = tasks.results || []
+    return c.json(con)
+  } catch (e: any) {
+    return c.json({ error: e.message || '공사 단건 조회 실패' }, 500)
+  }
 })
 
 // ─── 공사 요청번호로 조회 (작업 생성 시 자동 연동용) ─────────────────────────
@@ -98,15 +106,19 @@ app.get('/by-request-no/:reqNo', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const reqNo = c.req.param('reqNo')
 
-  const con = await c.env.DB.prepare(`
-    SELECT c.*, u.name AS manager_display_name
-    FROM constructions c
-    LEFT JOIN users u ON u.id = c.manager_id
-    WHERE c.request_no = ?
-  `).bind(reqNo).first<any>()
+  try {
+    const con = await c.env.DB.prepare(`
+      SELECT c.*, u.name AS manager_display_name
+      FROM constructions c
+      LEFT JOIN users u ON u.id = c.manager_id
+      WHERE c.request_no = ?
+    `).bind(reqNo).first<any>()
 
-  if (!con) return c.json({ error: '해당 공사요청번호 없음' }, 404)
-  return c.json(con)
+    if (!con) return c.json({ error: '해당 공사요청번호 없음' }, 404)
+    return c.json(con)
+  } catch (e: any) {
+    return c.json({ error: e.message || '공사 요청번호 조회 실패' }, 500)
+  }
 })
 
 // ─── 공사 생성 ───────────────────────────────────────────────────────────────
@@ -186,35 +198,39 @@ app.put('/:id', async (c) => {
     return c.json({ error: '공사종류 값이 올바르지 않습니다' }, 400)
   }
 
-  // 현재값 조회 (work_class 미입력 시 기존값 유지)
-  const existing = await c.env.DB.prepare('SELECT work_class FROM constructions WHERE id = ?').bind(id).first<any>()
+  try {
+    // 현재값 조회 (work_class 미입력 시 기존값 유지)
+    const existing = await c.env.DB.prepare('SELECT work_class FROM constructions WHERE id = ?').bind(id).first<any>()
 
-  await c.env.DB.prepare(`
-    UPDATE constructions SET
-      work_number        = ?,
-      work_class         = ?,
-      title              = ?,
-      work_order_address = ?,
-      manager_id         = ?,
-      manager_name       = ?,
-      supervisor_name    = ?,
-      description        = ?,
-      updated_at         = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).bind(
-    work_number || '',
-    work_class || existing?.work_class || 'relocation',
-    title || '',
-    work_order_address || '',
-    manager_id || null,
-    manager_name || '',
-    supervisor_name || '',
-    description || '',
-    id
-  ).run()
+    await c.env.DB.prepare(`
+      UPDATE constructions SET
+        work_number        = ?,
+        work_class         = ?,
+        title              = ?,
+        work_order_address = ?,
+        manager_id         = ?,
+        manager_name       = ?,
+        supervisor_name    = ?,
+        description        = ?,
+        updated_at         = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(
+      work_number || '',
+      work_class || existing?.work_class || 'relocation',
+      title || '',
+      work_order_address || '',
+      manager_id || null,
+      manager_name || '',
+      supervisor_name || '',
+      description || '',
+      id
+    ).run()
 
-  const con = await c.env.DB.prepare('SELECT * FROM constructions WHERE id = ?').bind(id).first<any>()
-  return c.json(con)
+    const con = await c.env.DB.prepare('SELECT * FROM constructions WHERE id = ?').bind(id).first<any>()
+    return c.json(con)
+  } catch (e: any) {
+    return c.json({ error: e.message || '공사 수정 실패' }, 500)
+  }
 })
 
 // ─── 공사 상태 자동 갱신 헬퍼 (내부 호출용 export) ──────────────────────────
@@ -271,41 +287,54 @@ app.post('/:id/settle', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = parseInt(c.req.param('id'))
 
-  const con = await c.env.DB.prepare('SELECT * FROM constructions WHERE id = ?').bind(id).first<any>()
-  if (!con) return c.json({ error: '공사 없음' }, 404)
-  if (con.status !== 'completed') {
-    return c.json({ error: '모든 작업이 완료된 경우에만 정산요청 가능합니다' }, 400)
-  }
+  try {
+    const con = await c.env.DB.prepare('SELECT * FROM constructions WHERE id = ?').bind(id).first<any>()
+    if (!con) return c.json({ error: '공사 없음' }, 404)
+    if (con.status !== 'completed') {
+      return c.json({ error: '모든 작업이 완료된 경우에만 정산요청 가능합니다' }, 400)
+    }
 
-  // settlement_requested 상태로 변경
-  await c.env.DB.prepare(`
-    UPDATE constructions SET status = 'settlement_requested', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `).bind(id).run()
-
-  // ─── 정산담당자 알림 발송 ──────────────────────────────────────────────────
-  const conName   = con.title || `공사 #${id}`
-  const actorName = user.name || '담당자'
-  const notifTitle = '정산요청 접수'
-  const notifMsg   = `[정산요청] "${conName}" 공사가 완료되어 정산요청이 접수되었습니다. 처리를 확인해 주세요.`
-
-  const settlers = await c.env.DB.prepare(`
-    SELECT id, name FROM users WHERE position = '정산담당자' AND is_active = 1
-  `).all<{ id: number; name: string }>()
-
-  for (const settler of settlers.results) {
+    // settlement_requested 상태로 변경
     await c.env.DB.prepare(`
-      INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type)
-      VALUES (?, 'settlement_request', ?, ?, ?, 'construction')
-    `).bind(settler.id, notifTitle, notifMsg, id).run()
+      UPDATE constructions SET status = 'settlement_requested', updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).bind(id).run()
 
-    sendToUser(settler.id, {
-      type:    'settlement_request',
-      conId:   id, conName, actor: actorName,
-      title:   notifTitle, message: notifMsg, ts: Date.now(),
-    })
+    // ─── 정산담당자 알림 발송 (실패해도 정산요청 성공에 영향 없음) ──────────
+    try {
+      const conName   = con.title || `공사 #${id}`
+      const actorName = user.name || '담당자'
+      const notifTitle = '정산요청 접수'
+      const notifMsg   = `[정산요청] "${conName}" 공사가 완료되어 정산요청이 접수되었습니다. 처리를 확인해 주세요.`
+
+      const settlers = await c.env.DB.prepare(`
+        SELECT id, name FROM users WHERE position = '정산담당자' AND is_active = 1
+      `).all<{ id: number; name: string }>()
+
+      for (const settler of settlers.results) {
+        try {
+          await c.env.DB.prepare(`
+            INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type)
+            VALUES (?, 'settlement_request', ?, ?, ?, 'construction')
+          `).bind(settler.id, notifTitle, notifMsg, id).run()
+        } catch (notifErr: any) {
+          console.warn('[constructions POST /:id/settle] 알림 INSERT 실패 (무시):', notifErr.message)
+        }
+
+        sendToUser(settler.id, {
+          type:    'settlement_request',
+          conId:   id, conName, actor: actorName,
+          title:   notifTitle, message: notifMsg, ts: Date.now(),
+        })
+      }
+
+      return c.json({ success: true, message: '정산요청이 완료되었습니다', notified: settlers.results.length })
+    } catch (notifErr: any) {
+      console.warn('[constructions POST /:id/settle] 알림 발송 실패 (무시):', notifErr.message)
+      return c.json({ success: true, message: '정산요청이 완료되었습니다', notified: 0 })
+    }
+  } catch (e: any) {
+    return c.json({ error: e.message || '정산요청 처리 실패' }, 500)
   }
-
-  return c.json({ success: true, message: '정산요청이 완료되었습니다', notified: settlers.results.length })
 })
 
 // ─── 정산요청 취소 (settlement_requested → completed) ────────────────────────
@@ -314,17 +343,22 @@ app.post('/:id/settle-cancel', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const id = parseInt(c.req.param('id'))
-  const con = await c.env.DB.prepare('SELECT * FROM constructions WHERE id = ?').bind(id).first<any>()
-  if (!con) return c.json({ error: '공사 없음' }, 404)
-  if (con.status !== 'settlement_requested') {
-    return c.json({ error: '정산요청 상태인 공사만 취소할 수 있습니다' }, 400)
+
+  try {
+    const con = await c.env.DB.prepare('SELECT * FROM constructions WHERE id = ?').bind(id).first<any>()
+    if (!con) return c.json({ error: '공사 없음' }, 404)
+    if (con.status !== 'settlement_requested') {
+      return c.json({ error: '정산요청 상태인 공사만 취소할 수 있습니다' }, 400)
+    }
+
+    await c.env.DB.prepare(`
+      UPDATE constructions SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).bind(id).run()
+
+    return c.json({ success: true, message: '정산요청이 취소되었습니다. 공사가 현장완료 상태로 돌아갔습니다.' })
+  } catch (e: any) {
+    return c.json({ error: e.message || '정산요청 취소 실패' }, 500)
   }
-
-  await c.env.DB.prepare(`
-    UPDATE constructions SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `).bind(id).run()
-
-  return c.json({ success: true, message: '정산요청이 취소되었습니다. 공사가 현장완료 상태로 돌아갔습니다.' })
 })
 
 // ─── 정산완료 (settlement_requested → settled) ───────────────────────────────
@@ -333,17 +367,22 @@ app.post('/:id/settle-complete', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const id = parseInt(c.req.param('id'))
-  const con = await c.env.DB.prepare('SELECT * FROM constructions WHERE id = ?').bind(id).first<any>()
-  if (!con) return c.json({ error: '공사 없음' }, 404)
-  if (con.status !== 'settlement_requested') {
-    return c.json({ error: '정산요청 상태인 공사만 정산완료 처리 가능합니다' }, 400)
+
+  try {
+    const con = await c.env.DB.prepare('SELECT * FROM constructions WHERE id = ?').bind(id).first<any>()
+    if (!con) return c.json({ error: '공사 없음' }, 404)
+    if (con.status !== 'settlement_requested') {
+      return c.json({ error: '정산요청 상태인 공사만 정산완료 처리 가능합니다' }, 400)
+    }
+
+    await c.env.DB.prepare(`
+      UPDATE constructions SET status = 'settled', updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).bind(id).run()
+
+    return c.json({ success: true, message: '정산완료 처리되었습니다' })
+  } catch (e: any) {
+    return c.json({ error: e.message || '정산완료 처리 실패' }, 500)
   }
-
-  await c.env.DB.prepare(`
-    UPDATE constructions SET status = 'settled', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `).bind(id).run()
-
-  return c.json({ success: true, message: '정산완료 처리되었습니다' })
 })
 
 export default app

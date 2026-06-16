@@ -139,40 +139,45 @@ app.get('/sessions', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { DB } = c.env
-  const eduType = c.req.query('edu_type') || ''
-  const year    = c.req.query('year')     || new Date().getFullYear().toString()
-  const quarter = c.req.query('quarter')  || ''
-  const page    = parseInt(c.req.query('page')  || '1')
-  const limit   = parseInt(c.req.query('limit') || '20')
-  const offset  = (page - 1) * limit
+  try {
+    const { DB } = c.env
+    const eduType = c.req.query('edu_type') || ''
+    const year    = c.req.query('year')     || new Date().getFullYear().toString()
+    const quarter = c.req.query('quarter')  || ''
+    const page    = parseInt(c.req.query('page')  || '1')
+    const limit   = parseInt(c.req.query('limit') || '20')
+    const offset  = (page - 1) * limit
 
-  let where = 'WHERE 1=1'
-  const params: any[] = []
+    let where = 'WHERE 1=1'
+    const params: any[] = []
 
-  if (eduType) { where += ' AND s.edu_type = ?'; params.push(eduType) }
-  if (year)    { where += ' AND s.year = ?';     params.push(Number(year)) }
-  if (quarter) { where += ' AND s.quarter = ?';  params.push(Number(quarter)) }
+    if (eduType) { where += ' AND s.edu_type = ?'; params.push(eduType) }
+    if (year)    { where += ' AND s.year = ?';     params.push(Number(year)) }
+    if (quarter) { where += ' AND s.quarter = ?';  params.push(Number(quarter)) }
 
-  const countRow: any = await DB.prepare(
-    `SELECT COUNT(*) as cnt FROM safety_education_sessions s ${where}`
-  ).bind(...params).first()
-  const total = countRow?.cnt || 0
+    const countRow: any = await DB.prepare(
+      `SELECT COUNT(*) as cnt FROM safety_education_sessions s ${where}`
+    ).bind(...params).first()
+    const total = countRow?.cnt || 0
 
-  const rows = (await DB.prepare(`
-    SELECT s.*,
-           u.name as creator_name,
-           COUNT(a.id) as attendee_count
-    FROM safety_education_sessions s
-    LEFT JOIN users u ON u.id = s.created_by
-    LEFT JOIN safety_education_attendees a ON a.session_id = s.id
-    ${where}
-    GROUP BY s.id
-    ORDER BY s.edu_date DESC, s.id DESC
-    LIMIT ? OFFSET ?
-  `).bind(...params, limit, offset).all()).results
+    const rows = (await DB.prepare(`
+      SELECT s.*,
+             u.name as creator_name,
+             COUNT(a.id) as attendee_count
+      FROM safety_education_sessions s
+      LEFT JOIN users u ON u.id = s.created_by
+      LEFT JOIN safety_education_attendees a ON a.session_id = s.id
+      ${where}
+      GROUP BY s.id
+      ORDER BY s.edu_date DESC, s.id DESC
+      LIMIT ? OFFSET ?
+    `).bind(...params, limit, offset).all()).results
 
-  return c.json({ sessions: rows, total, page, limit })
+    return c.json({ sessions: rows, total, page, limit })
+  } catch (e: any) {
+    console.error('[education GET /sessions]', e.message)
+    return c.json({ error: e.message || '교육 세션 목록 조회 실패' }, 500)
+  }
 })
 
 // ─── 교육 유형별 기본 교육내용 조회 ──────────────────────────────────────────
@@ -199,27 +204,32 @@ app.get('/sessions/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { DB } = c.env
-  const id = Number(c.req.param('id'))
+  try {
+    const { DB } = c.env
+    const id = Number(c.req.param('id'))
 
-  const session: any = await DB.prepare(`
-    SELECT s.*, u.name as creator_name
-    FROM safety_education_sessions s
-    LEFT JOIN users u ON u.id = s.created_by
-    WHERE s.id = ?
-  `).bind(id).first()
+    const session: any = await DB.prepare(`
+      SELECT s.*, u.name as creator_name
+      FROM safety_education_sessions s
+      LEFT JOIN users u ON u.id = s.created_by
+      WHERE s.id = ?
+    `).bind(id).first()
 
-  if (!session) return c.json({ error: '교육 세션을 찾을 수 없습니다.' }, 404)
+    if (!session) return c.json({ error: '교육 세션을 찾을 수 없습니다.' }, 404)
 
-  const attendees = (await DB.prepare(`
-    SELECT a.*, u.name as user_real_name, u.department as user_department, u.position as user_position
-    FROM safety_education_attendees a
-    LEFT JOIN users u ON u.id = a.user_id
-    WHERE a.session_id = ?
-    ORDER BY a.id
-  `).bind(id).all()).results
+    const attendees = (await DB.prepare(`
+      SELECT a.*, u.name as user_real_name, u.department as user_department, u.position as user_position
+      FROM safety_education_attendees a
+      LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.session_id = ?
+      ORDER BY a.id
+    `).bind(id).all()).results
 
-  return c.json({ session, attendees })
+    return c.json({ session, attendees })
+  } catch (e: any) {
+    console.error('[education GET /sessions/:id]', e.message)
+    return c.json({ error: e.message || '교육 세션 조회 실패' }, 500)
+  }
 })
 
 // ─── 교육 세션 생성 ────────────────────────────────────────────────────────
@@ -231,52 +241,61 @@ app.post('/sessions', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { DB } = c.env
-  const body: any = await c.req.json()
+  try {
+    const { DB } = c.env
+    const body: any = await c.req.json()
 
-  const {
-    edu_type, edu_subject, edu_date, edu_hours,
-    start_time, end_time, edu_content,
-    instructor, location, quarter, year,
-    target_type, special_work_type, notes,
-    attendees = []
-  } = body
+    const {
+      edu_type, edu_subject, edu_date, edu_hours,
+      start_time, end_time, edu_content,
+      instructor, location, quarter, year,
+      target_type, special_work_type, notes,
+      attendees = []
+    } = body
 
-  // 필수 항목 검증
-  if (!edu_type || !edu_subject || !edu_date || !edu_hours) {
-    return c.json({ error: '교육유형, 과목, 일자, 시간은 필수입니다.' }, 400)
+    // 필수 항목 검증
+    if (!edu_type || !edu_subject || !edu_date || !edu_hours) {
+      return c.json({ error: '교육유형, 과목, 일자, 시간은 필수입니다.' }, 400)
+    }
+
+    // 법적 최소 시간 경고 (차단은 안 함)
+    const minHours = LEGAL_MIN_HOURS[edu_type]?.[target_type || 'field'] || 0
+    const legalWarning = edu_hours < minHours
+      ? `법적 최소 교육시간(${minHours}시간)에 미달합니다.`
+      : null
+
+    // 연도 자동 계산
+    const computedYear = year || new Date(edu_date).getFullYear()
+
+    const result = await DB.prepare(`
+      INSERT INTO safety_education_sessions
+        (edu_type, edu_subject, edu_date, edu_hours, start_time, end_time, edu_content,
+         instructor, location, quarter, year, target_type, special_work_type, notes, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      edu_type, edu_subject, edu_date, edu_hours,
+      start_time || null, end_time || null,
+      edu_content || LEGAL_DEFAULT_CONTENT[edu_type] || null,
+      instructor || null, location || null,
+      quarter || null, computedYear,
+      target_type || null, special_work_type || null,
+      notes || null, user.id
+    ).run()
+
+    const sessionId = Number(result.meta.last_row_id)
+
+    // 참석자 배치 INSERT (N+1 → 단일 쿼리)
+    try {
+      await batchInsertAttendees(DB, sessionId, attendees)
+    } catch (attErr: any) {
+      console.warn('[education POST /sessions] 참석자 INSERT 실패 (무시):', attErr.message)
+    }
+
+    return c.json({ success: true, id: sessionId, legal_warning: legalWarning }, 201)
+  } catch (e: any) {
+    console.error('[education POST /sessions]', e.message)
+    return c.json({ error: e.message || '교육 세션 생성 실패' }, 500)
   }
-
-  // 법적 최소 시간 경고 (차단은 안 함)
-  const minHours = LEGAL_MIN_HOURS[edu_type]?.[target_type || 'field'] || 0
-  const legalWarning = edu_hours < minHours
-    ? `법적 최소 교육시간(${minHours}시간)에 미달합니다.`
-    : null
-
-  // 연도 자동 계산
-  const computedYear = year || new Date(edu_date).getFullYear()
-
-  const result = await DB.prepare(`
-    INSERT INTO safety_education_sessions
-      (edu_type, edu_subject, edu_date, edu_hours, start_time, end_time, edu_content,
-       instructor, location, quarter, year, target_type, special_work_type, notes, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(
-    edu_type, edu_subject, edu_date, edu_hours,
-    start_time || null, end_time || null,
-    edu_content || LEGAL_DEFAULT_CONTENT[edu_type] || null,
-    instructor || null, location || null,
-    quarter || null, computedYear,
-    target_type || null, special_work_type || null,
-    notes || null, user.id
-  ).run()
-
-  const sessionId = Number(result.meta.last_row_id)
-
-  // 참석자 배치 INSERT (N+1 → 단일 쿼리)
-  await batchInsertAttendees(DB, sessionId, attendees)
-
-  return c.json({ success: true, id: sessionId, legal_warning: legalWarning }, 201)
 })
 
 // ─── 교육 세션 수정 ────────────────────────────────────────────────────────
@@ -288,47 +307,56 @@ app.put('/sessions/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { DB } = c.env
-  const id = Number(c.req.param('id'))
-  const body: any = await c.req.json()
+  try {
+    const { DB } = c.env
+    const id = Number(c.req.param('id'))
+    const body: any = await c.req.json()
 
-  const session: any = await DB.prepare(
-    'SELECT * FROM safety_education_sessions WHERE id = ?'
-  ).bind(id).first()
-  if (!session) return c.json({ error: '세션 없음' }, 404)
+    const session: any = await DB.prepare(
+      'SELECT * FROM safety_education_sessions WHERE id = ?'
+    ).bind(id).first()
+    if (!session) return c.json({ error: '세션 없음' }, 404)
 
-  const {
-    edu_type, edu_subject, edu_date, edu_hours,
-    start_time, end_time, edu_content,
-    instructor, location, quarter, year,
-    target_type, special_work_type, notes,
-    attendees
-  } = body
+    const {
+      edu_type, edu_subject, edu_date, edu_hours,
+      start_time, end_time, edu_content,
+      instructor, location, quarter, year,
+      target_type, special_work_type, notes,
+      attendees
+    } = body
 
-  await DB.prepare(`
-    UPDATE safety_education_sessions SET
-      edu_type = ?, edu_subject = ?, edu_date = ?, edu_hours = ?,
-      start_time = ?, end_time = ?, edu_content = ?,
-      instructor = ?, location = ?, quarter = ?, year = ?,
-      target_type = ?, special_work_type = ?, notes = ?,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).bind(
-    edu_type, edu_subject, edu_date, edu_hours,
-    start_time || null, end_time || null, edu_content || null,
-    instructor || null, location || null,
-    quarter || null, year || new Date(edu_date).getFullYear(),
-    target_type || null, special_work_type || null,
-    notes || null, id
-  ).run()
+    await DB.prepare(`
+      UPDATE safety_education_sessions SET
+        edu_type = ?, edu_subject = ?, edu_date = ?, edu_hours = ?,
+        start_time = ?, end_time = ?, edu_content = ?,
+        instructor = ?, location = ?, quarter = ?, year = ?,
+        target_type = ?, special_work_type = ?, notes = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(
+      edu_type, edu_subject, edu_date, edu_hours,
+      start_time || null, end_time || null, edu_content || null,
+      instructor || null, location || null,
+      quarter || null, year || new Date(edu_date).getFullYear(),
+      target_type || null, special_work_type || null,
+      notes || null, id
+    ).run()
 
-  // 참석자 업데이트 (전달된 경우) — DELETE 후 배치 INSERT
-  if (attendees !== undefined) {
-    await DB.prepare('DELETE FROM safety_education_attendees WHERE session_id = ?').bind(id).run()
-    await batchInsertAttendees(DB, id, attendees || [])
+    // 참석자 업데이트 (전달된 경우) — DELETE 후 배치 INSERT
+    if (attendees !== undefined) {
+      try {
+        await DB.prepare('DELETE FROM safety_education_attendees WHERE session_id = ?').bind(id).run()
+        await batchInsertAttendees(DB, id, attendees || [])
+      } catch (attErr: any) {
+        console.warn('[education PUT /sessions/:id] 참석자 업데이트 실패 (무시):', attErr.message)
+      }
+    }
+
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[education PUT /sessions/:id]', e.message)
+    return c.json({ error: e.message || '교육 세션 수정 실패' }, 500)
   }
-
-  return c.json({ success: true })
 })
 
 // ─── 교육 세션 삭제 ────────────────────────────────────────────────────────
@@ -343,11 +371,16 @@ app.delete('/sessions/:id', async (c) => {
     return c.json({ error: '권한 없음' }, 403)
   }
 
-  const { DB } = c.env
-  const id = Number(c.req.param('id'))
+  try {
+    const { DB } = c.env
+    const id = Number(c.req.param('id'))
 
-  await DB.prepare('DELETE FROM safety_education_sessions WHERE id = ?').bind(id).run()
-  return c.json({ success: true })
+    await DB.prepare('DELETE FROM safety_education_sessions WHERE id = ?').bind(id).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[education DELETE /sessions/:id]', e.message)
+    return c.json({ error: e.message || '교육 세션 삭제 실패' }, 500)
+  }
 })
 
 // ─── 교육 완료처리 ────────────────────────────────────────────────────────
@@ -370,62 +403,67 @@ app.post('/sessions/:id/complete', async (c) => {
     return c.json({ error: '권한 없음 (관리자만 완료처리 가능)' }, 403)
   }
 
-  const { DB } = c.env
-  const sessionId = Number(c.req.param('id'))
+  try {
+    const { DB } = c.env
+    const sessionId = Number(c.req.param('id'))
 
-  const session: any = await DB.prepare(
-    'SELECT * FROM safety_education_sessions WHERE id = ?'
-  ).bind(sessionId).first()
-  if (!session) return c.json({ error: '교육 세션 없음' }, 404)
-  if (session.is_completed) return c.json({ error: '이미 완료처리된 교육입니다.' }, 409)
+    const session: any = await DB.prepare(
+      'SELECT * FROM safety_education_sessions WHERE id = ?'
+    ).bind(sessionId).first()
+    if (!session) return c.json({ error: '교육 세션 없음' }, 404)
+    if (session.is_completed) return c.json({ error: '이미 완료처리된 교육입니다.' }, 409)
 
-  // 1) 세션 완료 표시
-  await DB.prepare(`
-    UPDATE safety_education_sessions
-    SET is_completed = 1, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).bind(sessionId).run()
+    // 1) 세션 완료 표시
+    await DB.prepare(`
+      UPDATE safety_education_sessions
+      SET is_completed = 1, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(sessionId).run()
 
-  // 2) 참석한 등록 사용자의 이수현황 업데이트
-  const attendees: any[] = (await DB.prepare(`
-    SELECT user_id FROM safety_education_attendees
-    WHERE session_id = ? AND attended = 1 AND user_id IS NOT NULL
-  `).bind(sessionId).all()).results
+    // 2) 참석한 등록 사용자의 이수현황 업데이트
+    const attendees: any[] = (await DB.prepare(`
+      SELECT user_id FROM safety_education_attendees
+      WHERE session_id = ? AND attended = 1 AND user_id IS NOT NULL
+    `).bind(sessionId).all()).results
 
-  const eduDate = session.edu_date
-  const eduType = session.edu_type
+    const eduDate = session.edu_date
+    const eduType = session.edu_type
 
-  // 교육 유형 → users 컬럼 매핑
-  const colMap: Record<string, string> = {
-    periodic:   'edu_periodic_date',
-    hire:       'edu_hire_date',
-    job_change: 'edu_job_change_date',
-    special:    'edu_special_date',
-    supervisor: 'edu_supervisor_date',
-  }
-  const col = colMap[eduType]
+    // 교육 유형 → users 컬럼 매핑
+    const colMap: Record<string, string> = {
+      periodic:   'edu_periodic_date',
+      hire:       'edu_hire_date',
+      job_change: 'edu_job_change_date',
+      special:    'edu_special_date',
+      supervisor: 'edu_supervisor_date',
+    }
+    const col = colMap[eduType]
 
-  let updatedCount = 0
-  if (col) {
-    // users 테이블에 해당 컬럼이 없을 경우 조용히 스킵 (ALTER는 patchSchema에서 처리)
-    for (const att of attendees) {
-      try {
-        await DB.prepare(`UPDATE users SET ${col} = ? WHERE id = ?`)
-          .bind(eduDate, att.user_id).run()
-        updatedCount++
-      } catch(e: any) {
-        console.warn(`[complete] users.${col} 업데이트 실패 uid=${att.user_id}:`, e.message)
+    let updatedCount = 0
+    if (col) {
+      // users 테이블에 해당 컬럼이 없을 경우 조용히 스킵 (ALTER는 patchSchema에서 처리)
+      for (const att of attendees) {
+        try {
+          await DB.prepare(`UPDATE users SET ${col} = ? WHERE id = ?`)
+            .bind(eduDate, att.user_id).run()
+          updatedCount++
+        } catch(e: any) {
+          console.warn(`[education complete] users.${col} 업데이트 실패 uid=${att.user_id}:`, e.message)
+        }
       }
     }
-  }
 
-  return c.json({
-    success: true,
-    session_id: sessionId,
-    edu_type: eduType,
-    edu_date: eduDate,
-    updated_users: updatedCount,
-  })
+    return c.json({
+      success: true,
+      session_id: sessionId,
+      edu_type: eduType,
+      edu_date: eduDate,
+      updated_users: updatedCount,
+    })
+  } catch (e: any) {
+    console.error('[education POST /sessions/:id/complete]', e.message)
+    return c.json({ error: e.message || '교육 완료처리 실패' }, 500)
+  }
 })
 
 // ─── 참석자 추가/삭제 ──────────────────────────────────────────────────────
@@ -437,15 +475,20 @@ app.post('/sessions/:id/attendees', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { DB } = c.env
-  const sessionId = Number(c.req.param('id'))
-  const body: any = await c.req.json()
-  const { attendees = [] } = body
+  try {
+    const { DB } = c.env
+    const sessionId = Number(c.req.param('id'))
+    const body: any = await c.req.json()
+    const { attendees = [] } = body
 
-  const validAtts = attendees.filter((a: any) => !!a.user_name)
-  await batchInsertAttendees(DB, sessionId, validAtts)
+    const validAtts = attendees.filter((a: any) => !!a.user_name)
+    await batchInsertAttendees(DB, sessionId, validAtts)
 
-  return c.json({ success: true, added: validAtts.length })
+    return c.json({ success: true, added: validAtts.length })
+  } catch (e: any) {
+    console.error('[education POST /sessions/:id/attendees]', e.message)
+    return c.json({ error: e.message || '참석자 추가 실패' }, 500)
+  }
 })
 
 /**
@@ -455,16 +498,21 @@ app.patch('/attendees/:id/signature', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { DB } = c.env
-  const id = Number(c.req.param('id'))
-  const body: any = await c.req.json().catch(() => ({}))
-  const signData: string | null = body.sign_data || null
+  try {
+    const { DB } = c.env
+    const id = Number(c.req.param('id'))
+    const body: any = await c.req.json().catch(() => ({}))
+    const signData: string | null = body.sign_data || null
 
-  await DB.prepare(
-    'UPDATE safety_education_attendees SET signature_data = ? WHERE id = ?'
-  ).bind(signData, id).run()
+    await DB.prepare(
+      'UPDATE safety_education_attendees SET signature_data = ? WHERE id = ?'
+    ).bind(signData, id).run()
 
-  return c.json({ success: true })
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[education PATCH /attendees/:id/signature]', e.message)
+    return c.json({ error: e.message || '서명 저장 실패' }, 500)
+  }
 })
 
 /**
@@ -474,10 +522,15 @@ app.delete('/attendees/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { DB } = c.env
-  const id = Number(c.req.param('id'))
-  await DB.prepare('DELETE FROM safety_education_attendees WHERE id = ?').bind(id).run()
-  return c.json({ success: true })
+  try {
+    const { DB } = c.env
+    const id = Number(c.req.param('id'))
+    await DB.prepare('DELETE FROM safety_education_attendees WHERE id = ?').bind(id).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[education DELETE /attendees/:id]', e.message)
+    return c.json({ error: e.message || '참석자 삭제 실패' }, 500)
+  }
 })
 
 // ─── 통계 ──────────────────────────────────────────────────────────────────
@@ -491,117 +544,122 @@ app.get('/stats', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { DB } = c.env
-  const year = parseInt(c.req.query('year') || new Date().getFullYear().toString())
+  try {
+    const { DB } = c.env
+    const year = parseInt(c.req.query('year') || new Date().getFullYear().toString())
 
-  // 교육유형별 집계
-  const typeSummary = (await DB.prepare(`
-    SELECT
-      edu_type,
-      COUNT(*) as session_count,
-      SUM(edu_hours) as total_hours,
-      (SELECT COUNT(*) FROM safety_education_attendees a
-       WHERE a.session_id IN (
-         SELECT id FROM safety_education_sessions WHERE edu_type = s.edu_type AND year = ?
-       ) AND a.attended = 1) as total_attendees
-    FROM safety_education_sessions s
-    WHERE year = ?
-    GROUP BY edu_type
-    ORDER BY edu_type
-  `).bind(year, year).all()).results
+    // 교육유형별 집계
+    const typeSummary = (await DB.prepare(`
+      SELECT
+        edu_type,
+        COUNT(*) as session_count,
+        SUM(edu_hours) as total_hours,
+        (SELECT COUNT(*) FROM safety_education_attendees a
+         WHERE a.session_id IN (
+           SELECT id FROM safety_education_sessions WHERE edu_type = s.edu_type AND year = ?
+         ) AND a.attended = 1) as total_attendees
+      FROM safety_education_sessions s
+      WHERE year = ?
+      GROUP BY edu_type
+      ORDER BY edu_type
+    `).bind(year, year).all()).results
 
-  // 분기별 정기교육 현황
-  const quarterlyPeriodic = (await DB.prepare(`
-    SELECT
-      quarter,
-      target_type,
-      SUM(edu_hours) as total_hours,
-      COUNT(*) as session_count
-    FROM safety_education_sessions
-    WHERE year = ? AND edu_type = 'periodic'
-    GROUP BY quarter, target_type
-    ORDER BY quarter
-  `).bind(year).all()).results
+    // 분기별 정기교육 현황
+    const quarterlyPeriodic = (await DB.prepare(`
+      SELECT
+        quarter,
+        target_type,
+        SUM(edu_hours) as total_hours,
+        COUNT(*) as session_count
+      FROM safety_education_sessions
+      WHERE year = ? AND edu_type = 'periodic'
+      GROUP BY quarter, target_type
+      ORDER BY quarter
+    `).bind(year).all()).results
 
-  // 최근 6개월 교육 트렌드
-  const trend = (await DB.prepare(`
-    SELECT
-      strftime('%Y-%m', edu_date) as month,
-      edu_type,
-      COUNT(*) as cnt,
-      SUM(edu_hours) as hours
-    FROM safety_education_sessions
-    WHERE edu_date >= date('now', '-6 months')
-    GROUP BY month, edu_type
-    ORDER BY month, edu_type
-  `).all()).results
+    // 최근 6개월 교육 트렌드
+    const trend = (await DB.prepare(`
+      SELECT
+        strftime('%Y-%m', edu_date) as month,
+        edu_type,
+        COUNT(*) as cnt,
+        SUM(edu_hours) as hours
+      FROM safety_education_sessions
+      WHERE edu_date >= date('now', '-6 months')
+      GROUP BY month, edu_type
+      ORDER BY month, edu_type
+    `).all()).results
 
-  // 연도별 전체 요약
-  const yearTotal = (await DB.prepare(`
-    SELECT
-      COUNT(*) as total_sessions,
-      SUM(edu_hours) as total_hours,
-      (SELECT COUNT(*) FROM safety_education_attendees a2
-       WHERE a2.session_id IN (SELECT id FROM safety_education_sessions WHERE year = ?)
-       AND a2.attended = 1) as total_attendees
-    FROM safety_education_sessions
-    WHERE year = ?
-  `).bind(year, year).first()) as any
+    // 연도별 전체 요약
+    const yearTotal = (await DB.prepare(`
+      SELECT
+        COUNT(*) as total_sessions,
+        SUM(edu_hours) as total_hours,
+        (SELECT COUNT(*) FROM safety_education_attendees a2
+         WHERE a2.session_id IN (SELECT id FROM safety_education_sessions WHERE year = ?)
+         AND a2.attended = 1) as total_attendees
+      FROM safety_education_sessions
+      WHERE year = ?
+    `).bind(year, year).first()) as any
 
-  // 법적 준수 여부 체크 (정기교육 분기별) — for 루프 N+1 → 단일 GROUP BY 쿼리
-  const { quarter: currentQ } = getCurrentYearQuarter()
-  const legalCheck = []
-  const periodicRows = (await DB.prepare(`
-    SELECT quarter, target_type, COALESCE(SUM(edu_hours), 0) as hours
-    FROM safety_education_sessions
-    WHERE year = ? AND edu_type = 'periodic' AND quarter IS NOT NULL
-    GROUP BY quarter, target_type
-  `).bind(year).all()).results as any[]
+    // 법적 준수 여부 체크 (정기교육 분기별) — for 루프 N+1 → 단일 GROUP BY 쿼리
+    const { quarter: currentQ } = getCurrentYearQuarter()
+    const legalCheck = []
+    const periodicRows = (await DB.prepare(`
+      SELECT quarter, target_type, COALESCE(SUM(edu_hours), 0) as hours
+      FROM safety_education_sessions
+      WHERE year = ? AND edu_type = 'periodic' AND quarter IS NOT NULL
+      GROUP BY quarter, target_type
+    `).bind(year).all()).results as any[]
 
-  // quarter×target_type → hours 맵
-  const periodicMap: Record<string, number> = {}
-  for (const row of periodicRows) {
-    periodicMap[`${row.quarter}_${row.target_type}`] = Number(row.hours) || 0
-  }
-  for (let q = 1; q <= currentQ; q++) {
-    const officeH = periodicMap[`${q}_office`] || 0
-    const fieldH  = periodicMap[`${q}_field`]  || 0
-    legalCheck.push({
-      quarter: q,
-      office_hours: officeH,
-      office_min: 6,
-      office_ok: officeH >= 6,
-      field_hours: fieldH,
-      field_min: 12,
-      field_ok: fieldH >= 12,
+    // quarter×target_type → hours 맵
+    const periodicMap: Record<string, number> = {}
+    for (const row of periodicRows) {
+      periodicMap[`${row.quarter}_${row.target_type}`] = Number(row.hours) || 0
+    }
+    for (let q = 1; q <= currentQ; q++) {
+      const officeH = periodicMap[`${q}_office`] || 0
+      const fieldH  = periodicMap[`${q}_field`]  || 0
+      legalCheck.push({
+        quarter: q,
+        office_hours: officeH,
+        office_min: 6,
+        office_ok: officeH >= 6,
+        field_hours: fieldH,
+        field_min: 12,
+        field_ok: fieldH >= 12,
+      })
+    }
+
+    // 관리감독자 연간 교육시간 체크
+    const supervisorHours: any = await DB.prepare(`
+      SELECT COALESCE(SUM(edu_hours), 0) as hours
+      FROM safety_education_sessions
+      WHERE year = ? AND edu_type = 'supervisor'
+    `).bind(year).first()
+
+    return c.json({
+      year,
+      year_total: yearTotal,
+      type_summary: typeSummary,
+      quarterly_periodic: quarterlyPeriodic,
+      trend,
+      legal_check: {
+        periodic_quarterly: legalCheck,
+        supervisor_annual: {
+          hours: supervisorHours?.hours || 0,
+          min: 16,
+          ok: (supervisorHours?.hours || 0) >= 16,
+        }
+      },
+      edu_type_labels: EDU_TYPE_LABEL,
+      target_type_labels: TARGET_TYPE_LABEL,
+      legal_min_hours: LEGAL_MIN_HOURS,
     })
+  } catch (e: any) {
+    console.error('[education GET /stats]', e.message)
+    return c.json({ error: e.message || '교육 통계 조회 실패' }, 500)
   }
-
-  // 관리감독자 연간 교육시간 체크
-  const supervisorHours: any = await DB.prepare(`
-    SELECT COALESCE(SUM(edu_hours), 0) as hours
-    FROM safety_education_sessions
-    WHERE year = ? AND edu_type = 'supervisor'
-  `).bind(year).first()
-
-  return c.json({
-    year,
-    year_total: yearTotal,
-    type_summary: typeSummary,
-    quarterly_periodic: quarterlyPeriodic,
-    trend,
-    legal_check: {
-      periodic_quarterly: legalCheck,
-      supervisor_annual: {
-        hours: supervisorHours?.hours || 0,
-        min: 16,
-        ok: (supervisorHours?.hours || 0) >= 16,
-      }
-    },
-    edu_type_labels: EDU_TYPE_LABEL,
-    target_type_labels: TARGET_TYPE_LABEL,
-    legal_min_hours: LEGAL_MIN_HOURS,
-  })
 })
 
 /**
@@ -612,19 +670,24 @@ app.get('/user-history/:userId', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { DB } = c.env
-  const userId = Number(c.req.param('userId'))
+  try {
+    const { DB } = c.env
+    const userId = Number(c.req.param('userId'))
 
-  const history = (await DB.prepare(`
-    SELECT a.*, s.edu_type, s.edu_subject, s.edu_date, s.edu_hours,
-           s.instructor, s.location, s.year, s.quarter, s.target_type, s.is_completed
-    FROM safety_education_attendees a
-    JOIN safety_education_sessions s ON s.id = a.session_id
-    WHERE a.user_id = ? AND a.attended = 1
-    ORDER BY s.edu_date DESC
-  `).bind(userId).all()).results
+    const history = (await DB.prepare(`
+      SELECT a.*, s.edu_type, s.edu_subject, s.edu_date, s.edu_hours,
+             s.instructor, s.location, s.year, s.quarter, s.target_type, s.is_completed
+      FROM safety_education_attendees a
+      JOIN safety_education_sessions s ON s.id = a.session_id
+      WHERE a.user_id = ? AND a.attended = 1
+      ORDER BY s.edu_date DESC
+    `).bind(userId).all()).results
 
-  return c.json({ user_id: userId, history })
+    return c.json({ user_id: userId, history })
+  } catch (e: any) {
+    console.error('[education GET /user-history/:userId]', e.message)
+    return c.json({ error: e.message || '교육 이수 이력 조회 실패' }, 500)
+  }
 })
 
 export default app

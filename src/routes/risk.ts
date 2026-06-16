@@ -9,6 +9,7 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
   const { task_id, assessment_type, date_from, date_to, user_id } = c.req.query()
   const params: any[] = []
   const conditions: string[] = []
@@ -47,6 +48,10 @@ app.get('/', async (c) => {
     rows = result.results || []
   }
   return c.json(rows)
+  } catch (e: any) {
+    console.error('[risk GET /]', e.message)
+    return c.json({ error: e.message || '목록 조회 실패' }, 500)
+  }
 })
 
 // 위험성 평가 상세
@@ -54,6 +59,7 @@ app.get('/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = c.req.param('id')
+  try {
   const ra = await c.env.DB.prepare(
     `SELECT ra.*, t.title as task_title,
      COALESCE(ra.location, t.location) as location,
@@ -83,12 +89,17 @@ app.get('/:id', async (c) => {
   ra.members = members.results || []
 
   return c.json(ra)
+  } catch (e: any) {
+    console.error('[risk GET /:id]', e.message)
+    return c.json({ error: e.message || '평가 상세 조회 실패' }, 500)
+  }
 })
 
 // 위험성 평가 생성
 app.post('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
   const body = await c.req.json()
   // assessment_type: 'task'(기본,작업별), 'periodic'(정기), 'adhoc'(수시)
   const { task_id, weather, temperature, workers_count, notes, details,
@@ -142,6 +153,10 @@ app.post('/', async (c) => {
   }
 
   return c.json({ success: true, id: assessmentId })
+  } catch (e: any) {
+    console.error('[risk POST /]', e.message)
+    return c.json({ error: e.message || '평가 생성 실패' }, 500)
+  }
 })
 
 // ─── 위험성 평가 삭제 ────────────────────────────────────────────────────────
@@ -149,6 +164,7 @@ app.delete('/:id', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
   const id = c.req.param('id')
+  try {
   // 완료(completed) 상태는 삭제 불가
   const row = await c.env.DB.prepare(
     `SELECT status FROM risk_assessments WHERE id=?`
@@ -160,6 +176,10 @@ app.delete('/:id', async (c) => {
   await c.env.DB.prepare(`DELETE FROM risk_assessment_members  WHERE assessment_id=?`).bind(id).run()
   await c.env.DB.prepare(`DELETE FROM risk_assessments         WHERE id=?`).bind(id).run()
   return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk DELETE /:id]', e.message)
+    return c.json({ error: e.message || '평가 삭제 실패' }, 500)
+  }
 })
 
 // ─── 임시 저장 (draft/in_review/measures_done: 회의일자·장소·메모 저장) ──────
@@ -167,16 +187,21 @@ app.patch('/:id/save-draft', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
   const id = c.req.param('id')
-  const body = await c.req.json().catch(() => ({})) as any
-  const { meeting_date, meeting_place, notes } = body
-  await c.env.DB.prepare(
-    `UPDATE risk_assessments
-     SET meeting_date  = COALESCE(?, meeting_date),
-         meeting_place = COALESCE(?, meeting_place),
-         review_notes  = COALESCE(?, review_notes)
-     WHERE id = ?`
-  ).bind(meeting_date || null, meeting_place || null, notes || null, id).run()
-  return c.json({ success: true })
+  try {
+    const body = await c.req.json().catch(() => ({})) as any
+    const { meeting_date, meeting_place, notes } = body
+    await c.env.DB.prepare(
+      `UPDATE risk_assessments
+       SET meeting_date  = COALESCE(?, meeting_date),
+           meeting_place = COALESCE(?, meeting_place),
+           review_notes  = COALESCE(?, review_notes)
+       WHERE id = ?`
+    ).bind(meeting_date || null, meeting_place || null, notes || null, id).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk PATCH /:id/save-draft]', e.message)
+    return c.json({ error: e.message || '임시저장 실패' }, 500)
+  }
 })
 
 // 위험성 평가 완료
@@ -184,8 +209,13 @@ app.patch('/:id/complete', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = c.req.param('id')
-  await c.env.DB.prepare("UPDATE risk_assessments SET status='completed' WHERE id=?").bind(id).run()
-  return c.json({ success: true })
+  try {
+    await c.env.DB.prepare("UPDATE risk_assessments SET status='completed' WHERE id=?").bind(id).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk PATCH /:id/complete]', e.message)
+    return c.json({ error: e.message || '완료 처리 실패' }, 500)
+  }
 })
 
 // ─── 워크플로우 상태 전이 ────────────────────────────────────────────────────
@@ -197,15 +227,20 @@ app.patch('/:id/start-review', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
   const id = c.req.param('id')
-  const body = await c.req.json().catch(() => ({}))
-  const { meeting_date, meeting_place } = body as any
-  await c.env.DB.prepare(
-    `UPDATE risk_assessments
-     SET status='in_review',
-         meeting_date=?, meeting_place=?
-     WHERE id=?`
-  ).bind(meeting_date || null, meeting_place || null, id).run()
-  return c.json({ success: true })
+  try {
+    const body = await c.req.json().catch(() => ({}))
+    const { meeting_date, meeting_place } = body as any
+    await c.env.DB.prepare(
+      `UPDATE risk_assessments
+       SET status='in_review',
+           meeting_date=?, meeting_place=?
+       WHERE id=?`
+    ).bind(meeting_date || null, meeting_place || null, id).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk PATCH /:id/start-review]', e.message)
+    return c.json({ error: e.message || '상태 전이 실패' }, 500)
+  }
 })
 
 // 상태 전이: in_review → measures_done (감소대책 수립 완료 → 최종 위험도 선정)
@@ -213,12 +248,17 @@ app.patch('/:id/finish-measures', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
   const id = c.req.param('id')
-  const body = await c.req.json().catch(() => ({}))
-  const { review_notes } = body as any
-  await c.env.DB.prepare(
-    `UPDATE risk_assessments SET status='measures_done', review_notes=? WHERE id=?`
-  ).bind(review_notes || null, id).run()
-  return c.json({ success: true })
+  try {
+    const body = await c.req.json().catch(() => ({}))
+    const { review_notes } = body as any
+    await c.env.DB.prepare(
+      `UPDATE risk_assessments SET status='measures_done', review_notes=? WHERE id=?`
+    ).bind(review_notes || null, id).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk PATCH /:id/finish-measures]', e.message)
+    return c.json({ error: e.message || '상태 전이 실패' }, 500)
+  }
 })
 
 // 상태 전이: measures_done → completed (최종 위험도 확정)
@@ -226,33 +266,42 @@ app.patch('/:id/finalize', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
   const id = c.req.param('id')
-  const body = await c.req.json().catch(() => ({}))
-  const { final_notes, details } = body as any
+  try {
+    const body = await c.req.json().catch(() => ({}))
+    const { final_notes, details } = body as any
 
-  // 최종 위험도 일괄 업데이트
-  if (details && Array.isArray(details)) {
-    for (const d of details) {
-      const ff = Number(d.final_frequency) || 1
-      const fs_ = Number(d.final_severity) || 1
-      function rl(s: number) {
-        if (s <= 4) return '낮음'; if (s <= 9) return '보통';
-        if (s <= 16) return '높음'; return '중대'
+    // 최종 위험도 일괄 업데이트
+    if (details && Array.isArray(details)) {
+      for (const d of details) {
+        try {
+          const ff = Number(d.final_frequency) || 1
+          const fs_ = Number(d.final_severity) || 1
+          function rl(s: number) {
+            if (s <= 4) return '낮음'; if (s <= 9) return '보통';
+            if (s <= 16) return '높음'; return '중대'
+          }
+          await c.env.DB.prepare(
+            `UPDATE risk_assessment_details
+             SET final_frequency=?, final_severity=?, final_risk_level=?,
+                 member_measures=?, is_final=1
+             WHERE id=? AND assessment_id=?`
+          ).bind(ff, fs_, rl(ff * fs_), d.member_measures || null, d.id, id).run()
+        } catch (detailErr: any) {
+          console.warn('[risk PATCH /:id/finalize] detail 업데이트 실패 (무시):', detailErr.message)
+        }
       }
-      await c.env.DB.prepare(
-        `UPDATE risk_assessment_details
-         SET final_frequency=?, final_severity=?, final_risk_level=?,
-             member_measures=?, is_final=1
-         WHERE id=? AND assessment_id=?`
-      ).bind(ff, fs_, rl(ff * fs_), d.member_measures || null, d.id, id).run()
     }
-  }
 
-  await c.env.DB.prepare(
-    `UPDATE risk_assessments
-     SET status='completed', final_notes=?, review_date=date('now')
-     WHERE id=?`
-  ).bind(final_notes || null, id).run()
-  return c.json({ success: true })
+    await c.env.DB.prepare(
+      `UPDATE risk_assessments
+       SET status='completed', final_notes=?, review_date=date('now')
+       WHERE id=?`
+    ).bind(final_notes || null, id).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk PATCH /:id/finalize]', e.message)
+    return c.json({ error: e.message || '최종화 실패' }, 500)
+  }
 })
 
 // 평가위원 조회
@@ -260,15 +309,20 @@ app.get('/:id/members', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = c.req.param('id')
-  const result = await c.env.DB.prepare(
-    `SELECT ram.id, ram.assessment_id, ram.user_id, ram.role, ram.assigned_at,
-     u.name, u.position, u.department, u.role as user_role
-     FROM risk_assessment_members ram
-     JOIN users u ON u.id = ram.user_id
-     WHERE ram.assessment_id = ?
-     ORDER BY CASE ram.role WHEN 'chair' THEN 0 ELSE 1 END, ram.assigned_at`
-  ).bind(id).all<any>()
-  return c.json(result.results || [])
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT ram.id, ram.assessment_id, ram.user_id, ram.role, ram.assigned_at,
+       u.name, u.position, u.department, u.role as user_role
+       FROM risk_assessment_members ram
+       JOIN users u ON u.id = ram.user_id
+       WHERE ram.assessment_id = ?
+       ORDER BY CASE ram.role WHEN 'chair' THEN 0 ELSE 1 END, ram.assigned_at`
+    ).bind(id).all<any>()
+    return c.json(result.results || [])
+  } catch (e: any) {
+    console.error('[risk GET /:id/members]', e.message)
+    return c.json({ error: e.message || '평가위원 조회 실패' }, 500)
+  }
 })
 
 // 평가위원 일괄 추가 (체크박스 방식)
@@ -323,10 +377,15 @@ app.delete('/:id/members/:memberId', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
   const { id, memberId } = c.req.param()
-  await c.env.DB.prepare(
-    'DELETE FROM risk_assessment_members WHERE id=? AND assessment_id=?'
-  ).bind(memberId, id).run()
-  return c.json({ success: true })
+  try {
+    await c.env.DB.prepare(
+      'DELETE FROM risk_assessment_members WHERE id=? AND assessment_id=?'
+    ).bind(memberId, id).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk DELETE /:id/members/:memberId]', e.message)
+    return c.json({ error: e.message || '평가위원 삭제 실패' }, 500)
+  }
 })
 
 // 평가 세부항목 감소대책 업데이트 (위원 입력)
@@ -334,20 +393,26 @@ app.patch('/:id/details/:detailId', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const { id, detailId } = c.req.param()
-  const body = await c.req.json()
-  const { member_measures, control_measures } = body
-  await c.env.DB.prepare(
-    `UPDATE risk_assessment_details
-     SET member_measures=?, control_measures=COALESCE(?, control_measures)
-     WHERE id=? AND assessment_id=?`
-  ).bind(member_measures || null, control_measures || null, detailId, id).run()
-  return c.json({ success: true })
+  try {
+    const body = await c.req.json()
+    const { member_measures, control_measures } = body
+    await c.env.DB.prepare(
+      `UPDATE risk_assessment_details
+       SET member_measures=?, control_measures=COALESCE(?, control_measures)
+       WHERE id=? AND assessment_id=?`
+    ).bind(member_measures || null, control_measures || null, detailId, id).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk PATCH /:id/details/:detailId]', e.message)
+    return c.json({ error: e.message || '세부항목 업데이트 실패' }, 500)
+  }
 })
 
 // 수시평가 목록 (정기평가 검토용) — adhoc + task 타입만
 app.get('/adhoc/for-review', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
   const result = await c.env.DB.prepare(
     `SELECT ra.id, ra.assessment_type, ra.title, ra.assessment_date,
      ra.status, ra.location, ra.workers_count,
@@ -364,6 +429,10 @@ app.get('/adhoc/for-review', async (c) => {
      LIMIT 100`
   ).all<any>()
   return c.json(result.results || [])
+  } catch (e: any) {
+    console.error('[risk GET /adhoc/for-review]', e.message)
+    return c.json({ error: e.message || '수시평가 목록 조회 실패' }, 500)
+  }
 })
 
 
@@ -372,14 +441,19 @@ app.get('/adhoc/for-review', async (c) => {
 app.get('/categories/list', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const result = await c.env.DB.prepare(
-    `SELECT wc.id, wc.name, wc.code, wc.description,
-     COUNT(wt.id) as work_type_count
-     FROM work_categories wc
-     LEFT JOIN work_types wt ON wt.category_id = wc.id
-     GROUP BY wc.id ORDER BY wc.name`
-  ).all<any>()
-  return c.json(result.results || [])
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT wc.id, wc.name, wc.code, wc.description,
+       COUNT(wt.id) as work_type_count
+       FROM work_categories wc
+       LEFT JOIN work_types wt ON wt.category_id = wc.id
+       GROUP BY wc.id ORDER BY wc.name`
+    ).all<any>()
+    return c.json(result.results || [])
+  } catch (e: any) {
+    console.error('[risk GET /categories/list]', e.message)
+    return c.json({ error: e.message || '카테고리 목록 조회 실패' }, 500)
+  }
 })
 
 // 카테고리별 작업 유형 조회
@@ -387,45 +461,55 @@ app.get('/categories/:category_id/types', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const category_id = c.req.param('category_id')
-  const result = await c.env.DB.prepare(
-    `SELECT wt.id, wt.name, wt.code, wt.description,
-     COUNT(rai.id) as item_count
-     FROM work_types wt
-     LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND rai.is_active = 1
-     WHERE wt.category_id = ?
-     GROUP BY wt.id ORDER BY wt.name`
-  ).bind(category_id).all<any>()
-  return c.json(result.results || [])
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT wt.id, wt.name, wt.code, wt.description,
+       COUNT(rai.id) as item_count
+       FROM work_types wt
+       LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND rai.is_active = 1
+       WHERE wt.category_id = ?
+       GROUP BY wt.id ORDER BY wt.name`
+    ).bind(category_id).all<any>()
+    return c.json(result.results || [])
+  } catch (e: any) {
+    console.error('[risk GET /categories/:category_id/types]', e.message)
+    return c.json({ error: e.message || '작업유형 조회 실패' }, 500)
+  }
 })
 
 // 작업 유형별 위험성 평가 항목 조회 (엑셀 기반 표준 데이터)
 app.get('/items/by-type', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { work_type_id, work_type_code, category_code } = c.req.query()
-  
-  let q = `SELECT rai.*, wt.name as work_type_name, wt.code as work_type_code,
-    wc.name as category_name, wc.code as category_code
-    FROM risk_assessment_items rai
-    LEFT JOIN work_types wt ON wt.id = rai.work_type_id
-    LEFT JOIN work_categories wc ON wc.id = wt.category_id
-    WHERE rai.is_active = 1`
-  const params: any[] = []
+  try {
+    const { work_type_id, work_type_code, category_code } = c.req.query()
+    
+    let q = `SELECT rai.*, wt.name as work_type_name, wt.code as work_type_code,
+      wc.name as category_name, wc.code as category_code
+      FROM risk_assessment_items rai
+      LEFT JOIN work_types wt ON wt.id = rai.work_type_id
+      LEFT JOIN work_categories wc ON wc.id = wt.category_id
+      WHERE rai.is_active = 1`
+    const params: any[] = []
 
-  if (work_type_id) {
-    q += ' AND (rai.work_type_id = ? OR rai.work_type_id IS NULL)'
-    params.push(work_type_id)
-  } else if (work_type_code) {
-    q += ' AND wt.code = ?'
-    params.push(work_type_code)
-  } else if (category_code) {
-    q += ' AND wc.code = ?'
-    params.push(category_code)
+    if (work_type_id) {
+      q += ' AND (rai.work_type_id = ? OR rai.work_type_id IS NULL)'
+      params.push(work_type_id)
+    } else if (work_type_code) {
+      q += ' AND wt.code = ?'
+      params.push(work_type_code)
+    } else if (category_code) {
+      q += ' AND wc.code = ?'
+      params.push(category_code)
+    }
+    
+    q += ' ORDER BY rai.category, rai.id'
+    const result = await c.env.DB.prepare(q).bind(...params).all<any>()
+    return c.json(result.results || [])
+  } catch (e: any) {
+    console.error('[risk GET /items/by-type]', e.message)
+    return c.json({ error: e.message || '평가항목 조회 실패' }, 500)
   }
-  
-  q += ' ORDER BY rai.category, rai.id'
-  const result = await c.env.DB.prepare(q).bind(...params).all<any>()
-  return c.json(result.results || [])
 })
 
 // 위험성평가 표준 양식 조회 (작업유형 선택 시 전체 표준 항목 반환)
@@ -434,7 +518,7 @@ app.get('/items/standard-form', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const { work_type_id } = c.req.query()
   if (!work_type_id) return c.json({ error: 'work_type_id 필요' }, 400)
-  
+  try {
   const result = await c.env.DB.prepare(
     `SELECT rai.*,
      wt.name as work_type_name,
@@ -462,23 +546,32 @@ app.get('/items/standard-form', async (c) => {
     grouped,
     items
   })
+  } catch (e: any) {
+    console.error('[risk GET /items/standard-form]', e.message)
+    return c.json({ error: e.message || '표준양식 조회 실패' }, 500)
+  }
 })
 
 // 전체 작업유형 + 위험항목 수 요약
 app.get('/items/summary', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const result = await c.env.DB.prepare(
-    `SELECT wc.name as category_name, wc.code as category_code,
-     wt.id as work_type_id, wt.name as work_type_name, wt.code as work_type_code,
-     COUNT(rai.id) as item_count,
-     SUM(CASE WHEN rai.before_risk_level IN ('높음','매우높음') THEN 1 ELSE 0 END) as high_risk_count
-     FROM work_types wt
-     JOIN work_categories wc ON wc.id = wt.category_id
-     LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND rai.is_active = 1
-     GROUP BY wt.id ORDER BY wc.name, wt.name`
-  ).all<any>()
-  return c.json(result.results || [])
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT wc.name as category_name, wc.code as category_code,
+       wt.id as work_type_id, wt.name as work_type_name, wt.code as work_type_code,
+       COUNT(rai.id) as item_count,
+       SUM(CASE WHEN rai.before_risk_level IN ('높음','매우높음') THEN 1 ELSE 0 END) as high_risk_count
+       FROM work_types wt
+       JOIN work_categories wc ON wc.id = wt.category_id
+       LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND rai.is_active = 1
+       GROUP BY wt.id ORDER BY wc.name, wt.name`
+    ).all<any>()
+    return c.json(result.results || [])
+  } catch (e: any) {
+    console.error('[risk GET /items/summary]', e.message)
+    return c.json({ error: e.message || '요약 조회 실패' }, 500)
+  }
 })
 
 // 작업유형별 실제 위험성평가 이력 조회 (정기/수시 구분)
@@ -486,7 +579,7 @@ app.get('/items/summary', async (c) => {
 app.get('/items/by-type/assessments', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-
+  try {
   const { work_type_id, assessment_type } = c.req.query()
   if (!work_type_id) return c.json({ error: 'work_type_id 필요' }, 400)
 
@@ -550,6 +643,10 @@ app.get('/items/by-type/assessments', async (c) => {
     assessments: allAssessments,
     total: allAssessments.length
   })
+  } catch (e: any) {
+    console.error('[risk GET /items/by-type/assessments]', e.message)
+    return c.json({ error: e.message || '평가이력 조회 실패' }, 500)
+  }
 })
 
 // ─── 분류별 위험성 평가 항목 관리 ────────────────────────────────────────────
@@ -558,110 +655,122 @@ app.get('/items/by-type/assessments', async (c) => {
 app.get('/items/manage', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
+    const { category_id, work_type_id } = c.req.query()
 
-  const { category_id, work_type_id } = c.req.query()
+    let query = `SELECT rai.*, wt.name as work_type_name, wc.name as category_name
+       FROM risk_assessment_items rai
+       JOIN work_types wt ON wt.id = rai.work_type_id
+       JOIN work_categories wc ON wc.id = wt.category_id
+       WHERE rai.is_active = 1`
+    const params: any[] = []
 
-  let query = `SELECT rai.*, wt.name as work_type_name, wc.name as category_name
-     FROM risk_assessment_items rai
-     JOIN work_types wt ON wt.id = rai.work_type_id
-     JOIN work_categories wc ON wc.id = wt.category_id
-     WHERE rai.is_active = 1`
-  const params: any[] = []
+    if (work_type_id) {
+      query += ' AND rai.work_type_id = ?'
+      params.push(Number(work_type_id))
+    } else if (category_id) {
+      query += ' AND wt.category_id = ?'
+      params.push(Number(category_id))
+    }
 
-  if (work_type_id) {
-    query += ' AND rai.work_type_id = ?'
-    params.push(Number(work_type_id))
-  } else if (category_id) {
-    query += ' AND wt.category_id = ?'
-    params.push(Number(category_id))
+    query += ' ORDER BY wc.name, wt.name, rai.category, rai.id'
+
+    const result = await c.env.DB.prepare(query).bind(...params).all<any>()
+    return c.json({ items: result.results || [] })
+  } catch (e: any) {
+    console.error('[risk GET /items/manage]', e.message)
+    return c.json({ error: e.message || '항목 목록 조회 실패' }, 500)
   }
-
-  query += ' ORDER BY wc.name, wt.name, rai.category, rai.id'
-
-  const result = await c.env.DB.prepare(query).bind(...params).all<any>()
-  return c.json({ items: result.results || [] })
 })
 
 // 위험성 평가 항목 단건 추가
 app.post('/items/manage', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  try {
+    const body = await c.req.json()
+    const { work_type_id, category, hazard, risk_factor,
+      before_frequency, before_severity, control_measures,
+      after_frequency, after_severity, responsible } = body
 
-  const body = await c.req.json()
-  const { work_type_id, category, hazard, risk_factor,
-    before_frequency, before_severity, control_measures,
-    after_frequency, after_severity, responsible } = body
+    if (!work_type_id || !hazard) return c.json({ error: 'work_type_id, hazard 필요' }, 400)
 
-  if (!work_type_id || !hazard) return c.json({ error: 'work_type_id, hazard 필요' }, 400)
+    const bf = Number(before_frequency) || 1
+    const bs = Number(before_severity) || 1
+    const af = Number(after_frequency) || 1
+    const as_ = Number(after_severity) || 1
 
-  const bf = Number(before_frequency) || 1
-  const bs = Number(before_severity) || 1
-  const af = Number(after_frequency) || 1
-  const as_ = Number(after_severity) || 1
+    function riskLevel(score: number) {
+      if (score <= 4) return '낮음'
+      if (score <= 9) return '보통'
+      if (score <= 16) return '높음'
+      return '중대'
+    }
 
-  function riskLevel(score: number) {
-    if (score <= 4) return '낮음'
-    if (score <= 9) return '보통'
-    if (score <= 16) return '높음'
-    return '중대'
+    const result = await c.env.DB.prepare(
+      `INSERT INTO risk_assessment_items
+       (work_type_id, category, hazard, risk_factor,
+        before_frequency, before_severity, before_risk_level,
+        control_measures, after_frequency, after_severity, after_risk_level,
+        responsible, is_active)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)`
+    ).bind(
+      Number(work_type_id), category || '', hazard, risk_factor || '',
+      bf, bs, riskLevel(bf * bs),
+      control_measures || '', af, as_, riskLevel(af * as_),
+      responsible || '관리감독자'
+    ).run()
+
+    return c.json({ success: true, id: result.meta.last_row_id })
+  } catch (e: any) {
+    console.error('[risk POST /items/manage]', e.message)
+    return c.json({ error: e.message || '항목 추가 실패' }, 500)
   }
-
-  const result = await c.env.DB.prepare(
-    `INSERT INTO risk_assessment_items
-     (work_type_id, category, hazard, risk_factor,
-      before_frequency, before_severity, before_risk_level,
-      control_measures, after_frequency, after_severity, after_risk_level,
-      responsible, is_active)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)`
-  ).bind(
-    Number(work_type_id), category || '', hazard, risk_factor || '',
-    bf, bs, riskLevel(bf * bs),
-    control_measures || '', af, as_, riskLevel(af * as_),
-    responsible || '관리감독자'
-  ).run()
-
-  return c.json({ success: true, id: result.meta.last_row_id })
 })
 
 // 위험성 평가 항목 수정
 app.put('/items/manage/:itemId', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  try {
+    const itemId = c.req.param('itemId')
+    const body = await c.req.json()
+    const { category, hazard, risk_factor,
+      before_frequency, before_severity, control_measures,
+      after_frequency, after_severity, responsible } = body
 
-  const itemId = c.req.param('itemId')
-  const body = await c.req.json()
-  const { category, hazard, risk_factor,
-    before_frequency, before_severity, control_measures,
-    after_frequency, after_severity, responsible } = body
+    const bf = Number(before_frequency) || 1
+    const bs = Number(before_severity) || 1
+    const af = Number(after_frequency) || 1
+    const as_ = Number(after_severity) || 1
 
-  const bf = Number(before_frequency) || 1
-  const bs = Number(before_severity) || 1
-  const af = Number(after_frequency) || 1
-  const as_ = Number(after_severity) || 1
+    function riskLevel(score: number) {
+      if (score <= 4) return '낮음'
+      if (score <= 9) return '보통'
+      if (score <= 16) return '높음'
+      return '중대'
+    }
 
-  function riskLevel(score: number) {
-    if (score <= 4) return '낮음'
-    if (score <= 9) return '보통'
-    if (score <= 16) return '높음'
-    return '중대'
+    await c.env.DB.prepare(
+      `UPDATE risk_assessment_items SET
+       category=?, hazard=?, risk_factor=?,
+       before_frequency=?, before_severity=?, before_risk_level=?,
+       control_measures=?, after_frequency=?, after_severity=?, after_risk_level=?,
+       responsible=?
+       WHERE id=?`
+    ).bind(
+      category || '', hazard, risk_factor || '',
+      bf, bs, riskLevel(bf * bs),
+      control_measures || '', af, as_, riskLevel(af * as_),
+      responsible || '관리감독자',
+      Number(itemId)
+    ).run()
+
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk PUT /items/manage/:itemId]', e.message)
+    return c.json({ error: e.message || '항목 수정 실패' }, 500)
   }
-
-  await c.env.DB.prepare(
-    `UPDATE risk_assessment_items SET
-     category=?, hazard=?, risk_factor=?,
-     before_frequency=?, before_severity=?, before_risk_level=?,
-     control_measures=?, after_frequency=?, after_severity=?, after_risk_level=?,
-     responsible=?
-     WHERE id=?`
-  ).bind(
-    category || '', hazard, risk_factor || '',
-    bf, bs, riskLevel(bf * bs),
-    control_measures || '', af, as_, riskLevel(af * as_),
-    responsible || '관리감독자',
-    Number(itemId)
-  ).run()
-
-  return c.json({ success: true })
 })
 
 // 위험성 평가 항목 비활성화(삭제)
@@ -669,10 +778,15 @@ app.delete('/items/manage/:itemId', async (c) => {
   const user = getUser(c)
   if (!user || user.role !== 'admin') return c.json({ error: '관리자만 삭제 가능합니다.' }, 403)
   const itemId = c.req.param('itemId')
-  await c.env.DB.prepare(
-    'UPDATE risk_assessment_items SET is_active=0 WHERE id=?'
-  ).bind(Number(itemId)).run()
-  return c.json({ success: true })
+  try {
+    await c.env.DB.prepare(
+      'UPDATE risk_assessment_items SET is_active=0 WHERE id=?'
+    ).bind(Number(itemId)).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[risk DELETE /items/manage/:itemId]', e.message)
+    return c.json({ error: e.message || '항목 삭제 실패' }, 500)
+  }
 })
 
 export default app

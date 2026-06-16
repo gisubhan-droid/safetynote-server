@@ -24,6 +24,7 @@ app.get('/', async (c) => {
   let rows: any[] = []
   try {
     const q = `SELECT tbm.*, t.title as task_title, t.task_number, t.contractor_name,
+                     t.status as task_status,
                      u.name as conductor_name, u.position as conductor_position
       FROM tbm_records tbm
       LEFT JOIN tasks t ON t.id = tbm.task_id
@@ -34,6 +35,7 @@ app.get('/', async (c) => {
     // contractor_name 없는 구버전 DB fallback
     const q = `SELECT tbm.*, t.title as task_title, t.task_number,
                      '' as contractor_name,
+                     t.status as task_status,
                      u.name as conductor_name, u.position as conductor_position
       FROM tbm_records tbm
       LEFT JOIN tasks t ON t.id = tbm.task_id

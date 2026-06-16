@@ -193,7 +193,8 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 | `d658198` | attendees 비어있을 때 task_assignments 폴백 |
 | `e0c55a6` | 알람센터 미수신(makeD1 batch+sendToUsers) + TBM미서명 팝업→작업화면이동 |
 | `b95ab27` | 사진 등록 완료 후 즉시 썸네일 표시 (BUG-006) |
-| *(다음커밋)* | 사진 탭 부분 갱신 `_refreshPhotoTab()` (BUG-007) |
+| `5169f21` | 사진 탭 부분 갱신 `_refreshPhotoTab()` (BUG-007) |
+| *(다음커밋)* | 현장위치 지도 탭별 작업 상태 구분 표시 (BUG-008) |
 
 ---
 
@@ -400,3 +401,78 @@ if (document.getElementById('dtab-photo')) {
 - `photoTabBtn` 셀렉터: `[onclick*="switchDetailTab"][onclick*="photo"]`
   — 탭 버튼 텍스트 변경 시 이 셀렉터에는 영향 없음 (onclick 속성 기반)
 - 에러 발생 시 폴백으로 "새로고침 해주세요" 메시지 표시 (전체 모달 재로드 강제 없음)
+
+---
+
+## [BUG-008] 현장위치 지도 탭별 작업 상태 구분 표시 (2026-06)
+
+### 증상 / 요청
+- 현장위치 지도의 TBM·진행·완료 탭이 데이터 소스가 달라 작업 흐름과 일치하지 않음
+  - TBM 탭: `/api/tbm` 전체 표시 (작업 개시 후 건도 포함)
+  - 진행/완료 탭: `/api/inspections` 기반 (현장점검 GPS, 작업 위치 아님)
+- 요청: 작업 상태(status)에 따라 탭에 정확히 구분 표시
+  - TBM 탭 → `tbm_done` (TBM 완료, 작업 개시 대기) 만
+  - 진행 탭 → `working` (작업 개시됨) 만
+  - 완료 탭 → `work_completed` / `completed` 만
+
+### 원인
+1. **TBM 탭**: `/api/tbm` 응답에 `task_status` 컬럼이 없어 상태 필터링 불가
+2. **진행/완료 탭**: `/api/inspections` 기반으로 현장점검 GPS를 사용 → 작업 자체 위치와 다름
+
+### 해결
+
+#### 1. `src/routes/tbm.ts` — TBM 목록 쿼리에 `t.status as task_status` 추가
+```sql
+-- 수정 전
+SELECT tbm.*, t.title as task_title, t.task_number, ...
+-- 수정 후
+SELECT tbm.*, t.title as task_title, t.task_number, t.status as task_status, ...
+```
+- 구버전 DB fallback 쿼리에도 동일하게 추가
+
+#### 2. `public/static/app.js` — `loadSiteMapMarkers()` 탭별 로직 전면 개편
+
+**TBM 탭** (`filter === 'tbm'`):
+```javascript
+// task_status가 tbm_done 인 것만 표시
+if (tbm.task_status && tbm.task_status !== 'tbm_done') continue;
+// GPS: tbm_records.gps_lat / gps_lon / gps_address (TBM 작성 시 취득)
+```
+
+**진행 탭** (`filter === 'working'`):
+```javascript
+// 데이터 소스 변경: /api/inspections → /api/tasks?status=working
+const res = await API.get(`/tasks?status=working&start_date=${dateFrom}&end_date=${dateTo}&...`);
+// GPS: tasks.gps_lat / gps_lon + confirmed_address (작업개시 시 취득)
+```
+
+**완료 탭** (`filter === 'completed'`):
+```javascript
+// 데이터 소스 변경: /api/inspections → /api/tasks?status=work_completed,completed
+const res = await API.get(`/tasks?status=work_completed,completed&...`);
+// GPS: tasks.gps_lat / gps_lon + confirmed_address
+```
+
+#### 3. 목록 카드 개선
+- 진행/완료 탭 카드에 **"상세" 버튼 추가** → `showTaskDetail(taskId)` 호출
+- TBM/위험성 탭은 기존대로 화살표 아이콘만 표시
+
+### 탭별 표시 규칙 요약
+| 작업 상태 | TBM 탭 | 진행 탭 | 완료 탭 |
+|-----------|--------|---------|---------|
+| `tbm_done` (TBM완료, 개시 전) | ✅ | ❌ | ❌ |
+| `working` (작업 개시됨) | ❌ | ✅ | ❌ |
+| `work_completed` / `completed` | ❌ | ❌ | ✅ |
+| 그 외 | ❌ | ❌ | ❌ |
+
+### ⚠️ 주의사항
+- **진행/완료 탭의 날짜 필터**: tasks API는 `start_date`/`end_date`(planned_date 기준)
+  현장지도 필터는 `date_from`/`date_to` → 파라미터명 변환해서 전달
+- **tasks API의 `status` 파라미터**: 콤마 구분 다중 상태 지원
+  `status=work_completed,completed` 형태로 전달 (tasks.ts에서 `IN (...)` 처리)
+- **GPS 없는 작업**: `gps_lat/gps_lon` 이 null 이면 지도 마커 생략
+  (작업개시 시 GPS 권한 거부한 경우 → 지도에 표시되지 않음, 정상 동작)
+- **TBM 탭 `task_status` null 처리**: 구버전 DB에서 `task_status`가 null일 수 있음
+  → `if (tbm.task_status && tbm.task_status !== 'tbm_done') continue;`
+  → null이면 필터 통과 (하위 호환)
+- **위험성체크 탭**: 변경 없음 (기존 `/api/risk` 유지)

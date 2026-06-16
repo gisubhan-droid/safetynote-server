@@ -29414,10 +29414,10 @@ async function renderSiteMapPage(container) {
 
   // ── 탭 정의 ──
   const TAB_DEFS = [
-    { key:'risk',       label:'⚠️ 위험성체크', color:'#F59E0B', desc:'위험성평가 위치' },
-    { key:'tbm',        label:'🦺 TBM',       color:'#685182', desc:'TBM 위치' },
-    { key:'working',    label:'🟢 진행',       color:'#10B981', desc:'작업진행중 점검 위치' },
-    { key:'completed',  label:'✅ 완료',       color:'#6B7280', desc:'완료 작업 점검 위치' },
+    { key:'risk',       label:'⚠️ 위험성체크', color:'#F59E0B', desc:'위험성평가 작성 위치' },
+    { key:'tbm',        label:'🦺 TBM',       color:'#685182', desc:'TBM 완료 후 작업 개시 대기 중인 현장 위치' },
+    { key:'working',    label:'🟢 진행',       color:'#10B981', desc:'작업 개시(진행중) 현장 위치' },
+    { key:'completed',  label:'✅ 완료',       color:'#6B7280', desc:'작업 완료된 현장 위치' },
   ];
 
   // ── 사용자 목록 로드 (캐시) ──
@@ -29599,9 +29599,9 @@ async function loadSiteMapMarkers(map) {
   // 탭별 색상/아이콘 정의
   const TAB_META = {
     risk:      { color: '#F59E0B', faIcon: 'fa-exclamation-triangle', label: '⚠️ 위험성체크', emptyMsg: '위험성평가 작성 시 GPS 버튼을 눌러 위치를 기록해 주세요.' },
-    tbm:       { color: '#685182', faIcon: 'fa-hard-hat',             label: '🦺 TBM',       emptyMsg: 'TBM 작성 시 GPS 버튼을 눌러 위치를 기록해 주세요.' },
-    working:   { color: '#10B981', faIcon: 'fa-play-circle',          label: '🟢 진행',       emptyMsg: '진행 중인 작업의 현장점검 GPS 기록이 없습니다.' },
-    completed: { color: '#6B7280', faIcon: 'fa-check-circle',         label: '✅ 완료',       emptyMsg: '완료된 작업의 현장점검 GPS 기록이 없습니다.' },
+    tbm:       { color: '#685182', faIcon: 'fa-hard-hat',             label: '🦺 TBM (개시 대기)',    emptyMsg: 'TBM 완료 후 작업 개시 대기 중인 작업이 없거나 GPS 기록이 없습니다.' },
+    working:   { color: '#10B981', faIcon: 'fa-play-circle',          label: '🟢 진행중',             emptyMsg: '작업 개시 시 GPS를 허용하면 위치가 기록됩니다. 현재 진행중 GPS 기록이 없습니다.' },
+    completed: { color: '#6B7280', faIcon: 'fa-check-circle',         label: '✅ 완료',               emptyMsg: '완료된 작업의 GPS 기록이 없습니다.' },
   };
   const meta = TAB_META[filter] || TAB_META.risk;
 
@@ -29667,11 +29667,15 @@ async function loadSiteMapMarkers(map) {
       }
     }
 
-    // ── ② TBM 탭 ────────────────────────────────────────────────
+    // ── ② TBM 탭 ─────────────────────────────────────────────────
+    // task_status = 'tbm_done' (TBM 완료, 작업 개시 전) 인 것만 표시
+    // 작업 개시(working) 이후 건은 진행 탭으로 이동됨
     if (filter === 'tbm') {
       const res = await API.get(`/tbm${dateParams()}`);
       const list = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.tbms || []);
       for (const tbm of list) {
+        // task_status가 tbm_done 인 것만 (working·완료 상태는 각 탭에서 표시)
+        if (tbm.task_status && tbm.task_status !== 'tbm_done') continue;
         if (!tbm.gps_lat || !tbm.gps_lon) continue;
         const lat = parseFloat(tbm.gps_lat);
         const lon = parseFloat(tbm.gps_lon);
@@ -29684,7 +29688,7 @@ async function loadSiteMapMarkers(map) {
         const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, '🦺 TBM') }).addTo(map);
         marker.bindPopup(`
           <div style="min-width:200px;font-size:13px;">
-            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🦺 TBM</div>
+            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🦺 TBM 완료 (개시 대기)</div>
             <div style="font-weight:600">${name}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-user mr-1"></i>${tbm.conductor_name || '-'}
@@ -29703,32 +29707,49 @@ async function loadSiteMapMarkers(map) {
       }
     }
 
-    // ── ③ 진행 탭 (task_status = 'working') ─────────────────────
+    // ── ③ 진행 탭 (task_status = 'working') ──────────────────────
+    // tasks API로 status=working 인 작업만 조회 → confirmed_address GPS 사용
+    // (작업개시 시 브라우저 GPS → confirmed_address 에 저장됨)
     if (filter === 'working') {
-      const res = await API.get(`/inspections${dateParams()}`);
-      const list = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.inspections || []);
-      for (const insp of list) {
-        if (insp.task_status !== 'working') continue;
-        if (!insp.gps_lat || !insp.gps_lon) continue;
-        const lat = parseFloat(insp.gps_lat);
-        const lon = parseFloat(insp.gps_lon);
-        if (isNaN(lat) || isNaN(lon)) continue;
+      // tasks API 파라미터: status=working, start_date/end_date(planned_date 기준)
+      const p = new URLSearchParams();
+      p.set('status', 'working');
+      if (dateFrom) p.set('start_date', dateFrom);
+      if (dateTo)   p.set('end_date',   dateTo);
+      if (userId)   p.set('worker_id',  userId);
+      p.set('limit', '500');
+      const res = await API.get(`/tasks?${p.toString()}`);
+      const list = Array.isArray(res.data) ? res.data : (res.data?.tasks || res.data?.items || []);
+      for (const task of list) {
+        // GPS 우선순위: confirmed_address 좌표 → tbm GPS 좌표 → 스킵
+        // confirmed_address_source = 'working' 이면 작업개시 시 GPS
+        // confirmed_address_source = 'tbm' 이면 TBM 시 GPS
+        let lat = null, lon = null, addr = '';
+        if (task.gps_lat && task.gps_lon) {
+          lat = parseFloat(task.gps_lat);
+          lon = parseFloat(task.gps_lon);
+          addr = task.confirmed_address || task.work_start_address || task.location || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+        } else if (task.confirmed_address) {
+          // 좌표 없고 주소만 있는 경우 — 지도 마커 불가, 목록에만 표시
+          addr = task.confirmed_address;
+        }
+        if (!lat || !lon || isNaN(lat) || isNaN(lon)) continue;
 
-        const displayDate = (insp.inspection_date_only || insp.created_at || '').substring(0, 10);
-        const name = insp.task_title || insp.location || '현장점검';
-        const addr = insp.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+        const displayDate = (task.planned_date || task.work_started_at || task.created_at || '').substring(0, 10);
+        const name = task.title || '작업';
+        const workers = Array.isArray(task.workers) ? task.workers.map((w) => w.name).join(', ') : '';
 
         const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, '🟢 진행') }).addTo(map);
         marker.bindPopup(`
           <div style="min-width:200px;font-size:13px;">
-            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🟢 진행중</div>
+            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🟢 작업 진행중</div>
             <div style="font-weight:600">${name}</div>
-            <div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-user mr-1"></i>${insp.inspector_name || '-'}
-            </div>
-            <div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-clipboard-check mr-1"></i>${insp.location || '-'}
-            </div>
+            ${task.task_number ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-hashtag mr-1"></i>${task.task_number}
+            </div>` : ''}
+            ${workers ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-user-hard-hat mr-1"></i>${workers}
+            </div>` : ''}
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
             </div>
@@ -29739,37 +29760,48 @@ async function loadSiteMapMarkers(map) {
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: insp.inspector_name || '', address: addr, lat, lon });
+          author: workers || task.supervisor_name || '', address: addr, lat, lon,
+          taskId: task.id });
       }
     }
 
-    // ── ④ 완료 탭 (task_status in ['work_completed','completed']) ─
+    // ── ④ 완료 탭 (task_status = 'work_completed' | 'completed') ──
+    // tasks API로 완료 상태 작업만 조회 → confirmed_address GPS 사용
     if (filter === 'completed') {
-      const res = await API.get(`/inspections${dateParams()}`);
-      const list = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.inspections || []);
-      const DONE = ['work_completed', 'completed'];
-      for (const insp of list) {
-        if (!DONE.includes(insp.task_status)) continue;
-        if (!insp.gps_lat || !insp.gps_lon) continue;
-        const lat = parseFloat(insp.gps_lat);
-        const lon = parseFloat(insp.gps_lon);
-        if (isNaN(lat) || isNaN(lon)) continue;
+      const p = new URLSearchParams();
+      p.set('status', 'work_completed,completed');
+      if (dateFrom) p.set('start_date', dateFrom);
+      if (dateTo)   p.set('end_date',   dateTo);
+      if (userId)   p.set('worker_id',  userId);
+      p.set('limit', '500');
+      const res = await API.get(`/tasks?${p.toString()}`);
+      const list = Array.isArray(res.data) ? res.data : (res.data?.tasks || res.data?.items || []);
+      for (const task of list) {
+        let lat = null, lon = null, addr = '';
+        if (task.gps_lat && task.gps_lon) {
+          lat = parseFloat(task.gps_lat);
+          lon = parseFloat(task.gps_lon);
+          addr = task.confirmed_address || task.work_start_address || task.location || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+        }
+        if (!lat || !lon || isNaN(lat) || isNaN(lon)) continue;
 
-        const displayDate = (insp.inspection_date_only || insp.created_at || '').substring(0, 10);
-        const name = insp.task_title || insp.location || '현장점검';
-        const addr = insp.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+        const displayDate = (task.planned_date || task.work_started_at || task.created_at || '').substring(0, 10);
+        const name = task.title || '작업';
+        const workers = Array.isArray(task.workers) ? task.workers.map((w) => w.name).join(', ') : '';
+        // 상태 레이블
+        const doneLabel = task.status === 'completed' ? '✅ 일지완료' : '✅ 작업완료';
 
-        const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, '✅ 완료') }).addTo(map);
+        const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, doneLabel) }).addTo(map);
         marker.bindPopup(`
           <div style="min-width:200px;font-size:13px;">
-            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">✅ 완료</div>
+            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">${doneLabel}</div>
             <div style="font-weight:600">${name}</div>
-            <div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-user mr-1"></i>${insp.inspector_name || '-'}
-            </div>
-            <div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-clipboard-check mr-1"></i>${insp.location || '-'}
-            </div>
+            ${task.task_number ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-hashtag mr-1"></i>${task.task_number}
+            </div>` : ''}
+            ${workers ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-user-hard-hat mr-1"></i>${workers}
+            </div>` : ''}
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
             </div>
@@ -29780,7 +29812,8 @@ async function loadSiteMapMarkers(map) {
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: insp.inspector_name || '', address: addr, lat, lon });
+          author: workers || task.supervisor_name || '', address: addr, lat, lon,
+          taskId: task.id });
       }
     }
 
@@ -29814,12 +29847,14 @@ async function loadSiteMapMarkers(map) {
             <div class="text-xs text-gray-400">${dateRangeLabel}</div>
           </div>
           ${listItems.map(item => `
-            <div class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
-              onclick="_moveSiteMapTo(${item.lat}, ${item.lon})">
-              <div style="width:36px;height:36px;background:${item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <div class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
+              <!-- 아이콘 (클릭 → 지도 이동) -->
+              <div style="width:36px;height:36px;background:${item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer"
+                onclick="_moveSiteMapTo(${item.lat}, ${item.lon})" title="지도에서 위치 보기">
                 <i class="fas ${item.icon} text-white text-xs"></i>
               </div>
-              <div class="flex-1 min-w-0">
+              <!-- 내용 (클릭 → 지도 이동) -->
+              <div class="flex-1 min-w-0 cursor-pointer" onclick="_moveSiteMapTo(${item.lat}, ${item.lon})">
                 <div class="font-semibold text-gray-800 text-sm truncate">${item.name}</div>
                 ${item.author ? `<div class="text-xs font-medium truncate" style="color:${item.color}">
                   <i class="fas fa-user mr-1"></i>${item.author}
@@ -29829,7 +29864,13 @@ async function loadSiteMapMarkers(map) {
                   &nbsp;·&nbsp;<i class="fas fa-map-marker-alt mr-1"></i>${item.address}
                 </div>
               </div>
-              <i class="fas fa-chevron-right text-gray-300 flex-shrink-0"></i>
+              <!-- 작업 상세 이동 버튼 (taskId 있을 때만) -->
+              ${item.taskId ? `
+              <button onclick="event.stopPropagation();showTaskDetail(${item.taskId})"
+                title="작업 상세 보기"
+                style="flex-shrink:0;padding:5px 9px;border-radius:8px;border:1.5px solid #D8D0DC;background:#fff;color:#685182;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
+                <i class="fas fa-file-alt mr-1"></i>상세
+              </button>` : `<i class="fas fa-chevron-right text-gray-300 flex-shrink-0"></i>`}
             </div>
           `).join('')}`;
       }

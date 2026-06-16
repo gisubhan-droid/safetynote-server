@@ -1841,6 +1841,56 @@ app.use('*', cors({
 
 // ─── API 라우트 ───────────────────────────────────────────────────────
 app.route('/api/auth', authRoutes)
+
+// ── NAS 전용: tasks/:id/tbm-info (attendees 포함) ─────────────────────────────
+// taskRoutes(Cloudflare용)보다 앞에 등록해야 NAS에서 정확히 매칭됨
+app.get('/api/tasks/:id/tbm-info', async (c) => {
+  try {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    const id = c.req.param('id')
+
+    const tbm = rawDb.prepare(
+      `SELECT id, location, gps_address, gps_lat, gps_lon, created_at, tbm_date, attendees
+       FROM tbm_records
+       WHERE task_id = ? AND status = 'completed'
+       ORDER BY created_at DESC LIMIT 1`
+    ).get(Number(id)) as any
+
+    if (!tbm) return c.json({ tbm: null })
+
+    // attendees JSON 파싱
+    let attendees: string[] = []
+    try { attendees = tbm.attendees ? JSON.parse(tbm.attendees) : [] } catch(_) {}
+
+    // created_at KST 변환
+    let tbmDate = '', tbmTime = ''
+    if (tbm.created_at) {
+      const raw = tbm.created_at.replace(' ', 'T')
+      const hasOffset = raw.includes('+') || raw.endsWith('Z')
+      const utcStr = hasOffset ? raw : raw + 'Z'
+      const kstMs = new Date(utcStr).getTime() + 9 * 60 * 60 * 1000
+      const kstDt = new Date(kstMs).toISOString()
+      tbmDate = kstDt.slice(0, 10)
+      tbmTime = kstDt.slice(11, 16)
+    }
+
+    return c.json({
+      tbm: {
+        id: tbm.id,
+        address: tbm.gps_address || tbm.location || '',
+        tbm_date: tbmDate,
+        tbm_time: tbmTime,
+        created_at: tbm.created_at,
+        attendees  // ← 서명 완료 체크에 필요
+      }
+    })
+  } catch(e: any) {
+    console.error('[GET /tasks/:id/tbm-info] 에러:', e?.message)
+    return c.json({ tbm: null })
+  }
+})
+
 app.route('/api/tasks', taskRoutes)
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)

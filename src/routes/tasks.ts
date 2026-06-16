@@ -807,9 +807,9 @@ app.get('/:id/tbm-info', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = c.req.param('id')
 
-  // 해당 작업의 가장 최신 TBM 레코드 조회
+  // 해당 작업의 가장 최신 TBM 레코드 조회 (attendees 포함)
   const tbm = await c.env.DB.prepare(
-    `SELECT id, location, gps_address, gps_lat, gps_lon, created_at, tbm_date
+    `SELECT id, location, gps_address, gps_lat, gps_lon, created_at, tbm_date, attendees
      FROM tbm_records
      WHERE task_id = ? AND status = 'completed'
      ORDER BY created_at DESC LIMIT 1`
@@ -834,13 +834,18 @@ app.get('/:id/tbm-info', async (c) => {
     tbmTime = kstDt.slice(11, 16)  // HH:MM
   }
 
+  // attendees 파싱 (JSON 문자열 → 배열)
+  let attendees: string[] = []
+  try { attendees = tbm.attendees ? JSON.parse(tbm.attendees) : [] } catch(_) {}
+
   return c.json({
     tbm: {
       id: tbm.id,
       address: tbm.gps_address || tbm.location || '',
       tbm_date: tbmDate,
       tbm_time: tbmTime,
-      created_at: tbm.created_at
+      created_at: tbm.created_at,
+      attendees  // ← 서명 완료 체크에 필요
     }
   })
 })

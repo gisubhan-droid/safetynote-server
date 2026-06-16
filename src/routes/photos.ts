@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { getUser, buildStoragePath, type StageKey } from '../utils'
+import { getUser, buildStoragePath, type StageKey, PHOTO_TYPE_DIRS } from '../utils'
 
 type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
@@ -33,7 +33,10 @@ async function getUploadRoot(db: D1Database): Promise<string> {
   }
 }
 
-/** photo_type → StageKey 변환 */
+/** photo_type → StageKey 변환
+ *  before / progress / after  → 'photo' (03_작업사진 아래 하위 폴더로 분리)
+ *  나머지는 기존 매핑 유지
+ */
 function photoTypeToStage(photoType: string): StageKey {
   const map: Record<string, StageKey> = {
     tbm:        'tbm',
@@ -41,7 +44,9 @@ function photoTypeToStage(photoType: string): StageKey {
     order:      'order',
     work_order: 'order',
     inspection: 'inspection',
+    before:     'photo',
     progress:   'photo',
+    after:      'photo',
     photo:      'photo',
   }
   return map[photoType] || 'photo'
@@ -189,6 +194,7 @@ app.post('/', async (c) => {
           workDate:     task.work_date || task.planned_date,
           workType:     task.construction_type,
           stage,
+          photoType:    photoType,   // before/progress/after → 하위 폴더 분리
         })
         await fs.mkdir(pathInfo.uploadDir, { recursive: true })
 

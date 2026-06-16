@@ -40,6 +40,13 @@ export const STAGE_DIRS = {
 
 export type StageKey = keyof typeof STAGE_DIRS
 
+/** photo_type → 작업사진 하위 폴더명 매핑 */
+export const PHOTO_TYPE_DIRS: Record<string, string> = {
+  before:   '01_작업 전',
+  progress: '02_작업 중',
+  after:    '03_작업 후',
+}
+
 /** 파일시스템에 사용할 수 없는 문자를 '_'로 치환 */
 function safeName(s: string): string {
   return (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim()
@@ -60,7 +67,7 @@ export interface StoragePathInfo {
   taskFolder: string
   /** 단계 폴더명 e.g. "01_작업지시서" */
   stageDir:   string
-  /** 최종 업로드 경로 (conFolder / taskFolder / stageDir) */
+  /** 최종 업로드 경로 (conFolder / taskFolder / stageDir[/ photoSubDir]) */
   uploadDir:  string
 }
 
@@ -73,6 +80,7 @@ export interface StoragePathInfo {
  * @param opts.workDate     작업 예정일    (task.work_date or planned_date)
  * @param opts.workType     작업 종류      (task.construction_type)
  * @param opts.stage        파일 단계      ('order'|'tbm'|'photo'|'inspection'|'other')
+ * @param opts.photoType    사진 유형      ('before'|'progress'|'after') — photo 단계일 때 하위 폴더 생성
  */
 export function buildStoragePath(opts: {
   uploadRoot?:   string
@@ -82,6 +90,7 @@ export function buildStoragePath(opts: {
   workDate?:     string | null
   workType?:     string | null
   stage?:        StageKey
+  photoType?:    string | null
 }): StoragePathInfo {
   const root      = (opts.uploadRoot || './public/uploads').replace(/\/+$/, '')
   const stage     = opts.stage || 'other'
@@ -98,8 +107,13 @@ export function buildStoragePath(opts: {
   const workType = safeName(opts.workType    || '작업')
   const taskFolder = `${taskNum}_${workDate}_${workType}`
 
-  // 최종 경로 조합 (node:path 없이 직접 join — 런타임에서 호출될 때는 동적 import 사용)
-  const uploadDir = `${root}/${conFolder}/${taskFolder}/${stageDir}`
+  // photo 단계일 때 photo_type에 따라 하위 폴더 추가
+  // before → 01_작업 전 / progress → 02_작업 중 / after → 03_작업 후
+  let uploadDir = `${root}/${conFolder}/${taskFolder}/${stageDir}`
+  if (stage === 'photo' && opts.photoType) {
+    const subDir = PHOTO_TYPE_DIRS[opts.photoType]
+    if (subDir) uploadDir = `${uploadDir}/${subDir}`
+  }
 
   return { uploadRoot: root, conFolder, taskFolder, stageDir, uploadDir }
 }

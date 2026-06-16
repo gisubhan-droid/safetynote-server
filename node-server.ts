@@ -278,7 +278,8 @@ rawDb.pragma('foreign_keys = ON')
 
   // ── tasks CHECK 제약 완화 ('paused' 추가) ─────────────────────────────────────
   // 기존: CHECK(status IN ('unassigned','assigned','in_progress','tbm_done','working','completed','cancelled'))
-  // → 작업중지(paused) 처리 시 CHECK 실패 → 테이블 재생성으로 제약 제거
+  // → 작업중지(paused) 처리 시 CHECK 실패
+  // ★ 핵심: 기존 테이블의 컬럼을 PRAGMA로 동적 조회 → 그대로 복사 (컬럼 누락 방지)
   try {
     const tSql: any = rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'").get()
     const needsFix = tSql?.sql && tSql.sql.includes("CHECK(status IN") && !tSql.sql.includes("'paused'")
@@ -286,67 +287,89 @@ rawDb.pragma('foreign_keys = ON')
       console.log('[AutoMigrate] tasks CHECK 제약 제거 중 (paused 미포함)...')
       rawDb.pragma('foreign_keys = OFF')
       const fixTasks = rawDb.transaction(() => {
+        // ① 기존 컬럼 전체 조회
         const existingCols: any[] = rawDb.prepare("PRAGMA table_info(tasks)").all()
-        const colNames = existingCols.map((c: any) => c.name).join(', ')
+        const allColNames = existingCols.map((c: any) => c.name).join(', ')
+
+        // ② 기존 CREATE SQL에서 CHECK(status IN ...) 구문만 제거
+        //    (컬럼 정의는 그대로 유지 → 컬럼 누락 없음)
+        const oldSql: string = tSql.sql
+        // status 컬럼의 CHECK 제약만 제거 (다른 CHECK는 유지)
+        const newSql = oldSql
+          .replace(/CREATE TABLE tasks/i, 'CREATE TABLE tasks_new')
+          .replace(/\bstatus\s+TEXT[^,\n]*CHECK\s*\(status\s+IN\s*\([^)]+\)\)[^,\n]*/gi,
+            "status TEXT NOT NULL DEFAULT 'unassigned'")
+
         rawDb.exec('ALTER TABLE tasks RENAME TO tasks_old')
-        rawDb.exec(`
-          CREATE TABLE tasks (
-            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
-            construction_id           INTEGER NOT NULL,
-            task_type_id              INTEGER,
-            title                     TEXT NOT NULL DEFAULT '',
-            description               TEXT DEFAULT '',
-            status                    TEXT NOT NULL DEFAULT 'unassigned',
-            priority                  TEXT DEFAULT 'normal',
-            assigned_to               INTEGER,
-            created_by                INTEGER,
-            location                  TEXT DEFAULT '',
-            floor                     TEXT DEFAULT '',
-            area                      TEXT DEFAULT '',
-            planned_start             DATE,
-            planned_end               DATE,
-            actual_start              DATETIME,
-            actual_end                DATETIME,
-            quantity                  REAL DEFAULT 0,
-            quantity_unit             TEXT DEFAULT '개',
-            progress                  INTEGER DEFAULT 0,
-            tbm_required              INTEGER DEFAULT 1,
-            tbm_done_at               DATETIME,
-            notes                     TEXT DEFAULT '',
-            confirmed_address         TEXT DEFAULT '',
-            confirmed_address_source  TEXT DEFAULT '',
-            confirmed_address_at      DATETIME,
-            created_at                DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at                DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (construction_id) REFERENCES constructions(id) ON DELETE CASCADE,
-            FOREIGN KEY (task_type_id)    REFERENCES task_types(id),
-            FOREIGN KEY (assigned_to)     REFERENCES users(id),
-            FOREIGN KEY (created_by)      REFERENCES users(id)
-          )
-        `)
-        // 기존 컬럼 중 새 테이블에도 있는 것만 복사
-        const newColNames = ['id','construction_id','task_type_id','title','description',
-          'status','priority','assigned_to','created_by','location','floor','area',
-          'planned_start','planned_end','actual_start','actual_end',
-          'quantity','quantity_unit','progress','tbm_required','tbm_done_at','notes',
-          'confirmed_address','confirmed_address_source','confirmed_address_at',
-          'created_at','updated_at']
-        const copyColNames = existingCols.map((c: any) => c.name).filter((n: string) => newColNames.includes(n)).join(', ')
-        rawDb.exec(`INSERT INTO tasks (${copyColNames}) SELECT ${copyColNames} FROM tasks_old`)
+        rawDb.exec(newSql)
+        rawDb.exec(`INSERT INTO tasks_new (${allColNames}) SELECT ${allColNames} FROM tasks_old`)
         rawDb.exec('DROP TABLE tasks_old')
-        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_construction ON tasks(construction_id)')
-        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)')
-        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to)')
+        rawDb.exec('ALTER TABLE tasks_new RENAME TO tasks')
+        // 인덱스 재생성
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status       ON tasks(status)')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_planned_date ON tasks(planned_date)')
+        try { rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_construction ON tasks(construction_id)') } catch(_) {}
+        try { rawDb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to  ON tasks(assigned_to)') } catch(_) {}
       })
       fixTasks()
       rawDb.pragma('foreign_keys = ON')
-      console.log('[AutoMigrate] ✅ tasks CHECK 제약 제거 완료 (paused 허용)')
+      console.log('[AutoMigrate] ✅ tasks CHECK 제약 제거 완료 (paused 허용, 전체 컬럼 보존)')
     } else {
       console.log('[AutoMigrate] tasks CHECK 제약 이미 제거됨 또는 paused 포함 (skip)')
     }
   } catch(e: any) {
     console.warn('[AutoMigrate] tasks CHECK 제약 제거 실패 (무시):', e.message)
     try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+  }
+
+  // ── [긴급복구] tasks 필수 컬럼 누락 시 자동 추가 ──────────────────────────────
+  // 이전 버전 autoMigrate 버그로 컬럼이 유실된 경우를 대비한 안전망
+  const taskColsNow = getCols('tasks')
+  const taskEssentialPatches: { column: string; def: string }[] = [
+    { column: 'task_number',         def: "TEXT DEFAULT ''" },
+    { column: 'category_id',         def: 'INTEGER DEFAULT NULL' },
+    { column: 'work_type_id',        def: 'INTEGER DEFAULT NULL' },
+    { column: 'planned_date',        def: 'DATE DEFAULT NULL' },
+    { column: 'planned_quantity',    def: 'REAL DEFAULT 0' },
+    { column: 'supervisor_id',       def: 'INTEGER DEFAULT NULL' },
+    { column: 'risk_level',          def: "TEXT DEFAULT 'normal'" },
+    { column: 'construction_id',     def: 'INTEGER DEFAULT NULL' },
+    { column: 'construction_type',   def: "TEXT DEFAULT ''" },
+    { column: 'work_class',          def: "TEXT DEFAULT 'line'" },
+    { column: 'work_class_new',      def: "TEXT DEFAULT 'cable_install'" },
+    { column: 'work_date',           def: 'TEXT DEFAULT NULL' },
+    { column: 'work_number',         def: "TEXT DEFAULT ''" },
+    { column: 'work_order_address',  def: 'TEXT DEFAULT NULL' },
+    { column: 'work_start_address',  def: 'TEXT DEFAULT NULL' },
+    { column: 'work_start_at',       def: 'TEXT DEFAULT NULL' },
+    { column: 'work_started_at',     def: 'TEXT DEFAULT NULL' },
+    { column: 'work_completed_at',   def: 'TEXT DEFAULT NULL' },
+    { column: 'work_log_required',   def: 'INTEGER DEFAULT 0' },
+    { column: 'contractor_name',     def: "TEXT DEFAULT ''" },
+    { column: 'lgu_supervisor',      def: "TEXT DEFAULT ''" },
+    { column: 'request_no',          def: "TEXT DEFAULT ''" },
+    { column: 'sub_task_number',     def: "TEXT DEFAULT ''" },
+    { column: 'high_subtypes',       def: "TEXT DEFAULT '[]'" },
+    { column: 'checklist_started_at',def: 'TEXT DEFAULT NULL' },
+    { column: 'tbm_done_at',         def: 'DATETIME DEFAULT NULL' },
+    { column: 'gps_lat',             def: 'REAL DEFAULT NULL' },
+    { column: 'gps_lon',             def: 'REAL DEFAULT NULL' },
+    { column: 'gps_address',         def: 'TEXT DEFAULT NULL' },
+    { column: 'confirmed_address',       def: "TEXT DEFAULT ''" },
+    { column: 'confirmed_address_source',def: "TEXT DEFAULT ''" },
+    { column: 'confirmed_address_at',    def: 'DATETIME DEFAULT NULL' },
+  ]
+  for (const ep of taskEssentialPatches) {
+    if (!taskColsNow.includes(ep.column)) {
+      try {
+        rawDb.exec(`ALTER TABLE tasks ADD COLUMN ${ep.column} ${ep.def}`)
+        console.log(`[AutoMigrate] ✅ 복구: tasks.${ep.column} 추가`)
+      } catch(e: any) {
+        if (!e.message?.includes('duplicate column')) {
+          console.warn(`[AutoMigrate] tasks.${ep.column} 추가 실패:`, e.message)
+        }
+      }
+    }
   }
 
   const colCache: Record<string, string[]> = { tasks: taskCols, tbm_records: tbmCols }

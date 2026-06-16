@@ -568,6 +568,49 @@ function getSetting(key: string): string {
   return sysSettings[key] ?? ''
 }
 
+// ─── TBM 서명 테이블 보장 + 잔여 트리거 제거 ───────────────────────────────────
+// patchSchema() 보다 먼저 선언해야 함 (let TDZ 방지)
+let _tbmSigTableEnsured = false
+function ensureTbmSignaturesTable() {
+  if (_tbmSigTableEnsured) return
+  _tbmSigTableEnsured = true
+
+  // 1. 테이블 생성 보장
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS tbm_signatures (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        tbm_id      INTEGER NOT NULL,
+        user_id     INTEGER,
+        user_name   TEXT NOT NULL DEFAULT '',
+        position    TEXT DEFAULT '',
+        role        TEXT DEFAULT 'attendee',
+        signed_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        sign_method TEXT DEFAULT 'account',
+        sign_data   TEXT
+      )
+    `)
+  } catch(e: any) { console.warn('[ensureTbmSig] 테이블 생성 실패(무시):', e?.message) }
+  try { rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_sig_tbm  ON tbm_signatures(tbm_id)`) } catch(_) {}
+  try { rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_sig_name ON tbm_signatures(tbm_id, user_name)`) } catch(_) {}
+
+  // 2. tbm_records_old 참조 트리거 모두 제거 (잔여 트리거가 INSERT/UPDATE/DELETE 시 에러 유발)
+  try {
+    const triggers = rawDb.prepare(
+      `SELECT name FROM sqlite_master WHERE type='trigger' AND (
+         tbl_name='tbm_signatures' OR tbl_name='tbm_records' OR
+         sql LIKE '%tbm_records_old%'
+       )`
+    ).all() as any[]
+    for (const trig of triggers) {
+      try {
+        rawDb.exec(`DROP TRIGGER IF EXISTS "${trig.name}"`)
+        console.log(`[ensureTbmSig] 잔여 트리거 제거: ${trig.name}`)
+      } catch(e: any) { console.warn(`[ensureTbmSig] 트리거 제거 실패(무시): ${trig.name}`, e?.message) }
+    }
+  } catch(e: any) { console.warn('[ensureTbmSig] 트리거 조회 실패(무시):', e?.message) }
+}
+
 // ─── 스키마 안전 패치 (컬럼 없으면 자동 추가) ─────────────────────────────────
 function patchSchema() {
   const safeAlter = (sql: string) => {
@@ -1746,50 +1789,6 @@ app.route('/api/tasks', taskRoutes)
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
 // TBM 서명 조회
-// tbm_signatures 테이블 보장 (없으면 생성)
-// tbm_signatures 테이블 보장 + tbm_records_old 참조 트리거 제거
-// 요청마다 중복 실행 방지를 위해 1회만 실행
-let _tbmSigTableEnsured = false
-function ensureTbmSignaturesTable() {
-  if (_tbmSigTableEnsured) return
-  _tbmSigTableEnsured = true
-
-  // 1. 테이블 생성 보장
-  try {
-    rawDb.exec(`
-      CREATE TABLE IF NOT EXISTS tbm_signatures (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        tbm_id      INTEGER NOT NULL,
-        user_id     INTEGER,
-        user_name   TEXT NOT NULL DEFAULT '',
-        position    TEXT DEFAULT '',
-        role        TEXT DEFAULT 'attendee',
-        signed_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-        sign_method TEXT DEFAULT 'account',
-        sign_data   TEXT
-      )
-    `)
-  } catch(e: any) { console.warn('[ensureTbmSig] 테이블 생성 실패(무시):', e?.message) }
-  try { rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_sig_tbm  ON tbm_signatures(tbm_id)`) } catch(_) {}
-  try { rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_sig_name ON tbm_signatures(tbm_id, user_name)`) } catch(_) {}
-
-  // 2. tbm_records_old 참조 트리거 모두 제거 (잔여 트리거가 INSERT/UPDATE/DELETE 시 에러 유발)
-  try {
-    const triggers = rawDb.prepare(
-      `SELECT name FROM sqlite_master WHERE type='trigger' AND (
-         tbl_name='tbm_signatures' OR tbl_name='tbm_records' OR
-         sql LIKE '%tbm_records_old%'
-       )`
-    ).all() as any[]
-    for (const trig of triggers) {
-      try {
-        rawDb.exec(`DROP TRIGGER IF EXISTS "${trig.name}"`)
-        console.log(`[ensureTbmSig] 잔여 트리거 제거: ${trig.name}`)
-      } catch(e: any) { console.warn(`[ensureTbmSig] 트리거 제거 실패(무시): ${trig.name}`, e?.message) }
-    }
-  } catch(e: any) { console.warn('[ensureTbmSig] 트리거 조회 실패(무시):', e?.message) }
-}
-
 app.get('/api/tbm/:id/signatures', async (c) => {
   try {
     const user = getUser(c)

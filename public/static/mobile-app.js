@@ -27,11 +27,14 @@
     });
   }
 
-  // ── 2. PWA 설치 배너 (Android Chrome) ───────────────────────────
+  // ── 2. PWA 설치 배너 (Android Chrome 모바일 전용) ───────────────
+  // [BUG-007-PWA] PC 브라우저(Edge/Chrome 데스크톱)에서도 beforeinstallprompt
+  // 이벤트가 발생하여 배너가 표시되는 문제 → isMobile 조건으로 차단
   let deferredPrompt = null;
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     deferredPrompt = e;
+    if (!isMobile) return; // PC 브라우저에서는 설치 배너 표시 안 함
     if (!localStorage.getItem('pwa-dismissed') &&
         !localStorage.getItem('pwa-installed') && !isPWA) {
       setTimeout(showInstallBanner, 4000);

@@ -3719,22 +3719,30 @@ app.post('/api/work-reports', async (c) => {
       }
     }
 
-    // cable_sets의 extras(추가입력) 저장 (오류 무시)
+    // cable_sets의 extras(추가입력) 저장
     if (Array.isArray(body.cable_sets)) {
       try {
         rawDb.prepare(`DELETE FROM work_report_extras WHERE report_id=?`).run(reportId)
         const extraStmt = rawDb.prepare(`INSERT INTO work_report_extras (report_id, set_no, item_key, qty) VALUES (?,?,?,?)`)
+        let extraCount = 0
         for (const cs of body.cable_sets) {
           const setNo = cs.set_no || 1
           if (Array.isArray(cs.extras)) {
             for (const ex of cs.extras) {
-              if (ex.key && ex.qty > 0) {
-                try { extraStmt.run(reportId, setNo, ex.key, ex.qty) } catch(_) {}
+              const qty = Number(ex.qty)
+              if (ex.key && qty > 0) {
+                extraStmt.run(reportId, setNo, String(ex.key), qty)
+                extraCount++
               }
             }
           }
         }
-      } catch(extrasErr: any) { console.warn('[work-reports POST] extras 저장 실패(무시):', extrasErr.message) }
+        console.log(`[work-reports POST] extras 저장 완료: reportId=${reportId}, 저장항목=${extraCount}`)
+      } catch(extrasErr: any) {
+        console.error('[work-reports POST] extras 저장 실패:', extrasErr.message)
+      }
+    } else {
+      console.log(`[work-reports POST] cable_sets 없음 — extras 저장 스킵 (reportId=${reportId})`)
     }
 
     return c.json({ ok: true, reportId })

@@ -26547,9 +26547,16 @@ async function renderWorkReportForm(container, taskId) {
     </tr>`};
 
     // ── 케이블 세트 HTML 생성 헬퍼 (번호 n: 1부터) ──────────────────────────
-    const mkCableSetHTML = (n, cableData) => {
+    const mkCableSetHTML = (n, cableData, extrasData) => {
       const cbRows = (cableData && cableData.length > 0) ? cableData : Array(3).fill(null).map(() => ({}));
       const sid = `cs${n}`; // 세트 ID 접두사
+      // extras 맵: item_key → qty (해당 세트 번호 필터)
+      const extrasMap = {};
+      if (Array.isArray(extrasData)) {
+        extrasData.filter(ex => (ex.set_no || 1) === n).forEach(ex => {
+          extrasMap[ex.item_key] = ex.qty;
+        });
+      }
       return `
       <div class="wr-cable-set space-y-3" data-set="${n}">
         <!-- N번 작업 케이블정보 -->
@@ -26611,7 +26618,7 @@ async function renderWorkReportForm(container, taskId) {
                 ${WR_EXTRA_ITEMS.map(item=>`
                 <tr class="hover:bg-orange-50">
                   <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
-                  <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
+                  <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0" value="${extrasMap[item.key] > 0 ? extrasMap[item.key] : ''}"></td>
                   <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
                 </tr>`).join('')}
               </tbody>
@@ -26674,7 +26681,7 @@ async function renderWorkReportForm(container, taskId) {
 
       <!-- ── 케이블 세트 컨테이너 (동적 추가 영역) ── -->
       <div id="wr-cable-sets" class="space-y-4">
-        ${mkCableSetHTML(1, cableRows)}
+        ${mkCableSetHTML(1, cableRows, extras)}
       </div>
 
       <!-- ── 저장 버튼 ── -->
@@ -26705,18 +26712,7 @@ async function renderWorkReportForm(container, taskId) {
     window._wrOtherTypes = otherTypes;
     window._wrReportId   = reportId;
     window._wrTaskId     = taskId;
-
-    // 저장된 extras(추가입력) 값 복원 — set_no=1 기준 (현재 단일 세트 구조)
-    if (extras.length > 0) {
-      extras.forEach(ex => {
-        const sid = `cs${ex.set_no || 1}`;
-        const tbodyExtra = document.getElementById(`${sid}-extra-tbody`);
-        if (!tbodyExtra) return;
-        // data-key 속성으로 해당 입력 필드 찾아서 값 세팅
-        const input = tbodyExtra.querySelector(`.wre-qty[data-key="${ex.item_key}"]`);
-        if (input && ex.qty > 0) input.value = ex.qty;
-      });
-    }
+    // extras 값은 mkCableSetHTML 내부에서 extrasMap을 통해 HTML value로 직접 반영됨 (BUG-019)
 
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;

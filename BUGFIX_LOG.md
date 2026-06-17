@@ -1701,4 +1701,19 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 ```
 
 ### 커밋
-- `06d793a` — fix: 모바일 터치 스크롤 시 팝업 닫힘 방지 (FEAT-024)
+- `06d793a` — fix: 모바일 터치 스크롤 시 팝업 닫힘 방지 (FEAT-024) — JS 플래그 방식 (실기기 미적용)
+- `2103642` — fix: overlay pointer-events:none CSS 방식으로 근본 차단 (FEAT-024 재수정)
+
+### 실기기 피드백 및 재수정 이력
+- **1차 구현** (`06d793a`): JS `_touchScrolling` 플래그 + capture click 차단 → 실기기 미적용
+  - **실패 원인**: touchmove의 e.target이 내부 스크롤 요소일 경우 overlay 감지 불가. 내부 콘텐츠 스크롤 중 손가락이 overlay 영역에 닿으면 여전히 click 이벤트 발생
+- **2차 구현** (`2103642`): CSS `pointer-events: none` 방식으로 전환
+  - `.modal-overlay { pointer-events: none }` → overlay 배경 터치/클릭 원천 차단
+  - `.modal-overlay > * { pointer-events: auto }` → 내부 콘텐츠 정상 동작
+  - `.modal-overlay.modal-sm { pointer-events: auto }` → 소형 팝업 overlay 클릭 닫힘 허용
+  - `node-server.ts` 캐시 버전 `v=20260617d` → `v=20260617e`
+
+### ⚠️ 재발 방지 (CSS 방식이 JS 방식보다 우선)
+- 모바일 전체화면 모달의 overlay 닫힘 차단은 **CSS `pointer-events: none`이 유일하게 확실한 방법**
+- JS 이벤트 플래그 방식은 `e.target` 불일치로 인해 모바일 실기기에서 미동작 가능
+- `modal-sm` 예외 처리는 CSS `pointer-events: auto` 복원으로 처리

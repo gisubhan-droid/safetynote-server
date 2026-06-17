@@ -6259,12 +6259,15 @@ async function showTaskDetail(id, openTbmTab) {
             return '<p class="text-gray-400 text-sm text-center py-8">등록된 미디어가 없습니다.</p>';
           }
           // ── 정렬 순서 정의 ──────────────────────────────────────────
-          const TYPE_ORDER = { before: 0, progress: 1, after: 2 };
-          const TYPE_LABEL = { before: '작업 전', progress: '작업 중', after: '작업 후' };
+          const TYPE_ORDER = { before: 0, progress: 1, after: 2, hazard: 3, tbm: 4, completion: 5 };
+          const TYPE_LABEL = { before: '작업 전', progress: '작업 중', after: '작업 후', hazard: '위험 상황', tbm: 'TBM', completion: '완료' };
           const TYPE_COLOR = {
-            before:   'bg-blue-500',
-            progress: 'bg-yellow-500',
-            after:    'bg-green-500',
+            before:     'bg-blue-500',
+            progress:   'bg-yellow-500',
+            after:      'bg-green-500',
+            hazard:     'bg-red-500',
+            tbm:        'bg-purple-500',
+            completion: 'bg-teal-500',
           };
 
           // ── photo_type 기준 1차 그룹핑 ─────────────────────────────
@@ -7115,9 +7118,9 @@ async function _refreshPhotoTab(taskId) {
     }
 
     // ── 사진 렌더링 (showTaskDetail 내부 로직과 동일) ─────────────────────
-    const TYPE_ORDER = { before: 0, progress: 1, after: 2 };
-    const TYPE_LABEL = { before: '작업 전', progress: '작업 중', after: '작업 후' };
-    const TYPE_COLOR = { before: 'bg-blue-500', progress: 'bg-yellow-500', after: 'bg-green-500' };
+    const TYPE_ORDER = { before: 0, progress: 1, after: 2, hazard: 3, tbm: 4, completion: 5 };
+    const TYPE_LABEL = { before: '작업 전', progress: '작업 중', after: '작업 후', hazard: '위험 상황', tbm: 'TBM', completion: '완료' };
+    const TYPE_COLOR = { before: 'bg-blue-500', progress: 'bg-yellow-500', after: 'bg-green-500', hazard: 'bg-red-500', tbm: 'bg-purple-500', completion: 'bg-teal-500' };
 
     function renderThumb(p) {
       const cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");

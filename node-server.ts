@@ -1634,9 +1634,12 @@ const STAGE_DIRS: Record<string, string> = {
 
 // photo_type → 작업사진 하위 폴더 매핑
 const PHOTO_TYPE_DIRS: Record<string, string> = {
-  before:   '01_작업 전',
-  progress: '02_작업 중',
-  after:    '03_작업 후',
+  before:     '01_작업 전',
+  progress:   '02_작업 중',
+  after:      '03_작업 후',
+  hazard:     '04_위험 상황',
+  tbm:        '05_TBM',
+  completion: '06_완료',
 }
 
 /** caption(설명) 값을 폴더명으로 변환 — 비어있으면 null */
@@ -5027,13 +5030,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260617g">
+  <link rel="stylesheet" href="/static/style.css?v=20260617h">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260617g"></script>
+  <script src="/static/app.js?v=20260617h"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260617g"></script>
+  <script src="/static/mobile-app.js?v=20260617h"></script>
 </body>
 </html>`)
 })

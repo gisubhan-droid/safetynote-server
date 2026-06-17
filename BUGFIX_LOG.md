@@ -1499,3 +1499,122 @@ const consVal = document.getElementById('fr-construction')?.value || '';
 
 ### 커밋
 - `d90f02f` — feat: 공량내역 완전 재작성 (FEAT-022)
+
+---
+
+## [FEAT-023] 모바일 팝업 전체화면 전환 (2026-06-17)
+
+### 증상 (3가지)
+1. 모바일 접속 시 팝업 상단이 `top-header`(56px)에 가려짐
+2. 닫기(✕) 버튼이 헤더 뒤에 숨어 클릭 불가
+3. 팝업 내 스크롤 시 팝업이 닫히는 문제
+
+### 원인 분석
+기존 모바일 모달 방식: `bottom-sheet` (하단에서 올라오는 슬라이드, `max-height:92vh`)
+- `top-header` z-index:1100 이 모달(1000)보다 높아 헤더 아래쪽 영역은 정상이나,
+  모달 상단이 헤더 높이(56px) 아래에서 시작하지 않고 `top:0`에서 시작하는 문제
+- `overscroll-behavior` 미설정 → 모달 내 스크롤이 배경(`modal-overlay`)으로 전파
+- 모달 닫기 버튼(`font-size:xl ~24px`)이 터치 타겟 44px 미달
+
+### 기존 패턴 재발 방지
+- **[BUG-005]**: `modal-overlay` z-index 충돌로 인한 헤더 가려짐 → `top-header z-index:1100` 이미 적용됨
+  → 이번 FEAT-023은 z-index 문제가 아닌 **모달 시작 위치(top:0 → top:56px) 문제**임을 구분할 것
+- 닫기 버튼 CSS(`modal-header > button:last-child`)로 44px 터치 타겟 보장 — 신규 모달 추가 시 `modal-header` 구조 준수
+
+### 해결
+
+#### 1. `style.css` — 모바일 미디어쿼리 내 모달 블록 전면 교체
+
+**업무 모달 (기본 동작):**
+```css
+/* 모달 시작: top-header(56px) 아래에서 시작 */
+.modal-overlay {
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  padding: 0 !important;
+  top: 56px !important;           /* ← 핵심: 헤더 아래에서 시작 */
+  background: rgba(0,0,0,0) !important;   /* dim 제거 */
+  backdrop-filter: none !important;
+}
+.modal {
+  height: calc(100dvh - 56px) !important;  /* 헤더 아래 전체 높이 */
+  overscroll-behavior: contain;   /* 스크롤 배경 전파 차단 */
+}
+.modal-header {
+  position: sticky !important;   /* 헤더가 스크롤 따라 사라지지 않음 */
+  top: 0 !important;
+}
+/* 닫기 버튼 44×44px 터치 타겟 */
+.modal-header > button:last-child,
+.modal-header button[onclick*="remove"] {
+  min-width: 44px !important; min-height: 44px !important;
+}
+```
+
+**소형 확인 팝업 예외 (`modal-sm`):**
+```css
+.modal-overlay.modal-sm {
+  align-items: center !important;
+  justify-content: center !important;
+  top: 0 !important;             /* ← 중앙 팝업: top:0 유지 */
+  background: rgba(0,0,0,0.5) !important;
+}
+.modal-overlay.modal-sm .modal {
+  max-width: 420px !important;
+  height: auto !important;       /* ← 자동 높이 */
+  border-radius: 20px !important;
+}
+```
+
+#### 2. `app.js` — 소형 모달 29곳 `modal-sm` 클래스 추가 (Python으로 일괄 처리)
+
+`modal-sm` 적용 목록 (확인 팝업, 선택 팝업 등 소형):
+- `getGPSAddressWithConsent` GPS 동의 모달
+- `showGpsPermissionModal` GPS 권한 모달
+- `showMapModal` 지도 선택 모달 (max-width:360px)
+- `submitSelfRegister` 성공 알림 모달
+- `showAddWorkerModal` 작업자 추가 모달
+- `showConfirmDialog` 범용 확인 다이얼로그
+- `showChangeWorkClassModal` 작업분류 변경 모달
+- `confirmWorkComplete` 작업완료 확인 모달
+- `selfAssignTask` 자기배정 확인 모달
+- `changeTaskStatus` 상태변경 확인 모달
+- `deleteAttachment` 첨부파일 삭제 확인
+- `showPhotoData` / `showVideoData` 미디어 뷰어
+- `deleteMedia` 미디어 삭제 확인
+- TBM 관련 소형 확인 팝업 (서명요청, 외 다수)
+
+**`modal-sm` 적용 기준:**
+- `max-width ≤ 420px` → modal-sm
+- `max-width ≥ 500px` 또는 복잡한 폼 → 전체화면 (showTaskDetail 등)
+
+#### 3. `app.js` — 전역 touchmove 이벤트 추가 (배경 직접 터치 시 스크롤 전파 차단)
+```javascript
+document.addEventListener('touchmove', function(e) {
+  const overlay = e.target.closest('.modal-overlay');
+  if (!overlay) return;
+  if (overlay.classList.contains('modal-sm')) return;  // 소형 팝업 제외
+  if (e.target === overlay) {
+    e.preventDefault();  // overlay 배경 직접 터치 → 스크롤 차단
+  }
+}, { passive: false });
+```
+
+#### 4. `node-server.ts` — 캐시 버전 업데이트
+- `v=20260617b` → `v=20260617c` (3곳: style.css, app.js, mobile-app.js)
+
+### 롤백 태그
+| 태그 | 커밋 | 설명 |
+|------|------|------|
+| `rollback/pre-feat-mobile-modal-v2` | `ffd904a` | FEAT-023 적용 직전 (FEAT-022 완료 후) |
+| `rollback/pre-feat-mobile-modal`    | `ffd904a` | (동일) FEAT-023 첫 시도 직전 |
+
+**롤백 명령:**
+```bash
+git push origin ffd904a:main --force
+# NAS:
+cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+```
+
+### 커밋
+- `cd91c24` — feat: 모바일 팝업 전체화면 전환 (FEAT-023)

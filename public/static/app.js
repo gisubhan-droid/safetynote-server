@@ -27035,6 +27035,15 @@ function _collectWrData(taskId) {
 async function saveWorkReport(taskId) {
   try {
     const data = _collectWrData(taskId);
+    // [BUG-020] 진단 로그 — NAS PM2 로그 + 브라우저 콘솔 동시 확인용
+    console.log('[WR-SAVE] 수집 데이터:', {
+      task_id: data.task_id,
+      cables: data.cables?.length,
+      cable_sets: data.cable_sets?.length,
+      cable_sets_0_cables: data.cable_sets?.[0]?.cables?.length,
+      cable_sets_0_extras: data.cable_sets?.[0]?.extras?.length,
+      cables_sample: data.cables?.[0]
+    });
     const res  = await API.post('/work-reports', data);
     window._wrReportId = res.data.reportId;
     toast('임시저장 완료', 'success');
@@ -27054,13 +27063,20 @@ async function saveWorkReport(taskId) {
       }
       return;
     }
-    toast('저장 실패: ' + e.message, 'error');
+    console.error('[WR-SAVE] 저장 실패:', e.response?.data || e.message);
+    toast('저장 실패: ' + (e.response?.data?.error || e.message), 'error');
   }
 }
 
 async function submitWorkReport(taskId) {
   try {
     const data = _collectWrData(taskId);
+    console.log('[WR-SUBMIT] 수집 데이터:', {
+      task_id: data.task_id,
+      cables: data.cables?.length,
+      cable_sets_0_cables: data.cable_sets?.[0]?.cables?.length,
+      cables_sample: data.cables?.[0]
+    });
     const res  = await API.post('/work-reports', data);
     const reportId = res.data.reportId;
     window._wrReportId = reportId;

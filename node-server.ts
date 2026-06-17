@@ -3675,11 +3675,18 @@ app.post('/api/work-reports', async (c) => {
       reportId = ins.lastInsertRowid as number
     }
 
-    // [BUG-018] 수신 데이터 로그
-    console.log(`[work-reports POST] reportId=${reportId}, cables=${body.cables?.length}, cable_sets=${body.cable_sets?.length}`)
+    // [BUG-020] 수신 데이터 상세 로그
+    console.log(`[WR-POST] reportId=${reportId}, task_id=${body.task_id}`)
+    console.log(`[WR-POST] cables 배열 길이=${body.cables?.length ?? 'undefined'}, cable_sets 배열 길이=${body.cable_sets?.length ?? 'undefined'}`)
+    if (Array.isArray(body.cables) && body.cables.length > 0) {
+      console.log(`[WR-POST] cables[0] 샘플:`, JSON.stringify(body.cables[0]))
+    }
+    if (Array.isArray(body.cable_sets) && body.cable_sets.length > 0) {
+      console.log(`[WR-POST] cable_sets[0] extras 수:`, body.cable_sets[0]?.extras?.length ?? 0)
+    }
 
-    // 케이블 데이터 저장 — 빈 행 제외 후 INSERT
-    if (Array.isArray(body.cables)) {
+    // 케이블 데이터 저장 — 빈 행 제외 후 INSERT (BUG-020: 진단 로그 강화)
+    if (Array.isArray(body.cables) && body.cables.length > 0) {
       try {
         rawDb.prepare(`DELETE FROM work_report_cables WHERE report_id=?`).run(reportId)
         // proc/remark 포함 16컬럼 INSERT
@@ -3689,33 +3696,36 @@ app.post('/api/work-reports', async (c) => {
              start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
         let cableOrder = 0
+        let skipCount  = 0
         for (let i = 0; i < body.cables.length; i++) {
           const cb = body.cables[i]
           // 빈 기본행 필터링: 식별 가능한 값이 하나라도 있어야 저장
           const hasData = !!(cb.lot_no || cb.maker || cb.cable_kind || cb.proc || cb.remark || cb.spec ||
                              (cb.usage_m && cb.usage_m !== 0) ||
                              cb.start_point != null || cb.end_point != null)
-          if (!hasData) continue
-          try {
-            const sp = cb.start_point != null ? String(cb.start_point) : ''
-            const ep = cb.end_point   != null ? String(cb.end_point)   : ''
-            const specVal = cb.spec != null ? String(cb.spec) : ''  // spec → TEXT (BUG-018)
-            cableStmt.run(
-              reportId, cableOrder++,
-              cb.lot_no||'', specVal, cb.maker||'', cb.mfg_year||'',
-              '', '',  // cable_type, work_div (UI없음)
-              sp, ep,
-              cb.usage_m||0,
-              cb.cable_kind||'', '', '',  // cable_kind, cable_code, special_note
-              cb.proc||'', cb.remark||''
-            )
-          } catch(rowErr: any) {
-            console.error('[work-reports POST] cable row 저장 실패:', rowErr.message, JSON.stringify(cb))
-          }
+          if (!hasData) { skipCount++; continue }
+          const sp = cb.start_point != null ? String(cb.start_point) : ''
+          const ep = cb.end_point   != null ? String(cb.end_point)   : ''
+          const specVal = cb.spec != null ? String(cb.spec) : ''
+          cableStmt.run(
+            reportId, cableOrder++,
+            cb.lot_no||'', specVal, cb.maker||'', cb.mfg_year||'',
+            '', '',  // cable_type, work_div (UI없음)
+            sp, ep,
+            cb.usage_m||0,
+            cb.cable_kind||'', '', '',  // cable_kind, cable_code, special_note
+            cb.proc||'', cb.remark||''
+          )
         }
-        console.log(`[work-reports POST] cables 저장 완료: reportId=${reportId}, 저장=${cableOrder}/${body.cables.length}`)
+        console.log(`[WR-POST] cables 저장: reportId=${reportId}, 저장=${cableOrder}행, 스킵=${skipCount}행`)
       } catch(cableErr: any) {
-        console.error('[work-reports POST] cables 저장 실패:', cableErr.message)
+        console.error('[WR-POST] cables 저장 실패:', cableErr.message)
+      }
+    } else {
+      if (!Array.isArray(body.cables)) {
+        console.warn(`[WR-POST] ⚠️ cables가 배열이 아님: typeof=${typeof body.cables}`)
+      } else {
+        console.log(`[WR-POST] cables 빈 배열 — 저장 스킵`)
       }
     }
 

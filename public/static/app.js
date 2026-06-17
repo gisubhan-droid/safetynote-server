@@ -25203,7 +25203,7 @@ async function renderFieldReportPage(container) {
                     const cableHidden = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
                     const cableAmtIdx = 7 + allItemKeys.length;
                     // 세로회전 헤더 공통 스타일
-                    const vStyle = 'writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;padding:6px 4px;min-height:60px;';
+                    const vStyle = 'writing-mode:vertical-rl;white-space:nowrap;padding:6px 4px;min-height:56px;';
                     const hStyle = 'white-space:nowrap;padding:6px 8px;';
                     const cHideBtn = ci => `<button onclick="_frCableToggleCol(${ci})" title="이 컬럼 숨기기"
                       style="display:block;margin:2px auto 0;opacity:0.45;font-size:9px;cursor:pointer;"
@@ -25508,7 +25508,7 @@ async function _frLoadSpliceStats() {
         onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.55'">✕</button>`;
 
     // 접속 세로헤더 공통 스타일 (외선과 동일)
-    const spliceVStyle = 'writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;padding:6px 4px;min-height:60px;';
+    const spliceVStyle = 'writing-mode:vertical-rl;white-space:nowrap;padding:6px 4px;min-height:56px;';
     const spliceHStyle = 'white-space:nowrap;padding:6px 8px;';
     resultDiv.innerHTML = `
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">

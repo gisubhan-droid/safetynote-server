@@ -1703,6 +1703,8 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 ### 커밋
 - `06d793a` — fix: 모바일 터치 스크롤 시 팝업 닫힘 방지 (FEAT-024) — JS 플래그 방식 (실기기 미적용)
 - `2103642` — fix: overlay pointer-events:none CSS 방식으로 근본 차단 (FEAT-024 재수정)
+- `4008cfc` — fix: 모바일 전체화면 모달 스와이프 닫기 차단 (FEAT-024 근본 원인 수정) (실기기 미적용)
+- `e531fc2` — fix: FEAT-024 v4 — modal-sm 여부만으로 스와이프 닫기 완전 차단 ← **최신 (NAS 반영 필요)**
 
 ### 실기기 피드백 및 재수정 이력
 - **1차 구현** (`06d793a`): JS `_touchScrolling` 플래그 + capture click 차단 → 실기기 미적용
@@ -1712,11 +1714,26 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
   - `.modal-overlay > * { pointer-events: auto }` → 내부 콘텐츠 정상 동작
   - `.modal-overlay.modal-sm { pointer-events: auto }` → 소형 팝업 overlay 클릭 닫힘 허용
   - `node-server.ts` 캐시 버전 `v=20260617d` → `v=20260617e`
+  - **실기기 미적용** — `mobile-app.js` touchend 스와이프 닫기 코드가 여전히 동작
+- **3차 구현** (`4008cfc`): `mobile-app.js` touchend 핸들러에 `isMobileFullscreen` 조건 추가
+  - `isMobileFullscreen = !top.classList.contains('modal-sm') && window.innerWidth <= 768`
+  - 전체화면 모달이면 early return
+  - 캐시 버전 `v=20260617h` → `v=20260617i`
+  - **실기기 미적용** — `window.innerWidth <= 768` 조건 실패 가능성 + `e.target.closest('.modal-body')` null 반환 경로 미차단
+  - **실패 원인 분석**: `.modal-body` 밖 요소(헤더·탭 버튼·sticky 영역)를 터치할 때 `sb`가 `null` → `!sb` 조건 true → 닫힘 여전히 발동. `window.innerWidth` 조건도 기기/브라우저 따라 실패 가능
+- **4차 구현** (`e531fc2`): `modal-sm` 여부만으로 완전 차단 — **근본 해결**
+  - `if (!top.classList.contains('modal-sm')) return;` 단 1줄
+  - `window.innerWidth` 조건 제거 (기기 해상도/논리픽셀 차이 무관)
+  - `e.target` 위치 판단 완전 제거 (헤더·탭·body·footer 어디 터치해도 차단)
+  - `modal-sm` 소형 확인팝업만 기존 스와이프 닫기 동작 유지
+  - 캐시 버전 `v=20260617i` → `v=20260617j`
 
-### ⚠️ 재발 방지 (CSS 방식이 JS 방식보다 우선)
-- 모바일 전체화면 모달의 overlay 닫힘 차단은 **CSS `pointer-events: none`이 유일하게 확실한 방법**
-- JS 이벤트 플래그 방식은 `e.target` 불일치로 인해 모바일 실기기에서 미동작 가능
-- `modal-sm` 예외 처리는 CSS `pointer-events: auto` 복원으로 처리
+### ⚠️ 재발 방지 (최종 정리)
+- **CSS `pointer-events: none`**: overlay 배경 직접 클릭/탭 차단 (overlay layer 이벤트 무력화)
+- **JS touchend `modal-sm` 조건**: `mobile-app.js` 스와이프 닫기 완전 차단
+  - `e.target` 위치 판단은 절대 사용 금지 → `.modal-body` 밖 요소 터치 시 null 반환
+  - `window.innerWidth` 조건은 절대 사용 금지 → 기기/브라우저 차이로 실패 가능
+- `modal-sm` 소형 확인팝업만 스와이프·overlay 클릭 닫기 허용 (CSS + JS 동일 예외 처리)
 
 ---
 

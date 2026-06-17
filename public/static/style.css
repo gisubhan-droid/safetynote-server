@@ -826,6 +826,11 @@ body {
     top: 56px !important;           /* top-header 높이 — 헤더가 항상 위에 표시됨 */
     background: rgba(0,0,0,0) !important;  /* 배경 dim 제거 */
     backdrop-filter: none !important;
+    pointer-events: none !important; /* [FEAT-024] overlay 배경 터치/클릭 이벤트 차단 → 스크롤 시 팝업 닫힘 방지 */
+  }
+  /* overlay 내부 실제 콘텐츠(modal)는 터치/클릭 정상 동작 */
+  .modal-overlay > * {
+    pointer-events: auto !important;
   }
   .modal {
     width: 100% !important;
@@ -876,6 +881,7 @@ body {
     top: 0 !important;
     background: rgba(0,0,0,0.5) !important;
     backdrop-filter: blur(2px) !important;
+    pointer-events: auto !important; /* [FEAT-024] modal-sm: overlay 클릭 닫힘 허용 (pointer-events 복원) */
   }
   .modal-overlay.modal-sm .modal {
     width: 100% !important;

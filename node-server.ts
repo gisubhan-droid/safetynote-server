@@ -1430,6 +1430,36 @@ function patchSchema() {
       )
     `)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_extras ON work_report_extras(report_id)`)
+    // ── BUG-020: work_report_extras FK 오염 수정 ────────────────────────────────
+    // 이전 patchSchema에서 work_reports → work_reports_old RENAME 잔해가 남은 경우
+    // work_report_extras DDL의 FK가 work_reports_old(id)를 참조하게 됨 → INSERT 시 에러
+    // 감지 후 테이블 재생성으로 FK를 work_reports(id) 로 정상화
+    try {
+      const extrasDDL = (rawDb.prepare(`SELECT sql FROM sqlite_master WHERE name='work_report_extras'`).get() as any)?.sql || ''
+      if (extrasDDL.includes('work_reports_old')) {
+        console.log('[patchSchema] work_report_extras FK 오염 감지 (work_reports_old 참조) → 재생성 시작')
+        rawDb.exec(`
+          BEGIN;
+          CREATE TABLE work_report_extras_new (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id  INTEGER NOT NULL,
+            set_no     INTEGER DEFAULT 1,
+            item_key   TEXT NOT NULL,
+            qty        REAL DEFAULT 0,
+            FOREIGN KEY (report_id) REFERENCES work_reports(id) ON DELETE CASCADE
+          );
+          INSERT INTO work_report_extras_new (id, report_id, set_no, item_key, qty)
+            SELECT id, report_id, set_no, item_key, qty FROM work_report_extras;
+          DROP TABLE work_report_extras;
+          ALTER TABLE work_report_extras_new RENAME TO work_report_extras;
+          COMMIT;
+        `)
+        rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_extras ON work_report_extras(report_id)`)
+        console.log('[patchSchema] work_report_extras FK 재생성 완료 (→ work_reports(id))')
+      }
+    } catch(extrasFixErr: any) {
+      console.error('[patchSchema] work_report_extras FK 수정 실패:', extrasFixErr.message)
+    }
     console.log('[patchSchema] v0.131w 외선작업일보 proc/extras 컬럼 준비 완료')
 
     // ── v0.132w: 접속일보 테이블 ───────────────────────────────────────────────

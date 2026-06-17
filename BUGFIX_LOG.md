@@ -1431,4 +1431,71 @@ if (extrasDDL.includes('work_reports_old')) {
 
 ### 커밋
 - `73dfdb2` — fix: 공량내역 헤더 글씨 뒤집힘 수정 (rotate 제거)
-- *(이번)* — feat: 공량내역 헤더 가로 표시 + 컬럼 너비 드래그 조절
+- `4e59464` — feat: 공량내역 헤더 가로 표시 + 컬럼 너비 드래그 조절 (FEAT-021)
+
+---
+
+## [FEAT-022] 공량내역 완전 재작성 — 조회 기준 일치화 + renderFieldReportPage 복원 (2026-06-17)
+
+### 배경
+- FEAT-021 구현 중 Python 스크립트 교체 작업이 불완전하게 완료됨
+  - `renderFieldReportPage`의 `container.innerHTML` 템플릿이 25193번 줄에서 잘림
+  - 외선 테이블이 전혀 렌더링되지 않는 심각한 버그
+- 조회 기준이 외선/접속 탭별로 분리되어 있어 불편함
+- 브라우저 캐시로 인해 이전 변경사항이 미반영
+
+### 근본 원인
+```
+container.innerHTML = `...
+  <div id="fr-cable-section" ...>
+  ← 여기서 잘림 (25193줄) → 이후 줄에 _frUpdatePeriodUI 함수가 이어짐
+```
+→ 이전 Python 교체 스크립트의 `end_marker` 감지 오류로 발생
+
+### 수정 내용
+
+#### 1. `renderFieldReportPage` 완전 재작성
+- `container.innerHTML` 완전한 구조 복원 (공유 조회 바 + 탭 버튼 + 외선 섹션 + 접속 섹션)
+- 외선 테이블 HTML 빌드 로직을 함수 내부에 완전히 포함 (cableTableHTML 변수)
+- 가로 1~2줄 헤더 (`word-break:keep-all`), 드래그 리사이즈 핸들 정상 포함
+- 조건부 렌더링: rows.length === 0 시 "데이터 없음" 메시지
+
+#### 2. 공유 단일 조회 바 구현
+- **ID 통일**: `fr-period-mode`, `fr-period-week`, `fr-period-month`, `fr-period-year`, `fr-period-quarter`, `fr-construction`
+- 주간/월간/분기/연간/전체 5가지 모드
+- 탭(외선/접속) 전환과 무관하게 동일 조회 조건 적용
+
+#### 3. `_frUpdatePeriodUI()` week 모드 추가
+```javascript
+const weekInp = document.getElementById('fr-period-week');
+if (weekInp) weekInp.classList.toggle('hidden', mode !== 'week');
+// year 셀렉터: month/week/all 제외
+if (yearSel) yearSel.classList.toggle('hidden', mode === 'month' || mode === 'week' || mode === 'all');
+```
+
+#### 4. `_frLoadSpliceStats()` 공유 ID 적용
+```javascript
+// 구 ID (제거)
+document.getElementById('fr-splice-period-mode')
+document.getElementById('fr-splice-construction')
+// → 공유 ID (적용)
+const { from: fromDate, to: toDate } = _frCalcDateRange();  // 공통 헬퍼
+const consVal = document.getElementById('fr-construction')?.value || '';
+```
+
+#### 5. `_frSplicePeriodUI()` 함수 제거
+- 접속 탭 전용 조회 바가 삭제되어 더 이상 불필요
+
+#### 6. `node-server.ts` 캐시 버전 업데이트
+- `v=20260614a` → `v=20260617b` (3곳)
+
+### 롤백 태그
+| 태그 | 커밋 | 설명 |
+|------|------|------|
+| `rollback/pre-feat-volume-ui-v4` | `4e59464` | FEAT-022 적용 직전 |
+| `rollback/pre-feat-volume-ui-v3` | `4e59464` | (동일) FEAT-021 커밋 직후 |
+| `rollback/pre-feat-volume-ui-v2` | `73dfdb2` | 헤더 뒤집힘 수정 전 |
+| `rollback/pre-feat-volume-ui`    | `fbc7631` | 공량내역 UI 수정 전 |
+
+### 커밋
+- `d90f02f` — feat: 공량내역 완전 재작성 (FEAT-022)

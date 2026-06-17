@@ -1841,3 +1841,53 @@ const PHOTO_TYPE_DIRS = {
 
 ### 커밋
 - `b245c84` — fix: 사진 탭 유형 표시 누락 수정 (BUG-002)
+
+---
+
+## [BUG-007-PWA] PC 브라우저 PWA 설치 배너 표시 (2026-06-17)
+
+### 증상
+- Windows Edge / Chrome PC 환경에서 로그인 화면 하단에
+  **"SafetyNOTE 앱 설치 / 홈 화면에 추가하면 더 빠르게 접속"** 배너가 표시됨
+- 설치·닫기 버튼 포함된 보라색 배너 — PC에서는 불필요
+
+### 원인
+- `beforeinstallprompt` 이벤트는 **PC 브라우저(Edge/Chrome)에서도 발생**
+- 기존 코드에 `isMobile` 조건 없이 `showInstallBanner()` 호출
+- PC에서도 4초 후 배너 표시
+
+### 해결
+```javascript
+// mobile-app.js — beforeinstallprompt 핸들러
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (!isMobile) return; // [BUG-007-PWA] PC 브라우저 차단
+  if (!localStorage.getItem('pwa-dismissed') && ...) {
+    setTimeout(showInstallBanner, 4000);
+  }
+});
+```
+
+### 영향 범위
+- **PC 브라우저**: 설치 배너 완전 차단 ✅
+- **Android Chrome 모바일**: 기존대로 배너 표시 유지 ✅
+- **iOS Safari**: `showIOSGuide()` — `isIOS` 조건 있어 기존대로 유지 ✅
+
+### 수정 파일
+- `public/static/mobile-app.js` — `if (!isMobile) return;` 1줄 추가
+- `node-server.ts` — 캐시 버전 `20260617j` → `20260617k`
+
+### 롤백 태그
+| 태그 | 커밋 | 설명 |
+|------|------|------|
+| `rollback/pre-feat-pwa-banner` | `85bdbca` | 수정 직전 상태 |
+
+**롤백 명령:**
+```bash
+git push origin 85bdbca:main --force
+cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+```
+
+### 커밋
+- `1efa79c` — fix: PC 브라우저 PWA 설치 배너 미표시 (BUG-007-PWA)

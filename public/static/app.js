@@ -24821,7 +24821,7 @@ function doApkDownload(url, newVersion) {
     try {
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'safetynote.apk';
+      a.download = newVersion ? `safetynote-v${newVersion}.apk` : 'safetynote.apk';
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();

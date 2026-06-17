@@ -1055,8 +1055,8 @@ function showMapModal(address) {
     naver: () => tryOpenMap(maps[2].appUrl, maps[2].webUrl),
   };
 
-  // 모달 바깥 클릭 시 닫기
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  // 모달 바깥 클릭 시 닫기 (modal-sm — 모바일에서도 허용)
+  addOverlayClickClose(modal, () => modal.remove());
   document.body.appendChild(modal);
 }
 
@@ -2744,7 +2744,7 @@ function showNavigationWarning(onConfirm) {
   document.getElementById('nav-warning-modal')?.remove();
   const el = document.createElement('div');
   el.id = 'nav-warning-modal';
-  el.className = 'modal-overlay';
+  el.className = 'modal-overlay modal-sm';
   el.style.zIndex = '9999';
   el.innerHTML = `
   <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
@@ -2767,8 +2767,8 @@ function showNavigationWarning(onConfirm) {
     el.remove();
     onConfirm();
   };
-  // 배경 클릭 시 닫기
-  el.addEventListener('click', (e) => { if (e.target === el) el.remove(); });
+  // 배경 클릭 시 닫기 (modal-sm — 소형 확인 팝업)
+  addOverlayClickClose(el, () => el.remove());
 }
 
 function navigateTo(page) {
@@ -5622,7 +5622,8 @@ function showConfirmDialog(title, message = '', confirmLabel = '확인', cancelL
     document.body.appendChild(overlay);
     overlay.querySelector('#cdOk').onclick     = () => { overlay.remove(); resolve(true); };
     overlay.querySelector('#cdCancel').onclick  = () => { overlay.remove(); resolve(false); };
-    overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
+    // modal-sm — 소형 확인팝업: overlay 클릭 닫힘 허용 (addOverlayClickClose 사용)
+    addOverlayClickClose(overlay, () => { overlay.remove(); resolve(false); });
   });
 }
 
@@ -13105,7 +13106,8 @@ async function showCompletedTasksModal(type, id, label, year, month) {
       </div>
     </div>`;
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+  // 대형 모달: 모바일에서 overlay 클릭 닫힘 차단 (addOverlayClickClose 사용)
+  addOverlayClickClose(modal, () => modal.remove());
 
   try {
     let res;
@@ -13616,7 +13618,8 @@ async function showInspectionListModal(type, id, label, year, month) {
       </div>
     </div>`;
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+  // 대형 모달: 모바일에서 overlay 클릭 닫힘 차단
+  addOverlayClickClose(modal, () => modal.remove());
 
   const hazMap = { critical:'긴급', high:'높음', medium:'보통', low:'낮음' };
   const hazBadge = { critical:'risk-critical', high:'risk-high', medium:'risk-medium', low:'risk-low' };
@@ -22612,7 +22615,8 @@ async function renderWorkStopsPage(container) {
       </div>
     </div>`;
     document.body.appendChild(m);
-    m.addEventListener('click', (e) => { if (e.target === m) m.remove(); });
+    // modal-sm — 소형 팝업: overlay 클릭 닫힘 허용
+    addOverlayClickClose(m, () => m.remove());
 
     try {
       const res = await API.get(`/tasks/stops/${stopId}/photo`);
@@ -24914,10 +24918,9 @@ function showUpdateModal(apkInfo) {
     </div>
   `;
   // 강제 업데이트면 바깥 클릭으로 닫기 불가
+  // 일반 업데이트: addOverlayClickClose 사용 (모바일 전체화면 모달 닫힘 차단 포함)
   if (!isForce) {
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.remove();
-    });
+    addOverlayClickClose(modal, () => modal.remove());
   }
   document.body.appendChild(modal);
 }
@@ -25007,18 +25010,60 @@ async function init() {
 // 시작
 document.addEventListener('DOMContentLoaded', init);
 
-// ── 모바일 전체화면 모달: 터치 스크롤이 배경(overlay)으로 전파되지 않도록 방지 ──
-// modal-sm(소형 확인팝업)은 제외, 업무 모달만 적용
+// ── 모바일 전체화면 모달: 터치 스크롤/클릭으로 모달이 닫히지 않도록 방지 ──
+// modal-sm(소형 확인팝업)은 제외, 업무 모달(전체화면)만 적용
+
+// [FEAT-024] 모바일에서 overlay 직접 클릭(터치)으로 모달이 닫히지 않도록
+// 각 모달 생성 시 addOverlayClickClose() 대신 이 함수로 안전하게 등록
+function _isMobileFullscreen(overlay) {
+  // modal-sm 클래스가 없는 업무 모달 + 모바일 화면 폭일 때만 true
+  return !overlay.classList.contains('modal-sm') && window.innerWidth <= 768;
+}
+
+// 업무 모달 overlay click 닫힘 방지 — 스크롤 중 터치 → click 이벤트 발생 시 차단
+// 호출 방식: addOverlayClickClose(overlay, () => overlay.remove())
+// modal-sm이면 기존대로 overlay 클릭 닫힘 허용, 전체화면 모달이면 차단
+function addOverlayClickClose(overlay, closeFn) {
+  overlay.addEventListener('click', function(e) {
+    if (e.target !== overlay) return;
+    // 모바일 전체화면 모달: overlay 직접 클릭으로 닫기 차단
+    if (_isMobileFullscreen(overlay)) return;
+    closeFn();
+  });
+}
+
+// 터치 스크롤이 overlay 배경으로 전파되지 않도록 차단 (기존 코드 유지 + 강화)
+let _touchStartY = 0;
+let _touchScrolling = false;
+
+document.addEventListener('touchstart', function(e) {
+  _touchStartY = e.touches[0].clientY;
+  _touchScrolling = false;
+}, { passive: true });
+
 document.addEventListener('touchmove', function(e) {
   const overlay = e.target.closest('.modal-overlay');
   if (!overlay) return;
-  // 소형 확인 팝업(modal-sm)은 기존 방식 유지
   if (overlay.classList.contains('modal-sm')) return;
-  // overlay 배경 직접 터치 시 스크롤 차단 (모달 내부 스크롤은 허용)
+  // 스크롤 중임을 표시
+  const dy = Math.abs(e.touches[0].clientY - _touchStartY);
+  if (dy > 5) _touchScrolling = true;
+  // overlay 배경 직접 터치 시 스크롤 차단
   if (e.target === overlay) {
     e.preventDefault();
   }
 }, { passive: false });
+
+// 스크롤 후 click 이벤트가 overlay 배경에 도달하면 닫힘 차단
+document.addEventListener('click', function(e) {
+  if (!_touchScrolling) return;
+  const overlay = e.target.closest('.modal-overlay');
+  if (!overlay) return;
+  if (_isMobileFullscreen(overlay) && e.target === overlay) {
+    e.stopImmediatePropagation();
+    _touchScrolling = false;
+  }
+}, true); // capture 단계에서 처리
 
 // ═══════════════════════════════════════════════════════════════
 // 현장공량관리 — 외선일보 목록 페이지

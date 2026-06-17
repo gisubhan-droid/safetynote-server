@@ -209,9 +209,10 @@
   }, 200);
 
   // ── 6. 스와이프로 모달 닫기 ─────────────────────────────────────
-  // [FEAT-024] 모바일 전체화면 모달(modal-sm 아닌 것)은 스와이프 닫기 차단
-  // → 상세화면 내부 스크롤 시 팝업이 닫히는 문제 근본 원인
-  // modal-sm(소형 확인팝업)만 스와이프 닫기 허용
+  // [FEAT-024 v4] 전체화면 모달(.modal 내부 터치)은 스와이프 닫기 완전 차단
+  // - modal-sm 소형 확인팝업만 스와이프 닫기 허용
+  // - .modal 내부 어디를 터치하든(헤더·탭·body·sticky 영역 포함) 차단
+  // - window.innerWidth 조건 제거 → 기기 해상도 무관하게 동작
   let _sy = 0, _sx = 0;
   document.addEventListener('touchstart', e => {
     _sy = e.touches[0].clientY; _sx = e.touches[0].clientX;
@@ -223,9 +224,10 @@
       const modals = document.querySelectorAll('.modal-overlay');
       if (!modals.length) return;
       const top = modals[modals.length - 1];
-      // [FEAT-024] 전체화면 모달(modal-sm 아닌 것 + 모바일 폭)은 스와이프 닫기 차단
-      const isMobileFullscreen = !top.classList.contains('modal-sm') && window.innerWidth <= 768;
-      if (isMobileFullscreen) return;
+      // [FEAT-024 v4] modal-sm 이 아니면 무조건 스와이프 닫기 차단
+      // (헤더·탭·body 등 .modal 내부 어느 요소 터치 여부와 무관)
+      if (!top.classList.contains('modal-sm')) return;
+      // modal-sm: 기존 로직 유지 (스크롤 최상단일 때만 닫기)
       const sb = e.target.closest('.modal-body');
       if (!sb || sb.scrollTop === 0) {
         top.style.animation = 'snFadeOut .2s ease forwards';

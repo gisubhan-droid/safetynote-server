@@ -1618,3 +1618,87 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 
 ### 커밋
 - `cd91c24` — feat: 모바일 팝업 전체화면 전환 (FEAT-023)
+
+---
+
+## [FEAT-024] 모바일 터치 스크롤 시 팝업 닫힘 방지 (2026-06-17)
+
+### 증상
+- 모바일 전체화면 모달(대형 팝업) 내부에서 아래로 터치 스크롤 시 팝업이 닫혀버림
+- 닫기(✕) 버튼을 누르지 않았는데도 팝업이 사라지는 문제
+
+### 원인
+- 모바일에서 터치 스크롤 후 손가락을 떼면 브라우저가 `click` 이벤트를 발생시킴
+- 이 `click`의 `e.target`이 `.modal-overlay`(배경 영역)와 일치하면 `e.target === modal` 조건 충족
+- 기존 패턴 `modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); })` 7개소 전체에서 발생
+
+### 해결
+#### 1. `_isMobileFullscreen(overlay)` 헬퍼 추가
+```javascript
+function _isMobileFullscreen(overlay) {
+  return !overlay.classList.contains('modal-sm') && window.innerWidth <= 768;
+}
+```
+- `modal-sm` 클래스가 없고 화면 너비 ≤ 768px → 모바일 전체화면 모달로 판단
+
+#### 2. `addOverlayClickClose(overlay, closeFn)` 헬퍼 추가
+```javascript
+function addOverlayClickClose(overlay, closeFn) {
+  overlay.addEventListener('click', function(e) {
+    if (e.target !== overlay) return;
+    if (_isMobileFullscreen(overlay)) return;  // 모바일 전체화면 → 닫힘 차단
+    closeFn();
+  });
+}
+```
+- 모바일 전체화면 모달: overlay 직접 클릭으로도 닫히지 않음 (✕ 버튼만 동작)
+- `modal-sm` 소형 팝업: 기존과 동일하게 overlay 클릭으로 닫힘
+
+#### 3. `_touchScrolling` 플래그 + 전역 이벤트 핸들러 추가
+```javascript
+let _touchStartY = 0;
+let _touchScrolling = false;
+
+document.addEventListener('touchstart', ...) // _touchScrolling = false 리셋
+document.addEventListener('touchmove', ...)  // dy > 5px → _touchScrolling = true
+document.addEventListener('click', ..., true) // capture 단계에서 스크롤 후 click 차단
+```
+- 스크롤 중 발생한 `click` 이벤트를 capture 단계에서 `stopImmediatePropagation()`으로 원천 차단
+
+#### 4. 7개소 overlay click 패턴 → `addOverlayClickClose()` 교체
+| 모달 | 라인 | modal-sm |
+|------|------|----------|
+| showMapModal | L.1059 | ✅ |
+| showNavigationWarning | L.2771 | ✅ (이번에 추가) |
+| showConfirmDialog | L.5625 | ✅ |
+| 통계 완료작업 목록 | L.13109 | ❌ (대형) |
+| 점검 목록 | L.13622 | ❌ (대형) |
+| wsPhotoModal | L.22619 | ✅ |
+| APK 업데이트 | L.24923 | ❌ (대형) |
+
+#### 5. `showNavigationWarning` — `modal-sm` 클래스 추가
+- 소형 확인 팝업이지만 `modal-sm` 누락 → 이번에 추가
+
+#### 6. `node-server.ts` 캐시 버전 업데이트
+- `v=20260617c` → `v=20260617d` (3곳: style.css, app.js, mobile-app.js)
+
+### 주의 사항 (재발 방지)
+- **신규 모달 추가 시**: 반드시 `addOverlayClickClose(overlay, closeFn)` 사용
+  - 소형 확인팝업 → `modal-sm` 클래스 추가 필수
+  - 대형 모달 → `modal-sm` 없이 `addOverlayClickClose` 사용 → 자동으로 모바일 닫힘 차단
+- **직접 click 이벤트 등록 금지**: `modal.addEventListener('click', e => ...)` 패턴은 사용하지 말 것
+
+### 롤백 태그
+| 태그 | 커밋 | 설명 |
+|------|------|------|
+| `rollback/pre-feat-024` | `b7a0801` | FEAT-024 적용 직전 (FEAT-023 완료 후) |
+
+**롤백 명령:**
+```bash
+git push origin b7a0801:main --force
+# NAS:
+cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+```
+
+### 커밋
+- `06d793a` — fix: 모바일 터치 스크롤 시 팝업 닫힘 방지 (FEAT-024)

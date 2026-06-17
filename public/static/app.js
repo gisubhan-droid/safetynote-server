@@ -25038,34 +25038,51 @@ let _frSpliceCacheItemKeys = [];
 // ═══════════════════════════════════════════════════════════════
 // 공량내역 — 조회조건 + 데이터 테이블 (요약카드/차트 없음)
 // ═══════════════════════════════════════════════════════════════
-async function renderFieldReportPage(container) {
-  container.innerHTML = `<div class="max-w-5xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
-  try {
-    // ── 조회 조건 읽기 (volume-stats와 동일 방식) ──
-    const frMode   = document.getElementById('fr-period-mode')?.value  || 'month';
-    const frMVal   = document.getElementById('fr-period-month')?.value || '';
-    const frQVal   = document.getElementById('fr-period-quarter')?.value || '';
-    const nowYear  = new Date().getFullYear();
-    const frYVal   = document.getElementById('fr-period-year')?.value  || String(nowYear);
-    const frConsVal= document.getElementById('fr-construction')?.value || '';
-    const frTab    = document.getElementById('fr-active-tab')?.value   || 'cable';
+// ── 공량내역 조회 기간 계산 공통 헬퍼 ──
+function _frCalcDateRange() {
+  const mode  = document.getElementById('fr-period-mode')?.value || 'month';
+  const mVal  = document.getElementById('fr-period-month')?.value || '';
+  const wVal  = document.getElementById('fr-period-week')?.value  || '';
+  const qVal  = document.getElementById('fr-period-quarter')?.value || '';
+  const yVal  = document.getElementById('fr-period-year')?.value  || String(new Date().getFullYear());
+  let from = '', to = '';
+  if (mode === 'week' && wVal) {
+    const [yr, wk] = wVal.split('-W').map(Number);
+    const jan4 = new Date(yr, 0, 4);
+    const startOfWeek = new Date(jan4.getTime() + (wk - 1) * 7 * 86400000);
+    startOfWeek.setDate(startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7));
+    const endOfWeek = new Date(startOfWeek.getTime() + 6 * 86400000);
+    from = startOfWeek.toISOString().slice(0,10);
+    to   = endOfWeek.toISOString().slice(0,10);
+  } else if (mode === 'month' && mVal) {
+    from = mVal + '-01';
+    const d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+    to = d.toISOString().slice(0,10);
+  } else if (mode === 'quarter' && qVal && yVal) {
+    const q = parseInt(qVal);
+    from = `${yVal}-${String((q-1)*3+1).padStart(2,'0')}-01`;
+    const d = new Date(`${yVal}-${String(q*3).padStart(2,'0')}-01`);
+    d.setMonth(d.getMonth()+1); d.setDate(0);
+    to = d.toISOString().slice(0,10);
+  } else if (mode === 'year' && yVal) {
+    from = `${yVal}-01-01`; to = `${yVal}-12-31`;
+  }
+  return { from, to };
+}
 
-    let frFromDate = '', frToDate = '';
-    if (frMode === 'month' && frMVal) {
-      frFromDate = frMVal + '-01';
-      const d = new Date(frMVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      frToDate = d.toISOString().slice(0,10);
-    } else if (frMode === 'quarter' && frQVal && frYVal) {
-      const q = parseInt(frQVal);
-      const startM = String((q-1)*3+1).padStart(2,'0');
-      const endM   = String(q*3).padStart(2,'0');
-      frFromDate = `${frYVal}-${startM}-01`;
-      const d = new Date(`${frYVal}-${endM}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
-      frToDate = d.toISOString().slice(0,10);
-    } else if (frMode === 'year' && frYVal) {
-      frFromDate = `${frYVal}-01-01`;
-      frToDate   = `${frYVal}-12-31`;
-    }
+async function renderFieldReportPage(container) {
+  container.innerHTML = `<div class="w-full px-3 py-6"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  try {
+    const frMode    = document.getElementById('fr-period-mode')?.value    || 'month';
+    const frMVal    = document.getElementById('fr-period-month')?.value   || new Date().toISOString().slice(0,7);
+    const frWVal    = document.getElementById('fr-period-week')?.value    || '';
+    const frQVal    = document.getElementById('fr-period-quarter')?.value || '';
+    const nowYear   = new Date().getFullYear();
+    const frYVal    = document.getElementById('fr-period-year')?.value    || String(nowYear);
+    const frConsVal = document.getElementById('fr-construction')?.value   || '';
+    const frTab     = document.getElementById('fr-active-tab')?.value     || 'cable';
+
+    const { from: frFromDate, to: frToDate } = _frCalcDateRange();
 
     const frParams = [];
     if (frConsVal)  frParams.push(`construction_id=${frConsVal}`);
@@ -25075,8 +25092,7 @@ async function renderFieldReportPage(container) {
 
     const [statsRes, consRes, priceRes] = await Promise.all([
       API.get('/work-reports/volume-stats' + frQS).catch(err => {
-        const status = err?.response?.status;
-        if (status === 404) throw new Error('volume-stats API 없음 (서버 버전 확인 필요 — NAS에서 pm2 restart all 실행)');
+        if (err?.response?.status === 404) throw new Error('volume-stats API 없음 (NAS에서 pm2 restart 실행)');
         throw err;
       }),
       API.get('/constructions?limit=200').catch(() => ({ data: { constructions: [] } })),
@@ -25088,18 +25104,23 @@ async function renderFieldReportPage(container) {
     const priceMap = {};
     unitPrices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
     const isWorker = currentUser && currentUser.role === 'worker';
-    // 전역 캐시 저장 (엑셀 다운로드용)
-    _frCacheRows     = rows;
-    _frCacheExtras   = extras;
-    _frCachePriceMap = priceMap;
-    _frCacheIsWorker = isWorker;
+    _frCacheRows = rows; _frCacheExtras = extras;
+    _frCachePriceMap = priceMap; _frCacheIsWorker = isWorker;
 
     const frYears = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
-    const savedFrMode = frMode; const savedFrMVal = frMVal;
-    const savedFrQVal = frQVal; const savedFrYVal = frYVal;
-    const savedFrTab  = frTab;
+    const savedFrMode = frMode, savedFrMVal = frMVal, savedFrWVal = frWVal;
+    const savedFrQVal = frQVal, savedFrYVal = frYVal, savedFrTab  = frTab;
 
-    // extras 맵
+    // 주간 기본값 계산
+    const _nowWeekStr = (() => {
+      const now = new Date();
+      const jan4 = new Date(now.getFullYear(), 0, 4);
+      const wk = Math.ceil(((now - new Date(now.getFullYear(),0,1)) / 86400000 + new Date(now.getFullYear(),0,1).getDay() + 1) / 7);
+      return `${now.getFullYear()}-W${String(wk).padStart(2,'0')}`;
+    })();
+    const displayWeekVal = savedFrWVal || _nowWeekStr;
+    const _curQ = Math.ceil((new Date().getMonth()+1)/3);
+
     const extrasMap = {};
     extras.forEach(ex => {
       if (!extrasMap[ex.report_id]) extrasMap[ex.report_id] = {};
@@ -25113,259 +25134,224 @@ async function renderFieldReportPage(container) {
     const existingKeys = new Set(extras.map(ex => ex.item_key));
     const allItemKeys = WR_EXTRA_ORDER.filter(k => existingKeys.has(k));
     extras.forEach(ex => { if (!WR_EXTRA_ORDER.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
-    _frCacheItemKeys = allItemKeys; // 전역 캐시 저장
+    _frCacheItemKeys = allItemKeys;
 
-    // ── 접속 통계 데이터 (접속 탭용) ──
-    let spliceRows = [], spliceItems = [];
-    if (savedFrTab === 'splice') {
-      const spliceParams = [];
-      if (frConsVal)  spliceParams.push(`construction_id=${frConsVal}`);
-      if (frFromDate) spliceParams.push(`from_date=${frFromDate}`);
-      if (frToDate)   spliceParams.push(`to_date=${frToDate}`);
-      const spliceQS = spliceParams.length ? '?' + spliceParams.join('&') : '';
-      try {
-        const spliceRes = await API.get('/splice-reports/stats' + spliceQS);
-        spliceRows  = spliceRes.data.rows  || [];
-        spliceItems = spliceRes.data.items || [];
-      } catch(e) {
-        console.warn('[공량내역] 접속 탭 데이터 로드 실패:', e.message || e);
-      }
-    }
+    // ── 공유 조회 조건 바 ──
+    const sharedFilterBar = `
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center">
+        <select id="fr-construction" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
+          <option value="">전체 공사</option>
+          ${constructions.map(c=>`<option value="${c.id}" ${frConsVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
+        </select>
+        <select id="fr-period-mode" onchange="_frUpdatePeriodUI()" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
+          <option value="week"    ${savedFrMode==='week'   ?'selected':''}>주간</option>
+          <option value="month"   ${savedFrMode==='month'  ?'selected':''}>월간</option>
+          <option value="quarter" ${savedFrMode==='quarter'?'selected':''}>분기</option>
+          <option value="year"    ${savedFrMode==='year'   ?'selected':''}>연간</option>
+          <option value="all"     ${savedFrMode==='all'    ?'selected':''}>전체</option>
+        </select>
+        <input type="week" id="fr-period-week" value="${displayWeekVal}"
+          class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedFrMode!=='week'?'hidden':''}">
+        <input type="month" id="fr-period-month" value="${savedFrMVal}"
+          class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedFrMode!=='month'?'hidden':''}">
+        <select id="fr-period-year" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${(savedFrMode==='month'||savedFrMode==='week'||savedFrMode==='all')?'hidden':''}">
+          ${frYears.map(y=>`<option value="${y}" ${savedFrYVal==y?'selected':''}>${y}년</option>`).join('')}
+        </select>
+        <select id="fr-period-quarter" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedFrMode!=='quarter'?'hidden':''}">
+          ${[1,2,3,4].map(q=>`<option value="${q}" ${(savedFrQVal||String(_curQ))==String(q)?'selected':''}>Q${q}(${(q-1)*3+1}~${q*3}월)</option>`).join('')}
+        </select>
+        <button onclick="renderFieldReportPage(document.getElementById('page-content'))"
+          class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600 font-medium">
+          <i class="fas fa-search mr-1"></i>조회
+        </button>
+        <button onclick="downloadFieldReportCSV()"
+          class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
+          <i class="fas fa-file-excel mr-1"></i>엑셀
+        </button>
+      </div>`;
 
-    // ── 접속 테이블 헬퍼 ──
-    const spliceItemKeys = [...new Set(spliceItems.map(i => i.work_label))];
-    const spliceMap = {};
-    spliceItems.forEach(it => {
-      if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
-      spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0) + (it.total_qty||it.qty||0);
+    // ── 외선 테이블 HTML 빌드 ──
+    const cableColWidths = JSON.parse(localStorage.getItem('fr_cable_col_widths') || '{}');
+    const cableHidden    = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
+    const thInner = (lbl, minW) =>
+      `<div style="word-break:keep-all;white-space:normal;line-height:1.25;padding:5px 4px;min-width:${minW}px;font-size:11px;">${lbl}</div>`;
+    const cResizeHandle = ci =>
+      `<div class="fr-col-resize-handle" data-table="cable" data-col="${ci}"
+        style="position:absolute;right:0;top:0;bottom:0;width:5px;cursor:col-resize;z-index:2;background:transparent;"
+        onmousedown="_frResizeStart(event,'cable',${ci})"></div>`;
+    const cThStyle = (ci, defW) => {
+      const w = cableColWidths[ci] || defW;
+      return `position:relative;overflow:hidden;${cableHidden.includes(ci)?'display:none':'width:'+w+'px;'}`;
+    };
+    const hideBtn = (colIdx) =>
+      `<button onclick="_frCableToggleCol(${colIdx})" title="이 컬럼 숨기기"
+        style="margin-left:4px;opacity:0.55;font-size:10px;line-height:1;vertical-align:middle;cursor:pointer;"
+        onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.55'">✕</button>`;
+
+    // 기본 고정 컬럼 th 목록
+    const fixedThDefs = [
+      { ci:0, bg:'',              lbl:'완료일',    defW:76 },
+      { ci:1, bg:'',              lbl:'작업자(팀)', defW:72 },
+      { ci:2, bg:'',              lbl:'요청번호',   defW:72 },
+      { ci:3, bg:'',              lbl:'구분',      defW:52 },
+      { ci:4, bg:'bg-blue-50',   lbl:'신설(M)',   defW:56 },
+      { ci:5, bg:'bg-red-50',    lbl:'철거(M)',   defW:56 },
+      { ci:6, bg:'bg-purple-50', lbl:'이설(M)',   defW:56 },
+    ];
+    const cableExtraStart = 7;
+    const cableAmtColIdx  = cableExtraStart + allItemKeys.length;
+
+    // 합계금액 총합 계산
+    let cableTotalAmt = 0;
+    rows.forEach(row => {
+      const em = extrasMap[row.id] || {};
+      const rowAmt = isWorker ? 0 : (
+        (row.cable_new_m    || 0) * (priceMap['cable_new']    || 0) +
+        (row.cable_remove_m || 0) * (priceMap['cable_remove'] || 0) +
+        (row.cable_move_m   || 0) * (priceMap['cable_move']   || 0) +
+        allItemKeys.reduce((s,k) => s + (em[k]||0) * (priceMap[k]||0), 0)
+      );
+      cableTotalAmt += rowAmt;
     });
+
+    // 구분 뱃지 색상
+    const cableWcLabel = wc => ({ relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' }[wc] || wc || '-');
+    const wcBadgeClass = wc => ({ relocation:'bg-orange-100 text-orange-700', subscription:'bg-green-100 text-green-700',
+         conduit:'bg-blue-100 text-blue-700', environment:'bg-purple-100 text-purple-700' }[wc] || 'bg-gray-100 text-gray-600');
+
+    const cableColWidthsChk = JSON.parse(localStorage.getItem('fr_cable_col_widths') || '{}');
+    const cableHasHidden = cableHidden.length > 0;
+    const cableHasWidths = Object.keys(cableColWidthsChk).length > 0;
+
+    const cableTableHTML = rows.length === 0
+      ? `<div class="text-center text-gray-400 py-10 text-sm"><i class="fas fa-inbox text-3xl mb-2 block"></i>조회된 외선일보가 없습니다</div>`
+      : `
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table id="fr-cable-table" class="text-xs border-collapse" style="table-layout:fixed;width:100%;min-width:600px;">
+          <thead>
+            <tr class="bg-gray-50 text-gray-600 text-center">
+              ${fixedThDefs.map(d=>`<th class="border border-gray-200 ${d.bg}" data-col-idx="${d.ci}" style="${cThStyle(d.ci,d.defW)}">
+                ${thInner(d.lbl, (cableColWidths[d.ci]||d.defW)-8)}${hideBtn(d.ci)}${cResizeHandle(d.ci)}</th>`).join('')}
+              ${allItemKeys.map((k,ki)=>{
+                const ci = cableExtraStart + ki;
+                return `<th class="border border-gray-200 bg-yellow-50" data-col-idx="${ci}" style="${cThStyle(ci,52)}">
+                  ${thInner(k,(cableColWidths[ci]||52)-8)}${hideBtn(ci)}${cResizeHandle(ci)}</th>`;
+              }).join('')}
+              ${!isWorker?`<th class="border border-gray-200 bg-green-50 font-bold" data-col-idx="${cableAmtColIdx}" style="${cThStyle(cableAmtColIdx,88)}">
+                ${thInner('합계금액(원)',(cableColWidths[cableAmtColIdx]||88)-8)}${hideBtn(cableAmtColIdx)}${cResizeHandle(cableAmtColIdx)}</th>`:''}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row,ri)=>{
+              const em = extrasMap[row.id] || {};
+              const rowAmt = isWorker ? 0 : (
+                (row.cable_new_m    || 0) * (priceMap['cable_new']    || 0) +
+                (row.cable_remove_m || 0) * (priceMap['cable_remove'] || 0) +
+                (row.cable_move_m   || 0) * (priceMap['cable_move']   || 0) +
+                allItemKeys.reduce((s,k) => s + (em[k]||0) * (priceMap[k]||0), 0)
+              );
+              return `
+              <tr class="hover:bg-pink-50 border-b border-gray-100">
+                <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="0"
+                  style="${cableHidden.includes(0)?'display:none':''}">${(row.work_date||'').slice(0,10)||'-'}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="1"
+                  style="${cableHidden.includes(1)?'display:none':''}">${row.worker_team||'-'}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="2"
+                  style="${cableHidden.includes(2)?'display:none':''}">${row.request_no||'-'}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="3"
+                  style="${cableHidden.includes(3)?'display:none':''}">
+                  <span class="inline-block px-1.5 py-0.5 rounded text-xs font-semibold ${wcBadgeClass(row.construction_work_class)}">
+                    ${cableWcLabel(row.construction_work_class)}
+                  </span>
+                </td>
+                <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50" data-col-idx="4"
+                  style="${cableHidden.includes(4)?'display:none':''}">${row.cable_new_m>0?fmtMZ(row.cable_new_m):''}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50" data-col-idx="5"
+                  style="${cableHidden.includes(5)?'display:none':''}">${row.cable_remove_m>0?fmtMZ(row.cable_remove_m):''}</td>
+                <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50" data-col-idx="6"
+                  style="${cableHidden.includes(6)?'display:none':''}">${row.cable_move_m>0?fmtMZ(row.cable_move_m):''}</td>
+                ${allItemKeys.map((k,ki)=>{
+                  const ci = cableExtraStart + ki;
+                  return `<td class="border border-gray-100 px-2 py-1.5 text-right bg-yellow-50" data-col-idx="${ci}"
+                    style="${cableHidden.includes(ci)?'display:none':''}">${em[k]>0?em[k]:''}</td>`;
+                }).join('')}
+                ${!isWorker?`<td class="border border-gray-100 px-2 py-1.5 text-right bg-green-50 font-semibold" data-col-idx="${cableAmtColIdx}"
+                  style="${cableHidden.includes(cableAmtColIdx)?'display:none':''}">${rowAmt>0?rowAmt.toLocaleString():''}</td>`:''}
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="bg-gray-100 font-bold text-gray-700">
+              <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
+              <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100" data-col-idx="4"
+                style="${cableHidden.includes(4)?'display:none':''}">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_new_m||0),0))}</td>
+              <td class="border border-gray-200 px-2 py-2 text-right bg-red-100" data-col-idx="5"
+                style="${cableHidden.includes(5)?'display:none':''}">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_remove_m||0),0))}</td>
+              <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100" data-col-idx="6"
+                style="${cableHidden.includes(6)?'display:none':''}">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_move_m||0),0))}</td>
+              ${allItemKeys.map((k,ki)=>{
+                const ci = cableExtraStart + ki;
+                const tot = extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0);
+                return `<td class="border border-gray-200 px-2 py-2 text-right bg-yellow-100" data-col-idx="${ci}"
+                  style="${cableHidden.includes(ci)?'display:none':''}">${tot>0?tot:''}</td>`;
+              }).join('')}
+              ${!isWorker?`<td class="border border-gray-200 px-2 py-2 text-right bg-green-100 text-green-800" data-col-idx="${cableAmtColIdx}"
+                style="${cableHidden.includes(cableAmtColIdx)?'display:none':''}">${cableTotalAmt>0?cableTotalAmt.toLocaleString():''}</td>`:''}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      ${(cableHasHidden||cableHasWidths)?`
+      <div class="px-3 py-1.5 bg-pink-50 border-t border-pink-100 text-xs text-pink-600 flex items-center gap-3 flex-wrap">
+        ${cableHasHidden?`<span><i class="fas fa-eye-slash mr-1"></i>숨김 컬럼 있음
+          <button onclick="_frCableShowAllCols()" class="underline hover:text-pink-800 ml-1">모두 표시</button></span>`:''}
+        ${cableHasWidths?`<span><i class="fas fa-arrows-alt-h mr-1"></i>컬럼 너비 조정됨
+          <button onclick="_frResetColWidths('cable')" class="underline hover:text-pink-800 ml-1">너비 초기화</button></span>`:''}
+      </div>`:''}
+    </div>
+    <p class="text-xs text-gray-400 text-right mt-1">* 헤더 경계를 드래그해 컬럼 너비 조절 가능합니다.</p>`;
 
     container.innerHTML = `
     <div class="w-full px-3 py-3 space-y-3">
-      <!-- 헤더 + 탭 통합 바 -->
-      <div class="flex items-center gap-3 flex-wrap">
-        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2 shrink-0">
-          <i class="fas fa-list-alt text-pink-500"></i> 공량내역
-        </h2>
-        <!-- 외선 / 접속 탭 -->
-        <div class="flex rounded-xl overflow-hidden border border-gray-200 text-sm font-medium shrink-0">
-          <button id="fr-tab-cable-btn" onclick="_frSwitchTab('cable')"
-            class="px-5 py-1.5 text-center transition ${savedFrTab==='cable' ? 'bg-pink-500 text-white' : 'text-gray-500 hover:bg-gray-50 border-r border-gray-200'}">
-            <i class="fas fa-ethernet mr-1"></i>외선
-          </button>
-          <button id="fr-tab-splice-btn" onclick="_frSwitchTab('splice')"
-            class="px-5 py-1.5 text-center transition ${savedFrTab==='splice' ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}">
-            <i class="fas fa-plug mr-1"></i>접속
-          </button>
-        </div>
+      <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+        <i class="fas fa-list-alt text-pink-500"></i> 공량내역
+      </h2>
+      ${sharedFilterBar}
+      <div class="flex rounded-xl overflow-hidden border border-gray-200 text-sm font-medium w-fit">
+        <button id="fr-tab-cable-btn" onclick="_frSwitchTab('cable')"
+          class="px-5 py-1.5 text-center transition ${savedFrTab==='cable' ? 'bg-pink-500 text-white' : 'text-gray-500 hover:bg-gray-50 border-r border-gray-200'}">
+          <i class="fas fa-ethernet mr-1"></i>외선
+        </button>
+        <button id="fr-tab-splice-btn" onclick="_frSwitchTab('splice')"
+          class="px-5 py-1.5 text-center transition ${savedFrTab==='splice' ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}">
+          <i class="fas fa-plug mr-1"></i>접속
+        </button>
       </div>
       <input type="hidden" id="fr-active-tab" value="${savedFrTab}">
 
-      <!-- ── 외선 섹션 ── -->
-      <div id="fr-cable-section" class="${savedFrTab==='cable' ? '' : 'hidden'} space-y-3">
-        <!-- 조회 조건 -->
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center">
-          <select id="fr-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
-            <option value="">전체 공사</option>
-            ${constructions.map(c=>`<option value="${c.id}" ${frConsVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
-          </select>
-          <select id="fr-period-mode" onchange="_frUpdatePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
-            <option value="month"   ${savedFrMode==='month'  ?'selected':''}>월별</option>
-            <option value="quarter" ${savedFrMode==='quarter'?'selected':''}>분기별</option>
-            <option value="year"    ${savedFrMode==='year'   ?'selected':''}>연도별</option>
-            <option value="all"     ${savedFrMode==='all'    ?'selected':''}>전체</option>
-          </select>
-          <select id="fr-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none ${savedFrMode==='month'||savedFrMode==='all'?'hidden':''}">
-            ${frYears.map(y=>`<option value="${y}" ${savedFrYVal==y?'selected':''}>${y}년</option>`).join('')}
-          </select>
-          <select id="fr-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none ${savedFrMode!=='quarter'?'hidden':''}">
-            ${[1,2,3,4].map(q=>`<option value="${q}" ${savedFrQVal==q?'selected':''}>Q${q} (${(q-1)*3+1}~${q*3}월)</option>`).join('')}
-          </select>
-          <input type="month" id="fr-period-month" value="${savedFrMVal}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedFrMode!=='month'?'hidden':''}">
-          <button onclick="renderFieldReportPage(document.getElementById('page-content'))"
-                  class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600">
-            <i class="fas fa-search mr-1"></i>조회
-          </button>
-          <button onclick="downloadFieldReportCSV()"
-                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
-            <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
-          </button>
-        </div>
+      <!-- 외선 섹션 -->
+      <div id="fr-cable-section" class="${savedFrTab==='cable' ? '' : 'hidden'} space-y-2">
+        ${cableTableHTML}
+      </div>
 
-        <!-- 데이터 테이블 -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div class="overflow-x-auto">
-            <table id="fr-cable-table" class="text-xs border-collapse" style="table-layout:fixed;width:100%;min-width:600px;">
-              <colgroup id="fr-cable-colgroup"></colgroup>
-              <thead>
-                <tr class="bg-gray-50 text-gray-600 text-center">
-                  ${(() => {
-                    // 외선 컬럼 숨김 상태
-                    const cableHidden = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
-                    const cableColWidths = JSON.parse(localStorage.getItem('fr_cable_col_widths') || '{}');
-                    const cableAmtIdx = 7 + allItemKeys.length;
-                    // 가로 1~2줄 표시 헤더 스타일 (세로 회전 없음)
-                    const thInner = (lbl, minW) =>
-                      `<div style="word-break:keep-all;white-space:normal;line-height:1.25;padding:5px 4px;min-width:${minW}px;font-size:11px;">${lbl}</div>`;
-                    // 리사이즈 핸들 (오른쪽 경계 드래그)
-                    const resizeHandle = ci =>
-                      `<div class="fr-col-resize-handle" data-table="cable" data-col="${ci}"
-                        style="position:absolute;right:0;top:0;bottom:0;width:5px;cursor:col-resize;z-index:2;background:transparent;"
-                        onmousedown="_frResizeStart(event,'cable',${ci})"></div>`;
-                    const cHideBtn = ci => `<button onclick="_frCableToggleCol(${ci})" title="이 컬럼 숨기기"
-                      style="display:block;margin:1px auto 0;opacity:0.4;font-size:9px;cursor:pointer;line-height:1;"
-                      onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.4'">✕</button>`;
-                    const thStyle = (ci, defW) => {
-                      const w = cableColWidths[ci] || defW;
-                      return `position:relative;overflow:hidden;${cableHidden.includes(ci)?'display:none':'width:'+w+'px;'}`;
-                    };
-                    // 고정 컬럼 (완료일/작업자/요청번호/구분 + 수치컬럼 모두 가로)
-                    const fixedThs = [
-                      { ci:0, bg:'',            lbl:'완료일',    defW:76 },
-                      { ci:1, bg:'',            lbl:'작업자(팀)', defW:72 },
-                      { ci:2, bg:'',            lbl:'요청번호',   defW:72 },
-                      { ci:3, bg:'',            lbl:'구분',      defW:52 },
-                      { ci:4, bg:'bg-blue-50',  lbl:'신설(M)',   defW:52 },
-                      { ci:5, bg:'bg-red-50',   lbl:'철거(M)',   defW:52 },
-                      { ci:6, bg:'bg-purple-50',lbl:'이설(M)',   defW:52 },
-                    ];
-                    return fixedThs.map(({ci,bg,lbl,defW}) =>
-                      `<th class="border border-gray-200 ${bg}" data-col-idx="${ci}" style="${thStyle(ci,defW)}">
-                        ${thInner(lbl,defW-8)}${cHideBtn(ci)}${resizeHandle(ci)}</th>`
-                    ).join('') +
-                    allItemKeys.map((k,ki) => {
-                      const ci = 7 + ki;
-                      return `<th class="border border-gray-200 bg-orange-50" data-col-idx="${ci}" style="${thStyle(ci,52)}">
-                        ${thInner(k,44)}${cHideBtn(ci)}${resizeHandle(ci)}</th>`;
-                    }).join('') +
-                    (!isWorker ? `<th class="border border-gray-200 bg-green-50 font-bold" data-col-idx="${cableAmtIdx}" style="${thStyle(cableAmtIdx,80)}">
-                      ${thInner('합계금액(원)',72)}${cHideBtn(cableAmtIdx)}${resizeHandle(cableAmtIdx)}</th>` : '');
-                  })()}
-                </tr>
-              </thead>
-              <tbody>
-                ${rows.length === 0
-                  ? `<tr><td colspan="99" class="text-center py-8 text-gray-400">데이터 없음<br><span class="text-xs">임시저장 또는 제출된 일보가 없습니다</span></td></tr>`
-                  : rows.map(row => {
-                      const exMap = extrasMap[row.report_id] || {};
-                      const rowAmt = isWorker ? 0 :
-                        (row.cable_new_m    ||0) * (priceMap['cable_new']    ||0) +
-                        (row.cable_remove_m ||0) * (priceMap['cable_remove'] ||0) +
-                        (row.cable_move_m   ||0) * (priceMap['cable_move']   ||0) +
-                        allItemKeys.reduce((s,k) => s + (exMap[k]||0)*(priceMap[k]||0), 0);
-                      const cableHiddenRow = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
-                      const cableAmtIdxRow = 7 + allItemKeys.length;
-                      const ds = ci => cableHiddenRow.includes(ci) ? 'display:none' : '';
-                      return `
-                      <tr class="hover:bg-gray-50 border-b border-gray-100">
-                        <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="0" style="${ds(0)}">${(row.work_date||'').slice(0,10)||'-'}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="1" style="${ds(1)}">${row.worker_team||'-'}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="2" style="${ds(2)}">${row.request_no||'-'}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="3" style="${ds(3)}">${row.work_class||'-'}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50"  data-col-idx="4" style="${ds(4)}">${fmtM(row.cable_new_m)}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-red-50"   data-col-idx="5" style="${ds(5)}">${fmtM(row.cable_remove_m)}</td>
-                        <td class="border border-gray-100 px-2 py-1.5 text-right bg-purple-50" data-col-idx="6" style="${ds(6)}">${fmtM(row.cable_move_m)}</td>
-                        ${allItemKeys.map((k,ki) => {
-                          const ci = 7+ki;
-                          return `<td class="border border-gray-100 px-2 py-1.5 text-right bg-orange-50" data-col-idx="${ci}" style="${ds(ci)}">${exMap[k]||''}</td>`;
-                        }).join('')}
-                        ${!isWorker ? `<td class="border border-gray-100 px-2 py-1.5 text-right bg-green-50 font-semibold" data-col-idx="${cableAmtIdxRow}" style="${ds(cableAmtIdxRow)}">${rowAmt>0?rowAmt.toLocaleString():''}</td>` : ''}
-                      </tr>`;
-                    }).join('')}
-              </tbody>
-              ${rows.length > 0 ? `
-              <tfoot>
-                ${(() => {
-                  const cableHiddenFt = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
-                  const cableAmtIdxFt = 7 + allItemKeys.length;
-                  const dsf = ci => cableHiddenFt.includes(ci) ? 'display:none' : '';
-                  const totalAmt = !isWorker ? (
-                    rows.reduce((s,r)=>s+(r.cable_new_m||0),0)    * (priceMap['cable_new']    ||0) +
-                    rows.reduce((s,r)=>s+(r.cable_remove_m||0),0) * (priceMap['cable_remove'] ||0) +
-                    rows.reduce((s,r)=>s+(r.cable_move_m||0),0)   * (priceMap['cable_move']   ||0) +
-                    allItemKeys.reduce((s,k) => {
-                      const q = extras.filter(ex=>ex.item_key===k).reduce((a,ex)=>a+(ex.qty||0),0);
-                      return s + q * (priceMap[k]||0);
-                    }, 0)
-                  ) : 0;
-                  return `<tr class="bg-gray-100 font-bold text-gray-700">
-                    <td class="border border-gray-200 px-2 py-2 text-center" colspan="4">합 계</td>
-                    <td class="border border-gray-200 px-2 py-2 text-right bg-blue-100"  data-col-idx="4" style="${dsf(4)}">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_new_m||0),0))}</td>
-                    <td class="border border-gray-200 px-2 py-2 text-right bg-red-100"   data-col-idx="5" style="${dsf(5)}">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_remove_m||0),0))}</td>
-                    <td class="border border-gray-200 px-2 py-2 text-right bg-purple-100" data-col-idx="6" style="${dsf(6)}">${fmtMZ(rows.reduce((s,r)=>s+(r.cable_move_m||0),0))}</td>
-                    ${allItemKeys.map((k,ki)=>{
-                      const ci=7+ki;
-                      return `<td class="border border-gray-200 px-2 py-2 text-right bg-orange-100" data-col-idx="${ci}" style="${dsf(ci)}">${extras.filter(ex=>ex.item_key===k).reduce((s,ex)=>s+(ex.qty||0),0)||''}</td>`;
-                    }).join('')}
-                    ${!isWorker ? `<td class="border border-gray-200 px-2 py-2 text-right bg-green-100 text-green-800" data-col-idx="${cableAmtIdxFt}" style="${dsf(cableAmtIdxFt)}">${totalAmt>0?totalAmt.toLocaleString():''}</td>` : ''}
-                  </tr>`;
-                })()}
-              </tfoot>` : ''}
-            </table>
-          </div>
-          ${(() => {
-            const cableHiddenChk  = JSON.parse(localStorage.getItem('fr_cable_hidden_cols')  || '[]');
-            const cableWidthsChk  = JSON.parse(localStorage.getItem('fr_cable_col_widths')   || '{}');
-            const hasHidden = cableHiddenChk.length > 0;
-            const hasWidths = Object.keys(cableWidthsChk).length > 0;
-            if (!hasHidden && !hasWidths) return '';
-            return `
-            <div class="px-3 py-1.5 bg-pink-50 border-t border-pink-100 text-xs text-pink-600 flex items-center gap-3 flex-wrap">
-              ${hasHidden ? `<span><i class="fas fa-eye-slash mr-1"></i>숨김 컬럼 있음
-                <button onclick="_frCableShowAllCols()" class="underline hover:text-pink-800 ml-1">모두 표시</button></span>` : ''}
-              ${hasWidths ? `<span><i class="fas fa-arrows-alt-h mr-1"></i>컬럼 너비 조정됨
-                <button onclick="_frResetColWidths('cable')" class="underline hover:text-pink-800 ml-1">너비 초기화</button></span>` : ''}
-            </div>`;
-          })()}
-        </div>
-        <p class="text-xs text-gray-400 text-right">* 헤더 경계를 드래그해 컬럼 너비 조절 가능 &nbsp;|
-          <button onclick="renderCableDetailPage(document.getElementById('page-content'))" class="text-blue-500 hover:underline ml-1">광케이블 상세 현황 보기 →</button>
-        </p>
-      </div><!-- /fr-cable-section -->
-
-      <!-- ── 접속 섹션 ── -->
-      <div id="fr-splice-section" class="${savedFrTab==='splice' ? '' : 'hidden'} space-y-3">
-        <!-- 조회 조건 (외선과 동일 스타일) -->
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center">
-          <select id="fr-splice-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
-            <option value="">전체 공사</option>
-            ${constructions.map(c=>`<option value="${c.id}" ${frConsVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
-          </select>
-          <select id="fr-splice-period-mode" onchange="_frSplicePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
-            <option value="month">월별</option><option value="quarter">분기별</option>
-            <option value="year">연도별</option><option value="all">전체</option>
-          </select>
-          <select id="fr-splice-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none hidden">
-            ${frYears.map(y=>`<option value="${y}">${y}년</option>`).join('')}
-          </select>
-          <select id="fr-splice-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none hidden">
-            ${[1,2,3,4].map(q=>`<option value="${q}">Q${q}</option>`).join('')}
-          </select>
-          <input type="month" id="fr-splice-period-month" value="${new Date().toISOString().slice(0,7)}"
-            class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
-          <button onclick="_frLoadSpliceStats()"
-            class="bg-indigo-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-indigo-600">
-            <i class="fas fa-search mr-1"></i>조회
-          </button>
-          <button onclick="downloadFieldReportCSV()"
-            class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
-            <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
-          </button>
-        </div>
+      <!-- 접속 섹션 -->
+      <div id="fr-splice-section" class="${savedFrTab==='splice' ? '' : 'hidden'} space-y-2">
         <div id="fr-splice-result">
-          <div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-indigo-400 text-xl"></i></div>
+          <div class="text-center text-gray-400 py-10 text-sm">
+            <i class="fas fa-info-circle text-2xl mb-2 block"></i>조회 버튼을 클릭하거나 접속 탭을 선택하세요
+          </div>
         </div>
-      </div><!-- /fr-splice-section -->
-
+      </div>
     </div>`;
 
-    // 접속 탭이 활성이면 즉시 자동 조회
-    if (savedFrTab === 'splice') {
-      _frLoadSpliceStats();
-    }
-
   } catch(e) {
-    container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
+    container.innerHTML = `
+    <div class="w-full px-3 py-6">
+      <div class="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+        <i class="fas fa-exclamation-triangle mr-2"></i>공량내역 로드 실패: ${e.message}
+      </div>
+    </div>`;
   }
 }
 
@@ -25375,9 +25361,15 @@ function _frUpdatePeriodUI() {
   const yearSel    = document.getElementById('fr-period-year');
   const quarterSel = document.getElementById('fr-period-quarter');
   const monthInp   = document.getElementById('fr-period-month');
-  if (yearSel)    yearSel.classList.toggle('hidden',    mode === 'month' || mode === 'all');
-  if (quarterSel) quarterSel.classList.toggle('hidden', mode !== 'quarter');
+  const weekInp    = document.getElementById('fr-period-week');
+  // week 모드: 주간 입력만 표시
+  if (weekInp)    weekInp.classList.toggle('hidden',    mode !== 'week');
+  // month 모드: 월 입력만 표시
   if (monthInp)   monthInp.classList.toggle('hidden',   mode !== 'month');
+  // year 셀렉터: month/week/all 제외하고 표시
+  if (yearSel)    yearSel.classList.toggle('hidden',    mode === 'month' || mode === 'week' || mode === 'all');
+  // quarter 셀렉터: quarter 모드만 표시
+  if (quarterSel) quarterSel.classList.toggle('hidden', mode !== 'quarter');
 }
 
 function _frSwitchTab(tab) {
@@ -25422,41 +25414,17 @@ function _frCableShowAllCols() {
   renderFieldReportPage(document.getElementById('page-content'));
 }
 
-function _frSplicePeriodUI() {
-  const mode = document.getElementById('fr-splice-period-mode')?.value;
-  if (!mode) return;
-  const yearSel    = document.getElementById('fr-splice-period-year');
-  const quarterSel = document.getElementById('fr-splice-period-quarter');
-  const monthInp   = document.getElementById('fr-splice-period-month');
-  if (yearSel)    yearSel.classList.toggle('hidden',    mode === 'month' || mode === 'all');
-  if (quarterSel) quarterSel.classList.toggle('hidden', mode !== 'quarter');
-  if (monthInp)   monthInp.classList.toggle('hidden',   mode !== 'month');
-}
+// _frSplicePeriodUI 제거됨 — 공유 조회 바(_frUpdatePeriodUI)로 통합
 
 async function _frLoadSpliceStats() {
   const resultDiv = document.getElementById('fr-splice-result');
   if (!resultDiv) return;
   resultDiv.innerHTML = `<div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div>`;
   try {
-    const mode  = document.getElementById('fr-splice-period-mode')?.value || 'month';
-    const mVal  = document.getElementById('fr-splice-period-month')?.value || '';
-    const qVal  = document.getElementById('fr-splice-period-quarter')?.value || '';
-    const yVal  = document.getElementById('fr-splice-period-year')?.value || String(new Date().getFullYear());
-    const consVal = document.getElementById('fr-splice-construction')?.value || '';
+    // ── 공유 조회 바 ID 사용 + _frCalcDateRange() 활용 ──
+    const { from: fromDate, to: toDate } = _frCalcDateRange();
+    const consVal = document.getElementById('fr-construction')?.value || '';
 
-    let fromDate = '', toDate = '';
-    if (mode === 'month' && mVal) {
-      fromDate = mVal + '-01';
-      const d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      toDate = d.toISOString().slice(0,10);
-    } else if (mode === 'quarter' && qVal && yVal) {
-      const q = parseInt(qVal);
-      fromDate = `${yVal}-${String((q-1)*3+1).padStart(2,'0')}-01`;
-      const d = new Date(`${yVal}-${String(q*3).padStart(2,'0')}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
-      toDate = d.toISOString().slice(0,10);
-    } else if (mode === 'year' && yVal) {
-      fromDate = `${yVal}-01-01`; toDate = `${yVal}-12-31`;
-    }
     const params = [];
     if (consVal)   params.push(`construction_id=${consVal}`);
     if (fromDate)  params.push(`from_date=${fromDate}`);

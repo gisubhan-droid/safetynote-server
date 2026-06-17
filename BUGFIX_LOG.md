@@ -1717,3 +1717,51 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 - 모바일 전체화면 모달의 overlay 닫힘 차단은 **CSS `pointer-events: none`이 유일하게 확실한 방법**
 - JS 이벤트 플래그 방식은 `e.target` 불일치로 인해 모바일 실기기에서 미동작 가능
 - `modal-sm` 예외 처리는 CSS `pointer-events: auto` 복원으로 처리
+
+---
+
+## [BUG-006] APK 다운로드 실패 — ReferenceError: Log is not defined (2026-06-17)
+
+### 증상
+- 로그인 화면 APK 다운로드 버튼 클릭 시 "다운로드 중입니다" 토스트는 표시
+- 실제 APK 파일 다운로드 미실행
+- DevTools 콘솔: `ReferenceError: Log is not defined at doApkDownload`
+
+### 원인
+
+#### 1. `Log` 미선언 변수 참조 (주원인)
+- `doApkDownload()` 내부: `Log && Log.d && Log.d(...)` 패턴
+- `Log`는 Capacitor 네이티브 앱 환경의 Java 브릿지 객체 — 일반 브라우저에 미존재
+- JS에서 `선언되지 않은 변수 && ...` 평가 시 → `ReferenceError` throw → 함수 즉시 중단
+- 결과: `localStorage` 저장 후 다운로드 실행 코드(`window.open` 등)에 도달 불가
+
+#### 2. `window.open(_blank)` 방식의 팝업 차단 문제
+- 브라우저 팝업 차단 시 `null` 반환 → fallback으로 `window.location.href = url` 실행
+- 로그인 페이지가 APK URL로 이동 → 화면 전환 발생
+
+### 해결
+```javascript
+// 수정 전 (ReferenceError 발생)
+Log && Log.d && Log.d('doApkDownload', 'installed version → ' + newVersion);
+
+// 수정 후 (typeof로 안전하게 체크)
+typeof Log !== 'undefined' && Log.d && Log.d('doApkDownload', 'installed version → ' + newVersion);
+```
+
+- 다운로드 방식: `window.open(_blank)` → `<a download>` 태그 방식으로 변경
+  - 팝업 차단 영향 없음
+  - 페이지 이동(location.href) 없음
+  - 클릭 즉시 다운로드 시작
+
+#### 서비스워커 에러 (부수 에러)
+- `service-worker.js:84 TypeError: Failed to execute 'clone' on 'Response': Response body is already used`
+- NAS에 남아있는 구버전(v9) 서비스워커 캐시 문제
+- 현재 서비스워커는 `res.clone()` 올바르게 사용 중 — 버전을 v9 → v10으로 올려 강제 갱신
+
+### ⚠️ 재발 방지
+- **Capacitor 전용 API(`Log`, `StatusBar`, `Haptics` 등)**: 반드시 `typeof XXX !== 'undefined'` 로 체크
+- `Log && ...` 패턴은 선언되지 않은 변수에서 ReferenceError 발생 — 절대 사용 금지
+- APK 다운로드는 `<a download>` 방식 사용 (window.open 방식 사용 금지)
+
+### 커밋
+- `d51f355` — fix: APK 다운로드 ReferenceError(Log) + 다운로드 방식 개선 + 서비스워커 v10

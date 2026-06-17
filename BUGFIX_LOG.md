@@ -1348,3 +1348,42 @@ console.log('삭제된 오염 행 수:', result.changes);
 db.close();
 "
 ```
+
+---
+
+## [BUG-020b] work_report_extras FK 오염 — extras 저장 에러 완전 해결 (2026-06)
+
+### 증상
+BUG-020 패치(`86fe9b0`) NAS 적용 후:
+```
+[work-reports POST] extras 저장 실패: no such table: main.work_reports_old
+```
+케이블은 저장되나 extras(추가입력)만 저장 실패.
+
+### 근본 원인
+NAS DB 내부의 `work_report_extras` 테이블 DDL이 아래와 같이 오염되어 있었음:
+```sql
+-- 오염 상태 (NAS DB)
+FOREIGN KEY (report_id) REFERENCES work_reports_old(id) ON DELETE CASCADE
+--                                  ^^^^^^^^^^^^^^^^ 잘못된 참조
+```
+이전 patchSchema에서 `work_reports` RENAME 작업이 중간에 실패하여
+`work_reports_old` 잔해가 남은 상태에서 `work_report_extras`가 생성됨.
+`CREATE TABLE IF NOT EXISTS`는 기존 테이블을 건드리지 않으므로 이후 재시작에서도 수정 안 됨.
+
+### 수정 내용 (`node-server.ts` — patchSchema)
+```typescript
+// work_report_extras DDL에 'work_reports_old' 참조 감지 시 자동 재생성
+const extrasDDL = rawDb.prepare(`SELECT sql FROM sqlite_master WHERE name='work_report_extras'`).get()?.sql || ''
+if (extrasDDL.includes('work_reports_old')) {
+  // BEGIN; ... 재생성 ... COMMIT; (기존 데이터 보존)
+}
+```
+`pm2 restart` 한 번으로 자동 수리됨. 기존 extras 데이터 전량 보존.
+
+### 커밋
+- `4bcc5f6` — fix: BUG-020 work_report_extras FK 오염 자동 수정
+
+### 결과
+- extras(추가입력) 저장 ✅ 정상 확인
+- 외선일보 케이블 + extras 전체 저장/복원 ✅ 완전 해결

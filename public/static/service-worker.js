@@ -1,6 +1,6 @@
-// SafetyNOTE Service Worker v9
-const STATIC_CACHE = 'sn-static-v9';
-const API_CACHE    = 'sn-api-v9';
+// SafetyNOTE Service Worker v10
+const STATIC_CACHE = 'sn-static-v10';
+const API_CACHE    = 'sn-api-v10';
 
 // Network First 대상: 자주 업데이트되는 파일 (항상 서버에서 최신 버전을 받아옴)
 const NETWORK_FIRST_URLS = [

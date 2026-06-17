@@ -24803,7 +24803,7 @@ function doApkDownload(url, newVersion) {
   if (newVersion) {
     localStorage.setItem('apk-installed-version', newVersion);
     localStorage.removeItem('apk-update-skip-ver');
-    Log && Log.d && Log.d('doApkDownload', 'installed version → ' + newVersion);
+    typeof Log !== 'undefined' && Log.d && Log.d('doApkDownload', 'installed version → ' + newVersion);
   }
 
   if (isCapacitor) {
@@ -24817,13 +24817,15 @@ function doApkDownload(url, newVersion) {
     }
   } else {
     // 일반 브라우저 (PC/모바일 크롬 등)
-    // 1차: window.open — 새 탭 열기 방식 (팝업 차단 없으면 가장 안정적)
+    // <a download> 방식: 팝업 차단 영향 없음, 페이지 이동 없음
     try {
-      const opened = window.open(url, '_blank');
-      if (!opened) {
-        // 팝업 차단된 경우 location.href 로 fallback (같은 탭 다운로드)
-        window.location.href = url;
-      }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'safetynote.apk';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => a.remove(), 1000);
     } catch(e) {
       // 예외 시 location.href fallback
       window.location.href = url;

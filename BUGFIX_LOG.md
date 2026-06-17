@@ -1621,7 +1621,7 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 
 ---
 
-## [FEAT-024] 모바일 터치 스크롤 시 팝업 닫힘 방지 (2026-06-17)
+## [FEAT-024] 모바일 터치 스크롤 시 팝업 닫힘 방지 (2026-06-17) ✅ 실기기 확인 완료
 
 ### 증상
 - 모바일 전체화면 모달(대형 팝업) 내부에서 아래로 터치 스크롤 시 팝업이 닫혀버림
@@ -1712,7 +1712,7 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 - `06d793a` — fix: 모바일 터치 스크롤 시 팝업 닫힘 방지 (FEAT-024) — JS 플래그 방식 (실기기 미적용)
 - `2103642` — fix: overlay pointer-events:none CSS 방식으로 근본 차단 (FEAT-024 재수정)
 - `4008cfc` — fix: 모바일 전체화면 모달 스와이프 닫기 차단 (FEAT-024 근본 원인 수정) (실기기 미적용)
-- `e531fc2` — fix: FEAT-024 v4 — modal-sm 여부만으로 스와이프 닫기 완전 차단 ← **최신 (NAS 반영 필요)**
+- `e531fc2` — fix: FEAT-024 v4 — modal-sm 여부만으로 스와이프 닫기 완전 차단 ← **최신 ✅ NAS 반영 + 실기기 확인 완료 (2026-06-17)**
 
 ### 실기기 피드백 및 재수정 이력
 - **1차 구현** (`06d793a`): JS `_touchScrolling` 플래그 + capture click 차단 → 실기기 미적용

@@ -1239,3 +1239,112 @@ db.close();
 "
 # spec TEXT, proc TEXT, remark TEXT 가 포함되어야 정상
 ```
+
+---
+
+## [BUG-019] extras(추가입력) 복원 버그 — extrasMap HTML value= 직접 주입 (2026-06)
+
+### 증상
+- 외선일보 임시저장 후 폼 재로드 시 추가입력(extras) 항목 값이 복원되지 않음
+- DB에는 저장되어 있으나 UI에 표시 안 됨
+
+### 근본 원인
+- `mkCableSetHTML` 함수가 `extrasData` 파라미터를 받지 않아 extrasMap이 빈 객체
+- 기존 JS 복원 루프가 DOM 렌더링 타이밍 불일치로 동작 불안정
+
+### 수정 내용
+- `mkCableSetHTML(n, cableData, extrasData)` — 세 번째 파라미터 추가
+- `extrasMap = {}` 를 extrasData에서 구성 후 HTML value= 직접 주입
+- 기존 JS extras 복원 루프 제거 (HTML value= 방식으로 대체)
+- 서버 extras INSERT 로그 및 에러 처리 강화
+
+### 수정 파일
+| 파일 | 수정 내용 |
+|------|-----------|
+| `public/static/app.js` | mkCableSetHTML extrasData 파라미터 추가 + extrasMap HTML value 직접 주입 |
+| `node-server.ts` | extras INSERT 로그/에러처리 강화 |
+
+### 롤백 정보
+- **롤백 태그**: `rollback/pre-bugfix-019`
+- **안전 커밋**: `f38dc96` (BUG-018 수정 후)
+
+---
+
+## [BUG-020] 외선일보 저장 전체 미동작 — 근본 원인 분석 및 수정 (2026-06)
+
+### 증상
+- 외선일보 임시저장/제출 시 성공 메시지는 뜨지만 실제 DB 저장 안 됨
+- extras (추가입력) 최신 report에 전혀 없음 (DB 확인)
+- 케이블 spec이 '0.0'으로 저장된 오염 데이터 존재 (report_id 7, 8)
+- PM2 로그에 `[WR-POST]` 출력 없음 → NAS 미반영 상태 확인
+
+### 근본 원인
+
+#### 원인 1 ★★★ — NAS 미반영 (가장 직접적 원인)
+- `pm2 restart` 없이 구버전 코드 실행 중
+- `[WR-POST]` 로그 미출력으로 확인
+- **해결**: NAS에서 `git pull origin main && pm2 restart safetynote` 필수
+
+#### 원인 2 — `spec: '0.0'` 오염 데이터 — hasData 조건 우회
+- `spec REAL→TEXT` 마이그레이션(BUG-018) 이전 데이터: `'1C'→0→CAST→'0'` 또는 `'0.0'`
+- 구버전 hasData: `cb.spec`이 `'0.0'`이면 truthy → 빈 행으로 저장됨
+- UI 복원 시: SPEC_OPTS에 `value="0.0"` 없음 → selected 불일치 → 빈값 표시
+
+#### 원인 3 — extras key 필드명 불일치 가능성
+- 프론트: `extras.push({ key, qty })` → `ex.key`
+- 서버: `ex.key || ex.item_key` 모두 지원하도록 방어코드 추가
+
+### 수정 내용
+
+#### `node-server.ts`
+1. **hasData 강화**: `spec '0.0'` / `'0'` 은 오염값이므로 hasData 판정 제외
+   ```typescript
+   const specVal = cb.spec != null ? String(cb.spec) : ''
+   const specHasData = !!(specVal && specVal !== '0' && specVal !== '0.0')
+   const hasData = !!(cb.lot_no || cb.maker || cb.cable_kind || cb.proc || cb.remark ||
+                      specHasData || ...)
+   ```
+2. **specNorm 정규화**: `'0.0'`, `'0'` → `''` 변환 후 저장
+3. **extras 로그 강화**: `ex.key || ex.item_key` 지원, 저장 건별 로그, 배열 타입 체크
+
+#### `public/static/app.js`
+1. **mkCable spec 복원 정규화**: `cb.spec === '0.0'` / `'0'` → `''` 처리
+   ```javascript
+   const cbSpec = (cb.spec && cb.spec !== '0.0' && cb.spec !== '0') ? cb.spec : '';
+   ```
+
+### 수정 파일
+| 파일 | 수정 내용 |
+|------|-----------|
+| `node-server.ts` | hasData spec 오염값 제외; specNorm 정규화; extras 로그 강화 + key/item_key 방어 |
+| `public/static/app.js` | mkCable cbSpec 정규화 ('0.0'→'') |
+
+### 롤백 정보
+- **롤백 태그**: `rollback/pre-bugfix-020-final` (= 커밋 `a849e37`)
+- **롤백 명령**:
+  ```bash
+  git push origin a849e37:main --force
+  # NAS:
+  cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+  ```
+
+### ⚠️ NAS 반영 필수 명령
+```bash
+cd /volume1/safetynote
+git pull origin main
+pm2 restart safetynote
+# 확인: 외선일보 저장 후 로그에 [WR-POST] 출력 확인
+pm2 logs safetynote --nostream | grep "\[WR-POST\]" | tail -20
+```
+
+### ⚠️ DB 오염 데이터 정리 (선택 — report_id 7, 8)
+```bash
+# NAS에서 직접 실행 (오염된 빈 cables 행 삭제)
+node -e "
+const db = require('better-sqlite3')('/volume1/safetynote/data/safety.db');
+// spec이 '0.0'이고 다른 모든 필드도 비어있는 오염 행 삭제
+const result = db.prepare(\"DELETE FROM work_report_cables WHERE spec='0.0' AND lot_no='' AND maker='' AND cable_kind='' AND proc='' AND remark='' AND usage_m=0\").run();
+console.log('삭제된 오염 행 수:', result.changes);
+db.close();
+"
+```

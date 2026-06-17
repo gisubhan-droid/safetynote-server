@@ -26530,11 +26530,13 @@ async function renderWorkReportForm(container, taskId) {
     // ── 섹션3: 작업 케이블정보 행 ────────────────────────────────
     const mkCable = (cb, i) => {
       const cktypes = cb.cable_kind ? cb.cable_kind.split(',') : [];
+      // BUG-020: spec '0.0' / '0' 은 REAL→TEXT 오염값 → 빈값으로 정규화
+      const cbSpec = (cb.spec && cb.spec !== '0.0' && cb.spec !== '0') ? cb.spec : '';
       return `
     <tr class="hover:bg-gray-50">
       <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
       <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.lot_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS.replace(`value="${cb.spec||''}"`,`value="${cb.spec||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS.replace(`value="${cbSpec}"`,`value="${cbSpec}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.maker||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS.replace(`value="${cb.mfg_year||''}"`,`value="${cb.mfg_year||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS.replace(`value="${cb.cable_kind||''}"`,`value="${cb.cable_kind||''}" selected`)}</select></td>

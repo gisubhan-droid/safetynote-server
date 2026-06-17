@@ -3700,16 +3700,21 @@ app.post('/api/work-reports', async (c) => {
         for (let i = 0; i < body.cables.length; i++) {
           const cb = body.cables[i]
           // 빈 기본행 필터링: 식별 가능한 값이 하나라도 있어야 저장
-          const hasData = !!(cb.lot_no || cb.maker || cb.cable_kind || cb.proc || cb.remark || cb.spec ||
+          // BUG-020: spec이 '0.0' / '0' 인 경우는 REAL→TEXT 오염값으로 hasData 판정에서 제외
+          const specVal = cb.spec != null ? String(cb.spec) : ''
+          const specHasData = !!(specVal && specVal !== '0' && specVal !== '0.0')
+          const hasData = !!(cb.lot_no || cb.maker || cb.cable_kind || cb.proc || cb.remark ||
+                             specHasData ||
                              (cb.usage_m && cb.usage_m !== 0) ||
                              cb.start_point != null || cb.end_point != null)
           if (!hasData) { skipCount++; continue }
           const sp = cb.start_point != null ? String(cb.start_point) : ''
           const ep = cb.end_point   != null ? String(cb.end_point)   : ''
-          const specVal = cb.spec != null ? String(cb.spec) : ''
+          // BUG-020: 오염 spec값('0.0', '0')은 빈 문자열로 정규화하여 저장
+          const specNorm = (specVal === '0.0' || specVal === '0') ? '' : specVal
           cableStmt.run(
             reportId, cableOrder++,
-            cb.lot_no||'', specVal, cb.maker||'', cb.mfg_year||'',
+            cb.lot_no||'', specNorm, cb.maker||'', cb.mfg_year||'',
             '', '',  // cable_type, work_div (UI없음)
             sp, ep,
             cb.usage_m||0,
@@ -3729,30 +3734,40 @@ app.post('/api/work-reports', async (c) => {
       }
     }
 
-    // cable_sets의 extras(추가입력) 저장
-    if (Array.isArray(body.cable_sets)) {
+    // cable_sets의 extras(추가입력) 저장 (BUG-020: 로그 강화)
+    if (Array.isArray(body.cable_sets) && body.cable_sets.length > 0) {
       try {
         rawDb.prepare(`DELETE FROM work_report_extras WHERE report_id=?`).run(reportId)
         const extraStmt = rawDb.prepare(`INSERT INTO work_report_extras (report_id, set_no, item_key, qty) VALUES (?,?,?,?)`)
         let extraCount = 0
         for (const cs of body.cable_sets) {
           const setNo = cs.set_no || 1
-          if (Array.isArray(cs.extras)) {
-            for (const ex of cs.extras) {
-              const qty = Number(ex.qty)
-              if (ex.key && qty > 0) {
-                extraStmt.run(reportId, setNo, String(ex.key), qty)
-                extraCount++
-              }
+          const csExtras = cs.extras
+          if (!Array.isArray(csExtras)) {
+            console.warn(`[WR-POST] cable_sets[set_no=${setNo}].extras가 배열이 아님: ${typeof csExtras}`)
+            continue
+          }
+          console.log(`[WR-POST] set_no=${setNo} extras 수신: ${csExtras.length}개`)
+          for (const ex of csExtras) {
+            const qty = Number(ex.qty)
+            const key = ex.key || ex.item_key || ''
+            if (key && qty > 0) {
+              extraStmt.run(reportId, setNo, String(key), qty)
+              extraCount++
+              console.log(`[WR-POST]   extras INSERT: key="${key}", qty=${qty}`)
             }
           }
         }
-        console.log(`[work-reports POST] extras 저장 완료: reportId=${reportId}, 저장항목=${extraCount}`)
+        console.log(`[WR-POST] extras 저장 완료: reportId=${reportId}, 저장항목=${extraCount}`)
       } catch(extrasErr: any) {
-        console.error('[work-reports POST] extras 저장 실패:', extrasErr.message)
+        console.error('[WR-POST] extras 저장 실패:', extrasErr.message)
       }
     } else {
-      console.log(`[work-reports POST] cable_sets 없음 — extras 저장 스킵 (reportId=${reportId})`)
+      if (!Array.isArray(body.cable_sets)) {
+        console.warn(`[WR-POST] ⚠️ cable_sets가 배열이 아님: typeof=${typeof body.cable_sets}`)
+      } else {
+        console.log(`[WR-POST] cable_sets 빈 배열 — extras 저장 스킵 (reportId=${reportId})`)
+      }
     }
 
     return c.json({ ok: true, reportId })

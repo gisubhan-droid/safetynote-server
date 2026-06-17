@@ -817,21 +817,75 @@ body {
   /* 상단 헤더 */
   .top-header { padding: 0 12px; }
 
-  /* 모달 → 하단 시트 방식 */
-  .modal-overlay { align-items: flex-end !important; }
+  /* ── 모바일 모달 → 전체화면 방식 ──────────────────────────────── */
+  /* 업무 모달(기본): 헤더(56px) 아래부터 전체화면 */
+  .modal-overlay {
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    padding: 0 !important;
+    top: 56px !important;           /* top-header 높이 — 헤더가 항상 위에 표시됨 */
+    background: rgba(0,0,0,0) !important;  /* 배경 dim 제거 */
+    backdrop-filter: none !important;
+  }
   .modal {
-    width: 100% !important; max-width: 100% !important;
-    border-radius: 20px 20px 0 0 !important;
-    max-height: 92vh; overflow-y: auto;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: calc(100dvh - 56px) !important;  /* 헤더 아래 전체 높이 */
+    max-height: none !important;
+    border-radius: 0 !important;
+    overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;   /* 스크롤이 배경으로 전파되지 않음 */
   }
-  /* 핸들 바 */
-  .modal::before {
-    content: ''; display: block;
-    width: 40px; height: 4px;
-    background: #D1D5DB; border-radius: 2px;
-    margin: 8px auto 4px;
+  /* 핸들바 제거 (전체화면에서 불필요) */
+  .modal::before { display: none !important; }
+  /* modal-header: 닫기 버튼이 헤더에 가려지지 않도록 sticky 유지 */
+  .modal-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+    min-height: 52px;
   }
+  /* 닫기 버튼 터치 타겟 44×44px 보장 */
+  .modal-header > button:last-child,
+  .modal-header button[onclick*="remove"] {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+    font-size: 20px !important;
+  }
+  /* modal-content (교육등록 등) 동일 적용 */
+  .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: calc(100dvh - 56px) !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
+
+  /* ── 소형 확인 팝업 예외 (modal-sm): 기존 중앙 팝업 유지 ─────── */
+  .modal-overlay.modal-sm {
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 20px !important;
+    top: 0 !important;
+    background: rgba(0,0,0,0.5) !important;
+    backdrop-filter: blur(2px) !important;
+  }
+  .modal-overlay.modal-sm .modal {
+    width: 100% !important;
+    max-width: 420px !important;
+    height: auto !important;
+    max-height: 85vh !important;
+    border-radius: 20px !important;
+    overscroll-behavior: auto;
+  }
+  .modal-overlay.modal-sm .modal::before { display: none !important; }
 
   /* 버튼 탭 영역 44px */
   .btn { min-height: 44px; padding-top: 10px; padding-bottom: 10px; }

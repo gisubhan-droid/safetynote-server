@@ -750,7 +750,7 @@ async function getGPSAddressWithConsent() {
     if (existing) existing.remove();
 
     const m = document.createElement('div');
-    m.className = 'modal-overlay';
+    m.className = 'modal-overlay modal-sm';
     m.id = 'gpsConsentModal';
     m.style.zIndex = '99999';
     m.innerHTML = `
@@ -815,7 +815,7 @@ function showGpsPermissionModal(retryFn) {
   const existing = document.getElementById('gpsPermissionModal');
   if (existing) existing.remove();
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.id = 'gpsPermissionModal';
   m.style.zIndex = '99999';
   m.innerHTML = `
@@ -1006,7 +1006,7 @@ function showMapModal(address) {
   }
 
   const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay modal-sm';
   modal.style.zIndex = '9999';
   modal.innerHTML = `
     <div class="modal" style="max-width:360px">
@@ -1908,7 +1908,7 @@ async function submitSelfRegister() {
     document.querySelector('.modal-overlay')?.remove();
     // 성공 알림 (모달)
     const ok = document.createElement('div');
-    ok.className = 'modal-overlay';
+    ok.className = 'modal-overlay modal-sm';
     ok.innerHTML = `
     <div class="modal" style="max-width:400px;text-align:center">
       <div class="modal-body py-8">
@@ -5098,7 +5098,7 @@ async function showAddWorkerModal(taskId) {
     }
 
     const m = document.createElement('div');
-    m.className = 'modal-overlay';
+    m.className = 'modal-overlay modal-sm';
     m.style.zIndex = '99999';
 
     let listHtml = '';
@@ -5597,7 +5597,7 @@ function showConfirmDialog(title, message = '', confirmLabel = '확인', cancelL
     const t = T[key];
 
     const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
+    overlay.className = 'modal-overlay modal-sm';
     overlay.style.cssText = 'z-index:999999';
     overlay.innerHTML = `
       <div class="modal" style="max-width:380px;padding:0;border-radius:20px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.18)">
@@ -5659,7 +5659,7 @@ function _confirmCompletedConTaskCreate(conTitle) {
 // 작업 분류 빠른 변경 모달 (4종)
 function showChangeWorkClassModal(taskId, currentClass) {
   const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay modal-sm';
   const wcList = [
     { value:'cable_install',   label:'광케이블 시설',    icon:'fas fa-ethernet',      color:'blue'   },
     { value:'cable_splice',    label:'광케이블 접속',    icon:'fas fa-plug',           color:'indigo' },
@@ -6891,7 +6891,7 @@ async function _submitWorkStop(taskId) {
 // 작업 완료 확인 (작업중 → work_completed) — 커스텀 모달
 function confirmWorkComplete(taskId) {
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.innerHTML = `
   <div class="modal" style="max-width:360px">
     <div class="modal-header" style="background:linear-gradient(135deg,#4E3A63,#D70072);color:white">
@@ -6942,7 +6942,7 @@ function confirmWorkComplete(taskId) {
 // 작업자 직접 배정 (작업자가 자신을 배정)
 function selfAssignTask(taskId) {
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.innerHTML = `
   <div class="modal" style="max-width:360px">
     <div class="modal-header" style="background:linear-gradient(135deg,#685182,#685182);color:white">
@@ -6993,7 +6993,7 @@ function changeTaskStatus(taskId, newStatus) {
   const icon = iconMap[newStatus] || 'fa-sync-alt';
   const grad = colorMap[newStatus] || '#685182,#C6C6C6';
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.innerHTML = `
   <div class="modal" style="max-width:360px">
     <div class="modal-header" style="background:linear-gradient(135deg,${grad});color:white">
@@ -7401,7 +7401,7 @@ async function deleteWorkLogAttachment(attId, logId, taskId) {
 // 첨부파일 삭제
 function deleteAttachment(attId, taskId) {
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.innerHTML = `
   <div class="modal" style="max-width:340px">
     <div class="modal-header" style="background:linear-gradient(135deg,#A8005A,#D70072);color:white">
@@ -7454,7 +7454,7 @@ function loadPhotoData(img, photoId) {
 
 async function showPhotoData(photoId, caption) {
   const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
     <div class="bg-white rounded-2xl overflow-hidden max-w-2xl w-full mx-4">
       <div class="flex justify-between items-center p-4 border-b">
@@ -7473,7 +7473,7 @@ async function showPhotoData(photoId, caption) {
 
 async function showVideoData(videoId, caption) {
   const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
     <div class="bg-black rounded-2xl overflow-hidden max-w-2xl w-full mx-4">
       <div class="flex justify-between items-center p-4 border-b border-gray-700">
@@ -7492,7 +7492,7 @@ async function showVideoData(videoId, caption) {
 
 function deleteMedia(photoId, caption, closeModal) {
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.style.zIndex = '10000';
   m.innerHTML = `
   <div class="modal" style="max-width:340px">
@@ -8091,7 +8091,7 @@ async function showTbmForm(taskId) {
           <span style="font-size:12px"> ${u.label}</span></li>`
       ).join('');
       const m = document.createElement('div');
-      m.className = 'modal-overlay';
+      m.className = 'modal-overlay modal-sm';
       m.innerHTML = `
       <div class="modal" style="max-width:420px">
         <div class="modal-header" style="background:linear-gradient(135deg,#991B1B,#DC2626);color:white">
@@ -8452,7 +8452,7 @@ async function submitTbm(taskId) {
 // TBM 완료 직후 서명 요청 유도 모달 (비근로자 전용)
 function _showTbmSignRequestPrompt(tbmId, taskId, attendees) {
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.innerHTML = `
   <div class="modal" style="max-width:420px;text-align:center">
     <div class="modal-body" style="padding:28px 24px 20px">
@@ -9666,7 +9666,7 @@ async function _tbmCollectSign(tbmId, unsignedNames) {
 
   // 진행 상태 모달
   const prog = document.createElement('div');
-  prog.className = 'modal-overlay';
+  prog.className = 'modal-overlay modal-sm';
   prog.style.zIndex = '10010';
   prog.innerHTML = `
   <div class="modal" style="max-width:380px;text-align:center">
@@ -9745,7 +9745,7 @@ async function _tbmEditAttendees(tbmId, attendees) {
 
   // 편집 모달 생성
   const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay modal-sm';
   modal.style.zIndex = '10010';
   modal.innerHTML = `
   <div class="modal" style="max-width:420px">
@@ -11835,7 +11835,7 @@ async function showInspectionDetail(id) {
 
 function showInsPhotoData(photoId, caption) {
   const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
     <div class="bg-white rounded-2xl overflow-hidden max-w-2xl w-full mx-4">
       <div class="flex justify-between items-center p-4 border-b">
@@ -11849,7 +11849,7 @@ function showInsPhotoData(photoId, caption) {
 
 function showInsVideoData(videoId) {
   const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
     <div class="bg-black rounded-2xl overflow-hidden max-w-2xl w-full mx-4">
       <div class="flex justify-between items-center p-4 border-b border-gray-700">
@@ -11864,7 +11864,7 @@ function showInsVideoData(videoId) {
 // 점검 사진/동영상 삭제
 function deleteInsMedia(photoId, inspectionId) {
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.style.zIndex = '10000';
   m.innerHTML = `
   <div class="modal" style="max-width:340px">
@@ -14100,7 +14100,7 @@ async function _submitAddLegalNotice() {
 // 법령안내 삭제
 async function _deleteLegalNotice(key, title) {
   const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
+  overlay.className = 'modal-overlay modal-sm';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px';
   overlay.innerHTML = `
   <div style="background:white;border-radius:16px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
@@ -17844,7 +17844,7 @@ async function submitChecklist(taskId) {
   if (problemRows.length > 0) {
     // 경고 팝업 표시
     const warningModal = document.createElement('div');
-    warningModal.className = 'modal-overlay';
+    warningModal.className = 'modal-overlay modal-sm';
     warningModal.style.zIndex = '9999';
     warningModal.innerHTML = `
     <div class="modal" style="max-width:420px">
@@ -18158,7 +18158,7 @@ function _refreshTbmPhotoModalStatus(assId, taskId) {
 
 function deleteTbmSectionPhoto(photoItemId, assId, label, taskId, sectionId) {
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.style.zIndex = '10000';
   m.innerHTML = `
   <div class="modal" style="max-width:340px">
@@ -19361,7 +19361,7 @@ ${(() => {
 // 팀 수정 모달 (사용자현황 팀탭에서 호출)
 async function showEditTeamModal(teamId, currentName, currentDesc) {
   const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
   <div class="modal" style="max-width:420px">
     <div class="modal-header" style="background:linear-gradient(135deg,#685182,#D70072);border-radius:20px 20px 0 0;border-bottom:none;padding:18px 24px">
@@ -19665,7 +19665,7 @@ async function saveTeamMembers(teamId) {
 
 function deleteTeam(teamId, teamName) {
   const m = document.createElement('div');
-  m.className = 'modal-overlay';
+  m.className = 'modal-overlay modal-sm';
   m.innerHTML = `
   <div class="modal" style="max-width:360px">
     <div class="modal-header" style="background:linear-gradient(135deg,#4E3A63,#D70072);color:white">
@@ -19705,7 +19705,7 @@ async function showUserQrModal(userId, userName, teamName, position) {
   teamName = teamName || '';
   position = position || '';
   const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay modal-sm';
   const profileUrl = window.location.origin + '/qr/' + userId;
 
   modal.innerHTML = `
@@ -21548,7 +21548,7 @@ async function _signReqSign(reqId, refType, refId) {
 // 서명 거부
 async function _signReqReject(reqId) {
   const bm = document.createElement('div');
-  bm.className = 'modal-overlay';
+  bm.className = 'modal-overlay modal-sm';
   bm.innerHTML = `
   <div class="modal" style="max-width:360px">
     <div class="modal-header" style="background:linear-gradient(135deg,#6B7280,#9CA3AF);color:white">
@@ -22598,7 +22598,7 @@ async function renderWorkStopsPage(container) {
     if (existing) existing.remove();
     const m = document.createElement('div');
     m.id = 'wsPhotoModal';
-    m.className = 'modal-overlay';
+    m.className = 'modal-overlay modal-sm';
     m.style.zIndex = '99999';
     m.innerHTML = `
     <div class="modal" style="max-width:380px;padding:0;border-radius:16px;overflow:hidden">
@@ -25006,6 +25006,19 @@ async function init() {
 
 // 시작
 document.addEventListener('DOMContentLoaded', init);
+
+// ── 모바일 전체화면 모달: 터치 스크롤이 배경(overlay)으로 전파되지 않도록 방지 ──
+// modal-sm(소형 확인팝업)은 제외, 업무 모달만 적용
+document.addEventListener('touchmove', function(e) {
+  const overlay = e.target.closest('.modal-overlay');
+  if (!overlay) return;
+  // 소형 확인 팝업(modal-sm)은 기존 방식 유지
+  if (overlay.classList.contains('modal-sm')) return;
+  // overlay 배경 직접 터치 시 스크롤 차단 (모달 내부 스크롤은 허용)
+  if (e.target === overlay) {
+    e.preventDefault();
+  }
+}, { passive: false });
 
 // ═══════════════════════════════════════════════════════════════
 // 현장공량관리 — 외선일보 목록 페이지

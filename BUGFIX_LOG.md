@@ -1765,3 +1765,54 @@ typeof Log !== 'undefined' && Log.d && Log.d('doApkDownload', 'installed version
 
 ### 커밋
 - `d51f355` — fix: APK 다운로드 ReferenceError(Log) + 다운로드 방식 개선 + 서비스워커 v10
+
+---
+
+## [BUG-002] 사진 탭 그룹 표시 미반영 — 최종 수정 (2026-06-17)
+
+### 재분석 결과 (Phase 1 안정화 세션)
+
+기존 BUGFIX_LOG에 "미해결"로 기록되어 있었으나 실제 원인 파악 완료.
+
+### 진짜 원인
+
+#### 1. UI — `TYPE_LABEL` / `TYPE_ORDER` / `TYPE_COLOR` 누락
+업로드 폼에 `hazard`(위험 상황), `tbm`(TBM), `completion`(완료) 3개 유형이 있으나
+렌더링 로직의 상수 테이블에 정의가 없었음:
+- `TYPE_LABEL[type]` → `undefined` → 유형 코드값 그대로 표시 (`hazard` 등)
+- `TYPE_COLOR[type]` → `undefined` → `|| 'bg-gray-500'` fallback으로 무채색 표시
+- `TYPE_ORDER[type]` → `undefined` → `?? 99` → 정렬 맨 뒤로 밀림
+- **2곳 동시 미반영**: `showTaskDetail` 최초 렌더링 + `_refreshPhotoTab` 갱신 함수
+
+#### 2. 서버 — `PHOTO_TYPE_DIRS` 누락
+NAS 파일 저장 시 폴더 분류에 사용하는 `PHOTO_TYPE_DIRS`에 동일 3개 유형 미정의:
+- `hazard`, `tbm`, `completion` → `PHOTO_TYPE_DIRS[type]` = `undefined`
+- `getUploadDir()` 내 `if (PHOTO_TYPE_DIRS[photoType])` 조건 미충족 → 폴더 미분류 저장
+
+### 수정 내용
+
+**app.js (2곳 동일 수정):**
+```javascript
+const TYPE_ORDER = { before:0, progress:1, after:2, hazard:3, tbm:4, completion:5 };
+const TYPE_LABEL = { before:'작업 전', progress:'작업 중', after:'작업 후',
+                     hazard:'위험 상황', tbm:'TBM', completion:'완료' };
+const TYPE_COLOR = { before:'bg-blue-500', progress:'bg-yellow-500', after:'bg-green-500',
+                     hazard:'bg-red-500', tbm:'bg-purple-500', completion:'bg-teal-500' };
+```
+
+**node-server.ts:**
+```typescript
+const PHOTO_TYPE_DIRS = {
+  before:'01_작업 전', progress:'02_작업 중', after:'03_작업 후',
+  hazard:'04_위험 상황', tbm:'05_TBM', completion:'06_완료',
+}
+```
+
+### ⚠️ 재발 방지
+- 업로드 폼 `<select>` 유형 추가 시 반드시 3곳 동시 업데이트:
+  1. `app.js` — `TYPE_ORDER`, `TYPE_LABEL`, `TYPE_COLOR` (showTaskDetail)
+  2. `app.js` — 동일 상수 (_refreshPhotoTab)
+  3. `node-server.ts` — `PHOTO_TYPE_DIRS`
+
+### 커밋
+- `b245c84` — fix: 사진 탭 유형 표시 누락 수정 (BUG-002)

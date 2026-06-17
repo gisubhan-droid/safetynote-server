@@ -1891,3 +1891,63 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 
 ### 커밋
 - `1efa79c` — fix: PC 브라우저 PWA 설치 배너 미표시 (BUG-007-PWA)
+
+---
+
+## [FEAT-025-TAB] 상세화면 탭바 스크롤 시 분리 — sticky 고정 (2026-06-17)
+
+### 증상
+- 모바일 작업 상세화면(showTaskDetail 모달) 내부 스크롤 시
+  탭바(기본정보 / 체크리스트 / 위험성평가 / TBM / 작업일지 / 사진 / 현장점검)가
+  콘텐츠와 함께 위로 스크롤되어 화면에서 사라짐
+- 탭이 사라지면 탭 전환 불가 → UX 저하
+
+### 원인
+- `.modal`이 `overflow-y: auto` 스크롤 컨테이너
+- `.tab-bar`에 `position: sticky` 미적용 → 일반 흐름으로 스크롤과 함께 이동
+
+### 해결
+```css
+/* PC 기준 — modal-header 높이 약 62px */
+.tab-bar {
+  position: sticky;
+  top: 62px;
+  z-index: 9;
+}
+
+/* 모바일 @media (max-width:768px) */
+.modal .tab-bar {
+  position: sticky !important;
+  top: 52px !important;        /* modal-header min-height 기준 */
+  z-index: 9 !important;
+  margin-left: -24px !important;   /* full width */
+  margin-right: -24px !important;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+```
+
+### 영향 범위
+- 탭바: 스크롤 시 modal-header 바로 아래 고정 ✅
+- 좌우 스크롤: overflow-x:auto 유지 → 탭 항목 가로 스크롤 정상 ✅
+- modal-sm 소형 팝업: tab-bar 미사용 → 영향 없음 ✅
+- 기타 .tab-bar 사용 화면(목록 필터 등): PC sticky top:62px 적용 — 해당 화면은 modal 밖이므로 top:62px가 화면 최상단 기준 → 스크롤 시 상단 고정됨 (의도된 동작)
+
+### 수정 파일
+- `public/static/style.css` — .tab-bar sticky 추가, @media 모바일 .modal .tab-bar 추가
+- `node-server.ts` — 캐시 버전 `20260617k` → `20260617l`
+
+### 롤백 태그
+| 태그 | 커밋 | 설명 |
+|------|------|------|
+| `rollback/pre-feat-tab-sticky` | `56a8999` | 수정 직전 상태 |
+
+**롤백 명령:**
+```bash
+git push origin 56a8999:main --force
+cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+```
+
+### 커밋
+- `ac214ca` — feat: 상세화면 탭바 sticky 고정 (FEAT-025-TAB)

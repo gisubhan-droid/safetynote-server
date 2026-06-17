@@ -209,6 +209,9 @@
   }, 200);
 
   // ── 6. 스와이프로 모달 닫기 ─────────────────────────────────────
+  // [FEAT-024] 모바일 전체화면 모달(modal-sm 아닌 것)은 스와이프 닫기 차단
+  // → 상세화면 내부 스크롤 시 팝업이 닫히는 문제 근본 원인
+  // modal-sm(소형 확인팝업)만 스와이프 닫기 허용
   let _sy = 0, _sx = 0;
   document.addEventListener('touchstart', e => {
     _sy = e.touches[0].clientY; _sx = e.touches[0].clientX;
@@ -220,6 +223,9 @@
       const modals = document.querySelectorAll('.modal-overlay');
       if (!modals.length) return;
       const top = modals[modals.length - 1];
+      // [FEAT-024] 전체화면 모달(modal-sm 아닌 것 + 모바일 폭)은 스와이프 닫기 차단
+      const isMobileFullscreen = !top.classList.contains('modal-sm') && window.innerWidth <= 768;
+      if (isMobileFullscreen) return;
       const sb = e.target.closest('.modal-body');
       if (!sb || sb.scrollTop === 0) {
         top.style.animation = 'snFadeOut .2s ease forwards';

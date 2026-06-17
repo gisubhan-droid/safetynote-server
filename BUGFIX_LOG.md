@@ -1691,11 +1691,19 @@ document.addEventListener('click', ..., true) // capture 단계에서 스크롤 
 ### 롤백 태그
 | 태그 | 커밋 | 설명 |
 |------|------|------|
-| `rollback/pre-feat-024` | `b7a0801` | FEAT-024 적용 직전 (FEAT-023 완료 후) |
+| `rollback/pre-feat-024` | `b7a0801` | FEAT-024 전체 작업 직전 (FEAT-023 완료 후) — 가장 안전한 완전 롤백 |
+| `rollback/pre-feat-024-v4` | `4008cfc` | FEAT-024 v4 적용 직전 (v3까지 적용된 상태) |
 
-**롤백 명령:**
+**롤백 명령 (전체 롤백 — FEAT-023 완료 상태로):**
 ```bash
 git push origin b7a0801:main --force
+# NAS:
+cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+```
+
+**롤백 명령 (v4만 롤백 — v3 상태로):**
+```bash
+git push origin 4008cfc:main --force
 # NAS:
 cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 ```

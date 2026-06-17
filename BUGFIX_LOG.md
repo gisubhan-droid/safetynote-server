@@ -1387,3 +1387,48 @@ if (extrasDDL.includes('work_reports_old')) {
 ### 결과
 - extras(추가입력) 저장 ✅ 정상 확인
 - 외선일보 케이블 + extras 전체 저장/복원 ✅ 완전 해결
+
+---
+
+## [FEAT-021] 공량내역 화면 헤더 가로 표시 + 컬럼 너비 드래그 조절 (2026-06)
+
+### 배경
+- 이전: 공종 컬럼 헤더가 `writing-mode:vertical-rl`로 세로 표시 → 뒤집힘 버그 발생
+- 요청 1: 헤더를 세로 대신 가로 1~2줄로 표시
+- 요청 2: 각 컬럼 너비를 엑셀처럼 드래그로 조절하고 저장
+
+### 수정 내용 (`public/static/app.js`)
+
+#### 헤더 표시 방식 변경
+- `writing-mode:vertical-rl` 완전 제거
+- `word-break:keep-all; white-space:normal; line-height:1.25` 적용 → 2자 이내 짧은 라벨은 1줄, 긴 이름은 자동 2줄 줄바꿈
+- 테이블 레이아웃: `table-layout:fixed` + 각 컬럼 기본 너비(px) 고정
+
+#### 컬럼 너비 드래그 리사이즈 (엑셀 방식)
+- 각 `<th>`의 오른쪽 경계에 5px 투명 드래그 핸들 추가 (cursor:col-resize)
+- `_frResizeStart / _frResizeMove / _frResizeEnd` 3단계 이벤트로 구현
+- 드래그 중 세로 가이드라인(보라색 1px 선) 표시
+- 너비 변경 시 `<tbody>/<tfoot>`의 동일 `data-col-idx` td도 즉시 동기화
+- **저장**: `localStorage['fr_cable_col_widths']`, `localStorage['fr_splice_col_widths']` (JSON 객체)
+- **복원**: 페이지 재진입 시 저장된 너비 자동 적용
+- **초기화**: `_frResetColWidths('cable'|'splice')` → localStorage 삭제 후 페이지 재렌더
+
+#### 하단 상태 바 개선
+- 숨김 컬럼 있음 → 기존 표시 유지
+- 너비 조정됨 → 새 표시 + "너비 초기화" 버튼 추가
+- 안내 문구 변경: "헤더 경계를 드래그해 컬럼 너비 조절 가능"
+
+### localStorage 키 목록
+| 키 | 내용 |
+|----|------|
+| `fr_cable_hidden_cols` | 외선 숨김 컬럼 인덱스 배열 |
+| `fr_cable_col_widths`  | 외선 컬럼 너비 맵 `{ci: px}` |
+| `fr_splice_hidden_cols`| 접속 숨김 컬럼 인덱스 배열 |
+| `fr_splice_col_widths` | 접속 컬럼 너비 맵 `{ci: px}` |
+
+### 롤백 태그
+- `rollback/pre-feat-volume-ui-v2` → FEAT-021 적용 직전 상태
+
+### 커밋
+- `73dfdb2` — fix: 공량내역 헤더 글씨 뒤집힘 수정 (rotate 제거)
+- *(이번)* — feat: 공량내역 헤더 가로 표시 + 컬럼 너비 드래그 조절

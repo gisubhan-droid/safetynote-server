@@ -25195,43 +25195,51 @@ async function renderFieldReportPage(container) {
         <!-- 데이터 테이블 -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="overflow-x-auto">
-            <table id="fr-cable-table" class="w-full text-xs border-collapse">
+            <table id="fr-cable-table" class="text-xs border-collapse" style="table-layout:fixed;width:100%;min-width:600px;">
+              <colgroup id="fr-cable-colgroup"></colgroup>
               <thead>
                 <tr class="bg-gray-50 text-gray-600 text-center">
                   ${(() => {
                     // 외선 컬럼 숨김 상태
                     const cableHidden = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
+                    const cableColWidths = JSON.parse(localStorage.getItem('fr_cable_col_widths') || '{}');
                     const cableAmtIdx = 7 + allItemKeys.length;
-                    // 세로회전 헤더 공통 스타일
-                    const vStyle = 'writing-mode:vertical-rl;white-space:nowrap;padding:6px 4px;min-height:56px;';
-                    const hStyle = 'white-space:nowrap;padding:6px 8px;';
+                    // 가로 1~2줄 표시 헤더 스타일 (세로 회전 없음)
+                    const thInner = (lbl, minW) =>
+                      `<div style="word-break:keep-all;white-space:normal;line-height:1.25;padding:5px 4px;min-width:${minW}px;font-size:11px;">${lbl}</div>`;
+                    // 리사이즈 핸들 (오른쪽 경계 드래그)
+                    const resizeHandle = ci =>
+                      `<div class="fr-col-resize-handle" data-table="cable" data-col="${ci}"
+                        style="position:absolute;right:0;top:0;bottom:0;width:5px;cursor:col-resize;z-index:2;background:transparent;"
+                        onmousedown="_frResizeStart(event,'cable',${ci})"></div>`;
                     const cHideBtn = ci => `<button onclick="_frCableToggleCol(${ci})" title="이 컬럼 숨기기"
-                      style="display:block;margin:2px auto 0;opacity:0.45;font-size:9px;cursor:pointer;"
-                      onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.45'">✕</button>`;
-                    // 고정 컬럼: 완료일/작업자/요청번호/구분은 가로, 수치 컬럼은 세로
+                      style="display:block;margin:1px auto 0;opacity:0.4;font-size:9px;cursor:pointer;line-height:1;"
+                      onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.4'">✕</button>`;
+                    const thStyle = (ci, defW) => {
+                      const w = cableColWidths[ci] || defW;
+                      return `position:relative;overflow:hidden;${cableHidden.includes(ci)?'display:none':'width:'+w+'px;'}`;
+                    };
+                    // 고정 컬럼 (완료일/작업자/요청번호/구분 + 수치컬럼 모두 가로)
                     const fixedThs = [
-                      { ci:0, bg:'',            style:hStyle, lbl:'완료일' },
-                      { ci:1, bg:'',            style:hStyle, lbl:'작업자(팀)' },
-                      { ci:2, bg:'',            style:hStyle, lbl:'요청번호' },
-                      { ci:3, bg:'',            style:hStyle, lbl:'구분' },
-                      { ci:4, bg:'bg-blue-50',  style:vStyle, lbl:'신설(M)' },
-                      { ci:5, bg:'bg-red-50',   style:vStyle, lbl:'철거(M)' },
-                      { ci:6, bg:'bg-purple-50',style:vStyle, lbl:'이설(M)' },
+                      { ci:0, bg:'',            lbl:'완료일',    defW:76 },
+                      { ci:1, bg:'',            lbl:'작업자(팀)', defW:72 },
+                      { ci:2, bg:'',            lbl:'요청번호',   defW:72 },
+                      { ci:3, bg:'',            lbl:'구분',      defW:52 },
+                      { ci:4, bg:'bg-blue-50',  lbl:'신설(M)',   defW:52 },
+                      { ci:5, bg:'bg-red-50',   lbl:'철거(M)',   defW:52 },
+                      { ci:6, bg:'bg-purple-50',lbl:'이설(M)',   defW:52 },
                     ];
-                    return fixedThs.map(({ci,bg,style,lbl}) =>
-                      `<th class="border border-gray-200 ${bg}" data-col-idx="${ci}"
-                        style="${cableHidden.includes(ci)?'display:none':''}">
-                        <div style="${style}">${lbl}</div>${cHideBtn(ci)}</th>`
+                    return fixedThs.map(({ci,bg,lbl,defW}) =>
+                      `<th class="border border-gray-200 ${bg}" data-col-idx="${ci}" style="${thStyle(ci,defW)}">
+                        ${thInner(lbl,defW-8)}${cHideBtn(ci)}${resizeHandle(ci)}</th>`
                     ).join('') +
                     allItemKeys.map((k,ki) => {
                       const ci = 7 + ki;
-                      return `<th class="border border-gray-200 bg-orange-50" data-col-idx="${ci}"
-                        style="${cableHidden.includes(ci)?'display:none':''}">
-                        <div style="${vStyle}">${k}</div>${cHideBtn(ci)}</th>`;
+                      return `<th class="border border-gray-200 bg-orange-50" data-col-idx="${ci}" style="${thStyle(ci,52)}">
+                        ${thInner(k,44)}${cHideBtn(ci)}${resizeHandle(ci)}</th>`;
                     }).join('') +
-                    (!isWorker ? `<th class="border border-gray-200 bg-green-50 font-bold" data-col-idx="${cableAmtIdx}"
-                      style="${cableHidden.includes(cableAmtIdx)?'display:none':''}">
-                      <div style="${hStyle}">합계금액(원)</div>${cHideBtn(cableAmtIdx)}</th>` : '');
+                    (!isWorker ? `<th class="border border-gray-200 bg-green-50 font-bold" data-col-idx="${cableAmtIdx}" style="${thStyle(cableAmtIdx,80)}">
+                      ${thInner('합계금액(원)',72)}${cHideBtn(cableAmtIdx)}${resizeHandle(cableAmtIdx)}</th>` : '');
                   })()}
                 </tr>
               </thead>
@@ -25296,15 +25304,21 @@ async function renderFieldReportPage(container) {
             </table>
           </div>
           ${(() => {
-            const cableHiddenChk = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
-            return cableHiddenChk.length > 0 ? `
-            <div class="px-3 py-1.5 bg-pink-50 border-t border-pink-100 text-xs text-pink-600 flex items-center gap-2 flex-wrap">
-              <span><i class="fas fa-eye-slash mr-1"></i>숨김 컬럼 있음</span>
-              <button onclick="_frCableShowAllCols()" class="underline hover:text-pink-800">모두 표시</button>
-            </div>` : '';
+            const cableHiddenChk  = JSON.parse(localStorage.getItem('fr_cable_hidden_cols')  || '[]');
+            const cableWidthsChk  = JSON.parse(localStorage.getItem('fr_cable_col_widths')   || '{}');
+            const hasHidden = cableHiddenChk.length > 0;
+            const hasWidths = Object.keys(cableWidthsChk).length > 0;
+            if (!hasHidden && !hasWidths) return '';
+            return `
+            <div class="px-3 py-1.5 bg-pink-50 border-t border-pink-100 text-xs text-pink-600 flex items-center gap-3 flex-wrap">
+              ${hasHidden ? `<span><i class="fas fa-eye-slash mr-1"></i>숨김 컬럼 있음
+                <button onclick="_frCableShowAllCols()" class="underline hover:text-pink-800 ml-1">모두 표시</button></span>` : ''}
+              ${hasWidths ? `<span><i class="fas fa-arrows-alt-h mr-1"></i>컬럼 너비 조정됨
+                <button onclick="_frResetColWidths('cable')" class="underline hover:text-pink-800 ml-1">너비 초기화</button></span>` : ''}
+            </div>`;
           })()}
         </div>
-        <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보가 표시됩니다 &nbsp;|
+        <p class="text-xs text-gray-400 text-right">* 헤더 경계를 드래그해 컬럼 너비 조절 가능 &nbsp;|
           <button onclick="renderCableDetailPage(document.getElementById('page-content'))" class="text-blue-500 hover:underline ml-1">광케이블 상세 현황 보기 →</button>
         </p>
       </div><!-- /fr-cable-section -->
@@ -25507,36 +25521,40 @@ async function _frLoadSpliceStats() {
         style="margin-left:4px;opacity:0.55;font-size:10px;line-height:1;vertical-align:middle;cursor:pointer;"
         onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.55'">✕</button>`;
 
-    // 접속 세로헤더 공통 스타일 (외선과 동일)
-    const spliceVStyle = 'writing-mode:vertical-rl;white-space:nowrap;padding:6px 4px;min-height:56px;';
-    const spliceHStyle = 'white-space:nowrap;padding:6px 8px;';
+    // 접속 헤더 스타일 (가로 1~2줄 표시)
+    const spliceColWidths = JSON.parse(localStorage.getItem('fr_splice_col_widths') || '{}');
+    const sThInner = (lbl, minW) =>
+      `<div style="word-break:keep-all;white-space:normal;line-height:1.25;padding:5px 4px;min-width:${minW}px;font-size:11px;">${lbl}</div>`;
+    const sResizeHandle = ci =>
+      `<div class="fr-col-resize-handle" data-table="splice" data-col="${ci}"
+        style="position:absolute;right:0;top:0;bottom:0;width:5px;cursor:col-resize;z-index:2;background:transparent;"
+        onmousedown="_frResizeStart(event,'splice',${ci})"></div>`;
+    const sThStyle = (ci, defW) => {
+      const w = spliceColWidths[ci] || defW;
+      return `position:relative;overflow:hidden;${spliceHiddenCols.includes(ci)?'display:none':'width:'+w+'px;'}`;
+    };
     resultDiv.innerHTML = `
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div class="overflow-x-auto">
-        <table id="fr-splice-table" class="w-full text-xs border-collapse">
+        <table id="fr-splice-table" class="text-xs border-collapse" style="table-layout:fixed;width:100%;min-width:500px;">
+          <colgroup id="fr-splice-colgroup"></colgroup>
           <thead>
             <tr class="bg-gray-50 text-gray-600 text-center">
-              <th class="border border-gray-200" data-col-idx="0"
-                style="${spliceHiddenCols.includes(0)?'display:none':''}">
-                <div style="${spliceHStyle}">완료일</div>${hideBtn(0)}</th>
-              <th class="border border-gray-200" data-col-idx="1"
-                style="${spliceHiddenCols.includes(1)?'display:none':''}">
-                <div style="${spliceHStyle}">작업자(팀)</div>${hideBtn(1)}</th>
-              <th class="border border-gray-200" data-col-idx="2"
-                style="${spliceHiddenCols.includes(2)?'display:none':''}">
-                <div style="${spliceHStyle}">요청번호</div>${hideBtn(2)}</th>
-              <th class="border border-gray-200" data-col-idx="3"
-                style="${spliceHiddenCols.includes(3)?'display:none':''}">
-                <div style="${spliceHStyle}">구분</div>${hideBtn(3)}</th>
+              <th class="border border-gray-200" data-col-idx="0" style="${sThStyle(0,76)}">
+                ${sThInner('완료일',68)}${hideBtn(0)}${sResizeHandle(0)}</th>
+              <th class="border border-gray-200" data-col-idx="1" style="${sThStyle(1,72)}">
+                ${sThInner('작업자(팀)',64)}${hideBtn(1)}${sResizeHandle(1)}</th>
+              <th class="border border-gray-200" data-col-idx="2" style="${sThStyle(2,72)}">
+                ${sThInner('요청번호',64)}${hideBtn(2)}${sResizeHandle(2)}</th>
+              <th class="border border-gray-200" data-col-idx="3" style="${sThStyle(3,52)}">
+                ${sThInner('구분',44)}${hideBtn(3)}${sResizeHandle(3)}</th>
               ${spliceItemKeys.map((k,ki) => {
                 const ci = 4 + ki;
-                return `<th class="border border-gray-200 bg-indigo-50" data-col-idx="${ci}"
-                  style="${spliceHiddenCols.includes(ci)?'display:none':''}">
-                  <div style="${spliceVStyle}">${k}</div>${hideBtn(ci)}</th>`;
+                return `<th class="border border-gray-200 bg-indigo-50" data-col-idx="${ci}" style="${sThStyle(ci,52)}">
+                  ${sThInner(k,44)}${hideBtn(ci)}${sResizeHandle(ci)}</th>`;
               }).join('')}
-              ${!isWorker ? `<th class="border border-gray-200 bg-green-50 font-bold" data-col-idx="${amtColIdx}"
-                style="${spliceHiddenCols.includes(amtColIdx)?'display:none':''}">
-                <div style="${spliceHStyle}">합계금액(원)</div>${hideBtn(amtColIdx)}</th>` : ''}
+              ${!isWorker ? `<th class="border border-gray-200 bg-green-50 font-bold" data-col-idx="${amtColIdx}" style="${sThStyle(amtColIdx,80)}">
+                ${sThInner('합계금액(원)',72)}${hideBtn(amtColIdx)}${sResizeHandle(amtColIdx)}</th>` : ''}
             </tr>
           </thead>
           <tbody>
@@ -25584,13 +25602,21 @@ async function _frLoadSpliceStats() {
           </tfoot>
         </table>
       </div>
-      ${spliceHiddenCols.length > 0 ? `
-      <div class="px-3 py-1.5 bg-indigo-50 border-t border-indigo-100 text-xs text-indigo-600 flex items-center gap-2 flex-wrap">
-        <span><i class="fas fa-eye-slash mr-1"></i>숨김 컬럼 있음</span>
-        <button onclick="_frSpliceShowAllCols()" class="underline hover:text-indigo-800">모두 표시</button>
-      </div>` : ''}
+      ${(() => {
+        const spliceWidthsChk = JSON.parse(localStorage.getItem('fr_splice_col_widths') || '{}');
+        const hasHidden2 = spliceHiddenCols.length > 0;
+        const hasWidths2 = Object.keys(spliceWidthsChk).length > 0;
+        if (!hasHidden2 && !hasWidths2) return '';
+        return `
+      <div class="px-3 py-1.5 bg-indigo-50 border-t border-indigo-100 text-xs text-indigo-600 flex items-center gap-3 flex-wrap">
+        ${hasHidden2 ? `<span><i class="fas fa-eye-slash mr-1"></i>숨김 컬럼 있음
+          <button onclick="_frSpliceShowAllCols()" class="underline hover:text-indigo-800 ml-1">모두 표시</button></span>` : ''}
+        ${hasWidths2 ? `<span><i class="fas fa-arrows-alt-h mr-1"></i>컬럼 너비 조정됨
+          <button onclick="_frResetColWidths('splice')" class="underline hover:text-indigo-800 ml-1">너비 초기화</button></span>` : ''}
+      </div>`;
+      })()}
     </div>
-    <p class="text-xs text-gray-400 text-right mt-1">* 임시저장 포함 모든 접속일보가 표시됩니다</p>`;
+    <p class="text-xs text-gray-400 text-right mt-1">* 헤더 경계를 드래그해 컬럼 너비 조절 가능</p>`;
   } catch(e) {
     if (resultDiv) resultDiv.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
@@ -25608,6 +25634,79 @@ function _frSpliceToggleCol(colIdx) {
 function _frSpliceShowAllCols() {
   localStorage.removeItem('fr_splice_hidden_cols');
   _frLoadSpliceStats();
+}
+
+// ── 컬럼 너비 드래그 리사이즈 (엑셀 방식) ──
+// tableKey: 'cable' | 'splice'
+// colIdx: data-col-idx 숫자
+var _frResizeState = null;
+function _frResizeStart(e, tableKey, colIdx) {
+  e.preventDefault();
+  e.stopPropagation();
+  const th = e.currentTarget.closest('th') || e.target.closest('th');
+  if (!th) return;
+  const startX   = e.clientX;
+  const startW   = th.offsetWidth;
+  const widthKey = 'fr_' + tableKey + '_col_widths';
+
+  _frResizeState = { tableKey, colIdx, th, startX, startW, widthKey };
+
+  // 드래그 중 커서 전체 화면 고정
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+
+  // 드래그 가이드라인 (세로선)
+  const guide = document.createElement('div');
+  guide.id = 'fr-resize-guide';
+  guide.style.cssText =
+    'position:fixed;top:0;bottom:0;width:2px;background:#6366f1;opacity:0.7;z-index:9999;pointer-events:none;';
+  guide.style.left = e.clientX + 'px';
+  document.body.appendChild(guide);
+  _frResizeState.guide = guide;
+
+  document.addEventListener('mousemove', _frResizeMove);
+  document.addEventListener('mouseup',   _frResizeEnd);
+}
+function _frResizeMove(e) {
+  if (!_frResizeState) return;
+  const { th, startX, startW, guide } = _frResizeState;
+  const newW = Math.max(32, startW + (e.clientX - startX));
+  th.style.width = newW + 'px';
+  if (guide) guide.style.left = e.clientX + 'px';
+}
+function _frResizeEnd(e) {
+  if (!_frResizeState) return;
+  const { tableKey, colIdx, th, startX, startW, widthKey, guide } = _frResizeState;
+  const newW = Math.max(32, startW + (e.clientX - startX));
+
+  // localStorage 저장
+  const widths = JSON.parse(localStorage.getItem(widthKey) || '{}');
+  widths[colIdx] = newW;
+  localStorage.setItem(widthKey, JSON.stringify(widths));
+
+  // 같은 테이블의 tbody/tfoot td 너비도 동기화
+  const tableId = tableKey === 'cable' ? 'fr-cable-table' : 'fr-splice-table';
+  const table   = document.getElementById(tableId);
+  if (table) {
+    table.querySelectorAll(`td[data-col-idx="${colIdx}"]`).forEach(td => {
+      td.style.width = newW + 'px';
+    });
+  }
+
+  // 정리
+  if (guide) guide.remove();
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  document.removeEventListener('mousemove', _frResizeMove);
+  document.removeEventListener('mouseup',   _frResizeEnd);
+  _frResizeState = null;
+}
+
+// 컬럼 너비 초기화
+function _frResetColWidths(tableKey) {
+  localStorage.removeItem('fr_' + tableKey + '_col_widths');
+  if (tableKey === 'cable') renderFieldReportPage(document.getElementById('page-content'));
+  else _frLoadSpliceStats();
 }
 
 function downloadFieldReportCSV() {

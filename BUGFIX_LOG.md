@@ -2678,3 +2678,121 @@ NAS :3444  HTTP  전용 (Android HttpURLConnection FCM 등록 전용, 내부망 
 
 **⚠️ 이 구조를 변경하려면 반드시 BUGFIX_LOG RULE-004 확인 후 진행**
 
+---
+
+## [BUG-011] FCM 토큰 등록 성공 후에도 알림 미도달 (2026-06-18)
+
+### 증상
+- v1.4.7 APK 설치 후 FCM 토큰 DB 등록 확인 (`[FCM] 토큰 등록 — user:10(한기섭) ...`)
+- 그러나 작업 상태 변경, TBM 결재 등 알림 트리거 발생 시 기기에 알림 미도달
+
+### 의심 원인 (현재 진단 중)
+
+#### 원인 A (최우선 의심): NAS `.env`에 FCM 환경변수 미설정
+- `src/fcm.ts`의 `sendFcmPushMulti()` 내부에서 환경변수 미설정 시 **조용히 실패**
+  ```typescript
+  if (!projectId || !clientEmail || !privateKey) {
+    console.warn('[FCM] 환경변수 미설정 — 발송 생략')
+    return { sent: 0, failed: fcmTokens.length }  // ← 로그만 남기고 조용히 종료
+  }
+  ```
+- 이전 `sendFcmToUsers()` 도 환경변수 체크 없이 `sendFcmPushMulti()` 에 위임 → 발송 실패 로그가 PM2 아웃 로그에 나타나지 않았음
+
+#### 원인 B: FCM 발송 트리거 자체가 호출되지 않음
+- `sendFcmToUsers()` 는 TBM 결재, 작업 상태 변경 등 특정 이벤트에서만 호출
+- 테스트 중 해당 이벤트가 발생하지 않았을 가능성
+
+#### 원인 C: Android 알림 채널 미등록
+- `src/fcm.ts`에서 `channel_id: 'safetynote_push'` 지정
+- Android 앱 내 해당 채널이 등록되지 않으면 알림이 수신되어도 표시 안 됨
+
+### 해결 — 진단 도구 추가 (`d5bfc70`)
+
+#### 1. `sendFcmToUsers()` / `sendFcmToRoles()` 로그 강화
+- 환경변수 미설정 시 명시적 경고 로그 추가:
+  ```
+  [FCM] ⚠️ 환경변수 미설정 — FCM_PROJECT_ID:false FCM_CLIENT_EMAIL:false FCM_PRIVATE_KEY:false — 발송 생략 (target:[10])
+  ```
+- 발송 전 시도 로그 추가:
+  ```
+  [FCM] 발송 시도 — "작업상태 변경" → target:[10] tokens:1개
+  [FCM] 발송 완료 — sent:1 failed:0 target:[10]
+  ```
+
+#### 2. `GET /api/push/diagnose` 신규 API
+관리자/감독자 권한으로 FCM 전체 파이프라인 진단:
+```bash
+curl -sk https://linkmax.myds.me:3443/api/push/diagnose \
+  -H "Authorization: Bearer [관리자토큰]"
+```
+응답 구조:
+```json
+{
+  "env": {
+    "FCM_PROJECT_ID": "✅ 설정됨 (safetynote-xxxxx)",
+    "FCM_CLIENT_EMAIL": "✅ 설정됨 (firebase-adminsdk...)",
+    "FCM_PRIVATE_KEY": "✅ 설정됨 (길이: 1678자)",
+    "all_set": true
+  },
+  "oauth2": "✅ OAuth2 access_token 취득 성공 (FCM 서버 응답 확인됨)",
+  "registered_tokens": { "count": 2, "users": [...] },
+  "test_send": "(생략) test_token 쿼리 파라미터로 실제 발송 테스트 가능",
+  "diagnosis": "✅ FCM 환경 정상 — 발송 가능 상태"
+}
+```
+
+실제 기기 발송 테스트:
+```bash
+curl -sk "https://linkmax.myds.me:3443/api/push/diagnose?test_token=기기의_FCM_토큰" \
+  -H "Authorization: Bearer [관리자토큰]"
+```
+
+#### 3. `GET /api/push/status` 강화
+- `token_preview`: 토큰 앞 25자 미리보기 추가 (등록 여부 직관적 확인)
+- `without_token`: 토큰 미등록 사용자 수 필드 추가
+
+### 진단 순서 (NAS에서 실행)
+
+```bash
+# STEP 1: 환경변수 설정 여부 확인
+grep -i "FCM_PROJECT\|FCM_CLIENT\|FCM_PRIVATE" /volume1/safetynote/.env
+
+# STEP 2: PM2 로그에서 FCM 관련 로그 확인 (NAS git pull + restart 후)
+grep -i "\[FCM\]" /root/.pm2/logs/safetynote-out.log | tail -20
+
+# STEP 3: diagnose API 호출 (관리자 토큰 필요)
+curl -sk https://linkmax.myds.me:3443/api/push/diagnose \
+  -H "Authorization: Bearer [관리자토큰]"
+
+# STEP 4: 환경변수 미설정 확인 시 → .env에 추가 후 restart
+nano /volume1/safetynote/.env
+# 아래 3줄 추가:
+# FCM_PROJECT_ID=your-firebase-project-id
+# FCM_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com
+# FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+pm2 restart safetynote
+
+# STEP 5: 실기기 FCM 토큰으로 직접 발송 테스트
+curl -sk "https://linkmax.myds.me:3443/api/push/diagnose?test_token=기기토큰" \
+  -H "Authorization: Bearer [관리자토큰]"
+```
+
+### Firebase 서비스 계정 키 발급 방법
+1. [Firebase Console](https://console.firebase.google.com) → 프로젝트 선택
+2. 톱니바퀴 → **프로젝트 설정** → **서비스 계정** 탭
+3. **새 비공개 키 생성** 클릭 → JSON 파일 다운로드
+4. JSON 내용에서 추출:
+   - `project_id` → `FCM_PROJECT_ID`
+   - `client_email` → `FCM_CLIENT_EMAIL`
+   - `private_key` → `FCM_PRIVATE_KEY` (줄바꿈 `\n` 그대로 유지)
+
+### 상태
+- [ ] **원인 확정 전** — NAS에서 diagnose API 호출 후 결과 확인 필요
+- [ ] FCM 환경변수 설정 → pm2 restart → diagnose API 재확인
+- [ ] 실기기 알림 수신 확인
+
+### 연관 커밋
+| 커밋 | 내용 |
+|------|------|
+| `d5bfc70` | FCM 진단 API + sendFcmToUsers 로그 강화 |
+

@@ -1,10 +1,10 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-18 (세션 32)
-> **서버 현재 버전: 438c1e1** ← 최신
-> **NAS 배포 버전: 438c1e1** ✅ git pull 완료 + HTTP 3444 포트 확인
+> 최종 업데이트: 2026-06-18 (세션 33)
+> **서버 현재 버전: d5bfc70** ← 최신
+> **NAS 배포 버전: 438c1e1** ⚠️ git pull 필요 (d5bfc70 미반영)
 > **캐시 버전: v=20260618a**
-> **APK 최신**: v1.4.7 빌드 진행 중
+> **APK 최신**: v1.4.7 빌드 중 (Run #27752523683)
 
 ---
 
@@ -2177,5 +2177,83 @@ http://...:3444 응답:  {"error":"인증 필요"}  ✅  (이전: 빈 응답)
 
 ### 세션 32 미완료 → 다음 세션
 - [x] **NAS git pull** — `438c1e1` 반영 + 3444 포트 응답 확인 ✅
-- [ ] **v1.4.7 APK 빌드** — GitHub Actions 트리거 필요
+- [ ] **v1.4.7 APK 빌드** — GitHub Actions 트리거 필요 (Run #27752523683 진행 중)
 - [ ] **실기기 재테스트** — v1.4.7 설치 → 로그인 → FCM 등록 수 증가 확인
+
+---
+
+## 세션 33 (2026-06-18) — FCM 알림 미도달 진단 + 진단 API 추가
+
+### 문제 분석 (BUG-011)
+FCM 토큰 등록은 확인됐으나 알림이 기기에 도달하지 않음.
+
+**확인된 상태**:
+```
+NAS 로그:
+[FCM] 토큰 등록 — user:10(한기섭) token:e4relGXPSh-ywaweRTZl...
+[FCM] 토큰 등록 — user:39(전용찬) token:e4relGXPSh-ywaweRTZl...
+```
+→ 토큰 DB 저장은 정상이나, **발송 단계에서 조용히 실패** 가능성
+
+**근본 원인 (유력)**:
+`sendFcmPushMulti()` 내부에서 `FCM_PROJECT_ID` / `FCM_CLIENT_EMAIL` / `FCM_PRIVATE_KEY`
+환경변수 미설정 시 `console.warn` 한 줄만 남기고 `{sent:0, failed:N}` 반환 — **아무 로그도 PM2 out에 나타나지 않았음**.
+
+### 완료된 작업
+
+#### 1. `sendFcmToUsers()` / `sendFcmToRoles()` 로그 강화 (`d5bfc70`)
+- 환경변수 사전 체크 + 명시적 경고 로그:
+  ```
+  [FCM] ⚠️ 환경변수 미설정 — FCM_PROJECT_ID:false ... — 발송 생략 (target:[10])
+  ```
+- 발송 시도 로그:
+  ```
+  [FCM] 발송 시도 — "작업상태 변경" → target:[10] tokens:1개
+  [FCM] 발송 완료 — sent:1 failed:0 target:[10]
+  ```
+
+#### 2. `GET /api/push/diagnose` 신규 API (`d5bfc70`)
+단계별 FCM 파이프라인 진단:
+- **①** 환경변수 3개 설정 여부 즉시 확인
+- **②** 더미 토큰으로 OAuth2 access_token 취득 테스트 (Google 서버 연결 확인)
+- **③** DB에 등록된 FCM 토큰 목록 + 미리보기
+- **④** `?test_token=` 파라미터로 실제 기기 발송 테스트
+
+#### 3. `GET /api/push/status` 강화 (`d5bfc70`)
+- `token_preview` 필드 추가 (앞 25자 + `...`)
+- `without_token` 카운트 필드 추가
+
+### 커밋 이력
+| 레포 | 해시 | 내용 |
+|------|------|------|
+| safetynote-server | `d5bfc70` | FCM 진단 API + sendFcmToUsers 로그 강화 |
+
+### 세션 33 이후 해야 할 것
+1. **NAS에서 순서대로 실행**:
+   ```bash
+   # 1. 코드 반영
+   cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+
+   # 2. 환경변수 확인
+   grep -i "FCM_PROJECT\|FCM_CLIENT\|FCM_PRIVATE" /volume1/safetynote/.env
+
+   # 3. diagnose API 호출 (관리자 토큰 필요)
+   curl -sk https://linkmax.myds.me:3443/api/push/diagnose \
+     -H "Authorization: Bearer [관리자토큰]"
+   ```
+
+2. **환경변수 미설정 확인 시** → Firebase Console에서 서비스 계정 키 발급 → `.env` 추가 → `pm2 restart`
+
+3. **diagnose env.all_set=true 확인 후** → 실기기 FCM 발송 테스트:
+   ```bash
+   curl -sk "https://linkmax.myds.me:3443/api/push/diagnose?test_token=기기FCM토큰" \
+     -H "Authorization: Bearer [관리자토큰]"
+   ```
+
+4. **v1.4.7 APK 빌드 완료** 확인 → 실기기 설치 → 알림 수신 테스트
+
+### 버전 테이블
+| 버전 | 날짜 | 빌드 상태 | 주요 변경 |
+|------|------|-----------|---------| 
+| v1.4.6 | 2026-06-18 | ✅ | SSL 폴백 + APK 브릿지 (BUG-010-1/2) |
+| **v1.4.7** | **2026-06-18** | **빌드 중** | **HTTP 3444 포트 FCM 등록 (BUG-010-4)** |

@@ -1987,8 +1987,8 @@ GET    /api/push/status    — 토큰 등록 현황 (admin/supervisor)
 | 해시 | 설명 |
 |------|------|
 | `65b9c51` | docs: 세션 30 — PROJECT_HISTORY 빌드 완료 확인 반영 — safetynote-server |
-| (이번 세션) | fix: BUG-009 JS→SharedPreferences JWT 브릿지 구현 (v1.4.5) — safetynote-android |
-| (이번 세션) | fix: BUG-009 app.js doLogin/doLogout 브릿지 호출 추가 — safetynote-server |
+| `06380c1` | fix: BUG-009 JS→SharedPreferences JWT 브릿지 구현 (v1.4.5) — safetynote-android |
+| `decb91e` | fix: BUG-009 app.js doLogin/doLogout 브릿지 호출 추가 — safetynote-server |
 
 ### 주요 작업 — BUG-009 수정 (FCM JWT 브릿지)
 
@@ -2011,7 +2011,7 @@ GET    /api/push/status    — 토큰 등록 현황 (admin/supervisor)
 | 버전 | 날짜 | 빌드 상태 | 주요 변경 내용 |
 |------|------|-----------|----------------|
 | **v1.4.4** | **2026-06-18** | ✅ **빌드 완료 + 설치 확인** | 서버 설정 화면 개선(BUG-008) |
-| **v1.4.5** | **2026-06-18** | 🔲 빌드 예정 | FCM JWT 브릿지 수정(BUG-009) — 로그인 후 FCM 토큰 서버 등록 |
+| **v1.4.5** | **2026-06-18** | ✅ **빌드 완료** | FCM JWT 브릿지 수정(BUG-009) — 로그인 후 FCM 토큰 서버 등록 |
 
 ### 세션 30 미완료 → 다음 세션
 - [ ] **실기기 FCM 수신 테스트** — v1.4.5 재설치 → 로그인 → `/api/push/status` 토큰 등록 확인 → 관리자 발송

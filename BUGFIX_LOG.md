@@ -2245,7 +2245,7 @@ function testConnection() {
 - 접속 테스트 버튼은 최초 APK와 동일하게 항상 포함
 
 ### 커밋
-- 이번 세션 커밋 (safetynote-android repo)
+- `c74b6ab` (safetynote-android repo)
 
 ---
 
@@ -2372,7 +2372,7 @@ function doConnect(url) {
 | `safetynote-android/.github/workflows/build-apk.yml` | 버전 기본값 `1.4.5`로 업데이트 |
 
 ### 커밋
-- `safetynote-android`: (이번 세션)
-- `safetynote-server`: (이번 세션)
+- `safetynote-android`: `06380c1`
+- `safetynote-server`: `decb91e`
 
 ---

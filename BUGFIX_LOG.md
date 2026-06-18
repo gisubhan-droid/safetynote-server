@@ -3065,3 +3065,53 @@ console.log(`[FCM] 토큰 ${isUpdate ? '갱신' : '신규등록'} — user:${use
 - FCM 토큰 등록 현황은 발송 전 UI에서 **시각적으로 명확히 표시** (RED 경고)
 - `push/register` 로그에 등록 전후 토큰 수 출력으로 트러블슈팅 용이화
 
+
+---
+
+## [BUG-022] 수동 푸시 발송 버튼 클릭 시 아무 반응 없음 (2026-06-18)
+
+### 증상
+- 관리자 시스템 설정 → 제목/내용 입력 후 "푸시 알림 발송" 버튼 클릭 시
+  확인 다이얼로그도 안 뜨고 아무 반응 없음
+- 서버 로그에도 아무 기록 없음
+
+### 근본 원인
+`sendManualPush()` 내부에서 존재하지 않는 `showConfirm()` 함수 호출:
+```javascript
+// ❌ 잘못된 코드 — showConfirm 함수 미존재
+const confirmed = await showConfirm(`「${targetLabel}」에게 ...`);
+if (!confirmed) return;  // undefined → !undefined = true → 즉시 return
+```
+- `showConfirm()` 는 앱에 정의되지 않은 함수
+- `await undefined` → `undefined` 반환
+- `!confirmed` → `!undefined` → `true` → 즉시 `return`
+- 결과: 버튼 클릭 시 **아무 반응 없이 즉시 종료**
+
+실제 확인 다이얼로그 함수명: **`showConfirmDialog(title, message, confirmLabel, cancelLabel, type)`**
+
+### ⚠️ 재발 방지 규칙
+- 확인 다이얼로그 호출 시 반드시 `showConfirmDialog()` 사용
+- 단축 헬퍼: `showDeleteConfirm`, `showWarningConfirm`, `showInfoConfirm`, `showSuccessConfirm`
+- `showConfirm` 이라는 이름의 함수는 **존재하지 않음** — 절대 사용 금지
+
+### 해결 (`fcabd66`)
+```javascript
+// ✅ 수정된 코드 — showConfirmDialog 올바른 호출
+const confirmed = await showConfirmDialog(
+  `「${targetLabel}」에게 푸시 알림을 발송하시겠습니까?`,
+  `제목: ${title}\n내용: ${body}`,
+  '발송', '취소', 'info'
+);
+```
+- 캐시버전: `v=20260618c` → `v=20260618d`
+
+### BUG-021과의 관계
+- BUG-021: `total:0` 응답을 UI에서 명확히 구분 못함 → 해결됨
+- BUG-022: 버튼 자체가 동작 안 함 (`showConfirm` 미존재) → 이번에 해결
+- 두 버그가 겹쳐서 "수동 푸시 발송 기능이 동작 안 함"으로 보였음
+
+### 변경 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | `showConfirm` → `showConfirmDialog` (line ~14904) |
+| `node-server.ts` | 캐시버전 `v=20260618c` → `v=20260618d` |

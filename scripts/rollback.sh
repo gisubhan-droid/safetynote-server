@@ -4,6 +4,7 @@
 #  사용법: bash rollback.sh [버전코드]
 #
 #  버전코드 목록:
+#    pre-bug022      → BUG-022 수정 직전 (세션 36, 푸시 버튼 무반응 수정 전, 커밋 4b9789e)
 #    pre-bug021      → BUG-021 수정 직전 (세션 35, 수동 푸시 발송 UI 개선 전, 커밋 60ddb78)
 #    pre-bug017      → BUG-017 수정 직전 (세션 34, TBM 사진 팝업 z-index 수정 전, 커밋 53b6733)
 #    pre-bug012      → BUG-012 수정 직전 (세션 34 작업 전, push/send+APK 파일명 수정 전)
@@ -26,6 +27,7 @@ PM2_APP="${PM2_APP:-safetynote}"
 # ── 커밋 해시 맵 ──────────────────────────────────────────────
 # 서버(safetynote-server) 커밋 기준
 declare -A COMMIT_MAP=(
+  ["pre-bug022"]="4b9789e"      # 세션 36 — BUG-022(푸시 버튼 무반응) 수정 직전
   ["pre-bug021"]="60ddb78"      # 세션 35 — BUG-021(수동 푸시 발송 UI 개선) 수정 직전
   ["pre-bug017"]="53b6733"      # 세션 34 — BUG-017(TBM 사진 팝업 z-index) 수정 직전
   ["pre-bug012"]="c087a2a"      # 세션 34 작업 전 — BUG-012(push/send 버그+APK 파일명) 수정 직전
@@ -39,6 +41,7 @@ declare -A COMMIT_MAP=(
 
 # ── 버전별 설명 ───────────────────────────────────────────────
 declare -A DESC_MAP=(
+  ["pre-bug022"]="세션 36 — 푸시 버튼 무반응 수정 직전 (showConfirm 미존재 버그 있음, v1.4.7 APK 대응)"
   ["pre-bug021"]="세션 35 — 수동 푸시 발송 UI 개선 직전 (with_token:0 케이스 구분 없음, v1.4.7 APK 대응)"
   ["pre-bug017"]="세션 34 — TBM 안전조치 사진 팝업 z-index 수정 직전 (v1.4.7 APK 대응)"
   ["pre-bug012"]="세션 34 작업 전 — push/send 순서버그+APK 파일명 수정 직전 (v1.4.7 APK 대응)"
@@ -62,7 +65,7 @@ print_header() {
 
 print_versions() {
   echo -e "${BLUE}사용 가능한 버전코드:${NC}\n"
-  for key in pre-bug021 pre-bug017 pre-bug012 pre-bug011-safe pre-bug011 pre-bug010 pre-bug009 stable-28 latest; do
+  for key in pre-bug022 pre-bug021 pre-bug017 pre-bug012 pre-bug011-safe pre-bug011 pre-bug010 pre-bug009 stable-28 latest; do
     echo -e "  ${YELLOW}${key}${NC}"
     echo -e "    커밋: ${COMMIT_MAP[$key]}"
     echo -e "    설명: ${DESC_MAP[$key]}\n"
@@ -216,6 +219,7 @@ echo -e "${BLUE}설명:     ${NC} ${DESC_MAP[$TARGET]}"
 
 # ── 롤백 대상에 따른 APK 버전 안내 ──────────────────────────────────────
 declare -A APK_MAP=(
+  ["pre-bug022"]="v1.4.7 (FCM 자동 알림 있음, 푸시 버튼 무반응 버그 있음)"
   ["pre-bug021"]="v1.4.7 (FCM 자동 알림 있음, 수동 푸시 UI 개선 전)"
   ["pre-bug017"]="v1.4.7 (FCM 자동 알림 있음, TBM 사진 팝업 z-index 버그 있음)"
   ["pre-bug012"]="v1.4.7 (FCM 자동 알림 있음, push/send 순서버그 있음)"

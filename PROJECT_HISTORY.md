@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-18 (세션 35)
-> **서버 현재 버전: e86553f** ← 최신
-> **NAS 배포 버전: 53b6733** ⚠️ git pull 필요 (e86553f 미반영)
-> **캐시 버전: v=20260618c**
+> 최종 업데이트: 2026-06-18 (세션 36)
+> **서버 현재 버전: fcabd66** ← 최신
+> **NAS 배포 버전: 53b6733** ⚠️ git pull 필요 (fcabd66 미반영)
+> **캐시 버전: v=20260618d**
 > **APK 최신**: v1.4.7 빌드 중 (Run #27752523683)
 
 ---
@@ -2295,3 +2295,19 @@ NAS 로그:
 |------|------|------|
 | safetynote-server | `e86553f` | fix: BUG-021 수동 푸시 발송 UI 개선 — with_token:0 케이스 명확한 에러 메시지 + 캐시버전 v=20260618c + push/register 로그 강화 |
 
+
+---
+
+## 세션 36 (2026-06-18) — BUG-022 수동 푸시 발송 버튼 무반응 수정
+
+### 진행 내용
+- FCM 발송 서버는 정상 (`sent:1 failed:0` NAS 로그 확인, 전용찬 기기 알림 수신 확인)
+- **BUG-022** 수정: `sendManualPush()`에서 미존재 함수 `showConfirm()` 호출
+  → `undefined` 반환 → `!confirmed = true` → 즉시 `return` → 버튼 무반응
+- `showConfirm` → `showConfirmDialog(title, msg, '발송', '취소', 'info')` 수정
+- 캐시버전: `v=20260618c` → `v=20260618d`
+
+### 커밋 이력
+| 레포 | 해시 | 내용 |
+|------|------|------|
+| safetynote-server | `fcabd66` | fix: BUG-022 수동 푸시 발송 버튼 무반응 수정 — showConfirm→showConfirmDialog + 캐시버전 v=20260618d |

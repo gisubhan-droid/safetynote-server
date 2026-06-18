@@ -2466,3 +2466,98 @@ if (isCapacitor) {
 - `safetynote-server`: `f1c05c1`
 
 ---
+
+## [BUG-010-3] NAS 미배포 — app.js BUG-009/010 수정분 미반영 (2026-06-18)
+
+### 증상
+v1.4.6 APK 설치 후에도 동일 증상 지속:
+- FCM 등록: 0명 / 전체 46명
+- APK 다운로드 클릭 → 무반응
+
+### 원인
+APK(Java 코드)는 올바르게 빌드됨. 그러나 **NAS 서버가 구버전 `app.js` 서빙 중**.
+
+```bash
+# 확인 명령어
+curl -sk "https://linkmax.myds.me:3443/static/app.js" | grep -c "downloadApk"
+# → 0  ← BUG-010 수정분 없음
+
+curl -sk "https://linkmax.myds.me:3443/" | grep -o "app\.js.*v=[^\"]*"
+# → app.js?v=20260617n  ← 세션 27 구버전
+```
+
+| 항목 | 상태 |
+|------|------|
+| NAS 배포 커밋 | `a473c4a` (세션 27 — BUG-009/010 수정 전) |
+| GitHub main 최신 | `4f2a285` (BUG-010 수정 포함) |
+| 미배포 커밋 수 | 4개 (`decb91e`, `f1c05c1` 등) |
+
+**근본 원인**: GitHub Actions 빌드는 성공했으나 NAS에서 `git pull`이 실행되지 않음.
+APK(v1.4.6)에는 `saveAuthToken()` / `downloadApk()` 브릿지 수신 코드가 있으나,
+**NAS app.js에는 해당 브릿지를 호출하는 코드가 없음** → 브릿지 연결 불가.
+
+### 해결 — NAS git pull + 캐시 버전 업데이트
+
+**서버 코드 변경**:
+- `node-server.ts` 캐시 버전 `v=20260617n` → `v=20260618a` 로 업데이트 (커밋 `(see below)`)
+
+**NAS 배포 명령** (NAS SSH에서 실행):
+```bash
+cd /volume1/safetynote
+git pull origin main
+pm2 restart safetynote
+```
+
+**배포 자동화 스크립트** (`scripts/nas-deploy.sh`):
+```bash
+# NAS에서 실행
+bash /volume1/safetynote/scripts/nas-deploy.sh
+```
+
+### 재발 방지 규칙
+
+**⚠️ RULE-003**: `app.js` 수정 후 반드시 **NAS git pull + pm2 restart** 실행
+- GitHub 커밋/푸시만으로는 NAS에 반영되지 않음
+- APK 빌드 + NAS 서버 배포 **두 가지 모두** 필요한 경우 체크리스트 사용:
+  ```
+  [ ] GitHub main 푸시 완료 (app.js + android java 모두)
+  [ ] NAS git pull 완료
+  [ ] pm2 restart 완료
+  [ ] curl로 app.js 버전/코드 확인
+  [ ] APK 빌드 트리거
+  ```
+
+### 관련 스크립트
+- `scripts/nas-deploy.sh` — 배포 + 검증 자동화
+- `scripts/rollback.sh` — 버전별 롤백 툴
+
+---
+
+## [RULE-003] NAS 배포 체크리스트
+
+### app.js / node-server.ts 수정 후
+```bash
+# 1. GitHub 커밋/푸시
+git add . && git commit -m "fix: ..." && git push origin main
+
+# 2. NAS 배포 (NAS SSH에서 실행)
+cd /volume1/safetynote
+git pull origin main          # 또는: git fetch && git reset --hard origin/main
+pm2 restart safetynote
+
+# 3. 반영 확인
+curl -sk https://linkmax.myds.me:3443/ | grep app.js  # 캐시 버전 확인
+curl -sk https://linkmax.myds.me:3443/static/app.js | grep -c "saveAuthToken"
+```
+
+### 캐시 버전 업데이트 규칙
+`node-server.ts` Line 5217~5223:
+- `v=YYYYMMDD[알파벳]` 형식으로 업데이트
+- 앱이 app.js를 새로 받게 강제 (브라우저/WebView 캐시 초기화)
+- **app.js 수정 시 반드시 캐시 버전도 함께 올림**
+
+| 버전 | 날짜 | 주요 변경 |
+|------|------|---------|
+| `v=20260617n` | 세션 27 | FCM 서버 구현 |
+| `v=20260618a` | 세션 30 | BUG-009/010 브릿지 호출 코드 추가 |
+

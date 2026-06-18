@@ -1,10 +1,10 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-18 (세션 30)
-> **서버 현재 버전: 044a33d** ← 최신
-> **NAS 배포 버전: a473c4a** (세션 27 기준 — 세션 29 서버 코드 변경 없음)
-> **캐시 버전: v=20260617n**
-> **APK 자동 배포**: ✅ v1.4.4 빌드 완료 + 실기기 설치 확인 (2026-06-18)
+> 최종 업데이트: 2026-06-18 (세션 31)
+> **서버 현재 버전: (이번 세션 커밋)** ← 최신
+> **NAS 배포 버전: a473c4a** ⚠️ git pull 필요 → `bash scripts/nas-deploy.sh`
+> **캐시 버전: v=20260618a** (BUG-009/010 app.js 반영)
+> **APK 최신**: ✅ v1.4.6 빌드 완료 (BUG-010 수정)
 
 ---
 
@@ -2043,6 +2043,74 @@ GET    /api/push/status    — 토큰 등록 현황 (admin/supervisor)
 | **v1.4.5** | **2026-06-18** | ✅ 빌드 완료 | FCM JWT 브릿지 수정(BUG-009) — 로그인 후 FCM 토큰 서버 등록 |
 | **v1.4.6** | **2026-06-18** | ✅ **빌드 완료** | FCM SSL 폴백(BUG-010-1) + APK 다운로드 브릿지(BUG-010-2) |
 
-### 세션 30 추가분 미완료 → 다음 세션
-- [ ] **v1.4.6 빌드 완료 확인** — GitHub Actions 결과 대기
-- [ ] **실기기 재테스트** — 재설치 → 로그인 → FCM 등록 확인 → APK 다운로드 확인
+### 세션 30 추가분 미완료 → 세션 31에서 완료
+- [x] **v1.4.6 빌드 완료 확인** — Run #27748680201 success ✅
+- [ ] **실기기 재테스트** — NAS git pull 후 재테스트 필요
+
+---
+
+## 세션 31 (2026-06-18) — NAS 미배포 원인 분석 + 복원 툴 + 빌드 로그 강화
+
+### 문제 분석
+v1.4.6 설치 후에도 동일 증상(FCM 0명, APK 다운로드 무반응):
+- **근본 원인**: NAS 서버에 `git pull`이 실행되지 않아 구버전 `app.js` 서빙 중
+- NAS 서빙 버전: `v=20260617n` (세션 27)
+- NAS 배포 커밋: `a473c4a` (세션 27 — BUG-009/010 수정 전)
+- GitHub main 최신: `4f2a285` (BUG-010 수정 포함)
+
+### 완료된 작업
+
+#### 1. 캐시 버전 업데이트
+- `node-server.ts` 캐시 버전: `v=20260617n` → `v=20260618a`
+- NAS git pull 후 브라우저/WebView 캐시 강제 갱신됨
+
+#### 2. 복원 툴 작성 (`scripts/rollback.sh`)
+| 버전코드 | 커밋 | 설명 |
+|----------|------|------|
+| `pre-bug010` | `decb91e` | BUG-009 적용됨, BUG-010 수정 전 (v1.4.5 APK 대응) |
+| `pre-bug009` | `a473c4a` | 세션 27 안정 버전 (v1.4.4 APK 대응) |
+| `stable-28` | `d32c632` | FCM 서버 API 추가됨 (v1.4.3 APK 대응) |
+| `latest` | `HEAD` | main 최신 |
+
+사용법:
+```bash
+# NAS에서 실행
+bash /volume1/safetynote/scripts/rollback.sh [버전코드]
+bash /volume1/safetynote/scripts/rollback.sh pre-bug010
+```
+
+#### 3. 배포 스크립트 작성 (`scripts/nas-deploy.sh`)
+- git pull + 핵심 코드 검증 + pm2 restart + 라이브 서버 검증 자동화
+- BUG-009/010 코드 포함 여부 자동 확인
+```bash
+bash /volume1/safetynote/scripts/nas-deploy.sh
+```
+
+#### 4. APK 빌드 로그 강화 (`build-apk.yml`)
+- **새 검증 스텝 추가** ("Verify critical files"): 빌드 전 핵심 파일 4개 검증
+  - MainActivity.java: SafetyNoteAppBridge, @JavascriptInterface, saveAuthToken, downloadApk
+  - MyFirebaseMessagingService.java: SSL 폴백 코드
+  - www/index.html: saveServerUrl 호출
+  - google-services.json 존재 여부
+  - 검증 실패 시 빌드 즉시 중단 (`exit 1`)
+- **Build summary 강화**: 핵심 기능 포함 여부 + Git 정보 출력
+
+#### 5. BUGFIX_LOG 업데이트
+- BUG-010-3: NAS 미배포 원인 + 해결 기록
+- RULE-003: NAS 배포 체크리스트 추가
+
+### 커밋 이력
+| 해시 | 설명 |
+|------|------|
+| (이번 세션) | fix: 캐시버전 v=20260618a + NAS 배포/롤백 스크립트 + 빌드 로그 강화 |
+
+### 버전 테이블
+| 버전 | 날짜 | 빌드 상태 | 주요 변경 내용 |
+|------|------|-----------|----------------|
+| **v1.4.4** | **2026-06-18** | ✅ 빌드 완료 + 설치 확인 | 서버 설정 화면 개선(BUG-008) |
+| **v1.4.5** | **2026-06-18** | ✅ 빌드 완료 | FCM JWT 브릿지(BUG-009) |
+| **v1.4.6** | **2026-06-18** | ✅ 빌드 완료 | FCM SSL 폴백(BUG-010-1) + APK 다운로드 브릿지(BUG-010-2) |
+
+### 세션 31 미완료 → 다음 세션
+- [ ] **NAS git pull 실행** — `bash scripts/nas-deploy.sh` 실행
+- [ ] **실기기 재테스트** — 로그인 → FCM 등록 확인 → APK 다운로드 확인

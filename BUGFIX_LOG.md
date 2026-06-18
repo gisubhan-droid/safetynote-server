@@ -2786,13 +2786,50 @@ curl -sk "https://linkmax.myds.me:3443/api/push/diagnose?test_token=기기토큰
    - `client_email` → `FCM_CLIENT_EMAIL`
    - `private_key` → `FCM_PRIVATE_KEY` (줄바꿈 `\n` 그대로 유지)
 
+### 진단 결과 (세션 33)
+- FCM 환경변수 3개 모두 설정됨 ✅ (`grep -i FCM /volume1/safetynote/.env` 확인)
+- `POST /api/push/send` 수동 테스트: `sent:2, failed:0` ✅ — FCM 서버 발송 정상
+- **실기기에서 수동 발송 알림 수신 확인** ✅
+- **그러나 서버 자동 발송(작업 상태 변경 등)은 미수신** ← 진짜 버그
+
+### 근본 원인 확정
+`tasks.ts`(Cloudflare용) `PATCH /:id/status` 핸들러에 **FCM 발송 코드가 없음**.
+SSE(`broadcastToRoles`, `sendToUser`)만 있어서 앱이 백그라운드/종료 상태면 알림 도달 불가.
+
+```
+tasks.ts PATCH /:id/status 에:
+  ✅ broadcastToRoles(['admin','supervisor'], ...)  ← SSE (앱 열려있을 때만)
+  ✅ sendToUser(wid, ...)                           ← SSE (앱 열려있을 때만)
+  ❌ sendFcmToUsers() 호출 없음                    ← 백그라운드 알림 없음
+```
+
+`tasks.ts`는 Cloudflare용 파일 → Node.js `https`/`crypto` 사용하는 `sendFcmToUsers()` 호출 불가.
+→ **NAS 전용 PATCH 라우트를 `node-server.ts`에 추가해서 해결**.
+
+### 해결 (`cc860f1`)
+`node-server.ts`에 NAS 전용 `PATCH /api/tasks/:id/status` 라우트 추가:
+- `app.route('/api/tasks', taskRoutes)` **앞**에 등록 (NAS에서 가로채도록)
+- DB 업데이트: `working`/`work_completed`/`completed` 상태별 컬럼 처리
+- SSE 알림 유지 (기존 동작 보존)
+- `notifications` DB 저장 유지
+- **FCM 발송 추가** (`tbm_done`/`working`/`work_completed`/`completed`/`cancelled`)
+  - 대상: `관리감독자`/`총괄책임자`/`대표이사` + `admin`/`supervisor` + 배정 작업자 (본인 제외)
+
+### ⚠️ 재발 방지 규칙 (RULE-005)
+> `tasks.ts` (Cloudflare용)에 상태 변경/이벤트 발생 코드를 추가할 때,
+> FCM 발송이 필요하면 반드시 `node-server.ts`에 NAS 전용 라우트를 별도로 추가해야 함.
+> `tasks.ts`에서는 `Node.js https/crypto` 모듈 사용 불가 → `sendFcmToUsers()` 직접 호출 불가.
+
 ### 상태
-- [ ] **원인 확정 전** — NAS에서 diagnose API 호출 후 결과 확인 필요
-- [ ] FCM 환경변수 설정 → pm2 restart → diagnose API 재확인
-- [ ] 실기기 알림 수신 확인
+- [x] **원인 확정** — tasks.ts에 FCM 발송 코드 누락
+- [x] **해결 코드 배포** — `cc860f1` GitHub push 완료
+- [ ] **NAS git pull + pm2 restart** — 실기기 테스트 필요
+- [ ] 실기기 알림 수신 확인 (작업 상태 변경 시 알림 도달 여부)
 
 ### 연관 커밋
 | 커밋 | 내용 |
 |------|------|
 | `d5bfc70` | FCM 진단 API + sendFcmToUsers 로그 강화 |
+| `a65acc0` | diagnose 오탐 수정 + push/send 상세 결과 |
+| `cc860f1` | **BUG-011 근본 해결 — 작업 상태 변경 FCM 발송 추가** |
 

@@ -1576,16 +1576,27 @@ ensureTbmSignaturesTable()
 // [RULE-002] var 사용: patchSchema 이후에 정의되므로 안전
 async function sendFcmToUsers(userIds: number[], payload: { title: string; body: string; data?: Record<string,string> }): Promise<void> {
   if (!userIds || userIds.length === 0) return
+  // FCM 환경변수 사전 체크 (조용히 실패 방지 — 명시적 로그)
+  const _pid = process.env.FCM_PROJECT_ID || ''
+  const _ce  = process.env.FCM_CLIENT_EMAIL || ''
+  const _pk  = process.env.FCM_PRIVATE_KEY || ''
+  if (!_pid || !_ce || !_pk) {
+    console.warn(`[FCM] ⚠️ 환경변수 미설정 — FCM_PROJECT_ID:${!!_pid} FCM_CLIENT_EMAIL:${!!_ce} FCM_PRIVATE_KEY:${!!_pk} — 발송 생략 (target:${userIds})`)
+    return
+  }
   try {
     const placeholders = userIds.map(() => '?').join(',')
     const rows = rawDb.prepare(
-      `SELECT fcm_token FROM users WHERE id IN (${placeholders}) AND fcm_token IS NOT NULL AND fcm_token != ''`
+      `SELECT id, name, fcm_token FROM users WHERE id IN (${placeholders}) AND fcm_token IS NOT NULL AND fcm_token != ''`
     ).all(...userIds) as any[]
     const tokens = rows.map((r: any) => r.fcm_token).filter(Boolean)
-    if (tokens.length === 0) return
+    if (tokens.length === 0) {
+      console.warn(`[FCM] 등록된 토큰 없음 — target:${userIds} (FCM 토큰 미등록 또는 로그아웃 상태)`)
+      return
+    }
+    console.log(`[FCM] 발송 시도 — "${payload.title}" → target:${userIds} tokens:${tokens.length}개`)
     const result = await sendFcmPushMulti(tokens, payload)
-    if (result.sent > 0 || result.failed > 0)
-      console.log(`[FCM] 발송 완료 — sent:${result.sent} failed:${result.failed} target:${userIds}`)
+    console.log(`[FCM] 발송 완료 — sent:${result.sent} failed:${result.failed} target:${userIds}`)
   } catch (e: any) {
     console.error('[FCM] sendFcmToUsers 오류:', e.message)
   }
@@ -1593,15 +1604,26 @@ async function sendFcmToUsers(userIds: number[], payload: { title: string; body:
 
 async function sendFcmToRoles(roles: string[], payload: { title: string; body: string; data?: Record<string,string> }): Promise<void> {
   if (!roles || roles.length === 0) return
+  const _pid = process.env.FCM_PROJECT_ID || ''
+  const _ce  = process.env.FCM_CLIENT_EMAIL || ''
+  const _pk  = process.env.FCM_PRIVATE_KEY || ''
+  if (!_pid || !_ce || !_pk) {
+    console.warn(`[FCM] ⚠️ 환경변수 미설정 — roles(${roles}) 발송 생략`)
+    return
+  }
   try {
     const placeholders = roles.map(() => '?').join(',')
     const rows = rawDb.prepare(
       `SELECT fcm_token FROM users WHERE role IN (${placeholders}) AND is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
     ).all(...roles) as any[]
     const tokens = rows.map((r: any) => r.fcm_token).filter(Boolean)
-    if (tokens.length === 0) return
+    if (tokens.length === 0) {
+      console.warn(`[FCM] roles(${roles}) 등록 토큰 없음`)
+      return
+    }
+    console.log(`[FCM] roles(${roles}) 발송 시도 — "${payload.title}" tokens:${tokens.length}개`)
     const result = await sendFcmPushMulti(tokens, payload)
-    console.log(`[FCM] roles(${roles}) 발송 — sent:${result.sent} failed:${result.failed}`)
+    console.log(`[FCM] roles(${roles}) 발송 완료 — sent:${result.sent} failed:${result.failed}`)
   } catch (e: any) {
     console.error('[FCM] sendFcmToRoles 오류:', e.message)
   }
@@ -2513,12 +2535,113 @@ app.get('/api/push/status', async (c) => {
     return c.json({ error: '관리자 권한 필요' }, 403)
   const rows = rawDb.prepare(`
     SELECT id, name, role, position,
-           CASE WHEN fcm_token IS NOT NULL AND fcm_token != '' THEN 1 ELSE 0 END as has_token
+           CASE WHEN fcm_token IS NOT NULL AND fcm_token != '' THEN 1 ELSE 0 END as has_token,
+           CASE WHEN fcm_token IS NOT NULL AND fcm_token != ''
+                THEN substr(fcm_token, 1, 25) || '...'
+                ELSE NULL END as token_preview
     FROM users WHERE is_active = 1 ORDER BY role, name
   `).all()
   const total   = (rows as any[]).length
   const withToken = (rows as any[]).filter((r: any) => r.has_token).length
-  return c.json({ total, with_token: withToken, users: rows })
+  return c.json({ total, with_token: withToken, without_token: total - withToken, users: rows })
+})
+
+// GET /api/push/diagnose — FCM 환경변수 + OAuth2 + 발송 테스트 (관리자용)
+// query: ?test_token=FCM토큰 (선택 — 실제 기기 토큰으로 발송 테스트)
+app.get('/api/push/diagnose', async (c) => {
+  const user = getUser(c)
+  if (!user || !['admin', 'supervisor'].includes(user.role))
+    return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const report: Record<string, any> = {}
+
+  // ① 환경변수 확인
+  const projectId   = process.env.FCM_PROJECT_ID   || ''
+  const clientEmail = process.env.FCM_CLIENT_EMAIL || ''
+  const privateKey  = process.env.FCM_PRIVATE_KEY  || ''
+
+  report.env = {
+    FCM_PROJECT_ID:   projectId   ? `✅ 설정됨 (${projectId})` : '❌ 미설정',
+    FCM_CLIENT_EMAIL: clientEmail ? `✅ 설정됨 (${clientEmail.slice(0, 30)}...)` : '❌ 미설정',
+    FCM_PRIVATE_KEY:  privateKey  ? `✅ 설정됨 (길이: ${privateKey.length}자)` : '❌ 미설정',
+    all_set: !!(projectId && clientEmail && privateKey),
+  }
+
+  if (!report.env.all_set) {
+    report.diagnosis = '❌ FCM 환경변수 미설정 — NAS .env 파일에 FCM_PROJECT_ID / FCM_CLIENT_EMAIL / FCM_PRIVATE_KEY 추가 필요'
+    report.fix = [
+      '1. Firebase Console → 프로젝트 설정 → 서비스 계정 → 새 비공개 키 생성 (.json 다운로드)',
+      '2. NAS에서: nano /volume1/safetynote/.env',
+      '3. 다음 3줄 추가:',
+      '   FCM_PROJECT_ID=your-project-id',
+      '   FCM_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com',
+      '   FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"',
+      '4. pm2 restart safetynote',
+    ]
+    return c.json(report)
+  }
+
+  // ② OAuth2 토큰 취득 테스트
+  try {
+    const { sendFcmPush } = await import('./src/fcm')
+    // 더미 토큰으로 환경변수 주입 확인 (실제 발송 전 OAuth2만 테스트)
+    report.oauth2 = '테스트 중...'
+    // sendFcmPush 내부에서 OAuth2 취득 → 더미 토큰은 UNREGISTERED 에러 예상
+    const dummyResult = await sendFcmPush('__diagnose_dummy_token__', {
+      title: '진단 테스트',
+      body: '이 메시지는 표시되지 않습니다.',
+    })
+    // UNREGISTERED / INVALID_ARGUMENT 에러 = OAuth2 성공 + 토큰만 잘못됨 → 정상
+    if (dummyResult.error?.includes('UNREGISTERED') ||
+        dummyResult.error?.includes('INVALID_ARGUMENT') ||
+        dummyResult.error?.includes('registration-token-not-registered')) {
+      report.oauth2 = '✅ OAuth2 access_token 취득 성공 (FCM 서버 응답 확인됨)'
+    } else if (dummyResult.success) {
+      report.oauth2 = '✅ OAuth2 + FCM 발송 모두 성공 (예상치 못한 성공)'
+    } else {
+      report.oauth2 = `⚠️ OAuth2 또는 FCM 오류: ${dummyResult.error}`
+    }
+  } catch (e: any) {
+    report.oauth2 = `❌ import/실행 오류: ${e.message}`
+  }
+
+  // ③ 등록된 토큰 수 확인
+  const tokenRows = rawDb.prepare(
+    `SELECT id, name, role, substr(fcm_token,1,25)||'...' as token_preview
+     FROM users WHERE fcm_token IS NOT NULL AND fcm_token != '' AND is_active=1`
+  ).all() as any[]
+  report.registered_tokens = {
+    count: tokenRows.length,
+    users: tokenRows,
+  }
+
+  // ④ 특정 토큰으로 실제 발송 테스트 (query param 제공 시)
+  const testToken = c.req.query('test_token')
+  if (testToken) {
+    try {
+      const { sendFcmPush } = await import('./src/fcm')
+      const result = await sendFcmPush(testToken, {
+        title: '🔔 FCM 진단 테스트',
+        body: `SafetyNOTE FCM 테스트 — ${new Date().toLocaleString('ko-KR')}`,
+        data: { type: 'diagnose_test' },
+      })
+      report.test_send = result.success
+        ? `✅ 발송 성공 (messageId: ${result.messageId})`
+        : `❌ 발송 실패: ${result.error}`
+    } catch (e: any) {
+      report.test_send = `❌ 발송 오류: ${e.message}`
+    }
+  } else {
+    report.test_send = '(생략) test_token 쿼리 파라미터로 실제 발송 테스트 가능'
+    report.example = `GET /api/push/diagnose?test_token=YOUR_FCM_TOKEN`
+  }
+
+  report.diagnosis = report.oauth2?.startsWith('✅')
+    ? '✅ FCM 환경 정상 — 발송 가능 상태'
+    : '⚠️ FCM 발송 환경 문제 있음 — oauth2 항목 확인'
+
+  console.log(`[FCM] 진단 실행 — by:${user.name} env:${report.env.all_set} tokens:${tokenRows.length}`)
+  return c.json(report)
 })
 
 // ─── 서명 API ─────────────────────────────────────────────────────────────────

@@ -2146,3 +2146,105 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 - [ ] `MyFirebaseMessagingService.java`: 토큰 자동 등록, 포그라운드/백그라운드 알림 처리
 - [ ] `AndroidManifest.xml`: FCM 서비스 등록, 알림 채널 권한
 
+
+---
+
+## [BUG-008] APK 업데이트 불가 (v1.4.3) + 서버 주소 설정 화면 문제 (2026-06-18)
+
+### 증상 1: APK 업데이트 불가
+- v1.4.3 설치 후 앱 업데이트가 되지 않는 에러 발생
+- 이전 BUG-006(ReferenceError: Log is not defined)과 동일 패턴으로 보고됨
+
+### 증상 2: 서버 주소/포트 입력 화면 수정 불가
+- APK 최초 설치 후 서버 주소 잘못 입력 시 수정 불가
+- 접속 테스트 기능 없음 (최초 APK에는 있었던 기능)
+- 포트 기본값 미설정
+
+---
+
+### 원인 분석
+
+#### BUG-008-1: APK 업데이트 불가
+
+`app.js`의 `doApkDownload()` 확인 결과:
+- `typeof Log !== 'undefined'` 수정은 **이미 적용됨** (BUG-006 수정 커밋 `d51f355` 반영)
+- `MainActivity.java` APK URL 감지 조건 정상 (`url.contains("/apk/")` 포함)
+
+**실제 원인**: `www/index.html`의 앱 시작 로직 문제
+```javascript
+// 수정 전: 저장된 주소 있으면 무조건 자동 연결 → 설정 화면 진입 불가
+if (savedUrl) {
+  // 스플래시 → 자동 연결 (설정 화면 표시 안 함)
+  setTimeout(function() { window.location.replace(savedUrl); }, 400);
+}
+```
+- 저장된 서버 주소 있을 때 바로 자동 연결 → 사용자가 주소를 변경할 수 없음
+- 잘못된 주소 저장 시 연결 실패 → 계속 실패 루프 (설정 화면 접근 불가)
+- 포트 기본값 미설정 (`placeholder`만 있고 `value` 없음)
+- 접속 테스트 버튼 없음
+
+#### BUG-008-2: 서버 설정 화면 개선 필요
+
+---
+
+### 해결 — `www/index.html` 전면 개선
+
+#### 1. 저장된 주소 있을 때 → 수정 가능하도록 변경
+```javascript
+// 수정 후: 저장된 주소 표시 + "이 서버로 연결" / "주소 변경" 버튼 제공
+if (savedUrl) {
+  document.getElementById('currentConnUrl').textContent = savedUrl;
+  document.getElementById('currentConn').style.display = 'flex';  // 저장 주소 카드 표시
+  document.getElementById('inputForm').style.display = 'none';    // 입력 폼 숨김
+  // "주소 변경" 클릭 시 → showInputForm() 으로 입력 폼 표시
+}
+```
+
+#### 2. 포트 기본값 3443 설정
+```html
+<!-- 수정 후: value="3443" 명시 -->
+<input id="portInput" type="number" placeholder="3443" value="3443" ... />
+```
+- `getSavedPort()` 도 기본값 `'3443'` 반환 (`|| '3443'` 추가)
+
+#### 3. 접속 테스트 버튼 추가
+```javascript
+function testConnection() {
+  // fetch + no-cors 모드로 서버 도달 여부 확인
+  // 타임아웃 8초
+  // 테스트 중/성공/실패 상태별 UI 표시
+  fetch(url + '/api/health', { method: 'GET', signal: controller.signal, mode: 'no-cors' })
+    .then(() => { /* ✅ 서버 연결 성공 */ })
+    .catch(err => {
+      if (isAbort) { /* ⏱ 연결 시간 초과 */ }
+      else { /* ✅ 서버 응답 확인 (no-cors opaque response) */ }
+    });
+}
+```
+
+#### 4. 프리셋 클릭 시 입력 폼에 값 채우기
+- 기존: `doConnect(url)` 바로 실행
+- 수정: `loadPreset(url)` → URL 파싱 후 주소/포트 입력 필드에 채워넣기
+
+#### 5. 기타 UX 개선
+- 초기화 버튼: 포트 기본값 3443으로 리셋
+- 저장된 주소 카드: "저장된 서버 주소" 레이블 + URL 표시 + 2개 버튼 (이 서버로 연결 / 주소 변경)
+
+---
+
+### 수정 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `safetynote-android/www/index.html` | 서버 설정 화면 전면 개선 |
+| `safetynote-android/.github/workflows/build-apk.yml` | 버전 기본값 `1.4.4`로 업데이트 |
+
+### ⚠️ 재발 방지
+- 저장된 URL이 있더라도 **반드시 수정 가능한 경로 제공** (`주소 변경` 버튼)
+- 포트 기본값은 `value="3443"` 으로 명시 (`placeholder`만으로는 실제 입력값 없음)
+- 접속 테스트 버튼은 최초 APK와 동일하게 항상 포함
+
+### 커밋
+- 이번 세션 커밋 (safetynote-android repo)
+
+---

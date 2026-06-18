@@ -2597,7 +2597,7 @@ app.delete('/api/push/register', async (c) => {
 })
 
 // POST /api/push/send — 관리자용 수동 푸시 발송
-// body: { title, body, target: 'all' | 'role:admin' | 'role:worker' | 'user:123' }
+// body: { title, body, target: 'all' | 'role:admin' | 'role:supervisor' | 'role:worker' | 'user:123' }
 app.post('/api/push/send', async (c) => {
   const user = getUser(c)
   if (!user || !['admin', 'supervisor'].includes(user.role))
@@ -2612,91 +2612,86 @@ app.post('/api/push/send', async (c) => {
     data:  data || { type: 'manual_push' }
   }
 
-  let sent = 0, failed = 0, tokens: string[] = []
-
-  if (!target || target === 'all') {
-    // 전체 활성 사용자
-    const rows = rawDb.prepare(
-      `SELECT fcm_token FROM users WHERE is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
-    ).all() as any[]
-    tokens = rows.map((r: any) => r.fcm_token)
-  } else if (String(target).startsWith('role:')) {
-    // 특정 역할
-    const role = String(target).replace('role:', '')
-    const rows = rawDb.prepare(
-      `SELECT fcm_token FROM users WHERE role=? AND is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
-    ).all(role) as any[]
-    tokens = rows.map((r: any) => r.fcm_token)
-  } else if (String(target).startsWith('user:')) {
-    // 특정 사용자
-    const uid = parseInt(String(target).replace('user:', ''))
-    const row: any = rawDb.prepare(
-      `SELECT fcm_token FROM users WHERE id=? AND fcm_token IS NOT NULL AND fcm_token != ''`
-    ).get(uid)
-    if (row?.fcm_token) tokens = [row.fcm_token]
-  } else {
-    return c.json({ error: 'target 형식 오류 (all | role:xxx | user:123)' }, 400)
+  // ── FCM 환경변수 사전 체크 (조용한 실패 방지) ──
+  const _pid = process.env.FCM_PROJECT_ID   || ''
+  const _ce  = process.env.FCM_CLIENT_EMAIL || ''
+  const _pk  = process.env.FCM_PRIVATE_KEY  || ''
+  if (!_pid || !_ce || !_pk) {
+    console.warn(`[FCM] ⚠️ 수동 발송 실패 — 환경변수 미설정 (FCM_PROJECT_ID:${!!_pid} FCM_CLIENT_EMAIL:${!!_ce} FCM_PRIVATE_KEY:${!!_pk})`)
+    return c.json({ error: 'FCM 환경변수가 설정되지 않았습니다. 서버 관리자에게 문의하세요. (FCM_PROJECT_ID / FCM_CLIENT_EMAIL / FCM_PRIVATE_KEY)', sent: 0, failed: 0 }, 500)
   }
 
-  if (tokens.length === 0)
-    return c.json({ success: true, sent: 0, failed: 0, message: '등록된 FCM 토큰 없음' })
-
-  // 발송 대상 사용자 정보 (상세 결과에 이름 표시용)
+  // ── 발송 대상 사용자 조회 (한 번만 조회 — tokens/targetUsers 순서 일치 보장) ──
   let targetUsers: any[] = []
-  if (!target || target === 'all') {
+  const targetStr = String(target || 'all')
+
+  if (targetStr === 'all') {
     targetUsers = rawDb.prepare(
-      `SELECT id, name, role, fcm_token FROM users WHERE is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
+      `SELECT id, name, role, fcm_token FROM users WHERE is_active=1 AND fcm_token IS NOT NULL AND fcm_token != '' ORDER BY id`
     ).all() as any[]
-  } else if (String(target).startsWith('role:')) {
-    const role = String(target).replace('role:', '')
+  } else if (targetStr.startsWith('role:')) {
+    const role = targetStr.replace('role:', '')
     targetUsers = rawDb.prepare(
-      `SELECT id, name, role, fcm_token FROM users WHERE role=? AND is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
+      `SELECT id, name, role, fcm_token FROM users WHERE role=? AND is_active=1 AND fcm_token IS NOT NULL AND fcm_token != '' ORDER BY id`
     ).all(role) as any[]
-  } else if (String(target).startsWith('user:')) {
-    const uid = parseInt(String(target).replace('user:', ''))
+  } else if (targetStr.startsWith('user:')) {
+    const uid = parseInt(targetStr.replace('user:', ''))
     const row: any = rawDb.prepare(
       `SELECT id, name, role, fcm_token FROM users WHERE id=? AND fcm_token IS NOT NULL AND fcm_token != ''`
     ).get(uid)
     if (row) targetUsers = [row]
+  } else {
+    return c.json({ error: 'target 형식 오류 (all | role:xxx | user:123)' }, 400)
   }
 
-  const result = await sendFcmPushMulti(tokens, payload)
-  sent = result.sent; failed = result.failed
+  if (targetUsers.length === 0)
+    return c.json({ success: true, sent: 0, failed: 0, total: 0, message: '등록된 FCM 토큰 없음' })
 
-  // 사용자별 발송 결과 매핑
+  // tokens 배열 — targetUsers와 동일 순서 (한 번만 추출)
+  const tokens = targetUsers.map((u: any) => u.fcm_token)
+
+  console.log(`[FCM] 수동 발송 시도 — by:${user.name} target:${targetStr} tokens:${tokens.length}개 제목:"${payload.title}"`)
+  const result = await sendFcmPushMulti(tokens, payload)
+  const { sent, failed } = result
+
+  // ── 사용자별 발송 결과 매핑 (tokens와 targetUsers 동일 순서이므로 idx 일치) ──
   const userDetails = targetUsers.map((u: any, idx: number) => {
     const d = result.details[idx]
     return {
-      id: u.id,
-      name: u.name,
-      role: u.role,
+      id:            u.id,
+      name:          u.name,
+      role:          u.role,
       token_preview: u.fcm_token ? u.fcm_token.slice(0, 20) + '...' : null,
-      success: d?.success ?? false,
-      messageId: d?.messageId,
-      error: d?.error,
+      success:       d?.success  ?? false,
+      messageId:     d?.messageId,
+      error:         d?.error,
     }
   })
 
-  // 토큰 무효(UNREGISTERED) 감지 → 자동 삭제
-  for (const d of result.details) {
+  // ── 무효 토큰(UNREGISTERED) 자동 삭제 ──
+  for (let i = 0; i < result.details.length; i++) {
+    const d = result.details[i]
     if (d.error?.includes('UNREGISTERED') || d.error?.includes('NotRegistered') ||
         d.error?.includes('registration-token-not-registered')) {
-      // 해당 토큰 DB에서 삭제
-      rawDb.prepare(`UPDATE users SET fcm_token = NULL WHERE fcm_token = ?`)
-        .run(targetUsers.find((_: any, i: number) => result.details[i] === d)?.fcm_token)
-      console.log(`[FCM] 무효 토큰 자동 삭제: ${d.token_preview}`)
+      const invalidToken = targetUsers[i]?.fcm_token
+      if (invalidToken) {
+        rawDb.prepare(`UPDATE users SET fcm_token = NULL WHERE fcm_token = ?`).run(invalidToken)
+        console.log(`[FCM] 무효 토큰 자동 삭제 — user:${targetUsers[i]?.id}(${targetUsers[i]?.name}) token:${d.token_preview}`)
+      }
     }
   }
 
-  // 발송 이력 notifications 저장 (관리자 발송 기록)
+  // ── 발송 이력 notifications 저장 ──
   for (const u of targetUsers) {
-    rawDb.prepare(`
-      INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
-      VALUES (?, 'push_manual', ?, ?, 0, 'push', 0)
-    `).run(u.id, title, msgBody)
+    try {
+      rawDb.prepare(`
+        INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+        VALUES (?, 'push_manual', ?, ?, 0, 'push', 0)
+      `).run(u.id, title, msgBody)
+    } catch (_) { /* notifications 테이블 없을 시 무시 */ }
   }
 
-  console.log(`[FCM] 수동 발송 — by:${user.name} target:${target} sent:${sent} failed:${failed}`)
+  console.log(`[FCM] 수동 발송 완료 — by:${user.name} target:${targetStr} sent:${sent} failed:${failed}`)
   return c.json({ success: true, sent, failed, total: tokens.length, details: userDetails })
 })
 
@@ -3845,11 +3840,16 @@ app.get('/api/dist/apk/download', (c) => {
 
   const stat = statSync(filePath)
   const fileBuffer = readFileSync(filePath)
+  // 파일명에 버전 포함: safetynote-v1.4.7.apk (버전 없으면 safetynote.apk)
+  const apkVersion = getSetting('apk_version') || ''
+  const apkFilename = apkVersion
+    ? `safetynote-v${apkVersion}.apk`
+    : 'safetynote.apk'
   c.header('Content-Type', 'application/vnd.android.package-archive')
-  c.header('Content-Disposition', 'attachment; filename="safetynote.apk"')
+  c.header('Content-Disposition', `attachment; filename="${apkFilename}"`)
   c.header('Content-Length', String(stat.size))
   c.header('Cache-Control', 'no-cache')
-  console.log(`[APK Download] 서빙: ${filePath} (${(stat.size/1024/1024).toFixed(1)} MB)`)
+  console.log(`[APK Download] 서빙: ${filePath} → ${apkFilename} (${(stat.size/1024/1024).toFixed(1)} MB)`)
   return c.body(fileBuffer)
 })
 

@@ -2833,3 +2833,117 @@ tasks.ts PATCH /:id/status 에:
 | `a65acc0` | diagnose 오탐 수정 + push/send 상세 결과 |
 | `cc860f1` | **BUG-011 근본 해결 — 작업 상태 변경 FCM 발송 추가** |
 
+
+---
+
+## [BUG-012] 시스템 설정 수동 푸시 발송 실패 (2026-06-18)
+
+### 증상
+- 관리자 시스템 설정 → 푸시 알림 발송 버튼 클릭 시 `sent:0, failed:0` 반환
+- FCM 환경변수가 설정되어 있고 `POST /api/push/send`는 200 응답이지만 실제 알림 미도달
+- PM2 에러 로그에 아무 기록 없음
+
+### 원인 분석
+
+#### 원인 1: `tokens` 배열과 `targetUsers` 배열 **이중 조회 + 순서 불일치**
+```typescript
+// ❌ 기존 코드 — tokens 먼저 조회, targetUsers 별도 조회 (순서 다를 수 있음)
+const rows = rawDb.prepare(`SELECT fcm_token FROM users WHERE ... ORDER BY ...`).all()
+tokens = rows.map(r => r.fcm_token)  // 순서: DB 기본 정렬
+
+const targetUsers = rawDb.prepare(`SELECT id, name, role, fcm_token FROM users WHERE ...`).all()
+// → 두 번 조회 시 DB 내부 정렬이 다를 수 있음
+
+const result = await sendFcmPushMulti(tokens, payload)
+// result.details[0] → tokens[0] 기준
+// userDetails[0]    → targetUsers[0] 기준 → 불일치 가능
+```
+
+`result.details[idx]`와 `targetUsers[idx]`의 순서가 달라지면:
+- 무효 토큰 삭제가 엉뚱한 사용자 토큰 삭제
+- 상세 결과 표시 오류
+
+#### 원인 2: FCM 환경변수 미설정 시 조용한 실패 (기존 문제 — 이미 인지)
+- `sendFcmPushMulti()`: 환경변수 없으면 `details: []` 반환
+- `userDetails` 매핑: `d?.success ?? false` → 모두 false
+- 응답: `sent:0, failed:0` (오해를 부르는 응답)
+
+### 해결 (`node-server.ts`)
+
+#### 1. FCM 환경변수 사전 체크 추가
+```typescript
+const _pid = process.env.FCM_PROJECT_ID   || ''
+const _ce  = process.env.FCM_CLIENT_EMAIL || ''
+const _pk  = process.env.FCM_PRIVATE_KEY  || ''
+if (!_pid || !_ce || !_pk) {
+  console.warn(`[FCM] ⚠️ 수동 발송 실패 — 환경변수 미설정 ...`)
+  return c.json({ error: 'FCM 환경변수가 설정되지 않았습니다. ...', sent: 0, failed: 0 }, 500)
+}
+```
+→ 미설정 시 즉시 500 에러 반환 + 명확한 에러 메시지
+
+#### 2. `tokens`/`targetUsers` 단일 쿼리로 통합 (`ORDER BY id` 고정)
+```typescript
+// ✅ 수정 — 한 번만 조회, ORDER BY id로 순서 고정
+targetUsers = rawDb.prepare(
+  `SELECT id, name, role, fcm_token FROM users
+   WHERE is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''
+   ORDER BY id`
+).all()
+const tokens = targetUsers.map(u => u.fcm_token)  // 동일 순서 보장
+```
+
+#### 3. 무효 토큰 삭제 로직 — 인덱스 기반으로 수정
+```typescript
+// ✅ details[i] → targetUsers[i] 순서 일치 → 정확한 토큰 삭제
+for (let i = 0; i < result.details.length; i++) {
+  const d = result.details[i]
+  if (d.error?.includes('UNREGISTERED') ...) {
+    rawDb.prepare(`UPDATE users SET fcm_token = NULL WHERE fcm_token = ?`)
+      .run(targetUsers[i]?.fcm_token)
+  }
+}
+```
+
+#### 4. notifications 저장 try-catch 추가
+- `notifications` 테이블 없을 시 전체 발송 실패 방지
+
+### ⚠️ 재발 방지 규칙 (RULE-006)
+> `sendFcmPushMulti(tokens, payload)` 호출 전 반드시:
+> 1. FCM 환경변수 3개 사전 체크 (미설정 → 즉시 에러 반환)
+> 2. `tokens` 배열과 `userDetails` 배열은 **반드시 동일 쿼리에서 같은 순서로** 추출
+>    (`ORDER BY id` 고정 또는 단일 배열에서 `.map()` 으로 파생)
+> 3. `try-catch`로 notifications 저장 실패가 FCM 발송 결과를 가리지 않도록 분리
+
+### 연관 커밋
+- 수정 커밋: (이번 세션 34 커밋)
+
+---
+
+## [BUG-013-APK] APK 다운로드 파일명 버전 미포함 (2026-06-18)
+
+### 증상
+- `/api/dist/apk/download` 로 APK 다운로드 시 파일명이 `safetynote.apk`
+- 버전 구분 없이 동일한 파일명 → 기기 저장 폴더에서 구분 불가
+
+### 원인
+```typescript
+// ❌ 기존
+c.header('Content-Disposition', 'attachment; filename="safetynote.apk"')
+```
+버전 정보가 `system_settings.apk_version`에 있는데 파일명에 반영 안 됨
+
+### 해결
+```typescript
+// ✅ 수정
+const apkVersion = getSetting('apk_version') || ''
+const apkFilename = apkVersion ? `safetynote-v${apkVersion}.apk` : 'safetynote.apk'
+c.header('Content-Disposition', `attachment; filename="${apkFilename}"`)
+```
+→ `safetynote-v1.4.7.apk` 형태로 다운로드
+
+### 영향 범위
+- `GET /api/dist/apk/download` 핸들러만 수정
+- 파일 저장 경로(서버 내부)는 변경 없음 (`safetynote.apk` 그대로 유지)
+- 다운로드 시 브라우저/DownloadManager가 수신하는 `Content-Disposition` 파일명만 변경
+

@@ -14901,7 +14901,13 @@ async function sendManualPush() {
     }
   } catch(_) { /* 상태 조회 실패해도 발송 시도 허용 */ }
 
-  const confirmed = await showConfirm(`「${targetLabel}」에게 푸시 알림을 발송하시겠습니까?\n\n제목: ${title}\n내용: ${body}`);
+  // [BUG-022] showConfirm → showConfirmDialog (showConfirm 미존재 → undefined → 즉시 return → 버튼 무반응)
+  const confirmed = await showConfirmDialog(
+    `「${targetLabel}」에게 푸시 알림을 발송하시겠습니까?`,
+    `제목: ${title}
+내용: ${body}`,
+    '발송', '취소', 'info'
+  );
   if (!confirmed) return;
 
   try {

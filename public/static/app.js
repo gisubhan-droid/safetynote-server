@@ -14848,16 +14848,24 @@ async function _loadFcmStatus() {
   if (!bar) return;
   try {
     const res = await API.get('/push/status');
-    const { total, with_token } = res.data;
+    const { total, with_token, without_token } = res.data;
     const pct = total > 0 ? Math.round(with_token / total * 100) : 0;
-    bar.innerHTML = `
-      <div class="flex items-center justify-between mb-1">
-        <span><i class="fas fa-mobile-alt mr-1"></i> 앱 설치(FCM 등록): <strong>${with_token}명</strong> / 전체 ${total}명</span>
-        <span class="font-bold">${pct}%</span>
-      </div>
-      <div class="w-full bg-blue-200 rounded-full h-1.5">
-        <div class="bg-blue-600 h-1.5 rounded-full" style="width:${pct}%"></div>
-      </div>`;
+    const isZero = with_token === 0;
+    bar.className = 'mb-4 p-3 rounded-xl border text-xs ' +
+      (isZero ? 'bg-red-50 border-red-300 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700');
+    bar.innerHTML = isZero
+      ? `<div class="flex items-center gap-2 font-bold text-red-700">
+           <i class="fas fa-exclamation-triangle"></i>
+           FCM 토큰 등록된 기기 없음 — 앱에서 로그인해야 토큰이 등록됩니다.
+         </div>
+         <div class="mt-1 text-red-500 text-xs">전체 사용자 ${total}명 중 앱 로그인 기록 없음. 앱 실행 후 로그인하면 자동 등록됩니다.</div>`
+      : `<div class="flex items-center justify-between mb-1">
+           <span><i class="fas fa-mobile-alt mr-1"></i> 앱 FCM 등록: <strong>${with_token}명</strong> / 전체 ${total}명 (미등록 ${without_token ?? (total - with_token)}명)</span>
+           <span class="font-bold">${pct}%</span>
+         </div>
+         <div class="w-full bg-blue-200 rounded-full h-1.5">
+           <div class="bg-blue-600 h-1.5 rounded-full" style="width:${pct}%"></div>
+         </div>`;
   } catch(e) {
     bar.innerHTML = `<i class="fas fa-exclamation-circle mr-1 text-red-400"></i> 현황 로드 실패`;
   }
@@ -14876,18 +14884,46 @@ async function sendManualPush() {
     'role:supervisor': '현장감독', 'role:worker': '작업자'
   }[target] || target;
 
+  // ── 발송 전 FCM 토큰 현황 사전 확인 ──
+  try {
+    const statusRes = await API.get('/push/status');
+    const { total, with_token } = statusRes.data;
+    if (with_token === 0) {
+      toast(
+        `FCM 토큰 등록된 앱 기기가 없습니다 (전체 ${total}명 중 0명).\n앱에서 로그인해야 토큰이 등록됩니다.`,
+        'error'
+      );
+      return;
+    }
+    // role 타겟인 경우 해당 role의 토큰 보유자 수 예비 확인
+    if (target.startsWith('role:') && total > 0) {
+      // 전체 토큰 없는 특정 role이면 서버에서 '등록된 FCM 토큰 없음' 응답 예정 — 통과시킴
+    }
+  } catch(_) { /* 상태 조회 실패해도 발송 시도 허용 */ }
+
   const confirmed = await showConfirm(`「${targetLabel}」에게 푸시 알림을 발송하시겠습니까?\n\n제목: ${title}\n내용: ${body}`);
   if (!confirmed) return;
 
   try {
     const res = await API.post('/push/send', { title, body, target });
-    const { sent, failed, total } = res.data;
-    toast(`발송 완료 ✅  성공: ${sent}명 / 실패: ${failed}명 (전체: ${total}명)`, 'success');
+    const { sent, failed, total, message } = res.data;
+    if (total === 0 || (sent === 0 && failed === 0)) {
+      // 등록된 FCM 토큰 없음 케이스
+      toast(
+        message || `발송 대상 없음 — 「${targetLabel}」 중 앱에 로그인한 사용자가 없습니다.`,
+        'warning'
+      );
+    } else if (sent === 0 && failed > 0) {
+      toast(`⚠️ 전송 실패: ${failed}명 모두 실패. FCM 토큰이 만료되었을 수 있습니다.`, 'error');
+    } else {
+      toast(`발송 완료 ✅  성공: ${sent}명 / 실패: ${failed}명 (전체: ${total}명)`, 'success');
+    }
     document.getElementById('push-title').value = '';
     document.getElementById('push-body').value  = '';
     _loadFcmStatus();
   } catch(e) {
-    toast(e.response?.data?.error || '발송 실패', 'error');
+    const errMsg = e.response?.data?.error || e.message || '발송 실패';
+    toast(errMsg, 'error');
   }
 }
 

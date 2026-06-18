@@ -1951,3 +1951,42 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 
 ### 커밋
 - `ac214ca` — feat: 상세화면 탭바 sticky 고정 (FEAT-025-TAB)
+
+---
+
+## [FEAT-025-TAB v2] 탭바 세로 줄바꿈 / 높이 팽창 수정 (2026-06-18)
+
+### 증상 (v1 적용 후 발생)
+- 탭바가 sticky 고정은 되었으나, 탭 항목들이 **세로로 줄바꿈**되어 쌓임
+- 탭 텍스트 겹침/잘림, 탭바 높이 비정상적으로 팽창
+- 핑크 활성 밑줄 아래 흰 공간 과도하게 생김
+
+### 원인
+- `margin-left: -24px; margin-right: -24px` 음수 margin 적용 시
+  flex 컨테이너의 **가용 너비 계산 오류** 발생
+- 계산된 너비보다 탭 항목 합계가 초과 → `flex-wrap: wrap` 기본값으로 세로 줄바꿈
+
+### 해결 (v2)
+- **margin 음수값 완전 제거** — 탭바가 modal-body 패딩 안에서 자연 너비 유지
+- **`flex-wrap: nowrap` 명시** — 탭 항목 가로 1줄 강제 유지
+- **`overflow-x: auto` 명시** — 탭 항목 많을 때 좌우 스크롤
+- sticky / top:52px / z-index:9 / box-shadow 유지
+
+### 수정 파일
+- `public/static/style.css` — margin 음수값 제거, flex-wrap:nowrap 추가
+- `node-server.ts` — 캐시 버전 `20260617l` → `20260617m`
+
+### 롤백 태그
+| 태그 | 커밋 | 설명 |
+|------|------|------|
+| `rollback/pre-feat-tab-sticky-v2` | `b5383d7` | v2 수정 직전 (v1 적용 상태) |
+| `rollback/pre-feat-tab-sticky` | `56a8999` | v1 수정 직전 (tab-sticky 전체 롤백) |
+
+**롤백 명령 (v2만 롤백):**
+```bash
+git push origin b5383d7:main --force
+cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+```
+
+### 커밋
+- `eb4a5b4` — fix: 탭바 sticky v2 — margin 음수값 제거 + flex-wrap:nowrap (FEAT-025-TAB)

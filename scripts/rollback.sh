@@ -139,6 +139,18 @@ echo -e "${BLUE}롤백 대상:${NC} ${YELLOW}${TARGET}${NC}"
 echo -e "${BLUE}커밋:     ${NC} ${COMMIT_MAP[$TARGET]}"
 echo -e "${BLUE}설명:     ${NC} ${DESC_MAP[$TARGET]}"
 
+# ── 롤백 대상에 따른 APK 버전 안내 ──────────────────────────────────────
+declare -A APK_MAP=(
+  ["pre-bug010-v2"]="v1.4.6 (BUG-010-1/2 수정, HTTP 3444 포트 없음)"
+  ["pre-bug010"]="v1.4.5 (BUG-009만 적용)"
+  ["pre-bug009"]="v1.4.4 (FCM 브릿지 없음)"
+  ["stable-28"]="v1.4.3 이하"
+  ["latest"]="최신 빌드"
+)
+echo -e "${YELLOW}⚠️  이 서버 버전에 맞는 APK: ${APK_MAP[$TARGET]}${NC}"
+echo -e "${YELLOW}   APK도 해당 버전으로 다운그레이드하세요.${NC}"
+echo ""
+
 if confirm "위 버전으로 롤백합니다. 현재 실행 중인 서버가 재시작됩니다."; then
   do_rollback "$TARGET"
 else

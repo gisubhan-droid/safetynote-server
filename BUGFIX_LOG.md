@@ -2561,3 +2561,120 @@ curl -sk https://linkmax.myds.me:3443/static/app.js | grep -c "saveAuthToken"
 | `v=20260617n` | 세션 27 | FCM 서버 구현 |
 | `v=20260618a` | 세션 30 | BUG-009/010 브릿지 호출 코드 추가 |
 
+
+---
+
+## [BUG-010-4] FCM 등록 0명 지속 — HTTPS 전용 포트 3443에 HTTP 요청 (2026-06-18)
+
+### 증상
+v1.4.6 설치 + NAS git pull 완료 후에도 FCM 등록 0명 유지.
+서버 PM2 로그에 FCM 토큰 등록 흔적 **전혀 없음**.
+
+### 진단
+
+```bash
+# 서버 로그: FCM 시도 흔적 없음
+grep -i "fcm\|push" /root/.pm2/logs/safetynote-out.log | tail -20
+# → [patchSchema] v0.134 users.fcm_token 컬럼 추가 완료 (단 1줄)
+
+# HTTP로 직접 테스트 → 빈 응답
+curl -sk -X POST http://linkmax.myds.me:3443/api/push/register \
+  -H "Authorization: Bearer AAAA" -d '{"fcm_token":"test"}' ; echo ""
+# → (아무것도 출력 안 됨)
+```
+
+### 원인
+
+**3443 포트는 HTTPS 전용** — NAS `node-server.ts`가 `https.createServer()`로 3443 포트에 바인딩.
+Android `HttpURLConnection`은 `https→http` 변환 후 `http://linkmax.myds.me:3443`으로 요청하지만,
+3443은 TLS handshake를 기대하는 HTTPS 소켓 → 평문 HTTP 패킷 수신 시 즉시 연결 종료.
+결과: 빈 응답(connect 성공, 즉시 EOF) → Exception → 조용히 삼켜짐.
+
+```
+[BUG-010-1 v1 흐름]  Android → https://...:3443 → SSLHandshakeException (자체서명)
+[BUG-010-1 Fix v1]   Android → http://...:3443  → 빈 응답 (HTTPS 소켓에 HTTP 요청)
+[BUG-010-1 Fix v2]   Android → http://...:3444  → 정상 응답 ✅
+                      서버: HTTP 전용 3444 포트 동시 오픈
+```
+
+### 해결
+
+#### 서버 (`node-server.ts`) — HTTP 포트 3444 추가 (`c4c77de`)
+```typescript
+// HTTPS 서버(3443) 외에 HTTP 전용 서버(3444)를 동시에 기동
+const HTTP_PORT = parseInt(process.env.HTTP_PORT || '3444')
+const httpServer = http.createServer((req, res) => {
+  app.fetch(...).then(...)
+})
+httpServer.listen(HTTP_PORT, '0.0.0.0', () => {
+  console.log(`✅ HTTP 내부 포트 실행 중: http://0.0.0.0:${HTTP_PORT} (Android FCM 전용)`)
+})
+httpServer.on('error', (err) => {
+  console.warn(`[HTTP] 내부 포트 ${HTTP_PORT} 오류 (무시 가능):`, err.message)
+  // ⚠️ process.exit() 없음 — HTTPS 서버는 계속 실행
+})
+```
+
+#### Android (`MainActivity.java` + `MyFirebaseMessagingService.java`) — 포트 3443→3444 변환 (`e8d4bd2`)
+```java
+// https→http 변환 후 추가: 포트 3443 → 3444
+effectiveUrl = effectiveUrl.replaceAll(":3443(/|$)", ":3444$1");
+// 결과: http://linkmax.myds.me:3444/api/push/register
+```
+
+### 검증 방법 (NAS에서)
+
+```bash
+# NAS git pull + 재시작 후
+pm2 restart safetynote
+
+# 3444 포트 응답 확인
+curl -s -X POST http://linkmax.myds.me:3444/api/push/register \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer AAAA" \
+  -d '{"fcm_token":"test"}' ; echo ""
+# 기대값: {"error":"인증 필요"}  ← API 살아있음 확인
+
+# PM2 로그에서 HTTP 3444 포트 기동 확인
+grep "3444\|HTTP 내부" /root/.pm2/logs/safetynote-out.log | tail -3
+```
+
+### ⚠️ 재발 방지 규칙 (RULE-004)
+
+**HTTPS 전용 포트에 HttpURLConnection HTTP 요청 금지**
+- NAS 서버: 3443 = HTTPS 전용, 3444 = HTTP 내부 전용
+- Android `HttpURLConnection` 사용 시: 항상 `http://...:3444` 사용
+- WebView(Capacitor): HTTPS(3443) 그대로 사용 (WebView는 자체서명 인증서 예외 적용됨)
+- 공유기 포트포워딩: 3443만 외부 오픈 → 3444는 내부망 전용 (보안 유지)
+
+### 관련 버그 연결
+| 버그 | 원인 | 해결 |
+|------|------|------|
+| BUG-010-1 v1 | SSLHandshakeException (자체서명) | https→http 변환 |
+| **BUG-010-4** | **3443 HTTPS 전용 포트에 HTTP 요청** | **3444 HTTP 포트 추가** |
+
+### 커밋
+- `safetynote-server`: `c4c77de`
+- `safetynote-android`: `e8d4bd2`
+- APK: v1.4.7
+
+---
+
+## [RULE-004] NAS 포트 구조 (필수 숙지)
+
+```
+외부(인터넷) ─┐
+              │ 공유기 포트포워딩: 3443만 오픈
+              ▼
+NAS :3443  HTTPS 전용 (브라우저/WebView 접속용)
+NAS :3444  HTTP  전용 (Android HttpURLConnection FCM 등록 전용, 내부망 only)
+```
+
+| 클라이언트 | 프로토콜 | 포트 | 비고 |
+|-----------|---------|------|------|
+| 브라우저 | HTTPS | 3443 | 외부 공개 |
+| WebView(Capacitor) | HTTPS | 3443 | 외부 공개, 자체서명 예외 적용 |
+| Android HttpURLConnection | HTTP | 3444 | 내부망 전용, 외부 차단 |
+
+**⚠️ 이 구조를 변경하려면 반드시 BUGFIX_LOG RULE-004 확인 후 진행**
+

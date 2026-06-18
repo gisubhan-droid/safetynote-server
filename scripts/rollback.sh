@@ -4,6 +4,7 @@
 #  사용법: bash rollback.sh [버전코드]
 #
 #  버전코드 목록:
+#    pre-bug017      → BUG-017 수정 직전 (세션 34, TBM 사진 팝업 z-index 수정 전, 커밋 53b6733)
 #    pre-bug012      → BUG-012 수정 직전 (세션 34 작업 전, push/send+APK 파일명 수정 전)
 #    pre-bug011-safe → 세션 32 완료 (FCM 진단 없음, 가장 안전, 커밋 f20094a)
 #    pre-bug011      → BUG-011 PATCH 라우트 추가 직전 (FCM 진단API는 있음, 커밋 a65acc0)
@@ -24,6 +25,7 @@ PM2_APP="${PM2_APP:-safetynote}"
 # ── 커밋 해시 맵 ──────────────────────────────────────────────
 # 서버(safetynote-server) 커밋 기준
 declare -A COMMIT_MAP=(
+  ["pre-bug017"]="53b6733"      # 세션 34 — BUG-017(TBM 사진 팝업 z-index) 수정 직전
   ["pre-bug012"]="c087a2a"      # 세션 34 작업 전 — BUG-012(push/send 버그+APK 파일명) 수정 직전
   ["pre-bug011-safe"]="f20094a" # 세션 32 완료 상태 — FCM 진단API 없음, 가장 안전한 복원점
   ["pre-bug011"]="a65acc0"      # BUG-011 PATCH 라우트 추가 직전 — FCM 진단/상세결과 있음
@@ -35,6 +37,7 @@ declare -A COMMIT_MAP=(
 
 # ── 버전별 설명 ───────────────────────────────────────────────
 declare -A DESC_MAP=(
+  ["pre-bug017"]="세션 34 — TBM 안전조치 사진 팝업 z-index 수정 직전 (v1.4.7 APK 대응)"
   ["pre-bug012"]="세션 34 작업 전 — push/send 순서버그+APK 파일명 수정 직전 (v1.4.7 APK 대응)"
   ["pre-bug011-safe"]="세션 32 완료 (FCM 진단 없음) — cc860f1 이전 가장 안전한 복원점"
   ["pre-bug011"]="BUG-011 PATCH 라우트만 제거 — FCM 진단/push/send 상세결과는 유지 (v1.4.7 APK 대응)"
@@ -56,7 +59,7 @@ print_header() {
 
 print_versions() {
   echo -e "${BLUE}사용 가능한 버전코드:${NC}\n"
-  for key in pre-bug012 pre-bug011-safe pre-bug011 pre-bug010 pre-bug009 stable-28 latest; do
+  for key in pre-bug017 pre-bug012 pre-bug011-safe pre-bug011 pre-bug010 pre-bug009 stable-28 latest; do
     echo -e "  ${YELLOW}${key}${NC}"
     echo -e "    커밋: ${COMMIT_MAP[$key]}"
     echo -e "    설명: ${DESC_MAP[$key]}\n"
@@ -210,6 +213,7 @@ echo -e "${BLUE}설명:     ${NC} ${DESC_MAP[$TARGET]}"
 
 # ── 롤백 대상에 따른 APK 버전 안내 ──────────────────────────────────────
 declare -A APK_MAP=(
+  ["pre-bug017"]="v1.4.7 (FCM 자동 알림 있음, TBM 사진 팝업 z-index 버그 있음)"
   ["pre-bug012"]="v1.4.7 (FCM 자동 알림 있음, push/send 순서버그 있음)"
   ["pre-bug011-safe"]="v1.4.6 이하 (FCM 자동 알림 없음 — 수동 push/send만 가능)"
   ["pre-bug011"]="v1.4.7 (FCM 자동 알림 없음 — 수동 push/send만 가능)"

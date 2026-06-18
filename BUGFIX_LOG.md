@@ -2947,3 +2947,38 @@ c.header('Content-Disposition', `attachment; filename="${apkFilename}"`)
 - 파일 저장 경로(서버 내부)는 변경 없음 (`safetynote.apk` 그대로 유지)
 - 다운로드 시 브라우저/DownloadManager가 수신하는 `Content-Disposition` 파일명만 변경
 
+---
+
+## [BUG-017] TBM 안전조치 사진 등록 창이 기존 팝업 뒤에 표시됨 (2026-06-18)
+
+### 증상
+- "TBM 안전조치 사진 등록" 창이 최상위로 열리지 않고 기존 팝업(작업상세 모달 등) 뒤에 숨어 보임
+
+### 원인
+- `showTbmPhotoModal()` 함수에서 `document.body.appendChild(modal)` 호출 시
+  별도 z-index 설정이 없었음
+- 기존 모든 `.modal-overlay`가 CSS에서 `z-index: 1000`으로 고정되어 있어
+  새로 추가된 TBM 사진 등록 모달이 기존 모달과 동일한 레이어에 쌓임
+- DOM에 나중에 추가되어도 동일 z-index인 경우 스태킹 컨텍스트 순서에 의해
+  기존 모달 위에 제대로 표시되지 않을 수 있음
+
+### 해결 (`9a30fe8`)
+```javascript
+// showTbmPhotoModal() 함수 — document.body.appendChild 직전에 z-index 강제 설정
+modal.style.zIndex = '10020';  // 기존 모달(1000), 다른 최상위 모달(10010)보다 높게
+document.body.appendChild(modal);
+```
+- 캐시버전: `v=20260618a` → `v=20260618b`
+
+### 영향 범위
+- `showTbmPhotoModal()` 함수만 수정
+- 다른 모달 z-index는 변경 없음
+
+### 재발 방지
+- 팝업 위에 팝업을 띄울 때는 반드시 `modal.style.zIndex` 명시적 설정 필요
+- 현재 앱의 z-index 계층:
+  - 일반 모달: `1000` (CSS `.modal-overlay`)
+  - 알림/로딩 등: `10000`
+  - TBM 서명/사진 모달: `10010`
+  - **TBM 안전조치 사진 등록 모달: `10020` (최상위)**
+

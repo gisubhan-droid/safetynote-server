@@ -1856,3 +1856,66 @@ INSERT OR IGNORE INTO legal_notices (notice_key, title, law_ref, content, is_act
 ### 다음 단계
 - [ ] **NAS git pull + pm2 restart** — 커밋 `e3f4fca` 적용 필요
 - [ ] 확선내역/광케이블 DB 저장 API 연동 (`work-reports.ts` 신규 테이블 처리)
+
+---
+
+## 🗓️ 세션 28 — 2026-06-18 (Phase 2 FCM 푸시 알림 서버 구현)
+
+### 커밋 이력
+| 해시 | 설명 |
+|------|------|
+| `5d3e8d0` | fix: 탭바 sticky v3 — tab-bar-wrap을 modal 직계 자식으로 이동 (FEAT-025-TAB) |
+| `d2d2bb3` | docs: FEAT-025-TAB v3 커밋 해시 기입 (BUGFIX_LOG) |
+| `d32c632` | **feat: FCM 푸시 알림 서버 구현 (Phase 2 — FEAT-025-FCM)** |
+
+### 주요 작업
+
+#### FEAT-025-TAB v3 (보류)
+- tab-bar-wrap을 modal 직계 자식으로 이동하는 HTML 구조 변경 시도
+- 모바일 디바이스에서 여전히 sticky 미작동 → 사용자 결정으로 **보류**
+- 롤백 태그: `rollback/pre-feat-tab-sticky-v3` → `5add4ae`
+
+#### Phase 2 — FEAT-025-FCM (서버 구현 완료)
+
+**신규 파일:**
+- `src/fcm.ts` — FCM HTTP v1 헬퍼 모듈 (firebase-admin 미사용)
+
+**수정 파일:**
+- `node-server.ts` — patchSchema v0.134, FCM 헬퍼함수, FCM API 4개, 병행 발송 5곳
+- `public/static/app.js` — 관리자 UI 푸시 발송 섹션, _loadFcmStatus(), sendManualPush()
+
+**FCM API 엔드포인트:**
+```
+POST   /api/push/register  — 앱에서 FCM 토큰 등록/갱신
+DELETE /api/push/register  — 로그아웃 시 토큰 삭제
+POST   /api/push/send      — 관리자 수동 발송 (all|role:xxx|user:123)
+GET    /api/push/status    — 토큰 등록 현황 (admin/supervisor)
+```
+
+**FCM 자동 발송 트리거 (5곳):**
+- TBM 결재: safety서명완료 → general 알림
+- TBM 결재: general서명완료 → ceo 알림
+- TBM 결재: ceo서명완료 → 안전관리자 완료 알림
+- 서명요청 단건 (POST /api/signature-requests)
+- 서명요청 일괄 (POST /api/signature-requests/bulk)
+
+**Firebase 프로젝트**: `safetynote-c1e8c`  
+**패키지명**: `me.gisubhan.safetynote`
+
+### 빌드 상태
+- `npm run build` → ✅ 성공 (`dist/_worker.js 250.32 kB`)
+- `app.js` 구문 검사 → ✅ 통과
+- 캐시 버전: `v=20260617n`
+- 롤백 태그: `rollback/pre-phase2-fcm` → `d2d2bb3`
+
+### 세션 28 미완료 → 다음 세션
+
+- [ ] **Android 앱 FCM 연동** (safetynote-android 저장소):
+  - `app/google-services.json` 추가
+  - `app/build.gradle`: FCM SDK 의존성 추가
+  - `MyFirebaseMessagingService.java`: 토큰 자동 등록, 알림 수신 처리
+  - `AndroidManifest.xml`: FCM 서비스 등록, 알림 채널 권한
+- [ ] **NAS .env 설정**: FCM_PROJECT_ID, FCM_CLIENT_EMAIL, FCM_PRIVATE_KEY 추가
+- [ ] **NAS git pull + pm2 restart** 후 실기기 테스트
+- [ ] **FEAT-025-TAB** 탭바 sticky 모바일 미작동 — 별도 세션 재시도
+

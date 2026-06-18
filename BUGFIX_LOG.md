@@ -2064,3 +2064,85 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 
 ### 커밋
 - `5d3e8d0` — fix: 탭바 sticky v3 — tab-bar-wrap을 modal 직계 자식으로 이동 (FEAT-025-TAB)
+
+---
+
+## [FEAT-025-FCM] FCM 푸시 알림 서버 구현 (Phase 2)
+
+> **커밋**: `d32c632`  
+> **날짜**: 2026-06-18  
+> **상태**: ✅ 서버 구현 완료 / 🔄 Android 앱 연동 진행 중
+
+### 배경
+
+기존 실시간 알림은 SSE(Server-Sent Events)로만 발송 → 앱이 꺼져 있으면 수신 불가.  
+FCM HTTP v1 API를 추가로 병행 발송하여 앱 미실행 시에도 푸시 알림 수신.
+
+### 핵심 설계 결정
+
+| 문제 | 결정 |
+|------|------|
+| firebase-admin SDK NAS glibc 비호환 | Node.js 내장 `crypto`+`https`로 FCM HTTP v1 직접 구현 |
+| access_token 매 요청 발급 비효율 | 1시간 캐싱 + 만료 1분 전 자동 갱신 (`_cachedToken`, `_tokenExpiry`) |
+| 기존 SSE 코드 수정 최소화 | `.catch(()=>{})` 패턴으로 FCM 병행 — SSE 코드 변경 없음 |
+| RULE-002 TDZ 방지 | `sendFcmToUsers`, `sendFcmToRoles`를 patchSchema() 이후에 배치 |
+
+### 추가된 파일 / 수정 사항
+
+#### `src/fcm.ts` (신규)
+- RS256 JWT 생성 → Google OAuth2 토큰 교환 → FCM Bearer 인증
+- `sendFcmPush(token, payload)` — 단건 발송
+- `sendFcmPushMulti(tokens[], payload)` — 다건 순차 발송
+- Android 전용 알림 채널 `safetynote_push`, priority: high
+
+#### `node-server.ts`
+- **patchSchema v0.134**: `ALTER TABLE users ADD COLUMN fcm_token TEXT DEFAULT NULL`
+- **헬퍼 함수**: `sendFcmToUsers(userIds)`, `sendFcmToRoles(roles[])`
+- **FCM 병행 발송 추가 위치 (5곳)**:
+  - TBM 결재: approval_safety → approval_general
+  - TBM 결재: approval_general → approval_ceo
+  - TBM 결재: approval_ceo → 안전관리자 완료 알림
+  - 서명요청 단건 (POST /api/signature-requests)
+  - 서명요청 일괄 (POST /api/signature-requests/bulk)
+- **FCM API 4개**:
+  - `POST   /api/push/register`  — FCM 토큰 등록/갱신
+  - `DELETE /api/push/register`  — 로그아웃 시 토큰 삭제
+  - `POST   /api/push/send`      — 관리자 수동 발송 (all|role:xxx|user:123)
+  - `GET    /api/push/status`    — 토큰 등록 현황
+
+#### `app.js`
+- 관리자 설정 화면에 푸시 알림 발송 UI 섹션 추가 (#fcm-status-bar, #push-target, #push-title, #push-body)
+- `_loadFcmStatus()` — GET /api/push/status 호출, 현황 바 업데이트
+- `sendManualPush()` — POST /api/push/send 호출, 확인 후 발송
+- `renderAdminSettingsPage()` 내 `_loadFcmStatus()` 자동 호출 추가
+
+### NAS .env 설정 (필수)
+
+```env
+FCM_PROJECT_ID=safetynote-c1e8c
+FCM_CLIENT_EMAIL=firebase-adminsdk-fbsvc@safetynote-c1e8c.iam.gserviceaccount.com
+FCM_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n
+```
+
+> ⚠️ FCM_PRIVATE_KEY의 개행은 반드시 `\n` (리터럴 백슬래시+n) 으로 저장할 것.  
+> 실제 개행으로 저장하면 multi-line env 파싱 오류 발생.
+
+### 롤백 태그
+
+| 태그 | 커밋 | 설명 |
+|------|------|------|
+| `rollback/pre-phase2-fcm` | `d2d2bb3` | Phase 2 시작 직전 |
+
+**롤백 명령:**
+```bash
+git push origin d2d2bb3:main --force
+cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+```
+
+### 남은 작업 (Android 앱)
+
+- [ ] `app/google-services.json` 추가 (safetynote-c1e8c 프로젝트)
+- [ ] `app/build.gradle`: `com.google.firebase:firebase-messaging:23.4.0` 의존성 추가
+- [ ] `MyFirebaseMessagingService.java`: 토큰 자동 등록, 포그라운드/백그라운드 알림 처리
+- [ ] `AndroidManifest.xml`: FCM 서비스 등록, 알림 채널 권한
+

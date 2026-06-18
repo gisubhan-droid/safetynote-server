@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-06-18 (세션 31)
-> **서버 현재 버전: (이번 세션 커밋)** ← 최신
-> **NAS 배포 버전: a473c4a** ⚠️ git pull 필요 → `bash scripts/nas-deploy.sh`
-> **캐시 버전: v=20260618a** (BUG-009/010 app.js 반영)
+> **서버 현재 버전: 9a27d73** ← 최신
+> **NAS 배포 버전: 9a27d73** ✅ git pull 완료 (세션 31)
+> **캐시 버전: v=20260618a** (BUG-009/010 app.js 반영 — 라이브 서빙 확인)
 > **APK 최신**: ✅ v1.4.6 빌드 완료 (BUG-010 수정)
 
 ---
@@ -2111,6 +2111,14 @@ bash /volume1/safetynote/scripts/nas-deploy.sh
 | **v1.4.5** | **2026-06-18** | ✅ 빌드 완료 | FCM JWT 브릿지(BUG-009) |
 | **v1.4.6** | **2026-06-18** | ✅ 빌드 완료 | FCM SSL 폴백(BUG-010-1) + APK 다운로드 브릿지(BUG-010-2) |
 
+### NAS 배포 확인 결과 (세션 31)
+```
+app.js?v=20260618a     ✅ 신버전 서빙 확인
+saveAuthToken: 2건     ✅ BUG-009 코드 라이브
+downloadApk:   3건     ✅ BUG-010 코드 라이브
+pm2 safetynote online  ✅ 재시작 완료
+```
+
 ### 세션 31 미완료 → 다음 세션
-- [ ] **NAS git pull 실행** — `bash scripts/nas-deploy.sh` 실행
-- [ ] **실기기 재테스트** — 로그인 → FCM 등록 확인 → APK 다운로드 확인
+- [x] **NAS git pull 실행** — `9a27d73` 반영 완료 ✅
+- [ ] **실기기 재테스트** — 앱 재로그인 → FCM 등록 수 확인 → APK 다운로드 확인

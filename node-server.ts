@@ -2109,6 +2109,137 @@ app.get('/api/tasks/:id/tbm-info', async (c) => {
   }
 })
 
+// ── NAS 전용: PATCH /api/tasks/:id/status — FCM 발송 추가 ────────────────────
+// [BUG-011 Fix] tasks.ts(Cloudflare용)에는 FCM 발송 코드가 없음
+// → Node.js crypto/https를 사용하는 sendFcmToUsers()를 NAS에서만 호출
+// → taskRoutes보다 앞에 등록해서 NAS에서 가로채고, FCM 발송 후 taskRoutes로 위임하지 않고 직접 처리
+app.patch('/api/tasks/:id/status', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const id = Number(c.req.param('id'))
+  const body = await c.req.json().catch(() => ({})) as any
+  const { status, confirmed_address, work_started_at, work_completed_at } = body
+
+  if (!status) return c.json({ error: 'status 필수' }, 400)
+
+  // ── 상태 업데이트 ──────────────────────────────────────────────────────────
+  const statusLabel: Record<string, string> = {
+    unassigned: '미배정', assigned: '배정완료', working: '작업중',
+    in_progress: '진행중', tbm_done: 'TBM완료', work_completed: '작업완료',
+    completed: '완료', cancelled: '취소', paused: '일시중지'
+  }
+  const sLabel = statusLabel[status] || status
+
+  try {
+    if (status === 'working') {
+      rawDb.prepare(
+        `UPDATE tasks SET status=?, confirmed_address=?, work_started_at=COALESCE(work_started_at,?), updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).run(status, confirmed_address || null, work_started_at || new Date().toISOString(), id)
+    } else if (status === 'work_completed') {
+      rawDb.prepare(
+        `UPDATE tasks SET status=?, work_completed_at=?, work_log_required=1, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).run(status, work_completed_at || new Date().toISOString(), id)
+    } else if (status === 'completed') {
+      rawDb.prepare(
+        `UPDATE tasks SET status=?, work_log_required=0, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).run(status, id)
+    } else {
+      rawDb.prepare(
+        `UPDATE tasks SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).run(status, id)
+    }
+  } catch (e: any) {
+    console.error('[PATCH /tasks/:id/status] DB 업데이트 실패:', e.message)
+    return c.json({ error: '상태 업데이트 실패' }, 500)
+  }
+
+  // ── 작업 정보 조회 (알림용) ─────────────────────────────────────────────────
+  let taskTitle = String(id), taskNumDisplay = String(id)
+  let supervisorId: number | null = null
+  let workerIds: number[] = []
+  try {
+    const taskRow = rawDb.prepare(
+      `SELECT t.title, t.supervisor_id, t.work_number, t.sub_task_number, t.task_number,
+              GROUP_CONCAT(ta.worker_id) as worker_ids
+       FROM tasks t
+       LEFT JOIN task_assignments ta ON ta.task_id = t.id
+       WHERE t.id = ? GROUP BY t.id`
+    ).get(id) as any
+    if (taskRow) {
+      taskTitle = taskRow.title || String(id)
+      supervisorId = taskRow.supervisor_id || null
+      taskNumDisplay = taskRow.work_number
+        ? (taskRow.sub_task_number ? `${taskRow.work_number}-${taskRow.sub_task_number}` : taskRow.work_number)
+        : (taskRow.task_number || String(id))
+      if (taskRow.worker_ids) {
+        workerIds = String(taskRow.worker_ids).split(',').map(Number).filter(Boolean)
+      }
+    }
+  } catch(_) {}
+
+  const statusMsg = `[작업상태] "${taskTitle}": ${user.name}님이 상태를 [${sLabel}]로 변경했습니다.`
+
+  // ── SSE 실시간 알림 ─────────────────────────────────────────────────────────
+  try {
+    const ssePayload = {
+      type: 'task_status', taskId: id, status, statusLabel: sLabel,
+      actor: user.name, title: taskTitle, message: statusMsg, ts: Date.now()
+    }
+    broadcastToRoles(['admin', 'supervisor'], ssePayload)
+    for (const wid of workerIds) {
+      if (wid !== user.id) sendToUser(wid, ssePayload)
+    }
+  } catch(_) {}
+
+  // ── notifications DB 저장 ───────────────────────────────────────────────────
+  try {
+    const notifTitle = `작업 상태 변경: ${sLabel}`
+    const adminUsers = rawDb.prepare(
+      `SELECT id FROM users WHERE role IN ('admin','supervisor') AND is_active=1 AND id != ?`
+    ).all(user.id) as any[]
+    for (const u of adminUsers) {
+      rawDb.prepare(
+        `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+         VALUES (?, 'task_status_change', ?, ?, ?, 'task', 0)`
+      ).run(u.id, notifTitle, statusMsg, id)
+    }
+  } catch(_) {}
+
+  // ── FCM 발송 — 주요 상태 변경 시 관련자 모두에게 ────────────────────────────
+  const FCM_NOTIFY_STATUSES = ['tbm_done', 'working', 'work_completed', 'completed', 'cancelled']
+  if (FCM_NOTIFY_STATUSES.includes(status)) {
+    try {
+      // 대상: 관리감독자 + 총괄책임자 + 대표이사 + 배정 작업자 (본인 제외)
+      const targetRows = rawDb.prepare(
+        `SELECT id FROM users
+         WHERE (position IN ('관리감독자','총괄책임자','대표이사') OR role IN ('admin','supervisor'))
+         AND is_active=1 AND id != ?`
+      ).all(user.id) as any[]
+      let targetIds = targetRows.map((r: any) => r.id as number)
+      // 배정 작업자 추가 (중복 제거)
+      for (const wid of workerIds) {
+        if (wid !== user.id && !targetIds.includes(wid)) targetIds.push(wid)
+      }
+
+      if (targetIds.length > 0) {
+        const fcmTitle = `작업 상태 변경: ${sLabel}`
+        const fcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업이 [${sLabel}]로 변경되었습니다. (${user.name})`
+        console.log(`[FCM] 작업상태 변경 발송 시작 — task:${id} status:${status} → targets:${targetIds}`)
+        sendFcmToUsers(targetIds, {
+          title: fcmTitle,
+          body:  fcmBody,
+          data:  { type: 'task_status', taskId: String(id), status }
+        }).catch((e: any) => console.error('[FCM] 작업상태 FCM 오류:', e.message))
+      }
+    } catch(e: any) {
+      console.error('[FCM] 작업상태 FCM 준비 오류:', e.message)
+    }
+  }
+
+  return c.json({ success: true })
+})
+
 app.route('/api/tasks', taskRoutes)
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)

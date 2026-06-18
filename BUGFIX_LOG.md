@@ -2063,4 +2063,4 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 ```
 
 ### 커밋
-- (이번 세션 커밋 후 기입 예정)
+- `5d3e8d0` — fix: 탭바 sticky v3 — tab-bar-wrap을 modal 직계 자식으로 이동 (FEAT-025-TAB)

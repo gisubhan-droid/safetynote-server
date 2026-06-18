@@ -18115,6 +18115,8 @@ function showTbmPhotoModal(assId, taskId, sections) {
       </button>
     </div>
   </div>`;
+  // 기존 모달(작업상세 등) 위에 최상위 표시 — z-index 강제 설정
+  modal.style.zIndex = '10020';
   document.body.appendChild(modal);
 
   // 완료 버튼: 모달 닫기 + 작업 상세 화면 즉시 갱신

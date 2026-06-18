@@ -425,10 +425,11 @@ body {
   display: flex; gap: 2px; border-bottom: 2px solid var(--border);
   margin-bottom: 20px; overflow-x: auto;
   background: white; border-radius: 12px 12px 0 0; padding: 4px 4px 0;
-  /* [FEAT-025-TAB] 모달 내부 스크롤 시 탭바 상단 고정 */
+  /* [FEAT-025-TAB v2] 모달 내부 스크롤 시 탭바 상단 고정 (PC 기준) */
   position: sticky;
   top: 62px;        /* modal-header 높이(PC 기준: padding 20×2 + 내용 ~22px) */
-  z-index: 9;       /* modal-header(z-index:1) 보다 낮게 — 헤더 아래에 위치 */
+  z-index: 9;
+  flex-wrap: nowrap; /* 탭 항목 가로 1줄 고정 — 세로 줄바꿈 방지 */
 }
 .tab-item {
   padding: 9px 16px; font-size: 13px; font-weight: 600;
@@ -855,17 +856,15 @@ body {
     z-index: 10 !important;
     min-height: 52px;
   }
-  /* [FEAT-025-TAB] 모바일: 탭바 sticky — modal-header 바로 아래 고정 */
-  /* modal-header min-height:52px 기준, 실제 렌더 높이에 맞춰 top 조정 */
+  /* [FEAT-025-TAB v2] 모바일: 탭바 sticky — modal-header 바로 아래 고정 */
+  /* margin 음수값 제거 — 탭바 너비 계산 오류 및 항목 세로 줄바꿈 문제 해결 */
   .modal .tab-bar {
     position: sticky !important;
-    top: 52px !important;   /* modal-header min-height(52px) 바로 아래 */
-    z-index: 9 !important;  /* modal-header(10) 보다 낮아야 헤더 아래에 위치 */
-    margin-left: -24px !important;   /* modal-body padding 상쇄 → 좌우 full width */
-    margin-right: -24px !important;
-    padding-left: 24px !important;
-    padding-right: 24px !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.06); /* 고정 시 하단 구분선 강조 */
+    top: 52px !important;      /* modal-header min-height(52px) 바로 아래 */
+    z-index: 9 !important;     /* modal-header(z-index:10) 보다 낮게 */
+    flex-wrap: nowrap !important; /* 탭 항목 가로 1줄 고정 */
+    overflow-x: auto !important;  /* 탭 항목 많을 때 가로 스크롤 */
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
   }
   /* 닫기 버튼 터치 타겟 44×44px 보장 */
   .modal-header > button:last-child,

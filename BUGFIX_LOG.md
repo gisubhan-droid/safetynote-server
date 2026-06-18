@@ -2462,7 +2462,7 @@ if (isCapacitor) {
 | `build-apk.yml` | 버전 기본값 `1.4.6` |
 
 ### 커밋
-- `safetynote-android`: (이번 세션)
-- `safetynote-server`: (이번 세션)
+- `safetynote-android`: `8e5144f`
+- `safetynote-server`: `f1c05c1`
 
 ---

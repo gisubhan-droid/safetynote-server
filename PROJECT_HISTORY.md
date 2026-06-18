@@ -2023,8 +2023,8 @@ GET    /api/push/status    — 토큰 등록 현황 (admin/supervisor)
 ### 커밋 이력
 | 해시 | 설명 |
 |------|------|
-| (이번 세션) | fix: BUG-010 FCM SSL 폴백 + APK 다운로드 브릿지 (v1.4.6) — safetynote-android |
-| (이번 세션) | fix: BUG-010 app.js downloadApk 브릿지 우선 사용 — safetynote-server |
+| `8e5144f` | fix: BUG-010 FCM SSL 폴백 + APK 다운로드 브릿지 (v1.4.6) — safetynote-android |
+| `f1c05c1` | fix: BUG-010 app.js downloadApk 브릿지 우선 사용 — safetynote-server |
 
 ### 주요 작업 — BUG-010 (FCM 0명 + APK 다운로드 불가)
 
@@ -2041,7 +2041,7 @@ GET    /api/push/status    — 토큰 등록 현황 (admin/supervisor)
 | 버전 | 날짜 | 빌드 상태 | 주요 변경 내용 |
 |------|------|-----------|----------------|
 | **v1.4.5** | **2026-06-18** | ✅ 빌드 완료 | FCM JWT 브릿지 수정(BUG-009) — 로그인 후 FCM 토큰 서버 등록 |
-| **v1.4.6** | **2026-06-18** | 🔲 빌드 예정 | FCM SSL 폴백(BUG-010-1) + APK 다운로드 브릿지(BUG-010-2) |
+| **v1.4.6** | **2026-06-18** | ✅ **빌드 완료** | FCM SSL 폴백(BUG-010-1) + APK 다운로드 브릿지(BUG-010-2) |
 
 ### 세션 30 추가분 미완료 → 다음 세션
 - [ ] **v1.4.6 빌드 완료 확인** — GitHub Actions 결과 대기

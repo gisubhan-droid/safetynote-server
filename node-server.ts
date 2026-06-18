@@ -5359,6 +5359,49 @@ if (tlsCert) {
     process.exit(1)
   })
 
+  // ── HTTP 내부 포트 (Android FCM 등록 전용) ────────────────────────────
+  // [BUG-010-1 Fix] Android HttpURLConnection 은 자체서명 인증서를 신뢰하지 않음.
+  // https→http 변환 후 요청하지만, NAS는 HTTPS(3443)만 리슨 → 빈 응답(연결 거부).
+  // 해결: HTTP 전용 포트 3444를 추가로 열어 Android 내부 API 호출에 사용.
+  // 외부(인터넷)에서는 공유기 포트포워딩에 3444가 없으므로 접근 불가 → 보안 유지.
+  const HTTP_PORT = parseInt(process.env.HTTP_PORT || '3444')
+  const httpServer = http.createServer((req, res) => {
+    app.fetch(
+      new Request(
+        `http://${req.headers.host || `localhost:${HTTP_PORT}`}${req.url}`,
+        {
+          method: req.method,
+          headers: req.headers as any,
+          body: ['GET','HEAD'].includes(req.method ?? '') ? undefined : req as any,
+          duplex: 'half',
+        } as any
+      ),
+      { incoming: req, outgoing: res } as any
+    ).then((honoRes: Response) => {
+      res.writeHead(honoRes.status, Object.fromEntries(honoRes.headers.entries()))
+      if (honoRes.body) {
+        const reader = honoRes.body.getReader()
+        const pump = () => reader.read().then(({ done, value }) => {
+          if (done) { res.end(); return }
+          res.write(value)
+          pump()
+        })
+        pump()
+      } else {
+        res.end()
+      }
+    }).catch((err: any) => {
+      res.writeHead(500)
+      res.end('Internal Server Error')
+    })
+  })
+  httpServer.listen(HTTP_PORT, '0.0.0.0', () => {
+    console.log(`✅ HTTP 내부 포트 실행 중: http://0.0.0.0:${HTTP_PORT} (Android FCM 전용)`)
+  })
+  httpServer.on('error', (err: any) => {
+    console.warn(`[HTTP] 내부 포트 ${HTTP_PORT} 오류 (무시 가능):`, err.message)
+  })
+
 } else {
   // ── ✅ 샌드박스 / 개발 환경: HTTP 자동 폴백 ──────────────────────────
   // Synology 인증서 없음 → HTTP로 서빙 (개발/테스트 환경 정상 동작)

@@ -2510,14 +2510,55 @@ app.post('/api/push/send', async (c) => {
   if (tokens.length === 0)
     return c.json({ success: true, sent: 0, failed: 0, message: '등록된 FCM 토큰 없음' })
 
+  // 발송 대상 사용자 정보 (상세 결과에 이름 표시용)
+  let targetUsers: any[] = []
+  if (!target || target === 'all') {
+    targetUsers = rawDb.prepare(
+      `SELECT id, name, role, fcm_token FROM users WHERE is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
+    ).all() as any[]
+  } else if (String(target).startsWith('role:')) {
+    const role = String(target).replace('role:', '')
+    targetUsers = rawDb.prepare(
+      `SELECT id, name, role, fcm_token FROM users WHERE role=? AND is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
+    ).all(role) as any[]
+  } else if (String(target).startsWith('user:')) {
+    const uid = parseInt(String(target).replace('user:', ''))
+    const row: any = rawDb.prepare(
+      `SELECT id, name, role, fcm_token FROM users WHERE id=? AND fcm_token IS NOT NULL AND fcm_token != ''`
+    ).get(uid)
+    if (row) targetUsers = [row]
+  }
+
   const result = await sendFcmPushMulti(tokens, payload)
   sent = result.sent; failed = result.failed
 
+  // 사용자별 발송 결과 매핑
+  const userDetails = targetUsers.map((u: any, idx: number) => {
+    const d = result.details[idx]
+    return {
+      id: u.id,
+      name: u.name,
+      role: u.role,
+      token_preview: u.fcm_token ? u.fcm_token.slice(0, 20) + '...' : null,
+      success: d?.success ?? false,
+      messageId: d?.messageId,
+      error: d?.error,
+    }
+  })
+
+  // 토큰 무효(UNREGISTERED) 감지 → 자동 삭제
+  for (const d of result.details) {
+    if (d.error?.includes('UNREGISTERED') || d.error?.includes('NotRegistered') ||
+        d.error?.includes('registration-token-not-registered')) {
+      // 해당 토큰 DB에서 삭제
+      rawDb.prepare(`UPDATE users SET fcm_token = NULL WHERE fcm_token = ?`)
+        .run(targetUsers.find((_: any, i: number) => result.details[i] === d)?.fcm_token)
+      console.log(`[FCM] 무효 토큰 자동 삭제: ${d.token_preview}`)
+    }
+  }
+
   // 발송 이력 notifications 저장 (관리자 발송 기록)
-  const allUserIds = rawDb.prepare(
-    `SELECT id FROM users WHERE is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
-  ).all() as any[]
-  for (const u of allUserIds) {
+  for (const u of targetUsers) {
     rawDb.prepare(`
       INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
       VALUES (?, 'push_manual', ?, ?, 0, 'push', 0)
@@ -2525,7 +2566,7 @@ app.post('/api/push/send', async (c) => {
   }
 
   console.log(`[FCM] 수동 발송 — by:${user.name} target:${target} sent:${sent} failed:${failed}`)
-  return c.json({ success: true, sent, failed, total: tokens.length })
+  return c.json({ success: true, sent, failed, total: tokens.length, details: userDetails })
 })
 
 // GET /api/push/status — FCM 토큰 등록 현황 (관리자용)
@@ -2591,15 +2632,23 @@ app.get('/api/push/diagnose', async (c) => {
       title: '진단 테스트',
       body: '이 메시지는 표시되지 않습니다.',
     })
-    // UNREGISTERED / INVALID_ARGUMENT 에러 = OAuth2 성공 + 토큰만 잘못됨 → 정상
-    if (dummyResult.error?.includes('UNREGISTERED') ||
-        dummyResult.error?.includes('INVALID_ARGUMENT') ||
-        dummyResult.error?.includes('registration-token-not-registered')) {
+    // FCM 서버에서 에러 응답이 오면 OAuth2 토큰 취득은 성공한 것
+    // 더미 토큰에 대해 FCM 서버가 어떤 에러든 반환하면 → OAuth2/네트워크는 정상
+    // 환경변수 오류라면 에러 자체가 'FCM 환경변수 미설정' 이거나 네트워크 오류
+    const err = dummyResult.error || ''
+    const isFcmServerError =
+      err.includes('UNREGISTERED') ||
+      err.includes('INVALID_ARGUMENT') ||
+      err.includes('registration-token-not-registered') ||
+      err.includes('not a valid FCM registration token') ||
+      err.includes('InvalidRegistration') ||
+      err.includes('NotRegistered')
+    if (isFcmServerError || dummyResult.success) {
       report.oauth2 = '✅ OAuth2 access_token 취득 성공 (FCM 서버 응답 확인됨)'
-    } else if (dummyResult.success) {
-      report.oauth2 = '✅ OAuth2 + FCM 발송 모두 성공 (예상치 못한 성공)'
+    } else if (err.includes('FCM 환경변수 미설정')) {
+      report.oauth2 = '❌ FCM 환경변수 미설정'
     } else {
-      report.oauth2 = `⚠️ OAuth2 또는 FCM 오류: ${dummyResult.error}`
+      report.oauth2 = `⚠️ OAuth2 또는 네트워크 오류: ${err} (Google 서버 연결 실패 가능성)`
     }
   } catch (e: any) {
     report.oauth2 = `❌ import/실행 오류: ${e.message}`

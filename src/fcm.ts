@@ -186,36 +186,51 @@ export async function sendFcmPush(fcmToken: string, payload: FcmPayload): Promis
   }
 }
 
+export interface FcmMultiResult {
+  sent: number
+  failed: number
+  details: Array<{ token_preview: string; success: boolean; messageId?: string; error?: string }>
+}
+
 /**
  * FCM 푸시 알림 발송 (여러 토큰 — 순차 발송)
  * @param fcmTokens 대상 기기들의 FCM 토큰 배열
  * @param payload   { title, body, data? }
  */
-export async function sendFcmPushMulti(fcmTokens: string[], payload: FcmPayload): Promise<{ sent: number; failed: number }> {
+export async function sendFcmPushMulti(fcmTokens: string[], payload: FcmPayload): Promise<FcmMultiResult> {
   const projectId   = process.env.FCM_PROJECT_ID   || ''
   const clientEmail = process.env.FCM_CLIENT_EMAIL || ''
   const privateKey  = process.env.FCM_PRIVATE_KEY  || ''
 
   if (!projectId || !clientEmail || !privateKey) {
     console.warn('[FCM] 환경변수 미설정 — 발송 생략')
-    return { sent: 0, failed: fcmTokens.length }
+    return { sent: 0, failed: fcmTokens.length, details: [] }
   }
 
   let sent = 0, failed = 0
+  const details: FcmMultiResult['details'] = []
   try {
     const accessToken = await getCachedAccessToken(projectId, clientEmail, privateKey)
     for (const token of fcmTokens) {
-      if (!token) { failed++; continue }
-      const result = await sendFcmMessage(accessToken, projectId, token, payload)
-      if (result.success) sent++
-      else {
+      const preview = token ? token.slice(0, 20) + '...' : '(empty)'
+      if (!token) {
         failed++
-        console.warn(`[FCM] 발송 실패 (token: ${token.slice(0, 20)}...):`, result.error)
+        details.push({ token_preview: preview, success: false, error: '빈 토큰' })
+        continue
+      }
+      const result = await sendFcmMessage(accessToken, projectId, token, payload)
+      if (result.success) {
+        sent++
+        details.push({ token_preview: preview, success: true, messageId: result.messageId })
+      } else {
+        failed++
+        details.push({ token_preview: preview, success: false, error: result.error })
+        console.warn(`[FCM] 발송 실패 (token: ${preview}):`, result.error)
       }
     }
   } catch (e: any) {
     console.error('[FCM] 전체 발송 오류:', e.message)
     failed += fcmTokens.length - sent
   }
-  return { sent, failed }
+  return { sent, failed, details }
 }

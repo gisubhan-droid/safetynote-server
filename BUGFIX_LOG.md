@@ -2376,3 +2376,93 @@ function doConnect(url) {
 - `safetynote-server`: `decb91e`
 
 ---
+
+## [BUG-010] FCM 등록 0명 + APK 다운로드 안됨 (v1.4.5) (2026-06-18)
+
+### 증상
+1. v1.4.5 재설치 후 로그인해도 앱 설치(FCM 등록): **0명** 유지
+2. 앱 실행 시 업데이트 알림은 표시되나 **다운로드 클릭 → 아무 반응 없음**
+
+---
+
+### BUG-010-1: FCM 등록 0명 — SSL 오류
+
+#### 원인
+`triggerFcmRegistration()` / `registerTokenToServer()` 에서 `https://` URL로 `HttpURLConnection` 직접 호출
+→ Android `HttpURLConnection`은 WebView SSL 예외와 **별도 TrustStore** 사용
+→ NAS 자체서명 인증서를 신뢰하지 않아 **`SSLHandshakeException`** 발생
+→ catch(Exception) 에서 조용히 삼켜짐 → 서버에 토큰 미등록 → 0명
+
+```
+// 실제 발생 오류 (LogCat)
+FCMService: 토큰 등록 중 오류: javax.net.ssl.SSLHandshakeException:
+  java.security.cert.CertPathValidatorException: Trust anchor for certification path not found.
+```
+
+#### 해결
+`MyFirebaseMessagingService.java` + `MainActivity.triggerFcmRegistration()` 모두 수정:
+```java
+// https → http 변환 (AndroidManifest usesCleartextTraffic=true 전제)
+String effectiveUrl = serverUrl;
+if (effectiveUrl.startsWith("https://")) {
+    effectiveUrl = "http://" + effectiveUrl.substring(8);
+}
+String apiUrl = effectiveUrl.replaceAll("/+$", "") + "/api/push/register";
+```
+
+---
+
+### BUG-010-2: APK 다운로드 안됨 — window.open + URL 감지 이중 실패
+
+#### 원인 1 — `window.open(url, '_system')` 미트리거
+Capacitor 6에서 `window.open(url, '_system')` 이 `shouldOverrideUrlLoading` 을 **경우에 따라 트리거하지 않음**.
+Capacitor는 `_system` 타겟을 내부적으로 처리(Intent 실행)하는 경우가 있어 커스텀 WebViewClient 를 거치지 않음.
+
+#### 원인 2 — URL 감지 조건 미충족
+```java
+// 기존 감지 조건
+if (url.endsWith(".apk") || url.contains(".apk?") || url.contains("/apk/")) { ... }
+```
+`apk_url` 이 `/api/dist/apk/download` 경로로 설정된 경우:
+- `.apk`로 끝나지 않음 ✗
+- `.apk?` 없음 ✗  
+- `/apk/` 없음 ✗ → **감지 실패 → DownloadManager 미호출 → 다운로드 없음**
+
+#### 해결
+
+**`MainActivity.java`** — `SafetyNoteAppBridge` 에 `downloadApk()` 메서드 추가:
+```java
+@JavascriptInterface
+public void downloadApk(String apkUrl) {
+    Log.d(TAG, "downloadApk 브릿지 호출: " + apkUrl);
+    runOnUiThread(() -> startApkDownload(apkUrl));  // DownloadManager 직접 실행
+}
+```
+
+**`app.js`** — `doApkDownload()` Capacitor 분기 수정:
+```javascript
+if (isCapacitor) {
+  // 브릿지로 DownloadManager 직접 실행 (URL 형태 무관)
+  if (window.SafetyNoteApp && typeof window.SafetyNoteApp.downloadApk === 'function') {
+    window.SafetyNoteApp.downloadApk(url);
+    return;
+  }
+  // 폴백: 구버전 APK
+  window.open(url, '_system');
+}
+```
+
+### 수정 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `MainActivity.java` | `triggerFcmRegistration()` https→http 폴백, `downloadApk()` 브릿지 추가 |
+| `MyFirebaseMessagingService.java` | `registerTokenToServer()` https→http 폴백 |
+| `app.js` | `doApkDownload()` Capacitor 분기 — 브릿지 우선 사용 |
+| `build-apk.yml` | 버전 기본값 `1.4.6` |
+
+### 커밋
+- `safetynote-android`: (이번 세션)
+- `safetynote-server`: (이번 세션)
+
+---

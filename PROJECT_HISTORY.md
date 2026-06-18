@@ -2013,5 +2013,36 @@ GET    /api/push/status    — 토큰 등록 현황 (admin/supervisor)
 | **v1.4.4** | **2026-06-18** | ✅ **빌드 완료 + 설치 확인** | 서버 설정 화면 개선(BUG-008) |
 | **v1.4.5** | **2026-06-18** | ✅ **빌드 완료** | FCM JWT 브릿지 수정(BUG-009) — 로그인 후 FCM 토큰 서버 등록 |
 
-### 세션 30 미완료 → 다음 세션
-- [ ] **실기기 FCM 수신 테스트** — v1.4.5 재설치 → 로그인 → `/api/push/status` 토큰 등록 확인 → 관리자 발송
+### 세션 30 미완료 → 다음 세션 (추가 버그 발견)
+- [x] **실기기 v1.4.5 설치** 완료 → FCM 등록 0명 확인 → BUG-010 발견
+
+---
+
+## 세션 30 (추가) — BUG-010 수정 (2026-06-18)
+
+### 커밋 이력
+| 해시 | 설명 |
+|------|------|
+| (이번 세션) | fix: BUG-010 FCM SSL 폴백 + APK 다운로드 브릿지 (v1.4.6) — safetynote-android |
+| (이번 세션) | fix: BUG-010 app.js downloadApk 브릿지 우선 사용 — safetynote-server |
+
+### 주요 작업 — BUG-010 (FCM 0명 + APK 다운로드 불가)
+
+#### BUG-010-1: FCM 등록 0명
+- **원인**: `HttpURLConnection`이 WebView와 별도 TrustStore 사용 → 자체서명 인증서 `SSLHandshakeException` → 조용히 실패
+- **수정**: `MyFirebaseMessagingService` + `triggerFcmRegistration()` 모두 `https→http` 폴백 추가
+
+#### BUG-010-2: APK 다운로드 안됨
+- **원인 1**: `window.open(url, '_system')` → Capacitor 6에서 `shouldOverrideUrlLoading` 미트리거
+- **원인 2**: `/api/dist/apk/download` URL → `.apk`/`.apk?`/`/apk/` 감지 조건 모두 불충족
+- **수정**: `SafetyNoteAppBridge.downloadApk()` 추가 → `startApkDownload()` 직접 호출, `app.js` 브릿지 우선 사용
+
+### 버전 테이블 업데이트
+| 버전 | 날짜 | 빌드 상태 | 주요 변경 내용 |
+|------|------|-----------|----------------|
+| **v1.4.5** | **2026-06-18** | ✅ 빌드 완료 | FCM JWT 브릿지 수정(BUG-009) — 로그인 후 FCM 토큰 서버 등록 |
+| **v1.4.6** | **2026-06-18** | 🔲 빌드 예정 | FCM SSL 폴백(BUG-010-1) + APK 다운로드 브릿지(BUG-010-2) |
+
+### 세션 30 추가분 미완료 → 다음 세션
+- [ ] **v1.4.6 빌드 완료 확인** — GitHub Actions 결과 대기
+- [ ] **실기기 재테스트** — 재설치 → 로그인 → FCM 등록 확인 → APK 다운로드 확인

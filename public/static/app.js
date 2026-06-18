@@ -24920,12 +24920,23 @@ function doApkDownload(url, newVersion) {
   }
 
   if (isCapacitor) {
-    // MainActivity.shouldOverrideUrlLoading 이 .apk URL을 감지하여
-    // DownloadManager로 넘김. window.open 은 트리거 역할만 함.
+    // ── [BUG-010-2 Fix] JS→Java 브릿지로 직접 DownloadManager 호출 ──────────
+    // window.open(url, '_system') 은 Capacitor 6 에서 shouldOverrideUrlLoading
+    // 을 트리거하지 않는 경우가 있고, /api/dist/apk/download 처럼 .apk 확장자가
+    // 없는 URL은 URL 감지 조건도 통과하지 못함.
+    // → window.SafetyNoteApp.downloadApk() 브릿지로 DownloadManager 직접 실행.
+    if (window.SafetyNoteApp && typeof window.SafetyNoteApp.downloadApk === 'function') {
+      try {
+        window.SafetyNoteApp.downloadApk(url);
+        return; // 브릿지 성공 시 종료
+      } catch(e) {
+        Log.d && Log.d('doApkDownload', 'bridge failed, fallback to window.open: ' + e);
+      }
+    }
+    // 폴백: 브릿지 없는 구버전 APK / 개발환경
     try {
       window.open(url, '_system');
     } catch(e) {
-      // 폴백: location 이동
       window.location.href = url;
     }
   } else {

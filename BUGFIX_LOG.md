@@ -2248,3 +2248,131 @@ function testConnection() {
 - 이번 세션 커밋 (safetynote-android repo)
 
 ---
+
+## [BUG-009] FCM 푸시 알림 미수신 — JS→SharedPreferences JWT 브릿지 누락 (2026-06-18)
+
+### 증상
+- APK v1.4.4 설치 후 로그인해도 FCM 푸시 알림이 수신되지 않음
+- `/api/push/status` 확인 시 FCM 토큰 등록 건수 0건
+- `MyFirebaseMessagingService` 로그: `"JWT 없음 — 로그인 후 토큰 등록 예정"` 반복 출력
+
+### 원인 분석
+
+#### 데이터 흐름 불일치
+```
+[앱 로그인 시]
+app.js(WebView)
+  └→ localStorage.setItem('token', jwt)   ← WebView 전용 저장소
+  └→ (없음) SharedPreferences 저장 코드   ← ❌ 누락
+
+MyFirebaseMessagingService.onNewToken()
+  └→ SharedPreferences("SafetyNotePrefs")["authToken"] 읽기
+  └→ null → "JWT 없음 — 로그인 후 토큰 등록 예정" → 서버 등록 생략  ← 결과
+```
+
+- **localStorage** : WebView(JS) 전용 — Java/네이티브 코드에서 접근 불가
+- **SharedPreferences** : Android 네이티브 저장소 — Java 코드에서만 읽기/쓰기
+- Capacitor의 `@capacitor/preferences` 플러그인이 **미설치**여서 자동 동기화 없음
+- `MainActivity.java`에 `@JavascriptInterface` 브릿지가 **없었음** → JWT가 SharedPreferences에 저장되는 경로 자체가 없었음
+
+### 해결 방법 (BUG-009 Fix)
+
+#### 1. `MainActivity.java` — `@JavascriptInterface` 브릿지 내부 클래스 추가
+
+```java
+// ① import 추가
+import android.content.SharedPreferences;
+import android.webkit.JavascriptInterface;
+
+// ② 상수 추가 (MyFirebaseMessagingService 와 동일 키)
+private static final String PREFS_NAME = "SafetyNotePrefs";
+private static final String KEY_JWT    = "authToken";
+private static final String KEY_SERVER = "serverUrl";
+
+// ③ onCreate() 에서 WebView 에 브릿지 등록
+getBridge().getWebView().addJavascriptInterface(
+    new SafetyNoteAppBridge(), "SafetyNoteApp"
+);
+
+// ④ 내부 클래스 SafetyNoteAppBridge
+private class SafetyNoteAppBridge {
+    @JavascriptInterface
+    public void saveAuthToken(String token) {
+        // SharedPreferences 에 JWT 저장 + FCM 토큰 즉시 재등록 시도
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit().putString(KEY_JWT, token).apply();
+        FirebaseMessaging.getInstance().getToken()
+            .addOnSuccessListener(fcmToken -> triggerFcmRegistration(fcmToken));
+    }
+
+    @JavascriptInterface
+    public void clearAuthToken() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit().remove(KEY_JWT).apply();
+    }
+
+    @JavascriptInterface
+    public void saveServerUrl(String url) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit().putString(KEY_SERVER, url).apply();
+    }
+}
+
+// ⑤ triggerFcmRegistration() — 로그인 직후 FCM 토큰 서버 등록
+//    (onNewToken 에서 JWT 없어 생략된 경우 보완)
+```
+
+#### 2. `app.js` — `doLogin()` / `doLogout()` 에 브릿지 호출 추가
+
+```javascript
+// doLogin() 로그인 성공 직후
+localStorage.setItem('token', res.data.token);
+// [BUG-009 Fix] SharedPreferences 에 JWT 저장
+if (window.SafetyNoteApp && typeof window.SafetyNoteApp.saveAuthToken === 'function') {
+  try { window.SafetyNoteApp.saveAuthToken(res.data.token); } catch(e) { /* ignore */ }
+}
+
+// doLogout() 로그아웃 시
+localStorage.removeItem('token');
+// [BUG-009 Fix] SharedPreferences 에서 JWT 삭제
+if (window.SafetyNoteApp && typeof window.SafetyNoteApp.clearAuthToken === 'function') {
+  try { window.SafetyNoteApp.clearAuthToken(); } catch(e) { /* ignore */ }
+}
+```
+
+#### 3. `www/index.html` — `doConnect()` 에 `saveServerUrl` 호출 추가
+
+```javascript
+function doConnect(url) {
+  // ... (기존 화면 전환 코드)
+  // [BUG-009 Fix] SharedPreferences 에 서버 URL 저장
+  if (window.SafetyNoteApp && typeof window.SafetyNoteApp.saveServerUrl === 'function') {
+    try { window.SafetyNoteApp.saveServerUrl(url); } catch(e) { /* ignore */ }
+  }
+  setTimeout(() => { window.location.replace(url); }, 400);
+}
+```
+
+### 브라우저(PWA) 호환성
+- `window.SafetyNoteApp` 존재 여부를 항상 먼저 체크
+- 브릿지 없는 환경(PWA, 데스크톱 브라우저)에서는 조용히 스킵 → 기존 동작 유지
+
+### 재발 방지
+- Capacitor 앱에서 Java 코드가 사용할 데이터는 **반드시 SharedPreferences에 저장**
+- `@JavascriptInterface` 브릿지는 `onCreate()` 에서 WebView 초기화 직후 등록
+- `window.SafetyNoteApp?.saveXxx()` 호출 패턴으로 PWA/네이티브 양립
+
+### 수정 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `safetynote-android/android-overrides/app/src/main/java/me/linkmax/safetynote/MainActivity.java` | `@JavascriptInterface` 브릿지 내부 클래스 추가, `triggerFcmRegistration()` 추가 |
+| `safetynote-android/www/index.html` | `doConnect()` 에 `saveServerUrl()` 브릿지 호출 추가 |
+| `safetynote-server/public/static/app.js` | `doLogin()` `saveAuthToken()`, `doLogout()` `clearAuthToken()` 브릿지 호출 추가 |
+| `safetynote-android/.github/workflows/build-apk.yml` | 버전 기본값 `1.4.5`로 업데이트 |
+
+### 커밋
+- `safetynote-android`: (이번 세션)
+- `safetynote-server`: (이번 세션)
+
+---

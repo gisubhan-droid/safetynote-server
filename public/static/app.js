@@ -1959,6 +1959,13 @@ async function doLogin() {
     localStorage.setItem('sn-last-username', username);
     localStorage.setItem('token', res.data.token);
     currentUser = res.data.user;
+    // ── [BUG-009] JS→Java 브릿지: SharedPreferences 에 JWT 저장 ────────────
+    // Capacitor WebView 환경에서 MyFirebaseMessagingService 가
+    // SharedPreferences("SafetyNotePrefs")["authToken"] 을 읽어 FCM 토큰 등록.
+    // localStorage 는 WebView 전용이므로 별도 브릿지 호출 필수.
+    if (window.SafetyNoteApp && typeof window.SafetyNoteApp.saveAuthToken === 'function') {
+      try { window.SafetyNoteApp.saveAuthToken(res.data.token); } catch(e) { /* ignore */ }
+    }
     toast(`${currentUser.name}님 환영합니다!`);
     renderApp();
   } catch (e) {
@@ -1992,6 +1999,10 @@ function doLogout() {
   _unreadCount = 0;
   _notifPanelOpen = false;
   localStorage.removeItem('token');
+  // ── [BUG-009] JS→Java 브릿지: SharedPreferences 에서 JWT 삭제 ──────────
+  if (window.SafetyNoteApp && typeof window.SafetyNoteApp.clearAuthToken === 'function') {
+    try { window.SafetyNoteApp.clearAuthToken(); } catch(e) { /* ignore */ }
+  }
   currentUser = null;
   renderLogin();
 }

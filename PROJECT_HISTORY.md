@@ -1986,20 +1986,32 @@ GET    /api/push/status    — 토큰 등록 현황 (admin/supervisor)
 ### 커밋 이력
 | 해시 | 설명 |
 |------|------|
-| (이번 세션) | docs: 세션 30 — PROJECT_HISTORY 빌드 완료 확인 반영 |
+| `65b9c51` | docs: 세션 30 — PROJECT_HISTORY 빌드 완료 확인 반영 — safetynote-server |
+| (이번 세션) | fix: BUG-009 JS→SharedPreferences JWT 브릿지 구현 (v1.4.5) — safetynote-android |
+| (이번 세션) | fix: BUG-009 app.js doLogin/doLogout 브릿지 호출 추가 — safetynote-server |
 
-### 주요 확인 사항
+### 주요 작업 — BUG-009 수정 (FCM JWT 브릿지)
 
-#### JS→SharedPreferences JWT 브릿지 확인
-`MyFirebaseMessagingService.java`가 `SharedPreferences("SafetyNotePrefs")`에서 `authToken`(JWT)을 읽어 FCM 서버 등록에 사용.
-→ **앱 로그인 시 JS에서 이 SharedPreferences에 JWT를 저장하는 코드 존재 여부 확인 필요**
+#### 원인
+- `localStorage`(WebView 전용) ↔ `SharedPreferences`(Android 네이티브) 데이터 단절
+- `MainActivity.java`에 `@JavascriptInterface` 브릿지 부재
+- 결과: `onNewToken()` 호출 시 JWT null → FCM 토큰 서버 등록 생략 → 푸시 수신 불가
 
-**확인 대상**: `MainActivity.java` — WebView↔Java 브릿지 인터페이스 (`@JavascriptInterface`)
+#### 수정 내용
+1. **`MainActivity.java`** — `SafetyNoteAppBridge` 내부 클래스 추가
+   - `saveAuthToken(token)` — 로그인 시 JWT → SharedPreferences 저장 + FCM 즉시 재등록
+   - `clearAuthToken()` — 로그아웃 시 JWT 삭제
+   - `saveServerUrl(url)` — 서버 URL 저장
+   - `triggerFcmRegistration()` — 로그인 직후 FCM 토큰 서버 등록 보완
+2. **`app.js`** — `doLogin()` / `doLogout()` 에 `window.SafetyNoteApp.saveAuthToken/clearAuthToken()` 호출
+3. **`www/index.html`** — `doConnect()` 에 `window.SafetyNoteApp.saveServerUrl()` 호출
+4. **`build-apk.yml`** — 버전 기본값 `1.4.5`
 
 ### 버전 테이블 업데이트
 | 버전 | 날짜 | 빌드 상태 | 주요 변경 내용 |
 |------|------|-----------|----------------|
-| **v1.4.4** | **2026-06-18** | ✅ **빌드 완료 + 설치 확인** | (세션 29/30 동일) |
+| **v1.4.4** | **2026-06-18** | ✅ **빌드 완료 + 설치 확인** | 서버 설정 화면 개선(BUG-008) |
+| **v1.4.5** | **2026-06-18** | 🔲 빌드 예정 | FCM JWT 브릿지 수정(BUG-009) — 로그인 후 FCM 토큰 서버 등록 |
 
 ### 세션 30 미완료 → 다음 세션
-- [ ] **실기기 FCM 수신 테스트** — 로그인 → SharedPreferences JWT 저장 확인 → 토큰 등록 → 관리자 발송
+- [ ] **실기기 FCM 수신 테스트** — v1.4.5 재설치 → 로그인 → `/api/push/status` 토큰 등록 확인 → 관리자 발송

@@ -431,6 +431,19 @@ body {
   z-index: 9;
   flex-wrap: nowrap; /* 탭 항목 가로 1줄 고정 — 세로 줄바꿈 방지 */
 }
+/* [FEAT-025-TAB v3] 모바일 모달용 탭바 래퍼 — modal 직계 자식으로 sticky 동작 보장 */
+/* overflow-x:auto를 sticky 요소에 직접 설정하면 모바일에서 sticky가 무효화됨 → 래퍼 분리 */
+.tab-bar-wrap {
+  display: flex; gap: 2px; border-bottom: 2px solid var(--border);
+  background: white; border-radius: 12px 12px 0 0; padding: 4px 4px 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;        /* PC/비-sticky 컨텍스트에서는 문제 없음 */
+  -webkit-overflow-scrolling: auto;  /* sticky 방해 방지 */
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;   /* Firefox 스크롤바 숨김 */
+  margin-bottom: 16px;
+}
+.tab-bar-wrap::-webkit-scrollbar { display: none; } /* Chrome/Safari 스크롤바 숨김 */
 .tab-item {
   padding: 9px 16px; font-size: 13px; font-weight: 600;
   color: #9A9A9A; cursor: pointer; white-space: nowrap;
@@ -844,7 +857,7 @@ body {
     max-height: none !important;
     border-radius: 0 !important;
     overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
+    -webkit-overflow-scrolling: auto;  /* sticky 방해 방지: touch → auto */
     overscroll-behavior: contain;   /* 스크롤이 배경으로 전파되지 않음 */
   }
   /* 핸들바 제거 (전체화면에서 불필요) */
@@ -856,15 +869,27 @@ body {
     z-index: 10 !important;
     min-height: 52px;
   }
-  /* [FEAT-025-TAB v2] 모바일: 탭바 sticky — modal-header 바로 아래 고정 */
-  /* margin 음수값 제거 — 탭바 너비 계산 오류 및 항목 세로 줄바꿈 문제 해결 */
-  .modal .tab-bar {
+  /* [FEAT-025-TAB v3] 모바일: tab-bar-wrap → modal 직계 자식 → sticky 정상 동작 */
+  /* 핵심: overflow-x:auto를 sticky 요소에 직접 설정하면 모바일 Safari/Chrome에서 sticky 무효 */
+  /* 해결: modal 직계 자식(.tab-bar-wrap)에 sticky 적용, overflow는 내부 방향으로만 */
+  .modal > .tab-bar-wrap {
     position: sticky !important;
     top: 52px !important;      /* modal-header min-height(52px) 바로 아래 */
     z-index: 9 !important;     /* modal-header(z-index:10) 보다 낮게 */
-    flex-wrap: nowrap !important; /* 탭 항목 가로 1줄 고정 */
-    overflow-x: auto !important;  /* 탭 항목 많을 때 가로 스크롤 */
-    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;   /* modal 직계 자식이므로 sticky 유지됨 */
+    -webkit-overflow-scrolling: auto !important;  /* iOS sticky 방해 방지 */
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
+    margin-bottom: 0 !important;
+    border-radius: 0 !important;   /* 모바일 전체화면에서 둥근 모서리 불필요 */
+  }
+  /* 하위 호환: 기존 .tab-bar가 혹시 남아있다면 sticky 비활성 (충돌 방지) */
+  .modal .tab-bar {
+    position: relative !important;
+    top: auto !important;
+    z-index: auto !important;
+    margin-bottom: 16px;
+    box-shadow: none;
   }
   /* 닫기 버튼 터치 타겟 44×44px 보장 */
   .modal-header > button:last-child,

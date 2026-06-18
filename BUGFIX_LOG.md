@@ -1990,3 +1990,77 @@ cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
 
 ### 커밋
 - `eb4a5b4` — fix: 탭바 sticky v2 — margin 음수값 제거 + flex-wrap:nowrap (FEAT-025-TAB)
+
+---
+
+## [FEAT-025-TAB v3] 탭바 sticky 모바일 미작동 — HTML 구조 근본 수정 (2026-06-18)
+
+### 증상 (v2 적용 후 여전히 발생)
+- **PC**: 탭바 sticky 정상 동작
+- **모바일 브라우저(iOS Safari/Chrome)**: 탭바가 스크롤과 함께 올라감 (변화 없음)
+- 사용자 재신고: "아직도 변함이 없습니다. 해당 부분은 모바일 브라우저 접속시에만 발생합니다."
+
+### 근본 원인 (CSS로 해결 불가)
+- **`.tab-bar`가 `.modal-body` 안에 있었음** — sticky 요소는 스크롤 컨테이너의 **직계 자식**이어야 모바일에서 정상 동작
+- `.modal`(overflow-y:auto)이 스크롤 컨테이너, `.modal-body`가 중간 계층으로 존재
+- `.modal-body` → `.tab-bar` 구조에서 모바일 Safari/Chrome sticky 미동작
+- `-webkit-overflow-scrolling: touch`가 내부 sticky를 방해 (iOS Safari 알려진 이슈)
+- `.tab-bar`에 `overflow-x: auto`와 `position: sticky` 동시 적용 시 일부 모바일에서 sticky 무효화
+
+```
+[문제 구조]
+.modal (overflow-y:auto = 스크롤 컨테이너)
+  └── .modal-header (sticky top:0 ✅)
+  └── .modal-body
+        └── [작업 진행 단계]
+        └── .tab-bar (sticky → 모바일 미작동 ❌ — modal 직계 자식 아님)
+
+[수정 구조]  
+.modal (overflow-y:auto = 스크롤 컨테이너)
+  └── .modal-header (sticky top:0 ✅)
+  └── .tab-bar-wrap (sticky top:52px ✅ — modal 직계 자식)
+  └── .modal-body
+        └── [작업 진행 단계]
+        └── [탭 콘텐츠]
+```
+
+### 해결 (v3) — HTML 구조 변경
+
+#### 1. `app.js` — `showTaskDetail` HTML 구조 변경
+- `.tab-bar-wrap`을 `.modal-body` **밖**, `.modal` 직계 자식으로 이동
+- 기존 `.modal-body` 안의 `.tab-bar` 블록 제거
+- `.tab-item` 7개는 `.tab-bar-wrap` 안으로 이동
+
+#### 2. `style.css` — 신규 클래스 및 CSS 수정
+- `.tab-bar-wrap` 신규 정의 (PC 기준 기본 스타일)
+- `.tab-bar-wrap::-webkit-scrollbar { display: none }` — 웹킷 스크롤바 숨김
+- `@media (max-width: 768px)` 내:
+  - `.modal > .tab-bar-wrap { position: sticky !important; top: 52px !important; }` — 모바일 sticky
+  - `-webkit-overflow-scrolling: auto !important` — iOS sticky 방해 방지
+  - `.modal .tab-bar { position: relative !important }` — 기존 tab-bar 호환성 유지
+- `.modal { -webkit-overflow-scrolling: touch → auto }` — iOS sticky 방해 원천 차단
+
+#### 3. `node-server.ts` — 캐시 버전 `20260617m` → `20260617n`
+
+### 수정 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | `showTaskDetail`: `.tab-bar` → `.tab-bar-wrap` 로 교체, modal 직계 자식으로 이동 |
+| `public/static/style.css` | `.tab-bar-wrap` 신규 정의, 모바일 sticky, -webkit-overflow-scrolling 수정 |
+| `node-server.ts` | 캐시 버전 `20260617m` → `20260617n` |
+
+### 롤백 태그
+| 태그 | 커밋 | 설명 |
+|------|------|------|
+| `rollback/pre-feat-tab-sticky-v3` | `5add4ae` | v3 수정 직전 (v2 적용 상태) |
+| `rollback/pre-feat-tab-sticky-v2` | `b5383d7` | v2 수정 직전 |
+| `rollback/pre-feat-tab-sticky` | `56a8999` | tab-sticky 전체 롤백 |
+
+**롤백 명령 (v3만 롤백):**
+```bash
+git push origin 5add4ae:main --force
+cd /volume1/safetynote && git pull origin main && pm2 restart safetynote
+```
+
+### 커밋
+- (이번 세션 커밋 후 기입 예정)

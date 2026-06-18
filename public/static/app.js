@@ -5744,6 +5744,16 @@ async function showTaskDetail(id, openTbmTab) {
       </div>
       <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 hover:text-gray-600 text-xl"><i class="fas fa-times"></i></button>
     </div>
+    <!-- [FEAT-025-TAB v3] tab-bar를 modal 직계 자식으로 이동 → sticky top:52px 모바일 정상 동작 -->
+    <div class="tab-bar-wrap">
+      <div class="tab-item active whitespace-nowrap" onclick="switchDetailTab('info',this)">기본정보</div>
+      <div class="tab-item" style="white-space:normal;text-align:center;line-height:1.25;min-width:76px" onclick="switchDetailTab('checklist',this)"><span style="display:block;font-size:11px;font-weight:700">위험성<br>(체크리스트)평가</span>${checklistData.assessment?'<span class=\'ml-1 text-green-500\'><i class=\'fas fa-check-circle\'></i></span>':''}</div>
+      <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('risk',this)">위험성평가(상세)(${risks.length})</div>
+      <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('tbm',this)">TBM(${tbms.length})</div>
+      <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('log',this)">작업일지(${logs.length})</div>
+      <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('photo',this)">사진(${photos.length})</div>
+      <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('inspection',this)">현장점검(${inspections.length})${inspections.length>0?'<span class=\'ml-1 text-blue-500\'><i class=\'fas fa-clipboard-check\'></i></span>':''}</div>
+    </div>
     <div class="modal-body">
       <!-- 작업 진행 단계 (막대형 인디케이터 — 클릭 시 해당 탭으로 이동) -->
       <div class="bg-gray-50 rounded-xl p-4 mb-4">
@@ -5796,17 +5806,6 @@ async function showTaskDetail(id, openTbmTab) {
             }).join('');
           })()}
         </div>
-      </div>
-
-      <!-- 탭 -->
-      <div class="tab-bar overflow-x-auto flex-nowrap">
-        <div class="tab-item active whitespace-nowrap" onclick="switchDetailTab('info',this)">기본정보</div>
-        <div class="tab-item" style="white-space:normal;text-align:center;line-height:1.25;min-width:76px" onclick="switchDetailTab('checklist',this)"><span style="display:block;font-size:11px;font-weight:700">위험성<br>(체크리스트)평가</span>${checklistData.assessment?'<span class=\'ml-1 text-green-500\'><i class=\'fas fa-check-circle\'></i></span>':''}</div>
-        <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('risk',this)">위험성평가(상세)(${risks.length})</div>
-        <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('tbm',this)">TBM(${tbms.length})</div>
-        <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('log',this)">작업일지(${logs.length})</div>
-        <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('photo',this)">사진(${photos.length})</div>
-        <div class="tab-item whitespace-nowrap" onclick="switchDetailTab('inspection',this)">현장점검(${inspections.length})${inspections.length>0?'<span class=\'ml-1 text-blue-500\'><i class=\'fas fa-clipboard-check\'></i></span>':''}</div>
       </div>
 
       <!-- 기본정보 탭 -->

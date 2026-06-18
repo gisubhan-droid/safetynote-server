@@ -2982,3 +2982,86 @@ document.body.appendChild(modal);
   - TBM 서명/사진 모달: `10010`
   - **TBM 안전조치 사진 등록 모달: `10020` (최상위)**
 
+
+---
+
+## [BUG-021] 수동 푸시 발송 UI — FCM 토큰 0명 케이스 무응답처럼 보임 (2026-06-18)
+
+### 증상
+- 관리자 시스템 설정 → 수동 푸시 알람 발송 클릭 시
+  `sent:0, failed:0` 결과가 반환되어 발송된 것도 아니고 에러도 아닌 상태로 표시됨
+- 기존 UI: `"발송 완료 ✅ 성공: 0명 / 실패: 0명"` 토스트 → 사용자가 동작 안 함으로 인식
+
+### 근본 원인
+- `users.fcm_token` 컬럼에 등록된 토큰이 없음 (`with_token: 0`)
+  → `/api/push/send` 호출 시 `{ success:true, sent:0, failed:0, total:0, message:'등록된 FCM 토큰 없음' }` 반환
+- **서버 자체는 정상 동작** — 단지 DB에 토큰이 없을 뿐
+- UI에서 `total:0` / `sent:0, failed:0` 케이스를 성공과 동일하게 처리해 사용자 혼동 유발
+
+### FCM 토큰 미등록 원인 (참고)
+- Android `onNewToken()` 은 **앱 최초 설치 / 토큰 갱신 시에만** 자동 호출됨
+- 기존 설치 기기: `saveAuthToken()` → `triggerFcmRegistration()` 흐름으로 로그인 시 재등록 시도
+- HTTP 3444 포트 연결 실패 시 조용히 실패 → DB에 토큰 미저장 가능
+- 해결 방법: 앱에서 로그아웃 후 재로그인 (triggerFcmRegistration 재호출)
+
+### 해결 (`e86553f`)
+
+#### 1. `public/static/app.js` — `_loadFcmStatus()` 개선
+```javascript
+// with_token === 0 이면 RED 경고 배너 표시
+const isZero = with_token === 0;
+bar.className = 'mb-4 p-3 rounded-xl border text-xs ' +
+  (isZero ? 'bg-red-50 border-red-300 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700');
+bar.innerHTML = isZero
+  ? `FCM 토큰 등록된 기기 없음 — 앱에서 로그인해야 토큰이 등록됩니다. (전체 ${total}명 중 0명)`
+  : `... 정상 진행률 바 ...`;
+```
+
+#### 2. `public/static/app.js` — `sendManualPush()` 개선
+```javascript
+// 발송 전 /push/status 사전 확인 → with_token:0 이면 즉시 에러 토스트
+const statusRes = await API.get('/push/status');
+const { total, with_token } = statusRes.data;
+if (with_token === 0) {
+  toast(`FCM 토큰 등록된 앱 기기가 없습니다 (전체 ${total}명 중 0명).\n앱에서 로그인해야 토큰이 등록됩니다.`, 'error');
+  return;
+}
+
+// 발송 후 케이스별 다른 메시지
+if (total === 0 || (sent === 0 && failed === 0)) {
+  toast(message || `발송 대상 없음 — 「${targetLabel}」 중 앱 로그인 사용자 없음`, 'warning');
+} else if (sent === 0 && failed > 0) {
+  toast(`⚠️ 전송 실패: ${failed}명 모두 실패. FCM 토큰이 만료되었을 수 있습니다.`, 'error');
+} else {
+  toast(`발송 완료 ✅  성공: ${sent}명 / 실패: ${failed}명 (전체: ${total}명)`, 'success');
+}
+```
+
+#### 3. `node-server.ts` — `POST /api/push/register` 로그 강화
+```typescript
+// 등록 전후 토큰 수 출력 → 3444 포트 접근 및 DB 저장 확인 가능
+const beforeCount = rawDb.prepare(`SELECT COUNT(*) as cnt FROM users WHERE fcm_token IS NOT NULL AND fcm_token != ''`).get().cnt;
+rawDb.prepare(`UPDATE users SET fcm_token = ? WHERE id = ?`).run(fcm_token, user.id);
+const afterCount = rawDb.prepare(`SELECT COUNT(*) as cnt FROM users WHERE fcm_token IS NOT NULL AND fcm_token != ''`).get().cnt;
+console.log(`[FCM] 토큰 ${isUpdate ? '갱신' : '신규등록'} — user:${user.id}(${user.name}) | DB 등록 기기: ${beforeCount} → ${afterCount}개`);
+```
+
+#### 4. 캐시버전: `v=20260618b` → `v=20260618c`
+
+### 변경 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | `_loadFcmStatus()` RED 경고 배너 + `sendManualPush()` 사전확인 + 케이스별 메시지 |
+| `node-server.ts` | 캐시버전 업데이트 + push/register 로그 강화 |
+
+### ⚠️ BUG-012 재발 방지 확인 사항
+- `push/send` 토큰 순서 버그 (BUG-012): **단일 쿼리 ORDER BY id** — 변경 없음 ✅
+- FCM 환경변수 사전 체크: `_pid/_ce/_pk` 확인 → 미설정 시 500 반환 — 변경 없음 ✅
+- `tokens[]` / `targetUsers[]` 동일 순서 보장 — 변경 없음 ✅
+
+### 재발 방지 규칙
+- `total:0` 또는 `sent:0, failed:0` 응답은 반드시 **별도 케이스로 처리**
+  → 성공 토스트 절대 금지, warning 또는 error 토스트 필수
+- FCM 토큰 등록 현황은 발송 전 UI에서 **시각적으로 명확히 표시** (RED 경고)
+- `push/register` 로그에 등록 전후 토큰 수 출력으로 트러블슈팅 용이화
+

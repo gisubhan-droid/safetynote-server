@@ -14542,6 +14542,52 @@ async function renderAdminSettingsPage(container) {
         </div>
       </div>
 
+      <!-- ── FCM 푸시 알림 발송 (Phase 2) ── -->
+      <div class="bg-white rounded-2xl shadow-sm p-5 border border-blue-100">
+        <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
+          <i class="fas fa-bell text-blue-500"></i> 푸시 알림 발송
+        </h3>
+        <p class="text-xs text-gray-400 mb-4">
+          앱 설치 사용자에게 즉시 푸시 알림을 보냅니다. 앱이 꺼져 있어도 수신됩니다.
+        </p>
+        <!-- FCM 토큰 등록 현황 -->
+        <div id="fcm-status-bar" class="mb-4 p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-700">
+          <i class="fas fa-spinner fa-spin mr-1"></i> 등록 현황 로딩 중...
+        </div>
+        <div class="space-y-3">
+          <!-- 발송 대상 -->
+          <div>
+            <label class="form-label flex items-center gap-1">
+              <i class="fas fa-users text-blue-400 text-xs"></i> 발송 대상
+            </label>
+            <select id="push-target" class="form-control">
+              <option value="all">전체 사용자</option>
+              <option value="role:admin">관리자만</option>
+              <option value="role:supervisor">현장감독만</option>
+              <option value="role:worker">작업자만</option>
+            </select>
+          </div>
+          <!-- 제목 -->
+          <div>
+            <label class="form-label flex items-center gap-1">
+              <i class="fas fa-heading text-blue-400 text-xs"></i> 알림 제목
+            </label>
+            <input id="push-title" type="text" class="form-control" placeholder="예: 긴급 안전 공지" maxlength="50">
+          </div>
+          <!-- 내용 -->
+          <div>
+            <label class="form-label flex items-center gap-1">
+              <i class="fas fa-comment text-blue-400 text-xs"></i> 알림 내용
+            </label>
+            <textarea id="push-body" class="form-control" rows="3" placeholder="알림 내용을 입력하세요" maxlength="200" style="resize:none"></textarea>
+          </div>
+          <!-- 발송 버튼 -->
+          <button onclick="sendManualPush()" class="btn btn-primary w-full" style="background:#2563eb;border-color:#2563eb">
+            <i class="fas fa-paper-plane mr-2"></i> 푸시 알림 발송
+          </button>
+        </div>
+      </div>
+
       <!-- 폴더 현황 — 요약 카드 -->
       <div class="bg-white rounded-2xl shadow-sm p-5">
         <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
@@ -14687,6 +14733,9 @@ async function renderAdminSettingsPage(container) {
     // 레코드 수 비동기 로드
     _loadDbResetCounts();
 
+    // FCM 토큰 등록 현황 비동기 로드
+    _loadFcmStatus();
+
     // (폴더명 입력 토글 제거 — 새 구조에서는 단계폴더가 고정됨)
 
   } catch(e) {
@@ -14777,6 +14826,57 @@ async function saveAdminSettings() {
     setTimeout(() => renderAdminSettingsPage(document.getElementById('page-content')), 800);
   } catch(e) {
     toast(e.response?.data?.error || '저장 실패', 'error');
+  }
+}
+
+// ─── FCM 푸시 알림 함수들 (Phase 2 — FEAT-025-FCM) ────────────────────────────
+
+/** 관리자 화면 — FCM 토큰 등록 현황 로드 */
+async function _loadFcmStatus() {
+  const bar = document.getElementById('fcm-status-bar');
+  if (!bar) return;
+  try {
+    const res = await API.get('/push/status');
+    const { total, with_token } = res.data;
+    const pct = total > 0 ? Math.round(with_token / total * 100) : 0;
+    bar.innerHTML = `
+      <div class="flex items-center justify-between mb-1">
+        <span><i class="fas fa-mobile-alt mr-1"></i> 앱 설치(FCM 등록): <strong>${with_token}명</strong> / 전체 ${total}명</span>
+        <span class="font-bold">${pct}%</span>
+      </div>
+      <div class="w-full bg-blue-200 rounded-full h-1.5">
+        <div class="bg-blue-600 h-1.5 rounded-full" style="width:${pct}%"></div>
+      </div>`;
+  } catch(e) {
+    bar.innerHTML = `<i class="fas fa-exclamation-circle mr-1 text-red-400"></i> 현황 로드 실패`;
+  }
+}
+
+/** 관리자 수동 푸시 발송 */
+async function sendManualPush() {
+  const target = document.getElementById('push-target')?.value || 'all';
+  const title  = (document.getElementById('push-title')?.value || '').trim();
+  const body   = (document.getElementById('push-body')?.value  || '').trim();
+  if (!title) { toast('알림 제목을 입력하세요', 'error'); return; }
+  if (!body)  { toast('알림 내용을 입력하세요',  'error'); return; }
+
+  const targetLabel = {
+    'all': '전체 사용자', 'role:admin': '관리자',
+    'role:supervisor': '현장감독', 'role:worker': '작업자'
+  }[target] || target;
+
+  const confirmed = await showConfirm(`「${targetLabel}」에게 푸시 알림을 발송하시겠습니까?\n\n제목: ${title}\n내용: ${body}`);
+  if (!confirmed) return;
+
+  try {
+    const res = await API.post('/push/send', { title, body, target });
+    const { sent, failed, total } = res.data;
+    toast(`발송 완료 ✅  성공: ${sent}명 / 실패: ${failed}명 (전체: ${total}명)`, 'success');
+    document.getElementById('push-title').value = '';
+    document.getElementById('push-body').value  = '';
+    _loadFcmStatus();
+  } catch(e) {
+    toast(e.response?.data?.error || '발송 실패', 'error');
   }
 }
 

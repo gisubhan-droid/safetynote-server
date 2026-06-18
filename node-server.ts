@@ -61,6 +61,9 @@ import * as http from 'node:http'
 // SSE 공유 모듈
 import { sseClients, sendToUser, sendToUsers, broadcastAll, broadcastToRoles, getConnectionCount } from './src/sse'
 
+// FCM 푸시 알림 모듈 (Phase 2 — FEAT-025-FCM)
+import { sendFcmPush, sendFcmPushMulti } from './src/fcm'
+
 // 라우트 임포트
 import authRoutes from './src/routes/auth'
 import taskRoutes from './src/routes/tasks'
@@ -1552,10 +1555,57 @@ function patchSchema() {
     if (!e.message?.includes('already exists') && !e.message?.includes('duplicate column'))
       console.warn('[patchSchema v0.133t]', e.message)
   }
+
+  // ── v0.134: users.fcm_token 컬럼 추가 (Phase 2 — FCM 푸시 알림) ───────────
+  // [RULE-002] var 사용 — patchSchema() 호출 이전 선언 불가 → duplicate column 무시
+  try {
+    rawDb.exec(`ALTER TABLE users ADD COLUMN fcm_token TEXT DEFAULT NULL`)
+    console.log('[patchSchema] v0.134 users.fcm_token 컬럼 추가 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column'))
+      console.warn('[patchSchema v0.134]', e.message)
+  }
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)
 ensureTbmSignaturesTable()
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── FCM 푸시 알림 헬퍼 (NAS 전용) ──────────────────────────────────────────
+// users 테이블에서 userId 목록의 fcm_token을 꺼내 FCM 발송
+// [RULE-002] var 사용: patchSchema 이후에 정의되므로 안전
+async function sendFcmToUsers(userIds: number[], payload: { title: string; body: string; data?: Record<string,string> }): Promise<void> {
+  if (!userIds || userIds.length === 0) return
+  try {
+    const placeholders = userIds.map(() => '?').join(',')
+    const rows = rawDb.prepare(
+      `SELECT fcm_token FROM users WHERE id IN (${placeholders}) AND fcm_token IS NOT NULL AND fcm_token != ''`
+    ).all(...userIds) as any[]
+    const tokens = rows.map((r: any) => r.fcm_token).filter(Boolean)
+    if (tokens.length === 0) return
+    const result = await sendFcmPushMulti(tokens, payload)
+    if (result.sent > 0 || result.failed > 0)
+      console.log(`[FCM] 발송 완료 — sent:${result.sent} failed:${result.failed} target:${userIds}`)
+  } catch (e: any) {
+    console.error('[FCM] sendFcmToUsers 오류:', e.message)
+  }
+}
+
+async function sendFcmToRoles(roles: string[], payload: { title: string; body: string; data?: Record<string,string> }): Promise<void> {
+  if (!roles || roles.length === 0) return
+  try {
+    const placeholders = roles.map(() => '?').join(',')
+    const rows = rawDb.prepare(
+      `SELECT fcm_token FROM users WHERE role IN (${placeholders}) AND is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
+    ).all(...roles) as any[]
+    const tokens = rows.map((r: any) => r.fcm_token).filter(Boolean)
+    if (tokens.length === 0) return
+    const result = await sendFcmPushMulti(tokens, payload)
+    console.log(`[FCM] roles(${roles}) 발송 — sent:${result.sent} failed:${result.failed}`)
+  } catch (e: any) {
+    console.error('[FCM] sendFcmToRoles 오류:', e.message)
+  }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function loadSystemSettings(db: any): Promise<void> {
@@ -2235,6 +2285,12 @@ app.post('/api/tbm/:id/approval-sign', async (c) => {
           message: `[TBM 결재] 안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`,
           ts: Date.now()
         })
+        // [FCM] SSE 비접속 시에도 수신 (병행 발송)
+        sendFcmToUsers([gu.id], {
+          title: `[결재요청] ${tbmTitle}`,
+          body: `안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`,
+          data: { type: 'sign_request', ref_type: 'tbm', ref_id: String(id) }
+        }).catch(() => {})
         // notifications 영구 저장
         rawDb.prepare(`
           INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
@@ -2263,6 +2319,12 @@ app.post('/api/tbm/:id/approval-sign', async (c) => {
           message: `[TBM 결재] 총괄책임 서명 완료. 대표이사 결재를 요청합니다.`,
           ts: Date.now()
         })
+        // [FCM] SSE 비접속 시에도 수신 (병행 발송)
+        sendFcmToUsers([ceo.id], {
+          title: `[결재요청] ${tbmTitle}`,
+          body: `총괄책임 서명 완료. 대표이사 결재를 요청합니다.`,
+          data: { type: 'sign_request', ref_type: 'tbm', ref_id: String(id) }
+        }).catch(() => {})
         // notifications 영구 저장
         rawDb.prepare(`
           INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
@@ -2283,6 +2345,12 @@ app.post('/api/tbm/:id/approval-sign', async (c) => {
         tbmId: id,
         ts: Date.now()
       })
+      // [FCM] SSE 비접속 시에도 수신 (병행 발송)
+      sendFcmToUsers([su.id], {
+        title: `[TBM 결재완료] ${tbmTitle}`,
+        body: `대표이사 서명 완료. TBM 결재가 모두 완료되었습니다.`,
+        data: { type: 'tbm_approval_done', ref_type: 'tbm', ref_id: String(id) }
+      }).catch(() => {})
       // notifications 영구 저장
       rawDb.prepare(`
         INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
@@ -2348,6 +2416,110 @@ app.route('/api/teams', teamRoutes)
 app.route('/api/education', educationRoutes)
 app.route('/api/constructions', constructionRoutes)
 app.route('/api/notifications', notificationRoutes)
+
+// ─── FCM 푸시 알림 API (Phase 2 — FEAT-025-FCM) ───────────────────────────────
+// [RULE-001] NAS 전용 라우트 — app.route() 마운트 이후에 위치해도 독립 경로이므로 충돌 없음
+
+// POST /api/push/register — 앱에서 FCM 토큰 등록/갱신
+app.post('/api/push/register', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const body = await c.req.json().catch(() => ({})) as any
+  const { fcm_token } = body
+  if (!fcm_token || typeof fcm_token !== 'string')
+    return c.json({ error: 'fcm_token 필수' }, 400)
+  // [RULE-002] rawDb 동기 방식 사용 (D1 래퍼 금지)
+  rawDb.prepare(`UPDATE users SET fcm_token = ? WHERE id = ?`).run(fcm_token, user.id)
+  console.log(`[FCM] 토큰 등록 — user:${user.id}(${user.name}) token:${fcm_token.slice(0, 20)}...`)
+  return c.json({ success: true })
+})
+
+// DELETE /api/push/register — 로그아웃 시 FCM 토큰 삭제
+app.delete('/api/push/register', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  rawDb.prepare(`UPDATE users SET fcm_token = NULL WHERE id = ?`).run(user.id)
+  console.log(`[FCM] 토큰 삭제 — user:${user.id}(${user.name})`)
+  return c.json({ success: true })
+})
+
+// POST /api/push/send — 관리자용 수동 푸시 발송
+// body: { title, body, target: 'all' | 'role:admin' | 'role:worker' | 'user:123' }
+app.post('/api/push/send', async (c) => {
+  const user = getUser(c)
+  if (!user || !['admin', 'supervisor'].includes(user.role))
+    return c.json({ error: '관리자 권한 필요' }, 403)
+  const body = await c.req.json().catch(() => ({})) as any
+  const { title, body: msgBody, target, data } = body
+  if (!title || !msgBody) return c.json({ error: 'title, body 필수' }, 400)
+
+  const payload = {
+    title: String(title),
+    body:  String(msgBody),
+    data:  data || { type: 'manual_push' }
+  }
+
+  let sent = 0, failed = 0, tokens: string[] = []
+
+  if (!target || target === 'all') {
+    // 전체 활성 사용자
+    const rows = rawDb.prepare(
+      `SELECT fcm_token FROM users WHERE is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
+    ).all() as any[]
+    tokens = rows.map((r: any) => r.fcm_token)
+  } else if (String(target).startsWith('role:')) {
+    // 특정 역할
+    const role = String(target).replace('role:', '')
+    const rows = rawDb.prepare(
+      `SELECT fcm_token FROM users WHERE role=? AND is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
+    ).all(role) as any[]
+    tokens = rows.map((r: any) => r.fcm_token)
+  } else if (String(target).startsWith('user:')) {
+    // 특정 사용자
+    const uid = parseInt(String(target).replace('user:', ''))
+    const row: any = rawDb.prepare(
+      `SELECT fcm_token FROM users WHERE id=? AND fcm_token IS NOT NULL AND fcm_token != ''`
+    ).get(uid)
+    if (row?.fcm_token) tokens = [row.fcm_token]
+  } else {
+    return c.json({ error: 'target 형식 오류 (all | role:xxx | user:123)' }, 400)
+  }
+
+  if (tokens.length === 0)
+    return c.json({ success: true, sent: 0, failed: 0, message: '등록된 FCM 토큰 없음' })
+
+  const result = await sendFcmPushMulti(tokens, payload)
+  sent = result.sent; failed = result.failed
+
+  // 발송 이력 notifications 저장 (관리자 발송 기록)
+  const allUserIds = rawDb.prepare(
+    `SELECT id FROM users WHERE is_active=1 AND fcm_token IS NOT NULL AND fcm_token != ''`
+  ).all() as any[]
+  for (const u of allUserIds) {
+    rawDb.prepare(`
+      INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+      VALUES (?, 'push_manual', ?, ?, 0, 'push', 0)
+    `).run(u.id, title, msgBody)
+  }
+
+  console.log(`[FCM] 수동 발송 — by:${user.name} target:${target} sent:${sent} failed:${failed}`)
+  return c.json({ success: true, sent, failed, total: tokens.length })
+})
+
+// GET /api/push/status — FCM 토큰 등록 현황 (관리자용)
+app.get('/api/push/status', async (c) => {
+  const user = getUser(c)
+  if (!user || !['admin', 'supervisor'].includes(user.role))
+    return c.json({ error: '관리자 권한 필요' }, 403)
+  const rows = rawDb.prepare(`
+    SELECT id, name, role, position,
+           CASE WHEN fcm_token IS NOT NULL AND fcm_token != '' THEN 1 ELSE 0 END as has_token
+    FROM users WHERE is_active = 1 ORDER BY role, name
+  `).all()
+  const total   = (rows as any[]).length
+  const withToken = (rows as any[]).filter((r: any) => r.has_token).length
+  return c.json({ total, with_token: withToken, users: rows })
+})
 
 // ─── 서명 API ─────────────────────────────────────────────────────────────────
 // 위험성평가 서명 조회
@@ -2512,6 +2684,12 @@ app.post('/api/signature-requests', async (c) => {
     message: `[서명 요청] ${user.name}님이 서명을 요청했습니다`,
     ts: Date.now()
   })
+  // [FCM] SSE 비접속 시에도 수신 (병행 발송)
+  sendFcmToUsers([Number(target_user_id)], {
+    title: `[서명 요청] ${title}`,
+    body: `${user.name}님이 서명을 요청했습니다`,
+    data: { type: 'sign_request', ref_type, ref_id: String(ref_id) }
+  }).catch(() => {})
   return c.json({ success: true, id: info.lastInsertRowid })
 })
 
@@ -2551,6 +2729,12 @@ app.post('/api/signature-requests/bulk', async (c) => {
       ts: Date.now()
     })
   }
+  // [FCM] 일괄 FCM 발송 (SSE 비접속 대상자 포함)
+  sendFcmToUsers(target_user_ids.map(Number), {
+    title: `[서명 요청] ${title}`,
+    body: `${user.name}님이 서명을 요청했습니다`,
+    data: { type: 'sign_request', ref_type, ref_id: String(ref_id) }
+  }).catch(() => {})
   return c.json({ success: true, created })
 })
 

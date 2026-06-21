@@ -3315,3 +3315,39 @@ node --check public/static/app.js
 - `renderAdminSettingsPage()` 같은 대형 HTML 블록 재작성 시, **기존 함수 전체 범위를 확인 후 교체**할 것
 - 수정 후 반드시 `node --check public/static/app.js` 실행하여 JS 문법 검증
 - 특히 템플릿 리터럴(`` ` ``) 닫는 위치 확인 필수
+
+---
+
+## [BUG-022] 접속일보 폼 단가 공란 — mkItemRow itemKey 불일치 (2026-06-21)
+
+### 증상
+- 접속일보 작성 폼 공종별 작업량 테이블에서 단가 셀 공란
+  - 광커넥터 현장조립/취부, 광탭 결합/고정 작업, FTTH 레벨 측정시험 3개 항목
+- 단가 관리 화면에서 기본단가를 입력해도 폼에서 반영 안 됨
+
+### 원인
+- `mkItemRow` 함수 내 `itemKey` 변환이 단순 치환(공백·슬래시 제거)만 사용
+  ```
+  '광커넥터 현장조립/취부' → '광커넥터현장조립취부'  ≠  DB key '광커넥터현장조립'
+  '광탭 결합/고정 작업'   → '광탭결합고정작업'      ≠  DB key '광탭결합고정'
+  'FTTH 레벨 측정시험'    → 'FTTH레벨측정시험'      ≠  DB key 'FTTH레벨측정'
+  ```
+- 세션 48에서 `_spliceLabelToKey` 역방향 맵을 `공량내역` 계산부에만 적용,
+  `mkItemRow`에는 미적용 상태였음
+
+### 해결
+- `_mkLabelToKey` 맵 + `mkLabelToKey()` 헬퍼를 `mkItemRow` 바로 앞에 선언
+- SPLICE_ITEMS_DEF label→key 직접 매핑 우선, 폴백: 공백/슬래시 제거
+- hasPricePreview=false → `—` 에서 `단가없음` 텍스트로 명확화
+- total=0 → `—` 에서 `기본단가 0원`으로 명확화 (사용자가 "X"로 오인하던 문제 해결)
+- 캐시버전: `v=20260621j` → `v=20260621k`
+
+### 커밋
+`4bb3084` — fix: 접속일보 폼 단가 공란 수정 — mkItemRow에 SPLICE_ITEMS_DEF 역방향 맵 적용
+
+### "X" 표시 설명
+사용자가 문의한 "X" 표시의 실체:
+1. **단가 셀 공란/—**: `hasPricePreview=false`인 커스텀 항목에 `—` 대시 표시
+2. **커스텀 행 삭제 버튼**: `<i class="fas fa-times">` 아이콘 — 삭제(✕) 버튼 (정상)
+3. **야간/가공 비해당**: `has_aerial=false` 항목의 가공 체크박스 위치에 `—` 대시 (정상)
+→ 이번 수정으로 "—"를 "단가없음"/"기본단가 0원"으로 교체하여 의미 명확화

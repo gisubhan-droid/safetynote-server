@@ -14317,11 +14317,12 @@ async function renderAdminSettingsPage(container, _activeTab) {
 
     // 탭 정의
     const TABS = [
-      { key:'push',  label:'푸시 알림 발송',     icon:'fas fa-bell',          color:'blue'   },
-      { key:'files', label:'파일 설정',           icon:'fas fa-folder-open',   color:'yellow' },
-      { key:'gps',   label:'GPS 주소 변환',       icon:'fas fa-map-marker-alt',color:'red'    },
-      { key:'apk',   label:'APK 배포 관리',       icon:'fab fa-android',       color:'green'  },
-      { key:'info',  label:'정보',                icon:'fas fa-info-circle',   color:'gray'   },
+      { key:'push',   label:'푸시 알림 발송',     icon:'fas fa-bell',          color:'blue'   },
+      { key:'files',  label:'파일 설정',           icon:'fas fa-folder-open',   color:'yellow' },
+      { key:'gps',    label:'GPS 주소 변환',       icon:'fas fa-map-marker-alt',color:'red'    },
+      { key:'apk',    label:'APK 배포 관리',       icon:'fab fa-android',       color:'green'  },
+      { key:'update', label:'서버 업데이트',       icon:'fas fa-sync-alt',      color:'teal'   },
+      { key:'info',   label:'정보',                icon:'fas fa-info-circle',   color:'gray'   },
     ];
     const firstTab = _activeTab || 'push';
 
@@ -14784,6 +14785,85 @@ async function renderAdminSettingsPage(container, _activeTab) {
       <!-- ────────────────────────────────────────────────── -->
       <!-- TAB: 정보                                          -->
       <!-- ────────────────────────────────────────────────── -->
+      <!-- ────────────────────────────────────────────────── -->
+      <!-- TAB: 서버 업데이트 (Phase 5)                      -->
+      <!-- ────────────────────────────────────────────────── -->
+      <div id="spanel-update" class="settings-panel space-y-4 ${firstTab !== 'update' ? 'hidden' : ''}">
+
+        <!-- 현재 버전 / 업데이트 확인 -->
+        <div class="bg-white rounded-2xl shadow-sm p-5">
+          <h3 class="font-bold text-gray-700 mb-4 flex items-center gap-2">
+            <i class="fas fa-sync-alt text-teal-500"></i> 서버 업데이트
+            <span class="text-xs font-normal text-gray-400 ml-1">브라우저에서 직접 업데이트합니다</span>
+          </h3>
+
+          <!-- 버전 카드 -->
+          <div class="grid grid-cols-2 gap-3 mb-4">
+            <div class="bg-gray-50 rounded-xl p-3 text-center">
+              <p class="text-xs text-gray-400 mb-1">현재 버전 (NAS)</p>
+              <p id="upd-cur-commit" class="font-mono font-bold text-gray-800 text-sm">확인 중...</p>
+            </div>
+            <div class="bg-teal-50 rounded-xl p-3 text-center">
+              <p class="text-xs text-gray-400 mb-1">최신 버전 (GitHub)</p>
+              <p id="upd-lat-commit" class="font-mono font-bold text-teal-700 text-sm">—</p>
+            </div>
+          </div>
+
+          <!-- 상태 배너 -->
+          <div id="upd-status-banner" class="rounded-xl p-3 mb-4 text-sm flex items-center gap-2 bg-gray-50 text-gray-500">
+            <i class="fas fa-info-circle"></i>
+            <span id="upd-status-msg">아래 버튼으로 버전을 확인하세요.</span>
+          </div>
+
+          <!-- 버튼 -->
+          <div class="flex gap-2 flex-wrap">
+            <button id="upd-btn-check" onclick="_updCheck()"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all">
+              <i class="fas fa-search"></i> 버전 확인
+            </button>
+            <button id="upd-btn-apply" onclick="_updShowApply()" disabled
+              class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-blue-500 hover:bg-blue-600 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+              <i class="fas fa-download"></i> 업데이트 적용
+            </button>
+          </div>
+        </div>
+
+        <!-- 업데이트 적용 확인 폼 (기본 숨김) -->
+        <div id="upd-apply-form" class="hidden bg-blue-50 border border-blue-200 rounded-2xl p-5">
+          <h4 class="font-bold text-blue-700 mb-2 flex items-center gap-2">
+            <i class="fas fa-shield-alt"></i> 업데이트 실행 확인
+          </h4>
+          <p class="text-xs text-blue-600 mb-3">
+            업데이트 전 DB가 자동 백업됩니다.<br>
+            관리자 비밀번호를 입력하고 실행하세요.
+          </p>
+          <div class="flex gap-2">
+            <input type="password" id="upd-pw-input" placeholder="관리자 비밀번호"
+              class="flex-1 border border-blue-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white"
+              onkeydown="if(event.key==='Enter') _updApply()">
+            <button onclick="_updApply()"
+              class="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-all flex items-center gap-2">
+              <i class="fas fa-rocket"></i> 실행
+            </button>
+            <button onclick="document.getElementById('upd-apply-form').classList.add('hidden')"
+              class="bg-gray-200 hover:bg-gray-300 text-gray-600 rounded-xl px-3 py-2 text-sm transition-all">
+              취소
+            </button>
+          </div>
+        </div>
+
+        <!-- 로그 영역 -->
+        <div class="bg-white rounded-2xl shadow-sm p-5">
+          <h3 class="font-bold text-gray-700 mb-2 flex items-center gap-2 text-sm">
+            <i class="fas fa-terminal text-gray-400"></i> 실행 로그
+          </h3>
+          <div id="upd-log" class="bg-gray-900 rounded-xl p-3 font-mono text-xs text-green-400 min-h-16 max-h-48 overflow-y-auto whitespace-pre-wrap">
+            <span class="text-gray-500">버전 확인 버튼을 누르면 로그가 표시됩니다.</span>
+          </div>
+        </div>
+
+      </div>
+
       <div id="spanel-info" class="settings-panel space-y-4 ${firstTab !== 'info' ? 'hidden' : ''}">
 
         <!-- 서버 정보 -->
@@ -14860,8 +14940,9 @@ async function renderAdminSettingsPage(container, _activeTab) {
     </div>`;
 
     // 탭 패널에 따라 비동기 데이터 로드
-    if (firstTab === 'push')  _loadFcmStatus();
-    if (firstTab === 'info')  _loadDbResetCounts();
+    if (firstTab === 'push')   _loadFcmStatus();
+    if (firstTab === 'info')   _loadDbResetCounts();
+    if (firstTab === 'update') _updLoadStatus();
     // push 탭이 아닐 때도 FCM 상태 필요하므로 push 탭 진입 시 로드 (switchSettingsTab에서 처리)
 
   } catch(e) {
@@ -14886,8 +14967,154 @@ function switchSettingsTab(key) {
     activeBtn.classList.add('bg-blue-600', 'text-white', 'border-blue-600', 'shadow');
   }
   // 탭별 비동기 데이터 로드
-  if (key === 'push')  _loadFcmStatus();
-  if (key === 'info')  _loadDbResetCounts();
+  if (key === 'push')   _loadFcmStatus();
+  if (key === 'info')   _loadDbResetCounts();
+  if (key === 'update') _updLoadStatus();
+}
+
+// ─────────────────────────────────────────────────────────────
+// Phase 5 — 서버 업데이트 UI 함수 (_upd* 네임스페이스)
+// ─────────────────────────────────────────────────────────────
+
+let _updPollingTimer = null;
+
+/** 상태 배너 업데이트 헬퍼 */
+function _updSetBanner(msg, type) {
+  const banner = document.getElementById('upd-status-banner');
+  const msgEl  = document.getElementById('upd-status-msg');
+  if (!banner || !msgEl) return;
+  const styles = {
+    idle:       'bg-gray-50 text-gray-500',
+    checking:   'bg-yellow-50 text-yellow-700',
+    pulling:    'bg-blue-50 text-blue-700',
+    restarting: 'bg-purple-50 text-purple-700',
+    done:       'bg-green-50 text-green-700',
+    error:      'bg-red-50 text-red-700',
+    new:        'bg-teal-50 text-teal-700',
+  };
+  const icons = {
+    idle: 'fas fa-info-circle', checking: 'fas fa-spinner fa-spin',
+    pulling: 'fas fa-spinner fa-spin', restarting: 'fas fa-spinner fa-spin',
+    done: 'fas fa-check-circle', error: 'fas fa-exclamation-circle', new: 'fas fa-arrow-up',
+  };
+  banner.className = `rounded-xl p-3 mb-4 text-sm flex items-center gap-2 ${styles[type] || styles.idle}`;
+  banner.querySelector('i').className = icons[type] || 'fas fa-info-circle';
+  msgEl.textContent = msg;
+}
+
+/** 로그 렌더 */
+function _updRenderLog(logs) {
+  const el = document.getElementById('upd-log');
+  if (!el) return;
+  if (!logs || logs.length === 0) {
+    el.innerHTML = '<span class="text-gray-500">로그 없음</span>';
+    return;
+  }
+  el.textContent = logs.join('\n');
+  el.scrollTop = el.scrollHeight;
+}
+
+/** 상태 API 폴링 → UI 갱신 */
+async function _updLoadStatus() {
+  try {
+    const res = await API.get('/admin/update/status');
+    const s = res.data;
+
+    // 버전 표시
+    const curEl = document.getElementById('upd-cur-commit');
+    const latEl = document.getElementById('upd-lat-commit');
+    if (curEl) curEl.textContent = s.currentCommit || '—';
+    if (latEl) latEl.textContent = s.latestCommit  || '—';
+
+    // 적용 버튼 활성화: 새 버전 있을 때만
+    const applyBtn = document.getElementById('upd-btn-apply');
+    if (applyBtn) {
+      const hasNew = s.latestCommit && s.currentCommit && s.latestCommit !== s.currentCommit;
+      applyBtn.disabled = !hasNew || (s.status === 'pulling' || s.status === 'restarting' || s.status === 'checking');
+    }
+
+    // 배너
+    const bannerType = s.latestCommit && s.currentCommit && s.latestCommit !== s.currentCommit && s.status === 'idle'
+      ? 'new' : s.status;
+    _updSetBanner(s.message, bannerType);
+
+    // 로그
+    _updRenderLog(s.log);
+
+    // 완료/에러 시 폴링 중지, 진행 중이면 계속 폴링
+    if (s.status === 'checking' || s.status === 'pulling' || s.status === 'restarting') {
+      if (!_updPollingTimer) {
+        _updPollingTimer = setInterval(_updLoadStatus, 2000);
+      }
+    } else {
+      if (_updPollingTimer) { clearInterval(_updPollingTimer); _updPollingTimer = null; }
+      // done → 5초 후 새로고침 안내
+      if (s.status === 'done') {
+        setTimeout(() => {
+          const msgEl = document.getElementById('upd-status-msg');
+          if (msgEl) msgEl.textContent = s.message + ' — 페이지를 새로고침하세요 (F5)';
+        }, 2000);
+      }
+    }
+  } catch(e) {
+    _updSetBanner('상태 조회 실패: ' + e.message, 'error');
+  }
+}
+
+/** 버전 확인 버튼 */
+async function _updCheck() {
+  const checkBtn = document.getElementById('upd-btn-check');
+  if (checkBtn) checkBtn.disabled = true;
+  _updSetBanner('GitHub 버전 확인 중...', 'checking');
+  document.getElementById('upd-log').textContent = '';
+  if (_updPollingTimer) { clearInterval(_updPollingTimer); _updPollingTimer = null; }
+
+  try {
+    await API.post('/admin/update/check');
+    // 폴링 시작
+    _updPollingTimer = setInterval(_updLoadStatus, 2000);
+    setTimeout(() => { if (checkBtn) checkBtn.disabled = false; }, 5000);
+  } catch(e) {
+    _updSetBanner('요청 실패: ' + (e.response?.data?.error || e.message), 'error');
+    if (checkBtn) checkBtn.disabled = false;
+  }
+}
+
+/** 업데이트 적용 확인 폼 표시 */
+function _updShowApply() {
+  const form = document.getElementById('upd-apply-form');
+  if (form) {
+    form.classList.remove('hidden');
+    document.getElementById('upd-pw-input')?.focus();
+  }
+}
+
+/** 업데이트 실행 */
+async function _updApply() {
+  const pw = document.getElementById('upd-pw-input')?.value || '';
+  if (!pw) { toast('관리자 비밀번호를 입력하세요', 'error'); return; }
+
+  const applyBtn = document.getElementById('upd-btn-apply');
+  const checkBtn = document.getElementById('upd-btn-check');
+  if (applyBtn) applyBtn.disabled = true;
+  if (checkBtn) checkBtn.disabled = true;
+  document.getElementById('upd-apply-form')?.classList.add('hidden');
+  document.getElementById('upd-pw-input').value = '';
+
+  _updSetBanner('업데이트 시작 중...', 'pulling');
+  if (_updPollingTimer) { clearInterval(_updPollingTimer); _updPollingTimer = null; }
+
+  try {
+    await API.post('/admin/update/apply', { confirm_password: pw });
+    // 폴링 시작
+    _updPollingTimer = setInterval(_updLoadStatus, 2000);
+  } catch(e) {
+    const msg = e.response?.data?.error || e.message;
+    _updSetBanner('실패: ' + msg, 'error');
+    if (applyBtn) applyBtn.disabled = false;
+    if (checkBtn) checkBtn.disabled = false;
+    toast(msg, 'error');
+  }
 }
 
 /** 바이트를 읽기 쉬운 용량 문자열로 변환 (KB/MB/GB) */

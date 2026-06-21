@@ -5101,6 +5101,192 @@ app.post('/api/admin/reset', async (c) => {
 })
 
 // ═══════════════════════════════════════════════════════════════
+// Phase 5 — 서버 업데이트 API  /api/admin/update
+// ─ 브라우저에서 버튼 클릭 한 번으로 git pull + pm2 restart 실행
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 비동기 셸 명령 실행 헬퍼
+ * 타임아웃(ms) 초과 시 프로세스 강제 종료
+ */
+function runCmd(cmd: string, args: string[], cwd: string, timeoutMs = 30000): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    let stdout = '', stderr = ''
+    const proc = spawn(cmd, args, { cwd, stdio: 'pipe' })
+    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
+    proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
+    const timer = setTimeout(() => {
+      proc.kill('SIGKILL')
+      resolve({ code: -1, stdout, stderr: stderr + '\n[TIMEOUT]' })
+    }, timeoutMs)
+    proc.on('close', (code: number | null) => {
+      clearTimeout(timer)
+      resolve({ code: code ?? -1, stdout, stderr })
+    })
+  })
+}
+
+/** 업데이트 진행 상태 (메모리 싱글턴) */
+let _updateState: {
+  status: 'idle' | 'checking' | 'pulling' | 'restarting' | 'done' | 'error'
+  message: string
+  currentCommit: string
+  latestCommit: string
+  updatedAt: string | null
+  log: string[]
+} = {
+  status: 'idle',
+  message: '대기 중',
+  currentCommit: '',
+  latestCommit: '',
+  updatedAt: null,
+  log: []
+}
+
+function _addUpdateLog(msg: string) {
+  _updateState.log.push(`[${new Date().toISOString().slice(11,19)}] ${msg}`)
+  if (_updateState.log.length > 50) _updateState.log = _updateState.log.slice(-50)
+  console.log('[update]', msg)
+}
+
+// GET /api/admin/update/status  — 현재 상태 조회 (폴링용)
+app.get('/api/admin/update/status', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+  const gitHead = await runCmd('git', ['rev-parse', '--short', 'HEAD'], __dirname, 5000)
+  _updateState.currentCommit = gitHead.stdout.trim() || _updateState.currentCommit
+  return c.json({ ..._updateState })
+})
+
+// POST /api/admin/update/check  — GitHub 최신 버전 확인
+app.post('/api/admin/update/check', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+  if (_updateState.status === 'pulling' || _updateState.status === 'restarting')
+    return c.json({ error: '업데이트 진행 중입니다. 잠시 후 다시 시도하세요.' }, 409)
+
+  _updateState.status  = 'checking'
+  _updateState.message = 'GitHub 최신 버전 확인 중...'
+  _updateState.log     = []
+  _addUpdateLog('git fetch origin main 시작')
+
+  ;(async () => {
+    try {
+      const fetchRes = await runCmd('git', ['fetch', 'origin', 'main'], __dirname, 20000)
+      if (fetchRes.code !== 0) {
+        _addUpdateLog(`fetch 실패: ${fetchRes.stderr.trim()}`)
+        _updateState.status  = 'error'
+        _updateState.message = `GitHub 연결 실패: ${fetchRes.stderr.trim().slice(0,80)}`
+        return
+      }
+      const cur    = await runCmd('git', ['rev-parse', '--short', 'HEAD'], __dirname, 5000)
+      const latest = await runCmd('git', ['rev-parse', '--short', 'origin/main'], __dirname, 5000)
+      const curC   = cur.stdout.trim()
+      const latC   = latest.stdout.trim()
+      _updateState.currentCommit = curC
+      _updateState.latestCommit  = latC
+
+      if (curC === latC) {
+        _addUpdateLog(`이미 최신 버전입니다 (${curC})`)
+        _updateState.status  = 'idle'
+        _updateState.message = `이미 최신 버전입니다 (${curC})`
+      } else {
+        const logRes = await runCmd('git', ['log', '--oneline', `${curC}..origin/main`], __dirname, 5000)
+        const newLogs = logRes.stdout.trim().split('\n').filter(Boolean).slice(0, 5)
+        newLogs.forEach(l => _addUpdateLog(`새 변경: ${l}`))
+        _updateState.status  = 'idle'
+        _updateState.message = `새 버전 있음: ${curC} → ${latC} (${newLogs.length}개 변경)`
+      }
+    } catch(e: any) {
+      _updateState.status  = 'error'
+      _updateState.message = `확인 중 오류: ${e.message}`
+      _addUpdateLog(`오류: ${e.message}`)
+    }
+  })()
+
+  return c.json({ ok: true, message: '버전 확인 중...' })
+})
+
+// POST /api/admin/update/apply  — git pull + pm2 restart 실행
+app.post('/api/admin/update/apply', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+  if (_updateState.status === 'pulling' || _updateState.status === 'restarting')
+    return c.json({ error: '업데이트 진행 중입니다.' }, 409)
+
+  const body = await c.req.json().catch(() => ({})) as any
+  const { confirm_password } = body
+
+  const userRow = rawDb.prepare(`SELECT password_hash FROM users WHERE id=?`).get(user.id) as any
+  if (!userRow || !confirm_password || userRow.password_hash !== String(confirm_password))
+    return c.json({ error: '비밀번호가 올바르지 않습니다.' }, 403)
+
+  _updateState.status  = 'pulling'
+  _updateState.message = 'GitHub에서 최신 코드 다운로드 중...'
+  _updateState.log     = []
+  _updateState.updatedAt = null
+  _addUpdateLog('업데이트 시작')
+
+  ;(async () => {
+    try {
+      // ── 1. DB 자동 백업 ───────────────────────────────────────
+      _addUpdateLog('DB 백업 중...')
+      const dbSrc = String(process.env.DB_PATH || join(__dirname, 'data/safety.db'))
+      const backupDir = join(__dirname, 'backups')
+      const stamp = new Date().toISOString().slice(0,16).replace(/[-T:]/g,'')
+      const backupPath = join(backupDir, `safety_${stamp}_before_update.db`)
+      try {
+        await runCmd('mkdir', ['-p', backupDir], __dirname, 5000)
+        if (existsSync(dbSrc)) {
+          const cpRes = await runCmd('cp', [dbSrc, backupPath], __dirname, 10000)
+          _addUpdateLog(cpRes.code === 0 ? `DB 백업 완료: backups/safety_${stamp}_before_update.db` : `DB 백업 경고: ${cpRes.stderr.trim()}`)
+        } else { _addUpdateLog('DB 파일 없음 — 백업 건너뜀') }
+      } catch(be: any) { _addUpdateLog(`DB 백업 오류(무시): ${be.message}`) }
+
+      // ── 2. git pull ──────────────────────────────────────────
+      _addUpdateLog('git pull origin main 시작...')
+      const pullRes = await runCmd('git', ['pull', 'origin', 'main'], __dirname, 60000)
+      if (pullRes.code !== 0) {
+        _addUpdateLog(`git pull 실패: ${pullRes.stderr.trim()}`)
+        _updateState.status  = 'error'
+        _updateState.message = `git pull 실패: ${pullRes.stderr.trim().slice(0,100)}`
+        return
+      }
+      _addUpdateLog(`git pull 완료: ${pullRes.stdout.trim().split('\n').slice(-2).join(' ')}`)
+
+      const newCommit = await runCmd('git', ['rev-parse', '--short', 'HEAD'], __dirname, 5000)
+      _updateState.currentCommit = newCommit.stdout.trim()
+      _updateState.updatedAt = new Date().toISOString()
+
+      // ── 3. pm2 restart ──────────────────────────────────────
+      _updateState.status  = 'restarting'
+      _updateState.message = '서버 재시작 중... 잠시 후 페이지를 새로고침하세요'
+      _addUpdateLog('pm2 restart safetynote 실행...')
+
+      setTimeout(async () => {
+        const restartRes = await runCmd('pm2', ['restart', 'safetynote'], __dirname, 15000)
+        if (restartRes.code === 0) {
+          _addUpdateLog('pm2 restart 완료 ✅')
+          _updateState.status  = 'done'
+          _updateState.message = `업데이트 완료! (${_updateState.currentCommit})`
+        } else {
+          _addUpdateLog(`pm2 restart 실패: ${restartRes.stderr.trim()}`)
+          _updateState.status  = 'error'
+          _updateState.message = `서버 재시작 실패: ${restartRes.stderr.trim().slice(0,80)}`
+        }
+      }, 1000)
+
+    } catch(e: any) {
+      _addUpdateLog(`업데이트 오류: ${e.message}`)
+      _updateState.status  = 'error'
+      _updateState.message = `오류: ${e.message}`
+    }
+  })()
+
+  return c.json({ ok: true, message: '업데이트 시작됨' })
+})
+
+// ═══════════════════════════════════════════════════════════════
 // 작업지시서 첨부파일 API  /api/attachments
 // ═══════════════════════════════════════════════════════════════
 
@@ -5794,13 +5980,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621w">
+  <link rel="stylesheet" href="/static/style.css?v=20260621x">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621w"></script>
+  <script src="/static/app.js?v=20260621x"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621w"></script>
+  <script src="/static/mobile-app.js?v=20260621x"></script>
 </body>
 </html>`)
 })

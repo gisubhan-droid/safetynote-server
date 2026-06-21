@@ -29761,16 +29761,25 @@ async function renderUnitPricePage(container) {
     const cablePrices  = cableRes.data.prices  || [];
     const splicePrices = spliceRes.data.prices || [];
 
-    // ── 외선 공종 행 생성 (공종 + 단가 + 삭제버튼)
+    // ── 외선 공종 행 생성 (공종명편집 + 단위편집 + 단가 + 삭제버튼)
     const mkPriceRows = (prices) => prices.map(p => `
       <tr class="border-b border-gray-50 hover:bg-gray-50 group" data-key="${p.item_key}">
-        <td class="px-4 py-2 text-gray-700 font-medium text-sm">${p.item_label}</td>
-        <td class="px-4 py-2 text-right">
+        <td class="px-2 py-1.5">
+          <input type="text" maxlength="40"
+            class="up-cable-label-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
+            data-key="${p.item_key}" value="${p.item_label.replace(/"/g,'&quot;')}" placeholder="공종명">
+        </td>
+        <td class="px-2 py-1.5 w-20">
+          <input type="text" maxlength="10"
+            class="up-cable-unit-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-center text-gray-500 focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
+            data-key="${p.item_key}" value="${(p.unit||'식').replace(/"/g,'&quot;')}" placeholder="단위">
+        </td>
+        <td class="px-4 py-1.5 text-right">
           <input type="number" min="0" step="100"
             class="up-cable-input w-32 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
             data-key="${p.item_key}" value="${p.unit_price || 0}">
         </td>
-        <td class="px-3 py-2 text-center w-10">
+        <td class="px-3 py-1.5 text-center w-10">
           <button onclick="_upDeleteCableItem('${p.item_key}','${p.item_label}')"
             class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
             <i class="fas fa-trash-alt"></i>
@@ -29778,29 +29787,37 @@ async function renderUnitPricePage(container) {
         </td>
       </tr>`).join('');
 
-    // ── 접속 공종 행 생성 (공종 + 기본단가 + 야간 + 가공 + 단위 + 삭제버튼)
+    // ── 접속 공종 행 생성 (공종명편집 + 기본단가 + 야간 + 가공 + 단위편집 + 삭제버튼)
     const mkSplicePriceRows = (prices) => prices.map(p => `
       <tr class="border-b border-gray-50 hover:bg-indigo-50 group" data-key="${p.item_key}">
-        <td class="px-4 py-2 text-gray-700 font-medium text-sm">${p.item_label}</td>
-        <td class="px-4 py-2 text-right">
+        <td class="px-2 py-1.5">
+          <input type="text" maxlength="40"
+            class="up-splice-label-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-indigo-300 focus:bg-indigo-50 hover:border-gray-200 bg-transparent"
+            data-key="${p.item_key}" value="${p.item_label.replace(/"/g,'&quot;')}" placeholder="공종명">
+        </td>
+        <td class="px-4 py-1.5 text-right">
           <input type="number" min="0" step="100"
             class="up-splice-input w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300"
             data-key="${p.item_key}" value="${p.unit_price || 0}">
         </td>
-        <td class="px-4 py-2 text-right">
+        <td class="px-4 py-1.5 text-right">
           <input type="number" min="0" step="100"
             class="up-splice-input-night w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 ${p.night_price ? '' : 'text-gray-300'}"
             data-key="${p.item_key}" value="${p.night_price || 0}"
             placeholder="0" onfocus="this.classList.remove('text-gray-300')">
         </td>
-        <td class="px-4 py-2 text-right">
+        <td class="px-4 py-1.5 text-right">
           <input type="number" min="0" step="100"
             class="up-splice-input-aerial w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 ${p.aerial_price ? '' : 'text-gray-300'}"
             data-key="${p.item_key}" value="${p.aerial_price || 0}"
             placeholder="0" onfocus="this.classList.remove('text-gray-300')">
         </td>
-        <td class="px-4 py-2 text-center text-gray-400 text-xs w-16">${p.unit || '개소'}</td>
-        <td class="px-3 py-2 text-center w-10">
+        <td class="px-2 py-1.5 w-20">
+          <input type="text" maxlength="10"
+            class="up-splice-unit-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-center text-gray-500 focus:outline-none focus:border-indigo-300 focus:bg-indigo-50 hover:border-gray-200 bg-transparent"
+            data-key="${p.item_key}" value="${(p.unit||'개소').replace(/"/g,'&quot;')}" placeholder="단위">
+        </td>
+        <td class="px-3 py-1.5 text-center w-10">
           <button onclick="_upDeleteSpliceItem('${p.item_key}','${p.item_label}')"
             class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
             <i class="fas fa-trash-alt"></i>
@@ -29840,7 +29857,8 @@ async function renderUnitPricePage(container) {
           </div>
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
-              <th class="px-4 py-2 text-left border-b border-gray-100">공종</th>
+              <th class="px-4 py-2 text-left border-b border-gray-100">공종 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
+              <th class="px-4 py-2 text-center border-b border-gray-100 w-20">단위</th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-36">단가 (원)</th>
               <th class="w-10 border-b border-gray-100"></th>
             </tr></thead>
@@ -29883,11 +29901,11 @@ async function renderUnitPricePage(container) {
           </div>
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
-              <th class="px-4 py-2 text-left border-b border-gray-100">공종</th>
+              <th class="px-4 py-2 text-left border-b border-gray-100">공종 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-32">기본단가 (원)</th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-blue-50">야간 추가금액 (원)</th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-green-50">가공 추가금액 (원)</th>
-              <th class="px-4 py-2 text-center border-b border-gray-100 w-16">단위</th>
+              <th class="px-4 py-2 text-center border-b border-gray-100 w-20">단위</th>
               <th class="w-10 border-b border-gray-100"></th>
             </tr></thead>
             <tbody id="up-splice-tbody">${mkSplicePriceRows(splicePrices)}</tbody>
@@ -30076,11 +30094,33 @@ async function _upDeleteSpliceItem(itemKey, itemLabel) {
 
 
 async function _saveUnitPrices() {
-  const inputs = document.querySelectorAll('.up-cable-input');
-  const prices = Array.from(inputs).map(el => ({
-    item_key:   el.dataset.key,
-    unit_price: Number(el.value) || 0
-  }));
+  // 단가 input 수집
+  const priceInputs = document.querySelectorAll('.up-cable-input');
+  // 공종명 input 수집
+  const labelInputs = document.querySelectorAll('.up-cable-label-input');
+  // 단위 input 수집
+  const unitInputs  = document.querySelectorAll('.up-cable-unit-input');
+
+  // key → { unit_price, item_label, unit } 맵 구성
+  const dataMap = {};
+  priceInputs.forEach(el => {
+    const k = el.dataset.key;
+    if (!dataMap[k]) dataMap[k] = {};
+    dataMap[k].unit_price = Number(el.value) || 0;
+  });
+  labelInputs.forEach(el => {
+    const k = el.dataset.key;
+    if (!dataMap[k]) dataMap[k] = {};
+    const v = (el.value || '').trim();
+    if (v) dataMap[k].item_label = v;
+  });
+  unitInputs.forEach(el => {
+    const k = el.dataset.key;
+    if (!dataMap[k]) dataMap[k] = {};
+    dataMap[k].unit = (el.value || '').trim() || '식';
+  });
+
+  const prices = Object.entries(dataMap).map(([item_key, v]) => ({ item_key, ...v }));
   const msgEl = document.getElementById('up-msg');
   try {
     await API.put('/volume-unit-prices', { prices });
@@ -30096,18 +30136,32 @@ async function _saveUnitPrices() {
 }
 
 async function _saveSpliceUnitPrices() {
-  // 기본단가 input: class="up-splice-input", data-key, data-price-type="base" (또는 data-price-type 없음)
+  // 기본단가 input: class="up-splice-input", data-key
   // 야간추가: class="up-splice-input-night", data-key
   // 가공추가: class="up-splice-input-aerial", data-key
+  // 공종명:   class="up-splice-label-input", data-key
+  // 단위:     class="up-splice-unit-input",  data-key
   const baseInputs   = document.querySelectorAll('.up-splice-input');
   const nightInputs  = document.querySelectorAll('.up-splice-input-night');
   const aerialInputs = document.querySelectorAll('.up-splice-input-aerial');
+  const labelInputs  = document.querySelectorAll('.up-splice-label-input');
+  const unitInputs   = document.querySelectorAll('.up-splice-unit-input');
 
-  // key → { unit_price, night_price, aerial_price } 맵 구성
+  // key → { unit_price, night_price, aerial_price, item_label, unit } 맵 구성
   const priceMap = {};
-  baseInputs.forEach(el   => { if (!priceMap[el.dataset.key]) priceMap[el.dataset.key] = { unit_price:0, night_price:0, aerial_price:0 }; priceMap[el.dataset.key].unit_price   = Number(el.value) || 0; });
-  nightInputs.forEach(el  => { if (!priceMap[el.dataset.key]) priceMap[el.dataset.key] = { unit_price:0, night_price:0, aerial_price:0 }; priceMap[el.dataset.key].night_price  = Number(el.value) || 0; });
-  aerialInputs.forEach(el => { if (!priceMap[el.dataset.key]) priceMap[el.dataset.key] = { unit_price:0, night_price:0, aerial_price:0 }; priceMap[el.dataset.key].aerial_price = Number(el.value) || 0; });
+  const ensureKey = (k) => { if (!priceMap[k]) priceMap[k] = { unit_price:0, night_price:0, aerial_price:0 }; };
+  baseInputs.forEach(el   => { ensureKey(el.dataset.key); priceMap[el.dataset.key].unit_price   = Number(el.value) || 0; });
+  nightInputs.forEach(el  => { ensureKey(el.dataset.key); priceMap[el.dataset.key].night_price  = Number(el.value) || 0; });
+  aerialInputs.forEach(el => { ensureKey(el.dataset.key); priceMap[el.dataset.key].aerial_price = Number(el.value) || 0; });
+  labelInputs.forEach(el  => {
+    ensureKey(el.dataset.key);
+    const v = (el.value || '').trim();
+    if (v) priceMap[el.dataset.key].item_label = v;
+  });
+  unitInputs.forEach(el   => {
+    ensureKey(el.dataset.key);
+    priceMap[el.dataset.key].unit = (el.value || '').trim() || '개소';
+  });
 
   const prices = Object.entries(priceMap).map(([item_key, v]) => ({ item_key, ...v }));
   const msgEl = document.getElementById('up-splice-msg');

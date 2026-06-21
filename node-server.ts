@@ -4277,11 +4277,24 @@ app.put('/api/volume-unit-prices', async (c) => {
   if (!isSysadmin) return c.json({ error: '시스템관리자만 수정할 수 있습니다' }, 403)
   const { prices } = await c.req.json()
   if (!Array.isArray(prices)) return c.json({ error: '잘못된 요청' }, 400)
-  const stmt = rawDb.prepare(
-    `UPDATE volume_unit_prices SET unit_price=? WHERE item_key=?`
-  )
+  // 단가 + 공종명 + 단위 함께 업데이트
+  const stmtFull  = rawDb.prepare(`UPDATE volume_unit_prices SET unit_price=?, item_label=?, unit=? WHERE item_key=?`)
+  const stmtPrice = rawDb.prepare(`UPDATE volume_unit_prices SET unit_price=? WHERE item_key=?`)
   const update = rawDb.transaction((list: any[]) => {
-    for (const p of list) stmt.run(Number(p.unit_price) || 0, p.item_key)
+    for (const p of list) {
+      if (p.item_label !== undefined || p.unit !== undefined) {
+        // 공종명·단위 포함 전체 업데이트
+        const label = (p.item_label || '').trim() || undefined
+        const unit  = (p.unit || '').trim() || '식'
+        if (label) {
+          stmtFull.run(Number(p.unit_price) || 0, label, unit, p.item_key)
+        } else {
+          stmtPrice.run(Number(p.unit_price) || 0, p.item_key)
+        }
+      } else {
+        stmtPrice.run(Number(p.unit_price) || 0, p.item_key)
+      }
+    }
   })
   update(prices)
   return c.json({ ok: true })
@@ -4806,8 +4819,22 @@ app.put('/api/splice-unit-prices', async (c) => {
   const roleUi = dbRoleToUi(user.role, user.position, user.sub_role)
   if (roleUi !== 'sysadmin') return c.json({ error: '권한 없음' }, 403)
   const { prices } = await c.req.json() as any
-  const stmt = rawDb.prepare(`UPDATE splice_unit_prices SET unit_price=?, night_price=?, aerial_price=? WHERE item_key=?`)
-  for (const p of (prices || [])) stmt.run(p.unit_price || 0, p.night_price || 0, p.aerial_price || 0, p.item_key)
+  // 단가 + 공종명 + 단위 함께 업데이트
+  const stmtFull  = rawDb.prepare(`UPDATE splice_unit_prices SET unit_price=?, night_price=?, aerial_price=?, item_label=?, unit=? WHERE item_key=?`)
+  const stmtPrice = rawDb.prepare(`UPDATE splice_unit_prices SET unit_price=?, night_price=?, aerial_price=? WHERE item_key=?`)
+  for (const p of (prices || [])) {
+    if (p.item_label !== undefined || p.unit !== undefined) {
+      const label = (p.item_label || '').trim() || undefined
+      const unit  = (p.unit || '').trim() || '개소'
+      if (label) {
+        stmtFull.run(p.unit_price || 0, p.night_price || 0, p.aerial_price || 0, label, unit, p.item_key)
+      } else {
+        stmtPrice.run(p.unit_price || 0, p.night_price || 0, p.aerial_price || 0, p.item_key)
+      }
+    } else {
+      stmtPrice.run(p.unit_price || 0, p.night_price || 0, p.aerial_price || 0, p.item_key)
+    }
+  }
   return c.json({ ok: true })
 })
 
@@ -5758,13 +5785,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621p">
+  <link rel="stylesheet" href="/static/style.css?v=20260621q">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621p"></script>
+  <script src="/static/app.js?v=20260621q"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621p"></script>
+  <script src="/static/mobile-app.js?v=20260621q"></script>
 </body>
 </html>`)
 })

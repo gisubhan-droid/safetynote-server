@@ -143,7 +143,7 @@ app.post('/', async (c) => {
     return c.json({ error: '작업번호 형식: WKS-######-#####' }, 400)
   }
   // 공사종류 유효값 검증
-  const VALID_WORK_CLASS = ['relocation', 'subscription', 'conduit', 'environment']
+  const VALID_WORK_CLASS = ['relocation', 'subscription', 'conduit', 'environment', 'other']
   if (work_class && !VALID_WORK_CLASS.includes(work_class)) {
     return c.json({ error: '공사종류 값이 올바르지 않습니다' }, 400)
   }
@@ -193,7 +193,7 @@ app.put('/:id', async (c) => {
     return c.json({ error: '작업번호 형식: WKS-######-#####' }, 400)
   }
   // 공사종류 유효값 검증
-  const VALID_WORK_CLASS_PUT = ['relocation', 'subscription', 'conduit', 'environment']
+  const VALID_WORK_CLASS_PUT = ['relocation', 'subscription', 'conduit', 'environment', 'other']
   if (work_class && !VALID_WORK_CLASS_PUT.includes(work_class)) {
     return c.json({ error: '공사종류 값이 올바르지 않습니다' }, 400)
   }

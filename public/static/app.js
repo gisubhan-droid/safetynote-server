@@ -3465,6 +3465,7 @@ async function showCreateConstructionModal(editId = null) {
                 <option value="subscription" ${(con.work_class||'')==='subscription' ?'selected':''}>청약개통</option>
                 <option value="conduit"      ${(con.work_class||'')==='conduit'      ?'selected':''}>관로</option>
                 <option value="environment"  ${(con.work_class||'')==='environment'  ?'selected':''}>환경공사</option>
+                <option value="other"        ${(con.work_class||'')==='other'        ?'selected':''}>기타</option>
               </select>
             </div>
 
@@ -3544,6 +3545,7 @@ const WC_LABEL = {
   subscription: '청약개통',
   conduit:      '관로',
   environment:  '환경공사',
+  other:        '기타',
 };
 
 // 공사요청번호 입력 → 공사정보 자동 연동
@@ -4463,7 +4465,7 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
 
   const wc = task.work_class || 'cable_install';
   // 공사종류(ct): 기존 task값 → presetConstruction.work_class 변환 → 빈값 순으로 결정
-  const _WC_LABEL_STATIC = { relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' };
+  const _WC_LABEL_STATIC = { relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사', other:'기타' };
   const ct = task.construction_type
     || (presetConstruction?.work_class ? (_WC_LABEL_STATIC[presetConstruction.work_class] || '') : '')
     || '';

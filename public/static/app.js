@@ -29762,7 +29762,7 @@ async function renderUnitPricePage(container) {
     const cablePrices  = cableRes.data.prices  || [];
     const splicePrices = spliceRes.data.prices || [];
 
-    // ── 외선 공종 행 생성 (공종명편집 + 단위편집 + 단가 + 삭제버튼)
+    // ── 외선 공종 행 생성 (공종명편집 + 단가 + 단위편집 + 삭제버튼) — 콼럼 순서: 공종|단가|단위|삭제
     const mkPriceRows = (prices) => prices.map(p => `
       <tr class="border-b border-gray-50 hover:bg-gray-50 group" data-key="${p.item_key}">
         <td class="px-2 py-1.5">
@@ -29770,15 +29770,15 @@ async function renderUnitPricePage(container) {
             class="up-cable-label-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
             data-key="${p.item_key}" value="${p.item_label.replace(/"/g,'&quot;')}" placeholder="공종명">
         </td>
-        <td class="px-2 py-1.5 w-20">
-          <input type="text" maxlength="10"
-            class="up-cable-unit-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-center text-gray-500 focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
-            data-key="${p.item_key}" value="${(p.unit||'식').replace(/"/g,'&quot;')}" placeholder="단위">
-        </td>
         <td class="px-4 py-1.5 text-right">
           <input type="number" min="0" step="100"
             class="up-cable-input w-32 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
             data-key="${p.item_key}" value="${p.unit_price || 0}">
+        </td>
+        <td class="px-2 py-1.5 w-20">
+          <input type="text" maxlength="10"
+            class="up-cable-unit-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-center text-gray-500 focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
+            data-key="${p.item_key}" value="${(p.unit||'식').replace(/"/g,'&quot;')}" placeholder="단위">
         </td>
         <td class="px-3 py-1.5 text-center w-10">
           <button onclick="_upDeleteCableItem('${p.item_key}','${p.item_label}')"
@@ -29859,8 +29859,8 @@ async function renderUnitPricePage(container) {
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
               <th class="px-4 py-2 text-left border-b border-gray-100">공종 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
-              <th class="px-4 py-2 text-center border-b border-gray-100 w-20">단위</th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-36">단가 (원)</th>
+              <th class="px-4 py-2 text-center border-b border-gray-100 w-20">단위</th>
               <th class="w-10 border-b border-gray-100"></th>
             </tr></thead>
             <tbody id="up-cable-tbody">${mkPriceRows(cablePrices)}</tbody>

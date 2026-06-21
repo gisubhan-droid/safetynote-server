@@ -2872,3 +2872,50 @@ NAS 로그:
 - ✅ 빌드 성공 (`dist/_worker.js 251.41 kB`)
 - ✅ GitHub 푸시 완료
 - ⚠️ NAS 배포 대기 중
+
+
+---
+
+## 세션 54 (2026-06-21) — 최적화 2종 + 진행 계획 문서 전면 현행화
+
+### 수정 내용
+
+#### 최적화 1: 자동 DB 백업 (`8f7d502`)
+- `node-server.ts` 서버 시작 시 자동 백업 스케줄러 등록
+  - 매일 **새벽 2:00** 자동 실행 → `backups/safety_YYYYMMDD.db`
+  - WAL 체크포인트(`wal_checkpoint(TRUNCATE)`) 후 파일 복사 (데이터 일관성 보장)
+  - 오늘 백업 이미 존재하면 중복 생략
+  - **30일 초과** 백업 자동 삭제 (`pruneOldBackups`)
+- 오래된 알림 자동 정리: 90일 초과 `notifications` 레코드 삭제
+  - 서버 시작 시 1회 + 이후 **매 24시간** 실행
+
+#### 최적화 2: 페이지네이션 (`8f7d502`)
+- `src/routes/tasks.ts`:
+  - `GET /api/tasks` — `page` / `limit` 쿼리 파라미터 추가
+  - 기본 `limit=50` (최대 500), `limit=0`이면 전체 반환 (하위 호환)
+  - COUNT 쿼리로 `total` 응답 포함
+- `node-server.ts`:
+  - `GET /api/splice-reports` — 동일 방식 page/limit 지원
+- `app.js`:
+  - `TASK_PAGE_LIMIT = 50` 상수 선언
+  - 작업 목록 하단 **"더 보기"** 버튼 추가 (누적 로드 방식)
+  - 잔여 건수 표시: `더 보기 (N건 남음)`
+  - 필터/검색 변경 시 `taskFilters.page = 1` 자동 리셋
+  - 상단 건수 표시: `총 N건 중 M건 표시`
+- 캐시버전: `v=20260621x` → `v=20260621y`
+
+#### 문서 전면 현행화 (세션 54)
+- `docs/PENDING_TASKS.md`: Phase 6 세부 목록 추가, 세션 54 완료 항목 기록
+- `docs/WORK_PLAN.md`: 전면 재작성 — 완료/대기 Phase 현황, 장기 최적화 로드맵
+- `docs/DEPLOY_AND_UPDATE_GUIDE.md`: 전면 재작성 — 현재 상태 반영, FAQ 추가
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `8f7d502` | feat: 자동 DB 백업 + 페이지네이션 적용 (v=20260621y) |
+
+### 상태
+- ✅ node --check 통과
+- ✅ 빌드 성공 (`dist/_worker.js 251.78 kB`)
+- ✅ GitHub 푸시 완료
+- ✅ NAS 배포 완료 (사용자 확인)

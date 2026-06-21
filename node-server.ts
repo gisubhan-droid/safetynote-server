@@ -2580,7 +2580,7 @@ app.get('/api/constructions/request-no-seq', async (c) => {
   if (!dateParam) return c.json({ error: 'date 파라미터 필요' }, 400)
 
   // LM_YY.MM.DD_ 로 시작하는 건수 조회
-  const prefix = `LM_${dateParam}_`
+  const prefix = `AT_${dateParam}_`
   const row = rawDb.prepare(
     `SELECT COUNT(*) as cnt FROM constructions WHERE request_no LIKE ?`
   ).get(`${prefix}%`) as any
@@ -5593,13 +5593,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621b">
+  <link rel="stylesheet" href="/static/style.css?v=20260621c">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621b"></script>
+  <script src="/static/app.js?v=20260621c"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621b"></script>
+  <script src="/static/mobile-app.js?v=20260621c"></script>
 </body>
 </html>`)
 })

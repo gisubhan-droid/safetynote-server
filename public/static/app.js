@@ -3348,7 +3348,7 @@ async function _toggleReqNoAuto(checked) {
     input.style.background = '#F3F0F8';
     input.style.color = '#888';
     input.value = '조회 중…';
-    if (hint) { hint.textContent = '자동 부여 번호 (LM_YY.MM.DD_##)'; hint.style.color = '#685182'; }
+    if (hint) { hint.textContent = '자동 부여 번호 (AT_YY.MM.DD_##)'; hint.style.color = '#685182'; }
     try {
       // KST 날짜 계산
       const now = new Date(Date.now() + 9 * 60 * 60 * 1000); // UTC+9
@@ -3357,7 +3357,7 @@ async function _toggleReqNoAuto(checked) {
       const dd = String(now.getUTCDate()).padStart(2, '0');
       const dateParam = `${yy}.${mm}.${dd}`;
       const res = await API.get(`/constructions/request-no-seq?date=${encodeURIComponent(dateParam)}`);
-      input.value = res.next_no ?? '';
+      input.value = res.data?.next_no ?? '';
       input.dataset.autoNo = '1';
     } catch(e) {
       input.value = '';

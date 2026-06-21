@@ -26229,11 +26229,16 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
   content.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
 
   // 외선: tasks API
-  let cableTasks = [], spliceReports = [], spliceTasks = [];
+  let cableTasks = [], spliceReports = [], spliceTasks = [], allTasks = [];
   try {
     const r = await API.get('/tasks?status=working,work_completed,completed');
-    cableTasks = r.data.tasks || [];
-    spliceTasks = cableTasks; // 동일 task pool
+    allTasks   = r.data.tasks || [];
+    // 작업분류에 따라 일보 작성 대상 분리
+    // cable_install(광케이블 시설) → 외선 작업일보만 대상
+    // cable_splice (광케이블 접속) → 접속 작업일보만 대상
+    // 그 외 (관로시설/장비기타 등) → 외선·접속 일보 대상 아님
+    cableTasks = allTasks.filter(t => (t.work_class || 'cable_install') === 'cable_install');
+    spliceTasks = allTasks.filter(t => (t.work_class || 'cable_install') === 'cable_splice');
   } catch(e) { console.error('[report-write] tasks 로드 실패', e.message); }
   try {
     const r = await API.get('/splice-reports');
@@ -26255,14 +26260,16 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
   const cCompleted = cableTasks.filter(t => t.report_id && (t.report_status === 'submitted' || t.report_status === 'confirmed'));
 
   // ── 접속 탭 분류 ─────────────────────────────────────────────────
-  // - 작성 대상(pending) : task 기반 — 아직 report가 없는 task 목록
-  // - 작성 중  (draft)   : report 기반 — status='draft'인 report 목록
-  // - 작성 완료(completed): report 기반 — status='submitted'|'confirmed'인 report 목록
-  // ※ report 기반 분류로 task_id 없는 일보도 올바르게 표시됨
+  // - 작성 대상(pending) : cable_splice task 기반 — 아직 report가 없는 task 목록
+  // - 작성 중  (draft)   : report 기반 — cable_splice task에 연결된 draft report
+  // - 작성 완료(completed): report 기반 — cable_splice task에 연결된 완료 report
+  // ※ task_id가 없는 report(독립 작성분)는 계속 포함
+  // ※ task_id가 있는 report는 해당 task의 work_class가 cable_splice인 것만 표시
+  const spliceTaskIds  = new Set(spliceTasks.map(t => t.id));
   const reportedTaskIds = new Set(spliceReports.filter(r => r.task_id).map(r => r.task_id));
   const sPending   = spliceTasks.filter(t => !reportedTaskIds.has(t.id));
-  const sDrafts    = spliceReports.filter(r => r.status === 'draft');
-  const sCompleted = spliceReports.filter(r => r.status === 'submitted' || r.status === 'confirmed');
+  const sDrafts    = spliceReports.filter(r => r.status === 'draft'     && (!r.task_id || spliceTaskIds.has(r.task_id)));
+  const sCompleted = spliceReports.filter(r => (r.status === 'submitted' || r.status === 'confirmed') && (!r.task_id || spliceTaskIds.has(r.task_id)));
 
   // task 정보를 카드에서 참조하기 위한 taskMap
   const taskMap = {};

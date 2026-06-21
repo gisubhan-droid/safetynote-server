@@ -4765,6 +4765,58 @@ app.put('/api/splice-unit-prices', async (c) => {
   return c.json({ ok: true })
 })
 
+// POST /api/volume-unit-prices — 외선 공종 추가 (sysadmin)
+app.post('/api/volume-unit-prices', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const isSysadmin = user.sub_role === 'sysadmin' || user.position === '시스템관리자'
+  if (!isSysadmin) return c.json({ error: '권한 없음' }, 403)
+  const { item_key, item_label, unit_price } = await c.req.json() as any
+  if (!item_key || !item_label) return c.json({ error: 'item_key, item_label 필수' }, 400)
+  const maxSort = (rawDb.prepare(`SELECT MAX(sort_order) AS m FROM volume_unit_prices`).get() as any)?.m || 0
+  rawDb.prepare(`INSERT OR IGNORE INTO volume_unit_prices (item_key, item_label, unit_price, sort_order) VALUES (?,?,?,?)`)
+    .run(item_key, item_label, Number(unit_price) || 0, maxSort + 1)
+  return c.json({ ok: true })
+})
+
+// DELETE /api/volume-unit-prices/:key — 외선 공종 삭제 (sysadmin)
+app.delete('/api/volume-unit-prices/:key', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const isSysadmin = user.sub_role === 'sysadmin' || user.position === '시스템관리자'
+  if (!isSysadmin) return c.json({ error: '권한 없음' }, 403)
+  const key = c.req.param('key')
+  rawDb.prepare(`DELETE FROM volume_unit_prices WHERE item_key=?`).run(key)
+  return c.json({ ok: true })
+})
+
+// POST /api/splice-unit-prices — 접속 공종 추가 (sysadmin)
+app.post('/api/splice-unit-prices', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const roleUi = dbRoleToUi(user.role, user.position, user.sub_role)
+  if (roleUi !== 'sysadmin') return c.json({ error: '권한 없음' }, 403)
+  const { item_key, item_label, unit, unit_price } = await c.req.json() as any
+  if (!item_key || !item_label) return c.json({ error: 'item_key, item_label 필수' }, 400)
+  const maxSort = (rawDb.prepare(`SELECT MAX(sort_order) AS m FROM splice_unit_prices`).get() as any)?.m || 0
+  rawDb.prepare(`INSERT OR IGNORE INTO splice_unit_prices (item_key, item_label, unit, unit_price, night_price, aerial_price, sort_order) VALUES (?,?,?,?,0,0,?)`)
+    .run(item_key, item_label, unit || '개소', Number(unit_price) || 0, maxSort + 1)
+  return c.json({ ok: true })
+})
+
+// DELETE /api/splice-unit-prices/:key — 접속 공종 삭제 (sysadmin)
+app.delete('/api/splice-unit-prices/:key', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const roleUi = dbRoleToUi(user.role, user.position, user.sub_role)
+  if (roleUi !== 'sysadmin') return c.json({ error: '권한 없음' }, 403)
+  const key = c.req.param('key')
+  rawDb.prepare(`DELETE FROM splice_unit_prices WHERE item_key=?`).run(key)
+  return c.json({ ok: true })
+})
+
+
+
 // GET /api/admin/folders - 저장 폴더 용량 및 파일 종류별 집계 조회
 app.get('/api/admin/folders', async (c) => {
   const user = getUser(c)
@@ -5660,13 +5712,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621k">
+  <link rel="stylesheet" href="/static/style.css?v=20260621l">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621k"></script>
+  <script src="/static/app.js?v=20260621l"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621k"></script>
+  <script src="/static/mobile-app.js?v=20260621l"></script>
 </body>
 </html>`)
 })

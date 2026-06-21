@@ -25426,18 +25426,23 @@ function _frCalcDateRange() {
 }
 
 async function renderFieldReportPage(container) {
+  // ⚠️ DOM 값을 innerHTML 덮어쓰기 전에 먼저 읽어야 함 (DOM 소멸 방지)
+  // container.innerHTML = ... 하기 전에 현재 필터/탭 상태를 변수에 저장
+  const nowYear   = new Date().getFullYear();
+  const frMode    = document.getElementById('fr-period-mode')?.value    || 'month';
+  const frMVal    = document.getElementById('fr-period-month')?.value   || new Date().toISOString().slice(0,7);
+  const frWVal    = document.getElementById('fr-period-week')?.value    || '';
+  const frQVal    = document.getElementById('fr-period-quarter')?.value || '';
+  const frYVal    = document.getElementById('fr-period-year')?.value    || String(nowYear);
+  const frConsVal = document.getElementById('fr-construction')?.value   || '';
+  const frTab     = document.getElementById('fr-active-tab')?.value     || 'cable';
+  // 기간 계산도 DOM 소멸 전에 미리 수행
+  const { from: frFromDate, to: frToDate } = _frCalcDateRange();
+
   container.innerHTML = `<div class="w-full px-3 py-6"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
-    const frMode    = document.getElementById('fr-period-mode')?.value    || 'month';
-    const frMVal    = document.getElementById('fr-period-month')?.value   || new Date().toISOString().slice(0,7);
-    const frWVal    = document.getElementById('fr-period-week')?.value    || '';
-    const frQVal    = document.getElementById('fr-period-quarter')?.value || '';
-    const nowYear   = new Date().getFullYear();
-    const frYVal    = document.getElementById('fr-period-year')?.value    || String(nowYear);
-    const frConsVal = document.getElementById('fr-construction')?.value   || '';
-    const frTab     = document.getElementById('fr-active-tab')?.value     || 'cable';
 
-    const { from: frFromDate, to: frToDate } = _frCalcDateRange();
+    // frFromDate, frToDate는 위에서 DOM 소멸 전 이미 계산됨
 
     const frParams = [];
     if (frConsVal)  frParams.push(`construction_id=${frConsVal}`);
@@ -25515,7 +25520,7 @@ async function renderFieldReportPage(container) {
         <select id="fr-period-quarter" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedFrMode!=='quarter'?'hidden':''}">
           ${[1,2,3,4].map(q=>`<option value="${q}" ${(savedFrQVal||String(_curQ))==String(q)?'selected':''}>Q${q}(${(q-1)*3+1}~${q*3}월)</option>`).join('')}
         </select>
-        <button onclick="renderFieldReportPage(document.getElementById('page-content'))"
+        <button onclick="_frSearch()"
           class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600 font-medium">
           <i class="fas fa-search mr-1"></i>조회
         </button>
@@ -25756,7 +25761,20 @@ function _frSwitchTab(tab) {
   }
 }
 
-// ── 외선 탭 컬럼 숨김 토글 ──
+// ── 조회 버튼 클릭 핸들러 ──
+// 현재 활성 탭에 맞게 조회: 외선=전체 재렌더, 접속=접속 통계만 재조회
+function _frSearch() {
+  const activeTab = document.getElementById('fr-active-tab')?.value || 'cable';
+  if (activeTab === 'splice') {
+    // 접속 탭: 외선 전체 재렌더 없이 접속 통계만 재조회
+    _frLoadSpliceStats();
+  } else {
+    // 외선 탭: 전체 재렌더 (외선 데이터 포함)
+    renderFieldReportPage(document.getElementById('page-content'));
+  }
+}
+
+
 function _frCableToggleCol(colIdx) {
   const hidden = JSON.parse(localStorage.getItem('fr_cable_hidden_cols') || '[]');
   const idx = hidden.indexOf(colIdx);
@@ -27055,19 +27073,19 @@ async function renderWorkReportForm(container, taskId) {
             </table>
           </div>
         </div>
-        <!-- N번 추가입력 (공종별 작업량) -->
+        <!-- N번 공종별 작업량 -->
         <div class="bg-white rounded-2xl shadow-sm border border-orange-100">
           <div class="flex items-center px-4 pt-3 pb-2">
             <span class="font-semibold text-gray-700 text-sm">
               <i class="fas fa-clipboard-list text-orange-400 mr-1"></i>
-              추가입력
+              공종별 작업량
             </span>
           </div>
           <div class="px-3 pb-3">
             <table class="w-full text-xs border-collapse">
               <thead>
                 <tr class="bg-orange-50 text-gray-600 text-center">
-                  <th class="border border-gray-200 px-2 py-1.5">구분</th>
+                  <th class="border border-gray-200 px-2 py-1.5">공종</th>
                   <th class="border border-gray-200 px-2 py-1.5 w-32">작업량</th>
                   <th class="border border-gray-200 px-2 py-1.5 w-14">단위</th>
                 </tr>
@@ -27287,19 +27305,19 @@ function _wrAddCableSet() {
         </table>
       </div>
     </div>
-    <!-- ${n}번 추가입력 -->
+    <!-- ${n}번 공종별 작업량 -->
     <div class="bg-white rounded-2xl shadow-sm border border-orange-100">
       <div class="flex items-center px-4 pt-3 pb-2">
         <span class="font-semibold text-gray-700 text-sm">
           <i class="fas fa-clipboard-list text-orange-400 mr-1"></i>
-          추가입력
+          공종별 작업량
         </span>
       </div>
       <div class="px-3 pb-3">
         <table class="w-full text-xs border-collapse">
           <thead>
             <tr class="bg-orange-50 text-gray-600 text-center">
-              <th class="border border-gray-200 px-2 py-1.5">구분</th>
+              <th class="border border-gray-200 px-2 py-1.5">공종</th>
               <th class="border border-gray-200 px-2 py-1.5 w-32">작업량</th>
               <th class="border border-gray-200 px-2 py-1.5 w-14">단위</th>
             </tr>
@@ -29667,6 +29685,8 @@ async function renderUnitPricePage(container) {
     container.innerHTML = `<div class="p-8 text-center text-red-500"><i class="fas fa-lock text-4xl mb-3"></i><p class="text-lg font-semibold">시스템관리자만 접근할 수 있습니다</p></div>`;
     return;
   }
+  // 현재 탭 상태 보존 (DOM 소멸 전)
+  const savedTab = document.getElementById('up-active-tab')?.value || 'cable';
   container.innerHTML = `<div class="max-w-xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
     const [cableRes, spliceRes] = await Promise.all([
@@ -29676,46 +29696,55 @@ async function renderUnitPricePage(container) {
     const cablePrices  = cableRes.data.prices  || [];
     const splicePrices = spliceRes.data.prices || [];
 
-    const mkPriceRows = (prices, cls) => prices.map(p => `
-      <tr class="border-b border-gray-50 hover:bg-gray-50">
-        <td class="px-4 py-2 text-gray-700">${p.item_label}</td>
+    // ── 외선 공종 행 생성 (공종 + 단가 + 삭제버튼)
+    const mkPriceRows = (prices) => prices.map(p => `
+      <tr class="border-b border-gray-50 hover:bg-gray-50 group" data-key="${p.item_key}">
+        <td class="px-4 py-2 text-gray-700 font-medium text-sm">${p.item_label}</td>
         <td class="px-4 py-2 text-right">
           <input type="number" min="0" step="100"
-            class="${cls} w-36 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
+            class="up-cable-input w-36 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
             data-key="${p.item_key}" value="${p.unit_price || 0}">
+        </td>
+        <td class="px-3 py-2 text-center w-10">
+          <button onclick="_upDeleteCableItem('${p.item_key}','${p.item_label}')"
+            class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
+            <i class="fas fa-trash-alt"></i>
+          </button>
         </td>
       </tr>`).join('');
 
-    // 접속 단가 행: 기본단가 + 야간추가 + 가공추가 (has_night/has_aerial 공종만 추가 컬럼 활성화)
-    // 현재는 함체작업(및 has_aerial:true 공종)에만 야간/가공이 있으므로, 모든 행에 컬럼 표시
-    // (단가 0이면 시각적으로 흐릿하게 처리)
-    const mkSplicePriceRows = (prices, cls) => prices.map(p => {
-      const hasNightAerial = true; // 모든 공종에 컬럼 표시 (값 0이면 흐릿)
-      return `
-      <tr class="border-b border-gray-50 hover:bg-indigo-50">
-        <td class="px-4 py-2 text-gray-700 font-medium">${p.item_label}</td>
+    // ── 접속 공종 행 생성 (공종 + 기본단가 + 야간 + 가공 + 삭제버튼)
+    const mkSplicePriceRows = (prices) => prices.map(p => `
+      <tr class="border-b border-gray-50 hover:bg-indigo-50 group" data-key="${p.item_key}">
+        <td class="px-4 py-2 text-gray-700 font-medium text-sm">${p.item_label}</td>
         <td class="px-4 py-2 text-right">
           <input type="number" min="0" step="100"
-            class="${cls} w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300"
-            data-key="${p.item_key}" data-price-type="base" value="${p.unit_price || 0}">
+            class="up-splice-input w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300"
+            data-key="${p.item_key}" value="${p.unit_price || 0}">
         </td>
         <td class="px-4 py-2 text-right">
           <input type="number" min="0" step="100"
-            class="${cls}-night w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 ${p.night_price ? '' : 'text-gray-300'}"
-            data-key="${p.item_key}" data-price-type="night" value="${p.night_price || 0}"
+            class="up-splice-input-night w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 ${p.night_price ? '' : 'text-gray-300'}"
+            data-key="${p.item_key}" value="${p.night_price || 0}"
             placeholder="0" onfocus="this.classList.remove('text-gray-300')">
         </td>
         <td class="px-4 py-2 text-right">
           <input type="number" min="0" step="100"
-            class="${cls}-aerial w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 ${p.aerial_price ? '' : 'text-gray-300'}"
-            data-key="${p.item_key}" data-price-type="aerial" value="${p.aerial_price || 0}"
+            class="up-splice-input-aerial w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 ${p.aerial_price ? '' : 'text-gray-300'}"
+            data-key="${p.item_key}" value="${p.aerial_price || 0}"
             placeholder="0" onfocus="this.classList.remove('text-gray-300')">
         </td>
-      </tr>`;
-    }).join('');
+        <td class="px-3 py-2 text-center w-10">
+          <button onclick="_upDeleteSpliceItem('${p.item_key}','${p.item_label}')"
+            class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
+            <i class="fas fa-trash-alt"></i>
+          </button>
+        </td>
+      </tr>`).join('');
 
     container.innerHTML = `
-    <div class="max-w-xl mx-auto p-4 space-y-4">
+    <div class="max-w-2xl mx-auto p-4 space-y-4">
+      <input type="hidden" id="up-active-tab" value="${savedTab}">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
           <i class="fas fa-tags text-pink-500"></i> 단가 관리
@@ -29728,28 +29757,43 @@ async function renderUnitPricePage(container) {
       <!-- 탭 -->
       <div class="flex rounded-xl overflow-hidden border border-gray-200 text-sm font-medium">
         <button id="up-tab-cable-btn" onclick="_upSwitchTab('cable')"
-          class="flex-1 py-2 text-center transition bg-pink-50 text-pink-700 border-r border-gray-200">
+          class="flex-1 py-2 text-center transition ${savedTab==='cable'?'bg-pink-50 text-pink-700':'text-gray-500 hover:bg-gray-50'} border-r border-gray-200">
           <i class="fas fa-ethernet mr-1"></i>외선
         </button>
         <button id="up-tab-splice-btn" onclick="_upSwitchTab('splice')"
-          class="flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50">
+          class="flex-1 py-2 text-center transition ${savedTab==='splice'?'bg-indigo-50 text-indigo-700':'text-gray-500 hover:bg-gray-50'}">
           <i class="fas fa-plug mr-1"></i>접속
         </button>
       </div>
 
       <!-- 외선 단가 -->
-      <div id="up-cable-section">
+      <div id="up-cable-section" class="${savedTab==='cable'?'':'hidden'}">
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
-            * 외선 항목의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 금액 계산에 반영됩니다.
+            * 외선 공종의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 금액 계산에 반영됩니다.
           </div>
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
-              <th class="px-4 py-2 text-left border-b border-gray-100">항목</th>
+              <th class="px-4 py-2 text-left border-b border-gray-100">공종</th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-40">단가 (원)</th>
+              <th class="w-10 border-b border-gray-100"></th>
             </tr></thead>
-            <tbody>${mkPriceRows(cablePrices, 'up-cable-input')}</tbody>
+            <tbody id="up-cable-tbody">${mkPriceRows(cablePrices)}</tbody>
           </table>
+        </div>
+        <!-- 공종 추가 폼 -->
+        <div class="mt-2 bg-gray-50 rounded-xl border border-dashed border-gray-200 px-4 py-3">
+          <p class="text-xs text-gray-400 font-medium mb-2"><i class="fas fa-plus mr-1"></i>공종 추가</p>
+          <div class="flex gap-2 flex-wrap">
+            <input type="text" id="up-cable-add-label" placeholder="공종명 (예: 단순3)" maxlength="40"
+              class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-32 focus:outline-none focus:border-pink-300">
+            <input type="number" id="up-cable-add-price" placeholder="단가(원)" min="0" step="100"
+              class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-32 focus:outline-none focus:border-pink-300">
+            <button onclick="_upAddCableItem()"
+              class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600 whitespace-nowrap">
+              <i class="fas fa-plus mr-1"></i>추가
+            </button>
+          </div>
         </div>
         <div class="flex justify-end gap-2 mt-3">
           <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
@@ -29765,11 +29809,11 @@ async function renderUnitPricePage(container) {
       </div>
 
       <!-- 접속 단가 -->
-      <div id="up-splice-section" class="hidden">
+      <div id="up-splice-section" class="${savedTab==='splice'?'':'hidden'}">
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="px-4 py-3 bg-indigo-50 border-b border-indigo-100 text-xs text-indigo-700">
             * 접속 공종의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 접속 금액 계산에 반영됩니다.<br>
-            <span class="text-indigo-500">함체작업 등 야간·가공 추가금액은 일보 작성 시 야간/가공 체크 여부에 따라 기본단가에 더해집니다.</span>
+            <span class="text-indigo-500">야간·가공 추가금액은 일보 작성 시 야간/가공 체크 여부에 따라 기본단가에 더해집니다.</span>
           </div>
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
@@ -29777,9 +29821,26 @@ async function renderUnitPricePage(container) {
               <th class="px-4 py-2 text-right border-b border-gray-100 w-36">기본단가 (원)</th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-36 bg-blue-50">야간 추가금액 (원)</th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-36 bg-green-50">가공 추가금액 (원)</th>
+              <th class="w-10 border-b border-gray-100"></th>
             </tr></thead>
-            <tbody>${mkSplicePriceRows(splicePrices, 'up-splice-input')}</tbody>
+            <tbody id="up-splice-tbody">${mkSplicePriceRows(splicePrices)}</tbody>
           </table>
+        </div>
+        <!-- 접속 공종 추가 폼 -->
+        <div class="mt-2 bg-indigo-50 rounded-xl border border-dashed border-indigo-200 px-4 py-3">
+          <p class="text-xs text-indigo-500 font-medium mb-2"><i class="fas fa-plus mr-1"></i>공종 추가</p>
+          <div class="flex gap-2 flex-wrap">
+            <input type="text" id="up-splice-add-label" placeholder="공종명 (예: 광케이블 포설)" maxlength="40"
+              class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-32 focus:outline-none focus:border-indigo-300">
+            <input type="text" id="up-splice-add-unit" placeholder="단위(개소/코어 등)" maxlength="10"
+              class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-28 focus:outline-none focus:border-indigo-300">
+            <input type="number" id="up-splice-add-price" placeholder="기본단가(원)" min="0" step="100"
+              class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-32 focus:outline-none focus:border-indigo-300">
+            <button onclick="_upAddSpliceItem()"
+              class="bg-indigo-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-indigo-600 whitespace-nowrap">
+              <i class="fas fa-plus mr-1"></i>추가
+            </button>
+          </div>
         </div>
         <div class="flex justify-end gap-2 mt-3">
           <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
@@ -29800,6 +29861,8 @@ async function renderUnitPricePage(container) {
 }
 
 function _upSwitchTab(tab) {
+  const stateEl = document.getElementById('up-active-tab');
+  if (stateEl) stateEl.value = tab;
   const cableSection  = document.getElementById('up-cable-section');
   const spliceSection = document.getElementById('up-splice-section');
   const cableBtn      = document.getElementById('up-tab-cable-btn');
@@ -29812,10 +29875,144 @@ function _upSwitchTab(tab) {
   } else {
     cableSection?.classList.add('hidden');
     spliceSection?.classList.remove('hidden');
-    if (spliceBtn) spliceBtn.className = 'flex-1 py-2 text-center transition bg-indigo-50 text-indigo-700 border-r border-gray-200';
-    if (cableBtn)  cableBtn.className  = 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50';
+    if (spliceBtn) spliceBtn.className = 'flex-1 py-2 text-center transition bg-indigo-50 text-indigo-700';
+    if (cableBtn)  cableBtn.className  = 'flex-1 py-2 text-center transition text-gray-500 hover:bg-gray-50 border-r border-gray-200';
   }
 }
+
+// ── 외선 공종 추가 ──
+async function _upAddCableItem() {
+  const labelEl = document.getElementById('up-cable-add-label');
+  const priceEl = document.getElementById('up-cable-add-price');
+  const label   = (labelEl?.value || '').trim();
+  const price   = Number(priceEl?.value) || 0;
+  if (!label) { toast('공종명을 입력하세요.', 'error'); return; }
+  // item_key: 공백제거 변환
+  const item_key = label.replace(/ /g,'').replace(/\//g,'');
+  try {
+    await API.post('/volume-unit-prices', { item_key, item_label: label, unit_price: price });
+    toast(`'${label}' 공종이 추가되었습니다.`);
+    if (labelEl) labelEl.value = '';
+    if (priceEl) priceEl.value = '';
+    // 테이블에 즉시 행 추가
+    const tbody = document.getElementById('up-cable-tbody');
+    if (tbody) {
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-gray-50 hover:bg-gray-50 group';
+      tr.dataset.key = item_key;
+      tr.innerHTML = `
+        <td class="px-4 py-2 text-gray-700 font-medium text-sm">${label}</td>
+        <td class="px-4 py-2 text-right">
+          <input type="number" min="0" step="100"
+            class="up-cable-input w-36 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
+            data-key="${item_key}" value="${price}">
+        </td>
+        <td class="px-3 py-2 text-center w-10">
+          <button onclick="_upDeleteCableItem('${item_key}','${label}')"
+            class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
+            <i class="fas fa-trash-alt"></i>
+          </button>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+  } catch(e) {
+    toast('추가 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
+}
+
+// ── 외선 공종 삭제 ──
+async function _upDeleteCableItem(itemKey, itemLabel) {
+  const ok = await new Promise(res => showConfirmDialog({
+    title: '공종 삭제',
+    message: `'${itemLabel}' 공종을 삭제하시겠습니까?\n기존 집계 데이터에는 영향이 없습니다.`,
+    type: 'danger',
+    confirmText: '삭제',
+    onConfirm: () => res(true),
+    onCancel:  () => res(false)
+  }));
+  if (!ok) return;
+  try {
+    await API.delete(`/volume-unit-prices/${encodeURIComponent(itemKey)}`);
+    toast(`'${itemLabel}' 공종이 삭제되었습니다.`);
+    document.querySelector(`#up-cable-tbody tr[data-key="${itemKey}"]`)?.remove();
+  } catch(e) {
+    toast('삭제 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
+}
+
+// ── 접속 공종 추가 ──
+async function _upAddSpliceItem() {
+  const labelEl = document.getElementById('up-splice-add-label');
+  const unitEl  = document.getElementById('up-splice-add-unit');
+  const priceEl = document.getElementById('up-splice-add-price');
+  const label   = (labelEl?.value || '').trim();
+  const unit    = (unitEl?.value  || '').trim() || '개소';
+  const price   = Number(priceEl?.value) || 0;
+  if (!label) { toast('공종명을 입력하세요.', 'error'); return; }
+  const item_key = label.replace(/ /g,'').replace(/\//g,'');
+  try {
+    await API.post('/splice-unit-prices', { item_key, item_label: label, unit, unit_price: price });
+    toast(`'${label}' 공종이 추가되었습니다.`);
+    if (labelEl) labelEl.value = '';
+    if (unitEl)  unitEl.value  = '';
+    if (priceEl) priceEl.value = '';
+    // 테이블에 즉시 행 추가
+    const tbody = document.getElementById('up-splice-tbody');
+    if (tbody) {
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-gray-50 hover:bg-indigo-50 group';
+      tr.dataset.key = item_key;
+      tr.innerHTML = `
+        <td class="px-4 py-2 text-gray-700 font-medium text-sm">${label}</td>
+        <td class="px-4 py-2 text-right">
+          <input type="number" min="0" step="100"
+            class="up-splice-input w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300"
+            data-key="${item_key}" value="${price}">
+        </td>
+        <td class="px-4 py-2 text-right">
+          <input type="number" min="0" step="100"
+            class="up-splice-input-night w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 text-gray-300"
+            data-key="${item_key}" value="0" placeholder="0" onfocus="this.classList.remove('text-gray-300')">
+        </td>
+        <td class="px-4 py-2 text-right">
+          <input type="number" min="0" step="100"
+            class="up-splice-input-aerial w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 text-gray-300"
+            data-key="${item_key}" value="0" placeholder="0" onfocus="this.classList.remove('text-gray-300')">
+        </td>
+        <td class="px-3 py-2 text-center w-10">
+          <button onclick="_upDeleteSpliceItem('${item_key}','${label}')"
+            class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
+            <i class="fas fa-trash-alt"></i>
+          </button>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+  } catch(e) {
+    toast('추가 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
+}
+
+// ── 접속 공종 삭제 ──
+async function _upDeleteSpliceItem(itemKey, itemLabel) {
+  const ok = await new Promise(res => showConfirmDialog({
+    title: '공종 삭제',
+    message: `'${itemLabel}' 공종을 삭제하시겠습니까?\n기존 접속일보 데이터에는 영향이 없습니다.`,
+    type: 'danger',
+    confirmText: '삭제',
+    onConfirm: () => res(true),
+    onCancel:  () => res(false)
+  }));
+  if (!ok) return;
+  try {
+    await API.delete(`/splice-unit-prices/${encodeURIComponent(itemKey)}`);
+    toast(`'${itemLabel}' 공종이 삭제되었습니다.`);
+    document.querySelector(`#up-splice-tbody tr[data-key="${itemKey}"]`)?.remove();
+  } catch(e) {
+    toast('삭제 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
+}
+
+
 
 async function _saveUnitPrices() {
   const inputs = document.querySelectorAll('.up-cable-input');

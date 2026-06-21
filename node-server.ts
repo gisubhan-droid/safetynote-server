@@ -1581,6 +1581,20 @@ function patchSchema() {
       console.warn('[patchSchema v0.134]', e.message)
   }
 
+  // ── v0.135: splice_unit_prices — 야간/가공 추가단가 컬럼 (함체작업 추가단가 지원) ──
+  try {
+    rawDb.exec(`ALTER TABLE splice_unit_prices ADD COLUMN night_price INTEGER DEFAULT 0`)
+    console.log('[patchSchema] v0.135 splice_unit_prices.night_price 컬럼 추가 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.135a]', e.message)
+  }
+  try {
+    rawDb.exec(`ALTER TABLE splice_unit_prices ADD COLUMN aerial_price INTEGER DEFAULT 0`)
+    console.log('[patchSchema] v0.135 splice_unit_prices.aerial_price 컬럼 추가 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.135b]', e.message)
+  }
+
   // ── 성능 인덱스 추가 (장기 운영 대응 — 중복 생성 무시) ──────────────────────
   // 서버 시작 시 자동 생성 (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)
   ;(function addPerfIndexes() {
@@ -4746,8 +4760,8 @@ app.put('/api/splice-unit-prices', async (c) => {
   const roleUi = dbRoleToUi(user.role, user.position, user.sub_role)
   if (roleUi !== 'sysadmin') return c.json({ error: '권한 없음' }, 403)
   const { prices } = await c.req.json() as any
-  const stmt = rawDb.prepare(`UPDATE splice_unit_prices SET unit_price=? WHERE item_key=?`)
-  for (const p of (prices || [])) stmt.run(p.unit_price || 0, p.item_key)
+  const stmt = rawDb.prepare(`UPDATE splice_unit_prices SET unit_price=?, night_price=?, aerial_price=? WHERE item_key=?`)
+  for (const p of (prices || [])) stmt.run(p.unit_price || 0, p.night_price || 0, p.aerial_price || 0, p.item_key)
   return c.json({ ok: true })
 })
 
@@ -5646,13 +5660,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621i">
+  <link rel="stylesheet" href="/static/style.css?v=20260621j">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621i"></script>
+  <script src="/static/app.js?v=20260621j"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621i"></script>
+  <script src="/static/mobile-app.js?v=20260621j"></script>
 </body>
 </html>`)
 })

@@ -25795,9 +25795,15 @@ async function _frLoadSpliceStats() {
     const spliceItems = res.data.items || [];
     const spliceItemKeys = [...new Set(spliceItems.map(i => i.work_label))];
 
-    // splice 단가 맵: item_key(공백 없음) → unit_price
+    // splice 단가 맵: item_key → { unit_price, night_price, aerial_price }
     const splicePriceMap = {};
-    (priceRes.data.prices || []).forEach(p => { splicePriceMap[p.item_key] = p.unit_price || 0; });
+    (priceRes.data.prices || []).forEach(p => {
+      splicePriceMap[p.item_key] = {
+        unit_price:   p.unit_price   || 0,
+        night_price:  p.night_price  || 0,
+        aerial_price: p.aerial_price || 0,
+      };
+    });
 
     // 접속탭 전역 캐시 저장 (CSV 다운로드용)
     _frSpliceCacheRows      = spliceRows;
@@ -25805,10 +25811,25 @@ async function _frLoadSpliceStats() {
     _frSpliceCacheItemKeys  = spliceItemKeys;
     _frSpliceCachePriceMap  = splicePriceMap;
 
+    // spliceMap: report_id → { work_label → qty 합산 }
     const spliceMap = {};
     spliceItems.forEach(it => {
       if (!spliceMap[it.report_id]) spliceMap[it.report_id] = {};
       spliceMap[it.report_id][it.work_label] = (spliceMap[it.report_id][it.work_label]||0) + (it.total_qty||it.qty||0);
+    });
+
+    // spliceAmtMap: report_id → 합계금액 (야간/가공 추가금액 반영)
+    // items 배열을 직접 순회하여 item별 is_night/is_aerial 반영
+    const spliceAmtMap = {};
+    spliceItems.forEach(it => {
+      const key = labelToKey(it.work_label);
+      const p   = splicePriceMap[key];
+      if (!p) return;
+      const qty   = it.total_qty || it.qty || 0;
+      const night = it.is_night  ? (p.night_price  || 0) : 0;
+      const aer   = it.is_aerial ? (p.aerial_price || 0) : 0;
+      const unitAmt = (p.unit_price || 0) + night + aer;
+      spliceAmtMap[it.report_id] = (spliceAmtMap[it.report_id] || 0) + qty * unitAmt;
     });
 
     if (spliceRows.length === 0) {
@@ -25830,12 +25851,10 @@ async function _frLoadSpliceStats() {
     // 접속 공종 컬럼 인덱스: 4번부터 (0:완료일, 1:작업자, 2:요청번호, 3:구분, 4+:공종, 마지막:합계금액)
     const amtColIdx = 4 + spliceItemKeys.length; // 합계금액 컬럼 인덱스
 
-    // ── 합계금액 총합 계산 ──
+    // ── 합계금액 총합 계산 (spliceAmtMap 사용 — 야간/가공 추가금액 반영) ──
     let totalAmt = 0;
     spliceRows.forEach(row => {
-      const sm = spliceMap[row.id] || {};
-      const rowAmt = isWorker ? 0 : spliceItemKeys.reduce((s,k) => s + (sm[k]||0) * (splicePriceMap[labelToKey(k)]||0), 0);
-      totalAmt += rowAmt;
+      totalAmt += isWorker ? 0 : (spliceAmtMap[row.id] || 0);
     });
 
     // ── 숨김 버튼 헬퍼 ──
@@ -25883,7 +25902,8 @@ async function _frLoadSpliceStats() {
           <tbody>
             ${spliceRows.map((row,ri) => {
               const sm = spliceMap[row.id] || {};
-              const rowAmt = isWorker ? 0 : spliceItemKeys.reduce((s,k) => s + (sm[k]||0) * (splicePriceMap[labelToKey(k)]||0), 0);
+              // 야간/가공 추가금액 반영된 행 합계금액 (spliceAmtMap 사용)
+              const rowAmt = isWorker ? 0 : (spliceAmtMap[row.id] || 0);
               return `
               <tr class="hover:bg-indigo-50 border-b border-gray-100">
                 <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="0"
@@ -27770,6 +27790,19 @@ async function renderSpliceReportForm(container, reportId, taskId) {
       } catch(_) {}
     }
 
+    // ── 접속 단가 로드 (야간/가공 추가금액 포함) ──────────────────────────────
+    const splicePriceFormMap = {};  // item_key → { unit_price, night_price, aerial_price }
+    try {
+      const priceRes = await API.get('/splice-unit-prices');
+      (priceRes.data.prices || []).forEach(p => {
+        splicePriceFormMap[p.item_key] = {
+          unit_price:   p.unit_price   || 0,
+          night_price:  p.night_price  || 0,
+          aerial_price: p.aerial_price || 0,
+        };
+      });
+    } catch(_) {}
+
     const workDate   = report?.work_date   || (task?.work_completed_at || '').slice(0,10) || '';
     const workerTeam = report?.worker_team || task?.contractor_name || '-';
     const managerName= report?.manager_name|| task?.lgu_supervisor  || '-';
@@ -27789,19 +27822,49 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     const defaultKeys = new Set(SPLICE_ITEMS_DEF.map(d => d.key));
     const customItems = savedItems.filter(it => !defaultKeys.has(it.work_label));
 
+    // ── 단가 미리보기 계산 헬퍼 (함체작업 전용 — 야간/가공 추가금액 합산) ──
+    // item_key(공백 없음), is_night, is_aerial → 적용단가(원) 문자열 반환
+    const calcSplicePrice = (key, isNight, isAerial) => {
+      const p = splicePriceFormMap[key];
+      if (!p) return '';
+      const base  = p.unit_price   || 0;
+      const night = isNight  ? (p.night_price  || 0) : 0;
+      const aer   = isAerial ? (p.aerial_price || 0) : 0;
+      const total = base + night + aer;
+      if (total === 0) return '';
+      let label = `${total.toLocaleString()}원`;
+      const parts = [];
+      if (base  > 0) parts.push(`기본 ${base.toLocaleString()}`);
+      if (night > 0) parts.push(`야간 +${night.toLocaleString()}`);
+      if (aer   > 0) parts.push(`가공 +${aer.toLocaleString()}`);
+      return `<span class="text-indigo-700 font-semibold">${label}</span>`
+           + (parts.length > 1 ? `<br><span class="text-gray-400" style="font-size:10px">(${parts.join(', ')})</span>` : '');
+    };
+
     const mkItemRow = (label, unit, has_aerial, saved) => {
       const night  = saved?.is_night  ? 'checked' : '';
       const aerial = saved?.is_aerial ? 'checked' : '';
       const qty    = (saved?.qty != null) ? saved.qty : 0;
+      // 함체작업만 단가 미리보기 셀 표시 (key = label에서 공백 제거)
+      const itemKey = label.replace(/ /g,'').replace(/\//g,'');
+      const hasPricePreview = !!splicePriceFormMap[itemKey];
+      const priceHtml = hasPricePreview
+        ? calcSplicePrice(itemKey, !!saved?.is_night, !!saved?.is_aerial)
+        : `<span class="text-gray-200 text-xs">—</span>`;
+      // 야간/가공 onChange 이벤트: 함체작업 등 단가 있는 공종만 실시간 갱신
+      const nightOnChange  = hasPricePreview
+        ? `onchange="_srUpdatePricePreview(this,'${itemKey}')"`  : '';
+      const aerialOnChange = hasPricePreview
+        ? `onchange="_srUpdatePricePreview(this,'${itemKey}')"`  : '';
       return `
-      <tr class="hover:bg-purple-50 sri-row" data-key="${label}">
+      <tr class="hover:bg-purple-50 sri-row" data-key="${label}" data-item-key="${itemKey}">
         <td class="border border-gray-200 px-2 py-1.5 text-xs text-gray-700 font-medium">${label}</td>
         <td class="border border-gray-200 px-2 py-1.5 text-center">
-          <input type="checkbox" class="sri-night w-4 h-4 accent-indigo-600" ${night}>
+          <input type="checkbox" class="sri-night w-4 h-4 accent-indigo-600" ${night} ${nightOnChange}>
         </td>
         <td class="border border-gray-200 px-2 py-1.5 text-center">
           ${has_aerial
-            ? `<input type="checkbox" class="sri-aerial w-4 h-4 accent-indigo-600" ${aerial}>`
+            ? `<input type="checkbox" class="sri-aerial w-4 h-4 accent-indigo-600" ${aerial} ${aerialOnChange}>`
             : `<span class="text-gray-300 text-xs">—</span>`}
         </td>
         <td class="border border-gray-200 p-0.5">
@@ -27811,8 +27874,8 @@ async function renderSpliceReportForm(container, reportId, taskId) {
         <td class="border border-gray-200 px-2 py-1.5 text-center text-xs text-gray-500 sri-unit">${unit}
           <input type="hidden" class="sri-unit-val" value="${unit}">
         </td>
-        <td class="border border-gray-200 px-1 py-1 text-center">
-          <span class="text-gray-200 text-xs">—</span>
+        <td class="border border-gray-200 px-1 py-1 text-center text-xs leading-tight sri-price-cell" style="min-width:72px">
+          ${priceHtml}
         </td>
       </tr>`;
     };
@@ -27923,7 +27986,7 @@ async function renderSpliceReportForm(container, reportId, taskId) {
                 <th class="border border-gray-200 px-2 py-2 text-center text-gray-600 font-semibold w-12">가공</th>
                 <th class="border border-gray-200 px-2 py-2 text-center text-gray-600 font-semibold">시공량</th>
                 <th class="border border-gray-200 px-2 py-2 text-center text-gray-600 font-semibold w-14">단위</th>
-                <th class="border border-gray-200 px-1 py-2 w-7"></th>
+                <th class="border border-gray-200 px-2 py-2 text-center text-gray-600 font-semibold w-20 bg-indigo-50">단가</th>
               </tr>
             </thead>
             <tbody id="sr-items-tbody">
@@ -27949,6 +28012,9 @@ async function renderSpliceReportForm(container, reportId, taskId) {
         </button>
       </div>
     </div>`;
+
+    // ── 단가 캐시를 window 전역에 저장 (야간/가공 체크박스 onChange 실시간 갱신용) ──
+    window._splicePriceFormCache = splicePriceFormMap;
 
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
@@ -27982,6 +28048,35 @@ function _srAddCustomRow() {
       <button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button>
     </td>`;
   tbody.appendChild(tr);
+}
+
+// 야간/가공 체크박스 변경 시 단가 미리보기 실시간 갱신 (접속일보 폼 전용)
+// checkbox el, itemKey(공백 없음) 전달
+function _srUpdatePricePreview(checkboxEl, itemKey) {
+  const tr = checkboxEl.closest('tr.sri-row');
+  if (!tr) return;
+  const cell = tr.querySelector('.sri-price-cell');
+  if (!cell) return;
+  const isNight  = tr.querySelector('.sri-night')?.checked  || false;
+  const isAerial = tr.querySelector('.sri-aerial')?.checked || false;
+  // API 재호출 없이 DOM 내 hidden 캐시 사용
+  // 단가 정보는 data- 속성으로 tr에 저장해두지 않으므로,
+  // API 캐시는 window._splicePriceFormCache 에 저장
+  const cache = window._splicePriceFormCache || {};
+  const p = cache[itemKey];
+  if (!p) return;
+  const base  = p.unit_price   || 0;
+  const night = isNight  ? (p.night_price  || 0) : 0;
+  const aer   = isAerial ? (p.aerial_price || 0) : 0;
+  const total = base + night + aer;
+  if (total === 0) { cell.innerHTML = '<span class="text-gray-200 text-xs">—</span>'; return; }
+  let html = `<span class="text-indigo-700 font-semibold">${total.toLocaleString()}원</span>`;
+  const parts = [];
+  if (base  > 0) parts.push(`기본 ${base.toLocaleString()}`);
+  if (night > 0) parts.push(`야간 +${night.toLocaleString()}`);
+  if (aer   > 0) parts.push(`가공 +${aer.toLocaleString()}`);
+  if (parts.length > 1) html += `<br><span class="text-gray-400" style="font-size:10px">(${parts.join(', ')})</span>`;
+  cell.innerHTML = html;
 }
 
 // 접속일보 데이터 수집
@@ -28651,8 +28746,23 @@ async function _vsLoadSpliceStats() {
     const stats  = statsRes.data.stats   || [];
     const rows   = statsRes.data.rows    || [];
     const prices = priceRes.data.prices  || [];
+    // 단가 맵: item_key → { unit_price, night_price, aerial_price }
     const priceMap = {};
-    prices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
+    prices.forEach(p => {
+      priceMap[p.item_key] = {
+        unit_price:   p.unit_price   || 0,
+        night_price:  p.night_price  || 0,
+        aerial_price: p.aerial_price || 0,
+      };
+    });
+    // 적용단가 계산 헬퍼 (야간/가공 추가금액 반영)
+    const calcUnitAmt = (label, isNight, isAerial) => {
+      const p = priceMap[labelToKey(label)];
+      if (!p) return 0;
+      return (p.unit_price || 0)
+           + (isNight  ? (p.night_price  || 0) : 0)
+           + (isAerial ? (p.aerial_price || 0) : 0);
+    };
 
     const isWorker = currentUser && currentUser.role === 'worker';
     const labelToKey = label => (label||'').replace(/ /g,'').replace(/\//g,'');
@@ -28669,14 +28779,14 @@ async function _vsLoadSpliceStats() {
       labelMap[s.work_label].qty += (s.total_qty || 0);
     });
 
-    // ── 팀별 집계 (공종별 수량 + 달성금액) ──────────────────────────────────
+    // ── 팀별 집계 (공종별 수량 + 달성금액 — 야간/가공 추가금액 반영) ──────────
     const teamMap = {};
     stats.forEach(s => {
       if (!teamMap[s.worker_team]) teamMap[s.worker_team] = { labels: {}, amount: 0 };
       if (!teamMap[s.worker_team].labels[s.work_label]) teamMap[s.worker_team].labels[s.work_label] = 0;
       teamMap[s.worker_team].labels[s.work_label] += (s.total_qty || 0);
       if (!isWorker) {
-        const up = priceMap[labelToKey(s.work_label)] || 0;
+        const up = calcUnitAmt(s.work_label, !!s.is_night, !!s.is_aerial);
         teamMap[s.worker_team].amount += (s.total_qty || 0) * up;
       }
     });
@@ -28700,7 +28810,7 @@ async function _vsLoadSpliceStats() {
       if (!dateTeamMapSp[d][t]) dateTeamMapSp[d][t] = { count: 0, amount: 0 };
       dateTeamMapSp[d][t].count = 1; // 일보 단위 (중복 방지 위해 아래에서 처리)
       if (!isWorker) {
-        const up = priceMap[labelToKey(s.work_label)] || 0;
+        const up = calcUnitAmt(s.work_label, !!s.is_night, !!s.is_aerial);
         dateTeamMapSp[d][t].amount += (s.total_qty || 0) * up;
       }
     });
@@ -28724,9 +28834,9 @@ async function _vsLoadSpliceStats() {
     const totalReports = rows.length;
     const totalAmt = isWorker ? 0 : Object.values(teamMap).reduce((s, t) => s + (t.amount||0), 0);
 
-    // ── 공종별 합계금액 총계 ─────────────────────────────────────────────────
-    const totalLabelAmt = Object.entries(labelMap).reduce((s, [label, v]) => {
-      return s + v.qty * (priceMap[labelToKey(label)] || 0);
+    // ── 공종별 합계금액 총계 (야간/가공 추가금액 반영 — stats 기반 재계산) ─────
+    const totalLabelAmt = stats.reduce((s, it) => {
+      return s + (it.total_qty || 0) * calcUnitAmt(it.work_label, !!it.is_night, !!it.is_aerial);
     }, 0);
 
     // ── 팀별 합계행 ─────────────────────────────────────────────────────────
@@ -28815,13 +28925,18 @@ async function _vsLoadSpliceStats() {
             </thead>
             <tbody>
               ${Object.entries(labelMap).map(([label, v]) => {
-                const up = priceMap[labelToKey(label)] || 0;
-                const amt = v.qty * up;
+                // 공종별 금액: stats에서 해당 label의 모든 item 야간/가공 반영 합산
+                const amt = isWorker ? 0 : stats
+                  .filter(s => s.work_label === label)
+                  .reduce((sum, s) => sum + (s.total_qty||0) * calcUnitAmt(s.work_label, !!s.is_night, !!s.is_aerial), 0);
+                // 단가 표시: 야간/가공 없으면 기본단가, 있으면 '혼합' 표시
+                const baseP = priceMap[labelToKey(label)];
+                const upDisplay = baseP ? (baseP.unit_price||0).toLocaleString() : '0';
                 return `<tr class="border-b border-gray-50 hover:bg-indigo-50">
                   <td class="border border-gray-200 px-3 py-1.5 text-gray-700">${label}</td>
                   <td class="border border-gray-200 px-3 py-1.5 text-right font-semibold">${v.qty.toLocaleString()}</td>
                   <td class="border border-gray-200 px-3 py-1.5 text-center text-gray-500">${v.unit}</td>
-                  ${!isWorker ? `<td class="border border-gray-200 px-3 py-1.5 text-right text-gray-400">${up.toLocaleString()}</td>
+                  ${!isWorker ? `<td class="border border-gray-200 px-3 py-1.5 text-right text-gray-400">${upDisplay}</td>
                                  <td class="border border-gray-200 px-3 py-1.5 text-right text-green-700 font-medium bg-yellow-50">${amt>0?amt.toLocaleString():''}</td>` : ''}
                 </tr>`;
               }).join('')}
@@ -29538,6 +29653,34 @@ async function renderUnitPricePage(container) {
         </td>
       </tr>`).join('');
 
+    // 접속 단가 행: 기본단가 + 야간추가 + 가공추가 (has_night/has_aerial 공종만 추가 컬럼 활성화)
+    // 현재는 함체작업(및 has_aerial:true 공종)에만 야간/가공이 있으므로, 모든 행에 컬럼 표시
+    // (단가 0이면 시각적으로 흐릿하게 처리)
+    const mkSplicePriceRows = (prices, cls) => prices.map(p => {
+      const hasNightAerial = true; // 모든 공종에 컬럼 표시 (값 0이면 흐릿)
+      return `
+      <tr class="border-b border-gray-50 hover:bg-indigo-50">
+        <td class="px-4 py-2 text-gray-700 font-medium">${p.item_label}</td>
+        <td class="px-4 py-2 text-right">
+          <input type="number" min="0" step="100"
+            class="${cls} w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300"
+            data-key="${p.item_key}" data-price-type="base" value="${p.unit_price || 0}">
+        </td>
+        <td class="px-4 py-2 text-right">
+          <input type="number" min="0" step="100"
+            class="${cls}-night w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 ${p.night_price ? '' : 'text-gray-300'}"
+            data-key="${p.item_key}" data-price-type="night" value="${p.night_price || 0}"
+            placeholder="0" onfocus="this.classList.remove('text-gray-300')">
+        </td>
+        <td class="px-4 py-2 text-right">
+          <input type="number" min="0" step="100"
+            class="${cls}-aerial w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 ${p.aerial_price ? '' : 'text-gray-300'}"
+            data-key="${p.item_key}" data-price-type="aerial" value="${p.aerial_price || 0}"
+            placeholder="0" onfocus="this.classList.remove('text-gray-300')">
+        </td>
+      </tr>`;
+    }).join('');
+
     container.innerHTML = `
     <div class="max-w-xl mx-auto p-4 space-y-4">
       <div class="flex items-center justify-between">
@@ -29591,15 +29734,18 @@ async function renderUnitPricePage(container) {
       <!-- 접속 단가 -->
       <div id="up-splice-section" class="hidden">
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
-            * 접속 공종의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 접속 금액 계산에 반영됩니다.
+          <div class="px-4 py-3 bg-indigo-50 border-b border-indigo-100 text-xs text-indigo-700">
+            * 접속 공종의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 접속 금액 계산에 반영됩니다.<br>
+            <span class="text-indigo-500">함체작업 등 야간·가공 추가금액은 일보 작성 시 야간/가공 체크 여부에 따라 기본단가에 더해집니다.</span>
           </div>
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
               <th class="px-4 py-2 text-left border-b border-gray-100">공종</th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-40">단가 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-36">기본단가 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-36 bg-blue-50">야간 추가금액 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-36 bg-green-50">가공 추가금액 (원)</th>
             </tr></thead>
-            <tbody>${mkPriceRows(splicePrices, 'up-splice-input')}</tbody>
+            <tbody>${mkSplicePriceRows(splicePrices, 'up-splice-input')}</tbody>
           </table>
         </div>
         <div class="flex justify-end gap-2 mt-3">
@@ -29659,11 +29805,20 @@ async function _saveUnitPrices() {
 }
 
 async function _saveSpliceUnitPrices() {
-  const inputs = document.querySelectorAll('.up-splice-input');
-  const prices = Array.from(inputs).map(el => ({
-    item_key:   el.dataset.key,
-    unit_price: Number(el.value) || 0
-  }));
+  // 기본단가 input: class="up-splice-input", data-key, data-price-type="base" (또는 data-price-type 없음)
+  // 야간추가: class="up-splice-input-night", data-key
+  // 가공추가: class="up-splice-input-aerial", data-key
+  const baseInputs   = document.querySelectorAll('.up-splice-input');
+  const nightInputs  = document.querySelectorAll('.up-splice-input-night');
+  const aerialInputs = document.querySelectorAll('.up-splice-input-aerial');
+
+  // key → { unit_price, night_price, aerial_price } 맵 구성
+  const priceMap = {};
+  baseInputs.forEach(el   => { if (!priceMap[el.dataset.key]) priceMap[el.dataset.key] = { unit_price:0, night_price:0, aerial_price:0 }; priceMap[el.dataset.key].unit_price   = Number(el.value) || 0; });
+  nightInputs.forEach(el  => { if (!priceMap[el.dataset.key]) priceMap[el.dataset.key] = { unit_price:0, night_price:0, aerial_price:0 }; priceMap[el.dataset.key].night_price  = Number(el.value) || 0; });
+  aerialInputs.forEach(el => { if (!priceMap[el.dataset.key]) priceMap[el.dataset.key] = { unit_price:0, night_price:0, aerial_price:0 }; priceMap[el.dataset.key].aerial_price = Number(el.value) || 0; });
+
+  const prices = Object.entries(priceMap).map(([item_key, v]) => ({ item_key, ...v }));
   const msgEl = document.getElementById('up-splice-msg');
   try {
     await API.put('/splice-unit-prices', { prices });

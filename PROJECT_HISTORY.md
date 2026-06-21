@@ -2842,3 +2842,33 @@ NAS 로그:
 - ✅ 빌드 성공 (`dist/_worker.js 251.41 kB`)
 - ✅ GitHub 푸시 완료
 - ✅ NAS 배포 완료 (사용자 직접 확인)
+
+---
+
+## 세션 53 (2026-06-21) — Phase 5 브라우저 업데이트 자동화 구현
+
+### 수정 내용
+
+#### Phase 5 완료 (`808959f`)
+- `node-server.ts`: 업데이트 API 3개 추가
+  - `GET  /api/admin/update/status` — 진행 상태 폴링
+  - `POST /api/admin/update/check`  — git fetch + 버전 비교
+  - `POST /api/admin/update/apply`  — DB 백업 + git pull + pm2 restart
+- `app.js`: 시스템설정 → **"서버 업데이트"** 탭 신규 추가
+  - 현재 버전(NAS) / 최신 버전(GitHub) 카드 비교 표시
+  - 새 버전 있을 때만 "업데이트 적용" 버튼 활성화
+  - 비밀번호 확인 후 실행 → 2초 폴링으로 진행상황 실시간 표시
+  - 실행 로그 터미널 패널 (git pull 결과, pm2 상태 등)
+  - 완료 후 새로고침 안내
+- 캐시버전: `v=20260621w` → `v=20260621x`
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `808959f` | feat: Phase 5 — 브라우저 원클릭 서버 업데이트 자동화 구현 (v=20260621x) |
+
+### 상태
+- ✅ node --check 통과
+- ✅ 빌드 성공 (`dist/_worker.js 251.41 kB`)
+- ✅ GitHub 푸시 완료
+- ⚠️ NAS 배포 대기 중

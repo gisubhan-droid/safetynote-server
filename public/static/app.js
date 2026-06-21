@@ -30469,7 +30469,7 @@ async function _saveSpliceUnitPrices() {
 // ── 단가 관리 — 엑셀(CSV) 다운로드 ──────────────────────────────────────────
 function _upExportCsv(type) {
   // 브라우저에서 직접 API 호출하여 CSV 파일 다운로드
-  const token = localStorage.getItem('sn-token') || sessionStorage.getItem('sn-token') || '';
+  const token = localStorage.getItem('token') || '';
   const url = type === 'cable'
     ? '/api/volume-unit-prices/export'
     : '/api/splice-unit-prices/export';

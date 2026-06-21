@@ -25382,6 +25382,7 @@ let _workReportListData = [];
 // 공량내역 엑셀 다운로드용 전역 캐시
 let _frCacheRows      = [];
 let _frCacheExtras    = [];
+let _frCacheExtrasSnap= {}; // report_id → { item_key: unit_price_snapshot } (단가 불변)
 let _frCacheItemKeys  = [];
 let _frCachePriceMap  = {};
 let _frCacheIsWorker  = false;
@@ -25464,7 +25465,7 @@ async function renderFieldReportPage(container) {
     const priceMap = {};
     unitPrices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
     const isWorker = currentUser && currentUser.role === 'worker';
-    _frCacheRows = rows; _frCacheExtras = extras;
+    _frCacheRows = rows; _frCacheExtras = extras; _frCacheExtrasSnap = extrasSnapMap;
     _frCachePriceMap = priceMap; _frCacheIsWorker = isWorker;
 
     const frYears = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
@@ -25481,10 +25482,15 @@ async function renderFieldReportPage(container) {
     const displayWeekVal = savedFrWVal || _nowWeekStr;
     const _curQ = Math.ceil((new Date().getMonth()+1)/3);
 
-    const extrasMap = {};
+    const extrasMap = {};     // report_id → { item_key: qty }
+    const extrasSnapMap = {}; // report_id → { item_key: unit_price_snapshot } (단가 불변 정책)
     extras.forEach(ex => {
-      if (!extrasMap[ex.report_id]) extrasMap[ex.report_id] = {};
-      extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
+      if (!extrasMap[ex.report_id])     extrasMap[ex.report_id]     = {};
+      if (!extrasSnapMap[ex.report_id]) extrasSnapMap[ex.report_id] = {};
+      extrasMap[ex.report_id][ex.item_key]     = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
+      // unit_price_snapshot: NULL이면 현재 단가 사용 (이전 저장분 호환)
+      if (ex.unit_price_snapshot != null)
+        extrasSnapMap[ex.report_id][ex.item_key] = ex.unit_price_snapshot;
     });
     const WR_EXTRA_ORDER = [
       '조가선신설','커넥터취부','조가선 철거','전주 건식','전주 철거',
@@ -25561,15 +25567,16 @@ async function renderFieldReportPage(container) {
     const cableExtraStart = 7;
     const cableAmtColIdx  = cableExtraStart + allItemKeys.length;
 
-    // 합계금액 총합 계산
+    // 합계금액 총합 계산 (단가 불변 정책: extrasSnapMap 스냅샷 단가 우선, 없으면 현재 단가)
     let cableTotalAmt = 0;
     rows.forEach(row => {
-      const em = extrasMap[row.id] || {};
+      const em  = extrasMap[row.id]     || {};
+      const esm = extrasSnapMap[row.id] || {};
       const rowAmt = isWorker ? 0 : (
         (row.cable_new_m    || 0) * (priceMap['cable_new']    || 0) +
         (row.cable_remove_m || 0) * (priceMap['cable_remove'] || 0) +
         (row.cable_move_m   || 0) * (priceMap['cable_move']   || 0) +
-        allItemKeys.reduce((s,k) => s + (em[k]||0) * (priceMap[k]||0), 0)
+        allItemKeys.reduce((s,k) => s + (em[k]||0) * (esm[k] != null ? esm[k] : (priceMap[k]||0)), 0)
       );
       cableTotalAmt += rowAmt;
     });
@@ -25604,12 +25611,13 @@ async function renderFieldReportPage(container) {
           </thead>
           <tbody>
             ${rows.map((row,ri)=>{
-              const em = extrasMap[row.id] || {};
+              const em  = extrasMap[row.id]     || {};
+              const esm = extrasSnapMap[row.id] || {};
               const rowAmt = isWorker ? 0 : (
                 (row.cable_new_m    || 0) * (priceMap['cable_new']    || 0) +
                 (row.cable_remove_m || 0) * (priceMap['cable_remove'] || 0) +
                 (row.cable_move_m   || 0) * (priceMap['cable_move']   || 0) +
-                allItemKeys.reduce((s,k) => s + (em[k]||0) * (priceMap[k]||0), 0)
+                allItemKeys.reduce((s,k) => s + (em[k]||0) * (esm[k] != null ? esm[k] : (priceMap[k]||0)), 0)
               );
               return `
               <tr class="hover:bg-pink-50 border-b border-gray-100">
@@ -26099,13 +26107,18 @@ function downloadFieldReportCSV() {
       : [...baseHeaders, ...extraHeaders, '합계금액(원)'];
 
     const extrasMap = {};
+    const extrasSnapMapExcel = {};
     _frCacheExtras.forEach(ex => {
-      if (!extrasMap[ex.report_id]) extrasMap[ex.report_id] = {};
+      if (!extrasMap[ex.report_id])          extrasMap[ex.report_id]          = {};
+      if (!extrasSnapMapExcel[ex.report_id]) extrasSnapMapExcel[ex.report_id] = {};
       extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
+      if (ex.unit_price_snapshot != null)
+        extrasSnapMapExcel[ex.report_id][ex.item_key] = ex.unit_price_snapshot;
     });
 
     const rows = _frCacheRows.map(row => {
-      const exMap = extrasMap[row.report_id] || {};
+      const exMap  = extrasMap[row.report_id]          || {};
+      const esmMap = extrasSnapMapExcel[row.report_id] || {};
       const baseRow = [
         (row.work_date||'').slice(0,10) || '-',
         row.worker_team || '-',
@@ -26121,7 +26134,7 @@ function downloadFieldReportCSV() {
         (row.cable_new_m    ||0) * (_frCachePriceMap['cable_new']    ||0) +
         (row.cable_remove_m ||0) * (_frCachePriceMap['cable_remove'] ||0) +
         (row.cable_move_m   ||0) * (_frCachePriceMap['cable_move']   ||0) +
-        _frCacheItemKeys.reduce((s,k) => s + (exMap[k]||0)*(_frCachePriceMap[k]||0), 0);
+        _frCacheItemKeys.reduce((s,k) => s + (exMap[k]||0)*(esmMap[k] != null ? esmMap[k] : (_frCachePriceMap[k]||0)), 0);
       return [...baseRow, ...extraRow, amt];
     });
     // 합계 행 추가
@@ -27598,6 +27611,28 @@ async function _revertWorkReport(reportId, taskId) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 제출완료 접속일보 수정하기 (revert: submitted → draft)
+// ═══════════════════════════════════════════════════════════════
+async function _revertSpliceReport(reportId, taskId) {
+  if (!reportId) { toast('일보 ID가 없습니다.', 'error'); return; }
+  const ok = await showConfirmDialog(
+    '접속일보 수정',
+    '제출완료 상태를 임시저장으로 되돌리고 수정 모드로 전환합니다.\n계속하시겠습니까?',
+    '수정하기', '취소', 'warning'
+  );
+  if (!ok) return;
+  try {
+    await API.post(`/splice-reports/${reportId}/revert`);
+    toast('수정 모드로 전환되었습니다.', 'success');
+    await new Promise(r => setTimeout(r, 600));
+    const content = document.getElementById('page-content');
+    if (content) await renderSpliceReportForm(content, reportId, taskId);
+  } catch(e) {
+    toast('전환 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 기타공종 팝업
 // ═══════════════════════════════════════════════════════════════
 function showOtherWorkPopup(reportId, taskId) {
@@ -28060,7 +28095,20 @@ async function renderSpliceReportForm(container, reportId, taskId) {
       <input type="hidden" id="sr-worker-team"  value="${workerTeam || ''}">
       <input type="hidden" id="sr-manager-name" value="${managerName || ''}">
 
-      <!-- 저장/제출 버튼 -->
+      <!-- 저장/제출 버튼 (제출완료 시 수정하기 버튼 표시) -->
+      ${report?.status === 'submitted' || report?.status === 'confirmed' ? `
+      <div class="flex gap-3 pb-6">
+        <button onclick="navigateTo(currentUser?.role==='worker'?'report-write':'field-report')" class="flex-1 py-3 text-sm font-semibold rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition">
+          <i class="fas fa-arrow-left mr-1"></i> 목록으로
+        </button>
+        ${report?.status !== 'confirmed' ? `
+        <button onclick="_revertSpliceReport(${reportId}, ${tId})" class="flex-1 py-3 text-sm font-semibold rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition">
+          <i class="fas fa-edit mr-1"></i> 수정하기
+        </button>` : `
+        <button disabled class="flex-1 py-3 text-sm font-semibold rounded-xl bg-gray-200 text-gray-400 cursor-not-allowed">
+          <i class="fas fa-lock mr-1"></i> 확정됨 (수정불가)
+        </button>`}
+      </div>` : `
       <div class="flex gap-3 pb-6">
         <button onclick="saveSpliceReport()" class="flex-1 py-3 text-sm font-semibold rounded-xl text-white hover:opacity-90 transition" style="background:#685182;">
           <i class="fas fa-save mr-1"></i> 임시저장
@@ -28068,7 +28116,7 @@ async function renderSpliceReportForm(container, reportId, taskId) {
         <button onclick="submitSpliceReport()" class="flex-1 py-3 text-sm font-semibold rounded-xl bg-green-500 text-white hover:bg-green-600 transition">
           <i class="fas fa-paper-plane mr-1"></i> 제출
         </button>
-      </div>
+      </div>`}
     </div>`;
 
     // ── 단가 캐시를 window 전역에 저장 (야간/가공 체크박스 onChange 실시간 갱신용) ──
@@ -29939,14 +29987,11 @@ async function _upAddCableItem() {
 
 // ── 외선 공종 삭제 ──
 async function _upDeleteCableItem(itemKey, itemLabel) {
-  const ok = await new Promise(res => showConfirmDialog({
-    title: '공종 삭제',
-    message: `'${itemLabel}' 공종을 삭제하시겠습니까?\n기존 집계 데이터에는 영향이 없습니다.`,
-    type: 'danger',
-    confirmText: '삭제',
-    onConfirm: () => res(true),
-    onCancel:  () => res(false)
-  }));
+  const ok = await showConfirmDialog(
+    '공종 삭제',
+    `'${itemLabel}' 공종을 삭제하시겠습니까?\n기존 집계 데이터에는 영향이 없습니다.`,
+    '삭제', '취소', 'danger'
+  );
   if (!ok) return;
   try {
     await API.delete(`/volume-unit-prices/${encodeURIComponent(itemKey)}`);
@@ -30011,14 +30056,11 @@ async function _upAddSpliceItem() {
 
 // ── 접속 공종 삭제 ──
 async function _upDeleteSpliceItem(itemKey, itemLabel) {
-  const ok = await new Promise(res => showConfirmDialog({
-    title: '공종 삭제',
-    message: `'${itemLabel}' 공종을 삭제하시겠습니까?\n기존 접속일보 데이터에는 영향이 없습니다.`,
-    type: 'danger',
-    confirmText: '삭제',
-    onConfirm: () => res(true),
-    onCancel:  () => res(false)
-  }));
+  const ok = await showConfirmDialog(
+    '공종 삭제',
+    `'${itemLabel}' 공종을 삭제하시겠습니까?\n기존 접속일보 데이터에는 영향이 없습니다.`,
+    '삭제', '취소', 'danger'
+  );
   if (!ok) return;
   try {
     await API.delete(`/splice-unit-prices/${encodeURIComponent(itemKey)}`);

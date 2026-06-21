@@ -1613,8 +1613,14 @@ function patchSchema() {
     if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.136]', e.message)
   }
 
-
-  // 서버 시작 시 자동 생성 (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)
+  // ── v0.137: work_report_extras — unit_price_snapshot 컬럼 추가 (단가 불변 정책) ──
+  // 일보 저장 시점의 단가를 스냅샷으로 보존 → 이후 단가 수정 시 기존 공량 금액 불변
+  try {
+    rawDb.exec(`ALTER TABLE work_report_extras ADD COLUMN unit_price_snapshot REAL DEFAULT NULL`)
+    console.log('[patchSchema v0.137] work_report_extras.unit_price_snapshot 컬럼 추가 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.137]', e.message)
+  } (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)
   ;(function addPerfIndexes() {
     const idxList: [string, string][] = [
       // 1. tasks: status + planned_date 복합 인덱스 (작업 목록 status/날짜 필터 조회 최적화)
@@ -4218,8 +4224,10 @@ app.get('/api/work-reports/volume-stats', async (c) => {
   `).all(...params)
 
   // extras: 서브쿼리에서 별칭 r2/t2 사용 → 외부 WHERE와 별칭 충돌 없음
+  // unit_price_snapshot: 저장 시점 단가 (NULL이면 현재 단가 사용 — 단가 불변 정책)
   const extras = rawDb.prepare(`
-    SELECT re.report_id, re.item_key, SUM(re.qty) AS qty
+    SELECT re.report_id, re.item_key, SUM(re.qty) AS qty,
+           MIN(re.unit_price_snapshot) AS unit_price_snapshot
     FROM work_report_extras re
     WHERE re.report_id IN (
       SELECT r2.id FROM work_reports r2 JOIN tasks t2 ON t2.id=r2.task_id
@@ -4419,7 +4427,12 @@ app.post('/api/work-reports', async (c) => {
     if (Array.isArray(body.cable_sets) && body.cable_sets.length > 0) {
       try {
         rawDb.prepare(`DELETE FROM work_report_extras WHERE report_id=?`).run(reportId)
-        const extraStmt = rawDb.prepare(`INSERT INTO work_report_extras (report_id, set_no, item_key, qty) VALUES (?,?,?,?)`)
+        // 단가 스냅샷용: 현재 volume_unit_prices 전체 로드
+        const priceSnapshotRows = rawDb.prepare(`SELECT item_key, unit_price FROM volume_unit_prices`).all() as any[]
+        const priceSnapshotMap: Record<string, number> = {}
+        for (const p of priceSnapshotRows) priceSnapshotMap[p.item_key] = Number(p.unit_price) || 0
+
+        const extraStmt = rawDb.prepare(`INSERT INTO work_report_extras (report_id, set_no, item_key, qty, unit_price_snapshot) VALUES (?,?,?,?,?)`)
         let extraCount = 0
         for (const cs of body.cable_sets) {
           const setNo = cs.set_no || 1
@@ -4433,9 +4446,10 @@ app.post('/api/work-reports', async (c) => {
             const qty = Number(ex.qty)
             const key = ex.key || ex.item_key || ''
             if (key && qty > 0) {
-              extraStmt.run(reportId, setNo, String(key), qty)
+              const snapshot = priceSnapshotMap[key] ?? null  // 저장 시점 단가 스냅샷
+              extraStmt.run(reportId, setNo, String(key), qty, snapshot)
               extraCount++
-              console.log(`[WR-POST]   extras INSERT: key="${key}", qty=${qty}`)
+              console.log(`[WR-POST]   extras INSERT: key="${key}", qty=${qty}, price_snapshot=${snapshot}`)
             }
           }
         }
@@ -4751,6 +4765,18 @@ app.post('/api/splice-reports/:id/submit', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = Number(c.req.param('id'))
   rawDb.prepare(`UPDATE splice_reports SET status='submitted', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id)
+  return c.json({ ok: true })
+})
+
+// POST /api/splice-reports/:id/revert — 제출완료 → 임시저장으로 되돌리기
+app.post('/api/splice-reports/:id/revert', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  const existing = rawDb.prepare(`SELECT id, status FROM splice_reports WHERE id=?`).get(id) as any
+  if (!existing) return c.json({ error: '일보를 찾을 수 없습니다.' }, 404)
+  if (existing.status === 'confirmed') return c.json({ error: '확정된 일보는 수정할 수 없습니다.' }, 403)
+  rawDb.prepare(`UPDATE splice_reports SET status='draft', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id)
   return c.json({ ok: true })
 })
 
@@ -5730,13 +5756,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621n">
+  <link rel="stylesheet" href="/static/style.css?v=20260621o">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621n"></script>
+  <script src="/static/app.js?v=20260621o"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621n"></script>
+  <script src="/static/mobile-app.js?v=20260621o"></script>
 </body>
 </html>`)
 })

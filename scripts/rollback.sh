@@ -23,8 +23,11 @@ PM2_APP="${PM2_APP:-safetynote}"
 # ║  커밋 맵 — 세션별 복원 포인트 (최신순)                       ║
 # ╚══════════════════════════════════════════════════════════════╝
 declare -A COMMIT_MAP=(
-  # ── 세션 50 (최신) ─────────────────────────────────────────
-  ["s50-hotfix"]="2495d8e"  # ★현재 — patchSchema 구문오류(속도저하) 핫픽스
+  # ── 세션 51 (최신) ─────────────────────────────────────────
+  ["s51"]="605afae"    # ★현재 — 단가관리 공종명·단위 인라인 수정 기능 추가 (캐시 q)
+  ["pre-s51"]="757cd24" # 세션51 작업 직전 = 세션50-hotfix 완료 상태 ★ 안정 복원점
+  # ── 세션 50 ─────────────────────────────────────────────────
+  ["s50-hotfix"]="2495d8e"  # 세션50 핫픽스 — patchSchema 구문오류(속도저하) 수정
   ["s50-final"]="700e0f9"  # 세션50 최종 — 공종삭제·접속일보수정·단가불변 3종
   ["s50"]="6a9819d"        # 세션50 중간 — addCableSet DB동적로드 + otherTypes 에러 수정
   ["pre-s50"]="c6050b3"    # 세션50 작업 직전 = 세션49 완료 상태 ★ 안정 복원점
@@ -50,7 +53,9 @@ declare -A COMMIT_MAP=(
 # ║  버전별 설명                                                 ║
 # ╚══════════════════════════════════════════════════════════════╝
 declare -A DESC_MAP=(
-  ["s50-hotfix"]="★현재 — patchSchema 구문오류(서버속도저하) 핫픽스 완료"
+  ["s51"]="★현재 — 단가관리 공종명·단위 인라인 수정 기능 + 외선 단위 컬럼 추가 (캐시 q)"
+  ["pre-s51"]="세션51 작업 직전 = 세션50-hotfix 완료 상태 ★ 안정 복원점"
+  ["s50-hotfix"]="세션50 핫픽스 — patchSchema 구문오류(서버속도저하) 수정 완료"
   ["s50-final"]="세션50 최종 — 단가관리공종삭제·접속일보수정·단가불변정책 (캐시 o)"
   ["s50"]="세션50 중간 — addCableSet DB동적로드 + otherTypes 에러 수정 (캐시 n)"
   ["pre-s50"]="세션50 작업 직전 = 세션49 완료 상태 ★ 안정 복원점"
@@ -84,12 +89,12 @@ print_header() {
 print_versions() {
   echo -e "${BLUE}── 세션별 복원 포인트 (최신순) ──────────────${NC}\n"
 
-  local ORDER=(prev latest s50-hotfix s50-final s50 pre-s50 s49 pre-s49 s48 pre-s48 s47 s46 pre-bug023 pre-bug022 pre-bug011-safe)
+  local ORDER=(prev latest s51 pre-s51 s50-hotfix s50-final s50 pre-s50 s49 pre-s49 s48 pre-s48 s47 s46 pre-bug023 pre-bug022 pre-bug011-safe)
   for key in "${ORDER[@]}"; do
     local commit="${COMMIT_MAP[$key]:-?}"
     local desc="${DESC_MAP[$key]:-}"
     # 주요 복원점 강조
-    if [[ "$key" == "prev" || "$key" == "pre-s50" || "$key" == "pre-s49" ]]; then
+    if [[ "$key" == "prev" || "$key" == "pre-s51" || "$key" == "pre-s50" || "$key" == "pre-s49" ]]; then
       echo -e "  ${GREEN}★ ${YELLOW}${key}${NC}"
     else
       echo -e "  ${YELLOW}  ${key}${NC}"

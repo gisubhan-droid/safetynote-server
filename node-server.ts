@@ -2158,6 +2158,10 @@ app.use('*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }))
 
+// ─── 정적 파일 서빙 (/static/*) ──────────────────────────────────────
+// Phase 3 리팩토링 중 누락됨 — serveStatic import 후 라우트 등록 필수
+app.use('/static/*', serveStatic({ root: './public' }))
+
 // ─── API 라우트 ───────────────────────────────────────────────────────
 app.route('/api/auth', authRoutes)
 

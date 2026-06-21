@@ -27853,16 +27853,27 @@ async function renderSpliceReportForm(container, reportId, taskId) {
            + (parts.length > 1 ? `<br><span class="text-gray-400" style="font-size:10px">(${parts.join(', ')})</span>` : '');
     };
 
+    // ── label → DB item_key 변환 (mkItemRow 전용) ──────────────────────────
+    // SPLICE_ITEMS_DEF 역방향 맵 우선 적용 → 폴백: 공백/슬래시 제거
+    // '광커넥터 현장조립/취부' → '광커넥터현장조립'  (DB key 정확 일치)
+    // '광탭 결합/고정 작업'   → '광탭결합고정'       (DB key 정확 일치)
+    // 'FTTH 레벨 측정시험'    → 'FTTH레벨측정'       (DB key 정확 일치)
+    const _mkLabelToKey = {};
+    (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
+      _mkLabelToKey[d.label] = d.key;
+    });
+    const mkLabelToKey = lbl => _mkLabelToKey[lbl] || lbl.replace(/ /g,'').replace(/\//g,'');
+
     const mkItemRow = (label, unit, has_aerial, saved) => {
       const night  = saved?.is_night  ? 'checked' : '';
       const aerial = saved?.is_aerial ? 'checked' : '';
       const qty    = (saved?.qty != null) ? saved.qty : 0;
-      // 함체작업만 단가 미리보기 셀 표시 (key = label에서 공백 제거)
-      const itemKey = label.replace(/ /g,'').replace(/\//g,'');
+      // SPLICE_ITEMS_DEF 역방향 맵으로 정확한 DB item_key 추출
+      const itemKey = mkLabelToKey(label);
       const hasPricePreview = !!splicePriceFormMap[itemKey];
       const priceHtml = hasPricePreview
         ? calcSplicePrice(itemKey, !!saved?.is_night, !!saved?.is_aerial)
-        : `<span class="text-gray-200 text-xs">—</span>`;
+        : `<span class="text-gray-300 text-xs italic">단가없음</span>`;
       // 야간/가공 onChange 이벤트: 함체작업 등 단가 있는 공종만 실시간 갱신
       const nightOnChange  = hasPricePreview
         ? `onchange="_srUpdatePricePreview(this,'${itemKey}')"`  : '';
@@ -28081,7 +28092,7 @@ function _srUpdatePricePreview(checkboxEl, itemKey) {
   const night = isNight  ? (p.night_price  || 0) : 0;
   const aer   = isAerial ? (p.aerial_price || 0) : 0;
   const total = base + night + aer;
-  if (total === 0) { cell.innerHTML = '<span class="text-gray-200 text-xs">—</span>'; return; }
+  if (total === 0) { cell.innerHTML = '<span class="text-gray-400 text-xs italic">기본단가 0원</span>'; return; }
   let html = `<span class="text-indigo-700 font-semibold">${total.toLocaleString()}원</span>`;
   const parts = [];
   if (base  > 0) parts.push(`기본 ${base.toLocaleString()}`);

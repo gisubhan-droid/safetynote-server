@@ -1595,7 +1595,25 @@ function patchSchema() {
     if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.135b]', e.message)
   }
 
-  // ── 성능 인덱스 추가 (장기 운영 대응 — 중복 생성 무시) ──────────────────────
+  // ── v0.136: volume_unit_prices — unit 컬럼 추가 (외선 공종 단위 표시용) ──────
+  try {
+    rawDb.exec(`ALTER TABLE volume_unit_prices ADD COLUMN unit TEXT DEFAULT '식'`)
+    console.log('[patchSchema] v0.136 volume_unit_prices.unit 컬럼 추가 완료')
+    // 기존 항목 단위 일괄 업데이트
+    const unitMap: Record<string,string> = {
+      '조가선신설':'M', '커넥터취부':'개', '조가선 철거':'M', '전주 건식':'본',
+      '전주 철거':'본', 'B 형접지(대지)':'건', 'A 형접지(대지)':'건', '지선신설':'건',
+      '전주세움':'본', '가요전선관':'M', '내관포설':'M', '완금설치 (한전주)':'식',
+      '단순1':'본', '단순1-2':'경간', '단순2':'경간',
+      'cable_new':'M', 'cable_remove':'M', 'cable_move':'M'
+    }
+    const updUnit = rawDb.prepare(`UPDATE volume_unit_prices SET unit=? WHERE item_key=? AND (unit IS NULL OR unit='식')`)
+    for (const [k, u] of Object.entries(unitMap)) updUnit.run(u, k)
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.136]', e.message)
+  }
+
+
   // 서버 시작 시 자동 생성 (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)
   ;(function addPerfIndexes() {
     const idxList: [string, string][] = [
@@ -4771,11 +4789,11 @@ app.post('/api/volume-unit-prices', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const isSysadmin = user.sub_role === 'sysadmin' || user.position === '시스템관리자'
   if (!isSysadmin) return c.json({ error: '권한 없음' }, 403)
-  const { item_key, item_label, unit_price } = await c.req.json() as any
+  const { item_key, item_label, unit_price, unit } = await c.req.json() as any
   if (!item_key || !item_label) return c.json({ error: 'item_key, item_label 필수' }, 400)
   const maxSort = (rawDb.prepare(`SELECT MAX(sort_order) AS m FROM volume_unit_prices`).get() as any)?.m || 0
-  rawDb.prepare(`INSERT OR IGNORE INTO volume_unit_prices (item_key, item_label, unit_price, sort_order) VALUES (?,?,?,?)`)
-    .run(item_key, item_label, Number(unit_price) || 0, maxSort + 1)
+  rawDb.prepare(`INSERT OR IGNORE INTO volume_unit_prices (item_key, item_label, unit_price, unit, sort_order) VALUES (?,?,?,?,?)`)
+    .run(item_key, item_label, Number(unit_price) || 0, unit || '식', maxSort + 1)
   return c.json({ ok: true })
 })
 
@@ -5712,13 +5730,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621l">
+  <link rel="stylesheet" href="/static/style.css?v=20260621m">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621l"></script>
+  <script src="/static/app.js?v=20260621m"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621l"></script>
+  <script src="/static/mobile-app.js?v=20260621m"></script>
 </body>
 </html>`)
 })

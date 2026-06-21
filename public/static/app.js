@@ -26899,7 +26899,8 @@ async function renderWorkReportForm(container, taskId) {
     const [taskRes, reportRes, typesRes] = await Promise.all([
       API.get(`/tasks/${taskId}`),
       API.get(`/work-reports/task/${taskId}`).catch(() => ({ data: { report: null, lines: [], cables: [], confirms: [] } })),
-      API.get('/work-reports/other-work-types')
+      // volume-unit-prices: 공종별 작업량 동적 로드 (DB에서 공종 목록 가져옴)
+      API.get('/volume-unit-prices').catch(() => ({ data: { prices: [] } }))
     ]);
     const task    = taskRes.data.task || taskRes.data;
     const report  = reportRes.data.report;
@@ -26907,7 +26908,7 @@ async function renderWorkReportForm(container, taskId) {
     const cables  = reportRes.data.cables   || [];
     const confirms= reportRes.data.confirms || [];
     const extras  = reportRes.data.extras   || [];
-    const otherTypes = typesRes.data.types  || [];
+    // otherTypes는 volume-unit-prices로 대체 (공종별 작업량 동적 로드)
 
     // 자동입력 값
     const constrType  = task.construction_type || report?.work_class || '-';
@@ -26943,17 +26944,24 @@ async function renderWorkReportForm(container, taskId) {
     const KIND_OPTS     = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
     const PROC_OPTS     = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
     const YEAR_OPTS     = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
-    // 추가입력 공종 목록
-    const WR_EXTRA_ITEMS = [
-      {key:'조가선신설',  unit:'M'},  {key:'커넥터취부',   unit:'개'},
-      {key:'조가선 철거', unit:'M'},  {key:'전주 건식',    unit:'본'},
-      {key:'전주 철거',   unit:'본'}, {key:'B 형접지(대지)',unit:'건'},
-      {key:'A 형접지(대지)',unit:'건'},{key:'지선신설',     unit:'건'},
-      {key:'전주세움',    unit:'본'}, {key:'가요전선관',   unit:'M'},
-      {key:'내관포설',    unit:'M'},  {key:'완금설치 (한전주)',unit:'식'},
-      {key:'단순1',       unit:'본'}, {key:'단순1-2',      unit:'경간'},
-      {key:'단순2',       unit:'경간'}
+    // ── 공종별 작업량 공종 목록: volume_unit_prices DB에서 동적 로드 ──
+    // cable_new / cable_remove / cable_move 등 케이블 전용 항목은 제외
+    const CABLE_ONLY_KEYS = new Set(['cable_new','cable_remove','cable_move']);
+    const WR_EXTRA_ITEMS = (typesRes.data.prices || [])
+      .filter(p => !CABLE_ONLY_KEYS.has(p.item_key))
+      .map(p => ({ key: p.item_key, label: p.item_label || p.item_key, unit: p.unit || '식' }));
+    // DB 로드 실패 시 하드코딩 폴백
+    const WR_EXTRA_ITEMS_FALLBACK = [
+      {key:'조가선신설',  label:'조가선신설',  unit:'M'},  {key:'커넥터취부',   label:'커넥터취부',   unit:'개'},
+      {key:'조가선 철거', label:'조가선 철거', unit:'M'},  {key:'전주 건식',    label:'전주 건식',    unit:'본'},
+      {key:'전주 철거',   label:'전주 철거',   unit:'본'}, {key:'B 형접지(대지)',label:'B 형접지(대지)',unit:'건'},
+      {key:'A 형접지(대지)',label:'A 형접지(대지)',unit:'건'},{key:'지선신설', label:'지선신설',     unit:'건'},
+      {key:'전주세움',    label:'전주세움',    unit:'본'}, {key:'가요전선관',   label:'가요전선관',   unit:'M'},
+      {key:'내관포설',    label:'내관포설',    unit:'M'},  {key:'완금설치 (한전주)',label:'완금설치 (한전주)',unit:'식'},
+      {key:'단순1',       label:'단순1',       unit:'본'}, {key:'단순1-2',      label:'단순1-2',      unit:'경간'},
+      {key:'단순2',       label:'단순2',       unit:'경간'}
     ];
+    const extraItems = WR_EXTRA_ITEMS.length > 0 ? WR_EXTRA_ITEMS : WR_EXTRA_ITEMS_FALLBACK;
 
     // ── 섹션1: 작업내역 행 ────────────────────────────────────────
     const mkLine = (l, i) => `
@@ -27091,9 +27099,9 @@ async function renderWorkReportForm(container, taskId) {
                 </tr>
               </thead>
               <tbody id="${sid}-extra-tbody">
-                ${WR_EXTRA_ITEMS.map(item=>`
+                ${extraItems.map(item=>`
                 <tr class="hover:bg-orange-50">
-                  <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
+                  <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.label || item.key}</td>
                   <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0" value="${extrasMap[item.key] > 0 ? extrasMap[item.key] : ''}"></td>
                   <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
                 </tr>`).join('')}
@@ -27185,9 +27193,10 @@ async function renderWorkReportForm(container, taskId) {
     </div>`;
 
     // 전역 상태 저장
-    window._wrOtherTypes = otherTypes;
-    window._wrReportId   = reportId;
-    window._wrTaskId     = taskId;
+    window._wrOtherTypes      = otherTypes;
+    window._wrReportId        = reportId;
+    window._wrTaskId          = taskId;
+    window._wrExtraItemsCache = extraItems;  // 공종별 작업량 항목 캐시 (addCableSet에서 사용)
     // extras 값은 mkCableSetHTML 내부에서 extrasMap을 통해 HTML value로 직접 반영됨 (BUG-019)
 
   } catch(e) {
@@ -27237,16 +27246,18 @@ function _wrAddCableSet() {
   const OD_OPTS     = ['','32','50','63','75','100','125','150','200'].map(v=>`<option value="${v}">${v||'외경'}</option>`).join('');
   const ID_OPTS     = ['','26','42','51','63','82','101','127','170'].map(v=>`<option value="${v}">${v||'내경'}</option>`).join('');
   const PURPOSE_OPTS= ['','가공','관로','포설(기존)','포설(신규)','가공+포설','기타'].map(v=>`<option value="${v}">${v||'용도'}</option>`).join('');
-  const WR_EXTRA_ITEMS = [
-    {key:'조가선신설',  unit:'M'},  {key:'커넥터취부',   unit:'개'},
-    {key:'조가선 철거', unit:'M'},  {key:'전주 건식',    unit:'본'},
-    {key:'전주 철거',   unit:'본'}, {key:'B 형접지(대지)',unit:'건'},
-    {key:'A 형접지(대지)',unit:'건'},{key:'지선신설',     unit:'건'},
-    {key:'전주세움',    unit:'본'}, {key:'가요전선관',   unit:'M'},
-    {key:'내관포설',    unit:'M'},  {key:'완금설치 (한전주)',unit:'식'},
-    {key:'단순1',       unit:'본'}, {key:'단순1-2',      unit:'경간'},
-    {key:'단순2',       unit:'경간'}
+  // 공종별 작업량 항목: renderWorkReportForm에서 저장한 DB 캐시 사용 (하드코딩 폴백)
+  const WR_EXTRA_ITEMS_FALLBACK2 = [
+    {key:'조가선신설',  label:'조가선신설',  unit:'M'},  {key:'커넥터취부',   label:'커넥터취부',   unit:'개'},
+    {key:'조가선 철거', label:'조가선 철거', unit:'M'},  {key:'전주 건식',    label:'전주 건식',    unit:'본'},
+    {key:'전주 철거',   label:'전주 철거',   unit:'본'}, {key:'B 형접지(대지)',label:'B 형접지(대지)',unit:'건'},
+    {key:'A 형접지(대지)',label:'A 형접지(대지)',unit:'건'},{key:'지선신설', label:'지선신설',     unit:'건'},
+    {key:'전주세움',    label:'전주세움',    unit:'본'}, {key:'가요전선관',   label:'가요전선관',   unit:'M'},
+    {key:'내관포설',    label:'내관포설',    unit:'M'},  {key:'완금설치 (한전주)',label:'완금설치 (한전주)',unit:'식'},
+    {key:'단순1',       label:'단순1',       unit:'본'}, {key:'단순1-2',      label:'단순1-2',      unit:'경간'},
+    {key:'단순2',       label:'단순2',       unit:'경간'}
   ];
+  const WR_EXTRA_ITEMS = window._wrExtraItemsCache || WR_EXTRA_ITEMS_FALLBACK2;
   const sid = `cs${n}`;
   // 케이블 3행 기본 생성
   let cableRows3 = '';
@@ -27323,17 +27334,8 @@ function _wrAddCableSet() {
             </tr>
           </thead>
           <tbody id="${sid}-extra-tbody">
-            ${[
-              {key:'조가선신설',unit:'M'},{key:'커넥터취부',unit:'개'},
-              {key:'조가선 철거',unit:'M'},{key:'전주 건식',unit:'본'},
-              {key:'전주 철거',unit:'본'},{key:'B 형접지(대지)',unit:'건'},
-              {key:'A 형접지(대지)',unit:'건'},{key:'지선신설',unit:'건'},
-              {key:'전주세움',unit:'본'},{key:'가요전선관',unit:'M'},
-              {key:'내관포설',unit:'M'},{key:'완금설치 (한전주)',unit:'식'},
-              {key:'단순1',unit:'본'},{key:'단순1-2',unit:'경간'},
-              {key:'단순2',unit:'경간'}
-            ].map(item=>`<tr class="hover:bg-orange-50">
-              <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.key}</td>
+            ${WR_EXTRA_ITEMS.map(item=>`<tr class="hover:bg-orange-50">
+              <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.label || item.key}</td>
               <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
               <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
             </tr>`).join('')}
@@ -27820,15 +27822,19 @@ async function renderSpliceReportForm(container, reportId, taskId) {
       } catch(_) {}
     }
 
-    // ── 접속 단가 로드 (야간/가공 추가금액 포함) ──────────────────────────────
-    const splicePriceFormMap = {};  // item_key → { unit_price, night_price, aerial_price }
+    // ── 접속 단가 로드 (야간/가공 추가금액 포함) + 공종 목록 DB에서 동적 로드 ──
+    const splicePriceFormMap = {};  // item_key → { unit_price, night_price, aerial_price, unit, label }
+    let dbSpliceItems = [];         // DB에서 읽은 공종 목록 (sort_order 순)
     try {
       const priceRes = await API.get('/splice-unit-prices');
-      (priceRes.data.prices || []).forEach(p => {
+      dbSpliceItems = priceRes.data.prices || [];
+      dbSpliceItems.forEach(p => {
         splicePriceFormMap[p.item_key] = {
           unit_price:   p.unit_price   || 0,
           night_price:  p.night_price  || 0,
           aerial_price: p.aerial_price || 0,
+          unit:         p.unit         || '개소',
+          label:        p.item_label   || p.item_key,
         };
       });
     } catch(_) {}
@@ -27848,9 +27854,16 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     const savedMap = {};
     savedItems.forEach(it => { savedMap[it.work_label] = it; });
 
-    // 공종 행 생성 (기본항목 + 저장된 커스텀 항목)
-    const defaultKeys = new Set(SPLICE_ITEMS_DEF.map(d => d.key));
-    const customItems = savedItems.filter(it => !defaultKeys.has(it.work_label));
+    // ── DB 공종 목록 기반으로 행 생성 (SPLICE_ITEMS_DEF 하드코딩 대신 DB 사용) ──
+    // dbSpliceItems: splice_unit_prices 전체 (sort_order 순)
+    // 야간/가공 체크박스: night_price > 0 또는 aerial_price > 0 이면 활성 (항상 표시, 값 있으면 강조)
+    const dbItemKeys = new Set(dbSpliceItems.map(p => p.item_key));
+    // 저장된 아이템 중 DB에 없는 것 = 커스텀 항목
+    const customItems = savedItems.filter(it =>
+      !dbItemKeys.has(it.work_label) && !dbItemKeys.has(
+        (typeof _mkLabelToKey === 'function' ? _mkLabelToKey : (l => l))(it.work_label)
+      )
+    );
 
     // ── 단가 미리보기 계산 헬퍼 (함체작업 전용 — 야간/가공 추가금액 합산) ──
     // item_key(공백 없음), is_night, is_aerial → 적용단가(원) 문자열 반환
@@ -27944,9 +27957,14 @@ async function renderSpliceReportForm(container, reportId, taskId) {
         </td>
       </tr>`;
 
-    const defaultRows = SPLICE_ITEMS_DEF.map(d =>
-      mkItemRow(d.label, d.unit, d.has_aerial, savedMap[d.label] || savedMap[d.key])
-    ).join('');
+    // DB 공종 목록으로 행 생성 (SPLICE_ITEMS_DEF 하드코딩 대체)
+    // savedMap: work_label(=item_label) 또는 item_key로 저장 데이터 찾기
+    const defaultRows = dbSpliceItems.map(p => {
+      // has_aerial: aerial_price가 있거나 night_price가 있으면 야간/가공 체크박스 활성
+      const has_aerial = true; // 모든 공종에 체크박스 표시 (값 없으면 흐릿)
+      const saved = savedMap[p.item_label] || savedMap[p.item_key];
+      return mkItemRow(p.item_label, p.unit || '개소', has_aerial, saved);
+    }).join('');
     const customRows = customItems.map(it => mkCustomRow(it)).join('');
 
     container.innerHTML = `

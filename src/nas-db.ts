@@ -117,6 +117,19 @@ export function getUploadRoot(envUploadRoot: string): string {
 }
 
 /**
+ * 무인수 버전: node-server.ts의 UPLOAD_ROOT 상수 없이도 호출 가능
+ * admin/dist 라우트 등 nas-routes 내부에서 사용
+ */
+export function getUploadRootNow(): string {
+  const override = (global as any).__UPLOAD_ROOT_OVERRIDE
+  if (override) return override
+  const envPath = process.env.UPLOAD_PATH
+  if (envPath) return envPath.replace(/\/+$/, '')
+  // 기본값: 현재 실행 디렉터리 기준 public/uploads
+  return join(process.cwd(), 'public', 'uploads')
+}
+
+/**
  * DB 설정에서 업로드 루트 재정의 (loadSystemSettings 내에서 호출)
  */
 export function applyUploadRootOverride(envUploadRoot: string): void {
@@ -152,6 +165,21 @@ export function getUser(c: any): any {
     const buf = Buffer.from(token, 'base64')
     return JSON.parse(buf.toString('utf-8'))
   } catch(_) { return null }
+}
+
+// ─── 역할 변환 헬퍼 ──────────────────────────────────────────────────────────
+/**
+ * DB 저장 역할(role) + position + sub_role → UI 역할 변환
+ * node-server.ts의 dbRoleToUi()와 완전 동일
+ */
+export function dbRoleToUi(dbRole: string, position: string, subRole: string): string {
+  if (subRole) return subRole
+  if (dbRole === 'admin') {
+    if ((position || '') === '시스템관리자') return 'sysadmin'
+    return 'ceo'
+  }
+  if (dbRole === 'supervisor') return 'safety'
+  return 'worker'
 }
 
 // ─── DB 인스턴스 (D1 래퍼) — nas-routes-*.ts 에서 사용 ───────────────────────

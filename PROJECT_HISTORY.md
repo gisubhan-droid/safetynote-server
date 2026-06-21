@@ -1,11 +1,11 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-21 (세션 47)
-> **서버 현재 버전: 커밋 예정 (세션 47)** ← 최신 (GitHub)
-> **NAS 배포 버전: d2b1823** ⚠️ NAS 미적용 (배포 대기)
-> **캐시 버전: v=20260621i**
-> **APK 최신**: v1.4.7 빌드 중 (Run #27752523683)
-> **파일럿 테스트 중** — 발견 버그 일괄 기록 후 처리 예정
+> 최종 업데이트: 2026-06-21 (세션 51)
+> **서버 현재 버전: `bcec93b`** ← 최신 (GitHub)
+> **NAS 배포 버전: `2495d8e` (세션 50 hotfix)** ⚠️ 세션 51 미반영 (배포 대기)
+> **캐시 버전: v=20260621v**
+> **APK 최신**: v1.4.7
+> **파일럿 테스트 완료** — 누적 버그 순차 수정 중
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
 ---
@@ -2616,3 +2616,192 @@ NAS 로그:
 - ✅ 빌드 성공 (`dist/_worker.js 251.41 kB`)
 - ✅ node --check 통과
 - ⚠️ NAS 배포 대기 중 (통합 배포 원칙)
+
+---
+
+## 세션 48 (2026-06-21) — 단가관리/공량내역/외선일보 다중 개선
+
+### 사전 확인
+- PROJECT_HISTORY / BUGFIX_LOG 세션 컨텍스트 확인
+- 세션 47 pragma 최적화 + 인덱스 5개 적용 완료 상태에서 시작
+
+### 수정 내용
+
+#### [1] 공량내역 조회 버그 3종 수정 (`c6050b3`)
+- DOM 소멸 전 필터값(탭/기간/공사) 먼저 저장 → 재조회 시 외선 탭 자동변경 방지
+- `_frCalcDateRange()` container.innerHTML 이전 호출 → 기간 초기화 방지
+- 조회 버튼: `_frSearch()` 함수 분기 처리
+
+#### [2] 단가관리 공종 삭제 `[object Object]` 에러 수정 (`c6050b3`)
+- `_upDeleteCableItem` / `_upDeleteSpliceItem`: 객체 방식 호출 → 위치인수 방식으로 수정
+- `showConfirmDialog(title, msg, '삭제', '취소', 'danger')` 형태로 통일
+
+#### [3] 외선일보 공종별작업량 DB 동적 로드 (`d18d40d`)
+- `window._wrExtraItemsCache` 전역 캐시 도입
+- `renderWorkReportForm` → `_wrAddCableSet` 간 공종 목록 공유
+
+#### [4] renderWorkReportForm `otherTypes is not defined` 에러 수정 (`6a9819d`)
+- `otherTypes` 변수 undefined 방어 처리 추가
+
+### 캐시버전
+`v=20260621i` → `v=20260621n` (경유)
+
+### 커밋 이력
+| 해시 | 내용 |
+|------|------|
+| `0b16abe` | docs: BUG-002 상태 미해결→완료 갱신 |
+| `a42a38d` | feat: 접속일보 함체작업 야간/가공 추가단가 지원 |
+| `88ca077` | fix: 공량내역 접속탭 TDZ 에러 + 단가 매칭 오류 수정 |
+| `4bb3084` | fix: 접속일보 폼 단가 공란 수정 — mkItemRow에 SPLICE_ITEMS_DEF 역방향 맵 적용 |
+| `6d151cf` | docs: BUGFIX_LOG BUG-022 추가 |
+| `c6050b3` | feat: 공량내역/단가관리/외선일보 다중 개선 |
+| `d18d40d` | fix: 외선일보 addCableSet 공종별작업량 DB 동적 로드 |
+| `6a9819d` | fix: renderWorkReportForm otherTypes is not defined 에러 수정 |
+
+### 상태
+- ✅ 빌드 성공
+- ✅ GitHub 푸시 완료
+- ⚠️ NAS 배포 대기 중 (통합 배포 원칙)
+
+---
+
+## 세션 49 (2026-06-21) — 단가불변 정책 + 접속일보 수정 + rollback v2.0
+
+### 수정 내용
+
+#### [1] 단가 수정 시 이전 월 공량 금액 불변 정책 (`700e0f9`)
+- `patchSchema v0.137`: `work_report_extras.unit_price_snapshot` 컬럼 추가 (safeAlter)
+- `POST /api/work-reports` 저장 시 현재 단가 스냅샷 함께 저장
+- `GET /api/work-reports/volume-stats`: `unit_price_snapshot` 반환 추가
+- 공량내역 금액 계산: 스냅샷 단가 우선 사용 (없으면 현재 단가 — 하위호환)
+- 엑셀 내보내기 동일 정책 적용
+
+#### [2] 접속일보 제출건 수정 기능 추가 (`700e0f9`)
+- `renderSpliceReportForm`: submitted/confirmed 상태 분기 버튼 추가
+  - submitted: '목록으로' + '수정하기(amber)' 버튼
+  - confirmed: '확정됨(수정불가)' 버튼
+- `_revertSpliceReport()` 함수 신규 추가
+- `node-server.ts`: `POST /api/splice-reports/:id/revert` API 추가
+
+#### [3] 단가관리 공종 삭제 `[object Object]` 에러 수정 (`700e0f9`)
+- `showConfirmDialog` 위치인수 방식으로 통일
+
+#### [4] rollback.sh v2.0 업데이트 (`45eea70`)
+- 세션별 커밋 포인트 맵 구조로 전면 재작성
+- `prev` / `latest` 특수 키 지원
+- 자동 검증 기능 추가
+
+### 캐시버전
+`v=20260621n` → `v=20260621o`
+
+### 커밋 이력
+| 해시 | 내용 |
+|------|------|
+| `700e0f9` | fix+feat: 단가관리 공종삭제/접속일보 수정/단가불변 정책 3종 |
+| `45eea70` | chore: NAS 배포/롤백 스크립트 v2.0 업데이트 |
+
+### 상태
+- ✅ 빌드 성공
+- ✅ GitHub 푸시 완료
+- ⚠️ NAS 배포 대기 중 (통합 배포 원칙)
+
+---
+
+## 세션 50 (2026-06-21) — patchSchema 구문 오류 hotfix
+
+### 수정 내용
+
+#### patchSchema v0.137 구문 오류 수정 (`2495d8e`)
+- **버그**: `patchSchema v0.137` SQL 주석 문자열 내 오탈자로 서버 쿼리 실행 시 구문 오류 발생
+  - `try {...} (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)` — 괄호 외부로 주석 노출
+- **현상**: NAS 서버에서 매 요청마다 patchSchema 오류 로그 → 응답 속도 저하
+- **해결**: 해당 주석 제거, SQL 문자열 정상화
+
+#### idx_tasks_status_date 컬럼명 수정 (`50980b5`)
+- `start_date` → `planned_date` (실제 컬럼명 불일치 수정)
+
+### 커밋 이력
+| 해시 | 내용 |
+|------|------|
+| `2495d8e` | hotfix: patchSchema v0.137 구문 오류 수정 → 서버 속도 저하 해결 |
+| `757cd24` | chore: rollback.sh s50-hotfix 커밋 포인트 추가 |
+| `50980b5` | fix: idx_tasks_status_date 컬럼명 수정 (start_date → planned_date) |
+
+### 상태
+- ✅ 빌드 성공
+- ✅ GitHub 푸시 완료
+- ✅ NAS hotfix 즉시 배포 완료 (`2495d8e`)
+
+---
+
+## 세션 51 (2026-06-21) — 단가관리 단위 인라인 편집 + BUG 4종 수정 + 명칭 변경
+
+### 사전 확인
+- PROJECT_HISTORY / BUGFIX_LOG / RULE-001~006 전체 검토 완료
+- RULE-002 (NAS 전용 라우트 마운트 앞 등록) 준수
+- RULE-003 (캐시버전 반드시 갱신) 준수
+- RULE-005 (`node --check` 필수) 준수
+
+### 수정 내용
+
+#### [1] 단가관리 접속/외선 탭 헤더에 `단위` 컬럼 추가 (`e21f384`)
+- 접속 탭: `공종 | 단위 | 단가` 헤더 순으로 추가
+- 외선 탭: `공종 | 단위 | 단가` 헤더 순으로 추가
+
+#### [2] 단가관리 공종명·단위 인라인 수정 기능 구현 (`605afae`)
+- `mkPriceRows` / `mkSplicePriceRows`: 공종명 및 단위 인라인 `<input>` 렌더링
+  - 공종명: `up-cable-label-input` / `up-splice-label-input`
+  - 단위: `up-cable-unit-input` / `up-splice-unit-input`
+- `_saveUnitPrices()` / `_saveSpliceUnitPrices()`: label + unit + price 모두 수집·전송
+- `node-server.ts` PUT `/api/volume-unit-prices` / `/api/splice-unit-prices`:
+  - item_label, unit 수정 지원 (stmtFull 분기 추가)
+
+#### [3] BUG-023: 접속일보 `_mkLabelToKey` TDZ 수정 (`66e5adc`)
+- `const _mkLabelToKey` 선언 블록을 `customItems` 사용 앞으로 이동
+- 원인: 선언(27926번)보다 참조(27898번)가 앞 → `const` TDZ 에러
+
+#### [4] BUG-024: 공량내역 `extrasSnapMap` TDZ 수정 (`66e5adc`)
+- `const extrasSnapMap` 선언 직후에 `_frCacheExtrasSnap = extrasSnapMap` 대입
+- 원인: 선언(25486번)보다 캐시 대입(25468번)이 앞 → TDZ 에러
+
+#### [5] 외선 탭 컬럼 순서 변경 (`2e174b1`)
+- `공종 | 단위 | 단가` → `공종 | 단가 | 단위` (사용자 요청)
+
+#### [6] BUG-025: 외선 단위 저장 안 되는 버그 수정 (`2d00b56`)
+- PUT API item_label 없으면 무조건 `stmtPrice`(단가만) 분기 → unit 무시
+- `stmtUnit` 추가, 3단계 분기로 재설계 (Full / Unit / Price)
+
+#### [7] BUG-026: 외선 단위 화면 반영 안 되는 버그 수정 (`d6bc5a4`)
+- `GET /api/volume-unit-prices` SELECT 쿼리에 `unit` 컬럼 누락
+- `p.unit = undefined` → 항상 기본값 '식' 표시
+- SELECT에 unit 추가로 수정
+
+#### [8] `작업안전현황` → `안전현황` 명칭 변경 (`bcec93b`)
+- app.js 전체 6곳 치환
+
+### 캐시버전 변화
+`v=20260621i` → q → r → s → t → u → `v=20260621v`
+
+### 커밋 이력
+| 해시 | 내용 |
+|------|------|
+| `e21f384` | feat: 단가관리 외선/접속 테이블 단위 컬럼 위치 조정 |
+| `605afae` | feat: 단가관리 공종명·단위 인라인 수정 기능 추가 — v=20260621q |
+| `66e5adc` | fix: TDZ 에러 2종 수정 (BUG-023/024) — v=20260621r |
+| `2e174b1` | fix: 외선 탭 컬럼 순서 변경 — v=20260621s |
+| `2d00b56` | fix: 외선 단가관리 단위 저장 버그 수정 (BUG-025) — v=20260621t |
+| `d6bc5a4` | fix: GET volume-unit-prices SELECT unit 누락 수정 (BUG-026) — v=20260621u |
+| `bcec93b` | chore: '작업안전현황' → '안전현황' 명칭 변경 — v=20260621v |
+
+### BUGFIX_LOG 추가
+- BUG-023: `_mkLabelToKey` TDZ
+- BUG-024: `extrasSnapMap` TDZ
+- BUG-025: 외선 단위 저장 분기 누락
+- BUG-026: GET SELECT unit 컬럼 누락
+
+### 상태
+- ✅ 빌드 성공 (`dist/_worker.js 251.41 kB`)
+- ✅ node --check 통과
+- ✅ GitHub 푸시 완료 (`bcec93b`)
+- ⚠️ NAS 배포 대기 중 (통합 배포 원칙 — 세션 50 hotfix 이후 미반영 누적)
+

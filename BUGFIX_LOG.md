@@ -3227,3 +3227,59 @@ async function clearNotifHistory() {
 | `node-server.ts` | NAS 전용 `DELETE /api/notifications/clear-all` 라우트 추가 (RULE-002 준수) + 캐시버전 `v=20260619a` |
 | `public/static/app.js` | `clearNotifHistory()` → async 함수로 변경, API 호출 후 UI 갱신 |
 | `scripts/rollback.sh` | `pre-bug023` 항목 추가 (커밋 `f98fb2e`) |
+
+---
+
+## TASK-001 — 공사 삭제 기능 (신규)
+- **날짜**: 2026-06-21
+- **커밋**: `7ddd3c1`
+
+### 문제
+공사 상세 화면에 수정 버튼만 있고 삭제 버튼이 없었음.
+
+### 해결
+
+**1. `app.js` — 공사 상세 하단 삭제 버튼 + deleteConstruction() 함수 추가**
+- 하단 `modal-footer`를 `justify-between` 2열로 변경 (좌: 삭제, 우: 수정+상태)
+- `deleteConstruction(conId)`: `showConfirmDialog` → `API.delete` → 목록 갱신
+
+**2. `node-server.ts` — NAS 전용 삭제 라우트 (RULE-002 준수)**
+```typescript
+// app.route('/api/constructions', constructionRoutes) 앞에 등록
+app.delete('/api/constructions/:id', async (c) => {
+  // 연결 tasks 존재 시 409 차단
+  const linked = rawDb.prepare(`SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ?`).get(id)
+  if (linked.cnt > 0) return c.json({ error: `연결된 작업 ${linked.cnt}건 — 차단` }, 409)
+  rawDb.prepare(`DELETE FROM constructions WHERE id = ?`).run(id)
+  return c.json({ success: true })
+})
+```
+
+**3. `src/routes/constructions.ts` — Cloudflare용 DELETE /:id 추가**
+
+### ⚠️ 재발 방지 규칙
+- 삭제 API는 반드시 **연결 데이터 존재 여부 먼저 확인** 후 차단 (409)
+- 삭제 버튼은 항상 좌측, 일반 액션 버튼은 우측 (UX 일관성)
+
+---
+
+## TASK-003 — 공사요청번호 자동부여 (LM_YY.MM.DD_##)
+- **날짜**: 2026-06-21
+- **커밋**: `7ddd3c1`
+
+### 내용
+공사 신규 등록 시 수동 12자리 숫자 입력 대신 `LM_YY.MM.DD_##` 형식 자동부여 옵션 추가.
+
+### 해결
+
+**1. `app.js` — UI + 함수 수정**
+- `cReqNo` 블록에 `자동부여` 체크박스 추가 (신규 등록 시만 표시)
+- `_toggleReqNoAuto(checked)`: KST 날짜 계산 → `/api/constructions/request-no-seq` 호출 → 입력란 채움
+- `saveConstruction()`: `dataset.autoNo === '1'` 시 12자리 숫자 검증 건너뜀
+
+**2. `node-server.ts`** — `GET /api/constructions/request-no-seq` (TASK-003, RULE-002 준수)
+- LM_ prefix 기반 COUNT+1 방식으로 순번 계산
+
+### ⚠️ 재발 방지 규칙
+- 자동부여 번호는 `dataset.autoNo` 플래그로 직접입력과 구분
+- 저장 검증 분기 시 `isAutoNo` 변수 명시적으로 선언 후 사용

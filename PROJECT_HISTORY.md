@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-19 (세션 38)
-> **서버 현재 버전: 40eef26** ← 최신 (GitHub)
+> 최종 업데이트: 2026-06-21 (세션 39)
+> **서버 현재 버전: 7ddd3c1** ← 최신 (GitHub)
 > **NAS 배포 버전: 53b6733** ⚠️ 전체 작업 완료 후 1회 배포 예정
-> **캐시 버전: v=20260619a**
+> **캐시 버전: v=20260621a**
 > **APK 최신**: v1.4.7 빌드 중 (Run #27752523683)
 > **파일럿 테스트 중** — 발견 버그 일괄 기록 후 처리 예정
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
@@ -2401,3 +2401,41 @@ NAS 로그:
 | 레포 | 해시 | 내용 |
 |------|------|------|
 | safetynote-server | `40eef26` | fix: BUG-023 알림센터 전체삭제 DB 미반영 수정 — DELETE API 추가 + clearNotifHistory API 호출 + 캐시버전 v=20260619a |
+| safetynote-server | `73f13c8` | docs: BUG-023 해결 기록 추가 + rollback pre-bug023 + 세션 38 히스토리 |
+
+---
+
+## 세션 39 (2026-06-21) — 2단계 공사현황 묶음 (TASK-002/003/001)
+
+### 사전 확인
+- PROJECT_HISTORY / BUGFIX_LOG 세션 컨텍스트 확인
+- TASK-003 UI Edit 실패 재시도 → `Read` 도구로 정확한 내용 재확인 후 성공
+
+### 수정 내용
+
+#### TASK-002: 공사 상세 → 작업 생성 후 화면 복귀
+- `app.js` `showCreateTaskFromConstruction()`: `con._fromConId = con.id` 플래그 추가
+- `app.js` `_doCreate()` 성공 핸들러: `_fromConId` 있으면 `showConstructionDetail()` 복귀, 없으면 `renderTasksPage()`
+
+#### TASK-003: 공사요청번호 자동부여 (LM_YY.MM.DD_##)
+- `app.js` `cReqNo` 블록: `자동부여` 체크박스 UI 추가 (신규 등록 시만 표시)
+- `app.js` `_toggleReqNoAuto()` 함수 추가 — KST 날짜 계산 → `/api/constructions/request-no-seq` 호출
+- `app.js` `saveConstruction()`: `isAutoNo` 플래그로 12자리 숫자 검증 제외
+- `node-server.ts`: `GET /api/constructions/request-no-seq` NAS 전용 (RULE-002 준수, 이전 세션에서 추가)
+
+#### TASK-001: 공사 삭제 기능
+- `app.js`: 공사 상세 하단 삭제 버튼 추가 (좌측), `justify-between` 2열 레이아웃
+- `app.js`: `deleteConstruction()` 함수 추가 — `showConfirmDialog` → `API.delete` → 목록 갱신
+- `node-server.ts`: `DELETE /api/constructions/:id` NAS 전용 (RULE-002 준수, 연결 tasks 차단)
+- `src/routes/constructions.ts`: `DELETE /:id` Cloudflare용 (연결 tasks 차단)
+
+### 캐시버전
+`v=20260619a` → `v=20260621a` (RULE-003 준수)
+
+### 빌드
+`dist/_worker.js 251.36 kB` ✅ (1.16s)
+
+### 커밋 이력
+| 레포 | 해시 | 내용 |
+|------|------|------|
+| safetynote-server | `7ddd3c1` | feat: 2단계 공사현황 묶음 — TASK-002/003/001 완료 |

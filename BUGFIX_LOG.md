@@ -3444,3 +3444,35 @@ if (v) dataMap[k].item_label = v;  // ← 빈값이면 item_label 자체를 data
 - 복합 조건 UPDATE 분기: 각 필드의 **존재 여부(undefined 체크)**와 **빈값 여부**를 분리하여 처리
 - `item_label`이 없어도 `unit`이 있으면 반드시 unit 저장 경로로 진입해야 함
 - 프론트엔드에서 "현재값 유지" 의도를 서버에 명확히 전달할 것 (undefined vs 빈string 구분)
+
+---
+
+## [BUG-026] 외선 단위 수정 저장 후에도 화면에 반영 안 됨 (2026-06-21)
+
+### 증상
+- BUG-025 수정 후에도 단위 수정이 안 되는 것처럼 보임
+- 단위를 수정 → 저장 → 새로고침 → 여전히 기존 값(식)으로 표시
+
+### 원인
+`GET /api/volume-unit-prices` SELECT 쿼리에 `unit` 컬럼 누락
+
+```typescript
+// 잘못된 코드
+SELECT item_key, item_label, unit_price, sort_order
+// ↑ unit 없음 → p.unit = undefined → 화면: '식' (기본값) 고정
+```
+
+DB에는 저장이 됐지만 조회 시 unit을 안 읽어오니 항상 기본값만 표시.
+BUG-025 수정으로 저장 로직은 고쳤지만 조회 로직을 빠뜨린 것.
+
+### 해결 (커밋 `d6bc5a4`)
+```typescript
+// 수정된 코드
+SELECT item_key, item_label, unit_price, unit, sort_order
+```
+한 줄 수정 — `unit` 컬럼 SELECT에 추가
+
+### ⚠️ 재발 방지 규칙
+- 컬럼 추가(ALTER TABLE) 후 반드시 해당 컬럼을 **SELECT 쿼리에도 추가** 확인
+- 신규 컬럼을 저장(UPDATE/INSERT)만 하고 조회(SELECT)에 빠뜨리면
+  저장은 됐지만 화면에 반영 안 되는 증상으로 나타남 (디버깅 어려움)

@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-19 (세션 37)
-> **서버 현재 버전: fcabd66** ← 최신 (GitHub)
+> 최종 업데이트: 2026-06-19 (세션 38)
+> **서버 현재 버전: 40eef26** ← 최신 (GitHub)
 > **NAS 배포 버전: 53b6733** ⚠️ 전체 작업 완료 후 1회 배포 예정
-> **캐시 버전: v=20260618d**
+> **캐시 버전: v=20260619a**
 > **APK 최신**: v1.4.7 빌드 중 (Run #27752523683)
 > **파일럿 테스트 중** — 발견 버그 일괄 기록 후 처리 예정
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
@@ -2377,3 +2377,27 @@ NAS 로그:
 | `docs/PENDING_TASKS.md` | 작업 대기 목록 문서 신규 생성 (TASK-001~005) |
 | `BUGFIX_LOG.md` | BUG-023 알림센터 전체 삭제 버그 기록 추가 |
 | `PROJECT_HISTORY.md` | 세션 37 기록 + 외선일보 취소 공식 반영 + TASK-001~005 등록 |
+
+---
+
+## 세션 38 (2026-06-19) — BUG-023 알림센터 전체삭제 수정 (1단계)
+
+### 사전 확인
+- PROJECT_HISTORY 확인 완료
+- BUGFIX_LOG RULE-001~006 전체 검토 완료
+- RULE-002 준수: NAS 전용 라우트를 `app.route()` 마운트 앞에 등록
+
+### 근본 원인
+`clearNotifHistory()`가 클라이언트 메모리만 삭제, 서버 DB DELETE API 호출 없음.
+`notifications.ts`에 전체 삭제 엔드포인트 자체 미존재.
+
+### 수정 내용
+- `src/routes/notifications.ts` — `DELETE /clear-all` 추가 (Cloudflare용)
+- `node-server.ts` — NAS 전용 `DELETE /api/notifications/clear-all` 추가 (RULE-002 준수) + 캐시버전 `v=20260619a`
+- `public/static/app.js` — `clearNotifHistory()` async 함수로 전환, API 호출 후 UI 갱신
+- `scripts/rollback.sh` — `pre-bug023` 항목 추가 (롤백 포인트: `f98fb2e`)
+
+### 커밋 이력
+| 레포 | 해시 | 내용 |
+|------|------|------|
+| safetynote-server | `40eef26` | fix: BUG-023 알림센터 전체삭제 DB 미반영 수정 — DELETE API 추가 + clearNotifHistory API 호출 + 캐시버전 v=20260619a |

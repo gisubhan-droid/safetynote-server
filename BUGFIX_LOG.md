@@ -3149,3 +3149,81 @@ const confirmed = await showConfirmDialog(
 
 ### 변경 파일
 - 미정 (수정 전 원인 확인 필요)
+
+### ✅ 해결 (`40eef26`) — 세션 38
+
+#### 근본 원인 확정
+`clearNotifHistory()`가 클라이언트 메모리(`_notifHistory` 배열)만 비울 뿐,  
+서버 DB에 **DELETE API를 전혀 호출하지 않음**.  
+또한 `notifications.ts`에 전체 삭제 엔드포인트 자체가 없었음.
+
+```
+[기존 동작]
+전체삭제 버튼 클릭
+    → clearNotifHistory() 호출
+    → _notifHistory.length = 0  (메모리만 삭제)
+    → UI 비워짐 (정상처럼 보임)
+    → 재로그인 시 DB에서 다시 조회 → 알림 복원됨 ❌
+
+[수정 후 동작]
+전체삭제 버튼 클릭
+    → clearNotifHistory() 호출
+    → DELETE /api/notifications/clear-all (서버 DB 삭제)
+    → 성공 시 _notifHistory.length = 0 + UI 갱신
+    → 재로그인 시 DB에 데이터 없음 → 빈 목록 ✅
+```
+
+#### 수정 내용
+
+**1. `src/routes/notifications.ts` — 전체 삭제 API 추가 (Cloudflare용)**
+```typescript
+// DELETE /api/notifications/clear-all
+app.delete('/clear-all', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  await c.env.DB.prepare(`DELETE FROM notifications WHERE user_id = ?`).bind(user.id).run()
+  return c.json({ success: true })
+})
+```
+
+**2. `node-server.ts` — NAS 전용 전체 삭제 라우트 추가 (RULE-002 준수)**
+```typescript
+// app.route('/api/notifications', notificationRoutes) 앞에 등록
+app.delete('/api/notifications/clear-all', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  rawDb.prepare(`DELETE FROM notifications WHERE user_id = ?`).run(user.id)
+  console.log(`[알림] 전체삭제 — user:${user.id}(${user.name})`)
+  return c.json({ success: true })
+})
+```
+
+**3. `public/static/app.js` — clearNotifHistory() API 호출로 수정**
+```javascript
+// [BUG-023] 메모리만 삭제 → API 호출 후 메모리/UI 갱신으로 수정
+async function clearNotifHistory() {
+  try {
+    await API.delete('/notifications/clear-all')
+  } catch (e) {
+    toast('알림 삭제 중 오류가 발생했습니다.', 'error')
+    return
+  }
+  _notifHistory.length = 0
+  _unreadCount = 0
+  updateNotifBadge()
+  renderNotifPanel()
+}
+```
+
+### ⚠️ 재발 방지 규칙
+- **UI에서 "삭제" 동작은 반드시 서버 API 호출 포함** — 메모리/UI만 바꾸는 것은 임시처리
+- 새 API 엔드포인트 추가 시: `src/routes/` (Cloudflare용) + `node-server.ts` (NAS용) 동시 추가
+- NAS 전용 라우트는 반드시 `app.route()` 마운트 **앞**에 등록 (RULE-002)
+
+### 변경 파일 (최종)
+| 파일 | 변경 내용 |
+|------|-----------|
+| `src/routes/notifications.ts` | `DELETE /clear-all` 엔드포인트 추가 |
+| `node-server.ts` | NAS 전용 `DELETE /api/notifications/clear-all` 라우트 추가 (RULE-002 준수) + 캐시버전 `v=20260619a` |
+| `public/static/app.js` | `clearNotifHistory()` → async 함수로 변경, API 호출 후 UI 갱신 |
+| `scripts/rollback.sh` | `pre-bug023` 항목 추가 (커밋 `f98fb2e`) |

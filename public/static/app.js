@@ -281,9 +281,9 @@ const MENU_DEFINITIONS = [
   { id:'risk-adhoc',       label:'수시 위험성평가',   icon:'fas fa-bolt',              group:'위험성평가' },
   { id:'hazards',          label:'위험(아차사고)신고',    icon:'fas fa-exclamation-triangle',group:'안전' },
   { id:'work-stops',       label:'작업중지현황',         icon:'fas fa-hand-paper',           group:'안전' },
-  { id:'stats-task',          label:'작업통계',            icon:'fas fa-tasks',              group:'작업안전현황' },
-  { id:'stats-inspection',    label:'현장점검 통계',       icon:'fas fa-clipboard-check',    group:'작업안전현황' },
-  { id:'stats-worker-safety', label:'근로자 안전준수 현황', icon:'fas fa-user-shield',         group:'작업안전현황' },
+  { id:'stats-task',          label:'작업통계',            icon:'fas fa-tasks',              group:'안전현황' },
+  { id:'stats-inspection',    label:'현장점검 통계',       icon:'fas fa-clipboard-check',    group:'안전현황' },
+  { id:'stats-worker-safety', label:'근로자 안전준수 현황', icon:'fas fa-user-shield',         group:'안전현황' },
   { id:'users',            label:'업무중사용자',       icon:'fas fa-id-badge',          group:'사용자관리' },
   { id:'suspended-users',  label:'업무중지사용자',         icon:'fas fa-user-slash',        group:'사용자관리' },
   { id:'sys-user-mgmt',    label:'계정관리',    icon:'fas fa-user-shield',       group:'사용자관리' },
@@ -2013,7 +2013,7 @@ function renderApp() {
   const isWorker   = currentUser.role === 'worker' && myUiRoleForLayout !== 'lgu_plus';
   const isLguPlus  = myUiRoleForLayout === 'lgu_plus';
 
-  // LGU+ 역할: 공사현황·작업관리·현장점검·작업안전현황(stats-*) 열람 전용 고정 권한
+  // LGU+ 역할: 공사현황·작업관리·현장점검·안전현황(stats-*) 열람 전용 고정 권한
   const LGU_PLUS_ALLOWED_MENUS = [
     'dashboard', 'tasks', 'inspections',
     'stats-task', 'stats-inspection', 'stats-worker-safety',
@@ -2044,7 +2044,7 @@ function renderApp() {
     { id:'site-map',    icon:'fas fa-map-marked-alt',       label:'현장위치 지도' },
     { id:'hazards',     icon:'fas fa-exclamation-triangle', label:'위험(아차사고)신고' },
     { divider: true, label: '안전관리' },
-    { id:'stats', icon:'fas fa-chart-bar', label:'작업안전현황', group:'안전관리', children: [
+    { id:'stats', icon:'fas fa-chart-bar', label:'안전현황', group:'안전관리', children: [
       { id:'stats-task',          icon:'fas fa-tasks',          label:'작업통계' },
       { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
       { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
@@ -2091,7 +2091,7 @@ function renderApp() {
     { id:'tasks',       icon:'fas fa-clipboard-list',     label:'작업관리' },
     { id:'inspections', icon:'fas fa-search',             label:'현장점검' },
     { divider: true, label: '안전현황' },
-    { id:'stats', icon:'fas fa-chart-bar', label:'작업안전현황', children: [
+    { id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
       { id:'stats-task',          icon:'fas fa-tasks',          label:'작업통계' },
       { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
       { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
@@ -2161,7 +2161,7 @@ function renderApp() {
           '안전관리':   '#8E72A8',   // 안전관리 통합 그룹 (퍼플)
           '위험성평가': '#8E72A8',   // 연보라 (퍼플 계열)
           '안전':       '#FF349E',   // 연빨강
-          '작업안전현황': '#8E72A8',   // --lgu-purple-l
+          '안전현황': '#8E72A8',   // --lgu-purple-l
           '사용자관리':  '#8E72A8',   // 연파랑
           '시스템':     '#C6C6C6',   // 연그레이
         };
@@ -2720,7 +2720,7 @@ function navigateTodayTasks() {
 function getPageTitle(page) {
   const map = {
     constructions: '공사현황', dashboard: '작업현황', tasks: '작업관리', 'my-tasks': '내 작업목록',
-    inspections: '현장점검', hazards: '위험(아차사고)신고', stats: '작업안전현황',
+    inspections: '현장점검', hazards: '위험(아차사고)신고', stats: '안전현황',
     'stats-task': '작업통계', 'stats-inspection': '현장점검 통계', 'stats-worker-safety': '근로자 안전준수 현황',
     users: '업무중사용자', 'suspended-users': '업무중지사용자', 'my-stats': '내 작업통계', 'hazard-report': '위험신고',
     'admin-settings': '시스템 설정',

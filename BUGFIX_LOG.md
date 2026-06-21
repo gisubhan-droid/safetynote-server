@@ -3351,3 +3351,50 @@ node --check public/static/app.js
 2. **커스텀 행 삭제 버튼**: `<i class="fas fa-times">` 아이콘 — 삭제(✕) 버튼 (정상)
 3. **야간/가공 비해당**: `has_aerial=false` 항목의 가공 체크박스 위치에 `—` 대시 (정상)
 → 이번 수정으로 "—"를 "단가없음"/"기본단가 0원"으로 교체하여 의미 명확화
+
+---
+
+## [BUG-023] 접속일보 로드 실패 — _mkLabelToKey before initialization (2026-06-21)
+
+### 증상
+- 작성 완료된 접속일보 열람(renderSpliceReportForm) 시 화면 로드 실패
+- 에러: `Cannot access '_mkLabelToKey' before initialization`
+
+### 원인
+- 세션51 단가관리 개편 과정에서 `renderWorkReportForm` 내 코드 순서 역전
+  - `const _mkLabelToKey = {}` 선언: 27926번
+  - `_mkLabelToKey` 참조(`customItems` 필터): 27898번
+  - **선언보다 참조가 먼저** → `const` TDZ(Temporal Dead Zone) 에러
+- 잘못된 방어코드 `typeof _mkLabelToKey === 'function'` 도 TDZ를 피하지 못함
+  (`const`는 typeof 체크 시에도 TDZ 안에 있으면 에러 발생)
+
+### 해결 (커밋 `66e5adc`)
+- `_mkLabelToKey` / `mkLabelToKey` 선언 블록을 `customItems` 사용 **앞**으로 이동
+- 잘못된 `typeof _mkLabelToKey === 'function'` 방어코드 제거 → `mkLabelToKey(...)` 직접 호출로 교체
+
+### ⚠️ 재발 방지 규칙
+- `const` / `let` 선언은 **반드시** 첫 사용 앞에 위치시킬 것
+- 대형 함수 내 코드 이동 시 선언-사용 순서 반드시 재확인
+- `typeof 변수 === 'function'` 패턴은 `const`/`let` TDZ를 피하지 못함
+- BUG-001 3단계 (`let` TDZ)와 동일 패턴 — **`var` 사용** 또는 **선언을 앞으로 이동**
+
+---
+
+## [BUG-024] 공량내역 로드 실패 — extrasSnapMap before initialization (2026-06-21)
+
+### 증상
+- 공량내역 메뉴 접근 시 `공량내역 로드 실패: Cannot access 'extrasSnapMap' before initialization`
+
+### 원인
+- `renderFlowReportPage` 내 코드 순서 역전
+  - `_frCacheExtrasSnap = extrasSnapMap` 대입: 25468번
+  - `const extrasSnapMap = {}` 선언: 25486번
+  - **선언보다 18줄 앞**에서 참조 → `const` TDZ 에러
+
+### 해결 (커밋 `66e5adc`)
+- 25468번의 `_frCacheExtrasSnap = extrasSnapMap` 라인 제거
+- `extrasSnapMap` 선언(25486) 직후에 `_frCacheExtrasSnap = extrasSnapMap` 대입 추가
+
+### ⚠️ 재발 방지 규칙
+- BUG-023과 동일: `const` 선언은 사용 앞에 위치
+- `_frCache*` 캐시 등록은 해당 변수 선언 직후에 수행

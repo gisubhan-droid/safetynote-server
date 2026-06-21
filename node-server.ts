@@ -4278,21 +4278,30 @@ app.put('/api/volume-unit-prices', async (c) => {
   const { prices } = await c.req.json()
   if (!Array.isArray(prices)) return c.json({ error: '잘못된 요청' }, 400)
   // 단가 + 공종명 + 단위 함께 업데이트
+  // stmtFull  : 단가·공종명·단위 모두 업데이트
+  // stmtUnit  : 단가·단위만 업데이트 (공종명은 기존값 유지)
+  // stmtPrice : 단가만 업데이트
   const stmtFull  = rawDb.prepare(`UPDATE volume_unit_prices SET unit_price=?, item_label=?, unit=? WHERE item_key=?`)
+  const stmtUnit  = rawDb.prepare(`UPDATE volume_unit_prices SET unit_price=?, unit=? WHERE item_key=?`)
   const stmtPrice = rawDb.prepare(`UPDATE volume_unit_prices SET unit_price=? WHERE item_key=?`)
   const update = rawDb.transaction((list: any[]) => {
     for (const p of list) {
-      if (p.item_label !== undefined || p.unit !== undefined) {
-        // 공종명·단위 포함 전체 업데이트
-        const label = (p.item_label || '').trim() || undefined
-        const unit  = (p.unit || '').trim() || '식'
-        if (label) {
-          stmtFull.run(Number(p.unit_price) || 0, label, unit, p.item_key)
-        } else {
-          stmtPrice.run(Number(p.unit_price) || 0, p.item_key)
-        }
+      const label = (p.item_label || '').trim()
+      const unit  = (p.unit !== undefined) ? ((p.unit || '').trim() || '식') : undefined
+      const price = Number(p.unit_price) || 0
+      if (label && unit !== undefined) {
+        // 공종명 + 단위 둘 다 있음 → 전체 업데이트
+        stmtFull.run(price, label, unit, p.item_key)
+      } else if (unit !== undefined) {
+        // 단위만 있음 (공종명은 기존 유지) → 단가+단위만 업데이트
+        stmtUnit.run(price, unit, p.item_key)
+      } else if (label) {
+        // 공종명만 있음 → stmtFull에 기존 unit 그대로 넣기 위해 조회 후 업데이트
+        const cur = rawDb.prepare(`SELECT unit FROM volume_unit_prices WHERE item_key=?`).get(p.item_key) as any
+        stmtFull.run(price, label, cur?.unit || '식', p.item_key)
       } else {
-        stmtPrice.run(Number(p.unit_price) || 0, p.item_key)
+        // 아무것도 없음 → 단가만 업데이트
+        stmtPrice.run(price, p.item_key)
       }
     }
   })
@@ -5785,13 +5794,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621s">
+  <link rel="stylesheet" href="/static/style.css?v=20260621t">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621s"></script>
+  <script src="/static/app.js?v=20260621t"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621s"></script>
+  <script src="/static/mobile-app.js?v=20260621t"></script>
 </body>
 </html>`)
 })

@@ -30113,7 +30113,7 @@ async function _saveUnitPrices() {
     const k = el.dataset.key;
     if (!dataMap[k]) dataMap[k] = {};
     const v = (el.value || '').trim();
-    if (v) dataMap[k].item_label = v;
+    dataMap[k].item_label = v || undefined;  // 빈값이면 undefined → 서버에서 기존값 유지
   });
   unitInputs.forEach(el => {
     const k = el.dataset.key;

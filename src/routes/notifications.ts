@@ -56,4 +56,17 @@ app.get('/unread-count', async (c) => {
   return c.json({ count: row?.cnt ?? 0 })
 })
 
+// ─── 전체 삭제 ───────────────────────────────────────────────────────────────
+// [BUG-023] 알림센터 전체 삭제 — DB에서 실제 레코드 삭제
+app.delete('/clear-all', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  await c.env.DB.prepare(
+    `DELETE FROM notifications WHERE user_id = ?`
+  ).bind(user.id).run()
+
+  return c.json({ success: true })
+})
+
 export default app

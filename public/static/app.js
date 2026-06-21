@@ -2647,11 +2647,20 @@ function _closeNotifPanelOutside(e) {
 }
 
 /** 알림 히스토리 전체 삭제 */
-function clearNotifHistory() {
-  _notifHistory.length = 0;
-  _unreadCount = 0;
-  updateNotifBadge();
-  renderNotifPanel();
+// [BUG-023] 기존: 메모리(_notifHistory)만 삭제 → 재로그인 시 복원
+// 수정: 서버 DB DELETE 먼저 호출 → 성공 시 메모리/UI 갱신
+async function clearNotifHistory() {
+  try {
+    await API.delete('/notifications/clear-all')
+  } catch (e) {
+    console.warn('[알림] 전체삭제 API 실패:', e)
+    toast('알림 삭제 중 오류가 발생했습니다.', 'error')
+    return
+  }
+  _notifHistory.length = 0
+  _unreadCount = 0
+  updateNotifBadge()
+  renderNotifPanel()
 }
 
 /** 상대 시간 표시 (n초 전, n분 전, n시간 전) */

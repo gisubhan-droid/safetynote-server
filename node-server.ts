@@ -2568,6 +2568,19 @@ app.route('/api/checklist', checklistRoutes)
 app.route('/api/teams', teamRoutes)
 app.route('/api/education', educationRoutes)
 app.route('/api/constructions', constructionRoutes)
+
+// ─── NAS 전용: 알림센터 전체 삭제 ────────────────────────────────────────────
+// [BUG-023] RULE-002 준수 — app.route('/api/notifications') 앞에 등록
+// notifications.ts (Cloudflare용)의 /clear-all 과 동일 기능, NAS rawDb 버전
+app.delete('/api/notifications/clear-all', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  rawDb.prepare(`DELETE FROM notifications WHERE user_id = ?`).run(user.id)
+  console.log(`[알림] 전체삭제 — user:${user.id}(${user.name})`)
+  return c.json({ success: true })
+})
+
 app.route('/api/notifications', notificationRoutes)
 
 // ─── FCM 푸시 알림 API (Phase 2 — FEAT-025-FCM) ───────────────────────────────
@@ -5531,13 +5544,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260618d">
+  <link rel="stylesheet" href="/static/style.css?v=20260619a">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260618d"></script>
+  <script src="/static/app.js?v=20260619a"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260618d"></script>
+  <script src="/static/mobile-app.js?v=20260619a"></script>
 </body>
 </html>`)
 })

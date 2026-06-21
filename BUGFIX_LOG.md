@@ -3283,3 +3283,33 @@ app.delete('/api/constructions/:id', async (c) => {
 ### ⚠️ 재발 방지 규칙
 - 자동부여 번호는 `dataset.autoNo` 플래그로 직접입력과 구분
 - 저장 검증 분기 시 `isAutoNo` 변수 명시적으로 선언 후 사용
+
+---
+
+## [BUG-021] TASK-004 시스템설정 5탭 개편 후 웹 접속 불가 (2026-06-21)
+
+### 증상
+- TASK-004 NAS 적용(`pm2 restart`) 후 웹 페이지 전체 접속 불가
+- 서버는 정상 기동(`pm2 status: online`) 되지만 브라우저에서 화면이 안 열림
+
+### 원인
+- `renderAdminSettingsPage()` 재작성 시 **구버전 HTML 코드 538줄이 JS 파일 내 템플릿 리터럴 밖**에 남음
+- 14860번에서 `container.innerHTML` 백틱이 닫힌 후, 14862~15398번 사이에 구버전 HTML이 그대로 노출
+- HTML 주석(`<!-- 헤더 -->`)이 JS 코드 영역에 위치 → 브라우저 JS 파싱 오류 발생
+- 페이지 JS 전체가 실행 안 되어 화면이 빈 상태로 표시
+
+### 확인 방법
+```bash
+node --check public/static/app.js
+# SyntaxError: HTML comments are not allowed in modules
+# at line 14862: <!-- 헤더 -->
+```
+
+### 해결
+- 14861~15398번 줄 (구버전 HTML 잔해 538줄) `sed -i '14861,15398d'` 로 삭제
+- 커밋: `eccdd25` — fix: TASK-004 renderAdminSettingsPage 구버전 HTML 잔해 제거
+
+### 재발 방지
+- `renderAdminSettingsPage()` 같은 대형 HTML 블록 재작성 시, **기존 함수 전체 범위를 확인 후 교체**할 것
+- 수정 후 반드시 `node --check public/static/app.js` 실행하여 JS 문법 검증
+- 특히 템플릿 리터럴(`` ` ``) 닫는 위치 확인 필수

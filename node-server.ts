@@ -1585,9 +1585,10 @@ function patchSchema() {
   // 서버 시작 시 자동 생성 (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)
   ;(function addPerfIndexes() {
     const idxList: [string, string][] = [
-      // 1. tasks: status + start_date 복합 인덱스 (작업 목록 status/날짜 필터 조회 최적화)
+      // 1. tasks: status + planned_date 복합 인덱스 (작업 목록 status/날짜 필터 조회 최적화)
+      // ※ tasks 테이블에는 start_date 컬럼이 없음 — 올바른 컬럼은 planned_date
       ['idx_tasks_status_date',
-       'CREATE INDEX IF NOT EXISTS idx_tasks_status_date ON tasks(status, start_date)'],
+       'CREATE INDEX IF NOT EXISTS idx_tasks_status_date ON tasks(status, planned_date)'],
       // 2. work_reports: work_date + task_id 복합 인덱스 (일보 날짜 범위 조회 최적화)
       ['idx_work_reports_date',
        'CREATE INDEX IF NOT EXISTS idx_work_reports_date ON work_reports(work_date, task_id)'],

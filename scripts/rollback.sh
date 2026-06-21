@@ -24,6 +24,7 @@ PM2_APP="${PM2_APP:-safetynote}"
 # ╚══════════════════════════════════════════════════════════════╝
 declare -A COMMIT_MAP=(
   # ── 세션 50 (최신) ─────────────────────────────────────────
+  ["s50-hotfix"]="2495d8e"  # ★현재 — patchSchema 구문오류(속도저하) 핫픽스
   ["s50-final"]="700e0f9"  # 세션50 최종 — 공종삭제·접속일보수정·단가불변 3종
   ["s50"]="6a9819d"        # 세션50 중간 — addCableSet DB동적로드 + otherTypes 에러 수정
   ["pre-s50"]="c6050b3"    # 세션50 작업 직전 = 세션49 완료 상태 ★ 안정 복원점
@@ -49,7 +50,8 @@ declare -A COMMIT_MAP=(
 # ║  버전별 설명                                                 ║
 # ╚══════════════════════════════════════════════════════════════╝
 declare -A DESC_MAP=(
-  ["s50-final"]="세션50 최종 — 단가관리공종삭제·접속일보수정·단가불변정책 (캐시 o) ★현재"
+  ["s50-hotfix"]="★현재 — patchSchema 구문오류(서버속도저하) 핫픽스 완료"
+  ["s50-final"]="세션50 최종 — 단가관리공종삭제·접속일보수정·단가불변정책 (캐시 o)"
   ["s50"]="세션50 중간 — addCableSet DB동적로드 + otherTypes 에러 수정 (캐시 n)"
   ["pre-s50"]="세션50 작업 직전 = 세션49 완료 상태 ★ 안정 복원점"
   ["s49"]="세션49 완료 — 공량내역 버그3종·단가관리 공종추가삭제·외선일보 개선"
@@ -82,7 +84,7 @@ print_header() {
 print_versions() {
   echo -e "${BLUE}── 세션별 복원 포인트 (최신순) ──────────────${NC}\n"
 
-  local ORDER=(prev latest s50-final s50 pre-s50 s49 pre-s49 s48 pre-s48 s47 s46 pre-bug023 pre-bug022 pre-bug011-safe)
+  local ORDER=(prev latest s50-hotfix s50-final s50 pre-s50 s49 pre-s49 s48 pre-s48 s47 s46 pre-bug023 pre-bug022 pre-bug011-safe)
   for key in "${ORDER[@]}"; do
     local commit="${COMMIT_MAP[$key]:-?}"
     local desc="${DESC_MAP[$key]:-}"

@@ -377,5 +377,116 @@ export function createSpliceUnitPricesRoutes() {
     return c.json({ ok: true })
   })
 
+  // GET /export — 엑셀(CSV) 다운로드 (sysadmin)
+  r.get('/export', async (c) => {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    const roleUi = dbRoleToUi(user.role, user.position, user.sub_role)
+    if (roleUi !== 'sysadmin') return c.json({ error: '권한 없음' }, 403)
+    const rawDb = getRawDb()
+    const rows = rawDb.prepare(
+      `SELECT item_key, item_label, unit, unit_price, night_price, aerial_price, sort_order FROM splice_unit_prices ORDER BY sort_order`
+    ).all() as any[]
+
+    const BOM = '\uFEFF'
+    const header = '공종키,공종명,단위,기본단가(원),야간추가금액(원),가공추가금액(원),정렬순서'
+    const csvEsc = (v: any) => {
+      const s = String(v ?? '')
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const lines = rows.map(r =>
+      [r.item_key, r.item_label, r.unit ?? '개소',
+       r.unit_price ?? 0, r.night_price ?? 0, r.aerial_price ?? 0, r.sort_order ?? 0
+      ].map(csvEsc).join(',')
+    )
+    const csv = BOM + [header, ...lines].join('\r\n')
+
+    c.header('Content-Type', 'text/csv; charset=utf-8')
+    c.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('접속단가_' + new Date().toISOString().slice(0,10) + '.csv')}`)
+    return c.body(csv)
+  })
+
+  // POST /import — 엑셀(CSV) 일괄 업로드 (sysadmin)
+  r.post('/import', async (c) => {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    const roleUi = dbRoleToUi(user.role, user.position, user.sub_role)
+    if (roleUi !== 'sysadmin') return c.json({ error: '권한 없음' }, 403)
+    const rawDb = getRawDb()
+
+    try {
+      const body = await c.req.text()
+      const text = body.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+      if (lines.length < 2) return c.json({ error: '데이터가 없습니다' }, 400)
+
+      const parseCSVLine = (line: string): string[] => {
+        const result: string[] = []
+        let cur = '', inQ = false
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i]
+          if (ch === '"') {
+            if (inQ && line[i+1] === '"') { cur += '"'; i++ }
+            else inQ = !inQ
+          } else if (ch === ',' && !inQ) {
+            result.push(cur.trim()); cur = ''
+          } else {
+            cur += ch
+          }
+        }
+        result.push(cur.trim())
+        return result
+      }
+
+      const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase())
+      const iKey    = headers.findIndex(h => h.includes('키') || h === 'item_key')
+      const iLabel  = headers.findIndex(h => h.includes('공종명') || h.includes('공종') || h === 'item_label')
+      const iUnit   = headers.findIndex(h => h.includes('단위') || h === 'unit')
+      const iPrice  = headers.findIndex(h => (h.includes('기본단가') || h.includes('단가')) && !h.includes('야간') && !h.includes('가공'))
+      const iNight  = headers.findIndex(h => h.includes('야간'))
+      const iAerial = headers.findIndex(h => h.includes('가공'))
+
+      if (iKey < 0 || iLabel < 0 || iPrice < 0) {
+        return c.json({ error: '필수 컬럼 없음 — 공종키, 공종명, 기본단가(원) 컬럼이 필요합니다' }, 400)
+      }
+
+      const dataLines = lines.slice(1)
+      let upserted = 0, skipped = 0
+
+      const maxSort = (rawDb.prepare(`SELECT MAX(sort_order) AS m FROM splice_unit_prices`).get() as any)?.m || 0
+      const stmtUpsert = rawDb.prepare(`
+        INSERT INTO splice_unit_prices (item_key, item_label, unit, unit_price, night_price, aerial_price, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(item_key) DO UPDATE SET
+          item_label   = excluded.item_label,
+          unit         = COALESCE(excluded.unit, unit),
+          unit_price   = excluded.unit_price,
+          night_price  = excluded.night_price,
+          aerial_price = excluded.aerial_price
+      `)
+
+      const doImport = rawDb.transaction((rows: any[]) => {
+        rows.forEach((cols, idx) => {
+          const key    = (cols[iKey]   || '').trim()
+          const label  = (cols[iLabel] || '').trim()
+          const unit   = iUnit  >= 0 ? (cols[iUnit]  || '').trim() || '개소' : '개소'
+          const price  = Number((cols[iPrice]  || '0').replace(/[^0-9.-]/g, '')) || 0
+          const night  = iNight  >= 0 ? Number((cols[iNight]  || '0').replace(/[^0-9.-]/g, '')) || 0 : 0
+          const aerial = iAerial >= 0 ? Number((cols[iAerial] || '0').replace(/[^0-9.-]/g, '')) || 0 : 0
+          if (!key || !label) { skipped++; return }
+          stmtUpsert.run(key, label, unit, price, night, aerial, maxSort + idx + 1)
+          upserted++
+        })
+      })
+
+      const parsed = dataLines.map(l => parseCSVLine(l))
+      doImport(parsed)
+
+      return c.json({ ok: true, upserted, skipped, total: dataLines.length })
+    } catch (e: any) {
+      return c.json({ error: 'CSV 파싱 실패: ' + e.message }, 400)
+    }
+  })
+
   return r
 }

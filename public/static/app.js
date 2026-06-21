@@ -30143,15 +30143,27 @@ async function renderUnitPricePage(container) {
             </button>
           </div>
         </div>
-        <div class="flex justify-end gap-2 mt-3">
-          <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
-                  class="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-200">
-            <i class="fas fa-undo mr-1"></i>초기화
-          </button>
-          <button onclick="_saveUnitPrices()"
-                  class="bg-pink-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-pink-600">
-            <i class="fas fa-save mr-1"></i>저장
-          </button>
+        <div class="flex flex-wrap justify-between gap-2 mt-3">
+          <div class="flex gap-2">
+            <button onclick="_upExportCsv('cable')"
+                    class="bg-green-50 text-green-700 border border-green-200 rounded-lg px-3 py-2 text-sm hover:bg-green-100 flex items-center gap-1">
+              <i class="fas fa-file-download"></i><span class="hidden sm:inline">엑셀 다운로드</span>
+            </button>
+            <label class="bg-blue-50 text-blue-700 border border-blue-200 rounded-lg px-3 py-2 text-sm hover:bg-blue-100 flex items-center gap-1 cursor-pointer">
+              <i class="fas fa-file-upload"></i><span class="hidden sm:inline">엑셀 업로드</span>
+              <input type="file" accept=".csv,.xlsx,.xls" class="hidden" onchange="_upImportCsv(this,'cable')">
+            </label>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
+                    class="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-200">
+              <i class="fas fa-undo mr-1"></i>초기화
+            </button>
+            <button onclick="_saveUnitPrices()"
+                    class="bg-pink-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-pink-600">
+              <i class="fas fa-save mr-1"></i>저장
+            </button>
+          </div>
         </div>
         <div id="up-msg" class="text-center text-sm hidden mt-2"></div>
       </div>
@@ -30191,15 +30203,27 @@ async function renderUnitPricePage(container) {
             </button>
           </div>
         </div>
-        <div class="flex justify-end gap-2 mt-3">
-          <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
-                  class="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-200">
-            <i class="fas fa-undo mr-1"></i>초기화
-          </button>
-          <button onclick="_saveSpliceUnitPrices()"
-                  class="bg-indigo-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-indigo-600">
-            <i class="fas fa-save mr-1"></i>저장
-          </button>
+        <div class="flex flex-wrap justify-between gap-2 mt-3">
+          <div class="flex gap-2">
+            <button onclick="_upExportCsv('splice')"
+                    class="bg-green-50 text-green-700 border border-green-200 rounded-lg px-3 py-2 text-sm hover:bg-green-100 flex items-center gap-1">
+              <i class="fas fa-file-download"></i><span class="hidden sm:inline">엑셀 다운로드</span>
+            </button>
+            <label class="bg-blue-50 text-blue-700 border border-blue-200 rounded-lg px-3 py-2 text-sm hover:bg-blue-100 flex items-center gap-1 cursor-pointer">
+              <i class="fas fa-file-upload"></i><span class="hidden sm:inline">엑셀 업로드</span>
+              <input type="file" accept=".csv,.xlsx,.xls" class="hidden" onchange="_upImportCsv(this,'splice')">
+            </label>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="renderUnitPricePage(document.getElementById('page-content'))"
+                    class="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-200">
+              <i class="fas fa-undo mr-1"></i>초기화
+            </button>
+            <button onclick="_saveSpliceUnitPrices()"
+                    class="bg-indigo-500 text-white rounded-lg px-4 py-2 text-sm hover:bg-indigo-600">
+              <i class="fas fa-save mr-1"></i>저장
+            </button>
+          </div>
         </div>
         <div id="up-splice-msg" class="text-center text-sm hidden mt-2"></div>
       </div>
@@ -30439,6 +30463,75 @@ async function _saveSpliceUnitPrices() {
     msgEl.className = 'text-center text-sm text-red-600 bg-red-50 rounded-lg py-2';
     msgEl.textContent = '❌ 저장 실패: ' + (e.response?.data?.error || e.message);
     msgEl.classList.remove('hidden');
+  }
+}
+
+// ── 단가 관리 — 엑셀(CSV) 다운로드 ──────────────────────────────────────────
+function _upExportCsv(type) {
+  // 브라우저에서 직접 API 호출하여 CSV 파일 다운로드
+  const token = localStorage.getItem('sn-token') || sessionStorage.getItem('sn-token') || '';
+  const url = type === 'cable'
+    ? '/api/volume-unit-prices/export'
+    : '/api/splice-unit-prices/export';
+  // fetch + blob 방식으로 다운로드 (Authorization 헤더 포함)
+  fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
+    .then(res => {
+      if (!res.ok) throw new Error('다운로드 실패 (' + res.status + ')');
+      const disp = res.headers.get('Content-Disposition') || '';
+      // 파일명 추출
+      let filename = type === 'cable' ? '외선단가.csv' : '접속단가.csv';
+      const matchUtf8 = disp.match(/filename\*=UTF-8''([^;]+)/i);
+      const matchPlain = disp.match(/filename="?([^";]+)"?/i);
+      if (matchUtf8) filename = decodeURIComponent(matchUtf8[1]);
+      else if (matchPlain) filename = matchPlain[1];
+      return res.blob().then(blob => ({ blob, filename }));
+    })
+    .then(({ blob, filename }) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      toast('엑셀 파일을 다운로드했습니다.', 'success');
+    })
+    .catch(e => toast('다운로드 실패: ' + e.message, 'error'));
+}
+
+// ── 단가 관리 — 엑셀(CSV) 업로드 ────────────────────────────────────────────
+async function _upImportCsv(input, type) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  input.value = ''; // 같은 파일 재선택 가능하게 초기화
+
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  if (!['csv'].includes(ext)) {
+    toast('CSV 파일만 업로드 가능합니다.\n엑셀(.xlsx)은 먼저 CSV로 저장 후 업로드해 주세요.', 'error');
+    return;
+  }
+
+  const label = type === 'cable' ? '외선' : '접속';
+  const confirmed = await showConfirmDialog(
+    `${label} 단가 일괄 업로드`,
+    `"${file.name}" 파일을 업로드합니다.\n기존 단가는 공종키 기준으로 덮어씁니다.\n신규 공종키는 새로 추가됩니다.\n\n계속 진행하시겠습니까?`,
+    '업로드', '취소', 'primary'
+  );
+  if (!confirmed) return;
+
+  try {
+    const text = await file.text();
+    const url = type === 'cable'
+      ? '/api/volume-unit-prices/import'
+      : '/api/splice-unit-prices/import';
+    const res = await API.post(url, text, {
+      headers: { 'Content-Type': 'text/csv; charset=utf-8' }
+    });
+    const { upserted, skipped, total } = res.data;
+    toast(`✅ ${label} 단가 업로드 완료\n총 ${total}행 중 ${upserted}행 적용, ${skipped}행 건너뜀`, 'success');
+    // 페이지 새로고침
+    setTimeout(() => renderUnitPricePage(document.getElementById('page-content')), 800);
+  } catch(e) {
+    toast('업로드 실패: ' + (e.response?.data?.error || e.message), 'error');
   }
 }
 

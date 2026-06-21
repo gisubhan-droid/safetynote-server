@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-21 (세션 43)
-> **서버 현재 버전: 872f353** ← 최신 (GitHub)
+> 최종 업데이트: 2026-06-21 (세션 44)
+> **서버 현재 버전: dfff447** ← 최신 (GitHub)
 > **NAS 배포 버전: 503874e** ⚠️ NAS 미적용 (배포 대기)
-> **캐시 버전: v=20260621f**
+> **캐시 버전: v=20260621g**
 > **APK 최신**: v1.4.7 빌드 중 (Run #27752523683)
 > **파일럿 테스트 중** — 발견 버그 일괄 기록 후 처리 예정
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
@@ -2510,6 +2510,35 @@ NAS 로그:
 | 해시 | 내용 |
 |------|------|
 | `872f353` | feat: TASK-006 공사종류 기타(other) 추가 — v=20260621f |
+
+---
+
+## 세션 44 (2026-06-21) — TASK-005 외선작업일보 자산구분 필드 추가
+
+### 수정 내용
+- `public/static/app.js` — 작업 케이블정보 테이블 헤더 2곳에 `자산구분` 열 추가 (케이블종류~공정구분 사이)
+- `public/static/app.js` — `mkCable()` 기존 데이터 렌더링에 `wrc-asset` select 셀 추가 (기존값 selected 반영)
+- `public/static/app.js` — `_wrAddCableSet()` 신규 3행에 `wrc-asset` select 셀 추가
+- `public/static/app.js` — `_wrAddCableRow()` 행 추가 함수에 `wrc-asset` select 셀 추가
+- `public/static/app.js` — `_collectWrData()` 수집 객체에 `asset_type: .wrc-asset 값` 추가
+- `node-server.ts` — `patchSchema` `safeAlter` 로 `asset_type TEXT DEFAULT ''` 컬럼 추가 (기존 DB 자동 마이그레이션)
+- `node-server.ts` — `INSERT INTO work_report_cables` 17컬럼으로 확장 (asset_type 포함)
+- `src/routes/work-reports.ts` — `INSERT INTO work_report_cables` 17컬럼으로 확장 (asset_type 포함)
+- 캐시버전 `v=20260621f` → `v=20260621g`
+
+### DB 마이그레이션 방식
+- `safeAlter` 방식 사용 → 서버 재시작 시 자동으로 `ALTER TABLE work_report_cables ADD COLUMN asset_type TEXT DEFAULT ''` 실행
+- 기존 데이터는 `asset_type = ''` (빈값)으로 유지 (NULL 없음)
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `dfff447` | feat: TASK-005 외선작업일보 케이블정보 자산구분(N-1/N-2) 필드 추가 — v=20260621g |
+
+### 상태
+- ✅ 빌드 성공 (`dist/_worker.js 251.41 kB`)
+- ✅ GitHub 푸시 완료
+- ⚠️ NAS 배포 대기 중 (통합 배포 원칙)
 
 ### 상태
 - ✅ 빌드 성공 (`dist/_worker.js 251.38 kB`)

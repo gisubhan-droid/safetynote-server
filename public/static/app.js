@@ -3367,7 +3367,7 @@ async function _toggleReqNoAuto(checked) {
       if (hint) { hint.textContent = '조회 실패 — 직접 입력하세요'; hint.style.color = '#e53e3e'; }
       const cb = document.getElementById('cReqNoAuto');
       if (cb) cb.checked = false;
-      toast('자동번호 조회 실패', 'error');
+      toast(`자동번호 조회 실패: ${e?.message || '서버 오류'}`, 'error');
     }
   } else {
     // 직접입력 모드 복원
@@ -3427,10 +3427,10 @@ async function showCreateConstructionModal(editId = null) {
               자동부여
             </label>` : ''}
           </label>
-          <input id="cReqNo" class="form-control font-mono" placeholder="############" maxlength="12"
+          <input id="cReqNo" class="form-control font-mono" placeholder="############"
             value="${con.request_no||''}"
             ${editId ? 'readonly style="background:#F3F0F8;color:#888"' : ''}
-            oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,12)">
+            oninput="if(!this.dataset.autoNo) this.value=this.value.replace(/[^0-9]/g,'').slice(0,12)">
           <div id="cReqNoHint" class="text-xs text-gray-400 mt-1">숫자만 12자리 입력 (예: 100158298100)</div>
         </div>
 
@@ -3628,9 +3628,9 @@ async function saveConstruction(editId) {
   const supName  = (document.getElementById('cSupervisor')?.value || '').trim();
   const desc     = (document.getElementById('cDesc')?.value || '').trim();
 
-  if (!editId && !reqNo) { toast('공사요청번호를 입력하세요', 'error'); return; }
-  // 자동부여 모드(dataset.autoNo='1')이면 12자리 숫자 검증 건너뜀
+  // 자동부여 모드(dataset.autoNo='1')이면 빈값·12자리 검증 모두 건너뜀
   const isAutoNo = document.getElementById('cReqNo')?.dataset?.autoNo === '1';
+  if (!editId && !isAutoNo && !reqNo) { toast('공사요청번호를 입력하세요', 'error'); return; }
   if (!editId && !isAutoNo && reqNo.length !== 12) { toast('공사요청번호는 숫자 12자리여야 합니다', 'error'); return; }
   if (!workClass) { toast('공사종류를 선택하세요', 'error'); return; }
   if (!title) { toast('공사명을 입력하세요', 'error'); return; }

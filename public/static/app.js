@@ -5520,8 +5520,9 @@ async function deleteTask(id) {
   try {
     await API.delete(`/tasks/${id}`);
     toast('작업이 삭제되었습니다.');
-    document.querySelector('.modal-overlay')?.remove();
-    renderTasksPage(document.getElementById('page-content'));
+    document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
+    const pc = document.getElementById('page-content');
+    if (pc) renderTasksPage(pc);
   } catch(e) {
     toast(e.response?.data?.error || '삭제 실패', 'error');
   }
@@ -6184,8 +6185,20 @@ async function showTaskDetail(id, openTbmTab) {
         </div>` : ''}
 
         <!-- 작업 진행 버튼 -->
-        <div class="mt-4 flex flex-wrap gap-2">
-          ${getTaskActionButtons(task, isWorker)}
+        <div class="mt-4">
+          <!-- [TASK-006] 삭제 버튼: 관리자/감독자 전용, 좌측 배치 -->
+          ${!isWorker ? `
+          <div class="mb-2">
+            <button onclick="deleteTask(${task.id})"
+              class="btn font-bold"
+              style="background:white;color:#e53e3e;border:1.5px solid #e53e3e;font-size:0.8rem;padding:5px 14px">
+              <i class="fas fa-trash-alt mr-1"></i> 작업 삭제
+            </button>
+          </div>` : ''}
+          <!-- 워크플로우 액션 버튼 -->
+          <div class="flex flex-wrap gap-2">
+            ${getTaskActionButtons(task, isWorker)}
+          </div>
         </div>
       </div>
 

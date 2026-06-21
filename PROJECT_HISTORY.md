@@ -2544,3 +2544,32 @@ NAS 로그:
 - ✅ 빌드 성공 (`dist/_worker.js 251.38 kB`)
 - ✅ GitHub 푸시 완료
 - ⚠️ NAS 배포 대기 중 (통합 배포 원칙)
+
+---
+
+## 세션 45 (2026-06-21) — TASK-004 시스템설정 5탭 방식으로 개편
+
+### 수정 내용
+- `public/static/app.js` — `renderAdminSettingsPage()` 전체를 5탭 구조로 재작성
+  - **탭 구성**: push(푸시알림발송) / files(파일설정) / gps(GPS주소변환) / apk(APK배포관리) / info(정보)
+  - `_activeTab` 파라미터로 새로고침 시 마지막 탭 유지
+  - 탭별 비동기 로드 분리: push → `_loadFcmStatus()`, info → `_loadDbResetCounts()`
+  - 탭 네비게이션 ID 패턴: `stab-{key}` (버튼) / `spanel-{key}` (패널)
+  - CSS 클래스: `settings-main-tab` (버튼) / `settings-panel` (패널)
+- `public/static/app.js` — `switchSettingsTab(key)` 함수 신규 추가
+  - 탭 전환 + 활성 스타일 반영 + 비동기 데이터 로드
+- `node-server.ts` — 캐시버전 `v=20260621g` → `v=20260621h`
+
+### UX 개선 목적
+- 기존: 항목이 많아 세로 스크롤이 길어지는 문제
+- 개선: 5개 탭으로 분리하여 각 탭에서 관련 설정만 표시
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `9fe3661` | feat: TASK-004 시스템설정 5탭 방식으로 개편 — v=20260621h |
+
+### 상태
+- ✅ 빌드 성공 (`dist/_worker.js 251.41 kB`)
+- ✅ GitHub 푸시 완료 (`c0234bc` → `9fe3661`)
+- ⚠️ NAS 배포 대기 중 (통합 배포 원칙)

@@ -3337,28 +3337,32 @@ async function requestSettleComplete(conId) {
 }
 
 // ─── [TASK-003] 공사요청번호 자동부여 토글 ────────────────────────────────────
+// ─── [TASK-003] 공사요청번호 자동부여 토글 ─────────────────────────────────
+// 형식: YYMMDDhhmm## (12자리 순수숫자, 기존 검증 그대로 통과)
+// YY=년 MM=월 DD=일 hh=시 mm=분 ##=당일 순번(01~)
 async function _toggleReqNoAuto(checked) {
   const input = document.getElementById('cReqNo');
   const hint  = document.getElementById('cReqNoHint');
   if (!input) return;
 
   if (checked) {
-    // 자동번호 모드: 오늘 날짜 기준 KST 순번 조회
     input.readOnly = true;
     input.style.background = '#F3F0F8';
     input.style.color = '#888';
     input.value = '조회 중…';
-    if (hint) { hint.textContent = '자동 부여 번호 (AT_YY.MM.DD_##)'; hint.style.color = '#685182'; }
+    if (hint) { hint.textContent = '자동 부여 번호 (YYMMDDhhmm##, 12자리)'; hint.style.color = '#685182'; }
     try {
-      // KST 날짜 계산
-      const now = new Date(Date.now() + 9 * 60 * 60 * 1000); // UTC+9
+      // KST 날짜·시각 계산 (UTC+9)
+      const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
       const yy = String(now.getUTCFullYear()).slice(-2);
-      const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+      const mo = String(now.getUTCMonth() + 1).padStart(2, '0');
       const dd = String(now.getUTCDate()).padStart(2, '0');
-      const dateParam = `${yy}.${mm}.${dd}`;
-      const res = await API.get(`/constructions/request-no-seq?date=${encodeURIComponent(dateParam)}`);
-      input.value = res.data?.next_no ?? '';
-      input.dataset.autoNo = '1';
+      const hh = String(now.getUTCHours()).padStart(2, '0');
+      const mi = String(now.getUTCMinutes()).padStart(2, '0');
+      const dateParam = `${yy}${mo}${dd}${hh}${mi}`; // ex: 2606211435
+      const res = await API.get(`/constructions/request-no-seq?date=${dateParam}`);
+      const nextNo = res.data?.next_no ?? '';
+      input.value = nextNo;
     } catch(e) {
       input.value = '';
       input.readOnly = false;
@@ -3375,7 +3379,6 @@ async function _toggleReqNoAuto(checked) {
     input.style.background = '';
     input.style.color = '';
     input.value = '';
-    input.dataset.autoNo = '';
     if (hint) { hint.textContent = '숫자만 12자리 입력 (예: 100158298100)'; hint.style.color = ''; }
   }
 }
@@ -3430,7 +3433,7 @@ async function showCreateConstructionModal(editId = null) {
           <input id="cReqNo" class="form-control font-mono" placeholder="############"
             value="${con.request_no||''}"
             ${editId ? 'readonly style="background:#F3F0F8;color:#888"' : ''}
-            oninput="if(!this.dataset.autoNo) this.value=this.value.replace(/[^0-9]/g,'').slice(0,12)">
+            oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,12)">
           <div id="cReqNoHint" class="text-xs text-gray-400 mt-1">숫자만 12자리 입력 (예: 100158298100)</div>
         </div>
 
@@ -3628,10 +3631,9 @@ async function saveConstruction(editId) {
   const supName  = (document.getElementById('cSupervisor')?.value || '').trim();
   const desc     = (document.getElementById('cDesc')?.value || '').trim();
 
-  // 자동부여 모드(dataset.autoNo='1')이면 빈값·12자리 검증 모두 건너뜀
-  const isAutoNo = document.getElementById('cReqNo')?.dataset?.autoNo === '1';
-  if (!editId && !isAutoNo && !reqNo) { toast('공사요청번호를 입력하세요', 'error'); return; }
-  if (!editId && !isAutoNo && reqNo.length !== 12) { toast('공사요청번호는 숫자 12자리여야 합니다', 'error'); return; }
+  // 자동부여 모드는 YYMMDDhhmm## = 12자리 숫자이므로 기존 검증 그대로 통과
+  if (!editId && !reqNo) { toast('공사요청번호를 입력하세요', 'error'); return; }
+  if (!editId && reqNo.length !== 12) { toast('공사요청번호는 숫자 12자리여야 합니다', 'error'); return; }
   if (!workClass) { toast('공사종류를 선택하세요', 'error'); return; }
   if (!title) { toast('공사명을 입력하세요', 'error'); return; }
 

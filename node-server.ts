@@ -2569,24 +2569,26 @@ app.route('/api/teams', teamRoutes)
 app.route('/api/education', educationRoutes)
 
 // ─── NAS 전용: 공사요청번호 자동생성 순번 조회 ───────────────────────────────
-// [TASK-003] GET /api/constructions/request-no-seq?date=YYMMDD
-// KST 기준 당일 LM_YY.MM.DD_## 형식 다음 순번 반환
+// [TASK-003] GET /api/constructions/request-no-seq?date=YYMMDDhhmm
+// 형식: YYMMDDhhmm## (12자리 순수 숫자, 기존 검증 그대로 통과)
+// date 파라미터: YYMMDDhhmm (10자리, KST 기준 클라이언트에서 전달)
 app.get('/api/constructions/request-no-seq', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  // date 파라미터: YYMMDD (ex: 260619) — 클라이언트(KST)에서 전달
-  const dateParam = c.req.query('date') // ex: "26.06.19"
-  if (!dateParam) return c.json({ error: 'date 파라미터 필요' }, 400)
+  const dateParam = c.req.query('date') // ex: "2606211435" (YYMMDDhhmm)
+  if (!dateParam || dateParam.length !== 10) {
+    return c.json({ error: 'date 파라미터 필요 (YYMMDDhhmm 10자리)' }, 400)
+  }
 
-  // LM_YY.MM.DD_ 로 시작하는 건수 조회
-  const prefix = `AT_${dateParam}_`
+  // 동일 YYMMDDhhmm prefix 로 시작하는 건수 조회
+  const prefix = dateParam // ex: "2606211435"
   const row = rawDb.prepare(
     `SELECT COUNT(*) as cnt FROM constructions WHERE request_no LIKE ?`
   ).get(`${prefix}%`) as any
 
   const nextSeq = String((row?.cnt ?? 0) + 1).padStart(2, '0')
-  const nextNo = `${prefix}${nextSeq}`
+  const nextNo = `${prefix}${nextSeq}` // ex: "260621143501"
 
   return c.json({ next_no: nextNo, seq: nextSeq, prefix })
 })
@@ -5593,13 +5595,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621c">
+  <link rel="stylesheet" href="/static/style.css?v=20260621d">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621c"></script>
+  <script src="/static/app.js?v=20260621d"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621c"></script>
+  <script src="/static/mobile-app.js?v=20260621d"></script>
 </body>
 </html>`)
 })

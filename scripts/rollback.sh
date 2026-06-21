@@ -24,7 +24,8 @@ PM2_APP="${PM2_APP:-safetynote}"
 # ╚══════════════════════════════════════════════════════════════╝
 declare -A COMMIT_MAP=(
   # ── 세션 51 (최신) ─────────────────────────────────────────
-  ["s51-fix"]="66e5adc"   # ★현재 — TDZ 에러 2종 수정 (접속일보/공량내역) (캐시 r)
+  ["s51-fix2"]="2e174b1"  # ★현재 — 외선 단가관리 컬럼 순서 수정 (공종|단가|단위, 캐시 s)
+  ["s51-fix"]="66e5adc"   # 세션51 bugfix — TDZ 에러 2종 수정 (접속일보/공량내역) (캐시 r)
   ["s51"]="605afae"    # 세션51 — 단가관리 공종명·단위 인라인 수정 기능 추가 (캐시 q)
   ["pre-s51"]="757cd24" # 세션51 작업 직전 = 세션50-hotfix 완료 상태 ★ 안정 복원점
   # ── 세션 50 ─────────────────────────────────────────────────
@@ -54,7 +55,8 @@ declare -A COMMIT_MAP=(
 # ║  버전별 설명                                                 ║
 # ╚══════════════════════════════════════════════════════════════╝
 declare -A DESC_MAP=(
-  ["s51-fix"]="★현재 — TDZ 에러 2종 수정: 접속일보 _mkLabelToKey + 공량내역 extrasSnapMap (캐시 r)"
+  ["s51-fix2"]="★현재 — 외선 단가관리 컬럼 순서 공종|단가|단위 + 단위 개별수정 (캐시 s)"
+  ["s51-fix"]="세션51 bugfix — TDZ 에러 2종 수정: 접속일보 _mkLabelToKey + 공량내역 extrasSnapMap (캐시 r)"
   ["s51"]="세션51 — 단가관리 공종명·단위 인라인 수정 기능 + 외선 단위 컬럼 추가 (캐시 q)"
   ["pre-s51"]="세션51 작업 직전 = 세션50-hotfix 완료 상태 ★ 안정 복원점"
   ["s50-hotfix"]="세션50 핫픽스 — patchSchema 구문오류(서버속도저하) 수정 완료"
@@ -91,12 +93,12 @@ print_header() {
 print_versions() {
   echo -e "${BLUE}── 세션별 복원 포인트 (최신순) ──────────────${NC}\n"
 
-  local ORDER=(prev latest s51-fix s51 pre-s51 s50-hotfix s50-final s50 pre-s50 s49 pre-s49 s48 pre-s48 s47 s46 pre-bug023 pre-bug022 pre-bug011-safe)
+  local ORDER=(prev latest s51-fix2 s51-fix s51 pre-s51 s50-hotfix s50-final s50 pre-s50 s49 pre-s49 s48 pre-s48 s47 s46 pre-bug023 pre-bug022 pre-bug011-safe)
   for key in "${ORDER[@]}"; do
     local commit="${COMMIT_MAP[$key]:-?}"
     local desc="${DESC_MAP[$key]:-}"
     # 주요 복원점 강조
-    if [[ "$key" == "prev" || "$key" == "pre-s51" || "$key" == "pre-s50" || "$key" == "pre-s49" ]]; then
+    if [[ "$key" == "prev" || "$key" == "pre-s51" || "$key" == "pre-s50" || "$key" == "pre-s49" || "$key" == "s51-fix" ]]; then
       echo -e "  ${GREEN}★ ${YELLOW}${key}${NC}"
     else
       echo -e "  ${YELLOW}  ${key}${NC}"

@@ -25465,7 +25465,7 @@ async function renderFieldReportPage(container) {
     const priceMap = {};
     unitPrices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
     const isWorker = currentUser && currentUser.role === 'worker';
-    _frCacheRows = rows; _frCacheExtras = extras; _frCacheExtrasSnap = extrasSnapMap;
+    _frCacheRows = rows; _frCacheExtras = extras;
     _frCachePriceMap = priceMap; _frCacheIsWorker = isWorker;
 
     const frYears = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
@@ -25484,6 +25484,8 @@ async function renderFieldReportPage(container) {
 
     const extrasMap = {};     // report_id → { item_key: qty }
     const extrasSnapMap = {}; // report_id → { item_key: unit_price_snapshot } (단가 불변 정책)
+    // ⚠️ extrasSnapMap 선언 직후 캐시 등록 (TDZ 방지 — BUGFIX BUG-023)
+    _frCacheExtrasSnap = extrasSnapMap;
     extras.forEach(ex => {
       if (!extrasMap[ex.report_id])     extrasMap[ex.report_id]     = {};
       if (!extrasSnapMap[ex.report_id]) extrasSnapMap[ex.report_id] = {};
@@ -27888,15 +27890,25 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     const savedMap = {};
     savedItems.forEach(it => { savedMap[it.work_label] = it; });
 
+    // ── label → DB item_key 변환 (mkItemRow / customItems 전용) ─────────────
+    // SPLICE_ITEMS_DEF 역방향 맵 우선 적용 → 폴백: 공백/슬래시 제거
+    // '광커넥터 현장조립/취부' → '광커넥터현장조립'  (DB key 정확 일치)
+    // '광탭 결합/고정 작업'   → '광탭결합고정'       (DB key 정확 일치)
+    // 'FTTH 레벨 측정시험'    → 'FTTH레벨측정'       (DB key 정확 일치)
+    // ⚠️ 반드시 customItems 사용 앞에 선언 (TDZ 방지 — BUGFIX BUG-023)
+    const _mkLabelToKey = {};
+    (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
+      _mkLabelToKey[d.label] = d.key;
+    });
+    const mkLabelToKey = lbl => _mkLabelToKey[lbl] || lbl.replace(/ /g,'').replace(/\//g,'');
+
     // ── DB 공종 목록 기반으로 행 생성 (SPLICE_ITEMS_DEF 하드코딩 대신 DB 사용) ──
     // dbSpliceItems: splice_unit_prices 전체 (sort_order 순)
     // 야간/가공 체크박스: night_price > 0 또는 aerial_price > 0 이면 활성 (항상 표시, 값 있으면 강조)
     const dbItemKeys = new Set(dbSpliceItems.map(p => p.item_key));
     // 저장된 아이템 중 DB에 없는 것 = 커스텀 항목
     const customItems = savedItems.filter(it =>
-      !dbItemKeys.has(it.work_label) && !dbItemKeys.has(
-        (typeof _mkLabelToKey === 'function' ? _mkLabelToKey : (l => l))(it.work_label)
-      )
+      !dbItemKeys.has(it.work_label) && !dbItemKeys.has(mkLabelToKey(it.work_label))
     );
 
     // ── 단가 미리보기 계산 헬퍼 (함체작업 전용 — 야간/가공 추가금액 합산) ──
@@ -27917,17 +27929,6 @@ async function renderSpliceReportForm(container, reportId, taskId) {
       return `<span class="text-indigo-700 font-semibold">${label}</span>`
            + (parts.length > 1 ? `<br><span class="text-gray-400" style="font-size:10px">(${parts.join(', ')})</span>` : '');
     };
-
-    // ── label → DB item_key 변환 (mkItemRow 전용) ──────────────────────────
-    // SPLICE_ITEMS_DEF 역방향 맵 우선 적용 → 폴백: 공백/슬래시 제거
-    // '광커넥터 현장조립/취부' → '광커넥터현장조립'  (DB key 정확 일치)
-    // '광탭 결합/고정 작업'   → '광탭결합고정'       (DB key 정확 일치)
-    // 'FTTH 레벨 측정시험'    → 'FTTH레벨측정'       (DB key 정확 일치)
-    const _mkLabelToKey = {};
-    (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
-      _mkLabelToKey[d.label] = d.key;
-    });
-    const mkLabelToKey = lbl => _mkLabelToKey[lbl] || lbl.replace(/ /g,'').replace(/\//g,'');
 
     const mkItemRow = (label, unit, has_aerial, saved) => {
       const night  = saved?.is_night  ? 'checked' : '';

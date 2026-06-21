@@ -161,7 +161,7 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 
 ---
 
-## [BUG-002] 사진 탭 그룹 표시 미반영 (미해결, 2026-06)
+## [BUG-002] 사진 탭 그룹 표시 미반영 ✅ 완료 (2026-06-17, `b245c84`)
 
 ### 증상
 - `photo_type + caption` 기준 2단계 그룹 표시가 실제 앱에서 미반영
@@ -173,7 +173,9 @@ const blocked = attendees.length > 0 ? unsignedList.length > 0 : sigs.length ===
 - `public/static/app.js` — 사진 탭 UI (photo_type+caption 2단계 그룹핑)
 
 ### 상태
-- **미해결** — 별도 세션에서 재수정 필요
+- ~~**미해결** — 별도 세션에서 재수정 필요~~
+- ✅ **완료** — 커밋 `b245c84` (2026-06-17) 에서 최종 수정 완료
+- 상세 내용은 하단 **[BUG-002] 사진 탭 그룹 표시 미반영 — 최종 수정** 항목 참조
 
 ---
 

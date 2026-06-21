@@ -1620,7 +1620,9 @@ function patchSchema() {
     console.log('[patchSchema v0.137] work_report_extras.unit_price_snapshot 컬럼 추가 완료')
   } catch(e: any) {
     if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.137]', e.message)
-  } (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)
+  }
+
+  // 서버 시작 시 자동 생성 (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)
   ;(function addPerfIndexes() {
     const idxList: [string, string][] = [
       // 1. tasks: status + planned_date 복합 인덱스 (작업 목록 status/날짜 필터 조회 최적화)

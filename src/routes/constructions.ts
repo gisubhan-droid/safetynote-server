@@ -385,4 +385,34 @@ app.post('/:id/settle-complete', async (c) => {
   }
 })
 
+// ─── [TASK-001] 공사 삭제 ────────────────────────────────────────────────────
+// 연결된 tasks 존재 시 409 차단
+app.delete('/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
+
+  try {
+    // 연결 작업 존재 여부 확인
+    const linked = await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ?`
+    ).bind(id).first<any>()
+    if ((linked?.cnt ?? 0) > 0) {
+      return c.json({
+        error: `연결된 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 삭제하거나 연결을 해제해 주세요.`
+      }, 409)
+    }
+
+    const con = await c.env.DB.prepare(`SELECT id, title FROM constructions WHERE id = ?`).bind(id).first<any>()
+    if (!con) return c.json({ error: '공사 없음' }, 404)
+
+    await c.env.DB.prepare(`DELETE FROM constructions WHERE id = ?`).bind(id).run()
+    return c.json({ success: true, message: `"${con.title}" 공사가 삭제되었습니다.` })
+  } catch (e: any) {
+    return c.json({ error: e.message || '삭제 실패' }, 500)
+  }
+})
+
 export default app

@@ -3240,7 +3240,16 @@ async function showConstructionDetail(conId) {
       </div>
     </div>
     <!-- 하단 버튼 -->
-    <div class="modal-footer flex justify-end">
+    <div class="modal-footer flex justify-between">
+      <!-- 좌: 삭제 버튼 -->
+      <div>
+        <button onclick="deleteConstruction(${conId})"
+          class="btn font-bold"
+          style="background:white;color:#e53e3e;border:1.5px solid #e53e3e">
+          <i class="fas fa-trash-alt mr-1"></i> 삭제
+        </button>
+      </div>
+      <!-- 우: 수정 + 상태 버튼 -->
       <div class="flex gap-2">
         <button onclick="showEditConstructionModal(${conId})" class="btn btn-secondary">
           <i class="fas fa-edit"></i> 수정
@@ -3263,8 +3272,8 @@ async function showConstructionDetail(conId) {
               <i class="fas fa-file-invoice-dollar mr-1"></i> 정산요청
             </button>`
         }
-      </div>
-    </div>`;
+      </div>  <!-- /.flex.gap-2 우측 -->
+    </div>  <!-- /.modal-footer -->`;
   } catch(e) {
     overlay.querySelector('.modal').innerHTML = `<div class="p-8 text-center text-red-500">불러오기 실패</div>`;
   }
@@ -3327,6 +3336,50 @@ async function requestSettleComplete(conId) {
   }
 }
 
+// ─── [TASK-003] 공사요청번호 자동부여 토글 ────────────────────────────────────
+async function _toggleReqNoAuto(checked) {
+  const input = document.getElementById('cReqNo');
+  const hint  = document.getElementById('cReqNoHint');
+  if (!input) return;
+
+  if (checked) {
+    // 자동번호 모드: 오늘 날짜 기준 KST 순번 조회
+    input.readOnly = true;
+    input.style.background = '#F3F0F8';
+    input.style.color = '#888';
+    input.value = '조회 중…';
+    if (hint) { hint.textContent = '자동 부여 번호 (LM_YY.MM.DD_##)'; hint.style.color = '#685182'; }
+    try {
+      // KST 날짜 계산
+      const now = new Date(Date.now() + 9 * 60 * 60 * 1000); // UTC+9
+      const yy = String(now.getUTCFullYear()).slice(-2);
+      const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(now.getUTCDate()).padStart(2, '0');
+      const dateParam = `${yy}.${mm}.${dd}`;
+      const res = await API.get(`/constructions/request-no-seq?date=${encodeURIComponent(dateParam)}`);
+      input.value = res.next_no ?? '';
+      input.dataset.autoNo = '1';
+    } catch(e) {
+      input.value = '';
+      input.readOnly = false;
+      input.style.background = '';
+      input.style.color = '';
+      if (hint) { hint.textContent = '조회 실패 — 직접 입력하세요'; hint.style.color = '#e53e3e'; }
+      const cb = document.getElementById('cReqNoAuto');
+      if (cb) cb.checked = false;
+      toast('자동번호 조회 실패', 'error');
+    }
+  } else {
+    // 직접입력 모드 복원
+    input.readOnly = false;
+    input.style.background = '';
+    input.style.color = '';
+    input.value = '';
+    input.dataset.autoNo = '';
+    if (hint) { hint.textContent = '숫자만 12자리 입력 (예: 100158298100)'; hint.style.color = ''; }
+  }
+}
+
 // ─── 공사 등록/수정 모달 ────────────────────────────────────────────────────
 async function showCreateConstructionModal(editId = null) {
   let con = {};
@@ -3364,15 +3417,21 @@ async function showCreateConstructionModal(editId = null) {
 
         <!-- ① 공사요청번호 -->
         <div class="form-group">
-          <label class="form-label">
-            <i class="fas fa-hashtag mr-1" style="color:#685182"></i>
-            공사요청번호 <span class="text-red-500">*</span>
+          <label class="form-label" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span>
+              <i class="fas fa-hashtag mr-1" style="color:#685182"></i>
+              공사요청번호 <span class="text-red-500">*</span>
+            </span>
+            ${!editId ? `<label style="display:inline-flex;align-items:center;gap:4px;font-weight:normal;font-size:0.78rem;color:#685182;cursor:pointer;margin-left:4px">
+              <input type="checkbox" id="cReqNoAuto" onchange="_toggleReqNoAuto(this.checked)" style="width:14px;height:14px;accent-color:#685182">
+              자동부여
+            </label>` : ''}
           </label>
           <input id="cReqNo" class="form-control font-mono" placeholder="############" maxlength="12"
             value="${con.request_no||''}"
             ${editId ? 'readonly style="background:#F3F0F8;color:#888"' : ''}
             oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,12)">
-          <div class="text-xs text-gray-400 mt-1">숫자만 12자리 입력 (예: 100158298100)</div>
+          <div id="cReqNoHint" class="text-xs text-gray-400 mt-1">숫자만 12자리 입력 (예: 100158298100)</div>
         </div>
 
         <!-- ② 작업번호 -->
@@ -3570,7 +3629,9 @@ async function saveConstruction(editId) {
   const desc     = (document.getElementById('cDesc')?.value || '').trim();
 
   if (!editId && !reqNo) { toast('공사요청번호를 입력하세요', 'error'); return; }
-  if (!editId && reqNo.length !== 12) { toast('공사요청번호는 숫자 12자리여야 합니다', 'error'); return; }
+  // 자동부여 모드(dataset.autoNo='1')이면 12자리 숫자 검증 건너뜀
+  const isAutoNo = document.getElementById('cReqNo')?.dataset?.autoNo === '1';
+  if (!editId && !isAutoNo && reqNo.length !== 12) { toast('공사요청번호는 숫자 12자리여야 합니다', 'error'); return; }
   if (!workClass) { toast('공사종류를 선택하세요', 'error'); return; }
   if (!title) { toast('공사명을 입력하세요', 'error'); return; }
 
@@ -3600,6 +3661,25 @@ async function showEditConstructionModal(conId) {
   await showCreateConstructionModal(conId);
 }
 
+// ─── [TASK-001] 공사 삭제 ────────────────────────────────────────────────────
+async function deleteConstruction(conId) {
+  const ok = await showConfirmDialog(
+    '공사 삭제',
+    '이 공사를 삭제하면 복구할 수 없습니다.<br>정말 삭제하시겠습니까?',
+    '삭제', '취소', 'danger'
+  );
+  if (!ok) return;
+  try {
+    await API.delete(`/constructions/${conId}`);
+    toast('공사가 삭제되었습니다.', 'success');
+    document.getElementById('conDetailOverlay')?.remove();
+    if (document.getElementById('page-content')) renderConstructionsPage(document.getElementById('page-content'));
+  } catch(e) {
+    const msg = e?.response?.data?.error || '삭제 실패';
+    toast(msg, 'error', 4000);
+  }
+}
+
 // ─── 공사 상세에서 작업 등록 (공사 정보 자동 연동) ───────────────────────────
 async function showCreateTaskFromConstruction(con) {
   // con 객체가 문자열인 경우 파싱
@@ -3623,6 +3703,8 @@ async function showCreateTaskFromConstruction(con) {
   }
 
   document.getElementById('conDetailOverlay')?.remove();
+  // [TASK-002] 공사 상세에서 작업 생성 시 완료 후 공사 상세로 복귀하도록 con._fromConId 전달
+  con._fromConId = con.id;
   await showCreateTaskModal(null, con);
 }
 
@@ -4819,7 +4901,13 @@ async function createTask() {
 
     toast('작업이 등록되었습니다.');
     document.querySelector('.modal-overlay')?.remove();
-    renderTasksPage(document.getElementById('page-content'));
+    // [TASK-002] 공사 상세에서 작업 생성한 경우 → 공사 상세로 복귀
+    // 일반 작업관리에서 생성한 경우 → 작업관리 목록으로 이동
+    if (data.construction_id && presetConstruction?._fromConId) {
+      showConstructionDetail(presetConstruction._fromConId);
+    } else {
+      renderTasksPage(document.getElementById('page-content'));
+    }
   }
 
   try {

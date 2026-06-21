@@ -2567,6 +2567,55 @@ app.route('/api/worklogs', worklogRoutes)
 app.route('/api/checklist', checklistRoutes)
 app.route('/api/teams', teamRoutes)
 app.route('/api/education', educationRoutes)
+
+// ─── NAS 전용: 공사요청번호 자동생성 순번 조회 ───────────────────────────────
+// [TASK-003] GET /api/constructions/request-no-seq?date=YYMMDD
+// KST 기준 당일 LM_YY.MM.DD_## 형식 다음 순번 반환
+app.get('/api/constructions/request-no-seq', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  // date 파라미터: YYMMDD (ex: 260619) — 클라이언트(KST)에서 전달
+  const dateParam = c.req.query('date') // ex: "26.06.19"
+  if (!dateParam) return c.json({ error: 'date 파라미터 필요' }, 400)
+
+  // LM_YY.MM.DD_ 로 시작하는 건수 조회
+  const prefix = `LM_${dateParam}_`
+  const row = rawDb.prepare(
+    `SELECT COUNT(*) as cnt FROM constructions WHERE request_no LIKE ?`
+  ).get(`${prefix}%`) as any
+
+  const nextSeq = String((row?.cnt ?? 0) + 1).padStart(2, '0')
+  const nextNo = `${prefix}${nextSeq}`
+
+  return c.json({ next_no: nextNo, seq: nextSeq, prefix })
+})
+
+// ─── NAS 전용: 공사 삭제 ────────────────────────────────────────────────────
+// [TASK-001] RULE-002 준수 — app.route('/api/constructions') 마운트 앞에 등록
+// 연결된 tasks 존재 시 차단
+app.delete('/api/constructions/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const id = parseInt(c.req.param('id'))
+  if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
+
+  // 연결 작업 존재 여부 확인 (차단 조건)
+  const linked = rawDb.prepare(
+    `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ?`
+  ).get(id) as any
+  if ((linked?.cnt ?? 0) > 0) {
+    return c.json({ error: `연결된 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 삭제하거나 연결을 해제해 주세요.` }, 409)
+  }
+
+  const con = rawDb.prepare(`SELECT id, title FROM constructions WHERE id = ?`).get(id) as any
+  if (!con) return c.json({ error: '공사 없음' }, 404)
+
+  rawDb.prepare(`DELETE FROM constructions WHERE id = ?`).run(id)
+  return c.json({ success: true, message: `"${con.title}" 공사가 삭제되었습니다.` })
+})
+
 app.route('/api/constructions', constructionRoutes)
 
 // ─── NAS 전용: 알림센터 전체 삭제 ────────────────────────────────────────────
@@ -5544,13 +5593,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260619a">
+  <link rel="stylesheet" href="/static/style.css?v=20260621a">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260619a"></script>
+  <script src="/static/app.js?v=20260621a"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260619a"></script>
+  <script src="/static/mobile-app.js?v=20260621a"></script>
 </body>
 </html>`)
 })

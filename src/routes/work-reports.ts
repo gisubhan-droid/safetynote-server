@@ -135,15 +135,16 @@ app.post('/', async (c) => {
           await db.prepare(`
             INSERT INTO work_report_cables
               (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,
-               start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark,asset_type)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
           `).bind(
             reportId, cableOrder++,
             cb.lot_no||'', cb.spec||'', cb.maker||'', cb.mfg_year||'',
             '', '',
             sp, ep, cb.usage_m||0,
             cb.cable_kind||'', '', '',
-            cb.proc||'', cb.remark||''
+            cb.proc||'', cb.remark||'',
+            cb.asset_type||''
           ).run()
         }
         console.log(`[work-reports D1 POST] cables 저장 완료: reportId=${reportId}, 저장행수=${cableOrder}/${body.cables.length}`)

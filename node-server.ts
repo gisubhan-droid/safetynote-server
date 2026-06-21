@@ -1340,6 +1340,8 @@ function patchSchema() {
     // spec 컬럼이 REAL이면 '1C','12C' 같은 문자열이 0으로 저장됨 → TEXT로 재생성
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN proc TEXT DEFAULT ''`)
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN remark TEXT DEFAULT ''`)
+    // ── TASK-005: 자산구분 컬럼 추가 ──────────────────────────────────────────
+    safeAlter(`ALTER TABLE work_report_cables ADD COLUMN asset_type TEXT DEFAULT ''`)
     // spec 컬럼 타입 확인 후 REAL이면 테이블 재생성 (데이터 보존)
     try {
       const cablesDDL = (rawDb.prepare(`SELECT sql FROM sqlite_master WHERE name='work_report_cables'`).get() as any)?.sql || ''
@@ -4287,12 +4289,12 @@ app.post('/api/work-reports', async (c) => {
     if (Array.isArray(body.cables) && body.cables.length > 0) {
       try {
         rawDb.prepare(`DELETE FROM work_report_cables WHERE report_id=?`).run(reportId)
-        // proc/remark 포함 16컬럼 INSERT
+        // proc/remark/asset_type 포함 17컬럼 INSERT
         const cableStmt = rawDb.prepare(`
           INSERT INTO work_report_cables
             (report_id,cable_order,lot_no,spec,maker,mfg_year,cable_type,work_div,
-             start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+             start_point,end_point,usage_m,cable_kind,cable_code,special_note,proc,remark,asset_type)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
         let cableOrder = 0
         let skipCount  = 0
         for (let i = 0; i < body.cables.length; i++) {
@@ -4317,7 +4319,8 @@ app.post('/api/work-reports', async (c) => {
             sp, ep,
             cb.usage_m||0,
             cb.cable_kind||'', '', '',  // cable_kind, cable_code, special_note
-            cb.proc||'', cb.remark||''
+            cb.proc||'', cb.remark||'',
+            cb.asset_type||''           // TASK-005: 자산구분
           )
         }
         console.log(`[WR-POST] cables 저장: reportId=${reportId}, 저장=${cableOrder}행, 스킵=${skipCount}행`)
@@ -5595,13 +5598,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621f">
+  <link rel="stylesheet" href="/static/style.css?v=20260621g">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621f"></script>
+  <script src="/static/app.js?v=20260621g"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621f"></script>
+  <script src="/static/mobile-app.js?v=20260621g"></script>
 </body>
 </html>`)
 })

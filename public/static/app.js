@@ -26949,6 +26949,7 @@ async function renderWorkReportForm(container, taskId) {
       <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.maker||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS.replace(`value="${cb.mfg_year||''}"`,`value="${cb.mfg_year||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS.replace(`value="${cb.cable_kind||''}"`,`value="${cb.cable_kind||''}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-asset"><option value="">자산구분</option><option value="N-1" ${(cb.asset_type||'')==='N-1'?'selected':''}>N-1</option><option value="N-2" ${(cb.asset_type||'')==='N-2'?'selected':''}>N-2</option></select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS.replace(`value="${cb.proc||''}"`,`value="${cb.proc||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${cb.start_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
       <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${cb.end_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
@@ -26994,6 +26995,7 @@ async function renderWorkReportForm(container, taskId) {
                   <th class="border border-gray-200 px-1 py-1.5 w-16">제조사</th>
                   <th class="border border-gray-200 px-1 py-1.5 w-18">제작년도</th>
                   <th class="border border-gray-200 px-1 py-1.5 w-36">케이블종류</th>
+                  <th class="border border-gray-200 px-1 py-1.5 w-16">자산구분</th>
                   <th class="border border-gray-200 px-1 py-1.5 w-20">공정구분</th>
                   <th class="border border-gray-200 px-1 py-1.5 w-18">시작점<br><span class="font-normal text-gray-400">(M)</span></th>
                   <th class="border border-gray-200 px-1 py-1.5 w-18">종단점<br><span class="font-normal text-gray-400">(M)</span></th>
@@ -27193,6 +27195,7 @@ function _wrAddCableSet() {
       <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS2}</select></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-asset"><option value="">자산구분</option><option value="N-1">N-1</option><option value="N-2">N-2</option></select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS}</select></td>
       <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
       <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
@@ -27226,6 +27229,7 @@ function _wrAddCableSet() {
               <th class="border border-gray-200 px-1 py-1.5 w-16">제조사</th>
               <th class="border border-gray-200 px-1 py-1.5 w-18">제작년도</th>
               <th class="border border-gray-200 px-1 py-1.5 w-36">케이블종류</th>
+              <th class="border border-gray-200 px-1 py-1.5 w-16">자산구분</th>
               <th class="border border-gray-200 px-1 py-1.5 w-20">공정구분</th>
               <th class="border border-gray-200 px-1 py-1.5 w-18">시작점<br><span class="font-normal text-gray-400">(M)</span></th>
               <th class="border border-gray-200 px-1 py-1.5 w-18">종단점<br><span class="font-normal text-gray-400">(M)</span></th>
@@ -27317,6 +27321,7 @@ function _wrAddCableRow(tbodyId) {
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS3}</select></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-asset"><option value="">자산구분</option><option value="N-1">N-1</option><option value="N-2">N-2</option></select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS3}</select></td>
     <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
     <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
@@ -27417,6 +27422,7 @@ function _collectWrData(taskId) {
           maker:       tr.querySelector('.wrc-maker')?.value || '',
           mfg_year:    tr.querySelector('.wrc-mfg-year')?.value || '',
           cable_kind:  tr.querySelector('.wrc-kind')?.value || '',   // DB: cable_kind
+          asset_type:  tr.querySelector('.wrc-asset')?.value || '',  // DB: asset_type
           proc:        tr.querySelector('.wrc-proc')?.value || '',
           start_point: spRaw !== '' && spRaw != null ? parseInt(spRaw) : null,
           end_point:   epRaw !== '' && epRaw != null ? parseInt(epRaw) : null,

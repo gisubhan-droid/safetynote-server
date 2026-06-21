@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-21 (세션 40)
-> **서버 현재 버전: e346cee** ← 최신 (GitHub)
-> **NAS 배포 버전: bc020c8** ✅ 최신 적용 완료
-> **캐시 버전: v=20260621e**
+> 최종 업데이트: 2026-06-21 (세션 43)
+> **서버 현재 버전: 872f353** ← 최신 (GitHub)
+> **NAS 배포 버전: 503874e** ⚠️ NAS 미적용 (배포 대기)
+> **캐시 버전: v=20260621f**
 > **APK 최신**: v1.4.7 빌드 중 (Run #27752523683)
 > **파일럿 테스트 중** — 발견 버그 일괄 기록 후 처리 예정
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
@@ -2494,3 +2494,24 @@ NAS 로그:
 | 해시 | 내용 |
 |------|------|
 | `e346cee` | feat: 작업 상세 팝업에 삭제 버튼 추가 (관리자/감독자 전용) |
+
+---
+
+## 세션 43 (2026-06-21) — TASK-006 공사종류 "기타" 추가
+
+### 수정 내용
+- `public/static/app.js` — 공사 등록/수정 `<select>` 옵션에 `<option value="other">기타</option>` 추가
+- `public/static/app.js` — `WC_LABEL` 객체에 `other: '기타'` 추가
+- `public/static/app.js` — `_WC_LABEL_STATIC` 객체에 `other: '기타'` 추가
+- `src/routes/constructions.ts` — `VALID_WORK_CLASS`(POST), `VALID_WORK_CLASS_PUT`(PUT) 두 곳에 `'other'` 추가
+- `node-server.ts` — 캐시버전 `v=20260621e` → `v=20260621f`
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `872f353` | feat: TASK-006 공사종류 기타(other) 추가 — v=20260621f |
+
+### 상태
+- ✅ 빌드 성공 (`dist/_worker.js 251.38 kB`)
+- ✅ GitHub 푸시 완료
+- ⚠️ NAS 배포 대기 중 (통합 배포 원칙)

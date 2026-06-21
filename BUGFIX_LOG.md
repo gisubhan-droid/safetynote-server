@@ -3398,3 +3398,49 @@ node --check public/static/app.js
 ### ⚠️ 재발 방지 규칙
 - BUG-023과 동일: `const` 선언은 사용 앞에 위치
 - `_frCache*` 캐시 등록은 해당 변수 선언 직후에 수행
+
+---
+
+## [BUG-025] 외선 단가관리 단위 수정 저장 안 됨 (2026-06-21)
+
+### 증상
+- 단가관리 외선 탭에서 단위 셀 클릭 → 값 수정 → 저장 클릭
+- "✅ 저장되었습니다" 메시지 표시됨
+- 하지만 페이지 새로고침 시 단위가 원래 값으로 돌아옴
+
+### 원인 (2단계 복합)
+
+#### 1단계: node-server.ts PUT API 분기 오류
+```typescript
+// 기존 코드 (잘못됨)
+const label = (p.item_label || '').trim() || undefined
+if (label) {
+  stmtFull.run(price, label, unit, p.item_key)  // 공종명+단위 저장
+} else {
+  stmtPrice.run(price, p.item_key)  // ← 단가만! unit 무시
+}
+```
+`item_label`이 없으면(undefined) 무조건 `stmtPrice`(단가만)로 빠짐 → unit 변경사항 버려짐
+
+#### 2단계: app.js _saveUnitPrices() labelInputs 수집 오류
+```javascript
+// 기존 코드 (잘못됨)
+const v = (el.value || '').trim();
+if (v) dataMap[k].item_label = v;  // ← 빈값이면 item_label 자체를 dataMap에서 제외
+```
+공종명을 수정하지 않으면 `item_label = undefined` → 서버에서 1단계 조건 진입 → unit 무시
+
+### 해결 (커밋 `2d00b56`)
+**node-server.ts**: `stmtUnit` 추가 (단가+단위만 업데이트, 공종명 기존값 유지)
+- `label O + unit O` → `stmtFull` (전체 업데이트)
+- `label X + unit O` → `stmtUnit` (단가+단위, 공종명 기존값 유지)
+- `label O + unit X` → DB에서 기존 unit 조회 후 `stmtFull`
+- `label X + unit X` → `stmtPrice` (단가만)
+
+**app.js**: `labelInputs` 수집 시 빈값도 `undefined`로 명시 전송
+→ 서버에서 `unit !== undefined` 조건으로 단위 저장 여부 판단 가능
+
+### ⚠️ 재발 방지 규칙
+- 복합 조건 UPDATE 분기: 각 필드의 **존재 여부(undefined 체크)**와 **빈값 여부**를 분리하여 처리
+- `item_label`이 없어도 `unit`이 있으면 반드시 unit 저장 경로로 진입해야 함
+- 프론트엔드에서 "현재값 유지" 의도를 서버에 명확히 전달할 것 (undefined vs 빈string 구분)

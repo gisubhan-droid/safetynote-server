@@ -27193,7 +27193,6 @@ async function renderWorkReportForm(container, taskId) {
     </div>`;
 
     // 전역 상태 저장
-    window._wrOtherTypes      = otherTypes;
     window._wrReportId        = reportId;
     window._wrTaskId          = taskId;
     window._wrExtraItemsCache = extraItems;  // 공종별 작업량 항목 캐시 (addCableSet에서 사용)

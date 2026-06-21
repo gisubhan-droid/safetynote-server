@@ -1623,9 +1623,11 @@ function patchSchema() {
       '조가선신설':'M', '커넥터취부':'개', '조가선 철거':'M', '전주 건식':'본',
       '전주 철거':'본', 'B 형접지(대지)':'건', 'A 형접지(대지)':'건', '지선신설':'건',
       '전주세움':'본', '가요전선관':'M', '내관포설':'M', '완금설치 (한전주)':'식',
-      '단순1':'본', '단순1-2':'경간', '단순2':'경간',
+      '단순1':'본', '단순2':'경간',
       'cable_new':'M', 'cable_remove':'M', 'cable_move':'M'
     }
+    // '단순1-2' 키는 esbuild 파싱 오류 방지를 위해 별도 처리
+    unitMap['단순1-2'] = '경간'
     const updUnit = rawDb.prepare(`UPDATE volume_unit_prices SET unit=? WHERE item_key=? AND (unit IS NULL OR unit='식')`)
     for (const [k, u] of Object.entries(unitMap)) updUnit.run(u, k)
   } catch(e: any) {

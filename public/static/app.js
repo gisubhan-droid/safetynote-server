@@ -21815,15 +21815,6 @@ async function renderSignatureRequestsPage(container) {
   }
 }
 
-function _srSwitchTab(tab, el) {
-  // 이전 탭 정의 (signed → done으로 변경)
-  document.querySelectorAll('#sr-panel-pending,#sr-panel-done,#sr-panel-signed').forEach(p => p.classList.add('hidden'));
-  document.querySelectorAll('#srtab-pending,#srtab-done,#srtab-signed').forEach(t => t.classList.remove('active'));
-  const panel = document.getElementById(`sr-panel-${tab}`);
-  if (panel) panel.classList.remove('hidden');
-  el.classList.add('active');
-}
-
 // 서명 실행 (서명 패드 → API PATCH)
 async function _signReqSign(reqId, refType, refId) {
   const typeLabel = { tbm:'TBM 서명', risk_assessment:'위험성평가 서명', education:'안전교육 서명' }[refType] || '서명';

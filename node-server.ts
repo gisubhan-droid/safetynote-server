@@ -146,6 +146,19 @@ const rawDb = new Database(DB_FILE)
 rawDb.pragma('journal_mode = WAL')
 rawDb.pragma('foreign_keys = ON')
 
+// ─── SQLite 성능 최적화 pragma (장기 운영 대응) ────────────────────────
+// synchronous = NORMAL: WAL 모드에서 안전하고 FULL 대비 2~3x 빠름
+rawDb.pragma('synchronous = NORMAL')
+// cache_size = -32000: 32MB 메모리 캐시 (기본 2MB → 16x, 음수=KB 단위)
+rawDb.pragma('cache_size = -32000')
+// temp_store = MEMORY: 정렬/집계 임시 데이터를 디스크 대신 메모리에 저장
+rawDb.pragma('temp_store = MEMORY')
+// mmap_size = 256MB: 대용량 읽기 시 mmap으로 OS 캐시 활용 (읽기 성능 향상)
+rawDb.pragma('mmap_size = 268435456')
+// busy_timeout = 5000ms: 잠금 대기 시간 (동시 접근 시 SQLITE_BUSY 방지)
+rawDb.pragma('busy_timeout = 5000')
+console.log('[DB] pragma 최적화 적용 완료 (WAL+NORMAL+32MB캐시+mmap256MB+busy5s)')
+
 // ─── 자동 스키마 패치 (마이그레이션 누락분 보완) ──────────────────────
 ;(function autoMigrate() {
   // 테이블별 컬럼 목록 조회 헬퍼
@@ -1567,6 +1580,40 @@ function patchSchema() {
     if (!e.message?.includes('duplicate column'))
       console.warn('[patchSchema v0.134]', e.message)
   }
+
+  // ── 성능 인덱스 추가 (장기 운영 대응 — 중복 생성 무시) ──────────────────────
+  // 서버 시작 시 자동 생성 (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)
+  ;(function addPerfIndexes() {
+    const idxList: [string, string][] = [
+      // 1. tasks: status + start_date 복합 인덱스 (작업 목록 status/날짜 필터 조회 최적화)
+      ['idx_tasks_status_date',
+       'CREATE INDEX IF NOT EXISTS idx_tasks_status_date ON tasks(status, start_date)'],
+      // 2. work_reports: work_date + task_id 복합 인덱스 (일보 날짜 범위 조회 최적화)
+      ['idx_work_reports_date',
+       'CREATE INDEX IF NOT EXISTS idx_work_reports_date ON work_reports(work_date, task_id)'],
+      // 3. tbm_records: task_id + created_at 복합 인덱스 (작업별 TBM 목록 조회 최적화)
+      ['idx_tbm_records_task',
+       'CREATE INDEX IF NOT EXISTS idx_tbm_records_task ON tbm_records(task_id, created_at)'],
+      // 4. notifications: user_id + is_read + created_at 복합 인덱스 (미읽음 알림 조회 최적화)
+      ['idx_notifications_user_read',
+       'CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at)'],
+      // 5. signature_requests: target_user_id + status 복합 인덱스 (서명 대기 건수 배지 조회 최적화)
+      ['idx_sig_req_target_status',
+       'CREATE INDEX IF NOT EXISTS idx_sig_req_target_status ON signature_requests(target_user_id, status)'],
+    ]
+    let added = 0
+    for (const [name, sql] of idxList) {
+      try {
+        rawDb.exec(sql)
+        added++
+      } catch(e: any) {
+        // 이미 존재하거나 테이블 없는 경우 조용히 무시 (운영 중 안전)
+        if (!e.message?.includes('already exists') && !e.message?.includes('no such table'))
+          console.warn(`[patchSchema] 인덱스 ${name} 생성 실패:`, e.message)
+      }
+    }
+    console.log(`[patchSchema] 성능 인덱스 ${added}/${idxList.length}개 적용 완료`)
+  })()
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)
@@ -5598,13 +5645,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621h">
+  <link rel="stylesheet" href="/static/style.css?v=20260621i">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621h"></script>
+  <script src="/static/app.js?v=20260621i"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621h"></script>
+  <script src="/static/mobile-app.js?v=20260621i"></script>
 </body>
 </html>`)
 })

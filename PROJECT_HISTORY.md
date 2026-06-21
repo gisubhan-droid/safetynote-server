@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-21 (세션 44)
-> **서버 현재 버전: dfff447** ← 최신 (GitHub)
-> **NAS 배포 버전: 503874e** ⚠️ NAS 미적용 (배포 대기)
-> **캐시 버전: v=20260621g**
+> 최종 업데이트: 2026-06-21 (세션 47)
+> **서버 현재 버전: 커밋 예정 (세션 47)** ← 최신 (GitHub)
+> **NAS 배포 버전: d2b1823** ⚠️ NAS 미적용 (배포 대기)
+> **캐시 버전: v=20260621i**
 > **APK 최신**: v1.4.7 빌드 중 (Run #27752523683)
 > **파일럿 테스트 중** — 발견 버그 일괄 기록 후 처리 예정
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
@@ -2572,4 +2572,47 @@ NAS 로그:
 ### 상태
 - ✅ 빌드 성공 (`dist/_worker.js 251.41 kB`)
 - ✅ GitHub 푸시 완료 (`c0234bc` → `9fe3661`)
+- ⚠️ NAS 배포 대기 중 (통합 배포 원칙)
+
+---
+
+## 세션 47 (2026-06-21) — 즉시 적용 최적화 (pragma + 인덱스 + 버그수정)
+
+### 수정 내용
+
+#### 1. SQLite pragma 최적화 적용 (node-server.ts)
+- `synchronous = NORMAL` — WAL 모드에서 안전하고 FULL 대비 2~3x 빠름
+- `cache_size = -32000` — 32MB 메모리 캐시 (기본 2MB 대비 16x 향상)
+- `temp_store = MEMORY` — 정렬/집계 임시 데이터 메모리 처리
+- `mmap_size = 268435456` — 256MB mmap으로 대용량 읽기 최적화
+- `busy_timeout = 5000` — 동시 접근 시 SQLITE_BUSY 방지 (5초 대기)
+
+#### 2. 성능 인덱스 5개 추가 (patchSchema 내 자동 생성)
+- `idx_tasks_status_date` — tasks(status, start_date): 작업 목록 필터 조회
+- `idx_work_reports_date` — work_reports(work_date, task_id): 일보 날짜 범위 조회
+- `idx_tbm_records_task` — tbm_records(task_id, created_at): 작업별 TBM 목록
+- `idx_notifications_user_read` — notifications(user_id, is_read, created_at): 미읽음 알림
+- `idx_sig_req_target_status` — signature_requests(target_user_id, status): 서명 배지 건수
+
+#### 3. app.js 중복 함수 제거 (버그 수정)
+- `_srSwitchTab(tab, el)` 구버전 함수 (21818번) 제거 — 신버전(27714번)과 중복
+- 원인: 서명요청 페이지 리팩토링 시 구버전 함수 잔류
+- `node --check public/static/app.js` → ✅ 문법 오류 없음
+
+#### 4. 캐시 버전 갱신
+- `v=20260621h` → `v=20260621i`
+
+#### 5. 장기 운영 종합 권고사항 문서 작성 (docs/OPERATIONS_GUIDE.md)
+- 727줄 — 데이터/DB/유지보수/기능추가/백업/보안/운영 전반
+- 주간·월간·연간 체크리스트 포함
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `3e8349f` | docs: 세션 47 — 장기 운영 종합 권고사항(OPERATIONS_GUIDE.md) 작성 |
+| (예정) | perf: pragma 최적화 + 인덱스 5개 추가 + _srSwitchTab 중복 제거 — v=20260621i |
+
+### 상태
+- ✅ 빌드 성공 (`dist/_worker.js 251.41 kB`)
+- ✅ node --check 통과
 - ⚠️ NAS 배포 대기 중 (통합 배포 원칙)

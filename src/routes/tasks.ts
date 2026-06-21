@@ -48,7 +48,12 @@ app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const { status, date, start_date, end_date, worker_id, supervisor_id, risk_level, search_type, keyword } = c.req.query()
+  const { status, date, start_date, end_date, worker_id, supervisor_id, risk_level, search_type, keyword,
+          page: pageStr, limit: limitStr } = c.req.query()
+  // 페이지네이션 파라미터 (기본: limit=0 → 전체, limit>0 → 페이징)
+  const limitNum = Math.min(500, Math.max(0, parseInt(limitStr || '0') || 0))
+  const pageNum  = Math.max(1, parseInt(pageStr  || '1') || 1)
+  const offset   = limitNum > 0 ? (pageNum - 1) * limitNum : 0
   let query = `SELECT t.*, COALESCE(t.work_class_new, t.work_class, 'cable_install') as work_class, wc.name as category_name, wt.name as work_type_name,
     u.name as supervisor_name, cb.name as created_by_name,
     t.construction_type, t.request_no, t.contractor_name,
@@ -110,6 +115,18 @@ app.get('/', async (c) => {
 
   if (wheres.length) query += ' WHERE ' + wheres.join(' AND ')
   query += ' ORDER BY t.planned_date DESC, t.created_at DESC'
+
+  // 전체 건수 (페이지네이션용) — limitNum > 0 일 때만 COUNT 조회
+  let total: number | undefined
+  if (limitNum > 0) {
+    // COUNT 쿼리: SELECT * → COUNT(*) 로 교체 (같은 WHERE/JOIN 조건 재사용)
+    const countQuery = query
+      .replace(/SELECT t\.\*.*?FROM tasks t/is, 'SELECT COUNT(*) AS cnt FROM tasks t')
+    const countResult = await c.env.DB.prepare(countQuery).bind(...params).first<any>()
+    total = countResult?.cnt ?? 0
+    query += ` LIMIT ? OFFSET ?`
+    params.push(limitNum, offset)
+  }
 
   const result = await c.env.DB.prepare(query).bind(...params).all<any>()
   const tasks = result.results || []
@@ -184,7 +201,7 @@ app.get('/', async (c) => {
     }
   }
 
-  return c.json({ tasks })
+  return c.json({ tasks, ...(total !== undefined ? { total, page: pageNum, limit: limitNum } : {}) })
 })
 
 // 미배정 작업 목록 (작업자 직접 선택용) - /:id 보다 먼저 등록

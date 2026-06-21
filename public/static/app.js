@@ -4122,6 +4122,8 @@ function _getDashPeriodRange() {
 
 // 작업관리 현재 데이터 캐시 (정렬/엑셀용)
 let _taskListData = [];
+let _taskListTotal = 0;        // 전체 건수 (페이지네이션용)
+const TASK_PAGE_LIMIT = 50;    // 페이지당 건수
 
 async function renderTasksPage(container) {
   try {
@@ -4133,8 +4135,18 @@ async function renderTasksPage(container) {
       ...(taskFilters.keyword                            ? { keyword:     taskFilters.keyword, search_type: taskFilters.search_type } : {}),
       ...(taskFilters.date                               ? { date:        taskFilters.date                                      } : {}),
       ...(taskFilters.start_date && taskFilters.end_date ? { start_date:  taskFilters.start_date, end_date: taskFilters.end_date } : {}),
+      limit: TASK_PAGE_LIMIT,
+      page:  taskFilters.page || 1,
     } });
-    _taskListData = tasksRes.data.tasks || tasksRes.data || [];
+    const newTasks = tasksRes.data.tasks || tasksRes.data || [];
+    _taskListTotal = tasksRes.data.total ?? newTasks.length;
+
+    // 1페이지면 초기화, 추가 페이지면 누적
+    if ((taskFilters.page || 1) === 1) {
+      _taskListData = newTasks;
+    } else {
+      _taskListData = [..._taskListData, ...newTasks];
+    }
 
     // 팀 정보: tasks 응답의 team_name 필드 직접 사용 (teams API 별도 호출 불필요)
     function getTaskTeam(t) {
@@ -4364,7 +4376,7 @@ async function renderTasksPage(container) {
           class="btn btn-outline text-xs" style="flex-shrink:0;padding:0 10px">
           <i class="fas fa-times mr-1"></i>검색 초기화
         </button>` : ''}
-        <span class="text-xs text-gray-400 ml-auto">총 ${_taskListData.length}건</span>
+        <span class="text-xs text-gray-400 ml-auto">총 ${_taskListTotal || _taskListData.length}건 중 ${_taskListData.length}건 표시</span>
       </div>
 
       <!-- 카드 그리드 (모바일 2열) -->
@@ -4372,6 +4384,23 @@ async function renderTasksPage(container) {
            style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:4px 0">
         ${renderCards(_taskListData)}
       </div>
+
+      <!-- 더 보기 버튼 -->
+      ${_taskListData.length < (_taskListTotal || _taskListData.length) ? `
+      <div class="flex justify-center mt-4">
+        <button id="taskLoadMoreBtn" onclick="
+          taskFilters.page = (taskFilters.page || 1) + 1;
+          const btn = document.getElementById('taskLoadMoreBtn');
+          if (btn) { btn.disabled = true; btn.innerHTML = '<i class=\"fas fa-spinner fa-spin mr-1\"></i>불러오는 중...'; }
+          renderTasksPage(document.getElementById('page-content'));
+        " class="btn btn-outline text-sm px-6 py-2" style="border-radius:20px">
+          <i class="fas fa-chevron-down mr-1"></i>
+          더 보기 (${_taskListTotal - _taskListData.length}건 남음)
+        </button>
+      </div>` : (_taskListTotal > TASK_PAGE_LIMIT ? `
+      <div class="text-center mt-3 text-xs text-gray-400">
+        <i class="fas fa-check-circle mr-1"></i>전체 ${_taskListTotal}건 모두 표시됨
+      </div>` : '')}
     </div>`;
   } catch(e) {
     container.innerHTML = `<p class="text-red-500 p-4">로드 실패: ${e.message}</p>`;

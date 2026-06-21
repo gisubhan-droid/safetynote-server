@@ -4541,7 +4541,12 @@ app.post('/api/work-reports/:reportId/other-works', async (c) => {
 app.get('/api/splice-reports', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { from_date, to_date } = c.req.query()
+  const { from_date, to_date, page: pageStr, limit: limitStr } = c.req.query()
+
+  // 페이지네이션 파라미터 (기본: limit=0 → 전체)
+  const limitNum = Math.min(500, Math.max(0, parseInt(limitStr || '0') || 0))
+  const pageNum  = Math.max(1, parseInt(pageStr  || '1') || 1)
+  const offset   = limitNum > 0 ? (pageNum - 1) * limitNum : 0
 
   // ── 필터 조건 (splice_reports 단독, JOIN 없이) ────────────────────
   let where = `WHERE 1=1`
@@ -4555,15 +4560,26 @@ app.get('/api/splice-reports', async (c) => {
   }
 
   let rows: any[] = []
+  let total: number | undefined
   try {
+    // 전체 건수 (페이지네이션용)
+    if (limitNum > 0) {
+      const countRow = rawDb.prepare(
+        `SELECT COUNT(*) AS cnt FROM splice_reports sr ${where}`
+      ).get(...params) as any
+      total = countRow?.cnt ?? 0
+    }
+
     // ① splice_reports 단독 조회 (JOIN 없이 — 항상 안전)
+    const pageClause = limitNum > 0 ? ` LIMIT ? OFFSET ?` : ''
+    const pageParams = limitNum > 0 ? [...params, limitNum, offset] : params
     rows = rawDb.prepare(`
       SELECT sr.*,
              (SELECT COUNT(*) FROM splice_work_items WHERE report_id=sr.id AND qty>0) AS item_count
       FROM splice_reports sr
       ${where}
-      ORDER BY sr.work_date DESC, sr.id DESC
-    `).all(...params)
+      ORDER BY sr.work_date DESC, sr.id DESC${pageClause}
+    `).all(...pageParams)
   } catch(e: any) {
     console.error('[GET /api/splice-reports] 단순 조회 에러:', e.message)
     return c.json({ error: 'DB 조회 실패: ' + e.message }, 500)
@@ -4588,7 +4604,7 @@ app.get('/api/splice-reports', async (c) => {
     }
   }
 
-  return c.json({ reports: rows })
+  return c.json({ reports: rows, ...(total !== undefined ? { total, page: pageNum, limit: limitNum } : {}) })
 })
 
 // GET /api/splice-reports/stats — 공량내역/물량통계 (접속탭)
@@ -5980,13 +5996,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260621x">
+  <link rel="stylesheet" href="/static/style.css?v=20260621y">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260621x"></script>
+  <script src="/static/app.js?v=20260621y"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260621x"></script>
+  <script src="/static/mobile-app.js?v=20260621y"></script>
 </body>
 </html>`)
 })
@@ -6026,6 +6042,95 @@ loadSystemSettings(DB).then(() => {
   console.log(`[설정] 업로드 루트: ${getUploadRoot()}`)
   console.log(`[설정] 폴더 구조: {공사요청번호}_{공사명}/{서브번호}_{작업일}_{작업종류}/01~05단계`)
 })
+
+// ─── 자동 DB 백업 & 오래된 알림 정리 ────────────────────────────────────────
+// 1) 오래된 알림 자동 정리 (90일 초과 삭제) — 서버 시작 시 1회 + 매일 자정
+function pruneOldNotifications() {
+  try {
+    const res = rawDb.prepare(
+      `DELETE FROM notifications WHERE created_at < datetime('now', '-90 days')`
+    ).run()
+    if (res.changes > 0)
+      console.log(`[자동정리] 오래된 알림 ${res.changes}건 삭제 완료`)
+  } catch(e: any) {
+    console.warn('[자동정리] 알림 정리 실패(무시):', e.message)
+  }
+}
+pruneOldNotifications()
+setInterval(pruneOldNotifications, 24 * 60 * 60 * 1000) // 매 24시간
+
+// 2) 자동 DB 백업 — 매일 새벽 2시, 30일 보관
+function scheduleDailyBackup() {
+  const now   = new Date()
+  const next  = new Date(now)
+  next.setDate(now.getDate() + (now.getHours() >= 2 ? 1 : 0))
+  next.setHours(2, 0, 0, 0)                     // 다음 새벽 2:00:00
+  const delay = next.getTime() - now.getTime()
+
+  setTimeout(async () => {
+    await runDailyBackup()
+    setInterval(runDailyBackup, 24 * 60 * 60 * 1000) // 이후 매 24시간
+  }, delay)
+
+  const h = Math.floor(delay / 3600000)
+  const m = Math.floor((delay % 3600000) / 60000)
+  console.log(`[백업] 다음 자동 백업 예약: ${h}시간 ${m}분 후 (새벽 2:00)`)
+}
+
+async function runDailyBackup() {
+  try {
+    const backupDir = join(__dirname, 'backups')
+    mkdirSync(backupDir, { recursive: true })
+
+    const stamp   = new Date().toISOString().slice(0, 10).replace(/-/g, '') // YYYYMMDD
+    const dbSrc   = DB_FILE
+    const destPath = join(backupDir, `safety_${stamp}.db`)
+
+    // 오늘 백업이 이미 있으면 건너뜀
+    if (existsSync(destPath)) {
+      console.log(`[백업] 오늘 백업 이미 존재: safety_${stamp}.db — 건너뜀`)
+      pruneOldBackups(backupDir)
+      return
+    }
+
+    // WAL 체크포인트 후 복사 (데이터 일관성 보장)
+    try { rawDb.pragma('wal_checkpoint(TRUNCATE)') } catch(_) {}
+    const res = await runCmd('cp', [dbSrc, destPath], __dirname, 15000)
+    if (res.code === 0) {
+      console.log(`[백업] ✅ 자동 백업 완료: backups/safety_${stamp}.db`)
+    } else {
+      console.error(`[백업] ❌ 백업 실패:`, res.stderr.trim())
+    }
+
+    // 30일 초과 백업 자동 삭제
+    pruneOldBackups(backupDir)
+  } catch(e: any) {
+    console.error('[백업] 자동 백업 오류:', e.message)
+  }
+}
+
+function pruneOldBackups(backupDir: string) {
+  try {
+    const files = readdirSync(backupDir)
+      .filter(f => /^safety_\d{8}\.db$/.test(f)) // safety_YYYYMMDD.db 패턴만
+      .map(f => ({ name: f, mtime: statSync(join(backupDir, f)).mtime }))
+      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
+
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000 // 30일 전
+    let pruned = 0
+    for (const f of files) {
+      if (f.mtime.getTime() < cutoff) {
+        try { unlinkSync(join(backupDir, f.name)); pruned++ } catch(_) {}
+      }
+    }
+    if (pruned > 0) console.log(`[백업] 오래된 백업 ${pruned}개 삭제 (30일 초과)`)
+  } catch(e: any) {
+    console.warn('[백업] 오래된 백업 정리 실패(무시):', e.message)
+  }
+}
+
+scheduleDailyBackup()
+// ─── 자동 백업 끝 ────────────────────────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════
 // ⚠️  HTTPS / SSL 핵심 구간 — 수정 전 반드시 NAS-HTTPS-SETUP.md 확인

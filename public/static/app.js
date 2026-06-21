@@ -25796,6 +25796,7 @@ async function _frLoadSpliceStats() {
     const spliceItemKeys = [...new Set(spliceItems.map(i => i.work_label))];
 
     // splice 단가 맵: item_key → { unit_price, night_price, aerial_price }
+    // ※ item_key는 DB에 저장된 원본 키 (공백/슬래시 제거 없이 그대로 저장됨)
     const splicePriceMap = {};
     (priceRes.data.prices || []).forEach(p => {
       splicePriceMap[p.item_key] = {
@@ -25811,6 +25812,22 @@ async function _frLoadSpliceStats() {
     _frSpliceCacheItemKeys  = spliceItemKeys;
     _frSpliceCachePriceMap  = splicePriceMap;
 
+    // work_label → DB item_key 변환 (SPLICE_ITEMS_DEF 기반 역방향 맵)
+    // ⚠️ labelToKey는 spliceAmtMap 보다 반드시 먼저 선언되어야 함 (TDZ 방지)
+    // SPLICE_ITEMS_DEF: { key:'광커넥터현장조립', label:'광커넥터 현장조립/취부' }
+    // work_label은 label 값으로 저장되므로 label→key 역방향 맵 필요
+    const _spliceLabelToKey = {};
+    (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
+      _spliceLabelToKey[d.label] = d.key;  // '광커넥터 현장조립/취부' → '광커넥터현장조립'
+    });
+    const labelToKey = label => {
+      if (!label) return '';
+      // 1순위: SPLICE_ITEMS_DEF label→key 직접 매핑
+      if (_spliceLabelToKey[label]) return _spliceLabelToKey[label];
+      // 2순위: 공백+슬래시 제거 (커스텀 항목 등 폴백)
+      return label.replace(/ /g,'').replace(/\//g,'');
+    };
+
     // spliceMap: report_id → { work_label → qty 합산 }
     const spliceMap = {};
     spliceItems.forEach(it => {
@@ -25819,11 +25836,9 @@ async function _frLoadSpliceStats() {
     });
 
     // spliceAmtMap: report_id → 합계금액 (야간/가공 추가금액 반영)
-    // items 배열을 직접 순회하여 item별 is_night/is_aerial 반영
     const spliceAmtMap = {};
     spliceItems.forEach(it => {
-      const key = labelToKey(it.work_label);
-      const p   = splicePriceMap[key];
+      const p = splicePriceMap[labelToKey(it.work_label)];
       if (!p) return;
       const qty   = it.total_qty || it.qty || 0;
       const night = it.is_night  ? (p.night_price  || 0) : 0;
@@ -25841,9 +25856,6 @@ async function _frLoadSpliceStats() {
 
     // 공사종류(work_class) 코드 → 한글
     const spliceWcLabel = wc => ({ relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' }[wc] || wc || '-');
-
-    // work_label(공백 있음) → item_key(공백 없음) 변환 함수
-    const labelToKey = label => (label||'').replace(/ /g,'').replace(/\//g,'');
 
     // localStorage에서 숨김 컬럼 상태 불러오기
     const spliceHiddenCols = JSON.parse(localStorage.getItem('fr_splice_hidden_cols') || '[]');
@@ -28755,6 +28767,17 @@ async function _vsLoadSpliceStats() {
         aerial_price: p.aerial_price || 0,
       };
     });
+    // work_label → DB item_key 변환 (SPLICE_ITEMS_DEF 기반 역방향 맵)
+    // ⚠️ calcUnitAmt 보다 먼저 선언 필수 (TDZ 방지)
+    const _vsLabelToKey = {};
+    (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
+      _vsLabelToKey[d.label] = d.key;
+    });
+    const labelToKey = label => {
+      if (!label) return '';
+      if (_vsLabelToKey[label]) return _vsLabelToKey[label];
+      return label.replace(/ /g,'').replace(/\//g,'');
+    };
     // 적용단가 계산 헬퍼 (야간/가공 추가금액 반영)
     const calcUnitAmt = (label, isNight, isAerial) => {
       const p = priceMap[labelToKey(label)];
@@ -28765,7 +28788,6 @@ async function _vsLoadSpliceStats() {
     };
 
     const isWorker = currentUser && currentUser.role === 'worker';
-    const labelToKey = label => (label||'').replace(/ /g,'').replace(/\//g,'');
 
     if (stats.length === 0) {
       resultEl.innerHTML = `<div class="text-center text-gray-400 py-10 text-sm"><i class="fas fa-inbox text-3xl mb-2 block text-gray-300"></i>해당 기간에 데이터가 없습니다</div>`;

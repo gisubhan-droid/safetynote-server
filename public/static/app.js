@@ -29767,7 +29767,7 @@ async function renderUnitPricePage(container) {
         <td class="px-4 py-2 text-gray-700 font-medium text-sm">${p.item_label}</td>
         <td class="px-4 py-2 text-right">
           <input type="number" min="0" step="100"
-            class="up-cable-input w-36 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
+            class="up-cable-input w-32 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
             data-key="${p.item_key}" value="${p.unit_price || 0}">
         </td>
         <td class="px-3 py-2 text-center w-10">
@@ -29778,7 +29778,7 @@ async function renderUnitPricePage(container) {
         </td>
       </tr>`).join('');
 
-    // ── 접속 공종 행 생성 (공종 + 기본단가 + 야간 + 가공 + 삭제버튼)
+    // ── 접속 공종 행 생성 (공종 + 기본단가 + 야간 + 가공 + 단위 + 삭제버튼)
     const mkSplicePriceRows = (prices) => prices.map(p => `
       <tr class="border-b border-gray-50 hover:bg-indigo-50 group" data-key="${p.item_key}">
         <td class="px-4 py-2 text-gray-700 font-medium text-sm">${p.item_label}</td>
@@ -29799,6 +29799,7 @@ async function renderUnitPricePage(container) {
             data-key="${p.item_key}" value="${p.aerial_price || 0}"
             placeholder="0" onfocus="this.classList.remove('text-gray-300')">
         </td>
+        <td class="px-4 py-2 text-center text-gray-400 text-xs w-16">${p.unit || '개소'}</td>
         <td class="px-3 py-2 text-center w-10">
           <button onclick="_upDeleteSpliceItem('${p.item_key}','${p.item_label}')"
             class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
@@ -29840,7 +29841,7 @@ async function renderUnitPricePage(container) {
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
               <th class="px-4 py-2 text-left border-b border-gray-100">공종</th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-40">단가 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-36">단가 (원)</th>
               <th class="w-10 border-b border-gray-100"></th>
             </tr></thead>
             <tbody id="up-cable-tbody">${mkPriceRows(cablePrices)}</tbody>
@@ -29883,9 +29884,10 @@ async function renderUnitPricePage(container) {
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
               <th class="px-4 py-2 text-left border-b border-gray-100">공종</th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-36">기본단가 (원)</th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-36 bg-blue-50">야간 추가금액 (원)</th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-36 bg-green-50">가공 추가금액 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-32">기본단가 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-blue-50">야간 추가금액 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-green-50">가공 추가금액 (원)</th>
+              <th class="px-4 py-2 text-center border-b border-gray-100 w-16">단위</th>
               <th class="w-10 border-b border-gray-100"></th>
             </tr></thead>
             <tbody id="up-splice-tbody">${mkSplicePriceRows(splicePrices)}</tbody>

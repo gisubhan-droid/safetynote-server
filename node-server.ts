@@ -1453,7 +1453,14 @@ function patchSchema() {
     const newKeys = ['a000001','a000002','a000003','a000004','a000005','a000006',
       'a000007','a000008','a000009','a000010','a000011','a000012',
       'a000013','a000014','a000015','a000016','a000017','a000018']
-    const oldKeys = ['joga_new','connector','joga_remove','ip_new','ip_remove','ground_b','ground_a']
+    const oldKeys = [
+      'joga_new','connector','joga_remove','ip_new','ip_remove','ground_b','ground_a',
+      // v0.141: 한글/혼용 구버전 키 (INSERT OR IGNORE 잔존 방지용 선제 삭제)
+      'cable_new','cable_remove','cable_move',
+      '조가선신설','커넥터취부','조가선 철거','전주 건식','전주 철거',
+      'B 형접지(대지)','A 형접지(대지)','지선신설','전주세움',
+      '가요전선관','내관포설','완금설치 (한전주)','단순1','단순1-2','단순2',
+    ]
     oldKeys.forEach(k => { try { rawDb.prepare(`DELETE FROM volume_unit_prices WHERE item_key=?`).run(k) } catch(_){} })
     // 추가입력(공종별 작업량) 테이블 생성
     rawDb.exec(`
@@ -1539,6 +1546,11 @@ function patchSchema() {
         sort_order INTEGER DEFAULT 0
       )
     `)
+    // 한글 구버전 키 선제 삭제 (INSERT OR IGNORE 잔존 방지)
+    ;['함체작업','중간분기','선번확인','광케이블코아접속','광케이블성단',
+      '광탭작업','광탭중간분기','광커넥터현장조립','광탭결합고정',
+      'FTTH레벨측정','신호수배치'
+    ].forEach(k => { try { rawDb.prepare(`DELETE FROM splice_unit_prices WHERE item_key=?`).run(k) } catch(_){} })
     rawDb.exec(`
       INSERT OR IGNORE INTO splice_unit_prices (item_key, item_label, unit, unit_price, sort_order) VALUES
         ('b000001', '함체작업',              '개소', 0, 1),
@@ -1644,6 +1656,7 @@ function patchSchema() {
 
   // ── v0.140k: item_key 영문 순차 부여 마이그레이션 ────────────────────────────
   // 기존 DB의 한글·혼용 item_key를 영문 순차 키(a000001~, b000001~)로 일괄 변환
+  // ※ 영문 키가 이미 존재하면 UPDATE(SKIP) → 한글 구키 행은 v0.141에서 DELETE
   try {
     const volMapping: [string, string][] = [
       ['cable_new',          'a000001'], ['cable_remove',      'a000002'], ['cable_move',         'a000003'],
@@ -1654,7 +1667,7 @@ function patchSchema() {
       ['단순1',              'a000016'], ['단순1-2',            'a000017'], ['단순2',              'a000018'],
     ]
     for (const [oldKey, newKey] of volMapping) {
-      // 충돌 없을 때만 UPDATE (newKey가 이미 존재하면 SKIP)
+      // 영문 키 없으면 UPDATE, 있으면 SKIP (구 키는 v0.141에서 정리)
       rawDb.prepare(
         `UPDATE volume_unit_prices SET item_key=? WHERE item_key=? AND NOT EXISTS (SELECT 1 FROM volume_unit_prices WHERE item_key=?)`
       ).run(newKey, oldKey, newKey)
@@ -1675,6 +1688,53 @@ function patchSchema() {
     console.log('[patchSchema v0.140k] item_key 영문 순차 마이그레이션 완료')
   } catch(e: any) {
     console.warn('[patchSchema v0.140k]', e.message)
+  }
+
+  // ── v0.141: 구버전 한글/혼용 키 잔존 행 완전 정리 ────────────────────────────
+  // v0.140k에서 영문 키가 이미 존재해 UPDATE가 SKIP된 경우 구 키 행이 잔존함
+  // → 영문 키가 존재하는 경우에만 구 키 행을 DELETE (데이터 중복 제거)
+  try {
+    // 외선: 구버전 키 목록 (한글 + 혼용 영문)
+    const volOldKeys = [
+      'cable_new', 'cable_remove', 'cable_move',
+      '조가선신설', '커넥터취부', '조가선 철거', '전주 건식', '전주 철거',
+      'B 형접지(대지)', 'A 형접지(대지)', '지선신설', '전주세움',
+      '가요전선관', '내관포설', '완금설치 (한전주)', '단순1', '단순1-2', '단순2',
+    ]
+    // 영문 키(a000001~a000018) 중 하나라도 존재하면 구 키 전체 삭제
+    const volHasNew = rawDb.prepare(
+      `SELECT COUNT(*) as cnt FROM volume_unit_prices WHERE item_key LIKE 'a0%'`
+    ).get() as { cnt: number }
+    if (volHasNew.cnt > 0) {
+      const placeholders = volOldKeys.map(() => '?').join(',')
+      const deleted = rawDb.prepare(
+        `DELETE FROM volume_unit_prices WHERE item_key IN (${placeholders})`
+      ).run(...volOldKeys)
+      if (deleted.changes > 0)
+        console.log(`[patchSchema v0.141] volume_unit_prices 구 키 ${deleted.changes}건 삭제 완료`)
+    }
+
+    // 접속: 구버전 키 목록 (한글)
+    const spliceOldKeys = [
+      '함체작업', '중간분기', '선번확인', '광케이블코아접속', '광케이블성단',
+      '광탭작업', '광탭중간분기', '광커넥터현장조립', '광탭결합고정',
+      'FTTH레벨측정', '신호수배치',
+    ]
+    const spliceHasNew = rawDb.prepare(
+      `SELECT COUNT(*) as cnt FROM splice_unit_prices WHERE item_key LIKE 'b0%'`
+    ).get() as { cnt: number }
+    if (spliceHasNew.cnt > 0) {
+      const placeholders = spliceOldKeys.map(() => '?').join(',')
+      const deleted = rawDb.prepare(
+        `DELETE FROM splice_unit_prices WHERE item_key IN (${placeholders})`
+      ).run(...spliceOldKeys)
+      if (deleted.changes > 0)
+        console.log(`[patchSchema v0.141] splice_unit_prices 구 키 ${deleted.changes}건 삭제 완료`)
+    }
+
+    console.log('[patchSchema v0.141] 구버전 키 정리 완료')
+  } catch(e: any) {
+    console.warn('[patchSchema v0.141]', e.message)
   }
 
   // 서버 시작 시 자동 생성 (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)

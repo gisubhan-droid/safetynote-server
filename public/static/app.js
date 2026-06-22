@@ -14938,72 +14938,55 @@ async function renderAdminSettingsPage(container, _activeTab) {
 
       </div>
 
-      <!-- ────────────────────────────────────────────────── -->
-      <!-- TAB: LGU+ 권한 설정                              -->
-      <!-- ────────────────────────────────────────────────── -->
+      <!-- TAB: LGU+ 권한 설정 -->
       <div id="spanel-lgu" class="settings-panel space-y-4 ${firstTab !== 'lgu' ? 'hidden' : ''}">
-
-        <!-- LGU+ 메뉴 권한 -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 border border-pink-100">
-          <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
-            <i class="fas fa-building text-pink-500"></i> LGU+ 역할 조회 가능 메뉴
-          </h3>
-          <p class="text-xs text-gray-400 mb-4">LGU+ 역할로 로그인한 사용자가 접근할 수 있는 메뉴를 설정합니다.</p>
-          <div class="space-y-2" id="lgu-menu-settings">
-            ${[
-              { key:'lgu_menu_dashboard',     label:'작업현황',       defaultOn:true  },
-              { key:'lgu_menu_inspections',   label:'현장점검',       defaultOn:true  },
-              { key:'lgu_menu_site_map',      label:'현장위치 지도',  defaultOn:true  },
-              { key:'lgu_menu_constructions', label:'공사현황',       defaultOn:false },
-              { key:'lgu_menu_tasks',         label:'작업관리',       defaultOn:false },
-              { key:'lgu_menu_stats',         label:'안전현황 통계',  defaultOn:false },
-            ].map(item => {
-              const val = sv[item.key] !== undefined ? sv[item.key] === '1' : item.defaultOn;
-              return \`<label class="flex items-center gap-3 p-3 rounded-xl border \${val ? 'border-pink-200 bg-pink-50' : 'border-gray-200 bg-gray-50'} cursor-pointer lgu-menu-toggle" data-key="\${item.key}">
-                <input type="checkbox" class="w-4 h-4 rounded" \${val ? 'checked' : ''} onchange="toggleLguSetting(this, '\${item.key}', 'menu')">
-                <span class="text-sm font-medium text-gray-700">\${item.label}</span>
-                <span class="ml-auto text-xs \${val ? 'text-pink-600 font-semibold' : 'text-gray-400'}">\${val ? '허용' : '차단'}</span>
-              </label>\`;
-            }).join('')}
-          </div>
-        </div>
-
-        <!-- LGU+ 알림 단계 설정 -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 border border-pink-100">
-          <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
-            <i class="fas fa-bell text-pink-500"></i> LGU+ 역할 알림 수신 단계
-          </h3>
-          <p class="text-xs text-gray-400 mb-1">요청번호가 <b>1로 시작하는 공사</b>에 연계된 작업에서 아래 단계 도달 시 LGU+ 역할 사용자에게 푸시 알림이 발송됩니다.</p>
-          <p class="text-xs text-blue-500 mb-4"><i class="fas fa-info-circle mr-1"></i>알림은 앱이 설치된 LGU+ 계정에만 발송됩니다.</p>
-          <div class="space-y-2" id="lgu-notify-settings">
-            ${[
-              { key:'lgu_notify_checklist_done', label:'체크리스트 완료 (작업 준비 단계)',  defaultOn:true  },
-              { key:'lgu_notify_tbm_done',       label:'TBM 완료 (작업 시작 직전)',          defaultOn:true  },
-              { key:'lgu_notify_working',        label:'작업중 (현장 작업 개시)',             defaultOn:true  },
-              { key:'lgu_notify_work_completed', label:'작업완료 (현장 작업 완료)',           defaultOn:true  },
-              { key:'lgu_notify_completed',      label:'최종완료 (모든 처리 완료)',           defaultOn:false },
-              { key:'lgu_notify_cancelled',      label:'취소 (작업 취소)',                   defaultOn:false },
-            ].map(item => {
-              const val = sv[item.key] !== undefined ? sv[item.key] === '1' : item.defaultOn;
-              return \`<label class="flex items-center gap-3 p-3 rounded-xl border \${val ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-gray-50'} cursor-pointer lgu-notify-toggle" data-key="\${item.key}">
-                <input type="checkbox" class="w-4 h-4 rounded" \${val ? 'checked' : ''} onchange="toggleLguSetting(this, '\${item.key}', 'notify')">
-                <span class="text-sm font-medium text-gray-700">\${item.label}</span>
-                <span class="ml-auto text-xs \${val ? 'text-blue-600 font-semibold' : 'text-gray-400'}">\${val ? '발송' : '미발송'}</span>
-              </label>\`;
-            }).join('')}
-          </div>
-        </div>
-
-        <!-- 저장 버튼 -->
-        <div class="flex justify-end gap-2">
-          <button type="button" onclick="saveLguSettings()" class="btn btn-primary px-6 py-2 rounded-xl font-semibold text-sm">
-            <i class="fas fa-save mr-1"></i> LGU+ 설정 저장
-          </button>
-        </div>
-
+        ${(function(){
+          var lguMenuItems = [
+            { key:'lgu_menu_dashboard',     label:'작업현황',      defaultOn:true  },
+            { key:'lgu_menu_inspections',   label:'현장점검',      defaultOn:true  },
+            { key:'lgu_menu_site_map',      label:'현장위치 지도', defaultOn:true  },
+            { key:'lgu_menu_constructions', label:'공사현황',      defaultOn:false },
+            { key:'lgu_menu_tasks',         label:'작업관리',      defaultOn:false },
+            { key:'lgu_menu_stats',         label:'안전현황 통계', defaultOn:false },
+          ];
+          var lguNotifyItems = [
+            { key:'lgu_notify_checklist_done', label:'체크리스트 완료 (작업 준비 단계)', defaultOn:true  },
+            { key:'lgu_notify_tbm_done',       label:'TBM 완료 (작업 시작 직전)',        defaultOn:true  },
+            { key:'lgu_notify_working',        label:'작업중 (현장 작업 개시)',           defaultOn:true  },
+            { key:'lgu_notify_work_completed', label:'작업완료 (현장 작업 완료)',         defaultOn:true  },
+            { key:'lgu_notify_completed',      label:'최종완료 (모든 처리 완료)',         defaultOn:false },
+            { key:'lgu_notify_cancelled',      label:'취소 (작업 취소)',                 defaultOn:false },
+          ];
+          function makeLguRow(item, type) {
+            var val = sv[item.key] !== undefined ? sv[item.key] === '1' : item.defaultOn;
+            var isMenu = (type === 'menu');
+            var borderCls = val ? (isMenu ? 'border-pink-200 bg-pink-50' : 'border-blue-200 bg-blue-50') : 'border-gray-200 bg-gray-50';
+            var badgeCls  = val ? (isMenu ? 'text-pink-600 font-semibold' : 'text-blue-600 font-semibold') : 'text-gray-400';
+            var badgeTxt  = val ? (isMenu ? '허용' : '발송') : (isMenu ? '차단' : '미발송');
+            var checked   = val ? 'checked' : '';
+            return '<label class="flex items-center gap-3 p-3 rounded-xl border ' + borderCls + ' cursor-pointer" data-key="' + item.key + '">'
+              + '<input type="checkbox" class="w-4 h-4 rounded" ' + checked + ' onchange="toggleLguSetting(this,\'' + item.key + '\',\'' + type + '\')">'
+              + '<span class="text-sm font-medium text-gray-700">' + item.label + '</span>'
+              + '<span class="ml-auto text-xs ' + badgeCls + '">' + badgeTxt + '</span>'
+              + '</label>';
+          }
+          var menuRows   = lguMenuItems.map(function(i){ return makeLguRow(i,'menu'); }).join('');
+          var notifyRows = lguNotifyItems.map(function(i){ return makeLguRow(i,'notify'); }).join('');
+          return '<div class="bg-white rounded-2xl shadow-sm p-5 border border-pink-100">'
+            + '<h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2"><i class="fas fa-building text-pink-500"></i> LGU+ 역할 조회 가능 메뉴</h3>'
+            + '<p class="text-xs text-gray-400 mb-4">LGU+ 역할로 로그인한 사용자가 접근할 수 있는 메뉴를 설정합니다.</p>'
+            + '<div class="space-y-2">' + menuRows + '</div></div>'
+            + '<div class="bg-white rounded-2xl shadow-sm p-5 border border-pink-100">'
+            + '<h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2"><i class="fas fa-bell text-pink-500"></i> LGU+ 역할 알림 수신 단계</h3>'
+            + '<p class="text-xs text-gray-400 mb-1">요청번호가 <b>1로 시작하는 공사</b>에 연계된 작업에서 아래 단계 도달 시 LGU+ 역할 사용자에게 푸시 알림이 발송됩니다.</p>'
+            + '<p class="text-xs text-blue-500 mb-4"><i class="fas fa-info-circle mr-1"></i>알림은 앱이 설치된 LGU+ 계정에만 발송됩니다.</p>'
+            + '<div class="space-y-2">' + notifyRows + '</div></div>'
+            + '<div class="flex justify-end gap-2">'
+            + '<button type="button" onclick="saveLguSettings()" class="btn btn-primary px-6 py-2 rounded-xl font-semibold text-sm"><i class="fas fa-save mr-1"></i> LGU+ 설정 저장</button>'
+            + '</div>';
+        })()}
       </div>
-
-      <div id="spanel-info" class="settings-panel space-y-4 ${firstTab !== 'info' ? 'hidden' : ''}">`
+      <div id="spanel-info" class="settings-panel space-y-4 ${firstTab !== 'info' ? 'hidden' : ''}">
 
         <!-- 서버 정보 -->
         <div class="bg-white rounded-2xl shadow-sm p-5">

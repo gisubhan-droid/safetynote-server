@@ -6,16 +6,17 @@
 # 사용 가능한 스냅샷 태그:
 #   pre-lgu-role-202606221011  — v0.142 구현 직전 (LGU+ 미구현 상태)
 #   pre-lgu-v2-202606222145    — v0.143 재수정 직전 (v0.142 완성 상태)
-#   pre-lgu-v3-202606222151    — v0.143 최종 작업 직전 (현재 기준)
+#   pre-lgu-v3-202606222151    — v0.143 최종 작업 직전
+#   pre-lgu-v4-202606222343    — BUG-028/029 수정 직전 (현재 최신)
 #
-# 인수 없이 실행 시 → 가장 최근 스냅샷(pre-lgu-v3)으로 복원
+# 인수 없이 실행 시 → 가장 최근 스냅샷(pre-lgu-v4)으로 복원
 # ============================================================
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── 태그 선택 ──────────────────────────────────────────────
-SNAPSHOT_TAG="${1:-pre-lgu-v3-202606222151}"
+SNAPSHOT_TAG="${1:-pre-lgu-v4-202606222343}"
 
 # 태그에 맞는 DB 백업 파일 자동 선택
 case "$SNAPSHOT_TAG" in
@@ -27,6 +28,9 @@ case "$SNAPSHOT_TAG" in
     ;;
   pre-lgu-v3-202606222151)
     DB_BACKUP="safety.db.backup_pre_lgu_v3_202606222151"
+    ;;
+  pre-lgu-v4-202606222343)
+    DB_BACKUP="safety.db.backup_pre_lgu_v4_202606222343"
     ;;
   *)
     # 사용자가 직접 태그 지정한 경우 DB 백업은 수동 지정
@@ -96,7 +100,8 @@ echo ""
 echo "✅ 롤백 완료. NAS에서 pm2 restart safetynote 를 실행하세요."
 echo ""
 echo "─── 사용 가능한 롤백 시점 ───────────────────────────────"
-echo "  최초 LGU+ 미구현 상태:   bash restore_pre_lgu.sh pre-lgu-role-202606221011"
-echo "  v0.142 완성(잘못된조건): bash restore_pre_lgu.sh pre-lgu-v2-202606222145"
-echo "  v0.143 작업 직전:        bash restore_pre_lgu.sh pre-lgu-v3-202606222151"
+echo "  최초 LGU+ 미구현 상태:        bash restore_pre_lgu.sh pre-lgu-role-202606221011"
+echo "  v0.142 완성(잘못된조건):      bash restore_pre_lgu.sh pre-lgu-v2-202606222145"
+echo "  v0.143 작업 직전:             bash restore_pre_lgu.sh pre-lgu-v3-202606222151"
+echo "  BUG-028/029 수정 직전(최신):  bash restore_pre_lgu.sh pre-lgu-v4-202606222343"
 echo "────────────────────────────────────────────────────────"

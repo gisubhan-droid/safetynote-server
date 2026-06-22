@@ -3515,3 +3515,64 @@ app.post('/api/auth/bulk-register', async (c) => { ... })
 - `src/routes/*.ts` 파일에 `c.env.DB`가 있으면 NAS에서 반드시 오버라이드 필요
 - 오버라이드는 항상 `app.route()` 앞에 등록 (RULE-002)
 - NAS DB 스키마에 없는 컬럼은 patchSchema에서 `ALTER TABLE ADD COLUMN`으로 보완
+
+---
+
+## [BUG-028] LGU+ 설정 화면 알림 조건 설명 오류 (2026-06)
+
+### 증상
+- 시스템 설정 → LGU+ 권한 설정 탭의 알림 설명이
+  **"요청번호가 1로 시작하는 공사"** 로 표시됨
+- 실제 구현은 `is_auto_request_no=1`(자동부여 체크) 기반인데 UI 설명만 구버전 텍스트
+
+### 원인
+- v0.142 초기 구현 시 잘못된 조건(`request_no LIKE '1%'`)을 UI 설명에 반영
+- v0.143에서 백엔드 로직은 `is_auto_request_no=1`로 수정했으나 **UI 텍스트만 미수정**
+- 영향 범위:
+  1. `app.js` line 15029 — 설정 탭 알림 섹션 설명 문구
+  2. `node-server.ts` — `system_settings` lgu_notify_* `description` 컬럼 (DB 저장값)
+
+### 해결 (`세션 59`)
+1. `app.js` — 알림 설명 텍스트 수정
+   - ❌ 구: `요청번호가 1로 시작하는 공사에 연계된 작업`
+   - ✅ 신: `공사 등록 시 "공사요청번호 자동부여"를 체크한 공사에 연계된 작업`
+2. `app.js` — 부가 설명 추가
+   - `자동부여 체크 공사만 LGU+ 알림·조회 대상입니다. 수동 입력 공사는 LGU+ 접근이 차단됩니다.`
+3. `node-server.ts` — patchSchema v0.143 확장: lgu_notify_* description 6개 전부 UPDATE
+4. `node-server.ts` — system_settings INSERT 기본값 텍스트도 동일하게 수정
+
+### ⚠️ 재발 방지
+- 백엔드 로직 조건 변경 시 **UI 설명 텍스트(app.js)와 DB description 값도 반드시 동시에 수정**
+- `system_settings`의 `description` 컬럼은 patchSchema UPDATE로 기존 DB 행도 교정
+
+---
+
+## [BUG-029] 체크리스트 완료 500 에러 — ci.text 컬럼 없음 (2026-06)
+
+### 증상
+- 체크리스트 완료 버튼 클릭 시 `PATCH /api/checklist/:id/complete 500` 에러
+- NAS 에러 로그: `[checklist PATCH NAS /:id/complete] no such column: ci.text`
+
+### 원인
+- `node-server.ts` NAS 전용 `PATCH /api/checklist/:id/complete` 라우트에서
+  `checklist_items` 테이블 JOIN 시 존재하지 않는 컬럼명 `ci.text` 사용
+- 실제 `checklist_items` 테이블의 질문 컬럼명은 `question`
+- Cloudflare용 `src/routes/checklist.ts`는 `ci.question`을 올바르게 사용 중
+
+### 해결
+```typescript
+// ❌ 구 (잘못된 컬럼명)
+SELECT cr.*, ci.text, ci.category FROM checklist_responses cr
+JOIN checklist_items ci ON ci.id = cr.item_id
+WHERE cr.assessment_id = ? AND cr.response = 'no'
+
+// ✅ 신 (올바른 컬럼명)
+SELECT cr.*, ci.question, ci.category FROM checklist_responses cr
+JOIN checklist_items ci ON ci.id = cr.item_id
+WHERE cr.assessment_id = ? AND cr.response = 'no'
+```
+
+### ⚠️ 재발 방지
+- `node-server.ts` NAS 전용 라우트 작성 시 **반드시 `src/routes/*.ts` 파일의 동일 쿼리와 컬럼명 대조**
+- `checklist_items` 컬럼: `id`, `category`, `question`, `note`, `sort_order`, `work_class`, `is_active`
+- `text` 컬럼은 존재하지 않음

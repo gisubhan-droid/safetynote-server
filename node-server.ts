@@ -1886,6 +1886,27 @@ function patchSchema() {
       if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.142] users.permissions 컬럼:', e.message)
     }
   })()
+
+  // ── [v0.143 LGU+ 재수정] constructions.is_auto_request_no 컬럼 추가 ──────────
+  // "공사요청번호 자동부여" 체크박스 선택 여부를 DB에 저장
+  // LGU+ 역할은 is_auto_request_no=1인 공사/작업에 접근 불가 (알림·조회 모두 차단)
+  ;(function patchConstructionsAutoReqNo() {
+    try {
+      rawDb.exec("ALTER TABLE constructions ADD COLUMN is_auto_request_no INTEGER NOT NULL DEFAULT 0")
+      console.log('[patchSchema v0.143] constructions.is_auto_request_no 컬럼 추가 완료')
+    } catch (e: any) {
+      if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.143] constructions.is_auto_request_no:', e.message)
+    }
+    // system_settings lgu_notify_* 의미 설명 업데이트 (v0.142에서 잘못된 request_no '1%' 조건 제거)
+    // 이제 조건은 is_auto_request_no=1 인 공사에 연계된 작업
+    try {
+      rawDb.exec(`
+        UPDATE system_settings
+        SET description = '요청번호 자동부여 공사에 연계된 작업 — 체크리스트 완료 단계에서 LGU+ 알림 발송'
+        WHERE key = 'lgu_notify_checklist_done'
+      `)
+    } catch (_) {}
+  })()
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)
@@ -2600,21 +2621,22 @@ app.patch('/api/tasks/:id/status', async (c) => {
     }
   }
 
-  // ── [v0.142 LGU+] LGU+ 역할 사용자 FCM 알림 — request_no '1'로 시작하는 공사 작업 ──
+  // ── [v0.143 LGU+] LGU+ 역할 사용자 FCM 알림 — is_auto_request_no=1 인 공사에 연계된 작업 ──
   // 대상 상태: tbm_done, working, work_completed (system_settings lgu_notify_* = '1' 인 경우만)
+  // ❌ 구조건(v0.142): reqNo.startsWith('1') — 완전히 잘못된 해석 (제거)
+  // ✅ 신조건(v0.143): constructions.is_auto_request_no = 1 JOIN 쿼리
   try {
     const lguNotifyKey = `lgu_notify_${status}`
     const lguEnabled = getSetting(lguNotifyKey)
     if (lguEnabled === '1') {
-      // 해당 작업의 request_no 조회 (tasks 또는 연결된 constructions)
-      const taskReqRow = rawDb.prepare(
-        `SELECT t.request_no as t_req, c.request_no as c_req
+      // 해당 작업의 연결 공사에서 is_auto_request_no 조회
+      const taskConRow = rawDb.prepare(
+        `SELECT c.is_auto_request_no, c.request_no as c_req
          FROM tasks t
          LEFT JOIN constructions c ON c.id = t.construction_id
          WHERE t.id = ?`
       ).get(id) as any
-      const reqNo = (taskReqRow?.t_req || taskReqRow?.c_req || '')
-      const isLguTarget = reqNo && (reqNo.startsWith('1'))
+      const isLguTarget = taskConRow?.is_auto_request_no === 1
       if (isLguTarget) {
         // LGU+ 역할 사용자 조회 (role='lgu' 또는 sub_role='lgu_plus')
         const lguUsers = rawDb.prepare(
@@ -2624,7 +2646,7 @@ app.patch('/api/tasks/:id/status', async (c) => {
         if (lguIds.length > 0) {
           const fcmTitle = `[LGU+] 작업 상태 변경: ${sLabel}`
           const fcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업이 [${sLabel}]로 변경되었습니다. (${user.name})`
-          console.log(`[FCM/LGU+] 발송 — task:${id} reqNo:${reqNo} status:${status} → lgu targets:${lguIds}`)
+          console.log(`[FCM/LGU+] 발송 — task:${id} conReq:${taskConRow?.c_req}(자동부여) status:${status} → lgu targets:${lguIds}`)
           sendFcmToUsers(lguIds, {
             title: fcmTitle,
             body:  fcmBody,
@@ -2740,44 +2762,43 @@ app.patch('/api/checklist/:id/complete', async (c) => {
       } catch(_) {}
     }
 
-    // ② [v0.142 LGU+] 체크리스트 완료 시 LGU+ 알림 발송
+    // ② [v0.143 LGU+] 체크리스트 완료 시 LGU+ 알림 발송
+    // ❌ 구조건(v0.142): reqNo.startsWith('1') — 잘못된 해석 (제거)
+    // ✅ 신조건(v0.143): constructions.is_auto_request_no = 1 JOIN 쿼리
     try {
       var lguChkEnabled = getSetting('lgu_notify_checklist_done')
       if (lguChkEnabled === '1' && asmRow.task_id) {
         var lguTaskRow: any = rawDb.prepare(
-          `SELECT t.request_no as t_req, t.title, t.task_number, t.work_number, t.sub_task_number,
-                  c.request_no as c_req
+          `SELECT t.title, t.task_number, t.work_number, t.sub_task_number,
+                  c.is_auto_request_no, c.request_no as c_req
            FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
            WHERE t.id = ?`
         ).get(asmRow.task_id)
-        if (lguTaskRow) {
-          var lguReqNo = lguTaskRow.t_req || lguTaskRow.c_req || ''
-          if (lguReqNo.startsWith('1')) {
-            var lguTaskTitle = lguTaskRow.title || String(asmRow.task_id)
-            var lguTaskNum = lguTaskRow.work_number
-              ? (lguTaskRow.sub_task_number ? `${lguTaskRow.work_number}-${lguTaskRow.sub_task_number}` : lguTaskRow.work_number)
-              : (lguTaskRow.task_number || String(asmRow.task_id))
-            var lguUsersChk: any[] = rawDb.prepare(
-              `SELECT id FROM users WHERE (role='lgu' OR sub_role='lgu_plus') AND is_active=1`
-            ).all() as any[]
-            var lguIdsChk = lguUsersChk.map((r: any) => r.id as number).filter(uid => uid !== user.id)
-            if (lguIdsChk.length > 0) {
-              var lguFcmTitle = `[LGU+] 체크리스트 완료`
-              var lguFcmBody  = `[${lguTaskNum}] "${lguTaskTitle}" 작업 체크리스트가 완료되었습니다. (${user.name})`
-              console.log(`[FCM/LGU+] 체크리스트 완료 알림 — task:${asmRow.task_id} reqNo:${lguReqNo} → lgu:${lguIdsChk}`)
-              sendFcmToUsers(lguIdsChk, {
-                title: lguFcmTitle, body: lguFcmBody,
-                data: { type: 'task_status_lgu', taskId: String(asmRow.task_id), status: 'checklist_done' }
-              }).catch((e: any) => console.error('[FCM/LGU+] 체크리스트 FCM 오류:', e.message))
-              try {
-                for (var lguUidChk of lguIdsChk) {
-                  rawDb.prepare(
-                    `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
-                     VALUES (?, 'task_status_lgu', ?, ?, ?, 'task', 0)`
-                  ).run(lguUidChk, lguFcmTitle, lguFcmBody, asmRow.task_id)
-                }
-              } catch(_) {}
-            }
+        if (lguTaskRow && lguTaskRow.is_auto_request_no === 1) {
+          var lguTaskTitle = lguTaskRow.title || String(asmRow.task_id)
+          var lguTaskNum = lguTaskRow.work_number
+            ? (lguTaskRow.sub_task_number ? `${lguTaskRow.work_number}-${lguTaskRow.sub_task_number}` : lguTaskRow.work_number)
+            : (lguTaskRow.task_number || String(asmRow.task_id))
+          var lguUsersChk: any[] = rawDb.prepare(
+            `SELECT id FROM users WHERE (role='lgu' OR sub_role='lgu_plus') AND is_active=1`
+          ).all() as any[]
+          var lguIdsChk = lguUsersChk.map((r: any) => r.id as number).filter(uid => uid !== user.id)
+          if (lguIdsChk.length > 0) {
+            var lguFcmTitle = `[LGU+] 체크리스트 완료`
+            var lguFcmBody  = `[${lguTaskNum}] "${lguTaskTitle}" 작업 체크리스트가 완료되었습니다. (${user.name})`
+            console.log(`[FCM/LGU+] 체크리스트 완료 알림 — task:${asmRow.task_id} conReq:${lguTaskRow.c_req}(자동부여) → lgu:${lguIdsChk}`)
+            sendFcmToUsers(lguIdsChk, {
+              title: lguFcmTitle, body: lguFcmBody,
+              data: { type: 'task_status_lgu', taskId: String(asmRow.task_id), status: 'checklist_done' }
+            }).catch((e: any) => console.error('[FCM/LGU+] 체크리스트 FCM 오류:', e.message))
+            try {
+              for (var lguUidChk of lguIdsChk) {
+                rawDb.prepare(
+                  `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+                   VALUES (?, 'task_status_lgu', ?, ?, ?, 'task', 0)`
+                ).run(lguUidChk, lguFcmTitle, lguFcmBody, asmRow.task_id)
+              }
+            } catch(_) {}
           }
         }
       }
@@ -2811,18 +2832,18 @@ app.patch('/api/checklist/:id/complete-lgu-notify', async (c) => {
     if (!asmRow?.task_id) return c.json({ lgu_notified: false, reason: 'no_task' })
     const taskId = asmRow.task_id
 
-    // 해당 작업의 request_no 조회
+    // [v0.143] 해당 작업의 연결 공사 is_auto_request_no 조회 (구: reqNo.startsWith('1') 조건 제거)
     const taskRow = rawDb.prepare(
-      `SELECT t.request_no as t_req, t.title, t.task_number, t.work_number, t.sub_task_number,
-              c.request_no as c_req
+      `SELECT t.title, t.task_number, t.work_number, t.sub_task_number,
+              c.is_auto_request_no, c.request_no as c_req
        FROM tasks t
        LEFT JOIN constructions c ON c.id = t.construction_id
        WHERE t.id = ?`
     ).get(taskId) as any
     if (!taskRow) return c.json({ lgu_notified: false, reason: 'no_task_row' })
 
-    const reqNo = taskRow.t_req || taskRow.c_req || ''
-    if (!reqNo.startsWith('1')) return c.json({ lgu_notified: false, reason: 'req_no_not_1x' })
+    // ✅ 신조건(v0.143): is_auto_request_no=1 인 공사에 연계된 작업만 알림 발송
+    if (taskRow.is_auto_request_no !== 1) return c.json({ lgu_notified: false, reason: 'not_auto_req_no' })
 
     const taskTitle = taskRow.title || String(taskId)
     const taskNumDisplay = taskRow.work_number
@@ -2838,7 +2859,7 @@ app.patch('/api/checklist/:id/complete-lgu-notify', async (c) => {
     if (lguIds.length > 0) {
       const fcmTitle = `[LGU+] 체크리스트 완료`
       const fcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업 체크리스트가 완료되었습니다. (${user.name})`
-      console.log(`[FCM/LGU+] 체크리스트 완료 알림 — task:${taskId} reqNo:${reqNo} → lgu:${lguIds}`)
+      console.log(`[FCM/LGU+] 체크리스트 완료 알림 — task:${taskId} conReq:${taskRow.c_req}(자동부여) → lgu:${lguIds}`)
       sendFcmToUsers(lguIds, {
         title: fcmTitle,
         body:  fcmBody,

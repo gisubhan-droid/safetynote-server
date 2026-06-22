@@ -3092,7 +3092,14 @@ async function renderConstructionsPage(container) {
     if (_conFilters.keyword) params.keyword = _conFilters.keyword;
 
     const res = await API.get('/constructions', { params });
-    const list = res.data || [];
+    var rawList = res.data || [];
+    // [v0.143 LGU+] LGU+ 역할은 자동부여 공사(is_auto_request_no=1)만 접근 가능
+    // 수동 입력 공사(is_auto_request_no=0)는 목록에서 제외
+    var myUiRoleForCon = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+    var isLguPlusUser = (myUiRoleForCon === 'lgu_plus' || currentUser.role === 'lgu');
+    var list = isLguPlusUser
+      ? rawList.filter(function(con) { return con.is_auto_request_no === 1; })
+      : rawList;
     window._conListCache = list;   // 엑셀 다운로드용 캐시
     const area = document.getElementById('con-list-area');
     if (!area) return;
@@ -3158,6 +3165,31 @@ async function showConstructionDetail(conId) {
   try {
     const res = await API.get(`/constructions/${conId}`);
     const con = res.data;
+
+    // ── [v0.143 LGU+] 자동부여 공사 접근 차단 ───────────────────────────────
+    // LGU+ 역할(role='lgu' 또는 sub_role='lgu_plus')은
+    // is_auto_request_no=1(자동부여 체크된 공사)만 접근 가능
+    // is_auto_request_no=0(수동입력 공사)는 상세 열람 차단
+    var _conMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+    var _conIsLguPlus = (_conMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
+    if (_conIsLguPlus && con.is_auto_request_no !== 1) {
+      overlay.querySelector('.modal').innerHTML = `
+        <div class="modal-header" style="background:linear-gradient(135deg,#D70072,#685182);border-radius:20px 20px 0 0;border-bottom:none;padding:18px 24px">
+          <h3 class="font-black text-white text-base"><i class="fas fa-lock mr-2"></i>접근 제한</h3>
+          <button onclick="document.getElementById('conDetailOverlay').remove()" class="text-white opacity-70 hover:opacity-100 text-xl"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body text-center py-10">
+          <i class="fas fa-ban text-5xl mb-4" style="color:#D70072;opacity:.5"></i>
+          <p class="font-bold text-gray-700 text-base mb-2">접근 권한이 없습니다</p>
+          <p class="text-sm text-gray-400">공사요청번호 자동부여 공사만<br>LGU+ 계정으로 열람 가능합니다.</p>
+          <button onclick="document.getElementById('conDetailOverlay').remove()"
+            class="mt-6 px-6 py-2 rounded-xl text-white text-sm font-semibold"
+            style="background:linear-gradient(135deg,#D70072,#685182)">확인</button>
+        </div>`;
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     const tasks = con.tasks || [];
     const activeTasks = tasks.filter(t => t.status !== 'cancelled');
     const allCompleted = activeTasks.length > 0 && activeTasks.every(t => t.status === 'completed');
@@ -3683,9 +3715,15 @@ async function saveConstruction(editId) {
   if (!workClass) { toast('공사종류를 선택하세요', 'error'); return; }
   if (!title) { toast('공사명을 입력하세요', 'error'); return; }
 
+  // [v0.143 LGU+] 자동부여 체크박스 상태 읽기
+  const isAutoReqNo = !editId && !!(document.getElementById('cReqNoAuto')?.checked);
+
   const body = { work_number: workNum, work_class: workClass, title, work_order_address: address,
     manager_id: mgId, manager_name: mgName, supervisor_name: supName, description: desc };
-  if (!editId) body.request_no = reqNo;
+  if (!editId) {
+    body.request_no = reqNo;
+    body.is_auto_request_no = isAutoReqNo ? 1 : 0;  // [v0.143 LGU+] 자동부여 여부 저장
+  }
 
   try {
     if (editId) { await API.put(`/constructions/${editId}`, body); }
@@ -4182,8 +4220,18 @@ async function renderTasksPage(container) {
       limit: TASK_PAGE_LIMIT,
       page:  taskFilters.page || 1,
     } });
-    const newTasks = tasksRes.data.tasks || tasksRes.data || [];
-    _taskListTotal = tasksRes.data.total ?? newTasks.length;
+    var _rawNewTasks = tasksRes.data.tasks || tasksRes.data || [];
+    // ── [v0.143 LGU+] LGU+ 역할은 is_auto_request_no=1 공사에 연계된 tasks만 표시 ──
+    var _taskMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+    var _taskIsLguPlus = (_taskMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
+    const newTasks = _taskIsLguPlus
+      ? _rawNewTasks.filter(function(t) { return t.is_auto_request_no === 1; })
+      : _rawNewTasks;
+    // LGU+ 필터 적용 시 total도 필터된 건수로 보정
+    _taskListTotal = _taskIsLguPlus
+      ? newTasks.length
+      : (tasksRes.data.total ?? newTasks.length);
+    // ──────────────────────────────────────────────────────────────────────────
 
     // 1페이지면 초기화, 추가 페이지면 누적
     if ((taskFilters.page || 1) === 1) {

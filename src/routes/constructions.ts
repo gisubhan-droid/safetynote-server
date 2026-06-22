@@ -130,7 +130,7 @@ app.post('/', async (c) => {
   }
 
   const body = await c.req.json<any>()
-  const { request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description } = body
+  const { request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, is_auto_request_no } = body
 
   if (!request_no || !title) return c.json({ error: '공사요청번호와 공사명은 필수입니다' }, 400)
 
@@ -148,11 +148,14 @@ app.post('/', async (c) => {
     return c.json({ error: '공사종류 값이 올바르지 않습니다' }, 400)
   }
 
+  // [v0.143 LGU+] 자동부여 여부 (1=자동부여, 0=수동입력)
+  const autoReqNo = is_auto_request_no ? 1 : 0
+
   try {
     const result = await c.env.DB.prepare(`
       INSERT INTO constructions
-        (request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, created_by, is_auto_request_no)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       request_no,
       work_number || '',
@@ -163,7 +166,8 @@ app.post('/', async (c) => {
       manager_name || '',
       supervisor_name || '',
       description || '',
-      user.id
+      user.id,
+      autoReqNo
     ).run()
 
     const newId = result.meta.last_row_id

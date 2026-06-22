@@ -2723,9 +2723,9 @@ app.patch('/api/checklist/:id/complete', async (c) => {
       // 이미 완료된 경우: 재처리 방지, LGU+ 알림만 발송
     }
 
-    // NOK 항목 조회
+    // NOK 항목 조회 (컬럼명: ci.question — ci.text 아님, BUGFIX v0.143)
     var nokItems = rawDb.prepare(
-      `SELECT cr.*, ci.text, ci.category FROM checklist_responses cr
+      `SELECT cr.*, ci.question, ci.category FROM checklist_responses cr
        JOIN checklist_items ci ON ci.id = cr.item_id
        WHERE cr.assessment_id = ? AND cr.response = 'no'`
     ).all(assessId) as any[]

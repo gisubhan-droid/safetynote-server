@@ -1859,22 +1859,24 @@ function patchSchema() {
 
     // ③ lgu_role_permissions 테이블 생성 (확장 가능한 권한 구조)
     try {
-      rawDb.exec(`
-        CREATE TABLE IF NOT EXISTS lgu_role_permissions (
-          id          INTEGER PRIMARY KEY AUTOINCREMENT,
-          perm_type   TEXT NOT NULL,  -- 'menu' | 'notify'
-          perm_key    TEXT NOT NULL,  -- 메뉴 ID 또는 알림 status 값
-          perm_label  TEXT NOT NULL DEFAULT '',
-          is_enabled  INTEGER NOT NULL DEFAULT 0,
-          updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(perm_type, perm_key)
-        );
-        CREATE INDEX IF NOT EXISTS idx_lgu_perms_type ON lgu_role_permissions(perm_type);
-      `)
+      rawDb.exec(
+        'CREATE TABLE IF NOT EXISTS lgu_role_permissions (' +
+        '  id         INTEGER PRIMARY KEY AUTOINCREMENT,' +
+        '  perm_type  TEXT NOT NULL,' +
+        '  perm_key   TEXT NOT NULL,' +
+        '  perm_label TEXT NOT NULL DEFAULT \'\',' +
+        '  is_enabled INTEGER NOT NULL DEFAULT 0,' +
+        '  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,' +
+        '  UNIQUE(perm_type, perm_key)' +
+        ')'
+      )
       console.log('[patchSchema v0.142] lgu_role_permissions 테이블 준비 완료')
     } catch (e: any) {
       if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.142] lgu_role_permissions 생성 실패:', e.message)
     }
+    try {
+      rawDb.exec('CREATE INDEX IF NOT EXISTS idx_lgu_perms_type ON lgu_role_permissions(perm_type)')
+    } catch (_) {}
   })()
 }
 patchSchema()

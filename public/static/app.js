@@ -25751,9 +25751,9 @@ async function renderFieldReportPage(container) {
         extrasSnapMap[ex.report_id][ex.item_key] = ex.unit_price_snapshot;
     });
     const WR_EXTRA_ORDER = [
-      '조가선신설','커넥터취부','조가선 철거','전주 건식','전주 철거',
-      'B 형접지(대지)','A 형접지(대지)','지선신설','전주세움','가요전선관',
-      '내관포설','완금설치 (한전주)','단순1','단순1-2','단순2'
+      'a000004','a000005','a000006','a000007','a000008',
+      'a000009','a000010','a000011','a000012','a000013',
+      'a000014','a000015','a000016','a000017','a000018'
     ];
     const existingKeys = new Set(extras.map(ex => ex.item_key));
     const allItemKeys = WR_EXTRA_ORDER.filter(k => existingKeys.has(k));
@@ -25831,9 +25831,9 @@ async function renderFieldReportPage(container) {
       const em  = extrasMap[row.id]     || {};
       const esm = extrasSnapMap[row.id] || {};
       const rowAmt = isWorker ? 0 : (
-        (row.cable_new_m    || 0) * (priceMap['cable_new']    || 0) +
-        (row.cable_remove_m || 0) * (priceMap['cable_remove'] || 0) +
-        (row.cable_move_m   || 0) * (priceMap['cable_move']   || 0) +
+        (row.cable_new_m    || 0) * (priceMap['a000001'] || 0) +
+        (row.cable_remove_m || 0) * (priceMap['a000002'] || 0) +
+        (row.cable_move_m   || 0) * (priceMap['a000003'] || 0) +
         allItemKeys.reduce((s,k) => s + (em[k]||0) * (esm[k] != null ? esm[k] : (priceMap[k]||0)), 0)
       );
       cableTotalAmt += rowAmt;
@@ -25872,9 +25872,9 @@ async function renderFieldReportPage(container) {
               const em  = extrasMap[row.id]     || {};
               const esm = extrasSnapMap[row.id] || {};
               const rowAmt = isWorker ? 0 : (
-                (row.cable_new_m    || 0) * (priceMap['cable_new']    || 0) +
-                (row.cable_remove_m || 0) * (priceMap['cable_remove'] || 0) +
-                (row.cable_move_m   || 0) * (priceMap['cable_move']   || 0) +
+                (row.cable_new_m    || 0) * (priceMap['a000001'] || 0) +
+                (row.cable_remove_m || 0) * (priceMap['a000002'] || 0) +
+                (row.cable_move_m   || 0) * (priceMap['a000003'] || 0) +
                 allItemKeys.reduce((s,k) => s + (em[k]||0) * (esm[k] != null ? esm[k] : (priceMap[k]||0)), 0)
               );
               return `
@@ -26098,11 +26098,11 @@ async function _frLoadSpliceStats() {
 
     // work_label → DB item_key 변환 (SPLICE_ITEMS_DEF 기반 역방향 맵)
     // ⚠️ labelToKey는 spliceAmtMap 보다 반드시 먼저 선언되어야 함 (TDZ 방지)
-    // SPLICE_ITEMS_DEF: { key:'광커넥터현장조립', label:'광커넥터 현장조립/취부' }
+    // SPLICE_ITEMS_DEF: { key:'b000008', label:'광커넥터 현장조립/취부' }
     // work_label은 label 값으로 저장되므로 label→key 역방향 맵 필요
     const _spliceLabelToKey = {};
     (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
-      _spliceLabelToKey[d.label] = d.key;  // '광커넥터 현장조립/취부' → '광커넥터현장조립'
+      _spliceLabelToKey[d.label] = d.key;  // '광커넥터 현장조립/취부' → 'b000008'
     });
     const labelToKey = label => {
       if (!label) return '';
@@ -26389,9 +26389,9 @@ function downloadFieldReportCSV() {
       const extraRow = _frCacheItemKeys.map(k => exMap[k] || 0);
       if (_frCacheIsWorker) return [...baseRow, ...extraRow];
       const amt =
-        (row.cable_new_m    ||0) * (_frCachePriceMap['cable_new']    ||0) +
-        (row.cable_remove_m ||0) * (_frCachePriceMap['cable_remove'] ||0) +
-        (row.cable_move_m   ||0) * (_frCachePriceMap['cable_move']   ||0) +
+        (row.cable_new_m    ||0) * (_frCachePriceMap['a000001'] ||0) +
+        (row.cable_remove_m ||0) * (_frCachePriceMap['a000002'] ||0) +
+        (row.cable_move_m   ||0) * (_frCachePriceMap['a000003'] ||0) +
         _frCacheItemKeys.reduce((s,k) => s + (exMap[k]||0)*(esmMap[k] != null ? esmMap[k] : (_frCachePriceMap[k]||0)), 0);
       return [...baseRow, ...extraRow, amt];
     });
@@ -26407,9 +26407,9 @@ function downloadFieldReportCSV() {
     );
     if (!_frCacheIsWorker) {
       const totAmt =
-        _frCacheRows.reduce((s,r)=>s+(r.cable_new_m||0),0)    * (_frCachePriceMap['cable_new']    ||0) +
-        _frCacheRows.reduce((s,r)=>s+(r.cable_remove_m||0),0) * (_frCachePriceMap['cable_remove'] ||0) +
-        _frCacheRows.reduce((s,r)=>s+(r.cable_move_m||0),0)   * (_frCachePriceMap['cable_move']   ||0) +
+        _frCacheRows.reduce((s,r)=>s+(r.cable_new_m||0),0)    * (_frCachePriceMap['a000001'] ||0) +
+        _frCacheRows.reduce((s,r)=>s+(r.cable_remove_m||0),0) * (_frCachePriceMap['a000002'] ||0) +
+        _frCacheRows.reduce((s,r)=>s+(r.cable_move_m||0),0)   * (_frCachePriceMap['a000003'] ||0) +
         _frCacheItemKeys.reduce((s,k) => {
           const q = _frCacheExtras.filter(ex=>ex.item_key===k).reduce((a,ex)=>a+(ex.qty||0),0);
           return s + q*(_frCachePriceMap[k]||0);
@@ -27224,20 +27224,20 @@ async function renderWorkReportForm(container, taskId) {
     const YEAR_OPTS     = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
     // ── 공종별 작업량 공종 목록: volume_unit_prices DB에서 동적 로드 ──
     // cable_new / cable_remove / cable_move 등 케이블 전용 항목은 제외
-    const CABLE_ONLY_KEYS = new Set(['cable_new','cable_remove','cable_move']);
+    const CABLE_ONLY_KEYS = new Set(['a000001','a000002','a000003']);
     const WR_EXTRA_ITEMS = (typesRes.data.prices || [])
       .filter(p => !CABLE_ONLY_KEYS.has(p.item_key))
       .map(p => ({ key: p.item_key, label: p.item_label || p.item_key, unit: p.unit || '식' }));
     // DB 로드 실패 시 하드코딩 폴백
     const WR_EXTRA_ITEMS_FALLBACK = [
-      {key:'조가선신설',  label:'조가선신설',  unit:'M'},  {key:'커넥터취부',   label:'커넥터취부',   unit:'개'},
-      {key:'조가선 철거', label:'조가선 철거', unit:'M'},  {key:'전주 건식',    label:'전주 건식',    unit:'본'},
-      {key:'전주 철거',   label:'전주 철거',   unit:'본'}, {key:'B 형접지(대지)',label:'B 형접지(대지)',unit:'건'},
-      {key:'A 형접지(대지)',label:'A 형접지(대지)',unit:'건'},{key:'지선신설', label:'지선신설',     unit:'건'},
-      {key:'전주세움',    label:'전주세움',    unit:'본'}, {key:'가요전선관',   label:'가요전선관',   unit:'M'},
-      {key:'내관포설',    label:'내관포설',    unit:'M'},  {key:'완금설치 (한전주)',label:'완금설치 (한전주)',unit:'식'},
-      {key:'단순1',       label:'단순1',       unit:'본'}, {key:'단순1-2',      label:'단순1-2',      unit:'경간'},
-      {key:'단순2',       label:'단순2',       unit:'경간'}
+      {key:'a000004', label:'조가선신설',       unit:'M'},  {key:'a000005', label:'커넥터취부',        unit:'개'},
+      {key:'a000006', label:'조가선 철거',       unit:'M'},  {key:'a000007', label:'전주 건식',         unit:'본'},
+      {key:'a000008', label:'전주 철거',         unit:'본'}, {key:'a000009', label:'B 형접지(대지)',    unit:'건'},
+      {key:'a000010', label:'A 형접지(대지)',    unit:'건'}, {key:'a000011', label:'지선신설',          unit:'건'},
+      {key:'a000012', label:'전주세움',          unit:'본'}, {key:'a000013', label:'가요전선관',        unit:'M'},
+      {key:'a000014', label:'내관포설',          unit:'M'},  {key:'a000015', label:'완금설치 (한전주)', unit:'식'},
+      {key:'a000016', label:'단순1',            unit:'본'}, {key:'a000017', label:'단순1-2',           unit:'경간'},
+      {key:'a000018', label:'단순2',            unit:'경간'}
     ];
     const extraItems = WR_EXTRA_ITEMS.length > 0 ? WR_EXTRA_ITEMS : WR_EXTRA_ITEMS_FALLBACK;
 
@@ -27525,14 +27525,14 @@ function _wrAddCableSet() {
   const PURPOSE_OPTS= ['','가공','관로','포설(기존)','포설(신규)','가공+포설','기타'].map(v=>`<option value="${v}">${v||'용도'}</option>`).join('');
   // 공종별 작업량 항목: renderWorkReportForm에서 저장한 DB 캐시 사용 (하드코딩 폴백)
   const WR_EXTRA_ITEMS_FALLBACK2 = [
-    {key:'조가선신설',  label:'조가선신설',  unit:'M'},  {key:'커넥터취부',   label:'커넥터취부',   unit:'개'},
-    {key:'조가선 철거', label:'조가선 철거', unit:'M'},  {key:'전주 건식',    label:'전주 건식',    unit:'본'},
-    {key:'전주 철거',   label:'전주 철거',   unit:'본'}, {key:'B 형접지(대지)',label:'B 형접지(대지)',unit:'건'},
-    {key:'A 형접지(대지)',label:'A 형접지(대지)',unit:'건'},{key:'지선신설', label:'지선신설',     unit:'건'},
-    {key:'전주세움',    label:'전주세움',    unit:'본'}, {key:'가요전선관',   label:'가요전선관',   unit:'M'},
-    {key:'내관포설',    label:'내관포설',    unit:'M'},  {key:'완금설치 (한전주)',label:'완금설치 (한전주)',unit:'식'},
-    {key:'단순1',       label:'단순1',       unit:'본'}, {key:'단순1-2',      label:'단순1-2',      unit:'경간'},
-    {key:'단순2',       label:'단순2',       unit:'경간'}
+    {key:'a000004', label:'조가선신설',       unit:'M'},  {key:'a000005', label:'커넥터취부',        unit:'개'},
+    {key:'a000006', label:'조가선 철거',       unit:'M'},  {key:'a000007', label:'전주 건식',         unit:'본'},
+    {key:'a000008', label:'전주 철거',         unit:'본'}, {key:'a000009', label:'B 형접지(대지)',    unit:'건'},
+    {key:'a000010', label:'A 형접지(대지)',    unit:'건'}, {key:'a000011', label:'지선신설',          unit:'건'},
+    {key:'a000012', label:'전주세움',          unit:'본'}, {key:'a000013', label:'가요전선관',        unit:'M'},
+    {key:'a000014', label:'내관포설',          unit:'M'},  {key:'a000015', label:'완금설치 (한전주)', unit:'식'},
+    {key:'a000016', label:'단순1',            unit:'본'}, {key:'a000017', label:'단순1-2',           unit:'경간'},
+    {key:'a000018', label:'단순2',            unit:'경간'}
   ];
   const WR_EXTRA_ITEMS = window._wrExtraItemsCache || WR_EXTRA_ITEMS_FALLBACK2;
   const sid = `cs${n}`;
@@ -28074,17 +28074,17 @@ function _srSwitchTab(tab) {
 // 접속일보 — 입력 폼 페이지
 // ═══════════════════════════════════════════════════════════════
 const SPLICE_ITEMS_DEF = [
-  { key:'함체작업',              label:'함체작업',              has_aerial:true,  unit:'개소' },
-  { key:'중간분기',              label:'중간분기',              has_aerial:true,  unit:'개소' },
-  { key:'선번확인',              label:'선번확인',              has_aerial:true,  unit:'개소' },
-  { key:'광케이블코아접속',       label:'광케이블 코아접속',     has_aerial:true,  unit:'코어' },
-  { key:'광케이블성단',           label:'광케이블 성단',         has_aerial:true,  unit:'코어' },
-  { key:'광탭작업',              label:'광탭작업',              has_aerial:true,  unit:'개소' },
-  { key:'광탭중간분기',           label:'광탭 중간분기',         has_aerial:true,  unit:'개소' },
-  { key:'광커넥터현장조립',        label:'광커넥터 현장조립/취부',has_aerial:true,  unit:'개소' },
-  { key:'광탭결합고정',           label:'광탭 결합/고정 작업',  has_aerial:true,  unit:'개소' },
-  { key:'FTTH레벨측정',           label:'FTTH 레벨 측정시험',   has_aerial:true,  unit:'코어' },
-  { key:'신호수배치',             label:'신호수배치',            has_aerial:false, unit:'건'   },
+  { key:'b000001', label:'함체작업',              has_aerial:true,  unit:'개소' },
+  { key:'b000002', label:'중간분기',              has_aerial:true,  unit:'개소' },
+  { key:'b000003', label:'선번확인',              has_aerial:true,  unit:'개소' },
+  { key:'b000004', label:'광케이블 코아접속',      has_aerial:true,  unit:'코어' },
+  { key:'b000005', label:'광케이블 성단',          has_aerial:true,  unit:'코어' },
+  { key:'b000006', label:'광탭작업',              has_aerial:true,  unit:'개소' },
+  { key:'b000007', label:'광탭 중간분기',          has_aerial:true,  unit:'개소' },
+  { key:'b000008', label:'광커넥터 현장조립/취부', has_aerial:true,  unit:'개소' },
+  { key:'b000009', label:'광탭 결합/고정 작업',   has_aerial:true,  unit:'개소' },
+  { key:'b000010', label:'FTTH 레벨 측정시험',    has_aerial:true,  unit:'코어' },
+  { key:'b000011', label:'신호수배치',            has_aerial:false, unit:'건'   },
 ];
 
 async function renderSpliceReportForm(container, reportId, taskId) {
@@ -28155,9 +28155,9 @@ async function renderSpliceReportForm(container, reportId, taskId) {
 
     // ── label → DB item_key 변환 (mkItemRow / customItems 전용) ─────────────
     // SPLICE_ITEMS_DEF 역방향 맵 우선 적용 → 폴백: 공백/슬래시 제거
-    // '광커넥터 현장조립/취부' → '광커넥터현장조립'  (DB key 정확 일치)
-    // '광탭 결합/고정 작업'   → '광탭결합고정'       (DB key 정확 일치)
-    // 'FTTH 레벨 측정시험'    → 'FTTH레벨측정'       (DB key 정확 일치)
+    // '광커넥터 현장조립/취부' → 'b000008'  (DB key 정확 일치)
+    // '광탭 결합/고정 작업'   → 'b000009'  (DB key 정확 일치)
+    // 'FTTH 레벨 측정시험'    → 'b000010'  (DB key 정확 일치)
     // ⚠️ 반드시 customItems 사용 앞에 선언 (TDZ 방지 — BUGFIX BUG-023)
     const _mkLabelToKey = {};
     (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
@@ -28668,9 +28668,9 @@ async function renderVolumeStatsPage(container) {
 
     // extras에 등장하는 모든 item_key 목록 (헤더 컬럼 동적 생성 — WR_EXTRA_ITEMS 입력 순서 기준)
     const WR_EXTRA_ORDER = [
-      '조가선신설','커넥터취부','조가선 철거','전주 건식','전주 철거',
-      'B 형접지(대지)','A 형접지(대지)','지선신설','전주세움','가요전선관',
-      '내관포설','완금설치 (한전주)','단순1','단순1-2','단순2'
+      'a000004','a000005','a000006','a000007','a000008',
+      'a000009','a000010','a000011','a000012','a000013',
+      'a000014','a000015','a000016','a000017','a000018'
     ];
     const existingKeys = new Set(extras.map(ex => ex.item_key));
     const allItemKeys = WR_EXTRA_ORDER.filter(k => existingKeys.has(k));
@@ -28816,9 +28816,9 @@ async function renderVolumeStatsPage(container) {
       const rowAmounts = rows.map(row => {
         const exMap = extrasMap[row.report_id] || {};
         if (isWorker) return 0;
-        return (row.cable_new_m    ||0) * (priceMap['cable_new']    ||0) +
-               (row.cable_remove_m ||0) * (priceMap['cable_remove'] ||0) +
-               (row.cable_move_m   ||0) * (priceMap['cable_move']   ||0) +
+        return (row.cable_new_m    ||0) * (priceMap['a000001'] ||0) +
+               (row.cable_remove_m ||0) * (priceMap['a000002'] ||0) +
+               (row.cable_move_m   ||0) * (priceMap['a000003'] ||0) +
                allItemKeys.reduce((s,k) => s + (exMap[k]||0)*(priceMap[k]||0), 0);
       });
 
@@ -29476,9 +29476,9 @@ function downloadVolumeStatsCSV() {
   // 행별 금액 계산 함수
   const calcAmt = (row) => {
     const exMap = extrasMap[row.report_id] || {};
-    return (row.cable_new_m    ||0) * (priceMap?.['cable_new']    ||0) +
-           (row.cable_remove_m ||0) * (priceMap?.['cable_remove'] ||0) +
-           (row.cable_move_m   ||0) * (priceMap?.['cable_move']   ||0) +
+    return (row.cable_new_m    ||0) * (priceMap?.['a000001'] ||0) +
+           (row.cable_remove_m ||0) * (priceMap?.['a000002'] ||0) +
+           (row.cable_move_m   ||0) * (priceMap?.['a000003'] ||0) +
            allItemKeys.reduce((s,k) => s + (exMap[k]||0)*(priceMap?.[k]||0), 0);
   };
 
@@ -29532,9 +29532,9 @@ function printVolumeStats() {
   // 금액 계산
   const calcAmt = (row) => {
     const exMap = extrasMap[row.report_id] || {};
-    return (row.cable_new_m    ||0)*(priceMap?.['cable_new']   ||0) +
-           (row.cable_remove_m ||0)*(priceMap?.['cable_remove']||0) +
-           (row.cable_move_m   ||0)*(priceMap?.['cable_move']  ||0) +
+    return (row.cable_new_m    ||0)*(priceMap?.['a000001'] ||0) +
+           (row.cable_remove_m ||0)*(priceMap?.['a000002'] ||0) +
+           (row.cable_move_m   ||0)*(priceMap?.['a000003'] ||0) +
            allItemKeys.reduce((s,k)=>s+(exMap[k]||0)*(priceMap?.[k]||0),0);
   };
 
@@ -30260,8 +30260,13 @@ async function _upAddCableItem() {
   const label   = (labelEl?.value || '').trim();
   const price   = Number(priceEl?.value) || 0;
   if (!label) { toast('공종명을 입력하세요.', 'error'); return; }
-  // item_key: 공백제거 변환
-  const item_key = label.replace(/ /g,'').replace(/\//g,'');
+  // item_key: a + 6자리 순번 자동 부여 (기존 키 중 최대값 + 1)
+  const tbody = document.getElementById('up-cable-tbody');
+  const existingKeys = tbody
+    ? [...tbody.querySelectorAll('tr[data-key]')].map(tr => tr.dataset.key).filter(k => /^a\d{6}$/.test(k))
+    : [];
+  const maxNum = existingKeys.reduce((m, k) => Math.max(m, parseInt(k.slice(1), 10)), 0);
+  const item_key = 'a' + String(maxNum + 1).padStart(6, '0');
   try {
     await API.post('/volume-unit-prices', { item_key, item_label: label, unit_price: price });
     toast(`'${label}' 공종이 추가되었습니다.`);
@@ -30319,7 +30324,13 @@ async function _upAddSpliceItem() {
   const unit    = (unitEl?.value  || '').trim() || '개소';
   const price   = Number(priceEl?.value) || 0;
   if (!label) { toast('공종명을 입력하세요.', 'error'); return; }
-  const item_key = label.replace(/ /g,'').replace(/\//g,'');
+  // item_key: b + 6자리 순번 자동 부여 (기존 키 중 최대값 + 1)
+  const tbodySp = document.getElementById('up-splice-tbody');
+  const existingKeysSp = tbodySp
+    ? [...tbodySp.querySelectorAll('tr[data-key]')].map(tr => tr.dataset.key).filter(k => /^b\d{6}$/.test(k))
+    : [];
+  const maxNumSp = existingKeysSp.reduce((m, k) => Math.max(m, parseInt(k.slice(1), 10)), 0);
+  const item_key = 'b' + String(maxNumSp + 1).padStart(6, '0');
   try {
     await API.post('/splice-unit-prices', { item_key, item_label: label, unit, unit_price: price });
     toast(`'${label}' 공종이 추가되었습니다.`);

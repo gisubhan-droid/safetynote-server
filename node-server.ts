@@ -1345,24 +1345,24 @@ function patchSchema() {
     `)
     rawDb.exec(`
       INSERT OR IGNORE INTO volume_unit_prices (item_key, item_label, unit_price, sort_order) VALUES
-        ('cable_new',    '광케이블 신설',        1100,  1),
-        ('cable_remove', '광케이블 철거',         300,  2),
-        ('cable_move',   '광케이블 이설',        1400,  3),
-        ('조가선신설',   '조가선신설',            400,  4),
-        ('커넥터취부',   '커넥터취부',          38000,  5),
-        ('조가선 철거',  '조가선 철거',           100,  6),
-        ('전주 건식',    '전주 건식',          120000,  7),
-        ('전주 철거',    '전주 철거',           30000,  8),
-        ('B 형접지(대지)','B 형접지(대지)',      35000,  9),
-        ('A 형접지(대지)','A 형접지(대지)',       6000, 10),
-        ('지선신설',     '지선신설',            35000, 11),
-        ('전주세움',     '전주세움',            45000, 12),
-        ('가요전선관',   '가요전선관',            600, 13),
-        ('내관포설',     '내관포설',             400, 14),
-        ('완금설치 (한전주)','완금설치 (한전주)', 28000, 15),
-        ('단순1',        '단순1',             15000, 16),
-        ('단순1-2',      '단순1-2',           29000, 17),
-        ('단순2',        '단순2',             80000, 18)
+        ('a000001', '광케이블 신설',        1100,  1),
+        ('a000002', '광케이블 철거',         300,  2),
+        ('a000003', '광케이블 이설',        1400,  3),
+        ('a000004', '조가선신설',            400,  4),
+        ('a000005', '커넥터취부',          38000,  5),
+        ('a000006', '조가선 철거',           100,  6),
+        ('a000007', '전주 건식',          120000,  7),
+        ('a000008', '전주 철거',           30000,  8),
+        ('a000009', 'B 형접지(대지)',      35000,  9),
+        ('a000010', 'A 형접지(대지)',       6000, 10),
+        ('a000011', '지선신설',            35000, 11),
+        ('a000012', '전주세움',            45000, 12),
+        ('a000013', '가요전선관',            600, 13),
+        ('a000014', '내관포설',             400, 14),
+        ('a000015', '완금설치 (한전주)',    28000, 15),
+        ('a000016', '단순1',             15000, 16),
+        ('a000017', '단순1-2',           29000, 17),
+        ('a000018', '단순2',             80000, 18)
     `)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_work_reports_task  ON work_reports(task_id)`)
     rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_report_lines       ON work_report_lines(report_id)`)
@@ -1450,9 +1450,9 @@ function patchSchema() {
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN cable_code  TEXT DEFAULT ''`)
     safeAlter(`ALTER TABLE work_report_cables ADD COLUMN special_note TEXT DEFAULT ''`)
     // volume_unit_prices 항목을 신규 단가표로 교체 (기존 구버전 키 삭제)
-    const newKeys = ['cable_new','cable_remove','cable_move','조가선신설','커넥터취부','조가선 철거',
-      '전주 건식','전주 철거','B 형접지(대지)','A 형접지(대지)','지선신설','전주세움',
-      '가요전선관','내관포설','완금설치 (한전주)','단순1','단순1-2','단순2']
+    const newKeys = ['a000001','a000002','a000003','a000004','a000005','a000006',
+      'a000007','a000008','a000009','a000010','a000011','a000012',
+      'a000013','a000014','a000015','a000016','a000017','a000018']
     const oldKeys = ['joga_new','connector','joga_remove','ip_new','ip_remove','ground_b','ground_a']
     oldKeys.forEach(k => { try { rawDb.prepare(`DELETE FROM volume_unit_prices WHERE item_key=?`).run(k) } catch(_){} })
     // 추가입력(공종별 작업량) 테이블 생성
@@ -1541,17 +1541,17 @@ function patchSchema() {
     `)
     rawDb.exec(`
       INSERT OR IGNORE INTO splice_unit_prices (item_key, item_label, unit, unit_price, sort_order) VALUES
-        ('함체작업',              '함체작업',              '개소', 0, 1),
-        ('중간분기',              '중간분기',              '개소', 0, 2),
-        ('선번확인',              '선번확인',              '개소', 0, 3),
-        ('광케이블코아접속',       '광케이블 코아접속',      '코어', 0, 4),
-        ('광케이블성단',           '광케이블 성단',          '코어', 0, 5),
-        ('광탭작업',              '광탭작업',              '개소', 0, 6),
-        ('광탭중간분기',           '광탭 중간분기',          '개소', 0, 7),
-        ('광커넥터현장조립',        '광커넥터 현장조립/취부', '개소', 0, 8),
-        ('광탭결합고정',           '광탭 결합/고정 작업',   '개소', 0, 9),
-        ('FTTH레벨측정',           'FTTH 레벨 측정시험',    '코어', 0, 10),
-        ('신호수배치',             '신호수배치',            '건',   0, 11)
+        ('b000001', '함체작업',              '개소', 0, 1),
+        ('b000002', '중간분기',              '개소', 0, 2),
+        ('b000003', '선번확인',              '개소', 0, 3),
+        ('b000004', '광케이블 코아접속',      '코어', 0, 4),
+        ('b000005', '광케이블 성단',          '코어', 0, 5),
+        ('b000006', '광탭작업',              '개소', 0, 6),
+        ('b000007', '광탭 중간분기',          '개소', 0, 7),
+        ('b000008', '광커넥터 현장조립/취부', '개소', 0, 8),
+        ('b000009', '광탭 결합/고정 작업',   '개소', 0, 9),
+        ('b000010', 'FTTH 레벨 측정시험',    '코어', 0, 10),
+        ('b000011', '신호수배치',            '건',   0, 11)
     `)
     console.log('[patchSchema] v0.132w 접속일보 테이블 준비 완료')
   } catch(e: any) {
@@ -1618,16 +1618,15 @@ function patchSchema() {
   try {
     rawDb.exec(`ALTER TABLE volume_unit_prices ADD COLUMN unit TEXT DEFAULT '식'`)
     console.log('[patchSchema] v0.136 volume_unit_prices.unit 컬럼 추가 완료')
-    // 기존 항목 단위 일괄 업데이트
+    // 기존 항목 단위 일괄 업데이트 (영문 순차 키 기준)
     const unitMap: Record<string,string> = {
-      '조가선신설':'M', '커넥터취부':'개', '조가선 철거':'M', '전주 건식':'본',
-      '전주 철거':'본', 'B 형접지(대지)':'건', 'A 형접지(대지)':'건', '지선신설':'건',
-      '전주세움':'본', '가요전선관':'M', '내관포설':'M', '완금설치 (한전주)':'식',
-      '단순1':'본', '단순2':'경간',
-      'cable_new':'M', 'cable_remove':'M', 'cable_move':'M'
+      'a000001':'M', 'a000002':'M', 'a000003':'M',
+      'a000004':'M', 'a000005':'개', 'a000006':'M',
+      'a000007':'본', 'a000008':'본', 'a000009':'건',
+      'a000010':'건', 'a000011':'건', 'a000012':'본',
+      'a000013':'M', 'a000014':'M', 'a000015':'식',
+      'a000016':'본', 'a000017':'경간', 'a000018':'경간'
     }
-    // '단순1-2' 키는 esbuild 파싱 오류 방지를 위해 별도 처리
-    unitMap['단순1-2'] = '경간'
     const updUnit = rawDb.prepare(`UPDATE volume_unit_prices SET unit=? WHERE item_key=? AND (unit IS NULL OR unit='식')`)
     for (const [k, u] of Object.entries(unitMap)) updUnit.run(u, k)
   } catch(e: any) {
@@ -1641,6 +1640,41 @@ function patchSchema() {
     console.log('[patchSchema v0.137] work_report_extras.unit_price_snapshot 컬럼 추가 완료')
   } catch(e: any) {
     if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.137]', e.message)
+  }
+
+  // ── v0.140k: item_key 영문 순차 부여 마이그레이션 ────────────────────────────
+  // 기존 DB의 한글·혼용 item_key를 영문 순차 키(a000001~, b000001~)로 일괄 변환
+  try {
+    const volMapping: [string, string][] = [
+      ['cable_new',          'a000001'], ['cable_remove',      'a000002'], ['cable_move',         'a000003'],
+      ['조가선신설',          'a000004'], ['커넥터취부',          'a000005'], ['조가선 철거',         'a000006'],
+      ['전주 건식',           'a000007'], ['전주 철거',           'a000008'], ['B 형접지(대지)',      'a000009'],
+      ['A 형접지(대지)',      'a000010'], ['지선신설',            'a000011'], ['전주세움',            'a000012'],
+      ['가요전선관',          'a000013'], ['내관포설',            'a000014'], ['완금설치 (한전주)',    'a000015'],
+      ['단순1',              'a000016'], ['단순1-2',            'a000017'], ['단순2',              'a000018'],
+    ]
+    for (const [oldKey, newKey] of volMapping) {
+      // 충돌 없을 때만 UPDATE (newKey가 이미 존재하면 SKIP)
+      rawDb.prepare(
+        `UPDATE volume_unit_prices SET item_key=? WHERE item_key=? AND NOT EXISTS (SELECT 1 FROM volume_unit_prices WHERE item_key=?)`
+      ).run(newKey, oldKey, newKey)
+      // work_report_extras 스냅샷 키도 함께 변환
+      rawDb.prepare(`UPDATE work_report_extras SET item_key=? WHERE item_key=?`).run(newKey, oldKey)
+    }
+    const spliceMapping: [string, string][] = [
+      ['함체작업',        'b000001'], ['중간분기',          'b000002'], ['선번확인',          'b000003'],
+      ['광케이블코아접속', 'b000004'], ['광케이블성단',       'b000005'], ['광탭작업',          'b000006'],
+      ['광탭중간분기',    'b000007'], ['광커넥터현장조립',   'b000008'], ['광탭결합고정',       'b000009'],
+      ['FTTH레벨측정',   'b000010'], ['신호수배치',         'b000011'],
+    ]
+    for (const [oldKey, newKey] of spliceMapping) {
+      rawDb.prepare(
+        `UPDATE splice_unit_prices SET item_key=? WHERE item_key=? AND NOT EXISTS (SELECT 1 FROM splice_unit_prices WHERE item_key=?)`
+      ).run(newKey, oldKey, newKey)
+    }
+    console.log('[patchSchema v0.140k] item_key 영문 순차 마이그레이션 완료')
+  } catch(e: any) {
+    console.warn('[patchSchema v0.140k]', e.message)
   }
 
   // 서버 시작 시 자동 생성 (CREATE INDEX IF NOT EXISTS → 이미 있으면 무시)

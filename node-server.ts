@@ -1770,6 +1770,112 @@ function patchSchema() {
     }
     console.log(`[patchSchema] 성능 인덱스 ${added}/${idxList.length}개 적용 완료`)
   })()
+
+  // ── [v0.142 LGU+] users.role CHECK 확장 + lgu_role_permissions 테이블 추가 ──────
+  ;(function patchLguRole() {
+    try {
+      // ① users 테이블 role CHECK 확장: 'lgu' 값 허용 (테이블 재생성 방식)
+      // SQLite는 ALTER TABLE로 CHECK 제약 수정 불가 → 테이블 재생성 필요
+      // sub_role = 'lgu_plus' 방식도 유지하되, role='lgu' 방식을 추가로 지원
+      const usersSchema = (rawDb.prepare("SELECT sql FROM sqlite_master WHERE name='users'").get() as any)?.sql || ''
+      if (!usersSchema.includes("'lgu'")) {
+        console.log('[patchSchema v0.142] users.role CHECK에 lgu 추가 시작...')
+        rawDb.pragma('foreign_keys = OFF')
+        rawDb.exec(`BEGIN;
+          CREATE TABLE IF NOT EXISTS users_new AS SELECT * FROM users WHERE 0;
+          DROP TABLE users_new;
+          CREATE TABLE users_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'supervisor', 'worker', 'lgu')),
+            department TEXT,
+            phone TEXT,
+            position TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            company TEXT, blood_type TEXT, emergency_contact TEXT, health_info TEXT,
+            edu_hire_date TEXT, edu_special_electric TEXT, edu_special_confined TEXT,
+            edu_special_loading TEXT, edu_experience_date TEXT,
+            team_id INTEGER REFERENCES teams(id),
+            is_leader INTEGER DEFAULT 0, is_pending INTEGER DEFAULT 0,
+            rejection_reason TEXT DEFAULT NULL, approved_by INTEGER DEFAULT NULL,
+            approved_at DATETIME DEFAULT NULL, id_number TEXT,
+            privacy_agreed INTEGER DEFAULT 0, privacy_agreed_at DATETIME,
+            security_agreed INTEGER DEFAULT 0, security_agreed_at DATETIME,
+            location_agreed INTEGER DEFAULT 0, location_agreed_at DATETIME,
+            sub_role TEXT NOT NULL DEFAULT '', grade TEXT DEFAULT '',
+            edu_periodic_date DATE, edu_job_change_date DATE,
+            edu_special_date DATE, edu_supervisor_date DATE,
+            fcm_token TEXT DEFAULT NULL
+          );
+          INSERT INTO users_new SELECT
+            id, username, password_hash, name, role, department, phone, position,
+            is_active, created_at, updated_at, company, blood_type, emergency_contact,
+            health_info, edu_hire_date, edu_special_electric, edu_special_confined,
+            edu_special_loading, edu_experience_date, team_id, is_leader, is_pending,
+            rejection_reason, approved_by, approved_at, id_number,
+            privacy_agreed, privacy_agreed_at, security_agreed, security_agreed_at,
+            location_agreed, location_agreed_at, sub_role, grade,
+            edu_periodic_date, edu_job_change_date, edu_special_date, edu_supervisor_date,
+            COALESCE(fcm_token, NULL)
+          FROM users;
+          DROP TABLE users;
+          ALTER TABLE users_new RENAME TO users;
+          COMMIT;`)
+        rawDb.pragma('foreign_keys = ON')
+        console.log('[patchSchema v0.142] users.role CHECK 확장 완료 (lgu 추가)')
+      } else {
+        console.log('[patchSchema v0.142] users.role CHECK 이미 lgu 포함 (skip)')
+      }
+    } catch (e: any) {
+      rawDb.pragma('foreign_keys = ON')
+      console.error('[patchSchema v0.142] users 재생성 실패:', e.message)
+    }
+
+    // ② system_settings에 LGU+ 관련 기본값 추가
+    try {
+      rawDb.exec(`
+        INSERT OR IGNORE INTO system_settings (key, value, label, description) VALUES
+          ('lgu_menu_dashboard',        '1', 'LGU+ 메뉴: 작업현황',     'LGU+ 역할이 작업현황 메뉴를 볼 수 있으면 1'),
+          ('lgu_menu_inspections',      '1', 'LGU+ 메뉴: 현장점검',     'LGU+ 역할이 현장점검 메뉴를 볼 수 있으면 1'),
+          ('lgu_menu_site_map',         '1', 'LGU+ 메뉴: 현장위치지도', 'LGU+ 역할이 현장위치 지도 메뉴를 볼 수 있으면 1'),
+          ('lgu_menu_constructions',    '0', 'LGU+ 메뉴: 공사현황',     'LGU+ 역할이 공사현황 메뉴를 볼 수 있으면 1'),
+          ('lgu_menu_tasks',            '0', 'LGU+ 메뉴: 작업관리',     'LGU+ 역할이 작업관리 메뉴를 볼 수 있으면 1'),
+          ('lgu_menu_stats',            '0', 'LGU+ 메뉴: 안전현황',     'LGU+ 역할이 안전현황 통계 메뉴를 볼 수 있으면 1'),
+          ('lgu_notify_checklist_done', '1', 'LGU+ 알림: 체크리스트완료', 'LGU+ 대상 알림 — 체크리스트 완료 단계 (request_no 1로 시작)'),
+          ('lgu_notify_tbm_done',       '1', 'LGU+ 알림: TBM완료',      'LGU+ 대상 알림 — TBM 완료 단계 (request_no 1로 시작)'),
+          ('lgu_notify_working',        '1', 'LGU+ 알림: 작업중',       'LGU+ 대상 알림 — 작업중 단계 (request_no 1로 시작)'),
+          ('lgu_notify_work_completed', '1', 'LGU+ 알림: 작업완료',     'LGU+ 대상 알림 — 작업완료 단계 (request_no 1로 시작)'),
+          ('lgu_notify_completed',      '0', 'LGU+ 알림: 최종완료',     'LGU+ 대상 알림 — 최종완료 단계 (request_no 1로 시작)'),
+          ('lgu_notify_cancelled',      '0', 'LGU+ 알림: 취소',         'LGU+ 대상 알림 — 취소 단계 (request_no 1로 시작)');
+      `)
+      console.log('[patchSchema v0.142] system_settings LGU+ 기본값 추가 완료')
+    } catch (e: any) {
+      console.warn('[patchSchema v0.142] system_settings LGU+ 추가 실패:', e.message)
+    }
+
+    // ③ lgu_role_permissions 테이블 생성 (확장 가능한 권한 구조)
+    try {
+      rawDb.exec(`
+        CREATE TABLE IF NOT EXISTS lgu_role_permissions (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          perm_type   TEXT NOT NULL,  -- 'menu' | 'notify'
+          perm_key    TEXT NOT NULL,  -- 메뉴 ID 또는 알림 status 값
+          perm_label  TEXT NOT NULL DEFAULT '',
+          is_enabled  INTEGER NOT NULL DEFAULT 0,
+          updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(perm_type, perm_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_lgu_perms_type ON lgu_role_permissions(perm_type);
+      `)
+      console.log('[patchSchema v0.142] lgu_role_permissions 테이블 준비 완료')
+    } catch (e: any) {
+      if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.142] lgu_role_permissions 생성 실패:', e.message)
+    }
+  })()
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)
@@ -2390,6 +2496,53 @@ app.patch('/api/tasks/:id/status', async (c) => {
     }
   }
 
+  // ── [v0.142 LGU+] LGU+ 역할 사용자 FCM 알림 — request_no '1'로 시작하는 공사 작업 ──
+  // 대상 상태: tbm_done, working, work_completed (system_settings lgu_notify_* = '1' 인 경우만)
+  try {
+    const lguNotifyKey = `lgu_notify_${status}`
+    const lguEnabled = getSetting(lguNotifyKey)
+    if (lguEnabled === '1') {
+      // 해당 작업의 request_no 조회 (tasks 또는 연결된 constructions)
+      const taskReqRow = rawDb.prepare(
+        `SELECT t.request_no as t_req, c.request_no as c_req
+         FROM tasks t
+         LEFT JOIN constructions c ON c.id = t.construction_id
+         WHERE t.id = ?`
+      ).get(id) as any
+      const reqNo = (taskReqRow?.t_req || taskReqRow?.c_req || '')
+      const isLguTarget = reqNo && (reqNo.startsWith('1'))
+      if (isLguTarget) {
+        // LGU+ 역할 사용자 조회 (role='lgu' 또는 sub_role='lgu_plus')
+        const lguUsers = rawDb.prepare(
+          `SELECT id FROM users WHERE (role='lgu' OR sub_role='lgu_plus') AND is_active=1`
+        ).all() as any[]
+        const lguIds = lguUsers.map((r: any) => r.id as number).filter(uid => uid !== user.id)
+        if (lguIds.length > 0) {
+          const fcmTitle = `[LGU+] 작업 상태 변경: ${sLabel}`
+          const fcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업이 [${sLabel}]로 변경되었습니다. (${user.name})`
+          console.log(`[FCM/LGU+] 발송 — task:${id} reqNo:${reqNo} status:${status} → lgu targets:${lguIds}`)
+          sendFcmToUsers(lguIds, {
+            title: fcmTitle,
+            body:  fcmBody,
+            data:  { type: 'task_status_lgu', taskId: String(id), status }
+          }).catch((e: any) => console.error('[FCM/LGU+] FCM 오류:', e.message))
+          // notifications DB 저장 (LGU+ 사용자)
+          try {
+            const lguNotifTitle = `[LGU+] 작업 상태 변경: ${sLabel}`
+            for (const lguUid of lguIds) {
+              rawDb.prepare(
+                `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+                 VALUES (?, 'task_status_lgu', ?, ?, ?, 'task', 0)`
+              ).run(lguUid, lguNotifTitle, fcmBody, id)
+            }
+          } catch(_) {}
+        }
+      }
+    }
+  } catch(e: any) {
+    console.error('[FCM/LGU+] LGU+ 알림 준비 오류:', e.message)
+  }
+
   return c.json({ success: true })
 })
 
@@ -2423,6 +2576,188 @@ app.get('/api/inspections/photo/:id/img', async (c) => {
 app.route('/api/inspections', inspectionRoutes)
 app.route('/api/hazards', hazardRoutes)
 app.route('/api/worklogs', worklogRoutes)
+
+// ── [v0.142 LGU+] NAS 전용: 체크리스트 완료 후 LGU+ 알림 자동 트리거 ─────────
+// RULE-002: checklistRoutes 마운트보다 앞에 등록 (NAS 전용 라우트 우선순위)
+// PATCH /api/checklist/:id/complete 를 가로채서 원본 처리 후 LGU+ 알림 발송
+// checklist.ts(Cloudflare용) c.env.DB 사용 → NAS에서는 rawDb로 직접 처리
+app.patch('/api/checklist/:id/complete', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  var assessId = Number(c.req.param('id'))
+
+  // ① checklist.ts 원본 로직을 NAS 환경에서 직접 실행 (better-sqlite3 동기 API)
+  try {
+    var asmRow: any = rawDb.prepare(
+      `SELECT ca.*, t.work_class FROM checklist_assessments ca JOIN tasks t ON t.id = ca.task_id WHERE ca.id = ?`
+    ).get(assessId)
+    if (!asmRow) return c.json({ error: '체크리스트 평가를 찾을 수 없습니다.' }, 404)
+    if (asmRow.status === 'completed') {
+      // 이미 완료된 경우: 재처리 방지, LGU+ 알림만 발송
+    }
+
+    // NOK 항목 조회
+    var nokItems = rawDb.prepare(
+      `SELECT cr.*, ci.text, ci.category FROM checklist_responses cr
+       JOIN checklist_items ci ON ci.id = cr.item_id
+       WHERE cr.assessment_id = ? AND cr.response = 'no'`
+    ).all(assessId) as any[]
+
+    // 완료 처리
+    rawDb.prepare(`UPDATE checklist_assessments SET status = 'completed' WHERE id = ?`).run(assessId)
+
+    // KST 현재 시각
+    const nowTs = new Date()
+    const kstTs = new Date(nowTs.getTime() + 9 * 60 * 60 * 1000)
+    const kstStr = kstTs.toISOString().replace('T', ' ').slice(0, 19)
+
+    // tasks 상태 업데이트 (assigned → in_progress)
+    if (asmRow.task_id) {
+      try {
+        var tRow: any = rawDb.prepare(
+          `SELECT work_start_address, checklist_started_at, status FROM tasks WHERE id = ?`
+        ).get(asmRow.task_id)
+        if (tRow?.status === 'assigned') {
+          if (asmRow.gps_address && !tRow?.work_start_address) {
+            rawDb.prepare(
+              `UPDATE tasks SET status='in_progress', checklist_started_at=?, work_start_address=?, work_start_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+            ).run(kstStr, asmRow.gps_address, kstStr, asmRow.task_id)
+          } else {
+            rawDb.prepare(
+              `UPDATE tasks SET status='in_progress', checklist_started_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+            ).run(kstStr, asmRow.task_id)
+          }
+        } else if (!tRow?.checklist_started_at) {
+          rawDb.prepare(
+            `UPDATE tasks SET checklist_started_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+          ).run(kstStr, asmRow.task_id)
+        }
+      } catch(_) {}
+    }
+
+    // ② [v0.142 LGU+] 체크리스트 완료 시 LGU+ 알림 발송
+    try {
+      var lguChkEnabled = getSetting('lgu_notify_checklist_done')
+      if (lguChkEnabled === '1' && asmRow.task_id) {
+        var lguTaskRow: any = rawDb.prepare(
+          `SELECT t.request_no as t_req, t.title, t.task_number, t.work_number, t.sub_task_number,
+                  c.request_no as c_req
+           FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+           WHERE t.id = ?`
+        ).get(asmRow.task_id)
+        if (lguTaskRow) {
+          var lguReqNo = lguTaskRow.t_req || lguTaskRow.c_req || ''
+          if (lguReqNo.startsWith('1')) {
+            var lguTaskTitle = lguTaskRow.title || String(asmRow.task_id)
+            var lguTaskNum = lguTaskRow.work_number
+              ? (lguTaskRow.sub_task_number ? `${lguTaskRow.work_number}-${lguTaskRow.sub_task_number}` : lguTaskRow.work_number)
+              : (lguTaskRow.task_number || String(asmRow.task_id))
+            var lguUsersChk: any[] = rawDb.prepare(
+              `SELECT id FROM users WHERE (role='lgu' OR sub_role='lgu_plus') AND is_active=1`
+            ).all() as any[]
+            var lguIdsChk = lguUsersChk.map((r: any) => r.id as number).filter(uid => uid !== user.id)
+            if (lguIdsChk.length > 0) {
+              var lguFcmTitle = `[LGU+] 체크리스트 완료`
+              var lguFcmBody  = `[${lguTaskNum}] "${lguTaskTitle}" 작업 체크리스트가 완료되었습니다. (${user.name})`
+              console.log(`[FCM/LGU+] 체크리스트 완료 알림 — task:${asmRow.task_id} reqNo:${lguReqNo} → lgu:${lguIdsChk}`)
+              sendFcmToUsers(lguIdsChk, {
+                title: lguFcmTitle, body: lguFcmBody,
+                data: { type: 'task_status_lgu', taskId: String(asmRow.task_id), status: 'checklist_done' }
+              }).catch((e: any) => console.error('[FCM/LGU+] 체크리스트 FCM 오류:', e.message))
+              try {
+                for (var lguUidChk of lguIdsChk) {
+                  rawDb.prepare(
+                    `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+                     VALUES (?, 'task_status_lgu', ?, ?, ?, 'task', 0)`
+                  ).run(lguUidChk, lguFcmTitle, lguFcmBody, asmRow.task_id)
+                }
+              } catch(_) {}
+            }
+          }
+        }
+      }
+    } catch(e: any) {
+      console.error('[FCM/LGU+] 체크리스트 완료 알림 오류(무시):', e.message)
+    }
+
+    return c.json({ success: true, nok_items: nokItems, has_warnings: nokItems.length > 0 })
+  } catch (e: any) {
+    console.error('[checklist PATCH NAS /:id/complete]', e.message)
+    return c.json({ error: e.message || '평가 완료 처리 실패' }, 500)
+  }
+})
+
+// ── [v0.142 LGU+] 내부 호출 전용: 체크리스트 완료 LGU+ 알림만 ─────────────────
+// 외부에서는 직접 호출하지 않음
+app.patch('/api/checklist/:id/complete-lgu-notify', async (c) => {
+  // 이 라우트는 내부 호출 전용 — 외부에서 직접 호출하지 않음
+  // 체크리스트 /:id/complete 완료 후 LGU+ 알림만 별도 처리
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const assessId = Number(c.req.param('id'))
+  try {
+    const lguEnabled = getSetting('lgu_notify_checklist_done')
+    if (lguEnabled !== '1') return c.json({ lgu_notified: false, reason: 'disabled' })
+
+    // 체크리스트 평가의 task_id 조회
+    const asmRow = rawDb.prepare(
+      `SELECT task_id FROM checklist_assessments WHERE id = ?`
+    ).get(assessId) as any
+    if (!asmRow?.task_id) return c.json({ lgu_notified: false, reason: 'no_task' })
+    const taskId = asmRow.task_id
+
+    // 해당 작업의 request_no 조회
+    const taskRow = rawDb.prepare(
+      `SELECT t.request_no as t_req, t.title, t.task_number, t.work_number, t.sub_task_number,
+              c.request_no as c_req
+       FROM tasks t
+       LEFT JOIN constructions c ON c.id = t.construction_id
+       WHERE t.id = ?`
+    ).get(taskId) as any
+    if (!taskRow) return c.json({ lgu_notified: false, reason: 'no_task_row' })
+
+    const reqNo = taskRow.t_req || taskRow.c_req || ''
+    if (!reqNo.startsWith('1')) return c.json({ lgu_notified: false, reason: 'req_no_not_1x' })
+
+    const taskTitle = taskRow.title || String(taskId)
+    const taskNumDisplay = taskRow.work_number
+      ? (taskRow.sub_task_number ? `${taskRow.work_number}-${taskRow.sub_task_number}` : taskRow.work_number)
+      : (taskRow.task_number || String(taskId))
+
+    // LGU+ 역할 사용자 조회
+    const lguUsers = rawDb.prepare(
+      `SELECT id FROM users WHERE (role='lgu' OR sub_role='lgu_plus') AND is_active=1`
+    ).all() as any[]
+    const lguIds = lguUsers.map((r: any) => r.id as number).filter(uid => uid !== user.id)
+
+    if (lguIds.length > 0) {
+      const fcmTitle = `[LGU+] 체크리스트 완료`
+      const fcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업 체크리스트가 완료되었습니다. (${user.name})`
+      console.log(`[FCM/LGU+] 체크리스트 완료 알림 — task:${taskId} reqNo:${reqNo} → lgu:${lguIds}`)
+      sendFcmToUsers(lguIds, {
+        title: fcmTitle,
+        body:  fcmBody,
+        data:  { type: 'task_status_lgu', taskId: String(taskId), status: 'checklist_done' }
+      }).catch((e: any) => console.error('[FCM/LGU+] 체크리스트 FCM 오류:', e.message))
+      // notifications DB 저장
+      try {
+        for (const lguUid of lguIds) {
+          rawDb.prepare(
+            `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+             VALUES (?, 'task_status_lgu', ?, ?, ?, 'task', 0)`
+          ).run(lguUid, fcmTitle, fcmBody, taskId)
+        }
+      } catch(_) {}
+      return c.json({ lgu_notified: true, count: lguIds.length })
+    }
+    return c.json({ lgu_notified: false, reason: 'no_lgu_users' })
+  } catch (e: any) {
+    console.error('[FCM/LGU+] 체크리스트 완료 알림 오류:', e.message)
+    return c.json({ lgu_notified: false, error: e.message }, 500)
+  }
+})
+
 app.route('/api/checklist', checklistRoutes)
 app.route('/api/teams', teamRoutes)
 // ─── 교육 사진/리포트 → nas-routes/education-extra.ts (RULE-002: educationRoutes 앞) ─

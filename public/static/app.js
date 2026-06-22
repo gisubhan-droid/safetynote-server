@@ -1967,6 +1967,11 @@ async function doLogin() {
       try { window.SafetyNoteApp.saveAuthToken(res.data.token); } catch(e) { /* ignore */ }
     }
     toast(`${currentUser.name}님 환영합니다!`);
+    // [v0.142 LGU+] LGU+ 역할이면 메뉴 설정 사전 로드
+    var loginUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+    if (loginUiRole === 'lgu_plus' || currentUser.role === 'lgu') {
+      await loadLguSettings().catch(function(){});
+    }
     renderApp();
   } catch (e) {
     toast(e.response?.data?.error || '로그인 실패', 'error');
@@ -2007,17 +2012,43 @@ function doLogout() {
   renderLogin();
 }
 
+// ======= [v0.142 LGU+] LGU+ 설정 로드 헬퍼 =======
+// 앱 초기화 또는 관리자 설정 변경 후 호출
+// window.__lguMenuSettings 에 system_settings lgu_* 값을 캐시
+async function loadLguSettings() {
+  try {
+    var res = await API.get('/admin/settings');
+    var settings = (res.data && res.data.settings) || [];
+    var map = {};
+    settings.forEach(function(s) { if (s.key && s.key.startsWith('lgu_')) map[s.key] = s.value; });
+    window.__lguMenuSettings = map;
+  } catch(e) {
+    // 권한 없음(403) 등: 기본값 사용
+    if (!window.__lguMenuSettings) window.__lguMenuSettings = {};
+  }
+}
+
 // ======= 앱 레이아웃 =======
 function renderApp() {
   const myUiRoleForLayout = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
   const isWorker   = currentUser.role === 'worker' && myUiRoleForLayout !== 'lgu_plus';
   const isLguPlus  = myUiRoleForLayout === 'lgu_plus';
 
-  // LGU+ 역할: 공사현황·작업관리·현장점검·안전현황(stats-*) 열람 전용 고정 권한
-  const LGU_PLUS_ALLOWED_MENUS = [
-    'dashboard', 'tasks', 'inspections',
-    'stats-task', 'stats-inspection', 'stats-worker-safety',
-  ];
+  // LGU+ 역할: 기본 허용 메뉴 (system_settings lgu_menu_* 설정에 따라 동적 변경)
+  // 기본값: 작업현황(dashboard), 현장점검(inspections), 현장위치지도(site-map)
+  var LGU_PLUS_ALLOWED_MENUS = ['dashboard', 'inspections', 'site-map', 'my-profile'];
+  if (isLguPlus && window.__lguMenuSettings) {
+    // 서버 설정 기반 동적 메뉴 권한 (loadLguSettings()로 로드된 값 사용)
+    var lguDyn = [];
+    if (window.__lguMenuSettings['lgu_menu_dashboard']     === '1') lguDyn.push('dashboard');
+    if (window.__lguMenuSettings['lgu_menu_inspections']   === '1') lguDyn.push('inspections');
+    if (window.__lguMenuSettings['lgu_menu_site_map']      === '1') lguDyn.push('site-map');
+    if (window.__lguMenuSettings['lgu_menu_constructions'] === '1') lguDyn.push('constructions');
+    if (window.__lguMenuSettings['lgu_menu_tasks']         === '1') lguDyn.push('tasks');
+    if (window.__lguMenuSettings['lgu_menu_stats']         === '1') lguDyn.push('stats-task', 'stats-inspection', 'stats-worker-safety');
+    lguDyn.push('my-profile'); // 내 계정은 항상 허용
+    if (lguDyn.length > 1) LGU_PLUS_ALLOWED_MENUS = lguDyn;
+  }
 
   // permissions 기반 메뉴 필터링 함수
   // null이면 전체 허용, 배열이면 해당 id만 허용
@@ -2084,20 +2115,33 @@ function renderApp() {
     ]},
   ];
 
-  // LGU+ 전용 메뉴: 열람 허용된 관리자 메뉴만 표시 + 내 계정
-  const lguPlusMenuItems = [
-    { id:'constructions', icon:'fas fa-hard-hat',         label:'공사현황' },
-    { id:'dashboard',   icon:'fas fa-tasks',              label:'작업현황' },
-    { id:'tasks',       icon:'fas fa-clipboard-list',     label:'작업관리' },
-    { id:'inspections', icon:'fas fa-search',             label:'현장점검' },
-    { divider: true, label: '안전현황' },
-    { id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
+  // LGU+ 전용 메뉴: 서버 설정(lgu_menu_*)에 따라 동적으로 구성
+  // 기본: 작업현황 / 현장점검 / 현장위치 지도 (요구사항)
+  var lguAllMenuCandidates = [
+    { id:'constructions', icon:'fas fa-hard-hat',         label:'공사현황',       settingKey:'lgu_menu_constructions' },
+    { id:'dashboard',     icon:'fas fa-tasks',            label:'작업현황',       settingKey:'lgu_menu_dashboard' },
+    { id:'tasks',         icon:'fas fa-clipboard-list',   label:'작업관리',       settingKey:'lgu_menu_tasks' },
+    { id:'inspections',   icon:'fas fa-search',           label:'현장점검',       settingKey:'lgu_menu_inspections' },
+    { id:'site-map',      icon:'fas fa-map-marked-alt',   label:'현장위치 지도',  settingKey:'lgu_menu_site_map' },
+  ];
+  var lguSettings = window.__lguMenuSettings || {};
+  var lguPlusMenuItems = lguAllMenuCandidates.filter(m => {
+    // 설정이 없으면 기본값 적용 (dashboard/inspections/site-map = '1', 나머지 = '0')
+    var defaultOn = ['lgu_menu_dashboard','lgu_menu_inspections','lgu_menu_site_map'].includes(m.settingKey);
+    var val = lguSettings[m.settingKey];
+    return val !== undefined ? val === '1' : defaultOn;
+  }).map(m => ({ id: m.id, icon: m.icon, label: m.label }));
+
+  // 안전현황 통계 (lgu_menu_stats 허용 시 추가)
+  if ((lguSettings['lgu_menu_stats'] || '0') === '1') {
+    lguPlusMenuItems.push({ divider: true, label: '안전현황' });
+    lguPlusMenuItems.push({ id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
       { id:'stats-task',          icon:'fas fa-tasks',          label:'작업통계' },
       { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
       { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
-    ]},
-    { id:'my-profile', icon:'fas fa-user-cog', label:'내 계정' },
-  ];
+    ]});
+  }
+  lguPlusMenuItems.push({ id:'my-profile', icon:'fas fa-user-cog', label:'내 계정' });
 
   const menuItems = isLguPlus ? lguPlusMenuItems : isWorker ? [
     { id:'my-tasks',         icon:'fas fa-tasks',                 label:'내 작업' },
@@ -14351,6 +14395,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
       { key:'gps',    label:'GPS 주소 변환',       icon:'fas fa-map-marker-alt',color:'red'    },
       { key:'apk',    label:'APK 배포 관리',       icon:'fab fa-android',       color:'green'  },
       { key:'update', label:'서버 업데이트',       icon:'fas fa-sync-alt',      color:'teal'   },
+      { key:'lgu',    label:'LGU+ 권한 설정',     icon:'fas fa-building',      color:'pink'   },
       { key:'info',   label:'정보',                icon:'fas fa-info-circle',   color:'gray'   },
     ];
     const firstTab = _activeTab || 'push';
@@ -14893,7 +14938,72 @@ async function renderAdminSettingsPage(container, _activeTab) {
 
       </div>
 
-      <div id="spanel-info" class="settings-panel space-y-4 ${firstTab !== 'info' ? 'hidden' : ''}">
+      <!-- ────────────────────────────────────────────────── -->
+      <!-- TAB: LGU+ 권한 설정                              -->
+      <!-- ────────────────────────────────────────────────── -->
+      <div id="spanel-lgu" class="settings-panel space-y-4 ${firstTab !== 'lgu' ? 'hidden' : ''}">
+
+        <!-- LGU+ 메뉴 권한 -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 border border-pink-100">
+          <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
+            <i class="fas fa-building text-pink-500"></i> LGU+ 역할 조회 가능 메뉴
+          </h3>
+          <p class="text-xs text-gray-400 mb-4">LGU+ 역할로 로그인한 사용자가 접근할 수 있는 메뉴를 설정합니다.</p>
+          <div class="space-y-2" id="lgu-menu-settings">
+            ${[
+              { key:'lgu_menu_dashboard',     label:'작업현황',       defaultOn:true  },
+              { key:'lgu_menu_inspections',   label:'현장점검',       defaultOn:true  },
+              { key:'lgu_menu_site_map',      label:'현장위치 지도',  defaultOn:true  },
+              { key:'lgu_menu_constructions', label:'공사현황',       defaultOn:false },
+              { key:'lgu_menu_tasks',         label:'작업관리',       defaultOn:false },
+              { key:'lgu_menu_stats',         label:'안전현황 통계',  defaultOn:false },
+            ].map(item => {
+              const val = sv[item.key] !== undefined ? sv[item.key] === '1' : item.defaultOn;
+              return \`<label class="flex items-center gap-3 p-3 rounded-xl border \${val ? 'border-pink-200 bg-pink-50' : 'border-gray-200 bg-gray-50'} cursor-pointer lgu-menu-toggle" data-key="\${item.key}">
+                <input type="checkbox" class="w-4 h-4 rounded" \${val ? 'checked' : ''} onchange="toggleLguSetting(this, '\${item.key}', 'menu')">
+                <span class="text-sm font-medium text-gray-700">\${item.label}</span>
+                <span class="ml-auto text-xs \${val ? 'text-pink-600 font-semibold' : 'text-gray-400'}">\${val ? '허용' : '차단'}</span>
+              </label>\`;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- LGU+ 알림 단계 설정 -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 border border-pink-100">
+          <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
+            <i class="fas fa-bell text-pink-500"></i> LGU+ 역할 알림 수신 단계
+          </h3>
+          <p class="text-xs text-gray-400 mb-1">요청번호가 <b>1로 시작하는 공사</b>에 연계된 작업에서 아래 단계 도달 시 LGU+ 역할 사용자에게 푸시 알림이 발송됩니다.</p>
+          <p class="text-xs text-blue-500 mb-4"><i class="fas fa-info-circle mr-1"></i>알림은 앱이 설치된 LGU+ 계정에만 발송됩니다.</p>
+          <div class="space-y-2" id="lgu-notify-settings">
+            ${[
+              { key:'lgu_notify_checklist_done', label:'체크리스트 완료 (작업 준비 단계)',  defaultOn:true  },
+              { key:'lgu_notify_tbm_done',       label:'TBM 완료 (작업 시작 직전)',          defaultOn:true  },
+              { key:'lgu_notify_working',        label:'작업중 (현장 작업 개시)',             defaultOn:true  },
+              { key:'lgu_notify_work_completed', label:'작업완료 (현장 작업 완료)',           defaultOn:true  },
+              { key:'lgu_notify_completed',      label:'최종완료 (모든 처리 완료)',           defaultOn:false },
+              { key:'lgu_notify_cancelled',      label:'취소 (작업 취소)',                   defaultOn:false },
+            ].map(item => {
+              const val = sv[item.key] !== undefined ? sv[item.key] === '1' : item.defaultOn;
+              return \`<label class="flex items-center gap-3 p-3 rounded-xl border \${val ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-gray-50'} cursor-pointer lgu-notify-toggle" data-key="\${item.key}">
+                <input type="checkbox" class="w-4 h-4 rounded" \${val ? 'checked' : ''} onchange="toggleLguSetting(this, '\${item.key}', 'notify')">
+                <span class="text-sm font-medium text-gray-700">\${item.label}</span>
+                <span class="ml-auto text-xs \${val ? 'text-blue-600 font-semibold' : 'text-gray-400'}">\${val ? '발송' : '미발송'}</span>
+              </label>\`;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- 저장 버튼 -->
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="saveLguSettings()" class="btn btn-primary px-6 py-2 rounded-xl font-semibold text-sm">
+            <i class="fas fa-save mr-1"></i> LGU+ 설정 저장
+          </button>
+        </div>
+
+      </div>
+
+      <div id="spanel-info" class="settings-panel space-y-4 ${firstTab !== 'info' ? 'hidden' : ''}">`
 
         <!-- 서버 정보 -->
         <div class="bg-white rounded-2xl shadow-sm p-5">
@@ -14999,6 +15109,92 @@ function switchSettingsTab(key) {
   if (key === 'push')   _loadFcmStatus();
   if (key === 'info')   _loadDbResetCounts();
   if (key === 'update') _updLoadStatus();
+  // [v0.142 LGU+] lgu 탭 진입 시 최신 설정 리로드
+  if (key === 'lgu')    _reloadLguTabSettings();
+}
+
+// ─────────────────────────────────────────────────────────────
+// [v0.142 LGU+] LGU+ 권한 설정 UI 함수
+// ─────────────────────────────────────────────────────────────
+
+/** LGU+ 탭 진입 시 설정 최신화 */
+async function _reloadLguTabSettings() {
+  try {
+    var res = await API.get('/admin/settings');
+    var settings = (res.data && res.data.settings) || [];
+    // 화면 체크박스 상태 갱신
+    settings.forEach(function(s) {
+      if (!s.key.startsWith('lgu_')) return;
+      var checkbox = document.querySelector('[data-key="' + s.key + '"] input[type="checkbox"]');
+      if (checkbox) {
+        var enabled = s.value === '1';
+        checkbox.checked = enabled;
+        var label = checkbox.closest('label');
+        if (label) {
+          var isMenu = s.key.startsWith('lgu_menu_');
+          label.className = label.className.replace(/border-\w+-200|bg-\w+-50/g, '');
+          if (enabled) {
+            label.classList.add(isMenu ? 'border-pink-200' : 'border-blue-200', isMenu ? 'bg-pink-50' : 'bg-blue-50');
+          } else {
+            label.classList.add('border-gray-200', 'bg-gray-50');
+          }
+          var badge = label.querySelector('span:last-child');
+          if (badge) {
+            badge.textContent = enabled ? (isMenu ? '허용' : '발송') : (isMenu ? '차단' : '미발송');
+            badge.className = 'ml-auto text-xs ' + (enabled ? (isMenu ? 'text-pink-600 font-semibold' : 'text-blue-600 font-semibold') : 'text-gray-400');
+          }
+        }
+      }
+    });
+  } catch(e) {
+    console.warn('[LGU+] 설정 리로드 실패:', e.message);
+  }
+}
+
+/** 체크박스 토글 시 즉시 스타일 갱신 */
+function toggleLguSetting(checkbox, key, type) {
+  var label = checkbox.closest('label');
+  if (!label) return;
+  var enabled = checkbox.checked;
+  var isMenu = (type === 'menu');
+  // 테두리/배경 색상 업데이트
+  ['border-pink-200','bg-pink-50','border-blue-200','bg-blue-50','border-gray-200','bg-gray-50'].forEach(function(cls) {
+    label.classList.remove(cls);
+  });
+  if (enabled) {
+    label.classList.add(isMenu ? 'border-pink-200' : 'border-blue-200', isMenu ? 'bg-pink-50' : 'bg-blue-50');
+  } else {
+    label.classList.add('border-gray-200', 'bg-gray-50');
+  }
+  var badge = label.querySelector('span:last-child');
+  if (badge) {
+    badge.textContent = enabled ? (isMenu ? '허용' : '발송') : (isMenu ? '차단' : '미발송');
+    badge.className = 'ml-auto text-xs ' + (enabled ? (isMenu ? 'text-pink-600 font-semibold' : 'text-blue-600 font-semibold') : 'text-gray-400');
+  }
+}
+
+/** LGU+ 설정 일괄 저장 */
+async function saveLguSettings() {
+  var checkboxes = document.querySelectorAll('#spanel-lgu input[type="checkbox"][data-key], #lgu-menu-settings input, #lgu-notify-settings input');
+  // data-key를 label에서 읽음
+  var payload = {};
+  document.querySelectorAll('#spanel-lgu label[data-key]').forEach(function(label) {
+    var key = label.getAttribute('data-key');
+    var chk = label.querySelector('input[type="checkbox"]');
+    if (key && chk) payload[key] = chk.checked ? '1' : '0';
+  });
+  if (Object.keys(payload).length === 0) {
+    toast('저장할 설정이 없습니다.', 'warning'); return;
+  }
+  try {
+    await API.patch('/admin/settings', payload);
+    // window.__lguMenuSettings 갱신
+    if (!window.__lguMenuSettings) window.__lguMenuSettings = {};
+    Object.assign(window.__lguMenuSettings, payload);
+    toast('LGU+ 설정이 저장되었습니다.', 'success');
+  } catch(e) {
+    toast('저장 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -25553,6 +25749,11 @@ async function init() {
     const res = await API.get('/auth/me');
     currentUser = res.data;
     currentPage = currentUser.role === 'worker' ? 'my-tasks' : 'dashboard';
+    // [v0.142 LGU+] LGU+ 역할이면 메뉴 설정 사전 로드
+    var meUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+    if (meUiRole === 'lgu_plus' || currentUser.role === 'lgu') {
+      await loadLguSettings().catch(function(){});
+    }
     renderApp();
   } catch(e) {
     localStorage.removeItem('token');

@@ -1877,6 +1877,14 @@ function patchSchema() {
     try {
       rawDb.exec('CREATE INDEX IF NOT EXISTS idx_lgu_perms_type ON lgu_role_permissions(perm_type)')
     } catch (_) {}
+
+    // ④ users.permissions 컬럼 추가 (auth.ts INSERT 호환 — NAS DB에 없을 경우 대비)
+    try {
+      rawDb.exec("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT NULL")
+      console.log('[patchSchema v0.142] users.permissions 컬럼 추가 완료')
+    } catch (e: any) {
+      if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.142] users.permissions 컬럼:', e.message)
+    }
   })()
 }
 patchSchema()
@@ -2365,6 +2373,100 @@ app.use('*', cors({
 app.use('/static/*', serveStatic({ root: './public' }))
 
 // ─── API 라우트 ───────────────────────────────────────────────────────
+// [RULE-002] NAS 전용 라우트는 app.route() 앞에 등록
+
+// ── NAS 전용: POST /api/auth/register — rawDb 직접 처리 (c.env.DB 없음) ──────
+// auth.ts(Cloudflare용)는 c.env.DB.prepare()를 사용 → NAS에서 500 발생
+// → rawDb(better-sqlite3 동기)로 동일 로직 구현
+app.post('/api/auth/register', async (c) => {
+  const reqUser = getUser(c)
+  if (!reqUser) return c.json({ error: '인증 필요' }, 401)
+  if (reqUser.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  const body = await c.req.json().catch(() => ({})) as any
+  const {
+    username, password, name, grade, role, sub_role,
+    department, position, phone,
+    company, blood_type, emergency_contact, health_info,
+    edu_hire_date, edu_special_electric, edu_special_confined,
+    edu_special_loading, edu_experience_date, permissions,
+  } = body
+  if (!username || !password || !name || !role) {
+    return c.json({ error: '필수 항목을 입력하세요.' }, 400)
+  }
+  let permValue: string | null = null
+  if (Array.isArray(permissions) && permissions.length > 0) {
+    permValue = JSON.stringify(permissions)
+  }
+  try {
+    rawDb.prepare(
+      'INSERT INTO users (' +
+      '  username, password_hash, name, grade, role, sub_role,' +
+      '  department, position, phone,' +
+      '  company, blood_type, emergency_contact, health_info,' +
+      '  edu_hire_date, edu_special_electric, edu_special_confined,' +
+      '  edu_special_loading, edu_experience_date, permissions' +
+      ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      username, password, name, grade || '', role, sub_role || '',
+      department || '', position || '', phone || '',
+      company || '', blood_type || '', emergency_contact || '', health_info || '',
+      edu_hire_date || '', edu_special_electric || '', edu_special_confined || '',
+      edu_special_loading || '', edu_experience_date || '', permValue
+    )
+    return c.json({ success: true, message: '사용자가 등록되었습니다.' })
+  } catch (e: any) {
+    if (e.message?.includes('UNIQUE')) return c.json({ error: '이미 사용 중인 아이디입니다.' }, 409)
+    console.error('[NAS register] 등록 실패:', e.message)
+    return c.json({ error: '등록 중 오류가 발생했습니다.' }, 500)
+  }
+})
+
+// ── NAS 전용: POST /api/auth/bulk-register — rawDb 직접 처리 ─────────────────
+app.post('/api/auth/bulk-register', async (c) => {
+  const reqUser = getUser(c)
+  if (!reqUser) return c.json({ error: '인증 필요' }, 401)
+  if (reqUser.role !== 'admin') return c.json({ error: '시스템 관리자만 사용할 수 있습니다.' }, 403)
+  const body = await c.req.json().catch(() => ({})) as any
+  const users: any[] = Array.isArray(body.users) ? body.users : []
+  if (users.length === 0) return c.json({ error: '등록할 사용자 목록이 없습니다.' }, 400)
+  const results: any[] = []
+  for (const u of users) {
+    const { username, password, name, role, sub_role,
+      department, position, phone, company,
+      blood_type, emergency_contact, health_info,
+      edu_hire_date, edu_special_electric, edu_special_confined,
+      edu_special_loading, edu_experience_date, permissions, grade,
+    } = u
+    if (!username || !password || !name || !role) {
+      results.push({ username, success: false, error: '필수 항목 누락' }); continue
+    }
+    let permValue: string | null = null
+    if (Array.isArray(permissions) && permissions.length > 0) permValue = JSON.stringify(permissions)
+    try {
+      rawDb.prepare(
+        'INSERT INTO users (' +
+        '  username, password_hash, name, grade, role, sub_role,' +
+        '  department, position, phone, company,' +
+        '  blood_type, emergency_contact, health_info,' +
+        '  edu_hire_date, edu_special_electric, edu_special_confined,' +
+        '  edu_special_loading, edu_experience_date, permissions' +
+        ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(
+        username.trim(), password, name.trim(), grade || '', role, sub_role || '',
+        department || '', position || '', phone || '', company || '',
+        blood_type || '', emergency_contact || '', health_info || '',
+        edu_hire_date || '', edu_special_electric || '', edu_special_confined || '',
+        edu_special_loading || '', edu_experience_date || '', permValue
+      )
+      results.push({ username, success: true })
+    } catch (e: any) {
+      results.push({ username, success: false, error: e.message?.includes('UNIQUE') ? '이미 사용 중인 아이디' : e.message })
+    }
+  }
+  const successCount = results.filter(r => r.success).length
+  return c.json({ success: true, total: users.length, registered: successCount, results })
+})
+
 app.route('/api/auth', authRoutes)
 
 // ── NAS 전용: tasks/:id/tbm-info — tbm-extra.ts (RULE-002: taskRoutes 앞에 등록)

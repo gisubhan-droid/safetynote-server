@@ -3476,3 +3476,42 @@ SELECT item_key, item_label, unit_price, unit, sort_order
 - 컬럼 추가(ALTER TABLE) 후 반드시 해당 컬럼을 **SELECT 쿼리에도 추가** 확인
 - 신규 컬럼을 저장(UPDATE/INSERT)만 하고 조회(SELECT)에 빠뜨리면
   저장은 됐지만 화면에 반영 안 되는 증상으로 나타남 (디버깅 어려움)
+
+## [BUG-027] LGU+ 기능 적용 후 사용자 등록 500 오류 (2026-06-22)
+
+### 증상
+- 사용자 등록 폼에서 등록 버튼 클릭 시 `POST /api/auth/register 500 (Internal Server Error)`
+- 화면에 "등록 중 오류가 발생했습니다." 토스트 메시지
+
+### 원인 (2가지 복합)
+
+**원인 1: auth.ts는 Cloudflare용 — NAS에서 c.env.DB 없음**
+`src/routes/auth.ts`의 `/register` 라우트는 `c.env.DB.prepare()` (Cloudflare D1 API)를 사용.
+NAS 환경에서는 `c.env.DB`가 존재하지 않아 즉시 500 발생.
+
+**원인 2: users.permissions 컬럼 NAS DB에 없음**
+`auth.ts`의 INSERT 쿼리가 `permissions` 컬럼에 값을 넣으려 했으나
+NAS의 `safety.db`에 해당 컬럼이 없어 `table users has no column named permissions` 오류.
+
+### 해결 (커밋 `f019ebb`)
+
+1. **patchSchema v0.142에 `users.permissions` 컬럼 ADD** (서버 시작 시 자동 추가)
+```typescript
+rawDb.exec("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT NULL")
+```
+
+2. **NAS 전용 오버라이드 라우트 등록** (RULE-002 준수 — `app.route()` 앞에 등록)
+```typescript
+// app.route('/api/auth', authRoutes) 앞에:
+app.post('/api/auth/register', async (c) => {
+  // rawDb(better-sqlite3 동기 API)로 직접 처리
+  rawDb.prepare('INSERT INTO users (...) VALUES (...)').run(...)
+})
+app.post('/api/auth/bulk-register', async (c) => { ... })
+```
+
+### ⚠️ 재발 방지 규칙 (RULE-003 신설)
+- **Cloudflare용 라우트(`c.env.DB`)를 NAS에서 그대로 마운트하지 말 것**
+- `src/routes/*.ts` 파일에 `c.env.DB`가 있으면 NAS에서 반드시 오버라이드 필요
+- 오버라이드는 항상 `app.route()` 앞에 등록 (RULE-002)
+- NAS DB 스키마에 없는 컬럼은 patchSchema에서 `ALTER TABLE ADD COLUMN`으로 보완

@@ -1,11 +1,11 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-21 (세션 52)
-> **서버 현재 버전: `b906d1e`** ← 최신 (GitHub)
-> **NAS 배포 버전: `b906d1e`** ✅ 최신 반영 완료
+> 최종 업데이트: 2026-06-23 (세션 59)
+> **서버 현재 버전: `c277b1a`** ← 최신 (GitHub)
+> **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260621w**
 > **APK 최신**: v1.4.7
-> **파일럿 테스트 완료** — 누적 버그 순차 수정 중
+> **BUG-030~035 수정 완료** — NAS 적용 후 사진 기능 확인 필요
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
 ---
@@ -2966,3 +2966,96 @@ NAS 로그:
 - ✅ .env.example 보완 완료
 - ✅ GitHub 푸시 완료
 - ⏳ 실제 신규 NAS 설치 테스트 (사용자 직접 진행)
+
+---
+
+## 세션 58 (2026-06-23) — v0.143 미완성 항목 완성 + 연속 버그 수정 (BUG-030~034)
+
+### 수정 내용
+
+#### 업데이트 API git pull 실패 근본 해결
+- `src/nas-routes/admin.ts`: `git pull` → `git fetch + reset --hard` 변경
+  - 로컬 변경사항(node-server.ts 등) 자동 초기화 후 최신본으로 강제 교체
+
+#### BUG-030: LGU+ 설정 탭 알림 설명 텍스트 방향 오류
+- `app.js` line 15029~15030: "체크한 공사" → "미체크한(수동 입력) 공사"로 수정
+- `node-server.ts`: INSERT 기본값 6개 + patchSchema UPDATE 6개 description 교정
+
+#### BUG-031: Service Worker clone() 에러 — 사진 로딩 지연
+- `service-worker.js` v10 → v11 업그레이드
+- 이미지/바이너리 경로 캐싱 완전 제외 (regex + Content-Type 이중 차단)
+- 전체 clone() try-catch 방어 추가
+
+#### BUG-032: `/api/photos` 라우트 마운트 누락
+- `node-server.ts`에 `photosRoutes` import + `app.route('/api/photos', ...)` 추가
+
+#### BUG-033: photos.ts 동적 async import NAS 호환 문제
+- `src/routes/photos.ts`의 `await import('node:fs/promises')` 패턴이 NAS tsx 런타임에서 실패
+- `node-server.ts`에 NAS 전용 `/api/photos` 라우트 5개 직접 구현
+  - 정적 동기 import (readFileSync/writeFileSync/unlinkSync) + rawDb 직접 사용
+  - RULE-002 준수: photosRoutes 마운트 앞에 등록
+
+#### BUG-034: `POST /api/photos/upload` 라우트 누락
+- `uploadTbmPhoto()` (TBM 안전조치 사진)가 `/api/photos/upload` 호출 → 서버에 없었음
+- `node-server.ts`에 `POST /api/photos/upload` 추가
+  - formData: `photo`(단수), `label`, `task_id`
+  - 응답: `{ id, file_path, file_name, mime_type }` (checklist/tbm-photos에서 사용)
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `55f0b8b` | fix: 업데이트 API git pull → fetch+reset --hard |
+| `190684a` | fix: BUG-030 LGU+ 알림 설명 방향 오류 수정 |
+| `b4120af` | fix: BUG-031 Service Worker clone() 에러 수정 |
+| `afa2701` | fix: BUG-032 /api/photos 라우트 마운트 누락 |
+| `2b849a0` | fix: BUG-033 photos.ts 동적 async import NAS 호환 수정 |
+| `9cbd544` | fix: BUG-034 POST /api/photos/upload 라우트 누락 |
+| `9c12365` | chore: restore_photos.sh 복원 스크립트 추가 |
+
+### 상태
+- ✅ 빌드 성공 (`dist/_worker.js 252.03 kB`)
+- ✅ GitHub 푸시 완료
+- ⚠️ NAS 적용 후 동작 확인 필요 (사진 업로드)
+
+---
+
+## 세션 59 (2026-06-23) — 사진 업로드 추가 버그 수정 (BUG-035) + API 전수 점검
+
+### 수정 내용
+
+#### BUG-035: `POST/DELETE /api/inspection-photos` 라우트 누락
+- 현장 점검 사진 업로드/삭제가 `/api/inspection-photos` 독립 경로 사용
+  → `inspectionRoutes`는 `/api/inspections/*` 아래에만 마운트 → 404
+- `node-server.ts`에 NAS 전용 점검사진 라우트 추가 (RULE-002)
+  - `POST /api/inspection-photos`: formData `photos[]` → writeFileSync + rawDb INSERT
+  - `DELETE /api/inspection-photos/:id`: unlinkSync + rawDb DELETE
+
+#### API 호출 전수 점검 완료
+- app.js의 모든 fetch/XHR/API 호출 경로를 서버 라우트와 교차 검증
+- 누락 라우트 없음 확인 (`inspection-photos` 추가로 완전 해소)
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `c277b1a` | fix: BUG-035 POST/DELETE /api/inspection-photos 라우트 누락 수정 |
+
+### 상태
+- ✅ 빌드 성공 (`dist/_worker.js 252.03 kB`)
+- ✅ GitHub 푸시 완료 (`c277b1a`)
+- ✅ API 전수 점검 — 누락 라우트 없음
+- ⚠️ NAS 적용 후 전체 사진 기능 동작 확인 필요
+
+### NAS 업데이트
+```bash
+# 업데이트 버튼 클릭 또는
+git fetch origin && git reset --hard origin/main && pm2 restart safetynote
+```
+
+### 복원 방법 (문제 발생 시)
+```bash
+# BUG-031 이전 상태로 복원 (가장 안전)
+bash restore_photos.sh
+
+# BUG-031~034 완료 상태로 복원
+bash restore_photos.sh pre-photo-fix-v2-202606230213
+```

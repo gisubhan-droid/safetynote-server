@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-06-23 (세션 60)
-> **서버 현재 버전: `TBD`** ← 최신 (GitHub) — BUG-036 수정
+> **서버 현재 버전: `da547c6`** ← 최신 (GitHub) — BUG-036 수정
 > **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260621w**
 > **APK 최신**: v1.4.7
@@ -3079,7 +3079,7 @@ bash restore_photos.sh pre-photo-fix-v2-202606230213
 ### 커밋
 | 해시 | 내용 |
 |------|------|
-| `TBD` | fix: BUG-036 photo_type tbm_photo→tbm CHECK constraint 위반 수정 |
+| `da547c6` | fix: BUG-036 photo_type tbm_photo→tbm CHECK constraint 위반 수정 |
 
 ### 상태
 - ✅ 빌드 성공 (`dist/_worker.js 252.03 kB`)

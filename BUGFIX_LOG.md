@@ -3659,3 +3659,39 @@ WHERE cr.assessment_id = ? AND cr.response = 'no'
 - 새 파일 다운로드/스트리밍 API 추가 시 경로를 위 regex 패턴에 추가
 - `clone()` 호출은 항상 try-catch로 감싸야 안전함
 - STATIC_CACHE/API_CACHE 버전 번호는 수정마다 반드시 올릴 것 (구버전 캐시 자동 제거)
+
+---
+
+## [BUG-032] 사진 업로드 근본 원인 — /api/photos 라우트 마운트 누락 (2026-06)
+
+### 증상
+- TBM 안전조치 사진 등록 시 로딩 지연 후 업로드 실패
+- 브라우저 Network 탭: `POST /api/photos 404` 또는 응답 없음
+- BUG-031(Service Worker clone 에러)과 동시에 발생 — SW 수정 후에도 여전히 업로드 안 됨
+
+### 근본 원인
+`node-server.ts`에 `photosRoutes` import 및 `app.route('/api/photos', ...)` 마운트가 **완전히 누락**
+- `src/routes/photos.ts`는 Cloudflare용으로 개발됐고 NAS에서 마운트하지 않았음
+- `/api/photos` 경로로 오는 모든 요청(GET 목록, POST 업로드, GET 이미지)이 404 반환
+- BUG-031은 표면적 에러(SW 캐싱 오류)였고, 실제 업로드 불가의 근본 원인은 본 버그
+
+### 해결
+1. `node-server.ts` 상단 import에 `photosRoutes` 추가
+   ```typescript
+   import photosRoutes from './src/routes/photos'
+   ```
+2. `app.route('/api/attachments', ...)` 바로 앞에 마운트 등록
+   ```typescript
+   // photos.ts는 c.env.DB 사용 → 전역 app.use('*') 미들웨어에서 makeD1(rawDb) 주입 완료
+   app.route('/api/photos', photosRoutes)
+   ```
+3. `task_photos` 테이블은 기존 DB에 이미 존재 — patchSchema 추가 불필요
+
+### ⚠️ 재발 방지
+- `src/routes/` 아래 새 라우트 파일 추가 시 **반드시 `node-server.ts`에도 import + 마운트 추가**
+- Cloudflare/NAS 이중 구조 체크리스트:
+  - Cloudflare: `src/index.tsx`에 라우트 포함 여부
+  - NAS: `node-server.ts` import + `app.route()` 마운트 여부
+- `src/routes/*.ts`의 `c.env.DB` 사용 라우트는 **전역 DB 미들웨어**(app.use('*'))가 주입하므로
+  별도 미들웨어 불필요 — `app.route()` 한 줄로 충분
+- NAS 전용 오버라이드가 필요한 특수 라우트만 RULE-002에 따라 마운트 앞에 등록할 것

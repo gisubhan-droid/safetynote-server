@@ -94,6 +94,7 @@ import pushRoutes from './src/nas-routes/push'
 import signatureRequestsRoutes from './src/nas-routes/signature-requests'
 import legalNoticesNasRoutes from './src/nas-routes/legal-notices'
 import geocodeRoutes from './src/nas-routes/geocode'
+import photosRoutes from './src/routes/photos'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -3053,6 +3054,12 @@ app.route('/api/volume-unit-prices', createVolumeUnitPricesRoutes())
 app.route('/api/splice-reports', spliceReportsRoutes)
 app.route('/api/splice-unit-prices', createSpliceUnitPricesRoutes())
 // admin folders/reset/update → nas-routes/admin.ts (adminRoutes 에 포함됨)
+// ─── 사진 API → src/routes/photos.ts (전역 DB 미들웨어로 c.env.DB 주입됨) ──────
+// [BUG-032] photosRoutes 마운트 누락으로 /api/photos 404 → 업로드 불가 수정
+// photos.ts는 c.env.DB 사용 (전역 app.use('*') 에서 makeD1(rawDb) 주입 완료)
+// GET /:id/img 파일 스트리밍은 photos.ts 내 node:fs 동적 import로 처리
+app.route('/api/photos', photosRoutes)
+
 // ─── 첨부파일 API → nas-routes/attachments-nas.ts ──────────────────────────────
 app.route('/api/attachments', attachmentsNasRoutes)
 app.get('/qr/:userId', async (c) => {

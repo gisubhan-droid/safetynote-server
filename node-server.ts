@@ -3054,10 +3054,208 @@ app.route('/api/volume-unit-prices', createVolumeUnitPricesRoutes())
 app.route('/api/splice-reports', spliceReportsRoutes)
 app.route('/api/splice-unit-prices', createSpliceUnitPricesRoutes())
 // admin folders/reset/update → nas-routes/admin.ts (adminRoutes 에 포함됨)
-// ─── 사진 API → src/routes/photos.ts (전역 DB 미들웨어로 c.env.DB 주입됨) ──────
-// [BUG-032] photosRoutes 마운트 누락으로 /api/photos 404 → 업로드 불가 수정
-// photos.ts는 c.env.DB 사용 (전역 app.use('*') 에서 makeD1(rawDb) 주입 완료)
-// GET /:id/img 파일 스트리밍은 photos.ts 내 node:fs 동적 import로 처리
+// ─── 사진 API (NAS 전용) — BUG-033: photos.ts 동적 async import 실패로 NAS에서 직접 구현 ──
+// [BUG-033] photos.ts의 `await import('node:fs/promises')` 동적 비동기 import가
+//   NAS tsx 런타임에서 실패하여 업로드 불가. attachments-nas.ts 패턴(정적 동기 import +
+//   rawDb 직접 사용)으로 NAS 전용 라우트를 node-server.ts에 직접 구현.
+// RULE-002: app.route('/api/photos', photosRoutes) 앞에 등록하여 우선 처리.
+
+/** photo_type → stage 변환 */
+function photoTypeToStage(photoType: string): string {
+  const map: Record<string, string> = {
+    tbm: 'tbm', tbm_photo: 'tbm',
+    order: 'order', work_order: 'order',
+    inspection: 'inspection',
+    before: 'photo', progress: 'photo', after: 'photo', photo: 'photo',
+  }
+  return map[photoType] || 'photo'
+}
+
+// GET /api/photos?task_id=X&photo_type=Y — 목록 조회
+app.get('/api/photos', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const { task_id, photo_type } = c.req.query()
+  let q = `SELECT p.id, p.task_id, p.photo_type, p.file_name, p.file_path, p.file_size, p.mime_type,
+    p.caption, p.taken_at, p.created_at, u.name as uploader_name
+    FROM task_photos p LEFT JOIN users u ON u.id = p.uploader_id`
+  const params: any[] = []
+  const wheres: string[] = []
+  if (task_id) { wheres.push('p.task_id = ?'); params.push(task_id) }
+  if (photo_type) { wheres.push('p.photo_type = ?'); params.push(photo_type) }
+  if (wheres.length) q += ' WHERE ' + wheres.join(' AND ')
+  q += ' ORDER BY p.created_at DESC'
+  const rows = rawDb.prepare(q).all(...params)
+  return c.json(rows)
+})
+
+// GET /api/photos/:id/img — 이미지 파일 서빙
+app.get('/api/photos/:id/img', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const photo = rawDb.prepare(
+    'SELECT file_path, file_data, mime_type, file_name FROM task_photos WHERE id = ?'
+  ).get(Number(id)) as any
+  if (!photo) return c.json({ error: '사진 없음' }, 404)
+
+  // 파일 기반 (신규)
+  if (photo.file_path) {
+    try {
+      const fileBuffer = readFileSync(photo.file_path)
+      return new Response(fileBuffer, {
+        headers: {
+          'Content-Type': photo.mime_type || 'image/jpeg',
+          'Cache-Control': 'public, max-age=86400',
+          'Content-Disposition': `inline; filename="${photo.file_name}"`,
+        },
+      })
+    } catch (_) {
+      return c.json({ error: '파일을 찾을 수 없습니다.' }, 404)
+    }
+  }
+
+  // 하위호환: base64 기반 (기존 데이터)
+  if (photo.file_data) {
+    const binary = atob(photo.file_data)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return new Response(bytes.buffer, {
+      headers: {
+        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Cache-Control': 'public, max-age=86400',
+      },
+    })
+  }
+  return c.json({ error: '사진 데이터 없음' }, 404)
+})
+
+// GET /api/photos/:id/data — base64 데이터 반환 (하위호환)
+app.get('/api/photos/:id/data', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const photo = rawDb.prepare(
+    'SELECT file_path, file_data, mime_type FROM task_photos WHERE id = ?'
+  ).get(Number(id)) as any
+  if (!photo) return c.json({ error: '사진 없음' }, 404)
+
+  if (photo.file_path) {
+    try {
+      const fileBuffer = readFileSync(photo.file_path)
+      const b64 = Buffer.from(fileBuffer).toString('base64')
+      return c.json({ file_data: b64, mime_type: photo.mime_type })
+    } catch (_) {
+      return c.json({ error: '파일을 찾을 수 없습니다.' }, 404)
+    }
+  }
+  return c.json({ file_data: photo.file_data, mime_type: photo.mime_type })
+})
+
+// POST /api/photos — 사진 업로드 (multipart/form-data)
+app.post('/api/photos', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const contentType = c.req.header('Content-Type') || ''
+
+  // ── multipart/form-data (원본 파일 업로드) ─────────────────────────
+  if (contentType.includes('multipart/form-data')) {
+    try {
+      const formData  = await c.req.formData()
+      const taskId    = formData.get('task_id')
+      const photoType = (formData.get('photo_type') as string) || 'progress'
+      const caption   = (formData.get('caption')    as string) || ''
+      const files     = formData.getAll('photos') as File[]
+
+      if (!taskId) return c.json({ error: 'task_id 필요' }, 400)
+      if (files.length === 0) return c.json({ error: '파일 없음' }, 400)
+
+      // task + constructions 조회 (rawDb 동기)
+      const task = rawDb.prepare(
+        `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
+                t.construction_type, t.construction_id,
+                c.request_no AS con_request_no, c.title AS con_title
+         FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+         WHERE t.id = ?`
+      ).get(Number(taskId)) as any
+      if (!task) return c.json({ error: '작업을 찾을 수 없습니다' }, 404)
+
+      const stage     = photoTypeToStage(photoType)
+      const uploadDir = getUploadDir(task, stage, photoType, caption)
+      // getUploadDir 내부에서 mkdirSync 호출됨 — 폴더 자동 생성
+
+      const savedIds: number[] = []
+
+      for (const file of files) {
+        if (!file || typeof file === 'string') continue
+
+        const fileName = generateFileName(file.name || 'photo.jpg')
+        const filePath = join(uploadDir, fileName)
+        const buf      = await file.arrayBuffer()
+        writeFileSync(filePath, Buffer.from(buf))  // 동기 저장 — NAS 확실히 동작
+
+        // INSERT는 rawDb 동기 사용 (BUG-025 방지)
+        const result = rawDb.prepare(
+          `INSERT INTO task_photos
+             (task_id, uploader_id, photo_type, file_name, file_path, file_data, file_size, mime_type, caption)
+           VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`
+        ).run(
+          Number(taskId), user.id, photoType,
+          file.name || fileName, filePath,
+          file.size, file.type || 'image/jpeg', caption
+        )
+        savedIds.push(result.lastInsertRowid as number)
+      }
+
+      return c.json({ success: true, ids: savedIds, count: savedIds.length })
+    } catch (e: any) {
+      console.error('[사진] 업로드 오류:', e)
+      return c.json({ error: `업로드 실패: ${e.message}` }, 500)
+    }
+  }
+
+  // ── application/json (base64 — 하위호환) ──────────────────────────
+  const body = await c.req.json()
+  const { task_id, photo_type, file_name, file_data, file_size, mime_type, caption } = body
+  if (!task_id || !file_data) return c.json({ error: '필수 항목 누락' }, 400)
+
+  const result = rawDb.prepare(
+    `INSERT INTO task_photos
+       (task_id, uploader_id, photo_type, file_name, file_path, file_data, file_size, mime_type, caption)
+     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`
+  ).run(
+    task_id, user.id, photo_type || 'progress',
+    file_name || 'photo.jpg', file_data,
+    file_size || 0, mime_type || 'image/jpeg', caption || ''
+  )
+  return c.json({ success: true, id: result.lastInsertRowid })
+})
+
+// DELETE /api/photos/:id — 사진 삭제
+app.delete('/api/photos/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+
+  const photo = rawDb.prepare(
+    'SELECT uploader_id, file_path FROM task_photos WHERE id = ?'
+  ).get(Number(id)) as any
+  if (!photo) return c.json({ error: '사진 없음' }, 404)
+
+  if (user.role === 'worker' && photo.uploader_id !== user.id) {
+    return c.json({ error: '본인이 업로드한 사진만 삭제할 수 있습니다.' }, 403)
+  }
+
+  if (photo.file_path) {
+    try { unlinkSync(photo.file_path) } catch (_) {}
+  }
+  rawDb.prepare('DELETE FROM task_photos WHERE id = ?').run(Number(id))
+  return c.json({ success: true })
+})
+
+// ─── photosRoutes (src/routes/photos.ts) 마운트 — Cloudflare 빌드용, NAS에선 위 라우트가 우선 처리 ──
+// [BUG-033] NAS에서는 위 직접 구현 라우트가 우선 처리됨 (RULE-002: app.route 앞에 등록)
 app.route('/api/photos', photosRoutes)
 
 // ─── 첨부파일 API → nas-routes/attachments-nas.ts ──────────────────────────────

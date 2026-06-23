@@ -3695,3 +3695,56 @@ WHERE cr.assessment_id = ? AND cr.response = 'no'
 - `src/routes/*.ts`의 `c.env.DB` 사용 라우트는 **전역 DB 미들웨어**(app.use('*'))가 주입하므로
   별도 미들웨어 불필요 — `app.route()` 한 줄로 충분
 - NAS 전용 오버라이드가 필요한 특수 라우트만 RULE-002에 따라 마운트 앞에 등록할 것
+
+---
+
+## [BUG-033] 사진 업로드 여전히 실패 — photos.ts 동적 async import NAS 호환 문제 (2026-06)
+
+### 증상
+- BUG-032(photosRoutes 마운트 추가) 수정 후에도 사진 업로드 여전히 실패
+- "그래도 안됩니다" — 마운트는 됐지만 실제 업로드 핸들러가 오류 발생
+
+### 근본 원인
+`src/routes/photos.ts`의 **동적 비동기 `import()`** 가 NAS(tsx 런타임)에서 실패
+
+```typescript
+// photos.ts 내 문제 코드
+async function getFs() {
+  const fs = await import('node:fs/promises')   // ← NAS tsx에서 실패
+  const path = await import('node:path')
+  return { fs, path }
+}
+// POST 업로드 핸들러에서
+const { fs, path } = await getFs()
+await fs.mkdir(...)    // getFs() 실패 시 TypeError
+await fs.writeFile(...)
+```
+
+- `attachments-nas.ts`는 **정적 동기 import** 사용 → NAS에서 확실히 동작
+  ```typescript
+  import { writeFileSync, mkdirSync } from 'node:fs'  // ← 정적 import, 항상 동작
+  ```
+- tsx 런타임에서 ESM 동적 import()의 node:// 내장 모듈 참조가 불안정할 수 있음
+- photos.ts 자체는 Cloudflare Workers용으로 개발 — NAS에서 직접 사용하면 안전하지 않음
+
+### 해결
+`node-server.ts`에 NAS 전용 `/api/photos` 라우트를 직접 구현 (BUG-033 fix):
+
+1. **RULE-002 준수**: `app.route('/api/photos', photosRoutes)` **앞**에 NAS 전용 라우트 등록
+2. **정적 동기 import 사용**: `readFileSync`, `writeFileSync`, `unlinkSync`, `mkdirSync` — 이미 node-server.ts 상단에 import됨
+3. **rawDb 직접 사용**: `rawDb.prepare().run()` / `.get()` / `.all()` — 동기 better-sqlite3 API
+4. **기존 헬퍼 재활용**: `getUploadDir()`, `generateFileName()`, `photoTypeToStage()` — node-server.ts에 이미 있거나 신규 추가
+5. 구현된 라우트:
+   - `GET /api/photos` — rawDb 동기 목록 조회
+   - `GET /api/photos/:id/img` — readFileSync 이미지 서빙
+   - `GET /api/photos/:id/data` — readFileSync + Buffer.toString('base64')
+   - `POST /api/photos` — writeFileSync + rawDb INSERT (multipart/form-data + JSON 하위호환)
+   - `DELETE /api/photos/:id` — unlinkSync + rawDb DELETE
+
+### ⚠️ 재발 방지 — **NAS에서 src/routes/*.ts 사용 시 체크리스트**
+
+1. **동적 import 사용 여부 확인**: `await import(...)` 형태가 있으면 NAS에서 실패 가능
+2. **fs 작업 방식 확인**: `node:fs/promises` 비동기 대신 `node:fs` 동기(writeFileSync 등) 사용
+3. **DB 접근 방식 확인**: `c.env.DB` 사용 시 전역 미들웨어 주입에 의존 → rawDb 직접 사용이 더 안전
+4. **패턴 기준**: `attachments-nas.ts` = NAS 정상 동작 레퍼런스 (정적 import + rawDb + writeFileSync)
+5. **Cloudflare 전용 라우트 식별**: `getFs()` 패턴 / `await import('node:...')` 패턴 → NAS에서 직접 구현 필요

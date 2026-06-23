@@ -3254,6 +3254,68 @@ app.delete('/api/photos/:id', async (c) => {
   return c.json({ success: true })
 })
 
+// POST /api/photos/upload — TBM 안전조치 사진 전용 업로드 (BUG-034)
+// app.js의 uploadTbmPhoto()가 호출: formData 필드 = photo(File), label, section_id, photo_item_id, task_id
+// 응답 형식: { id, file_path, file_name, mime_type } — checklist/tbm-photos에서 file_path 등 사용
+// RULE-002: app.route('/api/photos', photosRoutes) 앞에 등록
+app.post('/api/photos/upload', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  try {
+    const formData   = await c.req.formData()
+    const file       = formData.get('photo') as File | null
+    const label      = (formData.get('label')         as string) || ''
+    const taskIdStr  = (formData.get('task_id')       as string) || ''
+
+    if (!file || typeof file === 'string') return c.json({ error: '파일 없음 (photo 필드)' }, 400)
+
+    // task 정보 조회 (task_id 있으면) — 없으면 미분류 폴더 사용
+    let task: any = null
+    if (taskIdStr) {
+      task = rawDb.prepare(
+        `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
+                t.construction_type, t.construction_id,
+                c.request_no AS con_request_no, c.title AS con_title
+         FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+         WHERE t.id = ?`
+      ).get(Number(taskIdStr)) as any
+    }
+
+    // 업로드 폴더: task 있으면 TBM 폴더, 없으면 미분류
+    const uploadDir = getUploadDir(task || 'tbm-photo', 'tbm', 'tbm_photo', label)
+
+    const fileName = generateFileName(file.name || 'photo.jpg')
+    const filePath = join(uploadDir, fileName)
+    const buf      = await file.arrayBuffer()
+    writeFileSync(filePath, Buffer.from(buf))
+
+    // task_photos에 INSERT — checklist/tbm-photos가 file_path로 참조
+    const mimeType = file.type || 'image/jpeg'
+    const result   = rawDb.prepare(
+      `INSERT INTO task_photos
+         (task_id, uploader_id, photo_type, file_name, file_path, file_data, file_size, mime_type, caption)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`
+    ).run(
+      task ? Number(taskIdStr) : null,
+      user.id, 'tbm_photo',
+      file.name || fileName, filePath,
+      file.size, mimeType, label
+    )
+
+    return c.json({
+      success: true,
+      id:        result.lastInsertRowid,
+      file_path: filePath,
+      file_name: file.name || fileName,
+      mime_type: mimeType,
+    })
+  } catch (e: any) {
+    console.error('[TBM사진/upload] 오류:', e)
+    return c.json({ error: `업로드 실패: ${e.message}` }, 500)
+  }
+})
+
 // ─── photosRoutes (src/routes/photos.ts) 마운트 — Cloudflare 빌드용, NAS에선 위 라우트가 우선 처리 ──
 // [BUG-033] NAS에서는 위 직접 구현 라우트가 우선 처리됨 (RULE-002: app.route 앞에 등록)
 app.route('/api/photos', photosRoutes)

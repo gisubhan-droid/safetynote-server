@@ -3698,6 +3698,53 @@ WHERE cr.assessment_id = ? AND cr.response = 'no'
 
 ---
 
+## [BUG-034] TBM 안전조치 사진 업로드 실패 — POST /api/photos/upload 라우트 누락 (2026-06)
+
+### 증상
+- BUG-033 수정 후에도 TBM 안전조치 탭 사진 등록 계속 실패
+- "그래도 안됩니다" — BUG-031/032/033 모두 수정했는데도 동일 증상
+
+### 근본 원인
+**`POST /api/photos/upload`** 라우트가 서버에 전혀 없었음
+
+app.js의 `uploadTbmPhoto()` 함수(TBM 안전조치 사진 등록)는 **`/api/photos`가 아니라
+`/api/photos/upload`** 를 호출함:
+
+```javascript
+// app.js line 18821 — TBM 안전조치 사진 업로드
+const result = await _uploadWithProgress('/api/photos/upload', formData, { ... });
+const { file_path, file_name, mime_type, id: uploadedPhotoId } = result.data;
+// 이후 POST /api/checklist/:id/tbm-photos 에 file_path 등 전달
+```
+
+- **formData 필드**: `photo`(File 단수), `label`, `section_id`, `photo_item_id`, `task_id`
+- **기대 응답**: `{ id, file_path, file_name, mime_type }` — checklist/tbm-photos에서 사용
+- BUG-032에서 `photosRoutes` 마운트를 추가했지만 `photos.ts`에 `/upload` 서브라우트 자체가 없었음
+- BUG-033에서 NAS 직접 구현 라우트를 추가했지만 `/api/photos` (POST /) 만 구현, `/upload` 누락
+
+### 왜 이전에 발견 못 했나
+- BUG-031~033 조사 과정에서 `POST /api/photos` (일반 작업 사진) 만 분석
+- TBM 안전조치 사진이 **별도 엔드포인트**(`/upload`)를 사용한다는 것을 코드 분석에서 놓침
+- `app.js` grep 결과에 `18821: '/api/photos/upload'` 가 나왔지만 `/api/photos` 검색에서 묻혔음
+
+### 해결
+`node-server.ts`에 `POST /api/photos/upload` 추가 (BUG-034 fix):
+- RULE-002: `app.route('/api/photos', photosRoutes)` 앞에 등록
+- formData의 `photo`(단수) 필드로 File 수신
+- `getUploadDir(task, 'tbm', 'tbm_photo', label)` — TBM 폴더 저장
+- `task_photos` INSERT → `{ id, file_path, file_name, mime_type }` 반환
+- `task_id` 없어도 허용 (미분류 처리)
+
+### ⚠️ 재발 방지
+- **app.js에서 API 호출 엔드포인트 목록을 먼저 grep 한 후 서버 구현 여부 확인할 것**
+  ```bash
+  grep -n "fetch\|API\.\|_uploadWithProgress\|xhr.open" public/static/app.js | grep "api/"
+  ```
+- 특히 `/api/엔드포인트/서브경로` 패턴은 별도 라우트로 서버에 등록해야 함
+- `photosRoutes` import 만으로는 `photos.ts`에 없는 서브라우트는 동작하지 않음
+
+---
+
 ## [BUG-033] 사진 업로드 여전히 실패 — photos.ts 동적 async import NAS 호환 문제 (2026-06)
 
 ### 증상

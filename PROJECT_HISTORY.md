@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-06-23 (세션 63)
-> **서버 현재 버전: `(이번 커밋)`** ← 최신 (GitHub) — BUG-041 + FEAT-029
+> **서버 현재 버전: `3872696`** ← 최신 (GitHub) — BUG-041 + FEAT-029
 > **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260621w**
 > **APK 최신**: v1.4.7
@@ -3291,7 +3291,7 @@ git fetch origin && git reset --hard origin/main && npm run build && pm2 restart
 | 해시 | 내용 |
 |------|------|
 | `7421134` | fix: FEAT-027 그룹별 권한 API URL 이중 prefix 수정 (세션 62) |
-| `(이번 커밋)` | fix: BUG-041 LGU+ 공사 조회 + FEAT-029 group_permissions 기반 푸시 알림 |
+| `3872696` | fix: BUG-041 LGU+ 공사 조회 + FEAT-029 group_permissions 기반 푸시 알림 |
 
 ### NAS 업데이트
 ```bash

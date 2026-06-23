@@ -1,11 +1,11 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-23 (세션 59)
-> **서버 현재 버전: `c277b1a`** ← 최신 (GitHub)
+> 최종 업데이트: 2026-06-23 (세션 60)
+> **서버 현재 버전: `TBD`** ← 최신 (GitHub) — BUG-036 수정
 > **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260621w**
 > **APK 최신**: v1.4.7
-> **BUG-030~035 수정 완료** — NAS 적용 후 사진 기능 확인 필요
+> **BUG-030~036 수정 완료** — NAS 적용 후 사진 기능 확인 필요
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
 ---
@@ -3058,4 +3058,35 @@ bash restore_photos.sh
 
 # BUG-031~034 완료 상태로 복원
 bash restore_photos.sh pre-photo-fix-v2-202606230213
+```
+
+---
+
+## 세션 60 (2026-06-23) — BUG-036: photo_type CHECK constraint 위반 수정
+
+### 수정 내용
+
+#### BUG-036: `POST /api/photos/upload` → `'tbm_photo'` CHECK constraint 위반
+- **에러**: `CHECK constraint failed: photo_type IN ('before','progress','after','hazard','tbm','completion')`
+- **원인**: BUG-034에서 추가한 핸들러가 `photo_type = 'tbm_photo'`로 INSERT
+  → `task_photos` 테이블은 `'tbm'`만 허용, `'tbm_photo'`는 CHECK 위반
+- **수정**: `node-server.ts` line 3387: `'tbm_photo'` → `'tbm'`
+
+#### 전수 확인
+- `POST /api/photos` (일반 작업사진): UI 셀렉트 옵션이 허용값만 포함 → 정상
+- `POST /api/inspection-photos`: `inspection_photos` 테이블 (photo_type 없음) → 정상
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `TBD` | fix: BUG-036 photo_type tbm_photo→tbm CHECK constraint 위반 수정 |
+
+### 상태
+- ✅ 빌드 성공 (`dist/_worker.js 252.03 kB`)
+- ✅ GitHub 푸시 완료
+- ⚠️ NAS 업데이트 후 TBM 사진 업로드 동작 확인 필요
+
+### NAS 업데이트
+```bash
+git fetch origin && git reset --hard origin/main && pm2 restart safetynote
 ```

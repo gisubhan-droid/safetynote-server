@@ -3384,7 +3384,7 @@ app.post('/api/photos/upload', async (c) => {
        VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`
     ).run(
       task ? Number(taskIdStr) : null,
-      user.id, 'tbm_photo',
+      user.id, 'tbm',          // ← BUG-036 수정: 'tbm_photo' → 'tbm' (CHECK constraint 허용값)
       file.name || fileName, filePath,
       file.size, mimeType, label
     )

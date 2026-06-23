@@ -3836,3 +3836,57 @@ await fs.writeFile(...)
 3. **DB 접근 방식 확인**: `c.env.DB` 사용 시 전역 미들웨어 주입에 의존 → rawDb 직접 사용이 더 안전
 4. **패턴 기준**: `attachments-nas.ts` = NAS 정상 동작 레퍼런스 (정적 import + rawDb + writeFileSync)
 5. **Cloudflare 전용 라우트 식별**: `getFs()` 패턴 / `await import('node:...')` 패턴 → NAS에서 직접 구현 필요
+
+---
+
+## [BUG-036] TBM 사진 업로드 500 에러 — photo_type CHECK constraint 위반 (2026-06)
+
+### 증상
+- TBM 안전조치 탭 사진 업로드 시 `500 Internal Server Error` 반복 발생
+- 에러 메시지: `CHECK constraint failed: photo_type IN ('before','progress','after','hazard','tbm','completion')`
+- `POST /api/photos/upload` → 3회 연속 500 에러 (스크린샷 확인)
+- BUG-034 수정 후에도 동일 증상 계속됨
+
+### 근본 원인
+**`node-server.ts`의 `POST /api/photos/upload` 핸들러에서 잘못된 `photo_type` 값 사용**
+
+```typescript
+// 수정 전 (BUG-034에서 잘못 작성됨)
+user.id, 'tbm_photo',   // ← CHECK constraint 위반! 허용 목록에 없음
+
+// task_photos 테이블 CHECK 제약 (migrations/0001, 0008, 0029):
+// CHECK(photo_type IN ('before','progress','after','hazard','tbm','completion'))
+// → 'tbm_photo'는 존재하지 않는 값 → SQLite CONSTRAINT 에러 → 500
+```
+
+**허용 값**: `before`, `progress`, `after`, `hazard`, **`tbm`**, `completion`  
+**불허 값**: `tbm_photo` ← BUG-034에서 INSERT 시 사용한 잘못된 값
+
+### 에러 흐름
+```
+uploadTbmPhoto() (app.js:18821)
+  → POST /api/photos/upload
+  → node-server.ts 핸들러
+  → rawDb.prepare(...).run(... 'tbm_photo' ...)
+  → SQLITE_CONSTRAINT: CHECK constraint failed
+  → catch → 500 반환
+```
+
+### 해결
+`node-server.ts` line 3387 수정:
+
+```typescript
+// 수정 후
+user.id, 'tbm',          // ← BUG-036 수정: 'tbm_photo' → 'tbm' (CHECK constraint 허용값)
+```
+
+### 전수 확인 결과
+- `POST /api/photos` (일반 작업사진): `photoType` 변수를 그대로 사용 → UI 셀렉트 박스 옵션이 `before/progress/after/hazard/tbm/completion`으로 모두 허용값
+- `POST /api/inspection-photos`: `inspection_photos` 테이블에 INSERT (photo_type 컬럼 없음) → 문제 없음
+- `photoTypeToStage()` 맵에 `tbm_photo: 'tbm'` 존재 → 폴더 경로용이므로 유지 (DB INSERT에는 사용 안 됨)
+
+### ⚠️ 재발 방지
+- **DB INSERT 전 CHECK 제약 반드시 확인**: migration 파일에서 허용 값 목록 확인
+- `task_photos.photo_type` 허용 값: `before`, `progress`, `after`, `hazard`, **`tbm`**, `completion` (총 6개)
+- `tbm_photo`, `tbm-photo`, `tbmsafety` 등은 **모두 허용되지 않음**
+- 새로운 photo_type 추가 시 migration 파일과 CHECK 제약 동시 업데이트 필요

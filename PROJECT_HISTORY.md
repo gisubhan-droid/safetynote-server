@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-06-23 (세션 61)
-> **서버 현재 버전: `(커밋 후 업데이트)`** ← 최신 (GitHub) — BUG-039 수정
+> **서버 현재 버전: `ae11251`** ← 최신 (GitHub) — BUG-039 수정
 > **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260621w**
 > **APK 최신**: v1.4.7
@@ -3139,7 +3139,7 @@ BUG-030 오기록("코드상 올바름")도 BUGFIX_LOG에 정정 기록.
 |------|------|
 | `6960caa` | fix: BUG-037 사진 이미지 401 에러 — img src 토큰 쿼리스트링 지원 |
 | `9c7b2fb` | fix: BUG-038 LGU+ 알림 미수신 — sub_role 누락 수정 |
-| *(이번 커밋)* | fix: BUG-039 LGU+ is_auto_request_no 조건 방향 전면 반전 |
+| `ae11251` | fix: BUG-039 LGU+ is_auto_request_no 조건 방향 전면 반전 |
 
 ### NAS 업데이트
 ```bash

@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-06-23 (세션 62)
-> **서버 현재 버전: `(이번 커밋)`** ← 최신 (GitHub) — FEAT-027/028 + BUG-040 단순화
+> **서버 현재 버전: `1bcd729`** ← 최신 (GitHub) — FEAT-027/028 + BUG-040 단순화
 > **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260621w**
 > **APK 최신**: v1.4.7
@@ -3225,7 +3225,7 @@ CREATE TABLE IF NOT EXISTS group_permissions (
 ### 커밋
 | 해시 | 내용 |
 |------|------|
-| `(이번 커밋)` | feat: FEAT-027/028 그룹별 권한관리 + TBM 연쇄 알림 + BUG-040 === 0 최종 단순화 |
+| `1bcd729` | feat: FEAT-027/028 그룹별 권한관리 + TBM 연쇄 알림 + BUG-040 === 0 최종 단순화 |
 
 ### NAS 업데이트
 ```bash

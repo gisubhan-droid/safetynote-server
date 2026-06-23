@@ -427,16 +427,24 @@ app.post('/update/apply', async (c) => {
         } else { _addUpdateLog('DB 파일 없음 — 백업 건너뜀') }
       } catch (be: any) { _addUpdateLog(`DB 백업 오류(무시): ${be.message}`) }
 
-      // ── 2. git pull ─────────────────────────────────────────
-      _addUpdateLog('git pull origin main 시작...')
-      const pullRes = await runCmd('git', ['pull', 'origin', 'main'], cwd, 60000)
-      if (pullRes.code !== 0) {
-        _addUpdateLog(`git pull 실패: ${pullRes.stderr.trim()}`)
+      // ── 2. git fetch + reset --hard (로컬 변경사항 자동 처리) ──
+      _addUpdateLog('git fetch origin 시작...')
+      const fetchRes = await runCmd('git', ['fetch', 'origin', 'main'], cwd, 60000)
+      if (fetchRes.code !== 0) {
+        _addUpdateLog(`git fetch 실패: ${fetchRes.stderr.trim()}`)
         _updateState.status  = 'error'
-        _updateState.message = `git pull 실패: ${pullRes.stderr.trim().slice(0, 100)}`
+        _updateState.message = `git fetch 실패: ${fetchRes.stderr.trim().slice(0, 100)}`
         return
       }
-      _addUpdateLog(`git pull 완료: ${pullRes.stdout.trim().split('\n').slice(-2).join(' ')}`)
+      _addUpdateLog('git fetch 완료 — 로컬 변경사항 초기화 중...')
+      const resetRes = await runCmd('git', ['reset', '--hard', 'origin/main'], cwd, 30000)
+      if (resetRes.code !== 0) {
+        _addUpdateLog(`git reset 실패: ${resetRes.stderr.trim()}`)
+        _updateState.status  = 'error'
+        _updateState.message = `git reset 실패: ${resetRes.stderr.trim().slice(0, 100)}`
+        return
+      }
+      _addUpdateLog(`git reset 완료: ${resetRes.stdout.trim()}`)
 
       const newCommit = await runCmd('git', ['rev-parse', '--short', 'HEAD'], cwd, 5000)
       _updateState.currentCommit = newCommit.stdout.trim()

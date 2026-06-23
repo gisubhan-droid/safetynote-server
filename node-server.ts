@@ -2708,6 +2708,92 @@ app.get('/api/inspections/photo/:id/img', async (c) => {
   return c.json({ error: '데이터 없음' }, 404)
 })
 
+// ─── 점검 사진 독립 API (NAS 전용) — BUG-035 ─────────────────────────────────
+// app.js: POST /api/inspection-photos (점검 사진 별도 업로드, addInsPhoto)
+//         DELETE /api/inspection-photos/:id (점검 사진 삭제)
+// RULE-002: inspectionRoutes 마운트 앞에 등록
+
+// POST /api/inspection-photos — 기존 점검에 사진 추가 (addInsPhoto 호출)
+// formData: inspection_id, photos(File[])
+app.post('/api/inspection-photos', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+
+  try {
+    const formData     = await c.req.formData()
+    const inspectionId = formData.get('inspection_id') as string
+    const files        = formData.getAll('photos') as File[]
+
+    if (!inspectionId) return c.json({ error: 'inspection_id 필요' }, 400)
+    if (!files || files.length === 0) return c.json({ error: '파일 없음' }, 400)
+
+    // 점검 → 연결된 task_id 조회 (폴더 경로 결정용)
+    const ins = rawDb.prepare(
+      'SELECT id, task_id FROM site_inspections WHERE id = ?'
+    ).get(Number(inspectionId)) as any
+    if (!ins) return c.json({ error: '점검 없음' }, 404)
+
+    // task_id 있으면 task 정보로 폴더 결정, 없으면 inspection 미분류 폴더
+    let task: any = null
+    if (ins.task_id) {
+      task = rawDb.prepare(
+        `SELECT t.task_number, t.sub_task_number, t.work_date, t.planned_date,
+                t.construction_type, t.construction_id,
+                c.request_no AS con_request_no, c.title AS con_title
+         FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+         WHERE t.id = ?`
+      ).get(Number(ins.task_id)) as any
+    }
+
+    const uploadDir = getUploadDir(task || '점검', 'inspection')
+    const savedIds: number[] = []
+
+    for (const file of files) {
+      if (!file || typeof file === 'string') continue
+
+      const fileName = generateFileName(file.name || 'photo.jpg')
+      const filePath = join(uploadDir, fileName)
+      const buf      = await file.arrayBuffer()
+      writeFileSync(filePath, Buffer.from(buf))
+
+      const result = rawDb.prepare(
+        `INSERT INTO inspection_photos
+           (inspection_id, file_name, file_path, file_data, caption, mime_type)
+         VALUES (?, ?, ?, NULL, ?, ?)`
+      ).run(
+        Number(inspectionId),
+        file.name || fileName,
+        filePath, '',
+        file.type || 'image/jpeg'
+      )
+      savedIds.push(result.lastInsertRowid as number)
+    }
+
+    return c.json({ success: true, ids: savedIds, count: savedIds.length })
+  } catch (e: any) {
+    console.error('[점검사진] 업로드 오류:', e)
+    return c.json({ error: `업로드 실패: ${e.message}` }, 500)
+  }
+})
+
+// DELETE /api/inspection-photos/:id — 점검 사진 삭제
+app.delete('/api/inspection-photos/:id', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  const id = c.req.param('id')
+
+  const photo = rawDb.prepare(
+    'SELECT file_path FROM inspection_photos WHERE id = ?'
+  ).get(Number(id)) as any
+  if (!photo) return c.json({ error: '사진 없음' }, 404)
+
+  if (photo.file_path) {
+    try { unlinkSync(photo.file_path) } catch (_) {}
+  }
+  rawDb.prepare('DELETE FROM inspection_photos WHERE id = ?').run(Number(id))
+  return c.json({ success: true })
+})
+
 app.route('/api/inspections', inspectionRoutes)
 app.route('/api/hazards', hazardRoutes)
 app.route('/api/worklogs', worklogRoutes)

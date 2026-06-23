@@ -3698,6 +3698,47 @@ WHERE cr.assessment_id = ? AND cr.response = 'no'
 
 ---
 
+## [BUG-035] 점검 사진 업로드/삭제 실패 — POST/DELETE /api/inspection-photos 라우트 누락 (2026-06)
+
+### 증상
+- 현장 점검 등록 후 사진 업로드 실패
+- 점검 상세에서 사진 추가/삭제 실패
+
+### 근본 원인
+app.js의 `addInsPhoto()` 및 점검 사진 삭제 핸들러가 `/api/inspection-photos`를 호출하지만
+서버에 해당 독립 라우트가 없었음:
+
+```javascript
+// app.js — 점검 사진 별도 업로드 (2단계)
+await _uploadWithProgress('/api/inspection-photos', formData, ...)
+// app.js — 점검 사진 삭제
+fetch(`/api/inspection-photos/${photoId}`, { method: 'DELETE' })
+```
+
+- `inspectionRoutes` (`src/routes/inspections.ts`)는 `/api/inspections` 아래에 마운트됨
+- 독립 경로 `/api/inspection-photos`는 전혀 존재하지 않았음
+
+### 앱 업로드 2단계 구조
+```
+1단계: POST /api/inspections   — JSON (photos: [] 빈 배열로 전송)
+2단계: POST /api/inspection-photos — FormData (사진 파일 별도 업로드)
+```
+→ inspections.ts 내부의 getFs() 파일 저장 코드는 실제로 실행되지 않음 (BUG-036 해당 없음)
+
+### 해결
+`node-server.ts`에 NAS 전용 점검 사진 라우트 추가 (RULE-002 준수):
+- `POST /api/inspection-photos` — formData의 `photos` 파일 수신, writeFileSync 저장
+  - inspection의 task_id로 task 정보 조회 → getUploadDir(task, 'inspection')
+  - inspection_photos INSERT, rawDb 동기
+- `DELETE /api/inspection-photos/:id` — unlinkSync + rawDb DELETE
+
+### ⚠️ 재발 방지
+- `POST /api/XXX-photos` 패턴은 독립 라우트 확인 필수
+- `src/routes/inspections.ts` 내부의 사진 라우트는 `/api/inspections/...` 경로로만 처리됨
+- `/api/inspection-photos` 독립 경로는 별도 NAS 라우트 필요
+
+---
+
 ## [BUG-034] TBM 안전조치 사진 업로드 실패 — POST /api/photos/upload 라우트 누락 (2026-06)
 
 ### 증상

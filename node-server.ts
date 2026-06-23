@@ -1845,12 +1845,12 @@ function patchSchema() {
           ('lgu_menu_constructions',    '0', 'LGU+ 메뉴: 공사현황',     'LGU+ 역할이 공사현황 메뉴를 볼 수 있으면 1'),
           ('lgu_menu_tasks',            '0', 'LGU+ 메뉴: 작업관리',     'LGU+ 역할이 작업관리 메뉴를 볼 수 있으면 1'),
           ('lgu_menu_stats',            '0', 'LGU+ 메뉴: 안전현황',     'LGU+ 역할이 안전현황 통계 메뉴를 볼 수 있으면 1'),
-          ('lgu_notify_checklist_done', '1', 'LGU+ 알림: 체크리스트완료', 'LGU+ 대상 알림 — 체크리스트 완료 단계 (공사요청번호 자동부여 체크 공사만 해당)'),
-          ('lgu_notify_tbm_done',       '1', 'LGU+ 알림: TBM완료',      'LGU+ 대상 알림 — TBM 완료 단계 (공사요청번호 자동부여 체크 공사만 해당)'),
-          ('lgu_notify_working',        '1', 'LGU+ 알림: 작업중',       'LGU+ 대상 알림 — 작업중 단계 (공사요청번호 자동부여 체크 공사만 해당)'),
-          ('lgu_notify_work_completed', '1', 'LGU+ 알림: 작업완료',     'LGU+ 대상 알림 — 작업완료 단계 (공사요청번호 자동부여 체크 공사만 해당)'),
-          ('lgu_notify_completed',      '0', 'LGU+ 알림: 최종완료',     'LGU+ 대상 알림 — 최종완료 단계 (공사요청번호 자동부여 체크 공사만 해당)'),
-          ('lgu_notify_cancelled',      '0', 'LGU+ 알림: 취소',         'LGU+ 대상 알림 — 취소 단계 (공사요청번호 자동부여 체크 공사만 해당)');
+          ('lgu_notify_checklist_done', '1', 'LGU+ 알림: 체크리스트완료', 'LGU+ 대상 알림 — 체크리스트 완료 단계 (공사요청번호 자동부여 미체크 공사만 해당)'),
+          ('lgu_notify_tbm_done',       '1', 'LGU+ 알림: TBM완료',      'LGU+ 대상 알림 — TBM 완료 단계 (공사요청번호 자동부여 미체크 공사만 해당)'),
+          ('lgu_notify_working',        '1', 'LGU+ 알림: 작업중',       'LGU+ 대상 알림 — 작업중 단계 (공사요청번호 자동부여 미체크 공사만 해당)'),
+          ('lgu_notify_work_completed', '1', 'LGU+ 알림: 작업완료',     'LGU+ 대상 알림 — 작업완료 단계 (공사요청번호 자동부여 미체크 공사만 해당)'),
+          ('lgu_notify_completed',      '0', 'LGU+ 알림: 최종완료',     'LGU+ 대상 알림 — 최종완료 단계 (공사요청번호 자동부여 미체크 공사만 해당)'),
+          ('lgu_notify_cancelled',      '0', 'LGU+ 알림: 취소',         'LGU+ 대상 알림 — 취소 단계 (공사요청번호 자동부여 미체크 공사만 해당)');
       `)
       console.log('[patchSchema v0.142] system_settings LGU+ 기본값 추가 완료')
     } catch (e: any) {
@@ -1901,12 +1901,12 @@ function patchSchema() {
     // v0.142에서 '(request_no 1로 시작)' 잘못된 설명 → '공사요청번호 자동부여 체크 공사만 해당'으로 교정
     try {
       const lguNotifyDescs: Record<string, string> = {
-        'lgu_notify_checklist_done': 'LGU+ 대상 알림 — 체크리스트 완료 단계 (공사요청번호 자동부여 체크 공사만 해당)',
-        'lgu_notify_tbm_done':       'LGU+ 대상 알림 — TBM 완료 단계 (공사요청번호 자동부여 체크 공사만 해당)',
-        'lgu_notify_working':        'LGU+ 대상 알림 — 작업중 단계 (공사요청번호 자동부여 체크 공사만 해당)',
-        'lgu_notify_work_completed': 'LGU+ 대상 알림 — 작업완료 단계 (공사요청번호 자동부여 체크 공사만 해당)',
-        'lgu_notify_completed':      'LGU+ 대상 알림 — 최종완료 단계 (공사요청번호 자동부여 체크 공사만 해당)',
-        'lgu_notify_cancelled':      'LGU+ 대상 알림 — 취소 단계 (공사요청번호 자동부여 체크 공사만 해당)',
+        'lgu_notify_checklist_done': 'LGU+ 대상 알림 — 체크리스트 완료 단계 (공사요청번호 자동부여 미체크 공사만 해당)',
+        'lgu_notify_tbm_done':       'LGU+ 대상 알림 — TBM 완료 단계 (공사요청번호 자동부여 미체크 공사만 해당)',
+        'lgu_notify_working':        'LGU+ 대상 알림 — 작업중 단계 (공사요청번호 자동부여 미체크 공사만 해당)',
+        'lgu_notify_work_completed': 'LGU+ 대상 알림 — 작업완료 단계 (공사요청번호 자동부여 미체크 공사만 해당)',
+        'lgu_notify_completed':      'LGU+ 대상 알림 — 최종완료 단계 (공사요청번호 자동부여 미체크 공사만 해당)',
+        'lgu_notify_cancelled':      'LGU+ 대상 알림 — 취소 단계 (공사요청번호 자동부여 미체크 공사만 해당)',
       }
       const updateDesc = rawDb.prepare(`UPDATE system_settings SET description = ? WHERE key = ?`)
       for (const [k, v] of Object.entries(lguNotifyDescs)) {

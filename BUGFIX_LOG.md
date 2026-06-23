@@ -3576,3 +3576,39 @@ WHERE cr.assessment_id = ? AND cr.response = 'no'
 - `node-server.ts` NAS 전용 라우트 작성 시 **반드시 `src/routes/*.ts` 파일의 동일 쿼리와 컬럼명 대조**
 - `checklist_items` 컬럼: `id`, `category`, `question`, `note`, `sort_order`, `work_class`, `is_active`
 - `text` 컬럼은 존재하지 않음
+
+---
+
+## [BUG-030] LGU+ 설정 화면 알림 조건 설명 방향 오류 (2026-06)
+
+### 증상
+- 시스템 설정 → LGU+ 역할 알림 수신 단계 섹션에
+  **"공사 등록 시 '공사요청번호 자동부여'를 체크한 공사에 연계된 작업"** 으로 표시됨
+- 실제 구현은 `is_auto_request_no=0`(자동부여 **미체크**, 수동 입력) 공사가 LGU+ 알림 대상인데
+  UI 설명이 **반대**(체크한 공사)로 기술됨
+
+### 원인
+- BUG-028(세션 59) 수정 시 `is_auto_request_no=1`(자동부여 **체크**) 공사만 LGU+ 접근 허용으로
+  잘못 이해하여 설명 텍스트를 "체크한 공사" 방향으로 작성
+- 실제 로직: `is_auto_request_no=1`이면 LGU+ 접근 **차단**, `is_auto_request_no=0`(미체크)이면 LGU+ **허용**
+- **⚠️ 중요**: 접근 차단 로직(`showConstructionDetail`, `renderTasksPage`)의 조건
+  `is_auto_request_no !== 1` (1이 아니면 허용, 1이면 차단) 은 코드상 올바름 — **UI 설명만 오류**
+
+### 수정 범위
+1. `app.js` line 15029 — 알림 섹션 메인 설명 문구
+   - ❌ 구: `"공사요청번호 자동부여"를 체크한 공사에 연계된 작업`
+   - ✅ 신: `"공사요청번호 자동부여"를 미체크한(수동 입력) 공사에 연계된 작업`
+2. `app.js` line 15030 — 부가 설명 문구
+   - ❌ 구: `자동부여 체크 공사만 LGU+ 알림·조회 대상입니다. 수동 입력 공사는 LGU+ 접근이 차단됩니다.`
+   - ✅ 신: `자동부여 미체크(수동 입력) 공사만 LGU+ 알림·조회 대상입니다. 자동부여 체크 공사는 LGU+ 접근이 차단됩니다.`
+3. `node-server.ts` line 1848~1853 — system_settings INSERT 기본값 6개 description
+   - ❌ 구: `(공사요청번호 자동부여 체크 공사만 해당)`
+   - ✅ 신: `(공사요청번호 자동부여 미체크 공사만 해당)`
+4. `node-server.ts` line 1904~1909 — patchSchema v0.143 UPDATE 딕셔너리 6개 동일 교정
+
+### ⚠️ 재발 방지
+- **LGU+ 접근 제어 방향 정리**:
+  - `is_auto_request_no = 1` (자동부여 체크) → LGU+ **접근 차단** (공사 상세 조회 불가, 작업 목록 필터 제외)
+  - `is_auto_request_no = 0` (자동부여 미체크, 수동 입력) → LGU+ **접근 허용** + **알림 발송 대상**
+- UI 설명 수정 시 코드 로직(`is_auto_request_no !== 1` 조건)과 방향 대조 필수
+- `patchSchema` description UPDATE도 함께 수정해야 기존 DB 행 교정됨

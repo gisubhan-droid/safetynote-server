@@ -15286,7 +15286,7 @@ async function _loadGroupPermPanel() {
   if (!body) return;
   body.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>로딩 중...</div>';
   try {
-    var res = await API.get('/api/group-permissions');
+    var res = await API.get('/group-permissions');
     var data = (res.data && res.data.permissions) ? res.data.permissions : {};
     // data 구조: { worker: { notify_own_task: 1, ... }, engineer: { ... }, ... }
     var groupOrder = ['worker','engineer','safety','site_rep','ceo','lgu_plus'];
@@ -15353,7 +15353,7 @@ async function saveGroupPerms() {
     updates.push({ group_key: chk.dataset.gk, perm_key: chk.dataset.pk, is_enabled: chk.checked ? 1 : 0 });
   });
   try {
-    await API.post('/api/group-permissions', { updates: updates });
+    await API.post('/group-permissions', { updates: updates });
     toast('그룹별 권한이 저장되었습니다.', 'success');
   } catch(e) {
     toast('저장 실패: ' + (e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message), 'error');

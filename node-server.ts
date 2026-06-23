@@ -2652,10 +2652,13 @@ app.patch('/api/tasks/:id/status', async (c) => {
     }
   }
 
-  // ── [v0.143 LGU+] LGU+ 역할 사용자 FCM 알림 — is_auto_request_no=1 인 공사에 연계된 작업 ──
+  // ── [v0.143 LGU+] LGU+ 역할 사용자 FCM 알림 — is_auto_request_no=0 인 공사에 연계된 작업 ──
   // 대상 상태: tbm_done, working, work_completed (system_settings lgu_notify_* = '1' 인 경우만)
   // ❌ 구조건(v0.142): reqNo.startsWith('1') — 완전히 잘못된 해석 (제거)
-  // ✅ 신조건(v0.143): constructions.is_auto_request_no = 1 JOIN 쿼리
+  // ❌ 오기록(v0.143): is_auto_request_no=1 로 잘못 구현 — BUG-039 수정
+  // ✅ 신조건(v0.144/BUG-039): is_auto_request_no=0(수동입력, 미체크) 공사에만 알림 발송
+  //    is_auto_request_no=0 → 수동 입력(자동부여 미체크) → LGU+ 허용 대상 → 알림 발송
+  //    is_auto_request_no=1 → 자동부여 체크 → LGU+ 차단 대상 → 알림 미발송
   try {
     const lguNotifyKey = `lgu_notify_${status}`
     const lguEnabled = getSetting(lguNotifyKey)
@@ -2667,7 +2670,8 @@ app.patch('/api/tasks/:id/status', async (c) => {
          LEFT JOIN constructions c ON c.id = t.construction_id
          WHERE t.id = ?`
       ).get(id) as any
-      const isLguTarget = taskConRow?.is_auto_request_no === 1
+      // BUG-039 수정: !== 1 (0이면 수동입력 = LGU+ 허용 = 알림 대상)
+      const isLguTarget = taskConRow?.is_auto_request_no !== 1
       if (isLguTarget) {
         // LGU+ 역할 사용자 조회 (role='lgu' 또는 sub_role='lgu_plus')
         const lguUsers = rawDb.prepare(
@@ -2677,7 +2681,7 @@ app.patch('/api/tasks/:id/status', async (c) => {
         if (lguIds.length > 0) {
           const fcmTitle = `[LGU+] 작업 상태 변경: ${sLabel}`
           const fcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업이 [${sLabel}]로 변경되었습니다. (${user.name})`
-          console.log(`[FCM/LGU+] 발송 — task:${id} conReq:${taskConRow?.c_req}(자동부여) status:${status} → lgu targets:${lguIds}`)
+          console.log(`[FCM/LGU+] 발송 — task:${id} conReq:${taskConRow?.c_req}(수동입력) status:${status} → lgu targets:${lguIds}`)
           sendFcmToUsers(lguIds, {
             title: fcmTitle,
             body:  fcmBody,
@@ -2881,7 +2885,8 @@ app.patch('/api/checklist/:id/complete', async (c) => {
 
     // ② [v0.143 LGU+] 체크리스트 완료 시 LGU+ 알림 발송
     // ❌ 구조건(v0.142): reqNo.startsWith('1') — 잘못된 해석 (제거)
-    // ✅ 신조건(v0.143): constructions.is_auto_request_no = 1 JOIN 쿼리
+    // ❌ 오기록(v0.143): is_auto_request_no=1 로 잘못 구현 — BUG-039 수정
+    // ✅ 신조건(v0.144/BUG-039): is_auto_request_no=0(수동입력) 공사에만 알림 발송
     try {
       var lguChkEnabled = getSetting('lgu_notify_checklist_done')
       if (lguChkEnabled === '1' && asmRow.task_id) {
@@ -2891,7 +2896,8 @@ app.patch('/api/checklist/:id/complete', async (c) => {
            FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
            WHERE t.id = ?`
         ).get(asmRow.task_id)
-        if (lguTaskRow && lguTaskRow.is_auto_request_no === 1) {
+        // BUG-039 수정: !== 1 (0이면 수동입력 = LGU+ 허용 = 알림 대상)
+        if (lguTaskRow && lguTaskRow.is_auto_request_no !== 1) {
           var lguTaskTitle = lguTaskRow.title || String(asmRow.task_id)
           var lguTaskNum = lguTaskRow.work_number
             ? (lguTaskRow.sub_task_number ? `${lguTaskRow.work_number}-${lguTaskRow.sub_task_number}` : lguTaskRow.work_number)
@@ -2903,7 +2909,7 @@ app.patch('/api/checklist/:id/complete', async (c) => {
           if (lguIdsChk.length > 0) {
             var lguFcmTitle = `[LGU+] 체크리스트 완료`
             var lguFcmBody  = `[${lguTaskNum}] "${lguTaskTitle}" 작업 체크리스트가 완료되었습니다. (${user.name})`
-            console.log(`[FCM/LGU+] 체크리스트 완료 알림 — task:${asmRow.task_id} conReq:${lguTaskRow.c_req}(자동부여) → lgu:${lguIdsChk}`)
+            console.log(`[FCM/LGU+] 체크리스트 완료 알림 — task:${asmRow.task_id} conReq:${lguTaskRow.c_req}(수동입력) → lgu:${lguIdsChk}`)
             sendFcmToUsers(lguIdsChk, {
               title: lguFcmTitle, body: lguFcmBody,
               data: { type: 'task_status_lgu', taskId: String(asmRow.task_id), status: 'checklist_done' }
@@ -2959,8 +2965,10 @@ app.patch('/api/checklist/:id/complete-lgu-notify', async (c) => {
     ).get(taskId) as any
     if (!taskRow) return c.json({ lgu_notified: false, reason: 'no_task_row' })
 
-    // ✅ 신조건(v0.143): is_auto_request_no=1 인 공사에 연계된 작업만 알림 발송
-    if (taskRow.is_auto_request_no !== 1) return c.json({ lgu_notified: false, reason: 'not_auto_req_no' })
+    // ❌ 오기록(v0.143): is_auto_request_no !== 1 로 잘못 구현 — BUG-039 수정
+    // ✅ 신조건(v0.144/BUG-039): is_auto_request_no=0(수동입력)이면 알림, is_auto_request_no=1이면 차단
+    //    → is_auto_request_no === 1(자동부여 체크) 이면 LGU+ 차단 대상이므로 early return
+    if (taskRow.is_auto_request_no === 1) return c.json({ lgu_notified: false, reason: 'auto_req_no_blocked' })
 
     const taskTitle = taskRow.title || String(taskId)
     const taskNumDisplay = taskRow.work_number

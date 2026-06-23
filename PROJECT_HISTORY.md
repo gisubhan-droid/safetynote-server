@@ -1,11 +1,11 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-23 (세션 60)
-> **서버 현재 버전: `da547c6`** ← 최신 (GitHub) — BUG-036 수정
+> 최종 업데이트: 2026-06-23 (세션 61)
+> **서버 현재 버전: `(커밋 후 업데이트)`** ← 최신 (GitHub) — BUG-039 수정
 > **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260621w**
 > **APK 최신**: v1.4.7
-> **BUG-030~036 수정 완료** — NAS 적용 후 사진 기능 확인 필요
+> **BUG-036~039 수정 완료** — NAS 적용 후 LGU+ 알림 동작 확인 필요
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
 ---
@@ -3090,3 +3090,64 @@ bash restore_photos.sh pre-photo-fix-v2-202606230213
 ```bash
 git fetch origin && git reset --hard origin/main && pm2 restart safetynote
 ```
+
+## 세션 61 (2026-06-23) — BUG-036~039 수정 완료 (LGU+ 알림 조건 전면 정정)
+
+### 세션 요약
+BUG-036~038 수정 후 사진 업로드 동작 확인 완료.
+BUG-039: `is_auto_request_no` 조건 방향이 전면 반전되어 있던 버그 수정.
+BUG-030 오기록("코드상 올바름")도 BUGFIX_LOG에 정정 기록.
+
+### BUG-037: 사진 이미지 401 에러 (세션 60~61 연속)
+- `GET /api/photos/:id/img` → Authorization 헤더 불가 (`<img src>` 태그 한계)
+- `?token=` 쿼리스트링 지원 + `getUser()` 폴백 추가
+- `app.js` `photoImgSrc()` 헬퍼 함수 + 11곳 교체
+- 커밋: `6960caa`
+
+### BUG-038: LGU+ sub_role 누락 (세션 61)
+- register API에서 `ui_role='lgu_plus'` → `sub_role` 미변환
+- `uiRoleToSubRole` 맵 + patchSchema v0.144 자동 복구 쿼리
+- 커밋: `9c7b2fb`
+
+### BUG-039: is_auto_request_no 조건 방향 전면 반전 (세션 61)
+
+#### 원인
+- v0.143(BUG-028) 당시 조건 방향 반대로 구현
+- BUG-030 오기록("코드상 올바름")으로 인해 수정 지연
+- 실제 의도: `is_auto_request_no=0`(수동입력) → LGU+ 허용/알림, `=1`(자동부여) → 차단
+
+#### 수정 파일 및 위치
+
+| 파일 | 위치 | 수정 내용 |
+|------|------|----------|
+| `node-server.ts` | line ~2670 | `=== 1` → `!== 1` (작업상태 알림 발송 조건) |
+| `node-server.ts` | line ~2894 | `=== 1` → `!== 1` (체크리스트 완료 알림 조건) |
+| `node-server.ts` | line ~2963 | `!== 1` → `=== 1` (수동 알림 엔드포인트 차단 방향) |
+| `app.js` | line ~3101 | `=== 1` → `!== 1` (공사 목록 필터) |
+| `app.js` | line ~3175 | `!== 1` → `=== 1` (공사 상세 접근 차단 방향) |
+| `app.js` | line ~4228 | `=== 1` → `!== 1` (작업 목록 필터) |
+
+#### is_auto_request_no 값 정의 (확정)
+- `0` = 수동 입력 (자동부여 미체크) → **LGU+ 허용**, 알림 발송 대상
+- `1` = 자동부여 체크 → **LGU+ 차단**, 알림 미발송
+
+### 생성된 파일
+- `restore_lgu_notify.sh` — BUG-039 수정 전 상태(`9c7b2fb`) 복원 스크립트
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `6960caa` | fix: BUG-037 사진 이미지 401 에러 — img src 토큰 쿼리스트링 지원 |
+| `9c7b2fb` | fix: BUG-038 LGU+ 알림 미수신 — sub_role 누락 수정 |
+| *(이번 커밋)* | fix: BUG-039 LGU+ is_auto_request_no 조건 방향 전면 반전 |
+
+### NAS 업데이트
+```bash
+git fetch origin && git reset --hard origin/main && npm run build && pm2 restart safetynote
+```
+
+### 상태
+- ✅ node-server.ts 수정 완료 (3곳)
+- ✅ app.js 수정 완료 (3곳)
+- ✅ BUGFIX_LOG BUG-039 기록 + BUG-038 오기록 정정
+- ⚠️ NAS 업데이트 후 LGU+ 계정으로 공사 목록/알림 동작 확인 필요

@@ -3093,12 +3093,15 @@ async function renderConstructionsPage(container) {
 
     const res = await API.get('/constructions', { params });
     var rawList = res.data || [];
-    // [v0.143 LGU+] LGU+ 역할은 자동부여 공사(is_auto_request_no=1)만 접근 가능
-    // 수동 입력 공사(is_auto_request_no=0)는 목록에서 제외
+    // [BUG-039 수정] LGU+ 역할은 수동입력 공사(is_auto_request_no=0)만 접근 가능
+    // ❌ 오기록(v0.143): is_auto_request_no=1(자동부여 체크)만 허용 — 방향 반대였음
+    // ✅ 수정(v0.144/BUG-039): is_auto_request_no=0(수동입력, 미체크)만 LGU+ 허용
+    //    is_auto_request_no=0 → 수동 입력(자동부여 미체크) → LGU+ 허용
+    //    is_auto_request_no=1 → 자동부여 체크 → LGU+ 차단
     var myUiRoleForCon = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
     var isLguPlusUser = (myUiRoleForCon === 'lgu_plus' || currentUser.role === 'lgu');
     var list = isLguPlusUser
-      ? rawList.filter(function(con) { return con.is_auto_request_no === 1; })
+      ? rawList.filter(function(con) { return con.is_auto_request_no !== 1; })
       : rawList;
     window._conListCache = list;   // 엑셀 다운로드용 캐시
     const area = document.getElementById('con-list-area');
@@ -3166,13 +3169,14 @@ async function showConstructionDetail(conId) {
     const res = await API.get(`/constructions/${conId}`);
     const con = res.data;
 
-    // ── [v0.143 LGU+] 자동부여 공사 접근 차단 ───────────────────────────────
-    // LGU+ 역할(role='lgu' 또는 sub_role='lgu_plus')은
-    // is_auto_request_no=1(자동부여 체크된 공사)만 접근 가능
-    // is_auto_request_no=0(수동입력 공사)는 상세 열람 차단
+    // ── [BUG-039 수정] 자동부여 공사 접근 차단 ──────────────────────────────
+    // ❌ 오기록(v0.143): is_auto_request_no !== 1(자동부여 미체크)일 때 차단 — 방향 반대였음
+    // ✅ 수정(v0.144/BUG-039): is_auto_request_no=1(자동부여 체크)일 때 LGU+ 차단
+    //    is_auto_request_no=0(수동입력, 미체크) → LGU+ 허용 (상세 열람 가능)
+    //    is_auto_request_no=1(자동부여 체크) → LGU+ 차단 (상세 열람 불가)
     var _conMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
     var _conIsLguPlus = (_conMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
-    if (_conIsLguPlus && con.is_auto_request_no !== 1) {
+    if (_conIsLguPlus && con.is_auto_request_no === 1) {
       overlay.querySelector('.modal').innerHTML = `
         <div class="modal-header" style="background:linear-gradient(135deg,#D70072,#685182);border-radius:20px 20px 0 0;border-bottom:none;padding:18px 24px">
           <h3 class="font-black text-white text-base"><i class="fas fa-lock mr-2"></i>접근 제한</h3>
@@ -4221,11 +4225,15 @@ async function renderTasksPage(container) {
       page:  taskFilters.page || 1,
     } });
     var _rawNewTasks = tasksRes.data.tasks || tasksRes.data || [];
-    // ── [v0.143 LGU+] LGU+ 역할은 is_auto_request_no=1 공사에 연계된 tasks만 표시 ──
+    // ── [BUG-039 수정] LGU+ 역할은 is_auto_request_no=0 공사에 연계된 tasks만 표시 ──
+    // ❌ 오기록(v0.143): is_auto_request_no=1(자동부여 체크) tasks만 표시 — 방향 반대였음
+    // ✅ 수정(v0.144/BUG-039): is_auto_request_no=0(수동입력, 미체크) tasks만 LGU+ 표시
+    //    is_auto_request_no=0 → 수동입력 공사 → LGU+ 허용 대상 → 목록 표시
+    //    is_auto_request_no=1 → 자동부여 체크 공사 → LGU+ 차단 대상 → 목록 제외
     var _taskMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
     var _taskIsLguPlus = (_taskMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
     const newTasks = _taskIsLguPlus
-      ? _rawNewTasks.filter(function(t) { return t.is_auto_request_no === 1; })
+      ? _rawNewTasks.filter(function(t) { return t.is_auto_request_no !== 1; })
       : _rawNewTasks;
     // LGU+ 필터 적용 시 total도 필터된 건수로 보정
     _taskListTotal = _taskIsLguPlus

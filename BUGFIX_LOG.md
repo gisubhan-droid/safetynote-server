@@ -4013,12 +4013,112 @@ WHERE position='LGU+' AND (sub_role='' OR sub_role IS NULL) AND is_active=1
 ```
 서버 재시작 시 1회 자동 실행 → 기존 계정 모두 복구
 
-### LGU+ 알림 조건 구조 (확정)
-- **알림 대상 공사**: `is_auto_request_no=1` (공사 등록 시 "자동부여" 체크한 공사)
-- **접근 가능 공사**: `is_auto_request_no=1` 공사만 목록/상세 표시
-- **알림 대상 사용자**: `role='lgu' OR sub_role='lgu_plus'` AND `is_active=1`
+### LGU+ 알림 조건 구조 (⚠️ BUG-038 당시 오기록 — BUG-039에서 정정)
+- ~~**알림 대상 공사**: `is_auto_request_no=1` (공사 등록 시 "자동부여" 체크한 공사)~~
+- ~~**접근 가능 공사**: `is_auto_request_no=1` 공사만 목록/상세 표시~~
+- **정정**: 실제 의도는 `is_auto_request_no=0`(자동부여 **미체크**, 수동입력) 공사가 LGU+ 허용·알림 대상
+- **알림 대상 사용자**: `role='lgu' OR sub_role='lgu_plus'` AND `is_active=1` (이 부분은 정확)
+- ▶ BUG-039 참조
 
 ### ⚠️ 재발 방지
 - register/update API에서 `ui_role` 수신 시 반드시 `sub_role`로 변환 후 저장
 - LGU+ 계정 확인: `sub_role='lgu_plus'` 필수 (position='LGU+' 만으로는 알림 쿼리에서 누락)
 - 알림 발송 전 DB에서 `WHERE sub_role='lgu_plus'` 조건 결과 건수 로그 확인 가능
+
+---
+
+## [BUG-039] LGU+ 알림 조건 방향 전면 반전 (2026-06-23)
+
+### 증상
+- LGU+ 계정으로 로그인 시 공사 목록/작업 목록이 비어 있음
+- 실제 공사에 알림이 오지 않음 (알림을 받아야 하는 공사에서 미수신)
+- 반대로 접근 차단되어야 할 공사가 표시되는 경우 발생
+
+### 원인
+- **BUG-030 오기록**: BUGFIX_LOG BUG-030에 "코드상 올바름 — UI 설명만 오류"라고 잘못 기록
+- 실제로는 **코드도 잘못된 방향**으로 구현되어 있었음
+- **v0.143(BUG-028) 당시 잘못 구현**: `is_auto_request_no=1`(자동부여 체크) 공사를 LGU+ 허용 대상으로 처리
+- **실제 의도**: `is_auto_request_no=0`(자동부여 **미체크**, 수동 입력) 공사가 LGU+ 허용·알림 대상
+
+### is_auto_request_no 값의 의미 (확정)
+| 값 | UI 체크박스 | 의미 | LGU+ 처리 |
+|----|------------|------|----------|
+| `0` | ☐ 미체크 (수동 입력) | 공사요청번호를 수동으로 입력 | **허용** — 목록 표시, 상세 열람, 알림 발송 |
+| `1` | ☑ 체크 (자동부여) | 공사요청번호 자동부여 | **차단** — 목록 제외, 상세 차단, 알림 미발송 |
+
+### 수정 내용
+
+#### `node-server.ts` — 3곳 수정
+
+**① line ~2670: 작업상태 알림 조건**
+```typescript
+// 수정 전 (❌ 잘못됨)
+const isLguTarget = taskConRow?.is_auto_request_no === 1
+
+// 수정 후 (✅ 정확)
+const isLguTarget = taskConRow?.is_auto_request_no !== 1
+// is_auto_request_no=0(수동입력) → LGU+ 허용 → 알림 발송
+```
+
+**② line ~2894: 체크리스트 완료 알림 조건**
+```typescript
+// 수정 전 (❌ 잘못됨)
+if (lguTaskRow && lguTaskRow.is_auto_request_no === 1) {
+
+// 수정 후 (✅ 정확)
+if (lguTaskRow && lguTaskRow.is_auto_request_no !== 1) {
+```
+
+**③ line ~2963: 수동 알림 엔드포인트 차단**
+```typescript
+// 수정 전 (❌ 잘못됨) — 수동입력 공사에서 알림 차단, 자동부여 공사에서 허용
+if (taskRow.is_auto_request_no !== 1) return c.json({ lgu_notified: false, reason: 'not_auto_req_no' })
+
+// 수정 후 (✅ 정확) — 자동부여 공사 차단, 수동입력 공사 허용
+if (taskRow.is_auto_request_no === 1) return c.json({ lgu_notified: false, reason: 'auto_req_no_blocked' })
+```
+
+#### `public/static/app.js` — 3곳 수정
+
+**① line ~3101: 공사 목록 필터**
+```javascript
+// 수정 전 (❌ 잘못됨)
+? rawList.filter(function(con) { return con.is_auto_request_no === 1; })
+
+// 수정 후 (✅ 정확)
+? rawList.filter(function(con) { return con.is_auto_request_no !== 1; })
+```
+
+**② line ~3175: 공사 상세 접근 차단**
+```javascript
+// 수정 전 (❌ 잘못됨) — 수동입력 공사 차단, 자동부여 공사 허용
+if (_conIsLguPlus && con.is_auto_request_no !== 1) {
+
+// 수정 후 (✅ 정확) — 자동부여 공사 차단, 수동입력 공사 허용
+if (_conIsLguPlus && con.is_auto_request_no === 1) {
+```
+
+**③ line ~4228: 작업 목록 필터**
+```javascript
+// 수정 전 (❌ 잘못됨)
+? _rawNewTasks.filter(function(t) { return t.is_auto_request_no === 1; })
+
+// 수정 후 (✅ 정확)
+? _rawNewTasks.filter(function(t) { return t.is_auto_request_no !== 1; })
+```
+
+### 복원 방법
+BUG-039 수정 후 문제 발생 시:
+```bash
+bash /home/user/webapp/restore_lgu_notify.sh
+# 또는 직접 롤백:
+git reset --hard 9c7b2fb && npm run build && pm2 restart safetynote
+```
+
+### ⚠️ 재발 방지
+- `is_auto_request_no` 관련 코드 수정 시 **반드시** 이 표를 참조:
+  - `=== 0` 또는 `!== 1` → LGU+ **허용** (수동입력 공사)
+  - `=== 1` → LGU+ **차단** (자동부여 공사)
+- BUG-030 오기록을 신뢰하지 말 것 — 실제 로직 방향은 이 BUG-039 기록이 정확
+- 공사 등록 UI: "자동부여" 체크박스 = `is_auto_request_no=1` → LGU+ 차단
+- 향후 LGU+ 관련 알림/접근 제어 수정 시 6곳 모두 일관성 유지 필수

@@ -3959,3 +3959,66 @@ function photoImgSrc(photoId) {
 - **`<img src>` / `<video src>` 태그는 헤더 불가** → 인증된 API는 `?token=` 쿼리스트링 필수
 - 새로운 인증 이미지 API 추가 시 반드시 `photoImgSrc()` 또는 동일 패턴 사용
 - `getUser()` 함수는 헤더와 쿼리스트링 모두 지원 (우선순위: 헤더 > 쿼리스트링)
+
+---
+
+## [BUG-038] LGU+ 계정 알림 미수신 — sub_role 누락 + register API ui_role 미변환 (2026-06)
+
+### 증상
+- LGU+ 역할 계정으로 로그인해도 작업 상태 변경 시 FCM 알림 미수신
+- 시스템에서 LGU+ 계정이 "근로자"로 표시됨
+
+### 계정 역할 구조 (설계 정의)
+
+| UI 표시명 | DB `role` | DB `sub_role` | DB `position` |
+|-----------|-----------|---------------|--------------|
+| 근로자 | `worker` | `''` | 다양 |
+| 공무 | `supervisor` | `engineer` | `관리감독자` 등 |
+| 안전관리자 | `supervisor` | `safety` | `안전관리자` |
+| 현장대리인 | `supervisor` | `site_rep` | `총괄책임자` |
+| CEO | `admin` | `ceo` | `대표이사` |
+| **LGU+** | `worker` ← 설계 의도(열람전용) | **`lgu_plus`** | `LGU+` |
+| 시스템관리자 | `admin` | `sysadmin` | `시스템관리자` |
+
+**LGU+가 DB `role=worker`인 것은 설계 의도** (열람 전용 권한). `sub_role='lgu_plus'`로 근로자와 구분.
+
+### 근본 원인 — 2가지
+
+#### 원인 1: `POST /api/auth/register` — `ui_role` → `sub_role` 미변환
+```javascript
+// app.js submitRegister() 전송 데이터
+{ role: 'worker',  ui_role: 'lgu_plus' }  // sub_role 없음!
+```
+서버는 `body.sub_role`을 직접 저장 → `sub_role = ''` (빈값)  
+알림 쿼리: `WHERE role='lgu' OR sub_role='lgu_plus'` → sub_role='' → LGU+ 계정 미포함 → 알림 0건
+
+#### 원인 2: 기존 등록된 LGU+ 계정 sub_role 누락
+위 버그로 등록된 계정 전부 `position='LGU+'`이지만 `sub_role=''` 상태
+
+### 해결
+
+#### 1. `node-server.ts` register API — ui_role → sub_role 변환 로직 추가
+```typescript
+const uiRoleToSubRole = {
+  safety: 'safety', engineer: 'engineer', site_rep: 'site_rep',
+  lgu_plus: 'lgu_plus', ceo: 'ceo', sysadmin: 'sysadmin', worker: '',
+}
+const effectiveSubRole = sub_role || (ui_role ? (uiRoleToSubRole[ui_role] ?? ui_role) : '')
+```
+
+#### 2. `node-server.ts` patchSchema v0.144 — 기존 LGU+ 계정 자동 복구
+```sql
+UPDATE users SET sub_role='lgu_plus'
+WHERE position='LGU+' AND (sub_role='' OR sub_role IS NULL) AND is_active=1
+```
+서버 재시작 시 1회 자동 실행 → 기존 계정 모두 복구
+
+### LGU+ 알림 조건 구조 (확정)
+- **알림 대상 공사**: `is_auto_request_no=1` (공사 등록 시 "자동부여" 체크한 공사)
+- **접근 가능 공사**: `is_auto_request_no=1` 공사만 목록/상세 표시
+- **알림 대상 사용자**: `role='lgu' OR sub_role='lgu_plus'` AND `is_active=1`
+
+### ⚠️ 재발 방지
+- register/update API에서 `ui_role` 수신 시 반드시 `sub_role`로 변환 후 저장
+- LGU+ 계정 확인: `sub_role='lgu_plus'` 필수 (position='LGU+' 만으로는 알림 쿼리에서 누락)
+- 알림 발송 전 DB에서 `WHERE sub_role='lgu_plus'` 조건 결과 건수 로그 확인 가능

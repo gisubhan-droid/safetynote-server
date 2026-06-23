@@ -1915,6 +1915,19 @@ function patchSchema() {
       }
       console.log('[patchSchema v0.143] system_settings lgu_notify_* description 교정 완료')
     } catch (_) {}
+
+    // ── [v0.144 BUG-038] LGU+ 계정 sub_role 누락 자동 복구 ─────────────────────
+    // 자가가입 버그로 인해 LGU+ 계정이 position='LGU+'이고 sub_role=''인 경우
+    // sub_role='lgu_plus' 자동 보정 → 알림 발송 쿼리 (sub_role='lgu_plus') 에 포함
+    try {
+      const fixed = rawDb.prepare(
+        `UPDATE users SET sub_role='lgu_plus'
+         WHERE position='LGU+' AND (sub_role='' OR sub_role IS NULL) AND is_active=1`
+      ).run()
+      if (fixed.changes > 0) {
+        console.log(`[patchSchema v0.144] LGU+ sub_role 누락 계정 ${fixed.changes}개 자동 복구 (position='LGU+' → sub_role='lgu_plus')`)
+      }
+    } catch(e: any) { console.warn('[patchSchema v0.144] LGU+ sub_role 복구 실패(무시):', e.message) }
   })()
 }
 patchSchema()
@@ -2415,6 +2428,7 @@ app.post('/api/auth/register', async (c) => {
   const body = await c.req.json().catch(() => ({})) as any
   const {
     username, password, name, grade, role, sub_role,
+    ui_role,  // BUG-038: 자가가입 시 ui_role로 전송됨 → sub_role 자동 변환
     department, position, phone,
     company, blood_type, emergency_contact, health_info,
     edu_hire_date, edu_special_electric, edu_special_confined,
@@ -2423,6 +2437,14 @@ app.post('/api/auth/register', async (c) => {
   if (!username || !password || !name || !role) {
     return c.json({ error: '필수 항목을 입력하세요.' }, 400)
   }
+  // BUG-038: ui_role → sub_role 자동 변환
+  // 자가가입(submitRegister)은 sub_role 대신 ui_role을 전송함
+  // safety/engineer/site_rep/lgu_plus/ceo/sysadmin 등 세부 역할을 sub_role에 저장
+  const uiRoleToSubRole: Record<string, string> = {
+    safety: 'safety', engineer: 'engineer', site_rep: 'site_rep',
+    lgu_plus: 'lgu_plus', ceo: 'ceo', sysadmin: 'sysadmin', worker: '',
+  }
+  const effectiveSubRole = sub_role || (ui_role ? (uiRoleToSubRole[ui_role] ?? ui_role) : '')
   let permValue: string | null = null
   if (Array.isArray(permissions) && permissions.length > 0) {
     permValue = JSON.stringify(permissions)
@@ -2437,7 +2459,7 @@ app.post('/api/auth/register', async (c) => {
       '  edu_special_loading, edu_experience_date, permissions' +
       ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
-      username, password, name, grade || '', role, sub_role || '',
+      username, password, name, grade || '', role, effectiveSubRole,
       department || '', position || '', phone || '',
       company || '', blood_type || '', emergency_contact || '', health_info || '',
       edu_hire_date || '', edu_special_electric || '', edu_special_confined || '',

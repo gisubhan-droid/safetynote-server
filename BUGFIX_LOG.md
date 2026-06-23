@@ -4296,3 +4296,94 @@ TBM 서명 연쇄 흐름 중 첫 단계(근로자 전원 서명 → 안전관리
 ### ⚠️ 재발 방지
 - TBM 서명 추가 시 반드시 연쇄 알림 체인 확인 (attendee → safety → site_rep → ceo)
 - 중복 방지 로직(이미 서명된 역할 체크) 필수
+
+---
+
+## [BUG-041] LGU+ 수동입력 공사 조회 안 됨 + 공사 미연결 작업 오포함 (2026-06-23)
+
+### 증상
+- LGU+ 계정으로 로그인 시 수동입력(is_auto_request_no=0) 공사가 목록에 표시 안 됨
+- 공사에 연결되지 않은 작업(construction_id=NULL)이 LGU+ 작업 목록에 포함됨
+
+### 원인 분석
+
+#### ① constructions.ts — NULL 반환으로 필터 불통과
+```sql
+-- 기존: SELECT c.* → is_auto_request_no 컬럼이 D1에 없는 경우 NULL 반환
+-- 프론트 필터: con.is_auto_request_no === 0 → null === 0 → false → 수동입력 공사도 숨김
+SELECT c.* FROM constructions c ...
+```
+
+#### ② tasks.ts — COALESCE(NULL, 0) = 0 오포함
+```sql
+-- 기존: COALESCE(con.is_auto_request_no, 0)
+-- 공사 미연결 작업(LEFT JOIN 미조인): NULL → 0 → LGU+ 필터 통과 → 오포함
+COALESCE(con.is_auto_request_no, 0) as is_auto_request_no
+```
+
+### 수정 내용
+
+#### ① constructions.ts — COALESCE 명시로 NULL 보장
+```sql
+-- 수정 후: c.* + 명시적 COALESCE
+COALESCE(c.is_auto_request_no, 0) AS is_auto_request_no
+```
+- D1에 컬럼 없어도 0 반환 → `=== 0` 필터 통과 (수동입력 공사 정상 표시)
+
+#### ② tasks.ts — COALESCE(NULL, -1) 로 공사 미연결 구분
+```sql
+-- 수정 후: NULL(공사 미연결) → -1 → === 0 필터 불통과 → LGU+ 대상 아님
+COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
+```
+| 값 | 의미 | LGU+ === 0 필터 |
+|----|------|----------------|
+| -1 | 공사 미연결 (NULL fallback) | ❌ 불통과 |
+| 0  | 수동입력 공사 | ✅ 통과 |
+| 1  | 자동부여 공사 | ❌ 불통과 |
+
+### 수정 파일
+- `src/routes/constructions.ts` — 목록 SELECT에 `COALESCE(c.is_auto_request_no, 0)` 추가
+- `src/routes/tasks.ts` — 3곳 `COALESCE(con.is_auto_request_no, 0)` → `-1`로 변경
+
+### ⚠️ 재발 방지
+- `LEFT JOIN constructions` 결과에서 `is_auto_request_no` 는 **항상 COALESCE 명시 필수**
+- 공사 미연결 작업의 fallback은 반드시 `-1` (0이면 LGU+ 허용 오발생)
+- constructions 목록 조회는 `c.*` 대신 `COALESCE(c.is_auto_request_no, 0)` 명시
+
+---
+
+## [FEAT-029] 푸시 알림 group_permissions 기반 그룹별 발송 (2026-06-23)
+
+### 개요
+기존 하드코딩된 `position IN ('관리감독자','총괄책임자','대표이사')` 방식을
+`group_permissions` 테이블 기반 `getUsersWithPerm(permKey)` 헬퍼로 전환.
+
+### 추가된 헬퍼 함수 (node-server.ts)
+
+#### `getUserGroupKey(u)` — 사용자 → group_key 매핑
+```typescript
+// sub_role 우선, 없으면 role+position으로 추정
+// worker/engineer/safety/site_rep/ceo/lgu_plus
+```
+
+#### `getUsersWithPerm(permKey, excludeId?)` — 권한별 수신자 조회
+```typescript
+// group_permissions에서 permKey=is_enabled=1 그룹 조회
+// 해당 그룹에 속한 is_active=1 유저 id[] 반환
+```
+
+### 변경된 발송 로직
+
+| 발송 지점 | 기존 | 변경 후 |
+|-----------|------|---------|
+| 작업상태 변경 FCM | `position IN (...)` 하드코딩 | `getUsersWithPerm('notify_all_tasks')` |
+| 작업상태 변경 SSE | `broadcastToRoles(['admin','supervisor'])` | `getUsersWithPerm('notify_all_tasks')` |
+| 작업상태 변경 notifications | `role IN ('admin','supervisor')` | `getUsersWithPerm('notify_all_tasks')` |
+| 배정 작업자 알림 | workerIds 직접 추가 | `getUsersWithPerm('notify_own_task')` 교집합 |
+| LGU+ 작업상태 알림 | `role='lgu' OR sub_role='lgu_plus'` | `getUsersWithPerm('notify_lgu_tasks')` |
+| 체크리스트 완료 알림 | LGU+만 발송 | 전체관리자 + LGU+ 분리 발송 |
+
+### ⚠️ 재발 방지
+- 새 알림 발송 로직 추가 시 반드시 `getUsersWithPerm()` 사용
+- `broadcastToRoles(['admin','supervisor'])` 직접 사용 금지 (group_permissions 우회)
+- 수신자 하드코딩(`position IN (...)`) 금지

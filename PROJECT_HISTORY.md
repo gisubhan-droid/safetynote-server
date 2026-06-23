@@ -1,11 +1,11 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-23 (세션 62)
-> **서버 현재 버전: `1bcd729`** ← 최신 (GitHub) — FEAT-027/028 + BUG-040 단순화
+> 최종 업데이트: 2026-06-23 (세션 63)
+> **서버 현재 버전: `(이번 커밋)`** ← 최신 (GitHub) — BUG-041 + FEAT-029
 > **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260621w**
 > **APK 최신**: v1.4.7
-> **FEAT-027/028 완료** — NAS 적용 후 그룹별 권한 설정 탭 동작 확인 필요
+> **BUG-041 + FEAT-029 완료** — NAS 적용 후 LGU+ 공사 조회 및 그룹별 푸시 알림 확인 필요
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
 ---
@@ -3240,3 +3240,70 @@ git fetch origin && git reset --hard origin/main && npm run build && pm2 restart
 - ✅ app.js: "그룹별 권한 설정" 관리자 탭 UI 추가
 - ✅ 빌드 성공 (252.03 kB, 오류 없음)
 - ⚠️ NAS 업데이트 후 그룹별 권한 설정 탭 동작 확인 필요
+
+---
+
+## 세션 63 (2026-06-23) — BUG-041: LGU+ 공사 조회 오류 + FEAT-029: group_permissions 기반 푸시 알림
+
+### 세션 요약
+세션 62 FEAT-027 적용 후 LGU+ 공사 조회가 안 되는 문제 발견 및 수정.
+푸시 알림 수신자 결정을 group_permissions 테이블 기반으로 전환.
+
+### BUG-041: LGU+ 수동입력 공사 조회 안 됨
+
+#### 원인
+- `constructions.ts` — `SELECT c.*` 에서 `is_auto_request_no`가 NULL 반환 가능 (D1 컬럼 누락 시)
+  - NULL → `=== 0` 필터 불통과 → 수동입력 공사도 LGU+에게 안 보임
+- `tasks.ts` — `COALESCE(con.is_auto_request_no, 0)` 에서 공사 미연결 작업이 0으로 처리
+  - NULL(미연결) → 0 → `=== 0` 필터 통과 → LGU+ 대상 아닌 작업 오포함
+
+#### 수정
+| 파일 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| `constructions.ts` | `SELECT c.*` | `COALESCE(c.is_auto_request_no, 0) AS is_auto_request_no` 명시 추가 |
+| `tasks.ts` (3곳) | `COALESCE(con.is_auto_request_no, 0)` | `COALESCE(con.is_auto_request_no, -1)` |
+
+#### COALESCE -1 의미
+```
+-1 = 공사 미연결 (NULL fallback) → === 0 불통과 → LGU+ 대상 아님 ✅
+ 0 = 수동입력 공사              → === 0 통과   → LGU+ 허용 ✅
+ 1 = 자동부여 공사              → === 0 불통과 → LGU+ 차단 ✅
+```
+
+### FEAT-029: group_permissions 기반 FCM/SSE/notifications 수신자 결정
+
+#### 추가 헬퍼 함수 (node-server.ts)
+- `getUserGroupKey(u)` — 사용자 row → group_key 매핑 (sub_role 우선, fallback role+position)
+- `getUsersWithPerm(permKey, excludeId?)` — group_permissions 기반 수신자 id[] 반환
+
+#### 변경된 발송 지점
+| 위치 | 기존 방식 | 변경 후 |
+|------|---------|---------|
+| 작업상태 변경 FCM/SSE/notifications | `position IN (...)` 하드코딩 | `getUsersWithPerm('notify_all_tasks')` |
+| 배정 작업자 FCM/SSE | `workerIds` 직접 | `getUsersWithPerm('notify_own_task')` 교집합 |
+| LGU+ 작업상태 FCM | `role='lgu' OR sub_role='lgu_plus'` | `getUsersWithPerm('notify_lgu_tasks')` |
+| 체크리스트 완료 알림 | LGU+만 | 전체관리자(`notify_all_tasks`) + LGU+(`notify_lgu_tasks`) 분리 |
+
+### 복원 스크립트
+- `restore_before_bug041.sh` — 커밋 `7421134` 기준 롤백
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `7421134` | fix: FEAT-027 그룹별 권한 API URL 이중 prefix 수정 (세션 62) |
+| `(이번 커밋)` | fix: BUG-041 LGU+ 공사 조회 + FEAT-029 group_permissions 기반 푸시 알림 |
+
+### NAS 업데이트
+```bash
+git fetch origin && git reset --hard origin/main && npm run build && pm2 restart safetynote
+```
+
+### 상태
+- ✅ constructions.ts: COALESCE(is_auto_request_no, 0) 명시 추가
+- ✅ tasks.ts: COALESCE -1 (공사 미연결 구분) 3곳 수정
+- ✅ node-server.ts: getUserGroupKey() + getUsersWithPerm() 헬퍼 추가
+- ✅ node-server.ts: 작업상태 FCM/SSE/notifications group_permissions 전환
+- ✅ node-server.ts: 체크리스트 완료 알림 전체관리자 + LGU+ 분리 발송
+- ✅ node-server.ts: LGU+ 알림 notify_lgu_tasks 기반 전환
+- ✅ 빌드 성공 (252.10 kB, 오류 없음)
+- ⚠️ NAS 업데이트 후 LGU+ 공사 목록 및 그룹별 알림 수신 확인 필요

@@ -59,7 +59,7 @@ app.get('/', async (c) => {
     t.construction_type, t.request_no, t.contractor_name,
     t.construction_id, t.sub_task_number,
     con.title as construction_title, con.request_no as con_request_no,
-    COALESCE(con.is_auto_request_no, 0) as is_auto_request_no
+    COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
     FROM tasks t
     LEFT JOIN work_categories wc ON t.category_id = wc.id
     LEFT JOIN work_types wt ON t.work_type_id = wt.id
@@ -75,7 +75,7 @@ app.get('/', async (c) => {
       t.construction_type, t.request_no, t.contractor_name,
       t.construction_id, t.sub_task_number,
       con.title as construction_title, con.request_no as con_request_no,
-      COALESCE(con.is_auto_request_no, 0) as is_auto_request_no
+      COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
       FROM tasks t
       LEFT JOIN work_categories wc ON t.category_id = wc.id
       LEFT JOIN work_types wt ON t.work_type_id = wt.id
@@ -363,7 +363,7 @@ app.get('/:id', async (c) => {
      con.title as construction_title, con.request_no as con_request_no,
      con.work_number as con_work_number, con.manager_name as con_manager_name,
      con.supervisor_name as con_supervisor_name, con.work_order_address as con_work_order_address,
-     COALESCE(con.is_auto_request_no, 0) as is_auto_request_no
+     COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
      FROM tasks t
      LEFT JOIN work_categories wc ON t.category_id = wc.id
      LEFT JOIN work_types wt ON t.work_type_id = wt.id

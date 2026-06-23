@@ -639,6 +639,53 @@ function getGroupPerm(groupKey: string, permKey: string): boolean {
   } catch (_) { return false }
 }
 
+// ─── [FEAT-029] group_permissions 기반 알림 수신자 조회 헬퍼 ─────────────────
+// getUsersWithPerm(permKey, excludeId?) → 해당 권한이 활성화된 그룹의 모든 유저 id[]
+// sub_role → group_key 매핑 (users.sub_role 컬럼 기준)
+// sub_role이 없는 경우 role+position으로 추정
+function getUserGroupKey(u: any): string {
+  const sr = (u.sub_role || '').trim()
+  if (sr === 'lgu_plus') return 'lgu_plus'
+  if (sr === 'safety')   return 'safety'
+  if (sr === 'site_rep') return 'site_rep'
+  if (sr === 'engineer') return 'engineer'
+  if (sr === 'ceo')      return 'ceo'
+  if (sr === 'worker')   return 'worker'
+  // sub_role 미설정 시 role+position으로 추정
+  const role = (u.role || '').trim()
+  const pos  = (u.position || '').trim()
+  if (role === 'admin' && pos === '대표이사') return 'ceo'
+  if (role === 'admin') return 'ceo'
+  if (role === 'supervisor' && pos === '안전관리자') return 'safety'
+  if (role === 'supervisor' && pos === '총괄책임자')  return 'site_rep'
+  if (role === 'supervisor' && pos === '관리감독자')  return 'engineer'
+  if (role === 'supervisor') return 'engineer'
+  if (role === 'worker'  && pos === 'LGU+') return 'lgu_plus'
+  if (role === 'lgu')    return 'lgu_plus'
+  return 'worker'
+}
+
+function getUsersWithPerm(permKey: string, excludeId?: number): number[] {
+  try {
+    // 권한이 활성화된 group_key 목록
+    const enabledGroups = (rawDb.prepare(
+      `SELECT group_key FROM group_permissions WHERE perm_key=? AND is_enabled=1`
+    ).all(permKey) as any[]).map((r: any) => r.group_key as string)
+    if (enabledGroups.length === 0) return []
+    // 활성 유저 전체 조회 (sub_role + role + position)
+    const allUsers = rawDb.prepare(
+      `SELECT id, role, position, sub_role FROM users WHERE is_active=1`
+    ).all() as any[]
+    const result: number[] = []
+    for (const u of allUsers) {
+      if (excludeId && u.id === excludeId) continue
+      const gk = getUserGroupKey(u)
+      if (enabledGroups.includes(gk)) result.push(u.id as number)
+    }
+    return [...new Set(result)]
+  } catch (_) { return [] }
+}
+
 // ─── TBM 서명 테이블 보장 + 잔여 트리거 제거 ───────────────────────────────────
 // var 사용: let/const 와 달리 TDZ 없음 → 선언 위치 무관하게 호이스팅됨
 var _tbmSigTableEnsured = false
@@ -2689,109 +2736,104 @@ app.patch('/api/tasks/:id/status', async (c) => {
 
   const statusMsg = `[작업상태] "${taskTitle}": ${user.name}님이 상태를 [${sLabel}]로 변경했습니다.`
 
-  // ── SSE 실시간 알림 ─────────────────────────────────────────────────────────
+  // ── SSE 실시간 알림 — [FEAT-029] group_permissions 기반 ──────────────────
   try {
     const ssePayload = {
       type: 'task_status', taskId: id, status, statusLabel: sLabel,
       actor: user.name, title: taskTitle, message: statusMsg, ts: Date.now()
     }
-    broadcastToRoles(['admin', 'supervisor'], ssePayload)
+    // notify_all_tasks 권한 그룹에게 SSE
+    const sseAllTargets = getUsersWithPerm('notify_all_tasks', user.id)
+    for (const uid of sseAllTargets) sendToUser(uid, ssePayload)
+    // notify_own_task 권한 그룹 중 배정된 작업자에게 SSE
+    const sseOwnPerm = getUsersWithPerm('notify_own_task')
     for (const wid of workerIds) {
-      if (wid !== user.id) sendToUser(wid, ssePayload)
+      if (wid !== user.id && sseOwnPerm.includes(wid) && !sseAllTargets.includes(wid)) {
+        sendToUser(wid, ssePayload)
+      }
     }
   } catch(_) {}
 
-  // ── notifications DB 저장 ───────────────────────────────────────────────────
+  // ── notifications DB 저장 — [FEAT-029] group_permissions 기반 ────────────
   try {
     const notifTitle = `작업 상태 변경: ${sLabel}`
-    const adminUsers = rawDb.prepare(
-      `SELECT id FROM users WHERE role IN ('admin','supervisor') AND is_active=1 AND id != ?`
-    ).all(user.id) as any[]
-    for (const u of adminUsers) {
+    const notifTargets = getUsersWithPerm('notify_all_tasks', user.id)
+    // notify_own_task 그룹 중 배정 작업자도 추가
+    const notifOwnPerm = getUsersWithPerm('notify_own_task')
+    for (const wid of workerIds) {
+      if (wid !== user.id && notifOwnPerm.includes(wid) && !notifTargets.includes(wid)) {
+        notifTargets.push(wid)
+      }
+    }
+    for (const uid of notifTargets) {
       rawDb.prepare(
         `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
          VALUES (?, 'task_status_change', ?, ?, ?, 'task', 0)`
-      ).run(u.id, notifTitle, statusMsg, id)
+      ).run(uid, notifTitle, statusMsg, id)
     }
   } catch(_) {}
 
-  // ── FCM 발송 — 주요 상태 변경 시 관련자 모두에게 ────────────────────────────
+  // ── FCM 발송 — [FEAT-029] group_permissions 기반 수신자 결정 ──────────────
+  // notify_all_tasks=1 그룹: 전체 작업 알림 수신 (기존 관리감독자/총괄책임자/대표이사)
+  // notify_own_task=1 그룹:  본인 배정 작업 알림 (배정 작업자)
+  // notify_lgu_tasks=1 그룹: LGU+ 대상 작업 알림 (별도 블록에서 처리)
   const FCM_NOTIFY_STATUSES = ['tbm_done', 'working', 'work_completed', 'completed', 'cancelled']
   if (FCM_NOTIFY_STATUSES.includes(status)) {
     try {
-      // 대상: 관리감독자 + 총괄책임자 + 대표이사 + 배정 작업자 (본인 제외)
-      const targetRows = rawDb.prepare(
-        `SELECT id FROM users
-         WHERE (position IN ('관리감독자','총괄책임자','대표이사') OR role IN ('admin','supervisor'))
-         AND is_active=1 AND id != ?`
-      ).all(user.id) as any[]
-      let targetIds = targetRows.map((r: any) => r.id as number)
-      // 배정 작업자 추가 (중복 제거)
+      const fcmTitle = `작업 상태 변경: ${sLabel}`
+      const fcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업이 [${sLabel}]로 변경되었습니다. (${user.name})`
+      const fcmData  = { type: 'task_status', taskId: String(id), status }
+
+      // ① notify_all_tasks 권한 그룹 → 전체 알림 수신
+      const allTaskTargets = getUsersWithPerm('notify_all_tasks', user.id)
+
+      // ② notify_own_task 권한 그룹 중 배정된 작업자만 추가
+      const ownTaskPerm = getUsersWithPerm('notify_own_task')
       for (const wid of workerIds) {
-        if (wid !== user.id && !targetIds.includes(wid)) targetIds.push(wid)
+        if (wid !== user.id && ownTaskPerm.includes(wid) && !allTaskTargets.includes(wid)) {
+          allTaskTargets.push(wid)
+        }
       }
 
-      if (targetIds.length > 0) {
-        const fcmTitle = `작업 상태 변경: ${sLabel}`
-        const fcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업이 [${sLabel}]로 변경되었습니다. (${user.name})`
-        console.log(`[FCM] 작업상태 변경 발송 시작 — task:${id} status:${status} → targets:${targetIds}`)
-        sendFcmToUsers(targetIds, {
-          title: fcmTitle,
-          body:  fcmBody,
-          data:  { type: 'task_status', taskId: String(id), status }
-        }).catch((e: any) => console.error('[FCM] 작업상태 FCM 오류:', e.message))
+      if (allTaskTargets.length > 0) {
+        console.log(`[FCM/FEAT-029] 작업상태 변경 발송 — task:${id} status:${status} → targets:${allTaskTargets}`)
+        sendFcmToUsers(allTaskTargets, { title: fcmTitle, body: fcmBody, data: fcmData })
+          .catch((e: any) => console.error('[FCM] 작업상태 FCM 오류:', e.message))
       }
     } catch(e: any) {
       console.error('[FCM] 작업상태 FCM 준비 오류:', e.message)
     }
   }
 
-  // ── [v0.143 LGU+] LGU+ 역할 사용자 FCM 알림 — is_auto_request_no=0 인 공사에 연계된 작업 ──
-  // 대상 상태: tbm_done, working, work_completed (system_settings lgu_notify_* = '1' 인 경우만)
-  // ❌ 구조건(v0.142): reqNo.startsWith('1') — 완전히 잘못된 해석 (제거)
-  // ❌ 오기록(v0.143): is_auto_request_no=1 로 잘못 구현 — BUG-039 수정
-  // ✅ 신조건(v0.144/BUG-039): is_auto_request_no=0(수동입력, 미체크) 공사에만 알림 발송
-  //    is_auto_request_no=0 → 수동 입력(자동부여 미체크) → LGU+ 허용 대상 → 알림 발송
-  //    is_auto_request_no=1 → 자동부여 체크 → LGU+ 차단 대상 → 알림 미발송
+  // ── [FEAT-029] LGU+ 알림 — notify_lgu_tasks 그룹 + is_auto_request_no=0 조건 ──
   try {
     const lguNotifyKey = `lgu_notify_${status}`
     const lguEnabled = getSetting(lguNotifyKey)
     if (lguEnabled === '1') {
-      // 해당 작업의 연결 공사에서 is_auto_request_no 조회
       const taskConRow = rawDb.prepare(
         `SELECT c.is_auto_request_no, c.request_no as c_req
-         FROM tasks t
-         LEFT JOIN constructions c ON c.id = t.construction_id
+         FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
          WHERE t.id = ?`
       ).get(id) as any
-      // BUG-039 수정: !== 1 (0이면 수동입력 = LGU+ 허용 = 알림 대상)
-      // BUG-040→FEAT-027 단순화: is_auto_request_no === 0 인 경우만 LGU+ 허용
-      //   null/undefined → false ✅  0 → true ✅  1 → false ✅
-      //   (null !== 1 → true 오발송 취약점 완전 제거)
+      // is_auto_request_no === 0 인 경우만 LGU+ 알림 발송
       const isLguTarget = taskConRow?.is_auto_request_no === 0
       if (isLguTarget) {
-        // LGU+ 역할 사용자 조회 (role='lgu' 또는 sub_role='lgu_plus')
-        const lguUsers = rawDb.prepare(
-          `SELECT id FROM users WHERE (role='lgu' OR sub_role='lgu_plus') AND is_active=1`
-        ).all() as any[]
-        const lguIds = lguUsers.map((r: any) => r.id as number).filter(uid => uid !== user.id)
+        // notify_lgu_tasks 권한 그룹 조회 (group_permissions 기반)
+        const lguIds = getUsersWithPerm('notify_lgu_tasks').filter(uid => uid !== user.id)
         if (lguIds.length > 0) {
-          const fcmTitle = `[LGU+] 작업 상태 변경: ${sLabel}`
-          const fcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업이 [${sLabel}]로 변경되었습니다. (${user.name})`
-          console.log(`[FCM/LGU+] 발송 — task:${id} conReq:${taskConRow?.c_req}(수동입력) status:${status} → lgu targets:${lguIds}`)
+          const lguFcmTitle = `[LGU+] 작업 상태 변경: ${sLabel}`
+          const lguFcmBody  = `[${taskNumDisplay}] "${taskTitle}" 작업이 [${sLabel}]로 변경되었습니다. (${user.name})`
+          console.log(`[FCM/LGU+/FEAT-029] 발송 — task:${id} conReq:${taskConRow?.c_req} → lgu:${lguIds}`)
           sendFcmToUsers(lguIds, {
-            title: fcmTitle,
-            body:  fcmBody,
+            title: lguFcmTitle, body: lguFcmBody,
             data:  { type: 'task_status_lgu', taskId: String(id), status }
           }).catch((e: any) => console.error('[FCM/LGU+] FCM 오류:', e.message))
-          // notifications DB 저장 (LGU+ 사용자)
           try {
-            const lguNotifTitle = `[LGU+] 작업 상태 변경: ${sLabel}`
             for (const lguUid of lguIds) {
               rawDb.prepare(
                 `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
                  VALUES (?, 'task_status_lgu', ?, ?, ?, 'task', 0)`
-              ).run(lguUid, lguNotifTitle, fcmBody, id)
+              ).run(lguUid, lguFcmTitle, lguFcmBody, id)
             }
           } catch(_) {}
         }
@@ -2980,52 +3022,64 @@ app.patch('/api/checklist/:id/complete', async (c) => {
       } catch(_) {}
     }
 
-    // ② [v0.143 LGU+] 체크리스트 완료 시 LGU+ 알림 발송
-    // ❌ 구조건(v0.142): reqNo.startsWith('1') — 잘못된 해석 (제거)
-    // ❌ 오기록(v0.143): is_auto_request_no=1 로 잘못 구현 — BUG-039 수정
-    // ✅ 신조건(v0.144/BUG-039): is_auto_request_no=0(수동입력) 공사에만 알림 발송
+    // ② [FEAT-029] 체크리스트 완료 알림 — group_permissions 기반 수신자 결정
     try {
-      var lguChkEnabled = getSetting('lgu_notify_checklist_done')
-      if (lguChkEnabled === '1' && asmRow.task_id) {
-        var lguTaskRow: any = rawDb.prepare(
+      if (asmRow.task_id) {
+        var chkTaskRow: any = rawDb.prepare(
           `SELECT t.title, t.task_number, t.work_number, t.sub_task_number,
                   c.is_auto_request_no, c.request_no as c_req
            FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
            WHERE t.id = ?`
         ).get(asmRow.task_id)
-        // BUG-039 수정: !== 1 (0이면 수동입력 = LGU+ 허용 = 알림 대상)
-        // BUG-040→FEAT-027 단순화: is_auto_request_no === 0 인 경우만 LGU+ 허용
-        //   null/undefined → false ✅  0 → true ✅  1 → false ✅
-        if (lguTaskRow && lguTaskRow.is_auto_request_no === 0) {
-          var lguTaskTitle = lguTaskRow.title || String(asmRow.task_id)
-          var lguTaskNum = lguTaskRow.work_number
-            ? (lguTaskRow.sub_task_number ? `${lguTaskRow.work_number}-${lguTaskRow.sub_task_number}` : lguTaskRow.work_number)
-            : (lguTaskRow.task_number || String(asmRow.task_id))
-          var lguUsersChk: any[] = rawDb.prepare(
-            `SELECT id FROM users WHERE (role='lgu' OR sub_role='lgu_plus') AND is_active=1`
-          ).all() as any[]
-          var lguIdsChk = lguUsersChk.map((r: any) => r.id as number).filter(uid => uid !== user.id)
-          if (lguIdsChk.length > 0) {
-            var lguFcmTitle = `[LGU+] 체크리스트 완료`
-            var lguFcmBody  = `[${lguTaskNum}] "${lguTaskTitle}" 작업 체크리스트가 완료되었습니다. (${user.name})`
-            console.log(`[FCM/LGU+] 체크리스트 완료 알림 — task:${asmRow.task_id} conReq:${lguTaskRow.c_req}(수동입력) → lgu:${lguIdsChk}`)
-            sendFcmToUsers(lguIdsChk, {
-              title: lguFcmTitle, body: lguFcmBody,
+        var chkTaskTitle = chkTaskRow?.title || String(asmRow.task_id)
+        var chkTaskNum   = chkTaskRow?.work_number
+          ? (chkTaskRow.sub_task_number ? `${chkTaskRow.work_number}-${chkTaskRow.sub_task_number}` : chkTaskRow.work_number)
+          : (chkTaskRow?.task_number || String(asmRow.task_id))
+
+        // (a) notify_all_tasks 그룹 → 전체 관리자 알림
+        var chkAllTargets = getUsersWithPerm('notify_all_tasks', user.id)
+        if (chkAllTargets.length > 0) {
+          var chkTitle = `체크리스트 완료`
+          var chkBody  = `[${chkTaskNum}] "${chkTaskTitle}" 작업 체크리스트가 완료되었습니다. (${user.name})`
+          sendFcmToUsers(chkAllTargets, {
+            title: chkTitle, body: chkBody,
+            data: { type: 'task_status', taskId: String(asmRow.task_id), status: 'checklist_done' }
+          }).catch((e: any) => console.error('[FCM] 체크리스트 FCM 오류:', e.message))
+          for (var chkUid of chkAllTargets) {
+            try {
+              rawDb.prepare(
+                `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+                 VALUES (?, 'task_status_change', ?, ?, ?, 'task', 0)`
+              ).run(chkUid, chkTitle, chkBody, asmRow.task_id)
+            } catch(_) {}
+          }
+        }
+
+        // (b) notify_lgu_tasks 그룹 → is_auto_request_no === 0 공사에만 LGU+ 알림
+        var lguChkEnabled = getSetting('lgu_notify_checklist_done')
+        if (lguChkEnabled === '1' && chkTaskRow && chkTaskRow.is_auto_request_no === 0) {
+          var lguChkTargets = getUsersWithPerm('notify_lgu_tasks').filter(uid => uid !== user.id)
+          if (lguChkTargets.length > 0) {
+            var lguChkTitle = `[LGU+] 체크리스트 완료`
+            var lguChkBody  = `[${chkTaskNum}] "${chkTaskTitle}" 체크리스트 완료 (${user.name})`
+            console.log(`[FCM/LGU+/FEAT-029] 체크리스트 완료 → lgu:${lguChkTargets}`)
+            sendFcmToUsers(lguChkTargets, {
+              title: lguChkTitle, body: lguChkBody,
               data: { type: 'task_status_lgu', taskId: String(asmRow.task_id), status: 'checklist_done' }
             }).catch((e: any) => console.error('[FCM/LGU+] 체크리스트 FCM 오류:', e.message))
-            try {
-              for (var lguUidChk of lguIdsChk) {
+            for (var lguChkUid of lguChkTargets) {
+              try {
                 rawDb.prepare(
                   `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
                    VALUES (?, 'task_status_lgu', ?, ?, ?, 'task', 0)`
-                ).run(lguUidChk, lguFcmTitle, lguFcmBody, asmRow.task_id)
-              }
-            } catch(_) {}
+                ).run(lguChkUid, lguChkTitle, lguChkBody, asmRow.task_id)
+              } catch(_) {}
+            }
           }
         }
       }
     } catch(e: any) {
-      console.error('[FCM/LGU+] 체크리스트 완료 알림 오류(무시):', e.message)
+      console.error('[FCM/FEAT-029] 체크리스트 완료 알림 오류(무시):', e.message)
     }
 
     return c.json({ success: true, nok_items: nokItems, has_warnings: nokItems.length > 0 })

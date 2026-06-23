@@ -40,6 +40,7 @@ app.get('/', async (c) => {
 
     const rows = await c.env.DB.prepare(`
       SELECT c.*,
+        COALESCE(c.is_auto_request_no, 0) AS is_auto_request_no,
         u.name  AS manager_display_name,
         cb.name AS created_by_name,
         COUNT(t.id)                             AS task_total,

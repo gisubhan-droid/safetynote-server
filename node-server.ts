@@ -627,6 +627,18 @@ function getSetting(key: string): string {
   return sysSettings[key] ?? ''
 }
 
+// ─── [FEAT-027] 그룹별 권한 헬퍼 ────────────────────────────────────────────
+// getGroupPerm(groupKey, permKey) → true(허용) / false(차단)
+// group_permissions 테이블에서 조회 (patchSchema v0.145에서 생성)
+function getGroupPerm(groupKey: string, permKey: string): boolean {
+  try {
+    const row = rawDb.prepare(
+      `SELECT is_enabled FROM group_permissions WHERE group_key=? AND perm_key=?`
+    ).get(groupKey, permKey) as any
+    return row ? row.is_enabled === 1 : false
+  } catch (_) { return false }
+}
+
 // ─── TBM 서명 테이블 보장 + 잔여 트리거 제거 ───────────────────────────────────
 // var 사용: let/const 와 달리 TDZ 없음 → 선언 위치 무관하게 호이스팅됨
 var _tbmSigTableEnsured = false
@@ -1928,6 +1940,88 @@ function patchSchema() {
         console.log(`[patchSchema v0.144] LGU+ sub_role 누락 계정 ${fixed.changes}개 자동 복구 (position='LGU+' → sub_role='lgu_plus')`)
       }
     } catch(e: any) { console.warn('[patchSchema v0.144] LGU+ sub_role 복구 실패(무시):', e.message) }
+
+  // ── [v0.145 FEAT-027] group_permissions 테이블 생성 + 그룹별 기본 권한값 ──────
+  // 그룹(역할)별 권한을 DB에서 관리 — 코드 하드코딩 제거
+  // 권한 키:
+  //   notify_own_task  : 본인 작업 알림 수신
+  //   notify_all_tasks : 전체 작업 알림 수신
+  //   notify_lgu_tasks : LGU+ 대상 작업 알림 (is_auto_request_no=0 공사)
+  //   view_all_tasks   : 전체 작업 조회
+  //   edit_task        : 작업 수정
+  //   sign_tbm         : TBM 결재 서명 권한
+  ;(function patchV0145() {
+    try {
+      rawDb.exec(`
+        CREATE TABLE IF NOT EXISTS group_permissions (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          group_key  TEXT NOT NULL,
+          perm_key   TEXT NOT NULL,
+          perm_label TEXT NOT NULL DEFAULT '',
+          is_enabled INTEGER NOT NULL DEFAULT 0,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(group_key, perm_key)
+        )
+      `)
+      rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_grp_perm ON group_permissions(group_key)`)
+      console.log('[patchSchema v0.145] group_permissions 테이블 준비 완료')
+    } catch(e: any) {
+      if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.145] group_permissions 생성 실패:', e.message)
+    }
+
+    // 그룹별 기본 권한값 삽입 (기존 값 유지 — INSERT OR IGNORE)
+    const defaults: Array<[string, string, string, number]> = [
+      // [group_key, perm_key, perm_label, is_enabled]
+      // ── 근로자 ──
+      ['worker',   'notify_own_task',  '본인 작업 알림 수신',           1],
+      ['worker',   'view_all_tasks',   '전체 작업 조회',                 0],
+      ['worker',   'notify_all_tasks', '전체 작업 알림 수신',            0],
+      ['worker',   'edit_task',        '작업 수정',                     0],
+      ['worker',   'sign_tbm',         'TBM 결재 서명',                  0],
+      ['worker',   'notify_lgu_tasks', 'LGU+ 대상 작업 알림',           0],
+      // ── 공무 ──
+      ['engineer', 'notify_own_task',  '본인 작업 알림 수신',            0],
+      ['engineer', 'notify_all_tasks', '전체 작업 알림 수신',            1],
+      ['engineer', 'view_all_tasks',   '전체 작업 조회',                 1],
+      ['engineer', 'edit_task',        '작업 수정',                     1],
+      ['engineer', 'sign_tbm',         'TBM 결재 서명',                  0],
+      ['engineer', 'notify_lgu_tasks', 'LGU+ 대상 작업 알림',           0],
+      // ── 안전관리자 ──
+      ['safety',   'notify_own_task',  '본인 작업 알림 수신',            0],
+      ['safety',   'notify_all_tasks', '전체 작업 알림 수신',            1],
+      ['safety',   'view_all_tasks',   '전체 작업 조회',                 1],
+      ['safety',   'edit_task',        '작업 수정',                     1],
+      ['safety',   'sign_tbm',         'TBM 결재 서명',                  1],
+      ['safety',   'notify_lgu_tasks', 'LGU+ 대상 작업 알림',           0],
+      // ── 현장대리인 ──
+      ['site_rep', 'notify_own_task',  '본인 작업 알림 수신',            0],
+      ['site_rep', 'notify_all_tasks', '전체 작업 알림 수신',            1],
+      ['site_rep', 'view_all_tasks',   '전체 작업 조회',                 1],
+      ['site_rep', 'edit_task',        '작업 수정',                     1],
+      ['site_rep', 'sign_tbm',         'TBM 결재 서명',                  1],
+      ['site_rep', 'notify_lgu_tasks', 'LGU+ 대상 작업 알림',           0],
+      // ── CEO ──
+      ['ceo',      'notify_own_task',  '본인 작업 알림 수신',            0],
+      ['ceo',      'notify_all_tasks', '전체 작업 알림 수신',            1],
+      ['ceo',      'view_all_tasks',   '전체 작업 조회',                 1],
+      ['ceo',      'edit_task',        '작업 수정',                     1],
+      ['ceo',      'sign_tbm',         'TBM 결재 서명',                  1],
+      ['ceo',      'notify_lgu_tasks', 'LGU+ 대상 작업 알림',           0],
+      // ── LGU+ ──
+      ['lgu_plus', 'notify_own_task',  '본인 작업 알림 수신',            0],
+      ['lgu_plus', 'notify_all_tasks', '전체 작업 알림 수신',            0],
+      ['lgu_plus', 'notify_lgu_tasks', 'LGU+ 대상 작업 알림 수신',      1],
+      ['lgu_plus', 'view_all_tasks',   '전체 작업 조회',                 0],
+      ['lgu_plus', 'edit_task',        '작업 수정 (열람 전용 — 비활성)', 0],
+      ['lgu_plus', 'sign_tbm',         'TBM 결재 서명',                  0],
+    ]
+    const insStmt = rawDb.prepare(
+      `INSERT OR IGNORE INTO group_permissions (group_key, perm_key, perm_label, is_enabled)
+       VALUES (?, ?, ?, ?)`
+    )
+    for (const row of defaults) insStmt.run(...row)
+    console.log('[patchSchema v0.145] group_permissions 기본값 삽입 완료')
+  })()
   })()
 }
 patchSchema()
@@ -2671,13 +2765,10 @@ app.patch('/api/tasks/:id/status', async (c) => {
          WHERE t.id = ?`
       ).get(id) as any
       // BUG-039 수정: !== 1 (0이면 수동입력 = LGU+ 허용 = 알림 대상)
-      // BUG-040 수정: taskConRow null 또는 is_auto_request_no가 NULL인 경우 알림 미발송
-      //   taskConRow=null → 공사 미연결 작업 → LGU+ 대상 아님
-      //   is_auto_request_no=null → LEFT JOIN 미조인(공사 없음) → LGU+ 대상 아님
-      //   is_auto_request_no=0 → 수동입력(미체크) → LGU+ 허용 → 알림 발송 ✅
-      //   is_auto_request_no=1 → 자동부여(체크) → LGU+ 차단 → 알림 미발송 ✅
-      const rawAutoNo = taskConRow?.is_auto_request_no
-      const isLguTarget = taskConRow != null && rawAutoNo != null && rawAutoNo !== 1
+      // BUG-040→FEAT-027 단순화: is_auto_request_no === 0 인 경우만 LGU+ 허용
+      //   null/undefined → false ✅  0 → true ✅  1 → false ✅
+      //   (null !== 1 → true 오발송 취약점 완전 제거)
+      const isLguTarget = taskConRow?.is_auto_request_no === 0
       if (isLguTarget) {
         // LGU+ 역할 사용자 조회 (role='lgu' 또는 sub_role='lgu_plus')
         const lguUsers = rawDb.prepare(
@@ -2903,11 +2994,9 @@ app.patch('/api/checklist/:id/complete', async (c) => {
            WHERE t.id = ?`
         ).get(asmRow.task_id)
         // BUG-039 수정: !== 1 (0이면 수동입력 = LGU+ 허용 = 알림 대상)
-        // BUG-040 수정: is_auto_request_no가 null(LEFT JOIN 미조인)이면 알림 미발송
-        //   lguTaskRow.is_auto_request_no=null → 공사 미연결 → LGU+ 대상 아님
-        //   lguTaskRow.is_auto_request_no=0    → 수동입력 → 알림 발송 ✅
-        //   lguTaskRow.is_auto_request_no=1    → 자동부여 → 알림 미발송 ✅
-        if (lguTaskRow && lguTaskRow.is_auto_request_no != null && lguTaskRow.is_auto_request_no !== 1) {
+        // BUG-040→FEAT-027 단순화: is_auto_request_no === 0 인 경우만 LGU+ 허용
+        //   null/undefined → false ✅  0 → true ✅  1 → false ✅
+        if (lguTaskRow && lguTaskRow.is_auto_request_no === 0) {
           var lguTaskTitle = lguTaskRow.title || String(asmRow.task_id)
           var lguTaskNum = lguTaskRow.work_number
             ? (lguTaskRow.sub_task_number ? `${lguTaskRow.work_number}-${lguTaskRow.sub_task_number}` : lguTaskRow.work_number)
@@ -2976,12 +3065,10 @@ app.patch('/api/checklist/:id/complete-lgu-notify', async (c) => {
     if (!taskRow) return c.json({ lgu_notified: false, reason: 'no_task_row' })
 
     // ❌ 오기록(v0.143): is_auto_request_no !== 1 로 잘못 구현 — BUG-039 수정
-    // ✅ 신조건(v0.144/BUG-039): is_auto_request_no=0(수동입력)이면 알림, is_auto_request_no=1이면 차단
-    //    → is_auto_request_no === 1(자동부여 체크) 이면 LGU+ 차단 대상이므로 early return
-    // BUG-040 추가: is_auto_request_no=null(공사 미연결) → 알림 불가 → early return
-    //   정확한 허용 조건: is_auto_request_no가 숫자 0 인 경우만 발송
-    if (taskRow.is_auto_request_no == null || taskRow.is_auto_request_no === 1)
-      return c.json({ lgu_notified: false, reason: taskRow.is_auto_request_no == null ? 'no_construction_linked' : 'auto_req_no_blocked' })
+    // BUG-040→FEAT-027 단순화: is_auto_request_no === 0 인 경우만 LGU+ 허용
+    //   null/undefined/1 → !== 0 → early return  |  0 → 통과 → 알림 발송 ✅
+    if (taskRow.is_auto_request_no !== 0)
+      return c.json({ lgu_notified: false, reason: 'not_lgu_target' })
 
     const taskTitle = taskRow.title || String(taskId)
     const taskNumDisplay = taskRow.work_number
@@ -3820,6 +3907,53 @@ app.get('/qr/:userId', async (c) => {
 // ─── SSE 실시간 알림 시스템 (공유 모듈 src/sse.ts 사용) ───────────────────────
 // sseClients, sendToUser, broadcastAll, broadcastToRoles, getConnectionCount
 // → 최상단 import에서 로드됨
+
+// ─── [FEAT-027] 그룹별 권한 설정 API ────────────────────────────────────────
+// GET  /api/group-permissions        ← 전체 권한 조회 (admin 전용)
+// POST /api/group-permissions        ← 권한 일괄 저장 (admin 전용)
+app.get('/api/group-permissions', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+  try {
+    const rows = rawDb.prepare(
+      `SELECT group_key, perm_key, perm_label, is_enabled FROM group_permissions ORDER BY group_key, perm_key`
+    ).all() as any[]
+    // group_key별로 그룹화
+    const result: Record<string, any> = {}
+    for (const row of rows) {
+      if (!result[row.group_key]) result[row.group_key] = {}
+      result[row.group_key][row.perm_key] = { is_enabled: row.is_enabled, perm_label: row.perm_label }
+    }
+    return c.json(result)
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+app.post('/api/group-permissions', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+  try {
+    // body: { group_key: { perm_key: 0|1, ... }, ... }
+    const body = await c.req.json() as Record<string, Record<string, number>>
+    const stmt = rawDb.prepare(
+      `INSERT INTO group_permissions (group_key, perm_key, is_enabled, updated_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(group_key, perm_key) DO UPDATE SET is_enabled=excluded.is_enabled, updated_at=CURRENT_TIMESTAMP`
+    )
+    let count = 0
+    for (const [groupKey, perms] of Object.entries(body)) {
+      for (const [permKey, isEnabled] of Object.entries(perms)) {
+        stmt.run(groupKey, permKey, isEnabled ? 1 : 0)
+        count++
+      }
+    }
+    console.log(`[FEAT-027] 그룹별 권한 저장 — ${count}개 항목 (by ${user.name})`)
+    return c.json({ success: true, updated: count })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
 
 // SSE 연결 엔드포인트: GET /api/events
 // EventSource는 커스텀 헤더 불가 → ?token= 쿼리스트링으로도 인증 허용

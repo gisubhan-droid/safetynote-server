@@ -197,6 +197,109 @@ app.post('/:id/signatures', async (c) => {
         resultId = info.lastInsertRowid
       }
     }
+    // ── [FEAT-028] 근로자(attendee) 서명 완료 → 전원 서명 여부 체크 → 안전관리자 알림 ──
+    // 연쇄 흐름:
+    //   [1] 근로자 전원 서명 완료 → 안전관리자 알림  ← 여기서 처리
+    //   [2] 안전관리자(approval_safety) 서명 → 현장대리인 알림  (approval-sign 엔드포인트)
+    //   [3] 현장대리인(approval_general) 서명 → CEO 알림         (approval-sign 엔드포인트)
+    //   [4] CEO(approval_ceo) 서명 → 안전관리자 완료 알림        (approval-sign 엔드포인트)
+    if (role === 'attendee') {
+      try {
+        const tbmNum = Number(id)
+        // TBM 정보 및 연결 작업 조회
+        const tbmRow = rawDb.prepare(
+          `SELECT tr.id, tr.attendees, tr.task_id, t.title as task_title, t.work_number, t.task_number
+           FROM tbm_records tr LEFT JOIN tasks t ON t.id = tr.task_id
+           WHERE tr.id = ?`
+        ).get(tbmNum) as any
+
+        if (tbmRow) {
+          // 참석자 목록 파악 (JSON 배열 또는 배정 작업자)
+          let attendeeNames: string[] = []
+          try {
+            attendeeNames = tbmRow.attendees ? JSON.parse(tbmRow.attendees) : []
+          } catch (_) { attendeeNames = [] }
+
+          // attendees 없으면 task_assignments에서 조회
+          if (attendeeNames.length === 0 && tbmRow.task_id) {
+            const assigned = rawDb.prepare(
+              `SELECT u.name FROM task_assignments ta
+               JOIN users u ON u.id = ta.user_id
+               WHERE ta.task_id = ? AND ta.is_active = 1`
+            ).all(tbmRow.task_id) as any[]
+            attendeeNames = assigned.map((r: any) => r.name).filter(Boolean)
+          }
+
+          // 현재 attendee 서명 완료자 목록 (서명 데이터 있는 것만)
+          const signedRows = rawDb.prepare(
+            `SELECT user_name FROM tbm_signatures
+             WHERE tbm_id = ? AND role = 'attendee'`
+          ).all(tbmNum) as any[]
+          const signedNames = new Set(signedRows.map((r: any) => r.user_name))
+
+          // 전원 서명 완료 여부 (attendees 목록의 모든 이름이 서명됨)
+          const totalCount  = attendeeNames.length
+          const signedCount = attendeeNames.filter(n => signedNames.has(n)).length
+          const allSigned   = totalCount > 0 && signedCount >= totalCount
+
+          const tbmTitle  = `TBM: ${tbmRow.task_title || tbmRow.id}`
+          const taskNumDisplay = tbmRow.work_number || tbmRow.task_number || String(tbmRow.task_id || id)
+
+          if (allSigned) {
+            // ── 전원 서명 완료 → 안전관리자에게 결재 요청 알림 ──────────────
+            // 안전관리자: sub_role='safety' OR position='안전관리자'
+            const safetyUsers = rawDb.prepare(
+              `SELECT id, name FROM users
+               WHERE (sub_role='safety' OR position='안전관리자') AND is_active=1`
+            ).all() as any[]
+
+            const notifyTitle = `[TBM 서명완료] ${tbmTitle}`
+            const notifyBody  = `[${taskNumDisplay}] TBM 참석자 전원(${signedCount}명) 서명이 완료되었습니다. 안전관리자 결재를 진행해주세요.`
+
+            for (const su of safetyUsers) {
+              // 이미 approval_safety 서명이 있으면 알림 생략
+              const alreadySigned = rawDb.prepare(
+                `SELECT id FROM tbm_signatures WHERE tbm_id=? AND role='approval_safety'`
+              ).get(tbmNum)
+              if (alreadySigned) continue
+
+              // SSE 실시간 알림
+              sendToUser(su.id, {
+                type: 'tbm_attendee_all_signed',
+                title: notifyTitle,
+                message: notifyBody,
+                tbmId: tbmNum,
+                taskId: tbmRow.task_id,
+                ts: Date.now()
+              })
+
+              // FCM 푸시 알림
+              sendFcmToUsers([su.id], {
+                title: notifyTitle,
+                body:  notifyBody,
+                data:  { type: 'tbm_attendee_all_signed', ref_type: 'tbm', ref_id: String(tbmNum) }
+              }).catch(() => {})
+
+              // notifications DB 저장
+              rawDb.prepare(
+                `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+                 VALUES (?, 'tbm_attendee_all_signed', ?, ?, ?, 'tbm', 0)`
+              ).run(su.id, notifyTitle, notifyBody, tbmNum)
+            }
+
+            console.log(`[FCM/TBM] 참석자 전원 서명 완료 — tbm:${tbmNum} (${signedCount}/${totalCount}명) → 안전관리자 ${safetyUsers.length}명 알림`)
+          } else {
+            // 일부 서명 — 진행 상황 로그만
+            console.log(`[TBM] 서명 진행 — tbm:${tbmNum} ${signedCount}/${totalCount}명 완료`)
+          }
+        }
+      } catch (notifyErr: any) {
+        // 알림 실패는 서명 저장 성공에 영향 없음
+        console.warn('[TBM] 참석자 서명 완료 알림 실패(무시):', notifyErr?.message)
+      }
+    }
+    // ── END [FEAT-028] ──────────────────────────────────────────────────────────
+
     return c.json({ success: true, id: resultId })
   } catch (e: any) {
     console.error('[POST /tbm/:id/signatures] 에러:', e?.message, e?.stack)

@@ -1,11 +1,11 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-23 (세션 61)
-> **서버 현재 버전: `ae11251`** ← 최신 (GitHub) — BUG-039 수정
+> 최종 업데이트: 2026-06-23 (세션 62)
+> **서버 현재 버전: `(이번 커밋)`** ← 최신 (GitHub) — FEAT-027/028 + BUG-040 단순화
 > **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260621w**
 > **APK 최신**: v1.4.7
-> **BUG-036~039 수정 완료** — NAS 적용 후 LGU+ 알림 동작 확인 필요
+> **FEAT-027/028 완료** — NAS 적용 후 그룹별 권한 설정 탭 동작 확인 필요
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
 ---
@@ -3151,3 +3151,92 @@ git fetch origin && git reset --hard origin/main && npm run build && pm2 restart
 - ✅ app.js 수정 완료 (3곳)
 - ✅ BUGFIX_LOG BUG-039 기록 + BUG-038 오기록 정정
 - ⚠️ NAS 업데이트 후 LGU+ 계정으로 공사 목록/알림 동작 확인 필요
+
+---
+
+## 세션 62 (2026-06-23) — FEAT-027/028: 그룹별 권한 관리 + TBM 연쇄 알림 완성
+
+### 세션 요약
+- BUG-040 임시 수정(`!= null && !== 1`)을 `=== 0` 명시 비교로 최종 단순화 (6곳)
+- FEAT-028: TBM 근로자 전원 서명 완료 → 안전관리자 연쇄 알림 추가 (기존 미구현 단계)
+- FEAT-027: 그룹별 권한 관리 DB 테이블 + REST API + 관리자 UI 탭 완성
+
+### BUG-040 → 최종 단순화 (STEP 5~6)
+
+#### 변경 내역
+| 파일 | 위치 | 변경 전 | 변경 후 |
+|------|------|---------|---------|
+| `node-server.ts` | 작업상태 알림 | `rawAutoNo != null && rawAutoNo !== 1` | `=== 0` 단일 비교 |
+| `node-server.ts` | 체크리스트 완료 | `!= null && !== 1` | `=== 0` |
+| `node-server.ts` | 수동 알림 엔드포인트 | `== null \|\| === 1` | `!== 0` |
+| `app.js` | 공사 목록 필터 | `!== 1` | `=== 0` |
+| `app.js` | 공사 상세 차단 | `=== 1` | `!== 0` |
+| `app.js` | 작업 목록 필터 | `!== 1` | `=== 0` |
+
+#### 단순화 근거
+```javascript
+null === 0    → false ✅ (null-safe, 별도 null 체크 불필요)
+undefined === 0 → false ✅
+0 === 0       → true  ✅ (수동입력 → 알림 발송)
+1 === 0       → false ✅ (자동부여 → 차단)
+```
+
+### FEAT-028: TBM 근로자 전원 서명 → 안전관리자 알림 (STEP 완료)
+
+#### 구현 파일: `src/nas-routes/tbm-extra.ts`
+- `POST /api/tbm/:id/signatures` — `role === 'attendee'` 서명 후 전원 서명 완료 체크
+- 안전관리자(`sub_role='safety'` OR `position='안전관리자'`) SSE + FCM + notifications
+- 중복 방지: `approval_safety` 기서명 시 skip
+
+#### TBM 서명 연쇄 흐름 (완성)
+```
+근로자 전원 서명 → 안전관리자 알림   ← FEAT-028 추가
+안전관리자 서명  → 현장대리인 알림   ← 기존 구현
+현장대리인 서명  → CEO 알림          ← 기존 구현
+CEO 서명         → 완료 알림         ← 기존 구현
+```
+
+### FEAT-027: 그룹별 권한 관리 (STEP 완료)
+
+#### 구현 파일: `node-server.ts`, `app.js`
+
+**DB 구조**
+```sql
+CREATE TABLE IF NOT EXISTS group_permissions (
+  group_key TEXT, perm_key TEXT, perm_label TEXT, is_enabled INTEGER,
+  UNIQUE(group_key, perm_key)
+);
+-- 36개 기본값 (6그룹 × 6권한)
+```
+
+**그룹 / 권한 키 정의**
+- 그룹: `worker / engineer / safety / site_rep / ceo / lgu_plus`
+- 권한: `notify_own_task / notify_all_tasks / notify_lgu_tasks / view_all_tasks / edit_task / sign_tbm`
+
+**API**
+- `GET /api/group-permissions` → group_key별 그룹화 반환
+- `POST /api/group-permissions` → `{ updates: [{group_key, perm_key, is_enabled}] }` 일괄 업데이트
+
+**관리자 UI**
+- 설정 화면 탭 목록에 "그룹별 권한 설정" 탭 추가 (`grpperm`)
+- `_loadGroupPermPanel()` — 6개 그룹 카드 + 6개 권한 체크박스 렌더링
+- `saveGroupPerms()` — 체크박스 수집 → POST
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `(이번 커밋)` | feat: FEAT-027/028 그룹별 권한관리 + TBM 연쇄 알림 + BUG-040 === 0 최종 단순화 |
+
+### NAS 업데이트
+```bash
+git fetch origin && git reset --hard origin/main && npm run build && pm2 restart safetynote
+```
+
+### 상태
+- ✅ node-server.ts: LGU+ 3곳 `=== 0` 단순화
+- ✅ app.js: LGU+ 3곳 `=== 0` 단순화
+- ✅ tbm-extra.ts: 근로자 전원 서명 → 안전관리자 알림 추가
+- ✅ node-server.ts: `group_permissions` 테이블 + `getGroupPerm()` + REST API
+- ✅ app.js: "그룹별 권한 설정" 관리자 탭 UI 추가
+- ✅ 빌드 성공 (252.03 kB, 오류 없음)
+- ⚠️ NAS 업데이트 후 그룹별 권한 설정 탭 동작 확인 필요

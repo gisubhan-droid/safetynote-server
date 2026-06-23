@@ -4195,3 +4195,104 @@ if (taskRow.is_auto_request_no == null || taskRow.is_auto_request_no === 1)
 - `!== 1` 단독 사용 금지 — null 취약. 반드시 `!= null && !== 1` 함께 사용
 - LEFT JOIN 결과에서 숫자 컬럼은 항상 null 가능성 고려
 - `=== 0` 명시적 비교가 가장 안전 (단, DEFAULT 0 보장 시에만)
+
+---
+
+## [FEAT-027] 그룹별 권한 관리 — DB 테이블 + 관리자 UI (2026-06-23)
+
+### 개요
+6개 그룹(근로자/공무/안전관리자/현장대리인/CEO/LGU+)의 6가지 권한을
+`group_permissions` 테이블로 관리하고, 관리자 설정 화면에서 UI로 제어 가능하도록 구현.
+
+### 구현 내용
+
+#### ① patchSchema v0.145 — `group_permissions` 테이블 + 기본값
+```sql
+CREATE TABLE IF NOT EXISTS group_permissions (
+  group_key TEXT NOT NULL,
+  perm_key  TEXT NOT NULL,
+  perm_label TEXT,
+  is_enabled INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(group_key, perm_key)
+);
+-- 36개 기본값 INSERT OR IGNORE (6 그룹 × 6 권한)
+```
+- 위치: `node-server.ts` patchV0145()
+
+#### ② `getGroupPerm()` 헬퍼 함수
+```typescript
+function getGroupPerm(groupKey: string, permKey: string): boolean {
+  const row = rawDb.prepare(
+    `SELECT is_enabled FROM group_permissions WHERE group_key=? AND perm_key=?`
+  ).get(groupKey, permKey) as any
+  return row ? row.is_enabled === 1 : false
+}
+```
+
+#### ③ `/api/group-permissions` REST API
+- `GET`  → 전체 권한 조회 (group_key별 그룹화)
+- `POST` → 권한 일괄 업데이트 (`ON CONFLICT DO UPDATE`)
+- admin 전용 (role='admin' 체크)
+
+#### ④ 관리자 설정 UI — "그룹별 권한 설정" 탭
+- 설정 탭 목록에 `grpperm` 탭 추가 (LGU+ 탭 앞)
+- `_loadGroupPermPanel()`: API 조회 후 6개 그룹 카드 렌더링
+- `saveGroupPerms()`: 체크박스 상태 수집 → POST 저장
+- 위치: `app.js`
+
+#### ⑤ BUG-040→FEAT-027 LGU+ 조건 단순화 (6곳)
+BUG-040 임시 수정(`!= null && !== 1`)을 FEAT-027 맥락에서 `=== 0`으로 최종 단순화.
+
+| 파일 | 위치 | 변경 전 | 변경 후 |
+|------|------|---------|---------|
+| `node-server.ts` | 작업상태 알림 | `!= null && !== 1` | `=== 0` |
+| `node-server.ts` | 체크리스트 완료 알림 | `!= null && !== 1` | `=== 0` |
+| `node-server.ts` | 수동 알림 엔드포인트 | `== null \|\| === 1` | `!== 0` |
+| `app.js` | 공사 목록 필터 | `!== 1` | `=== 0` |
+| `app.js` | 공사 상세 접근 차단 | `=== 1` | `!== 0` |
+| `app.js` | 작업 목록 필터 | `!== 1` | `=== 0` |
+
+### 그룹별 권한 기본값
+| 그룹 | notify_own | notify_all | notify_lgu | view_all | edit_task | sign_tbm |
+|------|-----------|-----------|-----------|----------|-----------|----------|
+| worker    | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| engineer  | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| safety    | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| site_rep  | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| ceo       | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| lgu_plus  | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+
+---
+
+## [FEAT-028] TBM 근로자 전원 서명 완료 → 안전관리자 연쇄 알림 (2026-06-23)
+
+### 개요
+TBM 서명 연쇄 흐름 중 첫 단계(근로자 전원 서명 → 안전관리자 알림)가 미구현 상태였음.
+`POST /api/tbm/:id/signatures` 핸들러에 attendee 전원 서명 완료 체크 로직 추가.
+
+### 연쇄 흐름 전체 현황
+| 단계 | 구현 여부 | 파일 |
+|------|----------|------|
+| attendee 전원 서명 완료 → 안전관리자 알림 | ✅ **FEAT-028 추가** | `tbm-extra.ts` |
+| 안전관리자(`approval_safety`) 서명 → 현장대리인 알림 | ✅ 기존 구현 | `tbm-extra.ts` |
+| 현장대리인(`approval_general`) 서명 → CEO 알림 | ✅ 기존 구현 | `tbm-extra.ts` |
+| CEO(`approval_ceo`) 서명 → 완료 알림 | ✅ 기존 구현 | `tbm-extra.ts` |
+
+### 구현 위치
+- `src/nas-routes/tbm-extra.ts` — `POST /api/tbm/:id/signatures` 핸들러
+- `role === 'attendee'` 서명 완료 후 `attendeeNames` 전원 서명 여부 확인
+- 안전관리자(`sub_role='safety'` OR `position='안전관리자'`) 대상 SSE + FCM + notifications 발송
+- 중복 방지: `approval_safety` 서명이 이미 있으면 skip
+
+### 알림 발송 흐름
+```
+[근로자 서명] role=attendee
+  → 전원 서명 완료 체크
+    → 안전관리자 SSE sendToUser()
+    → 안전관리자 FCM sendFcmToUsers()
+    → notifications INSERT (type='tbm_attendee_all_signed')
+```
+
+### ⚠️ 재발 방지
+- TBM 서명 추가 시 반드시 연쇄 알림 체인 확인 (attendee → safety → site_rep → ceo)
+- 중복 방지 로직(이미 서명된 역할 체크) 필수

@@ -3093,15 +3093,13 @@ async function renderConstructionsPage(container) {
 
     const res = await API.get('/constructions', { params });
     var rawList = res.data || [];
-    // [BUG-039 수정] LGU+ 역할은 수동입력 공사(is_auto_request_no=0)만 접근 가능
-    // ❌ 오기록(v0.143): is_auto_request_no=1(자동부여 체크)만 허용 — 방향 반대였음
-    // ✅ 수정(v0.144/BUG-039): is_auto_request_no=0(수동입력, 미체크)만 LGU+ 허용
-    //    is_auto_request_no=0 → 수동 입력(자동부여 미체크) → LGU+ 허용
-    //    is_auto_request_no=1 → 자동부여 체크 → LGU+ 차단
+    // BUG-040→FEAT-027 단순화: is_auto_request_no === 0 인 경우만 LGU+ 허용
+    //   null/undefined → false ✅  0 → true ✅  1 → false ✅
+    //   (null !== 1 → true 오필터링 취약점 완전 제거)
     var myUiRoleForCon = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
     var isLguPlusUser = (myUiRoleForCon === 'lgu_plus' || currentUser.role === 'lgu');
     var list = isLguPlusUser
-      ? rawList.filter(function(con) { return con.is_auto_request_no !== 1; })
+      ? rawList.filter(function(con) { return con.is_auto_request_no === 0; })
       : rawList;
     window._conListCache = list;   // 엑셀 다운로드용 캐시
     const area = document.getElementById('con-list-area');
@@ -3170,13 +3168,11 @@ async function showConstructionDetail(conId) {
     const con = res.data;
 
     // ── [BUG-039 수정] 자동부여 공사 접근 차단 ──────────────────────────────
-    // ❌ 오기록(v0.143): is_auto_request_no !== 1(자동부여 미체크)일 때 차단 — 방향 반대였음
-    // ✅ 수정(v0.144/BUG-039): is_auto_request_no=1(자동부여 체크)일 때 LGU+ 차단
-    //    is_auto_request_no=0(수동입력, 미체크) → LGU+ 허용 (상세 열람 가능)
-    //    is_auto_request_no=1(자동부여 체크) → LGU+ 차단 (상세 열람 불가)
+    // BUG-040→FEAT-027 단순화: is_auto_request_no !== 0 인 경우 LGU+ 차단
+    //   null/undefined/1 → 차단  |  0 → 허용(수동입력 공사) ✅
     var _conMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
     var _conIsLguPlus = (_conMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
-    if (_conIsLguPlus && con.is_auto_request_no === 1) {
+    if (_conIsLguPlus && con.is_auto_request_no !== 0) {
       overlay.querySelector('.modal').innerHTML = `
         <div class="modal-header" style="background:linear-gradient(135deg,#D70072,#685182);border-radius:20px 20px 0 0;border-bottom:none;padding:18px 24px">
           <h3 class="font-black text-white text-base"><i class="fas fa-lock mr-2"></i>접근 제한</h3>
@@ -4225,15 +4221,12 @@ async function renderTasksPage(container) {
       page:  taskFilters.page || 1,
     } });
     var _rawNewTasks = tasksRes.data.tasks || tasksRes.data || [];
-    // ── [BUG-039 수정] LGU+ 역할은 is_auto_request_no=0 공사에 연계된 tasks만 표시 ──
-    // ❌ 오기록(v0.143): is_auto_request_no=1(자동부여 체크) tasks만 표시 — 방향 반대였음
-    // ✅ 수정(v0.144/BUG-039): is_auto_request_no=0(수동입력, 미체크) tasks만 LGU+ 표시
-    //    is_auto_request_no=0 → 수동입력 공사 → LGU+ 허용 대상 → 목록 표시
-    //    is_auto_request_no=1 → 자동부여 체크 공사 → LGU+ 차단 대상 → 목록 제외
+    // BUG-040→FEAT-027 단순화: is_auto_request_no === 0 인 경우만 LGU+ 허용
+    //   null/undefined → false ✅  0 → true ✅  1 → false ✅
     var _taskMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
     var _taskIsLguPlus = (_taskMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
     const newTasks = _taskIsLguPlus
-      ? _rawNewTasks.filter(function(t) { return t.is_auto_request_no !== 1; })
+      ? _rawNewTasks.filter(function(t) { return t.is_auto_request_no === 0; })
       : _rawNewTasks;
     // LGU+ 필터 적용 시 total도 필터된 건수로 보정
     _taskListTotal = _taskIsLguPlus
@@ -14457,6 +14450,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
       { key:'gps',    label:'GPS 주소 변환',       icon:'fas fa-map-marker-alt',color:'red'    },
       { key:'apk',    label:'APK 배포 관리',       icon:'fab fa-android',       color:'green'  },
       { key:'update', label:'서버 업데이트',       icon:'fas fa-sync-alt',      color:'teal'   },
+      { key:'grpperm',label:'그룹별 권한 설정',    icon:'fas fa-users-cog',     color:'indigo' },
       { key:'lgu',    label:'LGU+ 권한 설정',     icon:'fas fa-building',      color:'pink'   },
       { key:'info',   label:'정보',                icon:'fas fa-info-circle',   color:'gray'   },
     ];
@@ -15000,6 +14994,24 @@ async function renderAdminSettingsPage(container, _activeTab) {
 
       </div>
 
+      <!-- TAB: 그룹별 권한 설정 (FEAT-027) -->
+      <div id="spanel-grpperm" class="settings-panel space-y-4 ${firstTab !== 'grpperm' ? 'hidden' : ''}">
+        <div class="bg-white rounded-2xl shadow-sm p-5 border border-indigo-100">
+          <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
+            <i class="fas fa-users-cog text-indigo-500"></i> 그룹별 권한 설정
+          </h3>
+          <p class="text-xs text-gray-400 mb-4">각 그룹(역할)별로 알림 수신·조회·수정·TBM 서명 권한을 개별 설정합니다.</p>
+          <div id="grpperm-body">
+            <div class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>로딩 중...</div>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="saveGroupPerms()" class="btn btn-primary px-6 py-2 rounded-xl font-semibold text-sm">
+            <i class="fas fa-save mr-1"></i> 권한 설정 저장
+          </button>
+        </div>
+      </div>
+
       <!-- TAB: LGU+ 권한 설정 -->
       <div id="spanel-lgu" class="settings-panel space-y-4 ${firstTab !== 'lgu' ? 'hidden' : ''}">
         ${(function(){
@@ -15151,11 +15163,13 @@ function switchSettingsTab(key) {
     activeBtn.classList.add('bg-blue-600', 'text-white', 'border-blue-600', 'shadow');
   }
   // 탭별 비동기 데이터 로드
-  if (key === 'push')   _loadFcmStatus();
-  if (key === 'info')   _loadDbResetCounts();
-  if (key === 'update') _updLoadStatus();
+  if (key === 'push')    _loadFcmStatus();
+  if (key === 'info')    _loadDbResetCounts();
+  if (key === 'update')  _updLoadStatus();
   // [v0.142 LGU+] lgu 탭 진입 시 최신 설정 리로드
-  if (key === 'lgu')    _reloadLguTabSettings();
+  if (key === 'lgu')     _reloadLguTabSettings();
+  // [FEAT-027] 그룹별 권한 탭 진입 시 로드
+  if (key === 'grpperm') _loadGroupPermPanel();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -15239,6 +15253,110 @@ async function saveLguSettings() {
     toast('LGU+ 설정이 저장되었습니다.', 'success');
   } catch(e) {
     toast('저장 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// [FEAT-027] 그룹별 권한 설정 UI 함수
+// ─────────────────────────────────────────────────────────────
+
+/** 그룹 key → 표시 이름 */
+var _GP_GROUP_LABELS = {
+  worker:    { label: '근로자',      icon: 'fas fa-hard-hat',        color: 'blue'   },
+  engineer:  { label: '공무',        icon: 'fas fa-drafting-compass', color: 'teal'   },
+  safety:    { label: '안전관리자',  icon: 'fas fa-shield-alt',       color: 'green'  },
+  site_rep:  { label: '현장대리인',  icon: 'fas fa-user-tie',         color: 'orange' },
+  ceo:       { label: 'CEO',         icon: 'fas fa-crown',            color: 'yellow' },
+  lgu_plus:  { label: 'LGU+',        icon: 'fas fa-building',         color: 'pink'   },
+};
+
+/** 권한 key → 표시 이름 */
+var _GP_PERM_LABELS = {
+  notify_own_task:  { label: '본인 작업 알림 수신',         desc: '자신이 배정된 작업에 대한 상태 변경 알림' },
+  notify_all_tasks: { label: '전체 작업 알림 수신',         desc: '모든 작업 상태 변경 알림 (관리자급)' },
+  notify_lgu_tasks: { label: 'LGU+ 대상 작업 알림 수신',   desc: '수동입력 공사(is_auto_request_no=0)에 연계된 작업 알림' },
+  view_all_tasks:   { label: '전체 작업 조회',              desc: '타 작업자 작업 목록 조회 가능 여부' },
+  edit_task:        { label: '작업 수정',                   desc: '작업 상태·정보 수정 가능 여부' },
+  sign_tbm:         { label: 'TBM 서명 (관리자급)',         desc: '안전관리자·현장대리인·CEO 승인 서명' },
+};
+
+/** 그룹별 권한 패널 데이터 로드 및 렌더링 */
+async function _loadGroupPermPanel() {
+  var body = document.getElementById('grpperm-body');
+  if (!body) return;
+  body.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>로딩 중...</div>';
+  try {
+    var res = await API.get('/api/group-permissions');
+    var data = (res.data && res.data.permissions) ? res.data.permissions : {};
+    // data 구조: { worker: { notify_own_task: 1, ... }, engineer: { ... }, ... }
+    var groupOrder = ['worker','engineer','safety','site_rep','ceo','lgu_plus'];
+    var permOrder  = ['notify_own_task','notify_all_tasks','notify_lgu_tasks','view_all_tasks','edit_task','sign_tbm'];
+
+    var colorMap = { blue:'indigo', teal:'teal', green:'green', orange:'orange', yellow:'yellow', pink:'pink' };
+    var html = '';
+    groupOrder.forEach(function(gk) {
+      var gInfo  = _GP_GROUP_LABELS[gk] || { label: gk, icon: 'fas fa-user', color: 'gray' };
+      var perms  = data[gk] || {};
+      var clr    = gInfo.color;
+      var borderCls = 'border-' + clr + '-200';
+      var bgHdrCls  = 'bg-' + clr + '-50';
+      var textCls   = 'text-' + clr + '-600';
+
+      html += '<div class="bg-white rounded-2xl border ' + borderCls + ' overflow-hidden mb-4">';
+      html += '<div class="flex items-center gap-2 px-4 py-3 ' + bgHdrCls + ' border-b ' + borderCls + '">';
+      html += '<i class="' + gInfo.icon + ' ' + textCls + '"></i>';
+      html += '<span class="font-bold text-gray-700 text-sm">' + gInfo.label + '</span>';
+      html += '</div>';
+      html += '<div class="divide-y divide-gray-100">';
+      permOrder.forEach(function(pk) {
+        var pInfo   = _GP_PERM_LABELS[pk] || { label: pk, desc: '' };
+        var enabled = perms[pk] === 1 || perms[pk] === true;
+        var chkId   = 'gp_' + gk + '_' + pk;
+        html += '<label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50" for="' + chkId + '">';
+        html += '<input type="checkbox" id="' + chkId + '" data-gk="' + gk + '" data-pk="' + pk + '"'
+             + ' class="w-4 h-4 rounded accent-indigo-600"'
+             + (enabled ? ' checked' : '') + '>';
+        html += '<div class="flex-1 min-w-0">';
+        html += '<div class="text-sm font-medium text-gray-700">' + pInfo.label + '</div>';
+        if (pInfo.desc) html += '<div class="text-xs text-gray-400">' + pInfo.desc + '</div>';
+        html += '</div>';
+        html += '<span class="text-xs font-semibold ml-auto ' + (enabled ? 'text-indigo-500' : 'text-gray-300') + '">'
+             + (enabled ? '허용' : '차단') + '</span>';
+        html += '</label>';
+      });
+      html += '</div></div>';
+    });
+    body.innerHTML = html;
+
+    // 체크박스 변경 시 badge 즉시 업데이트
+    body.querySelectorAll('input[type="checkbox"]').forEach(function(chk) {
+      chk.addEventListener('change', function() {
+        var badge = this.closest('label').querySelector('span.ml-auto');
+        if (badge) {
+          badge.textContent = this.checked ? '허용' : '차단';
+          badge.className = 'text-xs font-semibold ml-auto ' + (this.checked ? 'text-indigo-500' : 'text-gray-300');
+        }
+      });
+    });
+  } catch(e) {
+    body.innerHTML = '<div class="text-red-500 text-sm py-4 text-center"><i class="fas fa-exclamation-circle mr-1"></i>권한 정보를 불러오지 못했습니다: '
+      + (e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message) + '</div>';
+  }
+}
+
+/** 그룹별 권한 저장 */
+async function saveGroupPerms() {
+  var checkboxes = document.querySelectorAll('#grpperm-body input[type="checkbox"][data-gk]');
+  if (!checkboxes.length) { toast('저장할 권한 설정이 없습니다.', 'warning'); return; }
+  var updates = [];
+  checkboxes.forEach(function(chk) {
+    updates.push({ group_key: chk.dataset.gk, perm_key: chk.dataset.pk, is_enabled: chk.checked ? 1 : 0 });
+  });
+  try {
+    await API.post('/api/group-permissions', { updates: updates });
+    toast('그룹별 권한이 저장되었습니다.', 'success');
+  } catch(e) {
+    toast('저장 실패: ' + (e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message), 'error');
   }
 }
 

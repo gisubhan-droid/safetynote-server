@@ -2671,7 +2671,13 @@ app.patch('/api/tasks/:id/status', async (c) => {
          WHERE t.id = ?`
       ).get(id) as any
       // BUG-039 수정: !== 1 (0이면 수동입력 = LGU+ 허용 = 알림 대상)
-      const isLguTarget = taskConRow?.is_auto_request_no !== 1
+      // BUG-040 수정: taskConRow null 또는 is_auto_request_no가 NULL인 경우 알림 미발송
+      //   taskConRow=null → 공사 미연결 작업 → LGU+ 대상 아님
+      //   is_auto_request_no=null → LEFT JOIN 미조인(공사 없음) → LGU+ 대상 아님
+      //   is_auto_request_no=0 → 수동입력(미체크) → LGU+ 허용 → 알림 발송 ✅
+      //   is_auto_request_no=1 → 자동부여(체크) → LGU+ 차단 → 알림 미발송 ✅
+      const rawAutoNo = taskConRow?.is_auto_request_no
+      const isLguTarget = taskConRow != null && rawAutoNo != null && rawAutoNo !== 1
       if (isLguTarget) {
         // LGU+ 역할 사용자 조회 (role='lgu' 또는 sub_role='lgu_plus')
         const lguUsers = rawDb.prepare(
@@ -2897,7 +2903,11 @@ app.patch('/api/checklist/:id/complete', async (c) => {
            WHERE t.id = ?`
         ).get(asmRow.task_id)
         // BUG-039 수정: !== 1 (0이면 수동입력 = LGU+ 허용 = 알림 대상)
-        if (lguTaskRow && lguTaskRow.is_auto_request_no !== 1) {
+        // BUG-040 수정: is_auto_request_no가 null(LEFT JOIN 미조인)이면 알림 미발송
+        //   lguTaskRow.is_auto_request_no=null → 공사 미연결 → LGU+ 대상 아님
+        //   lguTaskRow.is_auto_request_no=0    → 수동입력 → 알림 발송 ✅
+        //   lguTaskRow.is_auto_request_no=1    → 자동부여 → 알림 미발송 ✅
+        if (lguTaskRow && lguTaskRow.is_auto_request_no != null && lguTaskRow.is_auto_request_no !== 1) {
           var lguTaskTitle = lguTaskRow.title || String(asmRow.task_id)
           var lguTaskNum = lguTaskRow.work_number
             ? (lguTaskRow.sub_task_number ? `${lguTaskRow.work_number}-${lguTaskRow.sub_task_number}` : lguTaskRow.work_number)
@@ -2968,7 +2978,10 @@ app.patch('/api/checklist/:id/complete-lgu-notify', async (c) => {
     // ❌ 오기록(v0.143): is_auto_request_no !== 1 로 잘못 구현 — BUG-039 수정
     // ✅ 신조건(v0.144/BUG-039): is_auto_request_no=0(수동입력)이면 알림, is_auto_request_no=1이면 차단
     //    → is_auto_request_no === 1(자동부여 체크) 이면 LGU+ 차단 대상이므로 early return
-    if (taskRow.is_auto_request_no === 1) return c.json({ lgu_notified: false, reason: 'auto_req_no_blocked' })
+    // BUG-040 추가: is_auto_request_no=null(공사 미연결) → 알림 불가 → early return
+    //   정확한 허용 조건: is_auto_request_no가 숫자 0 인 경우만 발송
+    if (taskRow.is_auto_request_no == null || taskRow.is_auto_request_no === 1)
+      return c.json({ lgu_notified: false, reason: taskRow.is_auto_request_no == null ? 'no_construction_linked' : 'auto_req_no_blocked' })
 
     const taskTitle = taskRow.title || String(taskId)
     const taskNumDisplay = taskRow.work_number

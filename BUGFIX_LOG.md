@@ -4122,3 +4122,76 @@ git reset --hard 9c7b2fb && npm run build && pm2 restart safetynote
 - BUG-030 오기록을 신뢰하지 말 것 — 실제 로직 방향은 이 BUG-039 기록이 정확
 - 공사 등록 UI: "자동부여" 체크박스 = `is_auto_request_no=1` → LGU+ 차단
 - 향후 LGU+ 관련 알림/접근 제어 수정 시 6곳 모두 일관성 유지 필수
+
+---
+
+## [BUG-040] LGU+ 알림 — 공사 미연결/NULL 시 대상 아닌 작업에 알림 누출 (2026-06-23)
+
+### 증상
+- BUG-039 수정 후에도 일부 LGU+ 계정으로 대상이 아닌 알림 수신
+- `is_auto_request_no` 값이 없는(NULL/공사 미연결) 작업에서도 알림 발송
+
+### 원인 — `!== 1` 조건의 null 취약점
+
+```typescript
+// ❌ 문제 코드 (BUG-039 수정 후 상태)
+const isLguTarget = taskConRow?.is_auto_request_no !== 1
+
+// 케이스별 평가:
+// taskConRow = null       → undefined !== 1 → true  ❌ (공사 미연결인데 알림 발송)
+// is_auto_request_no = null → null !== 1    → true  ❌ (LEFT JOIN 미조인인데 알림 발송)
+// is_auto_request_no = 0  → 0 !== 1         → true  ✅ (수동입력 → 정상 발송)
+// is_auto_request_no = 1  → 1 !== 1         → false ✅ (자동부여 → 정상 차단)
+```
+
+`null !== 1` 은 JavaScript에서 **`true`** 이므로, `is_auto_request_no`가 NULL이거나 `taskConRow` 자체가 null이면 의도치 않게 알림이 발송됨.
+
+### 수정 내용 — 3곳 null 안전 처리 추가
+
+#### ① `node-server.ts` line ~2679 — 작업상태 알림
+```typescript
+// 수정 전 (❌)
+const isLguTarget = taskConRow?.is_auto_request_no !== 1
+
+// 수정 후 (✅) — null 명시 체크
+const rawAutoNo = taskConRow?.is_auto_request_no
+const isLguTarget = taskConRow != null && rawAutoNo != null && rawAutoNo !== 1
+// taskConRow=null → false (공사 미연결 → 알림 안 함)
+// rawAutoNo=null  → false (LEFT JOIN 미조인 → 알림 안 함)
+// rawAutoNo=0     → true  (수동입력 → 알림 발송 ✅)
+// rawAutoNo=1     → false (자동부여 → 알림 안 함 ✅)
+```
+
+#### ② `node-server.ts` line ~2910 — 체크리스트 완료 알림
+```typescript
+// 수정 전 (❌)
+if (lguTaskRow && lguTaskRow.is_auto_request_no !== 1) {
+
+// 수정 후 (✅)
+if (lguTaskRow && lguTaskRow.is_auto_request_no != null && lguTaskRow.is_auto_request_no !== 1) {
+```
+
+#### ③ `node-server.ts` line ~2983 — 수동 알림 엔드포인트
+```typescript
+// 수정 전 (❌)
+if (taskRow.is_auto_request_no === 1) return c.json(...)
+
+// 수정 후 (✅) — null이면 공사 미연결이므로 차단
+if (taskRow.is_auto_request_no == null || taskRow.is_auto_request_no === 1)
+  return c.json({ lgu_notified: false, reason: taskRow.is_auto_request_no == null
+    ? 'no_construction_linked'
+    : 'auto_req_no_blocked' })
+```
+
+### 허용 조건 (최종 확정)
+| `taskConRow` | `is_auto_request_no` | 결과 |
+|---|---|---|
+| null (row 없음) | — | ❌ 알림 안 함 |
+| 있음 | null (공사 미연결) | ❌ 알림 안 함 |
+| 있음 | `0` (수동입력) | ✅ **알림 발송** |
+| 있음 | `1` (자동부여) | ❌ 알림 안 함 |
+
+### ⚠️ 재발 방지
+- `!== 1` 단독 사용 금지 — null 취약. 반드시 `!= null && !== 1` 함께 사용
+- LEFT JOIN 결과에서 숫자 컬럼은 항상 null 가능성 고려
+- `=== 0` 명시적 비교가 가장 안전 (단, DEFAULT 0 보장 시에만)

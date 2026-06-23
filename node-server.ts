@@ -3832,12 +3832,14 @@ function dbRoleToUi(dbRole: string, position: string, subRole: string): string {
 
 // ─── JWT 파싱 헬퍼 ────────────────────────────────────────────────────
 function getUser(c: any): any {
+  // 1순위: Authorization 헤더 (fetch/XHR 호출)
   const auth = c.req.header('Authorization') || ''
-  if (!auth.startsWith('Bearer ')) return null
+  // 2순위: ?token= 쿼리스트링 (img src 태그 — 헤더 불가)
+  const queryToken = c.req.query('token') || ''
+  const rawToken = auth.startsWith('Bearer ') ? auth.slice(7) : queryToken
+  if (!rawToken) return null
   try {
-    const token = auth.slice(7)
-    // 단순 base64 (이 앱 방식)
-    const buf = Buffer.from(token, 'base64')
+    const buf = Buffer.from(rawToken, 'base64')
     return JSON.parse(buf.toString('utf-8'))
   } catch(_) { return null }
 }

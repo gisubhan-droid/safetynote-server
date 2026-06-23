@@ -6352,7 +6352,7 @@ async function showTaskDetail(id, openTbmTab) {
               return `<div class="mb-2 p-2 bg-white rounded-lg border border-blue-100">
                 <div class="text-xs font-medium text-blue-700 mb-1"><i class="fas fa-shield-alt mr-1"></i>${sec.section_name}</div>
                 ${photos.map(p => `<div class="flex items-center gap-2 py-1">
-                  ${p.file_path ? `<img src="/api/photos/${p.id}/img" class="w-10 h-10 object-cover rounded" onerror="this.style.opacity='0.3'">` : `<div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center"><i class="fas fa-camera text-gray-300"></i></div>`}
+                  ${p.file_path ? `<img src="${photoImgSrc(p.id)}" class="w-10 h-10 object-cover rounded" onerror="this.style.opacity='0.3'">` : `<div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center"><i class="fas fa-camera text-gray-300"></i></div>`}
                   <span class="text-xs ${p.file_path?'text-green-600':'text-red-500'}">${p.label} ${p.file_path?'<i class=\'fas fa-check\'></i>':'(미등록)'}</span>
                 </div>`).join('')}
               </div>`;
@@ -6536,7 +6536,7 @@ async function showTaskDetail(id, openTbmTab) {
             const isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
             if (isVideo) {
               return `<div class="photo-thumb relative cursor-pointer" onclick="showVideoData(${p.id},'${cap}')">
-                <video src="/api/photos/${p.id}/img" class="w-full h-full object-cover" muted preload="metadata"></video>
+                <video src="${photoImgSrc(p.id)}" class="w-full h-full object-cover" muted preload="metadata"></video>
                 <div class="overlay"><i class="fas fa-play text-2xl"></i></div>
                 <div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>
                 <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
@@ -6546,7 +6546,7 @@ async function showTaskDetail(id, openTbmTab) {
               </div>`;
             } else {
               return `<div class="photo-thumb" onclick="showPhotoData(${p.id},'${cap}')">
-                <img src="/api/photos/${p.id}/img" alt="${p.caption||p.file_name}" onerror="this.style.opacity='0.3';this.title='이미지 로드 실패'">
+                <img src="${photoImgSrc(p.id)}" alt="${p.caption||p.file_name}" onerror="this.style.opacity='0.3';this.title='이미지 로드 실패'">
                 <div class="overlay"><i class="fas fa-expand text-lg"></i></div>
                 <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
                   <span class="truncate">${cap || '-'}</span>
@@ -7372,7 +7372,7 @@ async function _refreshPhotoTab(taskId) {
       const isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
       if (isVideo) {
         return `<div class="photo-thumb relative cursor-pointer" onclick="showVideoData(${p.id},'${cap}')">
-          <video src="/api/photos/${p.id}/img" class="w-full h-full object-cover" muted preload="metadata"></video>
+          <video src="${photoImgSrc(p.id)}" class="w-full h-full object-cover" muted preload="metadata"></video>
           <div class="overlay"><i class="fas fa-play text-2xl"></i></div>
           <div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>
           <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
@@ -7382,7 +7382,7 @@ async function _refreshPhotoTab(taskId) {
         </div>`;
       } else {
         return `<div class="photo-thumb" onclick="showPhotoData(${p.id},'${cap}')">
-          <img src="/api/photos/${p.id}/img" alt="${p.caption||p.file_name}" onerror="this.style.opacity='0.3';this.title='이미지 로드 실패'">
+          <img src="${photoImgSrc(p.id)}" alt="${p.caption||p.file_name}" onerror="this.style.opacity='0.3';this.title='이미지 로드 실패'">
           <div class="overlay"><i class="fas fa-expand text-lg"></i></div>
           <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
             <span class="truncate">${cap || '-'}</span>
@@ -7697,8 +7697,14 @@ async function uploadAttachAndRefresh(taskId, files) {
   } catch(e) { /* uploadTaskAttachments에서 이미 toast 처리 */ }
 }
 
+/** BUG-037: img src에 토큰 쿼리스트링 포함 — 브라우저 img 태그는 Authorization 헤더 불가 */
+function photoImgSrc(photoId) {
+  const token = localStorage.getItem('token') || '';
+  return `/api/photos/${photoId}/img${token ? '?token=' + encodeURIComponent(token) : ''}`;
+}
+
 function loadPhotoData(img, photoId) {
-  img.src = `/api/photos/${photoId}/img`;
+  img.src = photoImgSrc(photoId);
 }
 
 async function showPhotoData(photoId, caption) {
@@ -7715,7 +7721,7 @@ async function showPhotoData(photoId, caption) {
           <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 text-xl ml-2"><i class="fas fa-times"></i></button>
         </div>
       </div>
-      <img src="/api/photos/${photoId}/img" class="w-full" alt="${caption}" onerror="this.alt='사진 로드 실패'">
+      <img src="${photoImgSrc(photoId)}" class="w-full" alt="${caption}" onerror="this.alt='사진 로드 실패'">
     </div>`;
   document.body.appendChild(modal);
 }
@@ -7734,7 +7740,7 @@ async function showVideoData(videoId, caption) {
           <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 text-xl ml-2"><i class="fas fa-times"></i></button>
         </div>
       </div>
-      <video src="/api/photos/${videoId}/img" class="w-full" controls autoplay style="max-height:70vh"></video>
+      <video src="${photoImgSrc(videoId)}" class="w-full" controls autoplay style="max-height:70vh"></video>
     </div>`;
   document.body.appendChild(modal);
 }
@@ -9426,7 +9432,7 @@ async function submitPhotos(taskId) {
           thumb.className = 'relative rounded-lg overflow-hidden border border-green-200 bg-green-50';
           thumb.style.cssText = 'aspect-ratio:1;cursor:pointer';
           thumb.innerHTML = `
-            <img src="/api/photos/${photoId}/img"
+            <img src="${photoImgSrc(photoId)}"
                  class="w-full h-full object-cover"
                  onerror="this.parentElement.innerHTML='<div class=\'w-full h-full flex items-center justify-center text-gray-300\'><i class=\'fas fa-film text-2xl\'></i></div>'">
             <div class="absolute top-1 right-1 bg-green-500 text-white rounded-full" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:8px">
@@ -18748,7 +18754,7 @@ function showTbmPhotoModal(assId, taskId, sections) {
             ${photos.map(ph => `
             <div class="flex items-center gap-3 p-2 rounded-lg border ${ph.file_path ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}" id="tbmph-${ph.id}">
               ${ph.file_path
-                ? `<img src="/api/photos/${ph.id}/img" class="w-12 h-12 object-cover rounded" onerror="this.style.opacity='0.3'">`
+                ? `<img src="${photoImgSrc(ph.id)}" class="w-12 h-12 object-cover rounded" onerror="this.style.opacity='0.3'">`
                 : `<div class="w-12 h-12 bg-white rounded border flex items-center justify-center"><i class="fas fa-camera text-gray-300 text-xl"></i></div>`
               }
               <div class="flex-1 min-w-0">
@@ -18842,7 +18848,7 @@ async function uploadTbmPhoto(input, assId, sectionId, photoItemId, label, taskI
       el.style.pointerEvents = '';
       el.className = 'flex items-center gap-3 p-2 rounded-lg border border-green-200 bg-green-50';
       el.innerHTML = `
-        <img src="/api/photos/${uploadedPhotoId}/img"
+        <img src="${photoImgSrc(uploadedPhotoId)}"
              class="w-12 h-12 object-cover rounded flex-shrink-0"
              onerror="this.style.opacity='0.3'">
         <div class="flex-1 min-w-0">

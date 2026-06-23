@@ -3890,3 +3890,72 @@ user.id, 'tbm',          // ← BUG-036 수정: 'tbm_photo' → 'tbm' (CHECK con
 - `task_photos.photo_type` 허용 값: `before`, `progress`, `after`, `hazard`, **`tbm`**, `completion` (총 6개)
 - `tbm_photo`, `tbm-photo`, `tbmsafety` 등은 **모두 허용되지 않음**
 - 새로운 photo_type 추가 시 migration 파일과 CHECK 제약 동시 업데이트 필요
+
+---
+
+## [BUG-037] 사진 이미지 로드 401 에러 — img src에 Authorization 헤더 불가 (2026-06)
+
+### 증상
+- 사진 업로드는 성공 (BUG-036 수정 후)
+- 콘솔에 `GET /api/photos/190/img 401 (Unauthorized)` 에러 반복 발생
+- 이미지가 화면에 로드되지 않거나 onerror 처리됨
+
+### 근본 원인
+**브라우저 `<img src>` 태그는 HTTP 요청 시 커스텀 헤더를 붙일 수 없음**
+
+```html
+<!-- 브라우저가 Authorization 헤더 없이 단순 GET 요청 -->
+<img src="/api/photos/190/img">
+<!-- → 서버: getUser() → auth 헤더 없음 → null → 401 반환 -->
+```
+
+- `getUser()` 함수가 `Authorization: Bearer ...` 헤더만 인식
+- `<img src>`, `<video src>` 태그는 fetch/XHR과 달리 헤더 커스터마이즈 불가
+- 콘솔에 401 에러 발생, 이미지 로드 실패
+
+### 해결
+
+#### 1. 서버: `getUser()` — 쿼리스트링 `?token` 폴백 추가 (node-server.ts)
+```typescript
+function getUser(c: any): any {
+  // 1순위: Authorization 헤더 (fetch/XHR)
+  const auth = c.req.header('Authorization') || ''
+  // 2순위: ?token= 쿼리스트링 (img src 태그 — 헤더 불가)
+  const queryToken = c.req.query('token') || ''
+  const rawToken = auth.startsWith('Bearer ') ? auth.slice(7) : queryToken
+  if (!rawToken) return null
+  ...
+}
+```
+
+#### 2. 앱: `photoImgSrc()` 헬퍼 함수 추가 (app.js)
+```javascript
+function photoImgSrc(photoId) {
+  const token = localStorage.getItem('token') || '';
+  return `/api/photos/${photoId}/img${token ? '?token=' + encodeURIComponent(token) : ''}`;
+}
+```
+
+#### 3. 앱: 모든 `/api/photos/${id}/img` → `${photoImgSrc(id)}` 교체 (10곳)
+- `<img src="${photoImgSrc(p.id)}">` 패턴으로 통일
+- `<video src="${photoImgSrc(videoId)}">` 포함
+
+### 교체 위치 (app.js)
+| 라인 | 컨텍스트 |
+|------|---------|
+| 6355 | TBM 체크리스트 사진 썸네일 |
+| 6539 | 작업사진 탭 비디오 썸네일 |
+| 6549 | 작업사진 탭 이미지 썸네일 |
+| 7375 | 작업사진 모달 비디오 |
+| 7385 | 작업사진 모달 이미지 |
+| 7701 | `loadPhotoData()` 함수 |
+| 7724 | `showPhotoData()` 모달 이미지 |
+| 7743 | `showVideoData()` 모달 비디오 |
+| 9435 | 업로드 후 썸네일 미리보기 |
+| 18757 | TBM 안전조치 사진 목록 |
+| 18851 | TBM 안전조치 업로드 완료 후 표시 |
+
+### ⚠️ 재발 방지
+- **`<img src>` / `<video src>` 태그는 헤더 불가** → 인증된 API는 `?token=` 쿼리스트링 필수
+- 새로운 인증 이미지 API 추가 시 반드시 `photoImgSrc()` 또는 동일 패턴 사용
+- `getUser()` 함수는 헤더와 쿼리스트링 모두 지원 (우선순위: 헤더 > 쿼리스트링)

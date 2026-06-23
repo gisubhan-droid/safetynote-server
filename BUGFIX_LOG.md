@@ -3612,3 +3612,50 @@ WHERE cr.assessment_id = ? AND cr.response = 'no'
   - `is_auto_request_no = 0` (자동부여 미체크, 수동 입력) → LGU+ **접근 허용** + **알림 발송 대상**
 - UI 설명 수정 시 코드 로직(`is_auto_request_no !== 1` 조건)과 방향 대조 필수
 - `patchSchema` description UPDATE도 함께 수정해야 기존 DB 행 교정됨
+
+---
+
+## [BUG-031] 사진 등록 로딩 지연 + 업로드 실패 — Service Worker clone() 에러 (2026-06)
+
+### 증상
+- TBM 안전조치 사진 등록 시 로딩이 오래 걸리고 업로드가 완료되지 않음
+- 브라우저 콘솔 에러:
+  ```
+  Uncaught (in promise) TypeError: Failed to execute 'clone' on 'Response': Response body is already used
+    at service-worker.js:84
+  Uncaught (in promise) NetworkError: Failed to execute 'put' on 'Cache': Cache.put() encountered a network error
+    at service-worker.js:1
+  ```
+
+### 원인
+- `public/static/service-worker.js` API 캐싱 로직에서 `/api/photos/:id/img` 등
+  이미지 바이너리 스트리밍 응답에 대해 `res.clone()` → `cache.put()` 시도
+- 이미지 스트리밍 응답은 body가 이미 소비(consumed)된 상태라 `clone()` 불가
+  → `Response body is already used` TypeError 발생
+  → `Cache.put()` NetworkError 발생
+  → 업로드 후 썸네일 로드가 막혀 "업로드 안 됨"으로 오인
+
+### 해결 (`public/static/service-worker.js` v10 → v11)
+1. **이미지/파일 경로 완전 제외** — fetch 이벤트 초반에 regex로 bypass
+   ```javascript
+   // /api/photos/:id/img, /api/inspection-photos/:id/img 등
+   if (url.pathname.match(/\/api\/(photos|inspection-photos|attachments)\/\d+\/(img|file|thumb)/)) return;
+   ```
+2. **Content-Type 기반 바이너리 캐싱 제외** — API 캐시 블록에서 image/video/octet-stream 응답 건너뜀
+   ```javascript
+   const ct = res.headers.get('Content-Type') || '';
+   const isBinary = ct.startsWith('image/') || ct.startsWith('video/') || ct.startsWith('application/octet-stream');
+   if (res.ok && !isBinary) { /* 캐싱 */ }
+   ```
+3. **전체 `clone()` try-catch 방어** — API 블록 + 정적 파일 블록 모두 적용
+   ```javascript
+   try { const toCache = res.clone(); caches.open(...).then(...).catch(() => {}); }
+   catch (_) { /* clone 실패 무시 */ }
+   ```
+4. **캐시 버전 v10 → v11** — 구버전 캐시 자동 삭제 트리거
+
+### ⚠️ 재발 방지
+- Service Worker에서 바이너리 스트리밍 응답(이미지, 파일, 동영상)은 **절대 캐싱하지 말 것**
+- 새 파일 다운로드/스트리밍 API 추가 시 경로를 위 regex 패턴에 추가
+- `clone()` 호출은 항상 try-catch로 감싸야 안전함
+- STATIC_CACHE/API_CACHE 버전 번호는 수정마다 반드시 올릴 것 (구버전 캐시 자동 제거)

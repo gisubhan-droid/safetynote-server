@@ -1,6 +1,6 @@
-// SafetyNOTE Service Worker v10
-const STATIC_CACHE = 'sn-static-v10';
-const API_CACHE    = 'sn-api-v10';
+// SafetyNOTE Service Worker v11
+const STATIC_CACHE = 'sn-static-v11';
+const API_CACHE    = 'sn-api-v11';
 
 // Network First 대상: 자주 업데이트되는 파일 (항상 서버에서 최신 버전을 받아옴)
 const NETWORK_FIRST_URLS = [
@@ -43,14 +43,24 @@ self.addEventListener('fetch', e => {
   if (url.pathname.startsWith('/sse'))      return;
   if (url.pathname.startsWith('/uploads/')) return;
 
+  // ── 캐싱 완전 제외: 이미지/바이너리 스트리밍 응답 경로 ──────────────
+  // /api/photos/:id/img, /api/inspection-photos/:id/img 등
+  // clone() 시 "Response body is already used" 에러 발생 원인
+  if (url.pathname.match(/\/api\/(photos|inspection-photos|attachments)\/\d+\/(img|file|thumb)/)) return;
+
   // API: Network First — clone()을 먼저 캐시에 저장 후 원본 반환
   if (url.pathname.startsWith('/api/')) {
     e.respondWith(
       fetch(e.request)
         .then(res => {
-          if (res.ok) {
-            const toCache = res.clone();
-            caches.open(API_CACHE).then(c => c.put(e.request, toCache));
+          // 바이너리(이미지/파일) 응답은 캐싱 제외 (Content-Type 기반)
+          const ct = res.headers.get('Content-Type') || '';
+          const isBinary = ct.startsWith('image/') || ct.startsWith('video/') || ct.startsWith('application/octet-stream');
+          if (res.ok && !isBinary) {
+            try {
+              const toCache = res.clone();
+              caches.open(API_CACHE).then(c => c.put(e.request, toCache)).catch(() => {});
+            } catch (_) { /* clone 실패 무시 */ }
           }
           return res;
         })
@@ -81,7 +91,11 @@ self.addEventListener('fetch', e => {
       if (cached) return cached;
       return fetch(e.request)
         .then(res => {
-          if (res.ok) caches.open(STATIC_CACHE).then(c => c.put(e.request, res.clone()));
+          if (res.ok) {
+            try {
+              caches.open(STATIC_CACHE).then(c => c.put(e.request, res.clone())).catch(() => {});
+            } catch (_) { /* clone 실패 무시 */ }
+          }
           return res;
         })
         .catch(() => offlinePage());

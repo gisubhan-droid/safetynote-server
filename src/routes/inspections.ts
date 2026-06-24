@@ -125,13 +125,17 @@ app.get('/:id', async (c) => {
   if (!inspection) return c.json({ error: '점검 없음' }, 404)
   const photos = await c.env.DB.prepare('SELECT * FROM inspection_photos WHERE inspection_id = ?').bind(id).all<any>()
   inspection.photos = photos.results || []
-  // 연결된 작업자 목록
-  const workers = await c.env.DB.prepare(
-    `SELECT iw.worker_id, iw.result_type, u.name as worker_name, u.position
-     FROM inspection_workers iw JOIN users u ON u.id = iw.worker_id
-     WHERE iw.inspection_id = ?`
-  ).bind(id).all<any>()
-  inspection.workers = workers.results || []
+  // 연결된 작업자 목록 — 구버전 DB에 inspection_workers 없을 수 있으므로 try/catch
+  try {
+    const workers = await c.env.DB.prepare(
+      `SELECT iw.worker_id, iw.result_type, u.name as worker_name, u.position
+       FROM inspection_workers iw JOIN users u ON u.id = iw.worker_id
+       WHERE iw.inspection_id = ?`
+    ).bind(id).all<any>()
+    inspection.workers = workers.results || []
+  } catch (_) {
+    inspection.workers = []
+  }
   return c.json(inspection)
 })
 
@@ -203,14 +207,16 @@ app.post('/', async (c) => {
 
   const inspectionId = result.meta.last_row_id
 
-  // 불량/우수 선택 작업자 저장
-  if (['불량','우수'].includes(inspection_result) && workerIds.length > 0) {
-    for (const wid of workerIds) {
-      await c.env.DB.prepare(
-        `INSERT OR IGNORE INTO inspection_workers (inspection_id, worker_id, result_type) VALUES (?, ?, ?)`
-      ).bind(inspectionId, wid, inspection_result).run()
+  // 불량/우수 선택 작업자 저장 — 구버전 DB에 테이블 없을 수 있으므로 try/catch
+  try {
+    if (['불량','우수'].includes(inspection_result) && workerIds.length > 0) {
+      for (const wid of workerIds) {
+        await c.env.DB.prepare(
+          `INSERT OR IGNORE INTO inspection_workers (inspection_id, worker_id, result_type) VALUES (?, ?, ?)`
+        ).bind(inspectionId, wid, inspection_result).run()
+      }
     }
-  }
+  } catch (_) { /* inspection_workers 테이블 미존재 시 무시 */ }
 
   // 파일 저장 (multipart)
   if (photoFiles.length > 0) {
@@ -540,7 +546,6 @@ app.get('/worker-history/:workerId', async (c) => {
   const workerId = c.req.param('workerId')
   const { start, end, result_type } = c.req.query()
 
-  // 동적 필터 조건 구성
   const conditions: string[] = ['iw.worker_id = ?']
   const binds: any[] = [workerId]
 
@@ -554,22 +559,26 @@ app.get('/worker-history/:workerId', async (c) => {
   }
 
   const where = conditions.join(' AND ')
-  const rows = await c.env.DB.prepare(`
-    SELECT iw.result_type, iw.created_at as recorded_at,
-           si.id as inspection_id,
-           COALESCE(si.inspection_date_only, date(si.created_at)) as inspection_date_only,
-           si.location, si.findings, si.inspection_result, si.hazard_level,
-           si.corrective_actions, si.result_reason, si.status as ins_status,
-           t.id as task_id, t.title as task_title, t.task_number, t.status as task_status,
-           u.name as inspector_name
-    FROM inspection_workers iw
-    JOIN site_inspections si ON si.id = iw.inspection_id
-    LEFT JOIN tasks t ON t.id = si.task_id
-    LEFT JOIN users u ON u.id = si.inspector_id
-    WHERE ${where}
-    ORDER BY COALESCE(si.inspection_date_only, date(si.created_at)) DESC, iw.created_at DESC
-  `).bind(...binds).all<any>()
-  return c.json(rows.results || [])
+  try {
+    const rows = await c.env.DB.prepare(`
+      SELECT iw.result_type, iw.created_at as recorded_at,
+             si.id as inspection_id,
+             COALESCE(si.inspection_date_only, date(si.created_at)) as inspection_date_only,
+             si.location, si.findings, si.inspection_result, si.hazard_level,
+             si.corrective_actions, si.result_reason, si.status as ins_status,
+             t.id as task_id, t.title as task_title, t.task_number, t.status as task_status,
+             u.name as inspector_name
+      FROM inspection_workers iw
+      JOIN site_inspections si ON si.id = iw.inspection_id
+      LEFT JOIN tasks t ON t.id = si.task_id
+      LEFT JOIN users u ON u.id = si.inspector_id
+      WHERE ${where}
+      ORDER BY COALESCE(si.inspection_date_only, date(si.created_at)) DESC, iw.created_at DESC
+    `).bind(...binds).all<any>()
+    return c.json(rows.results || [])
+  } catch (_) {
+    return c.json([]) /* inspection_workers 테이블 미존재 시 빈 배열 */
+  }
 })
 
 // ─── 근로자 안전준수 통계 ─────────────────────────────────
@@ -585,54 +594,53 @@ app.get('/stats/worker-safety', async (c) => {
   let start = '', end = ''
 
   if (period_type === 'weekly') {
-    // 주별: 해당 월의 각 주 (1~5주)
     const m = (month || String(now.getMonth() + 1)).toString().padStart(2, '0')
     start = `${y}-${m}-01`
     end   = new Date(y, Number(m), 0).toISOString().split('T')[0]
   } else if (period_type === 'quarterly') {
-    // 분기별: Q1=1~3월, Q2=4~6월, Q3=7~9월, Q4=10~12월
     const q = Number(quarter || Math.ceil((now.getMonth() + 1) / 3))
     const startMonth = (q - 1) * 3 + 1
     const endMonth   = q * 3
     start = `${y}-${String(startMonth).padStart(2,'0')}-01`
     end   = new Date(y, endMonth, 0).toISOString().split('T')[0]
   } else {
-    // monthly(기본): 해당 월
     const m = (month || String(now.getMonth() + 1)).toString().padStart(2, '0')
     start = `${y}-${m}-01`
     end   = new Date(y, Number(m), 0).toISOString().split('T')[0]
   }
 
-  // 근로자별 불량/우수 집계
-  const workerRows = await c.env.DB.prepare(`
-    SELECT u.id as worker_id, u.name as worker_name, u.position, u.department,
-           t.name as team_name,
-           COUNT(iw.id) as total_records,
-           SUM(CASE WHEN iw.result_type='불량' THEN 1 ELSE 0 END) as poor_count,
-           SUM(CASE WHEN iw.result_type='우수' THEN 1 ELSE 0 END) as excel_count,
-           MAX(iw.created_at) as last_record_at
-    FROM inspection_workers iw
-    JOIN users u ON u.id = iw.worker_id
-    LEFT JOIN teams t ON t.id = u.team_id
-    JOIN site_inspections si ON si.id = iw.inspection_id
-    WHERE COALESCE(si.inspection_date_only, date(si.created_at)) BETWEEN ? AND ?
-    GROUP BY u.id
-    ORDER BY poor_count DESC, excel_count DESC
-  `).bind(start, end).all<any>()
+  // inspection_workers 테이블 없으면 빈 결과 반환 (구버전 DB 호환)
+  let workerRows: any = { results: [] }
+  let dailyRows:  any = { results: [] }
+  try {
+    workerRows = await c.env.DB.prepare(`
+      SELECT u.id as worker_id, u.name as worker_name, u.position, u.department,
+             t.name as team_name,
+             COUNT(iw.id) as total_records,
+             SUM(CASE WHEN iw.result_type='불량' THEN 1 ELSE 0 END) as poor_count,
+             SUM(CASE WHEN iw.result_type='우수' THEN 1 ELSE 0 END) as excel_count,
+             MAX(iw.created_at) as last_record_at
+      FROM inspection_workers iw
+      JOIN users u ON u.id = iw.worker_id
+      LEFT JOIN teams t ON t.id = u.team_id
+      JOIN site_inspections si ON si.id = iw.inspection_id
+      WHERE COALESCE(si.inspection_date_only, date(si.created_at)) BETWEEN ? AND ?
+      GROUP BY u.id
+      ORDER BY poor_count DESC, excel_count DESC
+    `).bind(start, end).all<any>()
 
-  // 기간별 일별 집계 (차트용)
-  const dailyRows = await c.env.DB.prepare(`
-    SELECT COALESCE(si.inspection_date_only, date(si.created_at)) as ins_date,
-           iw.result_type,
-           COUNT(*) as cnt
-    FROM inspection_workers iw
-    JOIN site_inspections si ON si.id = iw.inspection_id
-    WHERE COALESCE(si.inspection_date_only, date(si.created_at)) BETWEEN ? AND ?
-    GROUP BY ins_date, iw.result_type
-    ORDER BY ins_date
-  `).bind(start, end).all<any>()
+    dailyRows = await c.env.DB.prepare(`
+      SELECT COALESCE(si.inspection_date_only, date(si.created_at)) as ins_date,
+             iw.result_type,
+             COUNT(*) as cnt
+      FROM inspection_workers iw
+      JOIN site_inspections si ON si.id = iw.inspection_id
+      WHERE COALESCE(si.inspection_date_only, date(si.created_at)) BETWEEN ? AND ?
+      GROUP BY ins_date, iw.result_type
+      ORDER BY ins_date
+    `).bind(start, end).all<any>()
+  } catch (_) { /* inspection_workers 테이블 미존재 시 빈 결과 */ }
 
-  // 전체 집계
   const totals = (workerRows.results || []).reduce((acc: any, r: any) => {
     acc.poor  += r.poor_count
     acc.excel += r.excel_count
@@ -665,27 +673,30 @@ app.get('/worker-poor-tasks/:workerId', async (c) => {
     binds.push(start, end)
   }
 
-  const rows = await c.env.DB.prepare(`
-    SELECT
-      t.id as task_id, t.title as task_title, t.task_number,
-      t.status as task_status, t.location as task_location,
-      t.planned_date, t.work_date,
-      COUNT(iw.id) as poor_count,
-      GROUP_CONCAT(COALESCE(si.inspection_date_only, date(si.created_at)), ',') as ins_dates,
-      MAX(COALESCE(si.inspection_date_only, date(si.created_at))) as last_ins_date,
-      GROUP_CONCAT(si.findings, '||') as findings_list,
-      GROUP_CONCAT(u_ins.name, ',') as inspector_names
-    FROM inspection_workers iw
-    JOIN site_inspections si ON si.id = iw.inspection_id
-    LEFT JOIN tasks t ON t.id = si.task_id
-    LEFT JOIN users u_ins ON u_ins.id = si.inspector_id
-    WHERE iw.worker_id = ? AND iw.result_type = '불량'
-    ${dateFilter}
-    GROUP BY t.id
-    ORDER BY last_ins_date DESC
-  `).bind(...binds).all<any>()
-
-  return c.json(rows.results || [])
+  try {
+    const rows = await c.env.DB.prepare(`
+      SELECT
+        t.id as task_id, t.title as task_title, t.task_number,
+        t.status as task_status, t.location as task_location,
+        t.planned_date, t.work_date,
+        COUNT(iw.id) as poor_count,
+        GROUP_CONCAT(COALESCE(si.inspection_date_only, date(si.created_at)), ',') as ins_dates,
+        MAX(COALESCE(si.inspection_date_only, date(si.created_at))) as last_ins_date,
+        GROUP_CONCAT(si.findings, '||') as findings_list,
+        GROUP_CONCAT(u_ins.name, ',') as inspector_names
+      FROM inspection_workers iw
+      JOIN site_inspections si ON si.id = iw.inspection_id
+      LEFT JOIN tasks t ON t.id = si.task_id
+      LEFT JOIN users u_ins ON u_ins.id = si.inspector_id
+      WHERE iw.worker_id = ? AND iw.result_type = '불량'
+      ${dateFilter}
+      GROUP BY t.id
+      ORDER BY last_ins_date DESC
+    `).bind(...binds).all<any>()
+    return c.json(rows.results || [])
+  } catch (_) {
+    return c.json([]) /* inspection_workers 테이블 미존재 시 빈 배열 */
+  }
 })
 
 // 점검자별 점검 목록
@@ -723,49 +734,52 @@ app.get('/stats/my-safety', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const now  = new Date()
-  const year = Number(c.req.query('year')  || now.getFullYear())
+  const year = Number(c.req.query('year') || now.getFullYear())
 
-  // 연도별 월간 점수 추이
-  const monthlyRows = await c.env.DB.prepare(`
-    SELECT strftime('%m', COALESCE(si.inspection_date_only, date(si.created_at))) as month,
-           SUM(CASE WHEN iw.result_type='불량' THEN 1 ELSE 0 END) as poor_count,
-           SUM(CASE WHEN iw.result_type='우수' THEN 1 ELSE 0 END) as excel_count,
-           COUNT(iw.id) as total_records
-    FROM inspection_workers iw
-    JOIN site_inspections si ON si.id = iw.inspection_id
-    WHERE iw.worker_id = ?
-      AND strftime('%Y', COALESCE(si.inspection_date_only, date(si.created_at))) = ?
-    GROUP BY month
-    ORDER BY month
-  `).bind(user.id, String(year)).all<any>()
+  // inspection_workers 테이블 없으면 빈 결과 반환 (구버전 DB 호환)
+  let monthlyRows: any = { results: [] }
+  let totalRow: any    = null
+  let recentRows: any  = { results: [] }
+  try {
+    monthlyRows = await c.env.DB.prepare(`
+      SELECT strftime('%m', COALESCE(si.inspection_date_only, date(si.created_at))) as month,
+             SUM(CASE WHEN iw.result_type='불량' THEN 1 ELSE 0 END) as poor_count,
+             SUM(CASE WHEN iw.result_type='우수' THEN 1 ELSE 0 END) as excel_count,
+             COUNT(iw.id) as total_records
+      FROM inspection_workers iw
+      JOIN site_inspections si ON si.id = iw.inspection_id
+      WHERE iw.worker_id = ?
+        AND strftime('%Y', COALESCE(si.inspection_date_only, date(si.created_at))) = ?
+      GROUP BY month
+      ORDER BY month
+    `).bind(user.id, String(year)).all<any>()
 
-  // 전체 누적 집계
-  const totalRow = await c.env.DB.prepare(`
-    SELECT COUNT(iw.id) as total_records,
-           SUM(CASE WHEN iw.result_type='불량' THEN 1 ELSE 0 END) as poor_count,
-           SUM(CASE WHEN iw.result_type='우수' THEN 1 ELSE 0 END) as excel_count
-    FROM inspection_workers iw
-    JOIN site_inspections si ON si.id = iw.inspection_id
-    WHERE iw.worker_id = ?
-  `).bind(user.id).first<any>()
+    totalRow = await c.env.DB.prepare(`
+      SELECT COUNT(iw.id) as total_records,
+             SUM(CASE WHEN iw.result_type='불량' THEN 1 ELSE 0 END) as poor_count,
+             SUM(CASE WHEN iw.result_type='우수' THEN 1 ELSE 0 END) as excel_count
+      FROM inspection_workers iw
+      JOIN site_inspections si ON si.id = iw.inspection_id
+      WHERE iw.worker_id = ?
+    `).bind(user.id).first<any>()
 
-  // 최근 10건 상세 기록
-  const recentRows = await c.env.DB.prepare(`
-    SELECT iw.result_type, iw.created_at,
-           si.location, si.inspection_date_only,
-           si.result_reason,
-           COALESCE(si.inspection_date_only, date(si.created_at)) as ins_date
-    FROM inspection_workers iw
-    JOIN site_inspections si ON si.id = iw.inspection_id
-    WHERE iw.worker_id = ?
-    ORDER BY ins_date DESC
-    LIMIT 10
-  `).bind(user.id).all<any>()
+    recentRows = await c.env.DB.prepare(`
+      SELECT iw.result_type, iw.created_at,
+             si.location, si.inspection_date_only,
+             si.result_reason,
+             COALESCE(si.inspection_date_only, date(si.created_at)) as ins_date
+      FROM inspection_workers iw
+      JOIN site_inspections si ON si.id = iw.inspection_id
+      WHERE iw.worker_id = ?
+      ORDER BY ins_date DESC
+      LIMIT 10
+    `).bind(user.id).all<any>()
+  } catch (_) { /* inspection_workers 테이블 미존재 시 빈 결과 */ }
 
-  const total    = totalRow || { total_records: 0, poor_count: 0, excel_count: 0 }
-  const score    = (Number(total.excel_count) * 5) + (Number(total.poor_count) * -10)
-  const monthly  = monthlyRows.results || []
-  const recent   = recentRows.results  || []
+  const total  = totalRow || { total_records: 0, poor_count: 0, excel_count: 0 }
+  const score  = (Number(total.excel_count) * 5) + (Number(total.poor_count) * -10)
+  const monthly = monthlyRows.results || []
+  const recent  = recentRows.results  || []
 
   return c.json({ score, total, monthly, recent, year })
 })

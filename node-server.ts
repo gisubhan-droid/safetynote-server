@@ -2070,6 +2070,30 @@ function patchSchema() {
     console.log('[patchSchema v0.145] group_permissions 기본값 삽입 완료')
   })()
   })()
+
+  // ── [v0.146 BUG-042] site_inspections 결과 컬럼 + inspection_workers 테이블 ──
+  // inspection_result, result_reason 컬럼이 NAS 구버전 DB에 없어 POST /api/inspections 500 발생
+  safeAlter(`ALTER TABLE site_inspections ADD COLUMN inspection_result TEXT NOT NULL DEFAULT 'none'`)
+  safeAlter(`ALTER TABLE site_inspections ADD COLUMN result_reason     TEXT NOT NULL DEFAULT ''`)
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS inspection_workers (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        inspection_id INTEGER NOT NULL,
+        worker_id     INTEGER NOT NULL,
+        result_type   TEXT    NOT NULL DEFAULT '',
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (inspection_id) REFERENCES site_inspections(id) ON DELETE CASCADE,
+        FOREIGN KEY (worker_id)     REFERENCES users(id),
+        UNIQUE(inspection_id, worker_id)
+      )
+    `)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_ins_workers_ins ON inspection_workers(inspection_id)`)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_ins_workers_usr ON inspection_workers(worker_id)`)
+    console.log('[patchSchema v0.146] inspection_workers 테이블 및 site_inspections 결과 컬럼 준비 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.146] inspection_workers 생성 실패:', e.message)
+  }
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)

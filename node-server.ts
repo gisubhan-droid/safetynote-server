@@ -3281,6 +3281,106 @@ app.put('/api/inspections/:id', async (c) => {
   return c.json({ success: true, workers_saved: workersSaved })
 })
 
+// ─── [RULE-002] NAS 전용: PATCH /api/inspections/:id/status ─────────────────
+// inspections.ts(Cloudflare용)의 PATCH는 c.env.DB 사용 → NAS에서는 rawDb로 직접 처리
+// 완료(closed) 전환 시: 안전관리자(safety) + 현장대리인(site_rep) + 대표이사(ceo) 에게
+//   - notifications DB 저장
+//   - FCM 푸시 발송
+//   - SSE 실시간 알림
+app.patch('/api/inspections/:id/status', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+
+  const id = Number(c.req.param('id'))
+  let body: any
+  try { body = await c.req.json() } catch (e: any) {
+    return c.json({ error: `요청 파싱 실패: ${e.message}` }, 400)
+  }
+  const { status } = body
+  if (!['open', 'in_progress', 'closed'].includes(status)) {
+    return c.json({ error: `유효하지 않은 상태값: ${status}` }, 400)
+  }
+
+  // 점검 정보 조회
+  const ins = rawDb.prepare(
+    `SELECT si.id, si.location, si.inspection_type, si.status as prev_status,
+            si.inspection_date_only, si.inspection_result,
+            u.name as inspector_name
+     FROM site_inspections si
+     LEFT JOIN users u ON u.id = si.inspector_id
+     WHERE si.id = ?`
+  ).get(id) as any
+  if (!ins) return c.json({ error: '점검 없음' }, 404)
+
+  // DB 업데이트
+  try {
+    rawDb.prepare(
+      `UPDATE site_inspections SET status=?, closed_at=${status === 'closed' ? 'CURRENT_TIMESTAMP' : 'NULL'} WHERE id=?`
+    ).run(status, id)
+  } catch (e: any) {
+    console.error('[PATCH /api/inspections/:id/status] UPDATE 실패:', e.message)
+    return c.json({ error: `상태 저장 실패: ${e.message}` }, 500)
+  }
+
+  const statusLabelMap: Record<string, string> = { open:'미처리', in_progress:'처리중', closed:'완료' }
+  const statusLabel = statusLabelMap[status] || status
+  const insTypeLabelMap: Record<string, string> = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' }
+  const insTypeLabel = insTypeLabelMap[ins.inspection_type] || ins.inspection_type || '현장점검'
+
+  // ── 완료(closed) 전환 시: 알림 + FCM 발송 ──────────────────────────────────
+  if (status === 'closed') {
+    const notifTitle = `현장 점검 완료: ${ins.location || insTypeLabel}`
+    const notifMsg   = `[${insTypeLabel}] "${ins.location || '-'}" 점검이 완료 처리되었습니다. (처리자: ${user.name})`
+    const fcmData    = { type: 'inspection_closed', inspectionId: String(id) }
+
+    // 수신 대상: safety(안전관리자) + site_rep(현장대리인) + ceo(대표이사)
+    // getUsersWithPerm('notify_all_tasks') 는 group_permissions 기반으로 이 세 그룹을 포함
+    // 작성자 본인은 제외(excludeId=user.id)
+    const targetIds = getUsersWithPerm('notify_all_tasks', user.id)
+
+    // ① notifications DB 저장
+    try {
+      for (const uid of targetIds) {
+        rawDb.prepare(
+          `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+           VALUES (?, 'inspection_closed', ?, ?, ?, 'inspection', 0)`
+        ).run(uid, notifTitle, notifMsg, id)
+      }
+      console.log(`[PATCH /inspection/:id/status] 알림 DB 저장 — targets:${targetIds} ids`)
+    } catch (e: any) {
+      console.warn('[PATCH /api/inspections/:id/status] 알림 DB 저장 실패:', e.message)
+    }
+
+    // ② SSE 실시간 알림
+    try {
+      const ssePayload = {
+        type: 'inspection_closed',
+        inspectionId: id,
+        location: ins.location,
+        actor: user.name,
+        message: notifMsg,
+        ts: Date.now()
+      }
+      for (const uid of targetIds) sendToUser(uid, ssePayload)
+    } catch (e: any) {
+      console.warn('[PATCH /api/inspections/:id/status] SSE 발송 실패:', e.message)
+    }
+
+    // ③ FCM 푸시 (비동기 — 실패해도 응답 영향 없음)
+    if (targetIds.length > 0) {
+      sendFcmToUsers(targetIds, {
+        title: notifTitle,
+        body: notifMsg,
+        data: fcmData
+      }).catch((e: any) => console.error('[FCM] 점검완료 FCM 오류:', e.message))
+    }
+
+    console.log(`[PATCH /api/inspections/:id=${id}] 완료 처리 — 알림 대상:${targetIds.length}명`)
+  }
+
+  return c.json({ success: true, status, status_label: statusLabel })
+})
+
 app.route('/api/inspections', inspectionRoutes)
 app.route('/api/hazards', hazardRoutes)
 app.route('/api/worklogs', worklogRoutes)

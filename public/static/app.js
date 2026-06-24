@@ -11601,7 +11601,7 @@ async function showCreateInspectionModal(presetTaskId) {
           <select id="insType" class="form-control">
             <option value="routine">정기점검</option>
             <option value="joint">합동점검</option>
-            <option value="frequent">수시점검</option>
+            <option value="frequent" selected>수시점검</option>
           </select>
         </div>
       </div>
@@ -12097,8 +12097,19 @@ async function showInspectionDetail(id) {
             </div>
           </div>` : ''}
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
         ${currentUser && currentUser.role !== 'worker' ? `
+          <!-- 처리상태 드롭다운 -->
+          <div style="display:flex;align-items:center;gap:6px;margin-right:auto">
+            <label style="font-size:12px;font-weight:600;color:#64748B;white-space:nowrap">처리상태</label>
+            <select id="insStatusSel_${ins.id}" onchange="changeInspectionStatus(${ins.id},this.value)"
+              style="font-size:12px;font-weight:600;padding:5px 10px;border-radius:8px;border:2px solid;cursor:pointer;outline:none;
+                     ${ins.status==='closed'?'border-color:#10B981;background:#ECFDF5;color:#065F46':ins.status==='in_progress'?'border-color:#3B82F6;background:#EFF6FF;color:#1E40AF':'border-color:#F59E0B;background:#FFFBEB;color:#92400E'}">
+              <option value="open"        ${(ins.status||'open')==='open'        ?'selected':''}>⚠ 미처리</option>
+              <option value="in_progress" ${ins.status==='in_progress'?'selected':''}>🔄 처리중</option>
+              <option value="closed"      ${ins.status==='closed'     ?'selected':''}>✅ 완료</option>
+            </select>
+          </div>
           <button onclick="addInsPhoto(${ins.id})" class="btn btn-secondary">
             <i class="fas fa-camera"></i> 사진 추가
           </button>
@@ -12508,6 +12519,82 @@ async function updateInspectionStatus(id, status) {
     toast('상태가 업데이트되었습니다.');
     renderInspectionsPage(document.getElementById('page-content'));
   } catch(e) { toast('실패', 'error'); }
+}
+
+// 상세 모달 드롭다운 상태 변경
+async function changeInspectionStatus(id, status) {
+  const statusLabelMap = { open:'미처리', in_progress:'처리중', closed:'완료' };
+  const statusLabel = statusLabelMap[status] || status;
+  const sel = document.getElementById(`insStatusSel_${id}`);
+
+  // 완료(closed) 전환 시 확인 모달
+  if (status === 'closed') {
+    const confirmed = await new Promise(resolve => {
+      const m = document.createElement('div');
+      m.className = 'modal-overlay modal-sm';
+      m.style.zIndex = '10001';
+      m.innerHTML = `
+        <div class="modal" style="max-width:360px">
+          <div class="modal-header" style="background:linear-gradient(135deg,#059669,#10B981);color:white">
+            <h3 class="font-bold text-lg"><i class="fas fa-check-circle mr-2"></i>점검 완료 처리</h3>
+            <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="text-sm text-gray-700 mb-2">이 점검을 <b style="color:#059669">완료</b> 처리하시겠습니까?</p>
+            <p class="text-xs text-gray-500"><i class="fas fa-bell mr-1 text-yellow-500"></i>완료 처리 시 안전관리자·현장대리인·대표이사에게 알림이 발송됩니다.</p>
+          </div>
+          <div class="modal-footer">
+            <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">취소</button>
+            <button id="_insCloseConfirmBtn" class="btn btn-primary" style="background:#059669;border-color:#059669">
+              <i class="fas fa-check mr-1"></i>완료 처리
+            </button>
+          </div>
+        </div>`;
+      document.body.appendChild(m);
+      m.querySelector('#_insCloseConfirmBtn').onclick = () => { m.remove(); resolve(true); };
+      m.querySelector('.modal-header button').onclick  = () => { m.remove(); resolve(false); };
+    });
+    if (!confirmed) {
+      // 선택 취소 시 이전 값으로 복원
+      if (sel) {
+        const res = await API.get(`/inspections/${id}`).catch(() => null);
+        const prev = res?.data?.status || 'open';
+        sel.value = prev;
+        _applyInsStatusSelStyle(sel, prev);
+      }
+      return;
+    }
+  }
+
+  try {
+    await API.patch(`/inspections/${id}/status`, { status });
+    // 드롭다운 스타일 즉시 갱신
+    if (sel) _applyInsStatusSelStyle(sel, status);
+    toast(`점검이 [${statusLabel}] 처리되었습니다.`${status === 'closed' ? ' 관련자에게 알림이 발송됩니다.' : ''}`);
+    // 목록 갱신
+    const content = document.getElementById('page-content');
+    if (content && currentPage === 'inspections') renderInspectionsPage(content);
+  } catch(e) {
+    toast(e.response?.data?.error || '상태 변경 실패', 'error');
+    // 실패 시 이전 값으로 복원
+    if (sel) {
+      const res = await API.get(`/inspections/${id}`).catch(() => null);
+      const prev = res?.data?.status || 'open';
+      sel.value = prev;
+      _applyInsStatusSelStyle(sel, prev);
+    }
+  }
+}
+
+function _applyInsStatusSelStyle(sel, status) {
+  if (!sel) return;
+  if (status === 'closed') {
+    sel.style.borderColor = '#10B981'; sel.style.background = '#ECFDF5'; sel.style.color = '#065F46';
+  } else if (status === 'in_progress') {
+    sel.style.borderColor = '#3B82F6'; sel.style.background = '#EFF6FF'; sel.style.color = '#1E40AF';
+  } else {
+    sel.style.borderColor = '#F59E0B'; sel.style.background = '#FFFBEB'; sel.style.color = '#92400E';
+  }
 }
 
 // ======= 위험(아차사고)신고 =======

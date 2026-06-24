@@ -3455,3 +3455,84 @@ git fetch origin && git reset --hard origin/main && npm run build && pm2 restart
 - ✅ workers_saved 응답 포함
 - ✅ 빌드 성공 (255.04 kB, 오류 없음)
 - ✅ 커밋 bacf7ec 푸시 완료
+
+---
+
+## 세션 66 — FEAT-031, FEAT-032
+
+### FEAT-031: 현장 점검 등록 — 점검 유형 기본값 수시점검으로 변경
+
+#### 변경
+- `public/static/app.js` — 등록 모달 `<select id="insType">` 에서 `frequent`(수시점검) 옵션에 `selected` 속성 추가
+- 기존: `routine`(정기점검) 기본 선택 → 변경: `frequent`(수시점검) 기본 선택
+
+---
+
+### FEAT-032: 현장 점검 상태 드롭다운 + 완료 시 알림 발송
+
+#### 프론트엔드 (`public/static/app.js`)
+
+**상세 모달 footer — 처리상태 드롭다운 추가**
+- `<select id="insStatusSel_${ins.id}">` — 미처리 / 처리중 / 완료 선택
+- 현재 상태에 따라 색상 동적 적용
+  - 미처리: 노란색(`#F59E0B`)
+  - 처리중: 파란색(`#3B82F6`)
+  - 완료: 초록색(`#10B981`)
+
+**신규 함수**
+| 함수 | 역할 |
+|------|------|
+| `changeInspectionStatus(id, status)` | 드롭다운 변경 핸들러 — 완료 시 확인 모달 표시 후 API 호출 |
+| `_applyInsStatusSelStyle(sel, status)` | 드롭다운 스타일 동적 적용 헬퍼 |
+
+**완료 처리 확인 모달**
+- 완료(`closed`) 전환 시 확인 모달 표시
+- 취소 시 드롭다운 이전 값으로 복원
+- 확인 시 API 호출 → toast "관련자에게 알림이 발송됩니다" 표시
+
+#### 백엔드 (`node-server.ts`)
+
+**NAS 전용 PATCH /api/inspections/:id/status 오버라이드 추가**
+[RULE-002] `app.route('/api/inspections', inspectionRoutes)` 앞에 등록
+
+| 처리 | 내용 |
+|------|------|
+| DB 업데이트 | `rawDb.prepare('UPDATE site_inspections SET status=?, closed_at=... WHERE id=?').run()` |
+| 알림 DB 저장 | `notifications` 테이블 INSERT — `type: 'inspection_closed'`, `ref_type: 'inspection'` |
+| SSE 실시간 알림 | `sendToUser(uid, ssePayload)` — 수신자 즉시 알림 |
+| FCM 푸시 발송 | `sendFcmToUsers(targetIds, { title, body, data })` — 비동기, 실패해도 응답 영향 없음 |
+
+**알림 수신 대상 결정 방식**
+```
+getUsersWithPerm('notify_all_tasks', user.id)
+  → group_permissions 기반으로 safety(안전관리자) + site_rep(현장대리인) + ceo(대표이사) 자동 포함
+  → 처리자 본인(user.id) 제외
+```
+
+**status 값 검증**
+- `['open', 'in_progress', 'closed']` 외 값 → 400 에러 반환
+
+#### 복원 스크립트
+- `restore_before_feat031_032.sh` — 커밋 `7c2fe89` 기준 롤백
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| (이번 커밋) | feat: FEAT-031 수시점검 기본값 + FEAT-032 상태 드롭다운 + 완료 알림 |
+
+### NAS 업데이트
+```bash
+git fetch origin && git reset --hard origin/main && npm run build && pm2 restart safetynote
+```
+
+### 상태
+- ✅ 등록 모달 점검 유형 기본값: `frequent`(수시점검)
+- ✅ 상세 모달 footer: 처리상태 드롭다운 (미처리/처리중/완료)
+- ✅ 완료 전환 시 확인 모달 표시
+- ✅ 완료 처리 시 notifications DB 저장
+- ✅ 완료 처리 시 SSE 실시간 알림
+- ✅ 완료 처리 시 FCM 푸시 발송 (안전관리자+현장대리인+대표이사)
+- ✅ 드롭다운 상태별 색상 표시
+- ✅ RULE-002 준수 — inspectionRoutes 마운트 앞에 등록
+- ✅ 빌드 성공 (255.04 kB, 오류 없음)
+- ✅ 복원 스크립트: restore_before_feat031_032.sh (기준: 7c2fe89)

@@ -2096,6 +2096,69 @@ function patchSchema() {
   } catch(e: any) {
     if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.146] inspection_workers 생성 실패:', e.message)
   }
+
+  // ── [v0.147 BUG-045-2] inspection_workers FK site_inspections_old → site_inspections 수정 ──
+  // v0.146에서 CREATE TABLE IF NOT EXISTS 로 생성했으나,
+  // 이미 DB에 site_inspections_old 를 참조하는 잘못된 FK의 inspection_workers 가 존재하면
+  // IF NOT EXISTS 조건으로 인해 재생성이 건너뛰어짐 → INSERT 시 FK 오류 → 저장 실패
+  try {
+    const iwSql: any = rawDb.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='inspection_workers'"
+    ).get()
+    if (iwSql?.sql?.includes('site_inspections_old')) {
+      console.log('[patchSchema v0.147] inspection_workers FK 오류 감지 — 재생성 시작')
+      rawDb.pragma('foreign_keys = OFF')
+      const fixIW = rawDb.transaction(() => {
+        // 기존 데이터 백업
+        const existing: any[] = rawDb.prepare('SELECT * FROM inspection_workers').all()
+        // 인덱스 삭제
+        rawDb.exec('DROP INDEX IF EXISTS idx_ins_workers_ins')
+        rawDb.exec('DROP INDEX IF EXISTS idx_ins_workers_usr')
+        // 테이블 삭제 후 올바른 FK로 재생성
+        rawDb.exec('DROP TABLE inspection_workers')
+        rawDb.exec(`
+          CREATE TABLE inspection_workers (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            inspection_id INTEGER NOT NULL,
+            worker_id     INTEGER NOT NULL,
+            result_type   TEXT    NOT NULL DEFAULT '',
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (inspection_id) REFERENCES site_inspections(id) ON DELETE CASCADE,
+            FOREIGN KEY (worker_id)     REFERENCES users(id),
+            UNIQUE(inspection_id, worker_id)
+          )
+        `)
+        rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_ins_workers_ins ON inspection_workers(inspection_id)`)
+        rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_ins_workers_usr ON inspection_workers(worker_id)`)
+        // 유효한 데이터만 복원 (site_inspections 에 실제 존재하는 inspection_id만)
+        if (existing.length > 0) {
+          const validIds = new Set(
+            (rawDb.prepare('SELECT id FROM site_inspections').all() as any[]).map((r: any) => r.id)
+          )
+          const ins = rawDb.prepare(
+            `INSERT OR IGNORE INTO inspection_workers (id, inspection_id, worker_id, result_type, created_at)
+             VALUES (?, ?, ?, ?, ?)`
+          )
+          let restored = 0
+          for (const r of existing) {
+            if (validIds.has(r.inspection_id)) {
+              ins.run(r.id, r.inspection_id, r.worker_id, r.result_type || '', r.created_at)
+              restored++
+            }
+          }
+          console.log(`[patchSchema v0.147] 기존 데이터 ${restored}/${existing.length}건 복원`)
+        }
+      })
+      fixIW()
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[patchSchema v0.147] inspection_workers FK 재생성 완료 (site_inspections 참조)')
+    } else {
+      console.log('[patchSchema v0.147] inspection_workers FK 정상 — 재생성 불필요')
+    }
+  } catch(e: any) {
+    rawDb.pragma('foreign_keys = ON')
+    console.warn('[patchSchema v0.147] inspection_workers FK 수정 실패:', e.message)
+  }
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)

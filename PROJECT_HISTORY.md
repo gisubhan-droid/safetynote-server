@@ -3402,3 +3402,56 @@ git fetch origin && git reset --hard origin/main && npm run build && pm2 restart
 - ✅ public/static/app.js: 수정·삭제 버튼 UI + 관련 함수 5개 추가
 - ✅ 빌드 성공 (255.04 kB, 오류 없음)
 - ✅ 커밋 95350be 푸시 완료
+
+---
+
+## 세션 65 — BUG-046: 현장 점검 우수/불량 작업자 저장 안 됨
+
+### 원인 분석
+
+#### 1차 원인 (BUG-045 — 세션 64에서 수정)
+- `makeD1 run()` BigInt → `c.json()` 직렬화 실패 → 500
+
+#### 2차 원인 (BUG-046 — 금번 세션)
+- `inspections.ts` POST/PUT 라우트의 `inspection_workers` INSERT가 `try { ... } catch (_) {}` 에 잡혀 **에러 로그 없이 조용히 저장 실패**
+- `makeD1` 래퍼를 경유한 D1 호환 레이어에서 발생한 에러가 식별 불가
+- `inspection_result` 빈 문자열(`''`) 처리 불명확 — `|| 'none'` 폴백으로 인해 의도치 않은 `'none'` 저장 가능성
+
+### 해결
+
+#### NAS 전용 라우트 오버라이드 추가 (`node-server.ts`)
+**[RULE-002] `app.route('/api/inspections', inspectionRoutes)` 앞에 등록**
+
+| 라우트 | 처리 방식 |
+|--------|-----------|
+| `POST /api/inspections` | `rawDb` 직접 처리 — better-sqlite3 동기 API |
+| `PUT /api/inspections/:id` | `rawDb` 직접 처리 — better-sqlite3 동기 API |
+
+**개선 사항**:
+- `inspection_workers` INSERT를 `rawDb.transaction()`으로 안전하게 실행
+- 에러 발생 시 `console.warn` 로그 출력 (NAS 서버 로그 추적 가능)
+- 응답에 `workers_saved` 카운트 포함 (`{ success: true, id, workers_saved }`)
+- `inspection_result` 빈 문자열 폴백 로직 명확화
+  ```typescript
+  // 기존: body.inspection_result || 'none'  — '' → 'none' 폴백
+  // 수정: (body.inspection_result != null && body.inspection_result !== '') ? body.inspection_result : 'none'
+  ```
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `bacf7ec` | fix: 현장 점검 우수/불량 작업자 저장 안 됨 — NAS 전용 POST/PUT 오버라이드 |
+
+### NAS 업데이트
+```bash
+git fetch origin && git reset --hard origin/main && npm run build && pm2 restart safetynote
+```
+
+### 상태
+- ✅ node-server.ts: POST /api/inspections NAS 전용 오버라이드 (rawDb 직접)
+- ✅ node-server.ts: PUT /api/inspections/:id NAS 전용 오버라이드 (rawDb 직접)
+- ✅ inspection_workers rawDb.transaction() 안전 저장
+- ✅ 에러 로그 console.warn 추가
+- ✅ workers_saved 응답 포함
+- ✅ 빌드 성공 (255.04 kB, 오류 없음)
+- ✅ 커밋 bacf7ec 푸시 완료

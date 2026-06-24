@@ -2075,6 +2075,7 @@ function patchSchema() {
   // inspection_result, result_reason 컬럼이 NAS 구버전 DB에 없어 POST /api/inspections 500 발생
   safeAlter(`ALTER TABLE site_inspections ADD COLUMN inspection_result TEXT NOT NULL DEFAULT 'none'`)
   safeAlter(`ALTER TABLE site_inspections ADD COLUMN result_reason     TEXT NOT NULL DEFAULT ''`)
+  safeAlter(`ALTER TABLE site_inspections ADD COLUMN updated_at        DATETIME`)
   try {
     rawDb.exec(`
       CREATE TABLE IF NOT EXISTS inspection_workers (

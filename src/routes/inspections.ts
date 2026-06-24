@@ -285,6 +285,110 @@ app.get('/photo/:id/img', async (c) => {
   return c.json({ error: '사진 데이터 없음' }, 404)
 })
 
+// ─── 현장 점검 수정 (PUT /:id) ───────────────────────────────────────────────
+app.put('/:id', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+
+  const id = Number(c.req.param('id'))
+
+  // 존재 여부 + 권한 확인 (본인 작성 or admin)
+  const existing = await c.env.DB.prepare(
+    'SELECT id, inspector_id FROM site_inspections WHERE id = ?'
+  ).bind(id).first<any>()
+  if (!existing) return c.json({ error: '점검 없음' }, 404)
+  if (user.role !== 'admin' && existing.inspector_id !== user.id)
+    return c.json({ error: '본인이 작성한 점검만 수정할 수 있습니다.' }, 403)
+
+  const body = await c.req.json()
+  const {
+    location          = '',
+    inspection_type   = 'routine',
+    hazard_level      = 'low',
+    findings          = '',
+    corrective_actions = '',
+    notes             = '',
+    inspection_date_only = '',
+    inspection_result = 'none',
+    result_reason     = '',
+    worker_ids        = [],
+  } = body
+
+  if (!location) return c.json({ error: '점검 위치를 입력하세요.' }, 400)
+
+  await c.env.DB.prepare(`
+    UPDATE site_inspections SET
+      location           = ?,
+      inspection_type    = ?,
+      hazard_level       = ?,
+      findings           = ?,
+      corrective_actions = ?,
+      notes              = ?,
+      inspection_date_only = ?,
+      inspection_result  = ?,
+      result_reason      = ?,
+      updated_at         = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind(
+    location, inspection_type, hazard_level,
+    findings, corrective_actions, notes,
+    inspection_date_only, inspection_result, result_reason,
+    id
+  ).run()
+
+  // 기존 작업자 연결 삭제 후 재삽입
+  await c.env.DB.prepare('DELETE FROM inspection_workers WHERE inspection_id = ?').bind(id).run()
+  const wids: number[] = Array.isArray(worker_ids) ? worker_ids.map(Number).filter(Boolean) : []
+  if (['불량', '우수'].includes(inspection_result) && wids.length > 0) {
+    for (const wid of wids) {
+      await c.env.DB.prepare(
+        'INSERT OR IGNORE INTO inspection_workers (inspection_id, worker_id, result_type) VALUES (?, ?, ?)'
+      ).bind(id, wid, inspection_result).run()
+    }
+  }
+
+  return c.json({ success: true })
+})
+
+// ─── 현장 점검 삭제 (DELETE /:id) ────────────────────────────────────────────
+app.delete('/:id', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+
+  const id = Number(c.req.param('id'))
+
+  const existing = await c.env.DB.prepare(
+    'SELECT id, inspector_id FROM site_inspections WHERE id = ?'
+  ).bind(id).first<any>()
+  if (!existing) return c.json({ error: '점검 없음' }, 404)
+  if (user.role !== 'admin' && existing.inspector_id !== user.id)
+    return c.json({ error: '본인이 작성한 점검만 삭제할 수 있습니다.' }, 403)
+
+  // 첨부 사진 파일 경로 조회 → 물리 파일 삭제 시도
+  const photos = await c.env.DB.prepare(
+    'SELECT id, file_path FROM inspection_photos WHERE inspection_id = ?'
+  ).bind(id).all<any>()
+
+  if ((photos.results || []).length > 0) {
+    try {
+      // @ts-ignore
+      const fs = await import('node:fs/promises')
+      for (const p of photos.results) {
+        if (p.file_path) {
+          try { await fs.unlink(p.file_path) } catch (_) { /* 파일 없으면 무시 */ }
+        }
+      }
+    } catch (_) { /* 환경 미지원 시 무시 */ }
+  }
+
+  // DB 삭제 (inspection_workers, inspection_photos 는 CASCADE 또는 명시 삭제)
+  await c.env.DB.prepare('DELETE FROM inspection_workers WHERE inspection_id = ?').bind(id).run()
+  await c.env.DB.prepare('DELETE FROM inspection_photos    WHERE inspection_id = ?').bind(id).run()
+  await c.env.DB.prepare('DELETE FROM site_inspections     WHERE id = ?').bind(id).run()
+
+  return c.json({ success: true })
+})
+
 // 점검 상태 변경
 app.patch('/:id/status', async (c) => {
   const user = getUser(c)

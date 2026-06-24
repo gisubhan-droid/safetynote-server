@@ -12081,6 +12081,12 @@ async function showInspectionDetail(id) {
         ${currentUser && currentUser.role !== 'worker' ? `
           <button onclick="addInsPhoto(${ins.id})" class="btn btn-secondary">
             <i class="fas fa-camera"></i> 사진 추가
+          </button>
+          <button onclick="editInspection(${ins.id})" class="btn" style="background:#685182;color:white;border:none">
+            <i class="fas fa-edit"></i> 수정
+          </button>
+          <button onclick="deleteInspection(${ins.id})" class="btn btn-danger">
+            <i class="fas fa-trash"></i> 삭제
           </button>` : ''}
         <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">닫기</button>
       </div>
@@ -12160,6 +12166,262 @@ function deleteInsMedia(photoId, inspectionId) {
       showInspectionDetail(inspectionId);
     } catch(e) {
       toast(e.message || '삭제 실패', 'error');
+    }
+  };
+}
+
+// ─── 현장 점검 수정 모달 ───────────────────────────────────────────────────────
+async function editInspection(id) {
+  let ins;
+  try {
+    const res = await API.get(`/inspections/${id}`);
+    ins = res.data;
+  } catch(e) { toast('데이터 로드 실패', 'error'); return; }
+
+  // 작업 목록 캐시 활용
+  let allTasks = window._insTasksCache || [];
+  if (allTasks.length === 0) {
+    try {
+      const tRes = await API.get('/tasks');
+      allTasks = tRes.data.tasks || tRes.data || [];
+      window._insTasksCache = allTasks;
+      _insTaskWorkersMap = {};
+      for (const t of allTasks) {
+        if (Array.isArray(t.assigned_workers) && t.assigned_workers.length > 0) {
+          _insTaskWorkersMap[t.id] = t.assigned_workers.map(w => ({ id: w.id, name: w.name, position: w.position || '' }));
+        }
+      }
+    } catch(e) {}
+  }
+
+  const taskSelectHtml = allTasks.length > 0
+    ? `<select id="insEditTaskId" class="form-control" onchange="onInsEditTaskSelect(this)">
+        <option value="">— 작업 선택 안 함 —</option>
+        ${allTasks.map(t => `<option value="${t.id}" ${ins.task_id==t.id?'selected':''}>${t.task_number?'['+t.task_number+'] ':''}${t.title}</option>`).join('')}
+       </select>`
+    : `<div class="text-sm text-gray-400 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200"><i class="fas fa-info-circle mr-1 text-blue-400"></i>등록된 작업이 없습니다.</div>`;
+
+  const insTypeLabelMap = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' };
+  const currentResult = ins.inspection_result || '';
+  const colorMap = { '불량':'red', '적정':'yellow', '양호':'blue', '우수':'green' };
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header" style="background:linear-gradient(135deg,#4F3B78,#685182);color:white">
+      <div class="flex items-center gap-2">
+        <i class="fas fa-edit text-lg"></i>
+        <h3 class="font-bold text-lg">현장 점검 수정</h3>
+      </div>
+      <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;opacity:0.8">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label"><i class="fas fa-hard-hat text-blue-400 mr-1"></i>진행중 작업 연결</label>
+        ${taskSelectHtml}
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="form-group">
+          <label class="form-label">점검일 <span class="text-red-500">*</span></label>
+          <input id="insEditDateOnly" class="form-control" type="date" value="${ins.inspection_date_only||''}">
+        </div>
+        <div class="form-group"><label class="form-label">점검 유형</label>
+          <select id="insEditType" class="form-control">
+            <option value="routine" ${ins.inspection_type==='routine'?'selected':''}>정기점검</option>
+            <option value="joint"   ${ins.inspection_type==='joint'?'selected':''}>합동점검</option>
+            <option value="frequent"${ins.inspection_type==='frequent'?'selected':''}>수시점검</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">점검 위치 <span class="text-red-500">*</span></label>
+        <input id="insEditLocation" class="form-control" value="${(ins.location||'').replace(/"/g,'&quot;')}" placeholder="점검 위치를 입력하세요">
+      </div>
+      <div class="form-group"><label class="form-label">위험도</label>
+        <select id="insEditHazard" class="form-control">
+          <option value="low"      ${ins.hazard_level==='low'?'selected':''}>낮음</option>
+          <option value="medium"   ${ins.hazard_level==='medium'?'selected':''}>보통</option>
+          <option value="high"     ${ins.hazard_level==='high'?'selected':''}>높음</option>
+          <option value="critical" ${ins.hazard_level==='critical'?'selected':''}>긴급</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">점검 내용</label>
+        <textarea id="insEditFindings" class="form-control" rows="3" placeholder="점검 내용 및 발견된 문제점">${ins.findings||''}</textarea>
+      </div>
+      <div class="form-group"><label class="form-label">조치 사항</label>
+        <textarea id="insEditCorrectiveActions" class="form-control" rows="2" placeholder="필요한 시정/조치 사항">${ins.corrective_actions||''}</textarea>
+      </div>
+      <!-- 점검 결과 선택 -->
+      <div class="form-group">
+        <label class="form-label"><i class="fas fa-clipboard-check text-green-500 mr-1"></i>점검 결과</label>
+        <div class="flex gap-2 flex-wrap" id="insEditResultBtns">
+          ${['불량','적정','양호','우수'].map((v,i) => {
+            const colors = ['red','yellow','blue','green'];
+            const isSelected = currentResult === v;
+            const c = colors[i];
+            const cls = isSelected
+              ? `px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all border-${c}-500 bg-${c}-50 text-${c}-700`
+              : `px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all border-gray-200 text-gray-500 hover:border-${c}-400`;
+            return `<button type="button" onclick="selectInsEditResult('${v}')" id="insEditResult_${v}" class="${cls}" data-result="${v}">${v}</button>`;
+          }).join('')}
+        </div>
+        <input type="hidden" id="insEditResult" value="${currentResult}">
+      </div>
+      <!-- 사유 입력 -->
+      <div class="form-group ${currentResult && currentResult!=='none' ? '' : 'hidden'}" id="insEditReasonGroup">
+        <label class="form-label">사유 / 비고</label>
+        <textarea id="insEditReason" class="form-control" rows="2" placeholder="선택 사유 또는 세부 내용">${ins.result_reason||''}</textarea>
+      </div>
+      <!-- 작업자 선택 (불량/우수) -->
+      <div class="form-group ${['불량','우수'].includes(currentResult) ? '' : 'hidden'}" id="insEditWorkerGroup">
+        <label class="form-label"><i class="fas fa-users mr-1"></i>해당 작업자 선택 <span class="text-xs font-normal text-gray-400 ml-1">(다중 선택 가능)</span></label>
+        <div id="insEditWorkerList" class="border border-gray-200 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
+          <p class="text-sm text-gray-400 text-center py-2"><i class="fas fa-info-circle mr-1"></i>작업을 먼저 선택해 주세요</p>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">취소</button>
+      <button onclick="submitEditInspection(${id})" class="btn btn-primary" style="background:#685182"><i class="fas fa-save mr-1"></i>저장</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+
+  // 기존 연결 작업자 체크 상태 초기화
+  window._insEditPrevWorkerIds = (ins.workers || []).map(w => w.worker_id);
+  // 작업 선택 시 작업자 목록 갱신
+  if (ins.task_id) {
+    const sel = document.getElementById('insEditTaskId');
+    if (sel) onInsEditTaskSelect(sel);
+  }
+}
+
+// 수정 모달: 결과 버튼 선택
+function selectInsEditResult(val) {
+  document.getElementById('insEditResult').value = val;
+  const colorMap = { '불량':'red', '적정':'yellow', '양호':'blue', '우수':'green' };
+  ['불량','적정','양호','우수'].forEach(v => {
+    const btn = document.getElementById(`insEditResult_${v}`);
+    if (!btn) return;
+    if (v === val) {
+      const c = colorMap[v];
+      btn.className = `px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all border-${c}-500 bg-${c}-50 text-${c}-700`;
+    } else {
+      btn.className = `px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all border-gray-200 text-gray-500 hover:border-${colorMap[v]}-400`;
+    }
+  });
+  // 사유 입력창 표시
+  const rg = document.getElementById('insEditReasonGroup');
+  if (rg) rg.classList.toggle('hidden', !val);
+  // 작업자 선택창 표시 (불량/우수만)
+  const wg = document.getElementById('insEditWorkerGroup');
+  if (wg) wg.classList.toggle('hidden', !['불량','우수'].includes(val));
+}
+
+// 수정 모달: 작업 선택 시 작업자 목록 갱신
+function onInsEditTaskSelect(sel) {
+  const taskId = parseInt(sel.value) || 0;
+  const prevChecked = new Set(window._insEditPrevWorkerIds || []);
+  const wg = document.getElementById('insEditWorkerGroup');
+  const list = document.getElementById('insEditWorkerList');
+  if (!list) return;
+  let workers = [];
+  if (taskId && _insTaskWorkersMap[taskId] && _insTaskWorkersMap[taskId].length > 0) {
+    workers = _insTaskWorkersMap[taskId];
+  }
+  if (workers.length === 0) {
+    list.innerHTML = '<p class="text-sm text-gray-400 text-center py-2"><i class="fas fa-info-circle mr-1"></i>연결된 작업자가 없습니다</p>';
+    return;
+  }
+  const currentResult = document.getElementById('insEditResult')?.value || '';
+  const accentColor = currentResult === '우수' ? '#2DB400' : '#D70072';
+  list.innerHTML = workers.map(w =>
+    `<label class="flex items-center gap-2 py-1.5 cursor-pointer hover:bg-gray-100 rounded px-1">
+       <input type="checkbox" class="ins-edit-worker-check w-4 h-4 cursor-pointer rounded" style="accent-color:${accentColor}" value="${w.id}" ${prevChecked.has(w.id)?'checked':''}>
+       <span class="text-sm font-medium">${w.name}</span>
+       ${w.position ? `<span class="text-xs text-gray-400">${w.position}</span>` : ''}
+     </label>`
+  ).join('');
+}
+
+// 수정 저장
+async function submitEditInspection(id) {
+  const location = document.getElementById('insEditLocation')?.value?.trim() || '';
+  if (!location) { toast('점검 위치를 입력하세요.', 'error'); return; }
+
+  const inspection_result = document.getElementById('insEditResult')?.value || '';
+  const worker_ids = [];
+  if (['불량','우수'].includes(inspection_result)) {
+    document.querySelectorAll('.ins-edit-worker-check:checked').forEach(cb => {
+      const wid = parseInt(cb.value);
+      if (wid) worker_ids.push(wid);
+    });
+  }
+
+  const body = {
+    location,
+    inspection_type:    document.getElementById('insEditType')?.value || 'routine',
+    hazard_level:       document.getElementById('insEditHazard')?.value || 'low',
+    findings:           document.getElementById('insEditFindings')?.value || '',
+    corrective_actions: document.getElementById('insEditCorrectiveActions')?.value || '',
+    inspection_date_only: document.getElementById('insEditDateOnly')?.value || '',
+    inspection_result,
+    result_reason:      document.getElementById('insEditReason')?.value || '',
+    worker_ids,
+  };
+
+  try {
+    await API.put(`/inspections/${id}`, body);
+    toast('점검이 수정되었습니다.');
+    document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+    // 상세 모달 다시 열기
+    showInspectionDetail(id);
+    // 목록 페이지 갱신
+    const content = document.getElementById('page-content');
+    if (content && currentPage === 'inspections') renderInspectionsPage(content);
+  } catch(e) {
+    toast(e.response?.data?.error || e.message || '수정 실패', 'error');
+  }
+}
+
+// ─── 현장 점검 삭제 확인 모달 ─────────────────────────────────────────────────
+function deleteInspection(id) {
+  const m = document.createElement('div');
+  m.className = 'modal-overlay modal-sm';
+  m.style.zIndex = '10000';
+  m.innerHTML = `
+  <div class="modal" style="max-width:360px">
+    <div class="modal-header" style="background:linear-gradient(135deg,#A8005A,#D70072);color:white">
+      <div class="flex items-center gap-2">
+        <i class="fas fa-trash text-lg"></i>
+        <h3 class="font-bold">현장 점검 삭제</h3>
+      </div>
+      <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;opacity:0.8">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#FDE8F3;border:1.5px solid #FFC3DD;border-radius:12px;padding:14px 16px;color:#A8005A;font-size:14px;line-height:1.7">
+        <i class="fas fa-exclamation-triangle mr-2 text-red-400"></i>
+        이 현장 점검을 <b>삭제</b>하시겠습니까?<br>
+        <span style="font-size:12px;opacity:0.8">첨부된 사진/동영상도 함께 삭제되며,<br>삭제된 데이터는 복구할 수 없습니다.</span>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">취소</button>
+      <button id="doDeleteInsBtn" class="btn btn-danger font-bold"><i class="fas fa-trash mr-1"></i>삭제</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  m.querySelector('#doDeleteInsBtn').onclick = async () => {
+    m.remove();
+    try {
+      await API.delete(`/inspections/${id}`);
+      toast('점검이 삭제되었습니다.');
+      document.querySelectorAll('.modal-overlay').forEach(mo => mo.remove());
+      const content = document.getElementById('page-content');
+      if (content) renderInspectionsPage(content);
+    } catch(e) {
+      toast(e.response?.data?.error || e.message || '삭제 실패', 'error');
     }
   };
 }

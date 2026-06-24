@@ -205,7 +205,7 @@ app.post('/', async (c) => {
     corrective_actions, hazard_level, notes, insDateOnly, inspection_result, result_reason
   ).run()
 
-  const inspectionId = result.meta.last_row_id
+  const inspectionId = Number(result.meta.last_row_id)  // BigInt 방지
 
   // 불량/우수 선택 작업자 저장 — 구버전 DB에 테이블 없을 수 있으므로 try/catch
   try {

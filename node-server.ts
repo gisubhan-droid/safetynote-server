@@ -561,7 +561,8 @@ function makeD1(db: Database.Database) {
       async run() {
         try {
           const info = db.prepare(query).run(...params)
-          return { success: true, meta: { last_row_id: info.lastInsertRowid, changes: info.changes, duration: 0 } }
+          // BigInt → Number 변환: JSON 직렬화 및 bind 인자 호환성 보장
+          return { success: true, meta: { last_row_id: Number(info.lastInsertRowid), changes: info.changes, duration: 0 } }
         } catch(e: any) { throw new Error(`D1_ERROR: ${e.message}`) }
       }
     }
@@ -578,7 +579,7 @@ function makeD1(db: Database.Database) {
         for (const s of items) {
           try {
             const info = db.prepare(s._query).run(...(s._params || []))
-            results.push({ success: true, meta: { last_row_id: info.lastInsertRowid, changes: info.changes } })
+            results.push({ success: true, meta: { last_row_id: Number(info.lastInsertRowid), changes: info.changes } })
           } catch(e: any) {
             results.push({ success: false, error: e.message })
           }

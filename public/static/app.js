@@ -11911,6 +11911,12 @@ async function submitInspection() {
     });
   }
 
+  // 디버그 로그 — 실제로 전송되는 값 확인
+  console.log('[submitInspection] 전송 데이터:', {
+    insResult, selectedWorkerIds,
+    insResultHidden: document.getElementById('insResult')?.value,
+  });
+
   try {
     const res = await API.post('/inspections', {
       location,
@@ -11926,6 +11932,10 @@ async function submitInspection() {
       photos: [],
     });
     const inspectionId = res.data.id;
+    const workersSaved = res.data.workers_saved ?? null;
+
+    // 디버그: 서버 응답 확인
+    console.log('[submitInspection] 서버 응답:', res.data);
 
     // 2단계: 사진이 있으면 파일 서버에 별도 업로드
     if (photoFiles.length > 0) {
@@ -11942,10 +11952,20 @@ async function submitInspection() {
       if (!uploadResult.ok) console.warn('사진 업로드 경고:', uploadResult.data?.error);
     }
 
-    toast('현장 점검이 등록되었습니다.' + (photoFiles.length > 0 ? ` (사진 ${photoFiles.length}개)` : ''));
+    // workers_saved가 응답에 있으면 → 새 서버 코드 실행 중
+    let workerMsg = '';
+    if (workersSaved !== null) {
+      if ((insResult === '불량' || insResult === '우수') && selectedWorkerIds.length > 0) {
+        workerMsg = workersSaved > 0
+          ? ` · 작업자 ${workersSaved}명 기록됨`
+          : ` · ⚠️ 작업자 저장 실패 (서버 로그 확인 필요)`;
+      }
+    }
+    toast('현장 점검이 등록되었습니다.' + (photoFiles.length > 0 ? ` (사진 ${photoFiles.length}개)` : '') + workerMsg);
     document.querySelector('.modal-overlay')?.remove();
     renderInspectionsPage(document.getElementById('page-content'));
   } catch(e) {
+    console.error('[submitInspection] 오류:', e.response?.data, e.message);
     toast(e.response?.data?.error || e.message || '저장 실패', 'error');
   }
 }
@@ -12371,9 +12391,23 @@ async function submitEditInspection(id) {
     worker_ids,
   };
 
+  // 디버그 로그
+  console.log('[submitEditInspection] 전송 데이터:', { id, inspection_result, worker_ids });
+
   try {
-    await API.put(`/inspections/${id}`, body);
-    toast('점검이 수정되었습니다.');
+    const res = await API.put(`/inspections/${id}`, body);
+    const workersSaved = res.data?.workers_saved ?? null;
+    console.log('[submitEditInspection] 서버 응답:', res.data);
+
+    let workerMsg = '';
+    if (workersSaved !== null) {
+      if (['불량','우수'].includes(inspection_result) && worker_ids.length > 0) {
+        workerMsg = workersSaved > 0
+          ? ` · 작업자 ${workersSaved}명 기록됨`
+          : ` · ⚠️ 작업자 저장 실패`;
+      }
+    }
+    toast('점검이 수정되었습니다.' + workerMsg);
     document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
     // 상세 모달 다시 열기
     showInspectionDetail(id);
@@ -12381,6 +12415,7 @@ async function submitEditInspection(id) {
     const content = document.getElementById('page-content');
     if (content && currentPage === 'inspections') renderInspectionsPage(content);
   } catch(e) {
+    console.error('[submitEditInspection] 오류:', e.response?.data, e.message);
     toast(e.response?.data?.error || e.message || '수정 실패', 'error');
   }
 }

@@ -23100,7 +23100,7 @@ async function renderMyProfilePage(container) {
                   background:${isSel ? '#EDE7F6' : '#fff'};cursor:pointer;transition:all 0.15s;text-align:center">
                 <div style="font-size:${f.size};font-weight:${isSel ? '700' : '500'};color:${isSel ? '#685182' : '#6B7280'}">${f.label}</div>
                 <div style="font-size:10px;color:#9CA3AF;margin-top:2px">${f.size}</div>
-                ${isSel ? '<div style="margin-top:3px"><i class="fas fa-check" style="font-size:9px;color:#685182"></i></div>' : ''}
+                ${isSel ? '<div class="sn-font-check" style="margin-top:3px"><i class="fas fa-check" style="font-size:9px;color:#685182"></i></div>' : ''}
               </button>`;
             }).join('')}
           </div>

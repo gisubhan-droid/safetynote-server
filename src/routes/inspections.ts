@@ -336,16 +336,18 @@ app.put('/:id', async (c) => {
     id
   ).run()
 
-  // 기존 작업자 연결 삭제 후 재삽입
-  await c.env.DB.prepare('DELETE FROM inspection_workers WHERE inspection_id = ?').bind(id).run()
-  const wids: number[] = Array.isArray(worker_ids) ? worker_ids.map(Number).filter(Boolean) : []
-  if (['불량', '우수'].includes(inspection_result) && wids.length > 0) {
-    for (const wid of wids) {
-      await c.env.DB.prepare(
-        'INSERT OR IGNORE INTO inspection_workers (inspection_id, worker_id, result_type) VALUES (?, ?, ?)'
-      ).bind(id, wid, inspection_result).run()
+  // 기존 작업자 연결 삭제 후 재삽입 — 구버전 DB에 테이블 없을 수 있으므로 try/catch
+  try {
+    await c.env.DB.prepare('DELETE FROM inspection_workers WHERE inspection_id = ?').bind(id).run()
+    const wids: number[] = Array.isArray(worker_ids) ? worker_ids.map(Number).filter(Boolean) : []
+    if (['불량', '우수'].includes(inspection_result) && wids.length > 0) {
+      for (const wid of wids) {
+        await c.env.DB.prepare(
+          'INSERT OR IGNORE INTO inspection_workers (inspection_id, worker_id, result_type) VALUES (?, ?, ?)'
+        ).bind(id, wid, inspection_result).run()
+      }
     }
-  }
+  } catch (_) { /* inspection_workers 테이블 미존재 시 무시 (patchSchema v0.146 이전 DB) */ }
 
   return c.json({ success: true })
 })
@@ -381,10 +383,12 @@ app.delete('/:id', async (c) => {
     } catch (_) { /* 환경 미지원 시 무시 */ }
   }
 
-  // DB 삭제 (inspection_workers, inspection_photos 는 CASCADE 또는 명시 삭제)
-  await c.env.DB.prepare('DELETE FROM inspection_workers WHERE inspection_id = ?').bind(id).run()
-  await c.env.DB.prepare('DELETE FROM inspection_photos    WHERE inspection_id = ?').bind(id).run()
-  await c.env.DB.prepare('DELETE FROM site_inspections     WHERE id = ?').bind(id).run()
+  // DB 삭제 — inspection_workers 는 구버전 DB에 없을 수 있으므로 오류 무시
+  try {
+    await c.env.DB.prepare('DELETE FROM inspection_workers WHERE inspection_id = ?').bind(id).run()
+  } catch (_) { /* 테이블 미존재 시 무시 */ }
+  await c.env.DB.prepare('DELETE FROM inspection_photos WHERE inspection_id = ?').bind(id).run()
+  await c.env.DB.prepare('DELETE FROM site_inspections  WHERE id = ?').bind(id).run()
 
   return c.json({ success: true })
 })

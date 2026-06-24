@@ -1,11 +1,58 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-06-24 (세션 69)
-> **서버 현재 버전: `4051cd0`** ← 최신 (GitHub) — BUG-048-2 수정 완료
+> **서버 현재 버전: `a14ae83`** ← 최신 (GitHub) — BUG-048-2 수정 + 세션 69 기록 완료
 > **NAS 배포 버전: `41b0b38`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260624e**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
+
+---
+
+## 📋 BUG / FEAT 전체 인덱스
+
+> 최근 → 과거 순 정렬. 세션 번호 클릭으로 상세 참조.
+
+### 🐛 BUG 목록
+
+| 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
+|------|------|------|------|----------|------|
+| BUG-049 | 67(C) | 2026-06-24 | ✅ 수정 | 브라우저 업데이트 시 npm run build 누락 — dist/ 이전 버전 유지 | `41b0b38` |
+| BUG-048-2 | 69 | 2026-06-24 | ✅ 수정 | '보통' 선택 첫 1회 버튼 박스 크기 증가 (초기 렌더링 클래스 누락) | `4051cd0` |
+| BUG-048 | 67(B) | 2026-06-24 | ✅ 수정 | 글자크기 클릭마다 버튼 높이 누적 증가 (잘못된 DOM selector) | `859815d` |
+| BUG-047 | 67 | 2026-06-24 | ✅ 수정 | NAS 업데이트 후 앱 빈 화면 (app.js 템플릿 리터럴 문법 오류) | `e3a14eb` |
+| BUG-046 | 65 | 2026-06-24 | ✅ 수정 | 현장 점검 우수/불량 작업자 저장 안 됨 (NAS PUT 오버라이드 누락) | `bacf7ec` |
+| BUG-045-2 | 65 | 2026-06-24 | ✅ 수정 | inspection_workers FK site_inspections_old 참조 오류 | `7c2fe89` |
+| BUG-045 | 64 | 2026-06-24 | ✅ 수정 | POST /api/inspections 500 — lastInsertRowid BigInt→Number | `95350be` |
+| BUG-044 | 64 | 2026-06-24 | ✅ 수정 | GET/POST /api/inspections 500 — inspection_workers 구버전 DB 호환 | `ac1e739` |
+| BUG-043 | 64 | 2026-06-24 | ✅ 수정 | DELETE/PUT /api/inspections/:id 500 — inspection_workers 테이블 미존재 | `8b9e84e` |
+| BUG-042 | 64 | 2026-06-23 | ✅ 수정 | POST /api/inspections 500 — inspection_result 컬럼 누락 | `25b52c0` |
+| BUG-041 | 63 | 2026-06-23 | ✅ 수정 | LGU+ 공사 조회 오류 | — |
+| BUG-040 | 62 | 2026-06-23 | ✅ 수정 | TBM 연쇄 알림 오류 | — |
+| BUG-036~039 | 61 | 2026-06-23 | ✅ 수정 | photo_type CHECK constraint + LGU+ 알림 조건 오류 | — |
+| BUG-030~034 | 58 | 2026-06-23 | ✅ 수정 | v0.143 미완성 항목 + 연속 버그 수정 | — |
+
+### ✨ FEAT 목록
+
+| 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
+|------|------|------|------|----------|------|
+| FEAT-034 | 67(A) | 2026-06-24 | ✅ 완료 | 사이드바 메뉴 순서 변경 (공사현황 → 5번으로 이동) | `5bc8514` |
+| FEAT-033 | 68 | 2026-06-24 | ✅ 완료 | 체크리스트 시행일 기준 planned_date 자동갱신 + 명칭 변경 | `62a3838` |
+| FEAT-032 | 66 | 2026-06-24 | ✅ 완료 | 상태 드롭다운 + 완료 알림 발송 | `567fc23` |
+| FEAT-031 | 66 | 2026-06-24 | ✅ 완료 | 수시점검 기본값 설정 | `567fc23` |
+| FEAT-030 | 64 | 2026-06-23 | ✅ 완료 | 현장 점검 수정·삭제 기능 추가 | `81d24e7` |
+| FEAT-029 | 63 | 2026-06-23 | ✅ 완료 | group_permissions 기반 그룹별 푸시 알림 | — |
+| FEAT-027/028 | 62 | 2026-06-23 | ✅ 완료 | 그룹별 권한 관리 + TBM 연쇄 알림 완성 | — |
+
+### 🧠 버그 예방 룰 (누적)
+
+| 룰 번호 | 출처 버그 | 내용 |
+|---------|---------|------|
+| RULE-001 | BUG-047 | `node --check public/static/app.js` 문법 검사 필수 (커밋 전 항상 실행) |
+| RULE-002 | — | NAS 오버라이드는 `app.route()` 마운트 앞에 위치해야 함 |
+| RULE-003 | BUG-048 | DOM 탐색 시 `[style*="..."]` 방식 금지 → 반드시 클래스 기반으로 구현 |
+| RULE-004 | BUG-048-2 | JS 동적 조작에 사용하는 클래스는 초기 렌더링 HTML에도 반드시 동일하게 부여 |
+| RULE-005 | BUG-049 | 브라우저 업데이트 흐름: git reset → **npm run build** → pm2 restart (순서 준수) |
 
 ---
 
@@ -3535,6 +3582,219 @@ git fetch origin && git reset --hard origin/main && npm run build && pm2 restart
 - ✅ RULE-002 준수 — inspectionRoutes 마운트 앞에 등록
 - ✅ 빌드 성공 (255.04 kB, 오류 없음)
 - ✅ 복원 스크립트: restore_before_feat031_032.sh (기준: 7c2fe89)
+
+---
+
+## 세션 67 (A) — FEAT-034 사이드바 메뉴 순서 변경
+
+### 개요
+- **날짜**: 2026-06-24
+- **커밋**: `5bc8514`
+- **캐시버전**: `v=20260624b` → `v=20260624c`
+
+### 요구사항
+관리자 사이드바 메뉴 순서 변경 — 공사현황을 맨 앞에서 뒤로 이동
+
+### 수정 내용
+
+**파일**: `public/static/app.js` (2068번 라인 — `allManagerMenuItems` 배열)
+
+| 위치 | 변경 전 순서 | 변경 후 순서 |
+|------|------------|------------|
+| 사이드바 메뉴 | 공사현황 → 작업현황 → 작업관리 → 현장점검 → 현장위치지도 | 작업현황 → 작업관리 → 현장점검 → 현장위치지도 → 공사현황 |
+
+```javascript
+// 변경 전
+{ id:'constructions', ... '공사현황' },   // 1번
+{ id:'dashboard',    ... '작업현황' },   // 2번
+{ id:'tasks',        ... '작업관리' },   // 3번
+{ id:'inspections',  ... '현장점검' },   // 4번
+{ id:'site-map',     ... '현장위치 지도' }, // 5번
+
+// 변경 후
+{ id:'dashboard',    ... '작업현황' },   // 1번
+{ id:'tasks',        ... '작업관리' },   // 2번
+{ id:'inspections',  ... '현장점검' },   // 3번
+{ id:'site-map',     ... '현장위치 지도' }, // 4번
+{ id:'constructions', ... '공사현황' },  // 5번
+```
+
+### 파일 변경
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | allManagerMenuItems 배열 순서 변경 |
+| `node-server.ts` | 캐시버전 v=20260624b → v=20260624c |
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `5bc8514` | feat: FEAT-034 사이드바 메뉴 순서 변경 — 작업현황·작업관리·현장점검·현장위치지도·공사현황 (캐시버전 v=20260624c) |
+
+### 상태
+- ✅ 사이드바 메뉴 순서 변경 완료
+- ✅ node --check 문법 검사 통과
+- ✅ 빌드 성공
+- ✅ 커밋·푸시 완료 (5bc8514)
+
+---
+
+## 세션 67 (B) — BUG-048 글자크기 버튼 누적 확장 수정
+
+### 개요
+- **날짜**: 2026-06-24
+- **커밋**: `859815d`
+- **캐시버전**: `v=20260624c` → `v=20260624d`
+
+### 증상
+글자크기 설정 화면에서 '작게', '보통', '크게' 버튼을 클릭할 때마다 버튼 높이가 계속 증가하는 현상
+
+### 원인 분석
+```
+_applyFontSize() 내부 기존 체크 div 제거 로직:
+  btn.querySelector('[style*="fa-check"]')  ← 잘못된 selector
+  → fa-check는 <i> 태그 class에 있고, [style*="fa-check"]는 항상 null 반환
+  → chk가 null → chk.parentElement.remove() 미실행
+  → 체크 div 제거 실패 → 클릭마다 새 div 추가 → 버튼 높이 누적 증가
+```
+
+### 수정 내용
+
+**파일**: `public/static/app.js` (`_applyFontSize` 함수)
+
+```javascript
+// ❌ 수정 전 (BUG-048 원인) — selector 오류로 항상 null 반환
+const chk = btn.querySelector('[style*="fa-check"]');
+if (chk) chk.parentElement.remove();
+if (isSel) {
+  const d = document.createElement('div');
+  d.style.cssText = 'margin-top:3px';
+  ...
+}
+
+// ✅ 수정 후 — sn-font-check 클래스 기반으로 정확히 탐색·제거
+btn.querySelectorAll('.sn-font-check').forEach(el => el.remove());
+if (isSel) {
+  const d = document.createElement('div');
+  d.className = 'sn-font-check';  // ← 클래스 부여
+  d.style.cssText = 'margin-top:3px';
+  ...
+}
+```
+
+### 기존 버그 방지 사항
+- **BUG-047 교훈 준수**: `node --check public/static/app.js` 실행 → SyntaxError 없음 ✅
+- **RULE**: DOM 탐색 selector는 반드시 클래스 기반으로 구현 (`[style*=...]` 방식 금지)
+
+### 파일 변경
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | _applyFontSize(): sn-font-check 클래스 기반 탐색·제거로 변경 |
+| `node-server.ts` | 캐시버전 v=20260624c → v=20260624d |
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `859815d` | fix: BUG-048 글자크기 클릭 시 버튼 누적 확장 수정 — sn-font-check 클래스로 체크 div 정확히 제거 (캐시버전 v=20260624d) |
+
+### 상태
+- ✅ BUG-048 수정 완료 (_applyFontSize 클래스 기반 탐색·제거)
+- ✅ node --check 문법 검사 통과
+- ✅ 빌드 성공
+- ✅ 커밋·푸시 완료 (859815d)
+- ⚠️ BUG-048-2 잔존: '보통' 선택 시 첫 1회 박스 크기 변동 (→ 세션 69에서 수정)
+
+---
+
+## 세션 67 (C) — BUG-049 브라우저 업데이트 시 npm run build 누락 수정
+
+### 개요
+- **날짜**: 2026-06-24
+- **커밋**: `41b0b38`
+- **대상 파일**: `src/nas-routes/admin.ts`
+
+### 증상
+관리자 화면 '브라우저 업데이트' 기능 실행 시, `git reset --hard origin/main` 후 pm2 restart만 하면 `dist/` 폴더가 이전 버전 그대로 유지되어 최신 app.js가 반영되지 않음
+
+### 원인 분석
+```
+기존 업데이트 순서:
+  1. git fetch origin
+  2. git reset --hard origin/main   ← 소스코드만 갱신
+  3. pm2 restart safetynote         ← dist/ 는 이전 빌드 그대로!
+
+→ node-server.ts 변경사항은 pm2 restart로 반영되지만
+   public/static/app.js 변경사항은 dist/ 재빌드 없이는 브라우저에 미반영
+```
+
+### 수정 내용
+
+**파일**: `src/nas-routes/admin.ts`
+
+**1. npm run build 단계 추가 (git reset 후, pm2 restart 전)**
+```typescript
+// ── 3. npm run build (프론트엔드 dist 재빌드) ──────────────
+// BUG-049: git reset 후 빌드 없이 pm2 restart만 하면 dist/ 가 이전 버전 그대로 유지됨
+_updateState.status  = 'restarting'
+_updateState.message = '프론트엔드 빌드 중... (30초~1분 소요)'
+_addUpdateLog('npm run build 시작...')
+const npmBin = resolveNpmBin()
+const buildRes = await runCmd(npmBin, ['run', 'build'], cwd, 120000)
+if (buildRes.code !== 0) { ... return }
+_addUpdateLog('npm run build 완료 ✅')
+
+// ── 4. pm2 restart ─────────────────────────────────────
+```
+
+**2. npm 경로 자동 탐색 함수 추가 (`resolveNpmBin`)**
+```typescript
+function resolveNpmBin(): string {
+  const candidates = [
+    process.env.NPM_EXEC,
+    '/volume1/@appstore/Node.js_v18/usr/local/bin/npm',  // Synology NAS
+    '/usr/local/bin/npm',
+    '/usr/bin/npm',
+    'npm',
+  ]
+  for (const c of candidates) {
+    if (c && (c === 'npm' || existsSync(c))) return c
+  }
+  return 'npm'
+}
+```
+
+**3. runCmd PATH 보강**
+```typescript
+// NAS Node.js bin 경로가 PATH에 없어도 npm/git/pm2 인식하도록 보강
+const nasNodeBin = '/volume1/@appstore/Node.js_v18/usr/local/bin'
+const env = {
+  ...process.env,
+  PATH: [nasNodeBin, process.env.PATH || '', '/usr/local/bin', '/usr/bin', '/bin'].join(':'),
+}
+```
+
+### 업데이트 순서 (수정 후)
+```
+1. git fetch origin
+2. git reset --hard origin/main
+3. npm run build  ← 추가 (BUG-049)
+4. pm2 restart safetynote
+```
+
+### 파일 변경
+| 파일 | 변경 내용 |
+|------|----------|
+| `src/nas-routes/admin.ts` | resolveNpmBin() 추가, runCmd PATH 보강, npm run build 단계 삽입 |
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `41b0b38` | fix: BUG-049 브라우저 업데이트 시 npm run build 누락 수정 — git reset 후 dist 재빌드 추가 + NAS npm 경로 자동 탐색 |
+
+### 상태
+- ✅ BUG-049 수정 완료 (npm run build 단계 추가)
+- ✅ NAS npm 경로 자동 탐색 (`resolveNpmBin`)
+- ✅ runCmd PATH 보강 (NAS Node.js_v18 bin 포함)
+- ✅ 커밋·푸시 완료 (41b0b38)
 
 ---
 

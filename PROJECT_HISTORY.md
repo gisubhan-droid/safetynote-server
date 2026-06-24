@@ -3536,3 +3536,53 @@ git fetch origin && git reset --hard origin/main && npm run build && pm2 restart
 - ✅ RULE-002 준수 — inspectionRoutes 마운트 앞에 등록
 - ✅ 빌드 성공 (255.04 kB, 오류 없음)
 - ✅ 복원 스크립트: restore_before_feat031_032.sh (기준: 7c2fe89)
+
+---
+
+## 세션 67 — BUG-047 빈 화면 수정
+
+### 개요
+- **날짜**: 2026-06-24
+- **증상**: NAS 업데이트 후 `linkmax.myds.me:3443` 접속 시 빈 화면(백지)
+- **원인**: FEAT-032 구현 시 `app.js` 12573번 라인 템플릿 리터럴 문법 오류
+
+### 원인 분석
+
+**오류 코드** (12573번 라인):
+```javascript
+// ❌ 잘못된 코드 — 백틱이 중간에 닫혔다가 다시 열림
+toast(`점검이 [${statusLabel}] 처리되었습니다.`${status === 'closed' ? ' 관련자에게 알림이 발송됩니다.' : ''}`);
+```
+
+**수정 코드**:
+```javascript
+// ✅ 올바른 코드 — 하나의 템플릿 리터럴 안에 삼항 연산자 포함
+toast(`점검이 [${statusLabel}] 처리되었습니다.${status === 'closed' ? ' 관련자에게 알림이 발송됩니다.' : ''}`);
+```
+
+**진단 방법**: `node --check public/static/app.js` → SyntaxError 즉시 발견
+
+### 재발 방지
+- 향후 app.js 수정 후 반드시 `node --check public/static/app.js` 실행 후 커밋
+
+### 파일 변경
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | 12573번 라인 템플릿 리터럴 문법 오류 수정 |
+| `node-server.ts` | 캐시버전 `v=20260621z` → `v=20260624a` |
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| e3a14eb | fix: BUG-047 app.js 템플릿 리터럴 문법 오류 수정 — 빈 화면 원인 (캐시버전 v=20260624a) |
+
+### NAS 업데이트
+```bash
+git fetch origin && git reset --hard origin/main && npm run build && pm2 restart safetynote
+```
+
+### 상태
+- ✅ 문법 오류 수정 (`node --check` 통과)
+- ✅ 빌드 성공 (255.04 kB)
+- ✅ 캐시버전 `v=20260624a`
+- ✅ 커밋·푸시 완료 (`e3a14eb`)

@@ -2985,6 +2985,239 @@ app.delete('/api/inspection-photos/:id', async (c) => {
   return c.json({ success: true })
 })
 
+// ─── [RULE-002] NAS 전용: POST /api/inspections — rawDb 직접 처리 ───────────────
+// inspections.ts(Cloudflare용)의 POST는 c.env.DB(makeD1 래퍼) 사용
+// NAS에서 inspection_workers INSERT 시 에러가 catch(_){} 에 묻혀 저장 실패
+// → rawDb(better-sqlite3 동기)로 직접 처리하여 안정성 확보
+app.post('/api/inspections', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+
+  const contentType = c.req.header('Content-Type') || ''
+  let location = '', inspection_type = 'routine', findings = '', corrective_actions = ''
+  let hazard_level = 'low', notes = '', task_id: number | null = null
+  let inspection_date_only = '', inspection_result = 'none', result_reason = ''
+  let photoFiles: File[] = []
+  let legacyPhotos: any[] = []
+  let workerIds: number[] = []
+
+  try {
+    if (contentType.includes('multipart/form-data')) {
+      const fd = await c.req.formData()
+      location             = (fd.get('location')             as string) || ''
+      inspection_type      = (fd.get('inspection_type')      as string) || 'routine'
+      findings             = (fd.get('findings')             as string) || ''
+      corrective_actions   = (fd.get('corrective_actions')   as string) || ''
+      hazard_level         = (fd.get('hazard_level')         as string) || 'low'
+      notes                = (fd.get('notes')                as string) || ''
+      inspection_date_only = (fd.get('inspection_date_only') as string) || ''
+      inspection_result    = (fd.get('inspection_result')    as string) || 'none'
+      result_reason        = (fd.get('result_reason')        as string) || ''
+      const tid = fd.get('task_id')
+      task_id = tid ? Number(tid) : null
+      photoFiles = fd.getAll('photos') as File[]
+      const wids = fd.get('worker_ids') as string
+      if (wids) workerIds = wids.split(',').map(Number).filter(Boolean)
+    } else {
+      const body = await c.req.json()
+      location             = body.location             || ''
+      inspection_type      = body.inspection_type      || 'routine'
+      findings             = body.findings             || ''
+      corrective_actions   = body.corrective_actions   || ''
+      hazard_level         = body.hazard_level         || 'low'
+      notes                = body.notes                || ''
+      inspection_date_only = body.inspection_date_only || ''
+      // body.inspection_result 이 빈 문자열('')인 경우도 'none' 폴백 방지
+      inspection_result    = (body.inspection_result != null && body.inspection_result !== '')
+                               ? body.inspection_result : 'none'
+      result_reason        = body.result_reason        || ''
+      task_id              = body.task_id              || null
+      legacyPhotos         = body.photos               || []
+      workerIds            = Array.isArray(body.worker_ids)
+                               ? body.worker_ids.map(Number).filter(Boolean) : []
+    }
+  } catch (e: any) {
+    return c.json({ error: `요청 파싱 실패: ${e.message}` }, 400)
+  }
+
+  if (!location) return c.json({ error: '점검 위치를 입력하세요.' }, 400)
+
+  const today = new Date().toLocaleDateString('ko-KR', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).replace(/\. /g, '-').replace('.', '')
+  const insDateOnly = inspection_date_only || today
+
+  // ── 1) site_inspections INSERT (rawDb 동기) ──
+  let inspectionId: number
+  try {
+    const ins = rawDb.prepare(`
+      INSERT INTO site_inspections
+        (inspector_id, task_id, location, inspection_type, findings, corrective_actions,
+         hazard_level, notes, inspection_date_only, inspection_result, result_reason)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      user.id, task_id || null, location, inspection_type, findings,
+      corrective_actions, hazard_level, notes, insDateOnly, inspection_result, result_reason
+    )
+    inspectionId = Number(ins.lastInsertRowid)
+  } catch (e: any) {
+    console.error('[POST /api/inspections] site_inspections INSERT 실패:', e.message)
+    return c.json({ error: `점검 저장 실패: ${e.message}` }, 500)
+  }
+
+  // ── 2) inspection_workers INSERT (rawDb 동기) ──
+  let workersSaved = 0
+  if (['불량', '우수'].includes(inspection_result) && workerIds.length > 0) {
+    try {
+      const stmt = rawDb.prepare(
+        `INSERT OR IGNORE INTO inspection_workers (inspection_id, worker_id, result_type) VALUES (?, ?, ?)`
+      )
+      const insertMany = rawDb.transaction((wids: number[]) => {
+        for (const wid of wids) {
+          stmt.run(inspectionId, wid, inspection_result)
+          workersSaved++
+        }
+      })
+      insertMany(workerIds)
+      console.log(`[POST /api/inspections] inspection_workers 저장: ${workersSaved}명 (결과: ${inspection_result})`)
+    } catch (e: any) {
+      console.warn('[POST /api/inspections] inspection_workers INSERT 실패:', e.message)
+      // 작업자 저장 실패는 점검 등록 자체를 실패시키지 않음
+    }
+  }
+
+  // ── 3) 사진 저장 (multipart) ──
+  if (photoFiles.length > 0) {
+    try {
+      const taskObj = task_id
+        ? rawDb.prepare(
+            `SELECT t.task_number, t.sub_task_number, t.work_date, t.planned_date,
+                    t.construction_type, t.construction_id,
+                    c.request_no AS con_request_no, c.title AS con_title
+             FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+             WHERE t.id = ?`
+          ).get(task_id)
+        : null
+      const uploadDir = getUploadDir(taskObj || '점검', 'inspection')
+      const { mkdirSync: mkd } = await import('fs')
+      mkdirSync(uploadDir, { recursive: true })
+
+      for (const file of photoFiles) {
+        if (!file || typeof file === 'string') continue
+        const fileName = generateFileName(file.name || 'photo.jpg')
+        const filePath = join(uploadDir, fileName)
+        const buf = await file.arrayBuffer()
+        writeFileSync(filePath, Buffer.from(buf))
+        rawDb.prepare(
+          `INSERT INTO inspection_photos (inspection_id, file_name, file_path, file_data, caption, mime_type)
+           VALUES (?, ?, ?, NULL, ?, ?)`
+        ).run(inspectionId, file.name || fileName, filePath, '', file.type || 'image/jpeg')
+      }
+    } catch (e: any) {
+      console.warn('[POST /api/inspections] 사진 저장 실패:', e.message)
+    }
+  }
+
+  // ── 4) base64 사진 (JSON 하위호환) ──
+  if (legacyPhotos.length > 0) {
+    try {
+      for (const p of legacyPhotos) {
+        rawDb.prepare(
+          `INSERT INTO inspection_photos (inspection_id, file_name, file_path, file_data, caption)
+           VALUES (?, ?, NULL, ?, ?)`
+        ).run(inspectionId, p.file_name || 'photo.jpg', p.file_data, p.caption || '')
+      }
+    } catch (e: any) {
+      console.warn('[POST /api/inspections] base64 사진 저장 실패:', e.message)
+    }
+  }
+
+  return c.json({ success: true, id: inspectionId, workers_saved: workersSaved })
+})
+
+// ─── [RULE-002] NAS 전용: PUT /api/inspections/:id — rawDb 직접 처리 ──────────
+app.put('/api/inspections/:id', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+
+  const id = Number(c.req.param('id'))
+  const existing = rawDb.prepare(
+    'SELECT id, inspector_id FROM site_inspections WHERE id = ?'
+  ).get(id) as any
+  if (!existing) return c.json({ error: '점검 없음' }, 404)
+  if (user.role !== 'admin' && existing.inspector_id !== user.id)
+    return c.json({ error: '본인이 작성한 점검만 수정할 수 있습니다.' }, 403)
+
+  let body: any
+  try { body = await c.req.json() } catch (e: any) {
+    return c.json({ error: `요청 파싱 실패: ${e.message}` }, 400)
+  }
+  const {
+    location          = '',
+    inspection_type   = 'routine',
+    hazard_level      = 'low',
+    findings          = '',
+    corrective_actions = '',
+    notes             = '',
+    inspection_date_only = '',
+    result_reason     = '',
+    worker_ids        = [],
+  } = body
+  const inspection_result = (body.inspection_result != null && body.inspection_result !== '')
+                              ? body.inspection_result : 'none'
+
+  if (!location) return c.json({ error: '점검 위치를 입력하세요.' }, 400)
+
+  try {
+    rawDb.prepare(`
+      UPDATE site_inspections SET
+        location           = ?,
+        inspection_type    = ?,
+        hazard_level       = ?,
+        findings           = ?,
+        corrective_actions = ?,
+        notes              = ?,
+        inspection_date_only = ?,
+        inspection_result  = ?,
+        result_reason      = ?,
+        updated_at         = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      location, inspection_type, hazard_level,
+      findings, corrective_actions, notes,
+      inspection_date_only, inspection_result, result_reason,
+      id
+    )
+  } catch (e: any) {
+    console.error('[PUT /api/inspections/:id] UPDATE 실패:', e.message)
+    return c.json({ error: `수정 저장 실패: ${e.message}` }, 500)
+  }
+
+  // inspection_workers 재저장
+  let workersSaved = 0
+  try {
+    rawDb.prepare('DELETE FROM inspection_workers WHERE inspection_id = ?').run(id)
+    const wids: number[] = Array.isArray(worker_ids) ? worker_ids.map(Number).filter(Boolean) : []
+    if (['불량', '우수'].includes(inspection_result) && wids.length > 0) {
+      const stmt = rawDb.prepare(
+        `INSERT OR IGNORE INTO inspection_workers (inspection_id, worker_id, result_type) VALUES (?, ?, ?)`
+      )
+      const insertMany = rawDb.transaction((ids: number[]) => {
+        for (const wid of ids) {
+          stmt.run(id, wid, inspection_result)
+          workersSaved++
+        }
+      })
+      insertMany(wids)
+      console.log(`[PUT /api/inspections/:id=${id}] inspection_workers 재저장: ${workersSaved}명`)
+    }
+  } catch (e: any) {
+    console.warn('[PUT /api/inspections/:id] inspection_workers 재저장 실패:', e.message)
+  }
+
+  return c.json({ success: true, workers_saved: workersSaved })
+})
+
 app.route('/api/inspections', inspectionRoutes)
 app.route('/api/hazards', hazardRoutes)
 app.route('/api/worklogs', worklogRoutes)

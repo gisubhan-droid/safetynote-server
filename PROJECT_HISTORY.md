@@ -3307,3 +3307,98 @@ git fetch origin && git reset --hard origin/main && npm run build && pm2 restart
 - ✅ node-server.ts: LGU+ 알림 notify_lgu_tasks 기반 전환
 - ✅ 빌드 성공 (252.10 kB, 오류 없음)
 - ⚠️ NAS 업데이트 후 LGU+ 공사 목록 및 그룹별 알림 수신 확인 필요
+
+---
+
+## 세션 64 — BUG-042~045, FEAT-030
+
+### 개요
+현장 점검 등록·수정·삭제 기능 완성 및 관련 500 에러 연쇄 수정.
+
+### BUG-042: POST /api/inspections 500 — inspection_result 컬럼/inspection_workers 테이블 미존재
+
+#### 원인
+- `inspection_result`, `result_reason`, `updated_at` 컬럼 및 `inspection_workers` 테이블이 DB에 없음
+- patchSchema 버전 누락 → 서버 재시작 시 자동 생성 안 됨
+
+#### 수정
+- `node-server.ts` — patchSchema v0.146 추가
+  - `ALTER TABLE site_inspections ADD COLUMN inspection_result TEXT NOT NULL DEFAULT 'none'`
+  - `ALTER TABLE site_inspections ADD COLUMN result_reason TEXT NOT NULL DEFAULT ''`
+  - `ALTER TABLE site_inspections ADD COLUMN updated_at DATETIME`
+  - `CREATE TABLE IF NOT EXISTS inspection_workers (id, inspection_id, worker_id, result_type, created_at)` + UNIQUE(inspection_id, worker_id) + 인덱스 2개
+
+### FEAT-030: 현장 점검 수정·삭제 기능 추가
+
+#### Backend (`src/routes/inspections.ts`)
+- `PUT /:id` — 수정 라우트 (본인 or admin만 허용)
+- `DELETE /:id` — 삭제 라우트 (물리파일 + DB 연쇄 삭제, 본인 or admin)
+
+#### Frontend (`public/static/app.js`)
+- 상세 모달 footer에 수정·삭제 버튼 추가 (admin/inspector 역할만 노출)
+- `editInspection(id)` — 기존 데이터 prefill 수정 모달
+- `selectInsEditResult(val)` — 수정 모달 결과 버튼 토글
+- `onInsEditTaskSelect(sel)` — 수정 모달 작업 선택 시 작업자 목록 갱신
+- `submitEditInspection(id)` — PUT `/api/inspections/:id` 호출
+- `deleteInspection(id)` — 확인 모달 + DELETE API 호출
+
+### BUG-043: DELETE /api/inspections/:id 500 — inspection_workers 테이블 없음
+
+#### 수정
+- `DELETE /:id`, `PUT /:id` 라우트의 `inspection_workers` DELETE/INSERT 쿼리를 try/catch로 감쌈 → 실패 시 무시
+
+### BUG-044: GET /api/inspections/:id 상세 조회 500
+
+#### 수정
+`inspection_workers` 조회 관련 6개 라우트 전체 try/catch 처리:
+| 라우트 | 처리 |
+|--------|------|
+| `GET /:id` | workers 조회 → 실패 시 `[]` |
+| `POST /` | INSERT → 실패 시 무시 |
+| `GET /worker-history/:id` | 전체 try/catch → `[]` |
+| `GET /stats/worker-safety` | workerRows/dailyRows → 빈 결과 |
+| `GET /worker-poor-tasks/:id` | 전체 try/catch → `[]` |
+| `GET /stats/my-safety` | 3개 쿼리 → 빈 결과 |
+
+### BUG-045: 우수/불량 작업자 선택 시 POST /api/inspections 500
+
+#### 원인
+- better-sqlite3의 `lastInsertRowid`는 JavaScript `BigInt` 타입 반환
+- `makeD1` 래퍼가 이를 변환 없이 `last_row_id`에 저장
+- `c.json({ id: inspectionId })` 호출 시 `JSON.stringify(BigInt)` → **TypeError → 500**
+- 작업자 선택(우수/불량) 시에만 `inspectionId`를 bind 인자로 사용하여 증상 표면화
+
+#### 수정
+| 파일 | 위치 | 변경 내용 |
+|------|------|-----------|
+| `node-server.ts` | `makeD1 run()` | `Number(info.lastInsertRowid)` 변환 |
+| `node-server.ts` | `makeD1 batch()` | `Number(info.lastInsertRowid)` 변환 |
+| `src/routes/inspections.ts` | POST 등록 | `const inspectionId = Number(result.meta.last_row_id)` |
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `2690afe` | docs: PROJECT_HISTORY.md 세션 63 커밋 해시 반영 |
+| `25b52c0` | fix: BUG-042 patchSchema v0.146 — inspection 컬럼·테이블 추가 |
+| `81d24e7` | feat: FEAT-030 현장 점검 수정·삭제 기능 + BUG-042 연동 |
+| `8b9e84e` | fix: BUG-043 DELETE/PUT inspection_workers try/catch 처리 |
+| `ac1e739` | fix: BUG-044 GET /:id + 통계 6개 라우트 inspection_workers try/catch |
+| `95350be` | fix: BUG-045 makeD1 lastInsertRowid BigInt→Number 변환 |
+
+### NAS 업데이트
+```bash
+git fetch origin && git reset --hard origin/main && npm run build && pm2 restart safetynote
+```
+
+### 상태
+- ✅ node-server.ts: patchSchema v0.146 — inspection_result/result_reason/updated_at 컬럼 추가
+- ✅ node-server.ts: patchSchema v0.146 — inspection_workers 테이블 + 인덱스 생성
+- ✅ node-server.ts: makeD1 run() BigInt→Number 변환
+- ✅ node-server.ts: makeD1 batch() BigInt→Number 변환
+- ✅ src/routes/inspections.ts: PUT /:id 수정 라우트 구현
+- ✅ src/routes/inspections.ts: DELETE /:id 삭제 라우트 구현
+- ✅ src/routes/inspections.ts: inspection_workers 전체 6개 라우트 try/catch
+- ✅ src/routes/inspections.ts: inspectionId Number() 명시 변환
+- ✅ public/static/app.js: 수정·삭제 버튼 UI + 관련 함수 5개 추가
+- ✅ 빌드 성공 (255.04 kB, 오류 없음)
+- ✅ 커밋 95350be 푸시 완료

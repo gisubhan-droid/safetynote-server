@@ -23244,10 +23244,11 @@ function _applyFontSize(key) {
     btn.style.background = isSel ? '#EDE7F6' : '#fff';
     const label = btn.querySelector('div:first-child');
     if (label) { label.style.color = isSel ? '#685182' : '#6B7280'; label.style.fontWeight = isSel ? '700' : '500'; }
-    const chk = btn.querySelector('[style*="fa-check"]');
-    if (chk) chk.parentElement.remove();
+    // 기존 체크 div 모두 제거 (누적 추가 방지 — BUG-048)
+    btn.querySelectorAll('.sn-font-check').forEach(el => el.remove());
     if (isSel) {
       const d = document.createElement('div');
+      d.className = 'sn-font-check';
       d.style.cssText = 'margin-top:3px';
       d.innerHTML = '<i class="fas fa-check" style="font-size:9px;color:#685182"></i>';
       btn.appendChild(d);

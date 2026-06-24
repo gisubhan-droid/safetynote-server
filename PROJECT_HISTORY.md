@@ -3586,3 +3586,100 @@ git fetch origin && git reset --hard origin/main && npm run build && pm2 restart
 - ✅ 빌드 성공 (255.04 kB)
 - ✅ 캐시버전 `v=20260624a`
 - ✅ 커밋·푸시 완료 (`e3a14eb`)
+
+---
+
+## 세션 68 — FEAT-033 작업(예정)일 자동갱신 + 명칭 변경
+
+### 개요
+- **날짜**: 2026-06-24
+- **커밋**: `62a3838`
+- **캐시버전**: `v=20260624a` → `v=20260624b`
+
+### 요구사항
+1. 체크리스트 시행일이 최초 등록 작업예정일보다 늦으면 `planned_date` 자동 갱신
+2. UI 명칭 `작업예정일` → `작업(예정)일` 변경
+
+---
+
+### FEAT-033 구현 내용
+
+#### 1. planned_date 자동갱신 로직 (`node-server.ts`)
+
+**위치**: `PATCH /api/checklist/:id/complete` NAS 오버라이드 내부 — tasks 상태 업데이트 블록 직후
+
+**로직**:
+- 체크리스트 완료 시 KST 날짜(`kstDateStr = kstStr.slice(0,10)`) 추출
+- `tasks.planned_date` 조회
+- 체크리스트 날짜 > planned_date 이면 → planned_date를 체크리스트 날짜로 UPDATE
+- planned_date가 NULL이거나 같거나 이전이면 → 변경 없음
+- 실패 시 무음 처리(warn 로그만) — 완료 응답에 영향 없음
+
+```typescript
+// ── [FEAT-033] 체크리스트 시행일이 작업예정일보다 늦으면 planned_date 자동 갱신 ──
+try {
+  const kstDateStr = kstStr.slice(0, 10) // 'YYYY-MM-DD'
+  var pRow: any = rawDb.prepare(`SELECT planned_date FROM tasks WHERE id = ?`).get(asmRow.task_id)
+  const currentPlanned = pRow?.planned_date ? String(pRow.planned_date).slice(0, 10) : null
+  if (currentPlanned && kstDateStr > currentPlanned) {
+    rawDb.prepare(`UPDATE tasks SET planned_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(kstDateStr, asmRow.task_id)
+    console.log(`[FEAT-033] planned_date 자동갱신: task_id=${asmRow.task_id} ${currentPlanned} → ${kstDateStr}`)
+  }
+} catch(e: any) {
+  console.warn('[FEAT-033] planned_date 자동갱신 실패(무시):', e.message)
+}
+```
+
+**적용 예시**:
+- 작업예정일: `26.06.23`, 체크리스트 시행일: `26.06.24` → `작업(예정)일` 자동 `26.06.24`로 갱신
+- 작업예정일: `26.06.25`, 체크리스트 시행일: `26.06.24` → 변경 없음 (시행일 ≤ 예정일)
+- 작업예정일: NULL → 변경 없음
+
+#### 2. 명칭 변경 (`public/static/app.js`)
+
+| 위치 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| 4724번 (주석) | `<!-- 작업종류 \| 예정일 (2열) -->` | `<!-- 작업종류 \| 작업(예정)일 (2열) -->` |
+| 4738번 (등록 모달 라벨) | `예정일` | `작업(예정)일` |
+| 6165번 (상세 카드 주석) | `<!-- ... / 작업예정일 -->` | `<!-- ... / 작업(예정)일 -->` |
+| 6186번 (상세 카드 표시) | `작업예정일` | `작업(예정)일` |
+
+---
+
+### 기존 버그 방지 사항
+- **BUG-047 교훈**: `node --check public/static/app.js` 실행 → SyntaxError 없음 ✅
+- **RULE-002 준수**: NAS 오버라이드는 `app.route()` 마운트 앞에 위치 확인 ✅
+- **무음 실패 패턴 방지**: try/catch로 감싸되 실패 시 warn 로그 출력 후 응답은 정상 반환
+
+### 파일 변경
+| 파일 | 변경 내용 |
+|------|----------|
+| `node-server.ts` | FEAT-033 planned_date 자동갱신 + 캐시버전 v=20260624b |
+| `public/static/app.js` | 명칭 3곳 변경 ('작업예정일'→'작업(예정)일', '예정일'→'작업(예정)일') |
+| `restore_before_feat033.sh` | 복원 스크립트 생성 (기준: faeadaa) |
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| 62a3838 | feat: FEAT-033 체크리스트 시행일 기준 작업(예정)일 자동갱신 + 명칭 변경 (캐시버전 v=20260624b) |
+
+### NAS 업데이트
+```bash
+git fetch origin && git reset --hard origin/main && npm run build && pm2 restart safetynote
+```
+
+### 적용 후 검증
+```bash
+# planned_date 자동갱신 로그 확인
+pm2 logs safetynote --nostream | grep "FEAT-033"
+# → "[FEAT-033] planned_date 자동갱신: task_id=N 2026-06-23 → 2026-06-24"
+```
+
+### 상태
+- ✅ planned_date 자동갱신 로직 추가 (체크리스트 완료 시점)
+- ✅ UI 명칭 3곳 변경 ('작업(예정)일')
+- ✅ node --check 문법 검사 통과
+- ✅ 빌드 성공 (255.04 kB)
+- ✅ 복원 스크립트: restore_before_feat033.sh (기준: faeadaa)
+- ✅ 커밋·푸시 완료 (62a3838)

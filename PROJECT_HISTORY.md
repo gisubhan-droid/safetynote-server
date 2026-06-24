@@ -3518,7 +3518,7 @@ getUsersWithPerm('notify_all_tasks', user.id)
 ### 커밋
 | 해시 | 내용 |
 |------|------|
-| (이번 커밋) | feat: FEAT-031 수시점검 기본값 + FEAT-032 상태 드롭다운 + 완료 알림 |
+| 567fc23 | feat: FEAT-031 수시점검 기본값 + FEAT-032 상태 드롭다운 + 완료 알림 |
 
 ### NAS 업데이트
 ```bash

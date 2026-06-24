@@ -4721,7 +4721,7 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
             oninput="this.dataset.autoFilled='0'">
         </div>
 
-        <!-- 작업종류 | 예정일 (2열) -->
+        <!-- 작업종류 | 작업(예정)일 (2열) -->
         <div class="form-group">
           <label class="form-label">
             <i class="fas fa-layer-group mr-1" style="color:#685182"></i>작업종류 <span class="text-red-500">*</span>
@@ -4735,7 +4735,7 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
         </div>
         <div class="form-group">
           <label class="form-label">
-            <i class="fas fa-calendar-alt mr-1" style="color:#685182"></i>예정일
+            <i class="fas fa-calendar-alt mr-1" style="color:#685182"></i>작업(예정)일
           </label>
           <input id="mDate" class="form-control" type="date" value="${task.planned_date||''}">
         </div>
@@ -6162,7 +6162,7 @@ async function showTaskDetail(id, openTbmTab) {
             </div>
           </div>
 
-          <!-- ④ 공사담당자(협력사) / 공사감독자(LGU+) / 작업예정일 -->
+          <!-- ④ 공사담당자(협력사) / 공사감독자(LGU+) / 작업(예정)일 -->
           <div class="grid grid-cols-3 gap-2">
             <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
               <div class="flex items-center gap-1 mb-1">
@@ -6183,7 +6183,7 @@ async function showTaskDetail(id, openTbmTab) {
             <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
               <div class="flex items-center gap-1 mb-1">
                 <i class="fas fa-calendar-alt text-xs text-green-400"></i>
-                <span class="text-gray-500 text-xs font-semibold">작업예정일</span>
+                <span class="text-gray-500 text-xs font-semibold">작업(예정)일</span>
               </div>
               <span class="font-medium ${task.planned_date ? 'text-green-700' : 'text-gray-400'}">${formatDate(task.planned_date)||'-'}</span>
             </div>

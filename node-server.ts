@@ -3442,6 +3442,25 @@ app.patch('/api/checklist/:id/complete', async (c) => {
           ).run(kstStr, asmRow.task_id)
         }
       } catch(_) {}
+
+      // ── [FEAT-033] 체크리스트 시행일이 작업예정일보다 늦으면 planned_date 자동 갱신 ──
+      // 로직: assessment_date(체크리스트 시행일) 날짜 부분이 tasks.planned_date 보다 크면
+      //       planned_date 를 시행일의 날짜로 업데이트
+      try {
+        const kstDateStr = kstStr.slice(0, 10) // 'YYYY-MM-DD'
+        var pRow: any = rawDb.prepare(
+          `SELECT planned_date FROM tasks WHERE id = ?`
+        ).get(asmRow.task_id)
+        const currentPlanned = pRow?.planned_date ? String(pRow.planned_date).slice(0, 10) : null
+        if (currentPlanned && kstDateStr > currentPlanned) {
+          rawDb.prepare(
+            `UPDATE tasks SET planned_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+          ).run(kstDateStr, asmRow.task_id)
+          console.log(`[FEAT-033] planned_date 자동갱신: task_id=${asmRow.task_id} ${currentPlanned} → ${kstDateStr}`)
+        }
+      } catch(e: any) {
+        console.warn('[FEAT-033] planned_date 자동갱신 실패(무시):', e.message)
+      }
     }
 
     // ② [FEAT-029] 체크리스트 완료 알림 — group_permissions 기반 수신자 결정
@@ -4461,13 +4480,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260624a">
+  <link rel="stylesheet" href="/static/style.css?v=20260624b">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260624a"></script>
+  <script src="/static/app.js?v=20260624b"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260624a"></script>
+  <script src="/static/mobile-app.js?v=20260624b"></script>
 </body>
 </html>`)
 })

@@ -312,7 +312,13 @@ function runCmd(
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     let stdout = '', stderr = ''
-    const proc = spawn(cmd, args, { cwd, stdio: 'pipe' })
+    // NAS PATH 보강 — Node.js_v18 bin이 PATH에 없어도 npm/git/pm2 인식
+    const nasNodeBin = '/volume1/@appstore/Node.js_v18/usr/local/bin'
+    const env = {
+      ...process.env,
+      PATH: [nasNodeBin, process.env.PATH || '', '/usr/local/bin', '/usr/bin', '/bin'].join(':'),
+    }
+    const proc = spawn(cmd, args, { cwd, stdio: 'pipe', env })
     proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
     proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
     const timer = setTimeout(() => {
@@ -324,6 +330,21 @@ function runCmd(
       resolve({ code: code ?? -1, stdout, stderr })
     })
   })
+}
+
+// npm 실행 파일 경로 탐색 (NAS 환경 대응 — BUG-049)
+function resolveNpmBin(): string {
+  const candidates = [
+    process.env.NPM_EXEC,
+    '/volume1/@appstore/Node.js_v18/usr/local/bin/npm',
+    '/usr/local/bin/npm',
+    '/usr/bin/npm',
+    'npm',
+  ]
+  for (const c of candidates) {
+    if (c && (c === 'npm' || existsSync(c))) return c
+  }
+  return 'npm'
 }
 
 // ─── GET /api/admin/update/status ───────────────────────────────────────────
@@ -450,8 +471,25 @@ app.post('/update/apply', async (c) => {
       _updateState.currentCommit = newCommit.stdout.trim()
       _updateState.updatedAt     = new Date().toISOString()
 
-      // ── 3. pm2 restart ─────────────────────────────────────
+      // ── 3. npm run build (프론트엔드 dist 재빌드) ──────────────
+      // BUG-049: git reset 후 빌드 없이 pm2 restart만 하면 dist/ 가 이전 버전 그대로 유지됨
       _updateState.status  = 'restarting'
+      _updateState.message = '프론트엔드 빌드 중... (30초~1분 소요)'
+      _addUpdateLog('npm run build 시작...')
+
+      // NAS Node.js 경로 자동 탐색 (BUG-049)
+      const npmBin = resolveNpmBin()
+      _addUpdateLog(`npm 경로: ${npmBin}`)
+      const buildRes = await runCmd(npmBin, ['run', 'build'], cwd, 120000)
+      if (buildRes.code !== 0) {
+        _addUpdateLog(`npm run build 실패: ${buildRes.stderr.trim().slice(0, 200)}`)
+        _updateState.status  = 'error'
+        _updateState.message = `빌드 실패: ${buildRes.stderr.trim().slice(0, 100)}`
+        return
+      }
+      _addUpdateLog(`npm run build 완료 ✅`)
+
+      // ── 4. pm2 restart ─────────────────────────────────────
       _updateState.message = '서버 재시작 중... 잠시 후 페이지를 새로고침하세요'
       _addUpdateLog('pm2 restart safetynote 실행...')
 

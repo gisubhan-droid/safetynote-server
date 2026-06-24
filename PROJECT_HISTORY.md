@@ -1,11 +1,10 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-23 (세션 63)
-> **서버 현재 버전: `3872696`** ← 최신 (GitHub) — BUG-041 + FEAT-029
-> **NAS 배포 버전: `b906d1e`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
-> **캐시 버전: v=20260621w**
+> 최종 업데이트: 2026-06-24 (세션 69)
+> **서버 현재 버전: `4051cd0`** ← 최신 (GitHub) — BUG-048-2 수정 완료
+> **NAS 배포 버전: `41b0b38`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
+> **캐시 버전: v=20260624e**
 > **APK 최신**: v1.4.7
-> **BUG-041 + FEAT-029 완료** — NAS 적용 후 LGU+ 공사 조회 및 그룹별 푸시 알림 확인 필요
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
 ---
@@ -3683,3 +3682,69 @@ pm2 logs safetynote --nostream | grep "FEAT-033"
 - ✅ 빌드 성공 (255.04 kB)
 - ✅ 복원 스크립트: restore_before_feat033.sh (기준: faeadaa)
 - ✅ 커밋·푸시 완료 (62a3838)
+
+---
+
+## 세션 69 — BUG-048-2: 글자크기 '보통' 선택 시 1회 박스 크기 변동 수정
+
+### 개요
+- **날짜**: 2026-06-24
+- **커밋**: `4051cd0`
+- **캐시버전**: `v=20260624d` → `v=20260624e`
+
+### 증상
+글자크기 설정 화면에서 '보통'을 선택할 때 첫 1회에만 버튼 박스 크기가 증가하는 현상 발생.  
+(BUG-048 수정 후 잔존하는 부분 버그)
+
+### 원인 분석 (BUG-048-2)
+
+```
+renderMyProfilePage() 초기 HTML 렌더링
+  → 체크 div 생성: <div style="margin-top:3px">  ← sn-font-check 클래스 없음!
+  
+_applyFontSize() 첫 호출 시
+  → btn.querySelectorAll('.sn-font-check') → 0개 검색됨
+  → 기존 체크 div 제거 실패 (클래스 없으니 검색 안 됨)
+  → 새 sn-font-check div 추가
+  → 버튼 내 체크 div 2개 중첩 → 박스 크기 증가 (1회만 발생)
+  
+_applyFontSize() 두 번째 이후 호출
+  → .sn-font-check 1개 발견 → 정상 제거 후 재추가 → 크기 유지
+```
+
+### 수정 내용
+
+**파일**: `public/static/app.js` (23103번 라인)
+
+```javascript
+// ❌ 수정 전 (BUG-048-2 원인)
+${isSel ? '<div style="margin-top:3px"><i class="fas fa-check" ...></i></div>' : ''}
+
+// ✅ 수정 후
+${isSel ? '<div class="sn-font-check" style="margin-top:3px"><i class="fas fa-check" ...></i></div>' : ''}
+```
+
+### 기존 버그 방지 사항
+- **BUG-047 교훈 준수**: `node --check public/static/app.js` 실행 → SyntaxError 없음 ✅
+- **BUG-048 교훈**: 초기 렌더링 HTML과 JS 동적 조작이 동일 클래스 기준으로 일치해야 함
+- **동일 버그 방지 룰**: JS로 특정 클래스 기반 DOM 탐색·제거 시, 초기 렌더링 HTML에도 반드시 동일 클래스 부여
+
+### 파일 변경
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | 23103번: 체크 div에 class="sn-font-check" 추가 |
+| `node-server.ts` | 캐시버전 v=20260624d → v=20260624e |
+| `restore_before_bug048_2.sh` | 복원 스크립트 생성 (기준: 41b0b38) |
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `4051cd0` | fix: BUG-048-2 글자크기 초기 렌더링 체크 div sn-font-check 클래스 누락 수정 (캐시버전 v=20260624e) |
+
+### 상태
+- ✅ BUG-048-2 수정 완료 (초기 렌더링 체크 div 클래스 추가)
+- ✅ node --check 문법 검사 통과
+- ✅ 빌드 성공 (255.04 kB)
+- ✅ 복원 스크립트: restore_before_bug048_2.sh (기준: 41b0b38)
+- ✅ 커밋·푸시 완료 (4051cd0)
+- ⏳ NAS 업데이트 대기

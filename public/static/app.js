@@ -12570,7 +12570,7 @@ async function changeInspectionStatus(id, status) {
     await API.patch(`/inspections/${id}/status`, { status });
     // 드롭다운 스타일 즉시 갱신
     if (sel) _applyInsStatusSelStyle(sel, status);
-    toast(`점검이 [${statusLabel}] 처리되었습니다.`${status === 'closed' ? ' 관련자에게 알림이 발송됩니다.' : ''}`);
+    toast(`점검이 [${statusLabel}] 처리되었습니다.${status === 'closed' ? ' 관련자에게 알림이 발송됩니다.' : ''}`);
     // 목록 갱신
     const content = document.getElementById('page-content');
     if (content && currentPage === 'inspections') renderInspectionsPage(content);

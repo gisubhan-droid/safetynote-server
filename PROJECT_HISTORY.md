@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-24 (세션 69)
-> **서버 현재 버전: `a14ae83`** ← 최신 (GitHub) — BUG-048-2 수정 + 세션 69 기록 완료
+> 최종 업데이트: 2026-06-25 (세션 70)
+> **서버 현재 버전: `a091db3`** ← 최신 (GitHub) — BUG-050 현장위치 지도 위험성체크 수정
 > **NAS 배포 버전: `41b0b38`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
-> **캐시 버전: v=20260624e**
+> **캐시 버전: v=20260625a**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
@@ -17,6 +17,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-050 | 70 | 2026-06-25 | ✅ 수정 | 현장위치 지도 위험성체크 탭 마커 미표시 — GPS JOIN 누락 | `a091db3` |
 | BUG-049 | 67(C) | 2026-06-24 | ✅ 수정 | 브라우저 업데이트 시 npm run build 누락 — dist/ 이전 버전 유지 | `41b0b38` |
 | BUG-048-2 | 69 | 2026-06-24 | ✅ 수정 | '보통' 선택 첫 1회 버튼 박스 크기 증가 (초기 렌더링 클래스 누락) | `4051cd0` |
 | BUG-048 | 67(B) | 2026-06-24 | ✅ 수정 | 글자크기 클릭마다 버튼 높이 누적 증가 (잘못된 DOM selector) | `859815d` |
@@ -53,6 +54,7 @@
 | RULE-003 | BUG-048 | DOM 탐색 시 `[style*="..."]` 방식 금지 → 반드시 클래스 기반으로 구현 |
 | RULE-004 | BUG-048-2 | JS 동적 조작에 사용하는 클래스는 초기 렌더링 HTML에도 반드시 동일하게 부여 |
 | RULE-005 | BUG-049 | 브라우저 업데이트 흐름: git reset → **npm run build** → pm2 restart (순서 준수) |
+| RULE-006 | BUG-050 | GPS 저장 테이블과 조회 쿼리 테이블이 일치해야 함 — GPS 저장 위치 변경 시 JOIN도 함께 수정 |
 
 ---
 
@@ -4007,4 +4009,99 @@ ${isSel ? '<div class="sn-font-check" style="margin-top:3px"><i class="fas fa-ch
 - ✅ 빌드 성공 (255.04 kB)
 - ✅ 복원 스크립트: restore_before_bug048_2.sh (기준: 41b0b38)
 - ✅ 커밋·푸시 완료 (4051cd0)
+- ⏳ NAS 업데이트 대기
+
+---
+
+## 세션 70 — BUG-050: 현장위치 지도 위험성체크 탭 마커 미표시 수정
+
+### 개요
+- **날짜**: 2026-06-25
+- **커밋**: `a091db3`
+- **캐시버전**: `v=20260624e` → `v=20260625a`
+
+### 증상
+현장위치 지도 화면에서 '⚠️ 위험성체크' 탭을 선택해도 GPS 마커가 지도에 표시되지 않음.
+하단에 "GPS 기록이 없습니다" 메시지만 표시됨.
+
+### 원인 분석 (BUG-050)
+
+```
+GPS 저장 흐름 (실제):
+  체크리스트 완료 시 → GPS → checklist_assessments.gps_lat/gps_lon 저장
+
+/api/risk GET 쿼리 (기존):
+  SELECT ra.*, t.gps_lat, t.gps_lon ...
+  FROM risk_assessments ra
+  LEFT JOIN tasks t ON t.id = ra.task_id
+  → tasks.gps_lat: 작업 개시(working) 시에만 저장 → 위험성평가 시점에는 NULL
+
+결과:
+  /api/risk 응답의 gps_lat = NULL
+  → loadSiteMapMarkers()에서 if(!ra.gps_lat || !ra.gps_lon) continue
+  → 모든 항목 건너뜀 → 마커 0개
+```
+
+**핵심 원인**: GPS 저장 테이블(`checklist_assessments`)과 조회 쿼리 테이블(`tasks`) 불일치
+
+### 수정 내용
+
+**파일**: `src/routes/risk.ts` (GET `/` 쿼리)
+
+```sql
+-- ❌ 수정 전: tasks.gps_lat만 JOIN (위험성평가 시점에는 항상 NULL)
+SELECT ra.*, t.gps_lat, t.gps_lon, t.gps_address, ...
+FROM risk_assessments ra
+LEFT JOIN tasks t ON t.id = ra.task_id
+...
+
+-- ✅ 수정 후: checklist_assessments도 LEFT JOIN, COALESCE로 우선순위 처리
+SELECT ra.*,
+  COALESCE(ca.gps_lat, t.gps_lat) as gps_lat,    -- 체크리스트 GPS 우선
+  COALESCE(ca.gps_lon, t.gps_lon) as gps_lon,
+  COALESCE(ca.gps_address, t.gps_address) as gps_address,
+  ...
+FROM risk_assessments ra
+LEFT JOIN tasks t ON t.id = ra.task_id
+...
+LEFT JOIN (
+  SELECT task_id, gps_lat, gps_lon, gps_address
+  FROM checklist_assessments
+  WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL
+  GROUP BY task_id
+) ca ON ca.task_id = ra.task_id
+```
+
+**GPS 우선순위**:
+1. `checklist_assessments.gps_lat` (체크리스트 완료 시 기록)
+2. `tasks.gps_lat` (작업 개시 시 기록 — fallback)
+3. `NULL` (GPS 미기록)
+
+**Fallback 계층**:
+- `checklist_assessments` 테이블 없는 구버전 DB → `tasks.gps_lat` 사용
+- GPS 컬럼 없는 최구버전 DB → NULL 반환 (기존 동작 유지)
+
+### 기존 버그 방지 사항
+- **BUG-047 교훈 준수**: `node --check public/static/app.js` 실행 → SyntaxError 없음 ✅
+- **RULE-006 추가**: GPS 저장 테이블 변경 시 조회 쿼리 JOIN도 함께 수정해야 함
+- **패턴 확인**: TBM/진행/완료 탭은 `/tbm`, `/tasks` API를 직접 사용하므로 동일 문제 없음
+
+### 파일 변경
+| 파일 | 변경 내용 |
+|------|----------|
+| `src/routes/risk.ts` | GET `/` — checklist_assessments LEFT JOIN + COALESCE GPS 우선순위 |
+| `node-server.ts` | 캐시버전 v=20260624e → v=20260625a |
+| `restore_before_bug050.sh` | 복원 스크립트 생성 (기준: 3e66dc7) |
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `a091db3` | fix: BUG-050 현장위치 지도 위험성체크 탭 마커 미표시 수정 (캐시버전 v=20260625a) |
+
+### 상태
+- ✅ BUG-050 수정 완료 (checklist_assessments LEFT JOIN)
+- ✅ node --check 문법 검사 통과
+- ✅ 빌드 성공 (255.94 kB)
+- ✅ 복원 스크립트: restore_before_bug050.sh (기준: 3e66dc7)
+- ✅ 커밋·푸시 완료 (a091db3)
 - ⏳ NAS 업데이트 대기

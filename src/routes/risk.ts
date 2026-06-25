@@ -21,31 +21,56 @@ app.get('/', async (c) => {
   const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''
   const order = ' ORDER BY ra.created_at DESC'
 
-  // GPS 컬럼 포함 쿼리 먼저 시도 — 컬럼 없으면 fallback
+  // GPS 우선순위: checklist_assessments.gps_lat > tasks.gps_lat
+  // BUG-050: 위험성체크 탭에서 마커 미표시 — 체크리스트 완료 시 GPS가
+  //           checklist_assessments 테이블에 저장되므로 해당 테이블도 LEFT JOIN
   let rows: any[] = []
   try {
     const q = `SELECT ra.*, t.title as task_title, t.status as task_status,
-      t.gps_lat, t.gps_lon, t.gps_address,
+      COALESCE(ca.gps_lat, t.gps_lat) as gps_lat,
+      COALESCE(ca.gps_lon, t.gps_lon) as gps_lon,
+      COALESCE(ca.gps_address, t.gps_address) as gps_address,
       t.confirmed_address, t.work_order_address, t.location as task_location,
       u.name as assessor_name, wt.name as work_type_name
       FROM risk_assessments ra
       LEFT JOIN tasks t ON t.id = ra.task_id
       LEFT JOIN work_types wt ON wt.id = t.work_type_id
-      LEFT JOIN users u ON u.id = ra.assessor_id${where}${order}`
+      LEFT JOIN users u ON u.id = ra.assessor_id
+      LEFT JOIN (
+        SELECT task_id,
+               gps_lat, gps_lon, gps_address
+        FROM checklist_assessments
+        WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL
+        GROUP BY task_id
+      ) ca ON ca.task_id = ra.task_id${where}${order}`
     const result = await c.env.DB.prepare(q).bind(...params).all<any>()
     rows = result.results || []
   } catch(_) {
-    // GPS 컬럼 없는 구버전 DB — NULL 로 채워 반환
-    const q = `SELECT ra.*, t.title as task_title, t.status as task_status,
-      NULL as gps_lat, NULL as gps_lon, NULL as gps_address,
-      t.confirmed_address, t.work_order_address, t.location as task_location,
-      u.name as assessor_name, wt.name as work_type_name
-      FROM risk_assessments ra
-      LEFT JOIN tasks t ON t.id = ra.task_id
-      LEFT JOIN work_types wt ON wt.id = t.work_type_id
-      LEFT JOIN users u ON u.id = ra.assessor_id${where}${order}`
-    const result = await c.env.DB.prepare(q).bind(...params).all<any>()
-    rows = result.results || []
+    // checklist_assessments 테이블 없는 구버전 DB — tasks GPS만 사용 (fallback)
+    try {
+      const q = `SELECT ra.*, t.title as task_title, t.status as task_status,
+        t.gps_lat, t.gps_lon, t.gps_address,
+        t.confirmed_address, t.work_order_address, t.location as task_location,
+        u.name as assessor_name, wt.name as work_type_name
+        FROM risk_assessments ra
+        LEFT JOIN tasks t ON t.id = ra.task_id
+        LEFT JOIN work_types wt ON wt.id = t.work_type_id
+        LEFT JOIN users u ON u.id = ra.assessor_id${where}${order}`
+      const result = await c.env.DB.prepare(q).bind(...params).all<any>()
+      rows = result.results || []
+    } catch(_2) {
+      // GPS 컬럼도 없는 최구버전 DB — NULL 로 채워 반환
+      const q = `SELECT ra.*, t.title as task_title, t.status as task_status,
+        NULL as gps_lat, NULL as gps_lon, NULL as gps_address,
+        t.confirmed_address, t.work_order_address, t.location as task_location,
+        u.name as assessor_name, wt.name as work_type_name
+        FROM risk_assessments ra
+        LEFT JOIN tasks t ON t.id = ra.task_id
+        LEFT JOIN work_types wt ON wt.id = t.work_type_id
+        LEFT JOIN users u ON u.id = ra.assessor_id${where}${order}`
+      const result = await c.env.DB.prepare(q).bind(...params).all<any>()
+      rows = result.results || []
+    }
   }
   return c.json(rows)
   } catch (e: any) {

@@ -81,7 +81,7 @@ import constructionRoutes from './src/routes/constructions'
 import notificationRoutes from './src/routes/notifications'
 
 // NAS 전용 라우트 임포트 (Phase 3 — src/nas-routes/)
-import { setRawDb, setDB, makeD1 as nasD1 } from './src/nas-db'
+import { setRawDb, setDB, makeD1 as nasD1, getUploadRootNow } from './src/nas-db'
 import adminRoutes, { createAppVersionRoute } from './src/nas-routes/admin'
 import distRoutes from './src/nas-routes/dist'
 import workReportsRoutes, { createVolumeUnitPricesRoutes } from './src/nas-routes/work-reports'
@@ -2647,6 +2647,42 @@ app.use('*', cors({
 // ─── 정적 파일 서빙 (/static/*) ──────────────────────────────────────
 // Phase 3 리팩토링 중 누락됨 — serveStatic import 후 라우트 등록 필수
 app.use('/static/*', serveStatic({ root: './public' }))
+
+// ─── 업로드 파일 서빙 (/uploads/*) — BUG-052 ─────────────────────────
+// edu_photos(안전교육 사진) 등 업로드된 파일을 /uploads/... URL로 서빙
+// UPLOAD_ROOT가 ./public/uploads이면 /static/uploads/*와 동일하나,
+// NAS에서는 UPLOAD_ROOT가 외부 경로(/volume1/safetynote/uploads 등)이므로
+// serveStatic으로 처리 불가 → readFileSync로 직접 서빙
+app.get('/uploads/*', async (c) => {
+  // URL: /uploads/edu_photos/edu_123_1234567890.jpg
+  const urlPath = c.req.path  // ex) /uploads/edu_photos/edu_123_xxx.jpg
+  const uploadRoot = getUploadRootNow()
+  // urlPath에서 /uploads/ 접두사 제거 후 uploadRoot와 결합
+  const relPath = urlPath.replace(/^\/uploads\//, '')
+  const absPath = join(uploadRoot, relPath)
+
+  if (!existsSync(absPath)) {
+    return c.json({ error: 'Not Found' }, 404)
+  }
+
+  try {
+    const buf  = readFileSync(absPath)
+    const ext  = absPath.split('.').pop()?.toLowerCase() || 'bin'
+    const mime: Record<string, string> = {
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+      gif: 'image/gif',  webp: 'image/webp', heic: 'image/heic',
+      pdf: 'application/pdf',
+    }
+    const contentType = mime[ext] || 'application/octet-stream'
+    return new Response(buf, {
+      status: 200,
+      headers: { 'Content-Type': contentType, 'Cache-Control': 'max-age=86400' },
+    })
+  } catch (err: any) {
+    console.error('[/uploads] 파일 서빙 오류:', err.message)
+    return c.json({ error: 'Read Error' }, 500)
+  }
+})
 
 // ─── API 라우트 ───────────────────────────────────────────────────────
 // [RULE-002] NAS 전용 라우트는 app.route() 앞에 등록

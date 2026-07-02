@@ -279,25 +279,24 @@ app.post('/reset', async (c) => {
   return c.json({ ok: true, deleted, summary })
 })
 
-// ─── 버전 태그 생성 헬퍼 (V{major}.{minor}_{YYMMDD}{seq}) ──────────────────
-// 예: V2.01_260702001
+// ─── 버전 태그 생성 헬퍼 (V{major}.{minor}_{YYMMDD}{HHMM}) ──────────────────
+// 예: V2.9d_260702173  →  V2.9d_2607021703  (시분 4자리, 서울 KST 기준)
 // major: 고정 2, minor: 커밋 해시 앞 2자리(16진수→10진수) % 100 zero-pad
-// seq: 하루 내 순번 (001~999), updatedAt 기반
+// 시분: HHMM 4자리 (KST = UTC+9)
 function _makeVersionTag(commitHash: string, updatedAt: string | null): string {
-  const now   = updatedAt ? new Date(updatedAt) : new Date()
-  const yy    = String(now.getFullYear()).slice(2)
-  const mm    = String(now.getMonth() + 1).padStart(2, '0')
-  const dd    = String(now.getDate()).padStart(2, '0')
-  // 시퀀스: HHMMSS → 001~235959 범위에서 3자리 (시간 기반)
-  const hh    = String(now.getHours()).padStart(2, '0')
-  const mn    = String(now.getMinutes()).padStart(2, '0')
-  const ss    = String(now.getSeconds()).padStart(2, '0')
-  const seq   = `${hh}${mn}${ss}`.slice(0, 3).padStart(3, '0')
+  // KST(UTC+9) 기준 시각 계산
+  const base  = updatedAt ? new Date(updatedAt) : new Date()
+  const kst   = new Date(base.getTime() + 9 * 60 * 60 * 1000)
+  const yy    = String(kst.getUTCFullYear()).slice(2)
+  const mm    = String(kst.getUTCMonth() + 1).padStart(2, '0')
+  const dd    = String(kst.getUTCDate()).padStart(2, '0')
+  const hh    = String(kst.getUTCHours()).padStart(2, '0')
+  const mn    = String(kst.getUTCMinutes()).padStart(2, '0')
   // minor: 커밋 해시 앞 2글자를 16→10진수 변환 후 % 100
   const minor = commitHash
     ? String(parseInt(commitHash.slice(0, 2), 16) % 100).padStart(2, '0')
     : '00'
-  return `V2.${minor}_${yy}${mm}${dd}${seq}`
+  return `V2.${minor}_${yy}${mm}${dd}${hh}${mn}`
 }
 
 // ─── 업데이트 상태 싱글턴 ────────────────────────────────────────────────────

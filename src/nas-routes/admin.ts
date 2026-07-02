@@ -377,8 +377,9 @@ app.get('/update/status', async (c) => {
   const gitHead = await runCmd('git', ['rev-parse', '--short', 'HEAD'], process.cwd(), 5000)
   _updateState.currentCommit = gitHead.stdout.trim() || _updateState.currentCommit
   // 버전 태그 생성
-  const versionTag = _makeVersionTag(_updateState.currentCommit, _updateState.updatedAt)
-  return c.json({ ..._updateState, versionTag })
+  const versionTag  = _makeVersionTag(_updateState.currentCommit, _updateState.updatedAt)
+  const updateMode  = getSetting('update_mode') || 'manual'
+  return c.json({ ..._updateState, versionTag, updateMode })
 })
 
 // ─── POST /api/admin/update/check ───────────────────────────────────────────
@@ -546,9 +547,16 @@ app.post('/update/apply', async (c) => {
 
 // ─── POST /api/admin/update/webhook — FEAT-036 ───────────────────────────────
 // GitHub Actions에서 push 이벤트 시 자동 호출 → git fetch + reset + build + pm2 restart
-// 인증: DEPLOY_WEBHOOK_SECRET 환경변수 (APK webhook과 동일한 시크릿 재사용)
-// 비밀번호 없이 자동화 가능 (CI/CD 전용)
+// 인증: DEPLOY_WEBHOOK_SECRET 환경변수
+// ⚠️  update_mode=auto 일 때만 실행됨 (기본값: manual → 거부)
 app.post('/update/webhook', async (c) => {
+  // ── 업데이트 모드 확인 (manual이면 자동 업데이트 차단) ──────────────
+  const updateMode = getSetting('update_mode') || 'manual'
+  if (updateMode !== 'auto') {
+    console.log('[Update Webhook] 수동 업데이트 모드 — Webhook 차단')
+    return c.json({ error: '이 NAS는 수동 업데이트 모드입니다. 시스템설정 → 서버 업데이트에서 자동 모드로 변경하세요.' }, 403)
+  }
+
   const expectedSecret = process.env.DEPLOY_WEBHOOK_SECRET || ''
   if (!expectedSecret) {
     console.error('[Update Webhook] DEPLOY_WEBHOOK_SECRET 환경변수가 설정되지 않았습니다.')
@@ -565,7 +573,7 @@ app.post('/update/webhook', async (c) => {
     return c.json({ error: '업데이트 진행 중입니다.' }, 409)
   }
 
-  console.log('[Update Webhook] GitHub Actions 자동 업데이트 트리거')
+  console.log('[Update Webhook] 자동 업데이트 모드 — GitHub Actions 트리거 수신')
 
   _updateState.status    = 'pulling'
   _updateState.message   = 'GitHub Actions Webhook — 최신 코드 다운로드 중...'

@@ -15473,6 +15473,34 @@ async function renderAdminSettingsPage(container, _activeTab) {
       <!-- ────────────────────────────────────────────────── -->
       <div id="spanel-update" class="settings-panel space-y-4 ${firstTab !== 'update' ? 'hidden' : ''}">
 
+        <!-- 업데이트 모드 선택 -->
+        <div class="bg-white rounded-2xl shadow-sm p-5">
+          <h3 class="font-bold text-gray-700 mb-3 flex items-center gap-2">
+            <i class="fas fa-sliders-h text-gray-500"></i> 업데이트 모드
+          </h3>
+          <div class="flex gap-3 mb-3">
+            <!-- 수동 버튼 -->
+            <button id="upd-mode-manual" onclick="_updSetMode('manual')"
+              class="flex-1 flex flex-col items-center gap-1 px-4 py-3 rounded-xl border-2 text-sm font-semibold transition-all border-blue-500 bg-blue-50 text-blue-700">
+              <i class="fas fa-hand-pointer text-lg"></i>
+              <span>수동 업데이트</span>
+              <span class="text-xs font-normal text-blue-400">관리자가 직접 실행</span>
+            </button>
+            <!-- 자동 버튼 -->
+            <button id="upd-mode-auto" onclick="_updSetMode('auto')"
+              class="flex-1 flex flex-col items-center gap-1 px-4 py-3 rounded-xl border-2 text-sm font-semibold transition-all border-gray-200 bg-gray-50 text-gray-400">
+              <i class="fas fa-robot text-lg"></i>
+              <span>자동 업데이트</span>
+              <span class="text-xs font-normal">GitHub push 시 자동 적용</span>
+            </button>
+          </div>
+          <!-- 자동 업데이트 경고 (기본 숨김) -->
+          <div id="upd-auto-warning" class="hidden items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+            <i class="fas fa-exclamation-triangle text-red-500 text-base shrink-0"></i>
+            <span class="font-semibold">주의: 자동 업데이트시 오류로 인한 서버 미 작동 현상이 발생할 수 있습니다.</span>
+          </div>
+        </div>
+
         <!-- 현재 버전 / 업데이트 확인 -->
         <div class="bg-white rounded-2xl shadow-sm p-5">
           <h3 class="font-bold text-gray-700 mb-4 flex items-center gap-2">
@@ -15926,6 +15954,37 @@ async function saveGroupPerms() {
 
 let _updPollingTimer = null;
 
+/** 업데이트 모드 버튼 UI 갱신 */
+function _updRenderMode(mode) {
+  const manualBtn  = document.getElementById('upd-mode-manual');
+  const autoBtn    = document.getElementById('upd-mode-auto');
+  const autoWarn   = document.getElementById('upd-auto-warning');
+  if (!manualBtn || !autoBtn) return;
+
+  if (mode === 'auto') {
+    // 자동 선택
+    autoBtn.className   = 'flex-1 flex flex-col items-center gap-1 px-4 py-3 rounded-xl border-2 text-sm font-semibold transition-all border-orange-400 bg-orange-50 text-orange-700';
+    manualBtn.className = 'flex-1 flex flex-col items-center gap-1 px-4 py-3 rounded-xl border-2 text-sm font-semibold transition-all border-gray-200 bg-gray-50 text-gray-400';
+    if (autoWarn) { autoWarn.classList.remove('hidden'); autoWarn.classList.add('flex'); }
+  } else {
+    // 수동 선택 (기본)
+    manualBtn.className = 'flex-1 flex flex-col items-center gap-1 px-4 py-3 rounded-xl border-2 text-sm font-semibold transition-all border-blue-500 bg-blue-50 text-blue-700';
+    autoBtn.className   = 'flex-1 flex flex-col items-center gap-1 px-4 py-3 rounded-xl border-2 text-sm font-semibold transition-all border-gray-200 bg-gray-50 text-gray-400';
+    if (autoWarn) { autoWarn.classList.add('hidden'); autoWarn.classList.remove('flex'); }
+  }
+}
+
+/** 업데이트 모드 변경 저장 */
+async function _updSetMode(mode) {
+  try {
+    await API.patch('/admin/settings', { update_mode: mode });
+    _updRenderMode(mode);
+    toast(mode === 'auto' ? '자동 업데이트 모드로 변경되었습니다.' : '수동 업데이트 모드로 변경되었습니다.', mode === 'auto' ? 'warning' : 'success');
+  } catch(e) {
+    toast('모드 변경 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
+}
+
 /** 상태 배너 업데이트 헬퍼 */
 function _updSetBanner(msg, type) {
   const banner = document.getElementById('upd-status-banner');
@@ -15967,6 +16026,9 @@ async function _updLoadStatus() {
   try {
     const res = await API.get('/admin/update/status');
     const s = res.data;
+
+    // 업데이트 모드 UI 반영
+    if (s.updateMode) _updRenderMode(s.updateMode);
 
     // 버전 표시
     const curEl = document.getElementById('upd-cur-commit');

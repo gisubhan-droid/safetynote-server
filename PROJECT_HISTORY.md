@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-30 (세션 71)
-> **서버 현재 버전: `6bd6f22`** ← 최신 (GitHub) — BUG-053~055 위험신고·아차사고 상세·사진 수정
+> 최종 업데이트: 2026-07-02 (세션 72)
+> **서버 현재 버전: `15b3eae`** ← 최신 (GitHub) — BUG-052 안전교육 출력 사진 수정
 > **NAS 배포 버전: `41b0b38`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
-> **캐시 버전: v=20260625a**
+> **캐시 버전: v=20260630a**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
@@ -20,7 +20,7 @@
 | BUG-055 | 71 | 2026-06-30 | ✅ 수정 | 위험신고·아차사고 처리완료(resolved) 화면에 사진 첨부 기능 추가 | `6bd6f22` |
 | BUG-054 | 71 | 2026-06-30 | ✅ 수정 | 위험신고·아차사고 접수 내역 등록 사진 조회 안 됨 | `6bd6f22` |
 | BUG-053 | 71 | 2026-06-30 | ✅ 수정 | 위험신고·아차사고 접수 내역 상세 화면 진입 불가 | `6bd6f22` |
-| BUG-052 | — | 2026-06-29 | 🔴 미수정 | 안전교육 출력 시 사진 출력 안 됨 | — |
+| BUG-052 | 72 | 2026-07-02 | ✅ 수정 | 안전교육 출력 시 사진 출력 안 됨 | `15b3eae` |
 | BUG-051 | — | 2026-06-29 | 🔴 미수정 | 안전교육 등록 화면 사진 추가 시 미리보기 동작 안 함 | — |
 | BUG-050 | 70 | 2026-06-25 | ✅ 수정 | 현장위치 지도 위험성체크 탭 마커 미표시 — GPS JOIN 누락 | `a091db3` |
 | BUG-049 | 67(C) | 2026-06-24 | ✅ 수정 | 브라우저 업데이트 시 npm run build 누락 — dist/ 이전 버전 유지 | `41b0b38` |
@@ -4160,4 +4160,73 @@ LEFT JOIN (
 - ✅ node --check 통과
 - ✅ npm run build 성공 (255.99 kB)
 - ✅ GitHub 푸시 완료
+- ⚠️ NAS 업데이트 필요 (git reset --hard origin/main → npm run build → pm2 restart)
+
+---
+
+## 세션 72 — BUG-052: 안전교육 출력 시 사진 출력 안 됨 수정
+
+### 작업 내용
+
+#### BUG-052: 안전교육 출력(printEduLog) 시 사진 미출력
+
+**증상**: 안전교육 실시일지 출력(printEduLog) 시 교육 사진이 표시되지 않음
+
+**원인 분석**:
+1. `education-extra.ts` POST 라우트: 사진 업로드 시 `file_path = '/uploads/edu_photos/${fname}'` (상대 URL) 형태로 DB 저장
+2. 실제 파일은 `getUploadRootNow()/edu_photos/` (절대경로 — NAS: `/volume1/safetynote/uploads/edu_photos/`) 에 저장
+3. `printEduLog()`: API 응답의 `file_path` 값을 `<img src="${p.file_path}">` 로 직접 렌더링
+4. **`node-server.ts`에 `/uploads/*` 서빙 라우트가 없음** → 브라우저 404 → 사진 미출력
+5. `/static/*`만 `serveStatic`으로 등록되어 있었고, `/uploads/*`는 누락 상태였음
+
+**수정 내용** (`node-server.ts`):
+```typescript
+// GET /uploads/* — BUG-052
+// getUploadRootNow() 로 NAS 외부 경로 포함 절대경로 계산 → readFileSync 직접 서빙
+app.get('/uploads/*', async (c) => {
+  const relPath  = c.req.path.replace(/^\/uploads\//, '')
+  const absPath  = join(getUploadRootNow(), relPath)
+  if (!existsSync(absPath)) return c.json({ error: 'Not Found' }, 404)
+  const buf      = readFileSync(absPath)
+  const ext      = absPath.split('.').pop()?.toLowerCase() || 'bin'
+  const mime     = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png',
+                     gif:'image/gif', webp:'image/webp', heic:'image/heic',
+                     pdf:'application/pdf' }
+  return new Response(buf, {
+    headers: { 'Content-Type': mime[ext] || 'application/octet-stream',
+               'Cache-Control': 'max-age=86400' }
+  })
+})
+```
+
+**추가 수정**: `nas-db.ts`의 `getUploadRootNow`를 import에 추가 (누락 수정)
+
+**왜 serveStatic 불가?**:
+- NAS 환경에서 `UPLOAD_ROOT`가 `/volume1/safetynote/uploads` 등 `public/` 외부 경로
+- `serveStatic({ root: './public' })`은 `public/` 하위 파일만 서빙 가능
+
+**왜 인증 없음?**:
+- `<img src>` 태그는 `Authorization: Bearer` 헤더 전송 불가
+- 동일 origin 내부 접근이므로 보안 위험 낮음
+
+**window.open() 출력창 동작 확인**:
+- `window.open('', '_blank')` 후 `document.write()`로 HTML 삽입 시
+- 브라우저가 opener의 origin 상속 → `/uploads/...` 절대경로 정상 요청
+
+### 수정 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `node-server.ts` | `GET /uploads/*` 라우트 신규 추가 + `getUploadRootNow` import 추가 |
+
+### 커밋 이력
+
+| 해시 | 내용 |
+|------|------|
+| `15b3eae` | fix(BUG-052): /uploads/* 정적 파일 서빙 라우트 추가 — 안전교육 사진 출력 수정 |
+
+### 상태
+- ✅ node --check 통과
+- ✅ npm run build 성공 (255.99 kB)
+- ✅ GitHub 푸시 예정
 - ⚠️ NAS 업데이트 필요 (git reset --hard origin/main → npm run build → pm2 restart)

@@ -279,6 +279,27 @@ app.post('/reset', async (c) => {
   return c.json({ ok: true, deleted, summary })
 })
 
+// ─── 버전 태그 생성 헬퍼 (V{major}.{minor}_{YYMMDD}{seq}) ──────────────────
+// 예: V2.01_260702001
+// major: 고정 2, minor: 커밋 해시 앞 2자리(16진수→10진수) % 100 zero-pad
+// seq: 하루 내 순번 (001~999), updatedAt 기반
+function _makeVersionTag(commitHash: string, updatedAt: string | null): string {
+  const now   = updatedAt ? new Date(updatedAt) : new Date()
+  const yy    = String(now.getFullYear()).slice(2)
+  const mm    = String(now.getMonth() + 1).padStart(2, '0')
+  const dd    = String(now.getDate()).padStart(2, '0')
+  // 시퀀스: HHMMSS → 001~235959 범위에서 3자리 (시간 기반)
+  const hh    = String(now.getHours()).padStart(2, '0')
+  const mn    = String(now.getMinutes()).padStart(2, '0')
+  const ss    = String(now.getSeconds()).padStart(2, '0')
+  const seq   = `${hh}${mn}${ss}`.slice(0, 3).padStart(3, '0')
+  // minor: 커밋 해시 앞 2글자를 16→10진수 변환 후 % 100
+  const minor = commitHash
+    ? String(parseInt(commitHash.slice(0, 2), 16) % 100).padStart(2, '0')
+    : '00'
+  return `V2.${minor}_${yy}${mm}${dd}${seq}`
+}
+
 // ─── 업데이트 상태 싱글턴 ────────────────────────────────────────────────────
 let _updateState: {
   status: 'idle' | 'checking' | 'pulling' | 'restarting' | 'done' | 'error'
@@ -286,6 +307,7 @@ let _updateState: {
   currentCommit: string
   latestCommit: string
   updatedAt: string | null
+  appliedAt: string | null   // 마지막 업데이트 반영 시각 (KST)
   log: string[]
 } = {
   status: 'idle',
@@ -293,6 +315,7 @@ let _updateState: {
   currentCommit: '',
   latestCommit: '',
   updatedAt: null,
+  appliedAt: null,
   log: [],
 }
 
@@ -354,7 +377,9 @@ app.get('/update/status', async (c) => {
   if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
   const gitHead = await runCmd('git', ['rev-parse', '--short', 'HEAD'], process.cwd(), 5000)
   _updateState.currentCommit = gitHead.stdout.trim() || _updateState.currentCommit
-  return c.json({ ..._updateState })
+  // 버전 태그 생성
+  const versionTag = _makeVersionTag(_updateState.currentCommit, _updateState.updatedAt)
+  return c.json({ ..._updateState, versionTag })
 })
 
 // ─── POST /api/admin/update/check ───────────────────────────────────────────
@@ -471,6 +496,9 @@ app.post('/update/apply', async (c) => {
       const newCommit = await runCmd('git', ['rev-parse', '--short', 'HEAD'], cwd, 5000)
       _updateState.currentCommit = newCommit.stdout.trim()
       _updateState.updatedAt     = new Date().toISOString()
+      // KST 반영 시각 (UTC+9)
+      const _kstNow = new Date(Date.now() + 9 * 3600 * 1000)
+      _updateState.appliedAt = _kstNow.toISOString().replace('T', ' ').slice(0, 19)
 
       // ── 3. npm run build (프론트엔드 dist 재빌드) ──────────────
       // BUG-049: git reset 후 빌드 없이 pm2 restart만 하면 dist/ 가 이전 버전 그대로 유지됨
@@ -572,6 +600,9 @@ app.post('/update/webhook', async (c) => {
       // ── 2. 현재 커밋 해시 갱신 ──────────────────────────────────
       const hashRes = await runCmd('git', ['rev-parse', '--short', 'HEAD'], cwd, 5000)
       if (hashRes.code === 0) _updateState.currentCommit = hashRes.stdout.trim()
+      _updateState.updatedAt = new Date().toISOString()
+      const _kstNow2 = new Date(Date.now() + 9 * 3600 * 1000)
+      _updateState.appliedAt = _kstNow2.toISOString().replace('T', ' ').slice(0, 19)
 
       // ── 3. npm run build ─────────────────────────────────────────
       _updateState.status  = 'restarting'

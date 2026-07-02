@@ -15481,15 +15481,22 @@ async function renderAdminSettingsPage(container, _activeTab) {
           </h3>
 
           <!-- 버전 카드 -->
-          <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="grid grid-cols-2 gap-3 mb-3">
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <p class="text-xs text-gray-400 mb-1">현재 버전 (NAS)</p>
               <p id="upd-cur-commit" class="font-mono font-bold text-gray-800 text-sm">확인 중...</p>
+              <p id="upd-version-tag" class="text-xs text-indigo-500 mt-1 font-mono font-semibold">—</p>
             </div>
             <div class="bg-teal-50 rounded-xl p-3 text-center">
               <p class="text-xs text-gray-400 mb-1">최신 버전 (GitHub)</p>
               <p id="upd-lat-commit" class="font-mono font-bold text-teal-700 text-sm">—</p>
             </div>
+          </div>
+          <!-- 마지막 반영 시각 -->
+          <div id="upd-applied-row" class="hidden items-center gap-2 text-xs text-gray-500 bg-green-50 border border-green-100 rounded-xl px-3 py-2 mb-3">
+            <i class="fas fa-check-circle text-green-500"></i>
+            <span>마지막 반영 시각: </span>
+            <span id="upd-applied-at" class="font-semibold text-green-700">—</span>
           </div>
 
           <!-- 상태 배너 -->
@@ -15964,8 +15971,18 @@ async function _updLoadStatus() {
     // 버전 표시
     const curEl = document.getElementById('upd-cur-commit');
     const latEl = document.getElementById('upd-lat-commit');
+    const tagEl = document.getElementById('upd-version-tag');
     if (curEl) curEl.textContent = s.currentCommit || '—';
     if (latEl) latEl.textContent = s.latestCommit  || '—';
+    if (tagEl) tagEl.textContent = s.versionTag    || '—';
+    // 마지막 반영 시각 표시
+    const appliedRow = document.getElementById('upd-applied-row');
+    const appliedAt  = document.getElementById('upd-applied-at');
+    if (s.appliedAt && appliedRow && appliedAt) {
+      appliedRow.classList.remove('hidden');
+      appliedRow.classList.add('flex');
+      appliedAt.textContent = s.appliedAt + ' (KST)';
+    }
 
     // 적용 버튼 활성화: 새 버전 있을 때만
     const applyBtn = document.getElementById('upd-btn-apply');

@@ -1,0 +1,145 @@
+# ─── FEAT-035: 다중 NAS APK 자동 배포 ──────────────────────────────────────
+# dist-apk/ 폴더에 APK 파일이 push 되면 등록된 모든 NAS에 동시에 Webhook 전송
+# 각 NAS는 POST /api/dist/apk/webhook 을 받아 자동으로:
+#   APK 다운로드(GitHub raw URL) → 로컬 저장 → DB 버전 정보 업데이트
+#
+# ── GitHub Secrets 등록 필요 ──────────────────────────────────────────────────
+# DEPLOY_WEBHOOK_SECRET  : NAS 서버에 설정된 DEPLOY_WEBHOOK_SECRET 값 (동일값)
+# NAS_WEBHOOK_URL_1      : 첫 번째 NAS URL (예: https://nas1.example.com:3443)
+# NAS_WEBHOOK_URL_2      : 두 번째 NAS URL (예: https://nas2.example.com:3443)
+# NAS_WEBHOOK_URL_3      : 세 번째 NAS URL (선택, 없으면 skip)
+# ... 최대 5개 지원 (NAS_WEBHOOK_URL_1 ~ NAS_WEBHOOK_URL_5)
+# GH_PAT                 : GitHub Personal Access Token (dist-apk raw 파일 접근용)
+#                          - 없으면 public repo의 경우 토큰 없이 접근 가능
+#
+# ── APK 버전 관리 방법 ────────────────────────────────────────────────────────
+# dist-apk/version.txt  : APK 버전 문자열 (예: 1.4.8)
+# dist-apk/release.txt  : 릴리스 노트 (선택)
+# dist-apk/safetynote.apk : 실제 APK 파일
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: 📱 NAS APK 자동 배포 (FEAT-035)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dist-apk/**'
+
+jobs:
+  deploy-apk:
+    name: 모든 NAS에 APK 배포 Webhook 전송
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: APK 정보 읽기
+        id: apk_info
+        run: |
+          # dist-apk/version.txt 에서 버전 읽기
+          if [ -f "dist-apk/version.txt" ]; then
+            VERSION=$(cat dist-apk/version.txt | tr -d '[:space:]')
+          else
+            VERSION="unknown"
+          fi
+
+          # dist-apk/release.txt 에서 릴리스 노트 읽기 (선택)
+          if [ -f "dist-apk/release.txt" ]; then
+            RELEASE_NOTE=$(cat dist-apk/release.txt | head -5 | tr '\n' ' ')
+          else
+            RELEASE_NOTE=""
+          fi
+
+          # GitHub raw URL 구성 (APK 직접 다운로드 경로)
+          REPO="${{ github.repository }}"
+          SHA="${{ github.sha }}"
+          APK_URL="https://raw.githubusercontent.com/${REPO}/${SHA}/dist-apk/safetynote.apk"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "release_note=$RELEASE_NOTE" >> $GITHUB_OUTPUT
+          echo "apk_url=$APK_URL" >> $GITHUB_OUTPUT
+
+          echo "📱 APK 버전: $VERSION"
+          echo "📝 릴리스 노트: $RELEASE_NOTE"
+          echo "🔗 APK URL: $APK_URL"
+
+      - name: APK 파일 존재 확인
+        run: |
+          if [ ! -f "dist-apk/safetynote.apk" ]; then
+            echo "⚠️  dist-apk/safetynote.apk 파일이 없습니다."
+            echo "    dist-apk/ 폴더에 safetynote.apk를 추가하세요."
+            exit 1
+          fi
+          SIZE=$(du -sh dist-apk/safetynote.apk | cut -f1)
+          echo "✅ APK 확인: dist-apk/safetynote.apk ($SIZE)"
+
+      - name: NAS APK Webhook 전송 (병렬)
+        run: |
+          VERSION="${{ steps.apk_info.outputs.version }}"
+          RELEASE_NOTE="${{ steps.apk_info.outputs.release_note }}"
+          APK_URL="${{ steps.apk_info.outputs.apk_url }}"
+          SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
+          GH_PAT="${{ secrets.GH_PAT }}"
+
+          if [ -z "$SECRET" ]; then
+            echo "⚠️  DEPLOY_WEBHOOK_SECRET이 설정되지 않았습니다. Webhook을 전송하지 않습니다."
+            exit 0
+          fi
+
+          # GitHub PAT가 있으면 APK URL에 토큰 포함 (private repo 대응)
+          if [ -n "$GH_PAT" ]; then
+            APK_URL_WITH_TOKEN=$(echo "$APK_URL" | sed "s|https://raw.githubusercontent.com|https://${GH_PAT}@raw.githubusercontent.com|")
+          else
+            APK_URL_WITH_TOKEN="$APK_URL"
+          fi
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "secret": "$SECRET",
+            "version": "$VERSION",
+            "apk_url": "$APK_URL_WITH_TOKEN",
+            "release_note": "$RELEASE_NOTE",
+            "force_update": "0"
+          }
+          EOF
+          )
+
+          send_apk_webhook() {
+            local url="$1"
+            local label="$2"
+            if [ -z "$url" ]; then
+              echo "[$label] URL 미설정 — skip"
+              return 0
+            fi
+            echo "[$label] APK Webhook 전송 → $url (v$VERSION)"
+            HTTP_STATUS=$(curl -s -o /tmp/resp_apk_${label}.txt -w "%{http_code}" \
+              --max-time 60 \
+              --retry 2 \
+              --retry-delay 5 \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -k \
+              -d "$PAYLOAD" \
+              "${url}/api/dist/apk/webhook" 2>&1)
+            RESP=$(cat /tmp/resp_apk_${label}.txt 2>/dev/null || echo "")
+            echo "[$label] HTTP $HTTP_STATUS | $RESP"
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "[$label] ✅ APK 배포 트리거 성공 (v$VERSION)"
+            else
+              echo "[$label] ⚠️  응답 코드 $HTTP_STATUS"
+            fi
+          }
+
+          # 모든 NAS에 병렬 전송
+          send_apk_webhook "${{ secrets.NAS_WEBHOOK_URL_1 }}" "NAS1" &
+          send_apk_webhook "${{ secrets.NAS_WEBHOOK_URL_2 }}" "NAS2" &
+          send_apk_webhook "${{ secrets.NAS_WEBHOOK_URL_3 }}" "NAS3" &
+          send_apk_webhook "${{ secrets.NAS_WEBHOOK_URL_4 }}" "NAS4" &
+          send_apk_webhook "${{ secrets.NAS_WEBHOOK_URL_5 }}" "NAS5" &
+          wait
+
+          echo ""
+          echo "✅ 모든 NAS APK Webhook 전송 완료 (v$VERSION)"

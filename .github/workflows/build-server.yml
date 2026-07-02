@@ -1,0 +1,89 @@
+# ─── FEAT-036: 다중 NAS 서버 자동 업데이트 ──────────────────────────────────
+# main 브랜치에 push 되면 등록된 모든 NAS에 동시에 Webhook을 전송
+# 각 NAS는 POST /api/admin/update/webhook 을 받아 자동으로:
+#   git fetch + git reset --hard origin/main + npm run build + pm2 restart
+#
+# ── GitHub Secrets 등록 필요 ──────────────────────────────────────────────────
+# DEPLOY_WEBHOOK_SECRET  : NAS 서버에 설정된 DEPLOY_WEBHOOK_SECRET 값 (동일값)
+# NAS_WEBHOOK_URL_1      : 첫 번째 NAS URL (예: https://nas1.example.com:3443)
+# NAS_WEBHOOK_URL_2      : 두 번째 NAS URL (예: https://nas2.example.com:3443)
+# NAS_WEBHOOK_URL_3      : 세 번째 NAS URL (선택, 없으면 skip)
+# ... 최대 5개 지원 (NAS_WEBHOOK_URL_1 ~ NAS_WEBHOOK_URL_5)
+#
+# ── NAS 서버 설정 필요 ────────────────────────────────────────────────────────
+# pm2 ecosystem 또는 .env 에 DEPLOY_WEBHOOK_SECRET=<시크릿값> 추가 후 pm2 restart
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: 🚀 NAS 서버 자동 업데이트 (FEAT-036)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/workflows/build-apk.yml'
+
+jobs:
+  notify-nas-servers:
+    name: 모든 NAS에 업데이트 Webhook 전송
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: NAS 업데이트 Webhook 전송 (병렬)
+        run: |
+          COMMIT_SHA="${{ github.sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
+
+          if [ -z "$SECRET" ]; then
+            echo "⚠️  DEPLOY_WEBHOOK_SECRET이 설정되지 않았습니다. Webhook을 전송하지 않습니다."
+            exit 0
+          fi
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "secret": "$SECRET",
+            "commit": "$SHORT_SHA",
+            "ref": "${{ github.ref_name }}"
+          }
+          EOF
+          )
+
+          send_webhook() {
+            local url="$1"
+            local label="$2"
+            if [ -z "$url" ]; then
+              echo "[$label] URL 미설정 — skip"
+              return 0
+            fi
+            echo "[$label] Webhook 전송 → $url"
+            HTTP_STATUS=$(curl -s -o /tmp/resp_${label}.txt -w "%{http_code}" \
+              --max-time 30 \
+              --retry 2 \
+              --retry-delay 3 \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -k \
+              -d "$PAYLOAD" \
+              "${url}/api/admin/update/webhook" 2>&1)
+            RESP=$(cat /tmp/resp_${label}.txt 2>/dev/null || echo "")
+            echo "[$label] HTTP $HTTP_STATUS | $RESP"
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "[$label] ✅ 업데이트 트리거 성공"
+            else
+              echo "[$label] ⚠️  응답 코드 $HTTP_STATUS (NAS가 오프라인이거나 경로가 잘못되었을 수 있음)"
+            fi
+          }
+
+          # 모든 NAS에 병렬 전송
+          send_webhook "${{ secrets.NAS_WEBHOOK_URL_1 }}" "NAS1" &
+          send_webhook "${{ secrets.NAS_WEBHOOK_URL_2 }}" "NAS2" &
+          send_webhook "${{ secrets.NAS_WEBHOOK_URL_3 }}" "NAS3" &
+          send_webhook "${{ secrets.NAS_WEBHOOK_URL_4 }}" "NAS4" &
+          send_webhook "${{ secrets.NAS_WEBHOOK_URL_5 }}" "NAS5" &
+          wait
+
+          echo ""
+          echo "✅ 모든 NAS Webhook 전송 완료 (commit: $SHORT_SHA)"

@@ -11,6 +11,7 @@
  *   GET  /api/admin/update/status
  *   POST /api/admin/update/check
  *   POST /api/admin/update/apply
+ *   POST /api/admin/update/webhook  ← FEAT-036: GitHub Actions 자동 업데이트 (DEPLOY_WEBHOOK_SECRET 인증)
  *   GET  /qr/:userId  ← node-server.ts에서 별도 마운트
  *
  * 의존:
@@ -514,6 +515,101 @@ app.post('/update/apply', async (c) => {
   })()
 
   return c.json({ ok: true, message: '업데이트 시작됨' })
+})
+
+// ─── POST /api/admin/update/webhook — FEAT-036 ───────────────────────────────
+// GitHub Actions에서 push 이벤트 시 자동 호출 → git fetch + reset + build + pm2 restart
+// 인증: DEPLOY_WEBHOOK_SECRET 환경변수 (APK webhook과 동일한 시크릿 재사용)
+// 비밀번호 없이 자동화 가능 (CI/CD 전용)
+app.post('/update/webhook', async (c) => {
+  const expectedSecret = process.env.DEPLOY_WEBHOOK_SECRET || ''
+  if (!expectedSecret) {
+    console.error('[Update Webhook] DEPLOY_WEBHOOK_SECRET 환경변수가 설정되지 않았습니다.')
+    return c.json({ error: 'Webhook이 비활성화되어 있습니다. DEPLOY_WEBHOOK_SECRET을 서버에 설정하세요.' }, 503)
+  }
+
+  const body = await c.req.json().catch(() => ({})) as { secret?: string }
+  if (!body.secret || body.secret !== expectedSecret) {
+    console.warn('[Update Webhook] Secret 불일치 — 요청 거부')
+    return c.json({ error: '인증 실패' }, 401)
+  }
+
+  if (_updateState.status === 'pulling' || _updateState.status === 'restarting') {
+    return c.json({ error: '업데이트 진행 중입니다.' }, 409)
+  }
+
+  console.log('[Update Webhook] GitHub Actions 자동 업데이트 트리거')
+
+  _updateState.status    = 'pulling'
+  _updateState.message   = 'GitHub Actions Webhook — 최신 코드 다운로드 중...'
+  _updateState.log       = []
+  _updateState.updatedAt = null
+  _addUpdateLog('GitHub Actions Webhook 수신 — 자동 업데이트 시작')
+
+  const cwd = process.cwd()
+
+  ;(async () => {
+    try {
+      // ── 1. git fetch + reset --hard ─────────────────────────────
+      _addUpdateLog('git fetch origin main...')
+      const fetchRes = await runCmd('git', ['fetch', 'origin', 'main'], cwd, 60000)
+      if (fetchRes.code !== 0) {
+        _addUpdateLog(`git fetch 실패: ${fetchRes.stderr.trim()}`)
+        _updateState.status  = 'error'
+        _updateState.message = `git fetch 실패: ${fetchRes.stderr.trim().slice(0, 100)}`
+        return
+      }
+
+      const resetRes = await runCmd('git', ['reset', '--hard', 'origin/main'], cwd, 30000)
+      if (resetRes.code !== 0) {
+        _addUpdateLog(`git reset 실패: ${resetRes.stderr.trim()}`)
+        _updateState.status  = 'error'
+        _updateState.message = `git reset 실패: ${resetRes.stderr.trim().slice(0, 100)}`
+        return
+      }
+      _addUpdateLog(`git reset 완료: ${resetRes.stdout.trim()}`)
+
+      // ── 2. 현재 커밋 해시 갱신 ──────────────────────────────────
+      const hashRes = await runCmd('git', ['rev-parse', '--short', 'HEAD'], cwd, 5000)
+      if (hashRes.code === 0) _updateState.currentCommit = hashRes.stdout.trim()
+
+      // ── 3. npm run build ─────────────────────────────────────────
+      _updateState.status  = 'restarting'
+      _updateState.message = 'npm run build 실행 중...'
+      _addUpdateLog('npm run build 시작...')
+      const buildRes = await runCmd('npm', ['run', 'build'], cwd, 120000)
+      if (buildRes.code !== 0) {
+        _addUpdateLog(`npm run build 실패: ${buildRes.stderr.trim()}`)
+        _updateState.status  = 'error'
+        _updateState.message = `빌드 실패: ${buildRes.stderr.trim().slice(0, 100)}`
+        return
+      }
+      _addUpdateLog('npm run build 완료 ✅')
+
+      // ── 4. pm2 restart ───────────────────────────────────────────
+      _updateState.message = '서버 재시작 중...'
+      _addUpdateLog('pm2 restart safetynote 실행...')
+      setTimeout(async () => {
+        const restartRes = await runCmd('pm2', ['restart', 'safetynote'], cwd, 15000)
+        if (restartRes.code === 0) {
+          _addUpdateLog('pm2 restart 완료 ✅')
+          _updateState.status  = 'done'
+          _updateState.message = `Webhook 자동 업데이트 완료! (${_updateState.currentCommit})`
+        } else {
+          _addUpdateLog(`pm2 restart 실패: ${restartRes.stderr.trim()}`)
+          _updateState.status  = 'error'
+          _updateState.message = `서버 재시작 실패: ${restartRes.stderr.trim().slice(0, 80)}`
+        }
+      }, 1000)
+
+    } catch (e: any) {
+      _addUpdateLog(`Webhook 업데이트 오류: ${e.message}`)
+      _updateState.status  = 'error'
+      _updateState.message = `오류: ${e.message}`
+    }
+  })()
+
+  return c.json({ ok: true, message: 'Webhook 업데이트 시작됨' })
 })
 
 export default app

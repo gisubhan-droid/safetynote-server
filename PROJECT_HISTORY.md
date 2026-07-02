@@ -4337,3 +4337,5 @@ pm2 restart safetynote
 - ✅ GitHub 푸시 완료
 - ⚠️ NAS 업데이트 필요 (git reset --hard origin/main → npm run build → pm2 restart)
 - ⚠️ GitHub Secrets 등록 필요 (DEPLOY_WEBHOOK_SECRET, NAS_WEBHOOK_URL_1 이상)
+
+<!-- FEAT-036 동작 테스트 — 자동 삭제 가능 -->

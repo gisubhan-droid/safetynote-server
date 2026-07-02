@@ -794,6 +794,9 @@ function patchSchema() {
       if (!e.message?.includes('duplicate column')) console.warn('[patchSchema]', e.message)
     }
   }
+  // BUG-055: hazard_reports 처리 사진 컬럼 추가
+  safeAlter("ALTER TABLE hazard_reports ADD COLUMN resolve_photo_data TEXT DEFAULT NULL")
+
   // v0.96: tasks 최종 확인 주소
   safeAlter("ALTER TABLE tasks ADD COLUMN confirmed_address TEXT DEFAULT ''")
   safeAlter("ALTER TABLE tasks ADD COLUMN confirmed_address_source TEXT DEFAULT ''")
@@ -4480,13 +4483,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260625a">
+  <link rel="stylesheet" href="/static/style.css?v=20260630a">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260625a"></script>
+  <script src="/static/app.js?v=20260630a"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260625a"></script>
+  <script src="/static/mobile-app.js?v=20260630a"></script>
 </body>
 </html>`)
 })

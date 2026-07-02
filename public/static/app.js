@@ -12684,7 +12684,7 @@ async function renderHazardsPage(container) {
             const riskLabel = h.risk_level==='critical'?'긴급':h.risk_level==='high'?'높음':h.risk_level==='medium'?'보통':'낮음';
             const riskClass = h.risk_level==='critical'?'risk-critical':h.risk_level==='high'?'risk-high':h.risk_level==='medium'?'risk-medium':'risk-low';
             return `
-            <div class="card" style="border-left:4px solid ${borderColor}">
+            <div class="card" style="border-left:4px solid ${borderColor};cursor:pointer" onclick="showHazardDetail(${h.id})">
               <div class="flex justify-between items-start mb-2">
                 <div class="flex-1">
                   <div class="flex items-center gap-2 mb-1 flex-wrap">
@@ -12701,10 +12701,15 @@ async function renderHazardsPage(container) {
               ${h.recurrence_prevention ? `<p class="text-xs mb-1 px-2 py-1 rounded-lg" style="background:#F5F0F8;color:#685182"><i class="fas fa-shield-alt mr-1"></i><strong>재발방지:</strong> ${h.recurrence_prevention}</p>` : ''}
               ${h.immediate_action ? `<p class="text-xs mb-2" style="color:#685182"><i class="fas fa-bolt mr-1"></i>즉각조치: ${h.immediate_action}</p>` : ''}
               ${h.resolution_notes ? `<p class="text-xs px-3 py-2 rounded-lg mb-2" style="background:#EDE7F6;color:#685182"><i class="fas fa-clipboard-check mr-1"></i>처리내용: ${h.resolution_notes}</p>` : ''}
-              ${h.status !== 'resolved' && currentUser.role !== 'worker' ? `
-                <button onclick="resolveHazard(${h.id})" class="btn btn-primary mt-2 text-xs py-1">
+              <div class="flex gap-2 mt-2" onclick="event.stopPropagation()">
+                ${h.status !== 'resolved' && currentUser.role !== 'worker' ? `
+                <button onclick="resolveHazard(${h.id})" class="btn btn-primary text-xs py-1">
                   <i class="fas fa-check-circle mr-1"></i> 처리 완료
                 </button>` : ''}
+                <button onclick="showHazardDetail(${h.id})" class="btn btn-outline text-xs py-1">
+                  <i class="fas fa-eye mr-1"></i> 상세보기
+                </button>
+              </div>
             </div>`;
           }).join('')}
       </div>
@@ -13004,6 +13009,126 @@ async function submitHazardReport() {
   }
 }
 
+// ── BUG-053·054: 위험신고·아차사고 상세 모달 (사진 포함) ─────────────────────
+async function showHazardDetail(id) {
+  try {
+    const res = await API.get('/hazards');
+    const all = res.data || [];
+    const h = all.find(x => x.id === id);
+    if (!h) { toast('상세 정보를 불러올 수 없습니다.', 'error'); return; }
+
+    const statusLabel = h.status==='resolved'?'조치완료':h.status==='reviewing'?'검토중':'미처리';
+    const statusStyle = h.status==='resolved'?'background:#EDE7F6;color:#685182'
+      :h.status==='reviewing'?'background:#FDE8F3;color:#D70072':'background:#D70072;color:#fff';
+    const riskLabel = h.risk_level==='critical'?'긴급':h.risk_level==='high'?'높음':h.risk_level==='medium'?'보통':'낮음';
+    const riskClass = h.risk_level==='critical'?'risk-critical':h.risk_level==='high'?'risk-high':h.risk_level==='medium'?'risk-medium':'risk-low';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <div class="flex items-center gap-2">
+          <span style="width:36px;height:36px;border-radius:50%;background:#FDE8F3;display:flex;align-items:center;justify-content:center">
+            <i class="fas fa-exclamation-triangle" style="color:#D70072;font-size:16px"></i>
+          </span>
+          <h3 class="font-bold text-base" style="color:#D70072">
+            ${h.report_type==='nearmiss'?'아차사고 상세':'위험신고 상세'}
+          </h3>
+        </div>
+        <button onclick="this.closest('.modal-overlay').remove()" class="text-xl" style="color:#C6C6C6"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body space-y-3">
+
+        <!-- 상태·위험도 -->
+        <div class="flex items-center gap-2 flex-wrap">
+          ${h.report_type==='nearmiss'?`<span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:#EDE7F6;color:#685182"><i class="fas fa-bell mr-1"></i>아차사고</span>`:''}
+          <span class="badge ${riskClass}">${riskLabel}</span>
+          <span class="badge" style="${statusStyle}">${statusLabel}</span>
+          <span class="text-xs ml-auto" style="color:#C6C6C6">${formatDateTime(h.report_date)}</span>
+        </div>
+
+        <!-- 기본 정보 -->
+        <div class="rounded-xl p-3 space-y-2" style="background:#F5F0F8">
+          <div class="flex gap-2 text-xs">
+            <span style="color:#685182;min-width:60px"><i class="fas fa-tag mr-1"></i>유형</span>
+            <span style="color:#4E3A63;font-weight:600">${h.hazard_type||'-'}</span>
+          </div>
+          <div class="flex gap-2 text-xs">
+            <span style="color:#685182;min-width:60px"><i class="fas fa-map-marker-alt mr-1"></i>위치</span>
+            <span style="color:#4E3A63">${h.location||'-'}</span>
+          </div>
+          <div class="flex gap-2 text-xs">
+            <span style="color:#685182;min-width:60px"><i class="fas fa-user mr-1"></i>신고자</span>
+            <span style="color:#4E3A63">${h.reporter_name||'-'}</span>
+          </div>
+        </div>
+
+        <!-- 위험 내용 -->
+        <div>
+          <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-exclamation-circle mr-1"></i>위험 내용</p>
+          <p class="text-sm p-3 rounded-xl" style="background:#FDE8F3;color:#4E3A63">${h.hazard_description||'-'}</p>
+        </div>
+
+        <!-- 즉각 조치 -->
+        ${h.immediate_action ? `
+        <div>
+          <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-bolt mr-1"></i>즉각 조치</p>
+          <p class="text-sm p-3 rounded-xl" style="background:#F5F0F8;color:#4E3A63">${h.immediate_action}</p>
+        </div>` : ''}
+
+        <!-- 아차사고 전용 -->
+        ${h.near_miss_cause ? `
+        <div>
+          <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-search mr-1"></i>발생 원인</p>
+          <p class="text-sm p-3 rounded-xl" style="background:#EDE7F6;color:#4E3A63">${h.near_miss_cause}</p>
+        </div>` : ''}
+        ${h.recurrence_prevention ? `
+        <div>
+          <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-shield-alt mr-1"></i>재발 방지</p>
+          <p class="text-sm p-3 rounded-xl" style="background:#EDE7F6;color:#4E3A63">${h.recurrence_prevention}</p>
+        </div>` : ''}
+
+        <!-- BUG-054: 등록 사진 표시 -->
+        ${h.photo_data ? `
+        <div>
+          <p class="text-xs font-bold mb-2" style="color:#685182"><i class="fas fa-camera mr-1"></i>신고 사진</p>
+          <img src="data:image/jpeg;base64,${h.photo_data}" alt="신고 사진"
+               style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;border:1px solid #D8D0DC"
+               onclick="this.requestFullscreen?.()">
+        </div>` : ''}
+
+        <!-- 처리 정보 (resolved) -->
+        ${h.status==='resolved' ? `
+        <div class="rounded-xl p-3 space-y-2" style="background:#EDE7F6;border:1px solid #8E72A8">
+          <p class="text-xs font-bold" style="color:#685182"><i class="fas fa-clipboard-check mr-1"></i>처리 완료 정보</p>
+          <p class="text-sm" style="color:#4E3A63">${h.resolution_notes||'-'}</p>
+          ${h.resolved_by_name ? `<p class="text-xs" style="color:#685182">처리자: <strong>${h.resolved_by_name}</strong> · ${h.resolved_at?formatDateTime(h.resolved_at):''}</p>` : ''}
+          <!-- BUG-054: 처리 사진 표시 -->
+          ${h.resolve_photo_data ? `
+          <div class="mt-2">
+            <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-camera mr-1"></i>처리 사진</p>
+            <img src="data:image/jpeg;base64,${h.resolve_photo_data}" alt="처리 사진"
+                 style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;border:1px solid #D8D0DC"
+                 onclick="this.requestFullscreen?.()">
+          </div>` : ''}
+        </div>` : ''}
+
+      </div>
+      <div class="modal-footer">
+        <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">닫기</button>
+        ${h.status !== 'resolved' && currentUser.role !== 'worker' ? `
+        <button onclick="this.closest('.modal-overlay').remove();resolveHazard(${h.id})" class="btn btn-primary">
+          <i class="fas fa-check-circle mr-1"></i> 처리 완료
+        </button>` : ''}
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+  } catch(e) {
+    toast('상세 정보를 불러오는 중 오류가 발생했습니다.', 'error');
+  }
+}
+
 async function resolveHazard(id) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -13056,6 +13181,19 @@ async function resolveHazard(id) {
         <textarea id="resolveNotes" class="form-control" rows="3"
           placeholder="처리한 내용을 구체적으로 입력하세요.&#10;예) 안전망 설치 완료 / 작업자 전원 대피 / 누전 차단기 교체 등"></textarea>
       </div>
+      <!-- BUG-055: 처리 사진 첨부 -->
+      <div class="form-group">
+        <label class="form-label"><i class="fas fa-camera mr-1"></i>처리 사진 <span class="text-xs font-normal" style="color:#C6C6C6">(선택)</span></label>
+        <div class="upload-zone" onclick="document.getElementById('resolvePhotoInput').click()"
+             style="border:2px dashed #D8D0DC;border-radius:10px;padding:16px;text-align:center;cursor:pointer;background:#F5F0F8">
+          <i class="fas fa-camera text-2xl mb-1" style="color:#685182"></i>
+          <p class="text-xs" style="color:#685182">사진을 첨부하려면 탭하세요</p>
+        </div>
+        <input type="file" id="resolvePhotoInput" accept="image/*" class="hidden"
+               onchange="previewResolvePhoto(this)">
+        <div id="resolvePhotoPreview"></div>
+      </div>
+
       <div class="rounded-lg px-3 py-2 text-xs flex items-center gap-2" style="background:#F5F0F8;color:#685182">
         <i class="fas fa-user-check"></i>
         <span>처리자: <strong>${currentUser.name}</strong> (${currentUser.role === 'admin' ? '관리자' : '현장감독'})</span>
@@ -13110,6 +13248,24 @@ async function resolveHazard(id) {
   });
 }
 
+function previewResolvePhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('resolvePhotoPreview').innerHTML = `
+      <div class="mt-2 relative" style="display:inline-block">
+        <img src="${e.target.result}" alt="처리사진"
+             style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1px solid #D8D0DC">
+        <button type="button" onclick="document.getElementById('resolvePhotoInput').value='';document.getElementById('resolvePhotoPreview').innerHTML=''"
+                style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#D70072;color:white;border:none;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>`;
+  };
+  reader.readAsDataURL(file);
+}
+
 async function _submitResolveHazard(id) {
   // hidden input에서 선택값 읽기 (radio 방식 제거됨)
   const typeValEl = document.getElementById('resolveTypeVal');
@@ -13119,13 +13275,26 @@ async function _submitResolveHazard(id) {
   const notes = notesEl?.value?.trim();
   if (!notes || notes === typeVal + ':') { toast('처리 내용을 입력하세요.', 'error'); return; }
 
+  // BUG-055: 처리 사진 base64 추출
+  let resolvePhotoData = null;
+  const photoInput = document.getElementById('resolvePhotoInput');
+  if (photoInput && photoInput.files.length > 0) {
+    resolvePhotoData = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(photoInput.files[0]);
+    });
+  }
+
   const btn = document.getElementById('resolveSubmitBtn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>처리 중...'; }
 
   try {
     await API.patch(`/hazards/${id}/resolve`, {
       resolution_notes: `[${typeVal}] ${notes}`,
-      status: 'resolved'
+      status: 'resolved',
+      resolve_photo_data: resolvePhotoData
     });
     document.querySelector('.modal-overlay')?.remove();
     toast('처리 완료되었습니다.');

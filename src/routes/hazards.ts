@@ -77,15 +77,15 @@ app.post('/', async (c) => {
   return c.json({ success: true, id: newId })
 })
 
-// 위험 상황 처리
+// 위험 상황 처리 (BUG-055: resolve_photo_data 저장 추가)
 app.patch('/:id/resolve', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
   const id = c.req.param('id')
-  const { resolution_notes, status } = await c.req.json()
+  const { resolution_notes, status, resolve_photo_data } = await c.req.json()
   await c.env.DB.prepare(
-    `UPDATE hazard_reports SET status=?, resolved_by=?, resolved_at=CURRENT_TIMESTAMP, resolution_notes=? WHERE id=?`
-  ).bind(status || 'resolved', user.id, resolution_notes || '', id).run()
+    `UPDATE hazard_reports SET status=?, resolved_by=?, resolved_at=CURRENT_TIMESTAMP, resolution_notes=?, resolve_photo_data=? WHERE id=?`
+  ).bind(status || 'resolved', user.id, resolution_notes || '', resolve_photo_data || null, id).run()
   return c.json({ success: true })
 })
 

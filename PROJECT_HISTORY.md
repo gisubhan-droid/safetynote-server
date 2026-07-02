@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-02 (세션 72)
-> **서버 현재 버전: `15b3eae`** ← 최신 (GitHub) — BUG-052 안전교육 출력 사진 수정
+> **서버 현재 버전: `15b3eae`** ← 최신 (GitHub) — BUG-051·052 안전교육 사진 미리보기·출력 수정
 > **NAS 배포 버전: `41b0b38`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260630a**
 > **APK 최신**: v1.4.7
@@ -21,7 +21,7 @@
 | BUG-054 | 71 | 2026-06-30 | ✅ 수정 | 위험신고·아차사고 접수 내역 등록 사진 조회 안 됨 | `6bd6f22` |
 | BUG-053 | 71 | 2026-06-30 | ✅ 수정 | 위험신고·아차사고 접수 내역 상세 화면 진입 불가 | `6bd6f22` |
 | BUG-052 | 72 | 2026-07-02 | ✅ 수정 | 안전교육 출력 시 사진 출력 안 됨 | `15b3eae` |
-| BUG-051 | — | 2026-06-29 | 🔴 미수정 | 안전교육 등록 화면 사진 추가 시 미리보기 동작 안 함 | — |
+| BUG-051 | 72 | 2026-07-02 | ✅ 수정 | 안전교육 등록 화면 사진 추가 시 미리보기 동작 안 함 (BUG-052 동일 원인 — /uploads/* 라우트 추가로 함께 해결) | `15b3eae` |
 | BUG-050 | 70 | 2026-06-25 | ✅ 수정 | 현장위치 지도 위험성체크 탭 마커 미표시 — GPS JOIN 누락 | `a091db3` |
 | BUG-049 | 67(C) | 2026-06-24 | ✅ 수정 | 브라우저 업데이트 시 npm run build 누락 — dist/ 이전 버전 유지 | `41b0b38` |
 | BUG-048-2 | 69 | 2026-06-24 | ✅ 수정 | '보통' 선택 첫 1회 버튼 박스 크기 증가 (초기 렌더링 클래스 누락) | `4051cd0` |
@@ -4164,9 +4164,22 @@ LEFT JOIN (
 
 ---
 
-## 세션 72 — BUG-052: 안전교육 출력 시 사진 출력 안 됨 수정
+## 세션 72 — BUG-051·052: 안전교육 사진 미리보기·출력 안 됨 수정
 
 ### 작업 내용
+
+#### BUG-051·052: 동일 근본 원인 — `/uploads/*` 서빙 라우트 미존재
+
+**BUG-051 증상**: 안전교육 등록 화면 증빙사진 모달(`showEduPhotoModal`)에서 업로드 후 사진 미리보기가 표시되지 않음
+**BUG-052 증상**: 안전교육 실시일지 출력(`printEduLog`) 시 교육 사진이 인쇄 화면에 표시되지 않음
+
+**BUG-051 관련 코드** (`showEduPhotoModal`, `reloadPhotos`):
+```javascript
+grid.innerHTML = photos.map(p => `
+  <div onclick="window.open('${p.file_path}','_blank')">
+    <img src="${p.file_path}" class="w-full h-full object-cover ...">  // ← 동일한 file_path
+  </div>`).join('');
+```
 
 #### BUG-052: 안전교육 출력(printEduLog) 시 사진 미출력
 
@@ -4228,5 +4241,5 @@ app.get('/uploads/*', async (c) => {
 ### 상태
 - ✅ node --check 통과
 - ✅ npm run build 성공 (255.99 kB)
-- ✅ GitHub 푸시 예정
+- ✅ GitHub 푸시 완료 (`abe9e37` → `8f08226`)
 - ⚠️ NAS 업데이트 필요 (git reset --hard origin/main → npm run build → pm2 restart)

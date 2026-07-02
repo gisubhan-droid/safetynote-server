@@ -1,6 +1,6 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-02 (세션 75)
+> 최종 업데이트: 2026-07-02 (세션 76)
 > **서버 현재 버전: `23007db`** ← 최신 (GitHub) — 수동/자동 업데이트 모드 선택 UI + 버전 태그
 > **NAS 배포 버전: `23007db`** ✅ 최신 반영 완료
 > **캐시 버전: v=20260702a**
@@ -9,6 +9,7 @@
 > **⚠️ 수정 대기 목록 (일괄 작업 예정)**
 > - BUG-056: TBM 위험성(체크리스트)평가 화면 — TBM 안전조치 사진 미리보기 안 됨
 > - BUG-057: TBM 회의록 출력 — 서명란 2열 배치 + 안전조치 사진 하단 2열 배치
+> - BUG-058: TBM 상세 모달 — 참가자 서명 2열 배치 + TBM 촬영사진 미리보기 섹션 추가
 
 ---
 
@@ -20,6 +21,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-058 | 76 | 2026-07-02 | ⏳ 대기 | TBM 상세 모달(`showTbmDetail`) — 참가자 서명 2열 배치 + TBM 촬영사진 미리보기 섹션 추가 | — |
 | BUG-057 | 75 | 2026-07-02 | ⏳ 대기 | TBM 회의록 출력 — 서명란 2열(인원별) 배치 + 안전조치 촬영사진 하단 2열 배치 | — |
 | BUG-056 | 74 | 2026-07-02 | ⏳ 대기 | TBM 위험성(체크리스트)평가 화면 — TBM 안전조치 사진 미리보기 안 됨 | — |
 | BUG-055 | 71 | 2026-06-30 | ✅ 수정 | 위험신고·아차사고 처리완료(resolved) 화면에 사진 첨부 기능 추가 | `6bd6f22` |
@@ -4403,4 +4405,91 @@ const sigRowsHtml = orderedSigs.map(s => `<tr>
 - BUG-056(사진 미리보기 안 됨)도 동시 수정 필요 — 원인: `photoImgSrc(p.id)` 미사용
 - 출력 창은 별도 window이므로 토큰 전달 방식 동일 유지
 - `sig-table` CSS 클래스 2열 대응으로 확장 필요
+
+
+---
+
+## 세션 76 — BUG-058: TBM 상세 모달 서명 2열 배치 + TBM 촬영사진 미리보기 추가
+
+### 작업 개요
+- **세션**: 76
+- **날짜**: 2026-07-02
+- **상태**: ⏳ 일괄 작업 대기
+
+### 요청 내용 (스크린샷 확인)
+`showTbmDetail()` 모달 화면 2가지 개선 요청:
+
+1. **참가자 서명 2열 배치**
+   - 현재: 1열 세로 리스트 (참가자 1명 = 1행, 이름 + 미서명/서명완료 상태)
+   - 변경: 2열 그리드 — 참가자 2명씩 좌우 배치 (모바일에서도 공간 절약)
+   - 서명 완료(초록), 미서명(빨강) 카드 스타일 유지
+   - 클릭 → 서명 패드 동작 유지
+
+2. **TBM 촬영사진 미리보기 섹션 추가**
+   - 현재: 사진 섹션 없음 (TBM 상세 모달에 사진 표시 없음)
+   - 변경: 서명 패널 위 또는 아래에 "📸 안전조치 사진" 섹션 추가
+   - 데이터 출처: `checklistData.tbm_sections` (`/checklist/task/:taskId`)
+   - 단, `showTbmDetail()`은 현재 checklist API 호출 없음
+     → `tbm.task_id`를 이용해 `/checklist/task/${tbm.task_id}` 추가 조회 필요
+   - 사진 2열 grid 표시 (사진 + 라벨)
+   - 사진 없으면 섹션 자체 미표시
+
+### 수정 대상 파일
+| 파일 | 위치 | 수정 내용 |
+|------|------|---------|
+| `public/static/app.js` | `showTbmDetail()` 함수 (9557~9855줄) | ① API 호출에 checklist 추가 ② 서명 2열 렌더링 ③ 사진 섹션 추가 |
+
+### 현재 참가자 서명 렌더링 위치 (9617~9664줄)
+```javascript
+const attendeeRows = attendees.length > 0
+  ? attendees.map((name, idx) => {
+      // 현재: 1열 div
+      return `<div style="display:flex;align-items:center;...">...</div>`
+    })
+```
+
+### 변경 목표 — 서명 2열
+```javascript
+// 2명씩 짝지어 grid row 생성
+const paired = [];
+for (let i = 0; i < allSigItems.length; i += 2) {
+  paired.push([allSigItems[i], allSigItems[i+1] || null]);
+}
+// <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+//   <card> 참가자1 </card>
+//   <card> 참가자2 </card>
+// </div>
+```
+
+### 변경 목표 — 사진 미리보기 섹션
+```javascript
+// showTbmDetail() _reload() 내 API 추가
+const checklistRes = tbm.task_id
+  ? await API.get(`/checklist/task/${tbm.task_id}`).catch(() => ({ data: { tbm_sections: [] } }))
+  : { data: { tbm_sections: [] } };
+const tbmSections = checklistRes.data?.tbm_sections || [];
+
+// 사진 섹션 HTML (tbmSections 있을 때만)
+const photoSectionHtml = tbmSections.length > 0 ? `
+  <div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:12px;padding:12px 14px;margin-bottom:8px">
+    <div style="font-size:12px;font-weight:700;color:#1D4ED8;margin-bottom:8px">
+      <i class="fas fa-camera" style="margin-right:4px"></i>안전조치 사진
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      ${tbmSections.flatMap(sec => (sec.photos||[]).filter(p=>p.file_path).map(p => `
+        <div>
+          <img src="/api/photos/${p.id}/img?token=..." style="width:100%;height:80px;object-fit:cover;border-radius:6px">
+          <div style="font-size:10px;color:#374151;margin-top:2px">${p.label}</div>
+        </div>
+      `)).join('')}
+    </div>
+  </div>
+` : '';
+```
+
+### 수정 시 주의사항
+- BUG-056(체크리스트 탭 사진 미리보기 안 됨)과 동시 수정 권장
+- BUG-057(회의록 출력 서명 2열 + 사진)과 같은 배치로 통합 작업 효율적
+- 서명 2열 시 홀수 인원 처리: 마지막 카드 colspan=2 또는 빈 카드로 처리
+- 사진 토큰 전달: `photoImgSrc(p.id)` 함수 사용 (토큰 자동 포함)
 

@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-06-25 (세션 70)
-> **서버 현재 버전: `a091db3`** ← 최신 (GitHub) — BUG-050 현장위치 지도 위험성체크 수정
+> 최종 업데이트: 2026-06-30 (세션 71)
+> **서버 현재 버전: `6bd6f22`** ← 최신 (GitHub) — BUG-053~055 위험신고·아차사고 상세·사진 수정
 > **NAS 배포 버전: `41b0b38`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260625a**
 > **APK 최신**: v1.4.7
@@ -17,9 +17,9 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
-| BUG-055 | — | 2026-06-30 | 🔴 미수정 | 위험신고·아차사고 처리완료(resolved) 화면에 사진 첨부 기능 추가 — 현재 처리완료 시 사진 첨부 UI 없음 | — |
-| BUG-054 | — | 2026-06-30 | 🔴 미수정 | 위험신고·아차사고 접수 내역 등록 사진 조회 안 됨 | — |
-| BUG-053 | — | 2026-06-30 | 🔴 미수정 | 위험신고·아차사고 접수 내역 상세 화면 진입 불가 | — |
+| BUG-055 | 71 | 2026-06-30 | ✅ 수정 | 위험신고·아차사고 처리완료(resolved) 화면에 사진 첨부 기능 추가 | `6bd6f22` |
+| BUG-054 | 71 | 2026-06-30 | ✅ 수정 | 위험신고·아차사고 접수 내역 등록 사진 조회 안 됨 | `6bd6f22` |
+| BUG-053 | 71 | 2026-06-30 | ✅ 수정 | 위험신고·아차사고 접수 내역 상세 화면 진입 불가 | `6bd6f22` |
 | BUG-052 | — | 2026-06-29 | 🔴 미수정 | 안전교육 출력 시 사진 출력 안 됨 | — |
 | BUG-051 | — | 2026-06-29 | 🔴 미수정 | 안전교육 등록 화면 사진 추가 시 미리보기 동작 안 함 | — |
 | BUG-050 | 70 | 2026-06-25 | ✅ 수정 | 현장위치 지도 위험성체크 탭 마커 미표시 — GPS JOIN 누락 | `a091db3` |
@@ -4112,3 +4112,52 @@ LEFT JOIN (
 - ✅ 복원 스크립트: restore_before_bug050.sh (기준: 3e66dc7)
 - ✅ 커밋·푸시 완료 (a091db3)
 - ⏳ NAS 업데이트 대기
+
+---
+
+## 세션 71 — BUG-053·054·055 위험신고·아차사고 상세화면·사진 일괄 수정
+
+> 날짜: 2026-06-30 | 커밋: `6bd6f22` | 캐시버전: `v=20260630a`
+
+### 수정 내용
+
+#### BUG-053: 위험신고·아차사고 상세 화면 진입 불가
+- **원인**: 카드에 `onclick` 이벤트 없음 + `showHazardDetail()` 함수 미존재
+- **수정**:
+  - 카드 div에 `onclick="showHazardDetail(h.id)"` 추가
+  - `showHazardDetail()` 함수 신규 작성 (상세 모달)
+  - 카드 하단 "상세보기" 버튼 추가
+
+#### BUG-054: 위험신고·아차사고 등록 사진 조회 안 됨
+- **원인**: 상세 화면 자체가 없어 `photo_data` 표시 불가
+- **수정**: `showHazardDetail()` 모달 내 신고 사진(`photo_data`) 표시
+  - Base64 데이터 → `<img src="data:image/jpeg;base64,...">` 렌더링
+  - 탭하면 전체화면 확대 (`requestFullscreen`)
+  - 처리완료 사진(`resolve_photo_data`)도 상세 모달에 함께 표시
+
+#### BUG-055: 위험신고·아차사고 처리완료 화면 사진 첨부 기능 추가
+- **원인**: `resolveHazard()` 모달에 사진 첨부 UI 없음, API도 미처리
+- **수정**:
+  - `resolveHazard()` 모달에 사진 첨부 UI 추가 (upload-zone + 미리보기)
+  - `previewResolvePhoto()` 함수 신규 작성
+  - `_submitResolveHazard()` — `resolve_photo_data` Base64 추출 후 API 전송
+  - `src/routes/hazards.ts` PATCH `/:id/resolve` — `resolve_photo_data` 저장 처리
+  - `node-server.ts` — `hazard_reports` 테이블에 `resolve_photo_data` 컬럼 자동 추가 (`safeAlter`)
+
+### 수정 파일
+| 파일 | 내용 |
+|------|------|
+| `public/static/app.js` | 카드 onclick·showHazardDetail·previewResolvePhoto·_submitResolveHazard 수정 |
+| `src/routes/hazards.ts` | PATCH resolve에 resolve_photo_data 저장 추가 |
+| `node-server.ts` | safeAlter로 resolve_photo_data 컬럼 자동 추가 + 캐시버전 갱신 |
+
+### 커밋
+| 해시 | 내용 |
+|------|------|
+| `6bd6f22` | fix: BUG-053~055 위험신고·아차사고 상세화면·사진조회·처리완료사진첨부 수정 |
+
+### 상태
+- ✅ node --check 통과
+- ✅ npm run build 성공 (255.99 kB)
+- ✅ GitHub 푸시 완료
+- ⚠️ NAS 업데이트 필요 (git reset --hard origin/main → npm run build → pm2 restart)

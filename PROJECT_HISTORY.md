@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-02 (세션 72)
-> **서버 현재 버전: `15b3eae`** ← 최신 (GitHub) — BUG-051·052 안전교육 사진 미리보기·출력 수정
+> 최종 업데이트: 2026-07-02 (세션 73)
+> **서버 현재 버전: `bec2bc3`** ← 최신 (GitHub) — FEAT-035·036 다중 NAS 자동 업데이트·APK 배포
 > **NAS 배포 버전: `41b0b38`** ⚠️ 업데이트 필요 (git reset --hard origin/main)
 > **캐시 버전: v=20260630a**
 > **APK 최신**: v1.4.7
@@ -42,8 +42,8 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
-| FEAT-036 | — | 2026-06-30 | ⏳ 대기 | 다중 NAS 자동 업데이트 — GitHub Actions → 모든 NAS 동시 Webhook (`build-server.yml` 신규 작성) / 사용자: GitHub Secrets에 NAS 주소 등록 필요 | — |
-| FEAT-035 | — | 2026-06-30 | ⏳ 대기 | 다중 NAS APK 자동배포 — 추가 NAS Webhook URL GitHub Secrets 등록 후 적용 | — |
+| FEAT-036 | 73 | 2026-07-02 | ✅ 구현 | 다중 NAS 자동 업데이트 — `build-server.yml` + `POST /api/admin/update/webhook` / GitHub Secrets 등록 후 즉시 동작 | `bec2bc3` |
+| FEAT-035 | 73 | 2026-07-02 | ✅ 구현 | 다중 NAS APK 자동배포 — `build-apk.yml` (dist-apk/** push 시 NAS_WEBHOOK_URL_1~5 동시 전송) / GitHub Secrets 등록 후 즉시 동작 | `bec2bc3` |
 | FEAT-034 | 67(A) | 2026-06-24 | ✅ 완료 | 사이드바 메뉴 순서 변경 (공사현황 → 5번으로 이동) | `5bc8514` |
 | FEAT-033 | 68 | 2026-06-24 | ✅ 완료 | 체크리스트 시행일 기준 planned_date 자동갱신 + 명칭 변경 | `62a3838` |
 | FEAT-032 | 66 | 2026-06-24 | ✅ 완료 | 상태 드롭다운 + 완료 알림 발송 | `567fc23` |
@@ -4243,3 +4243,97 @@ app.get('/uploads/*', async (c) => {
 - ✅ npm run build 성공 (255.99 kB)
 - ✅ GitHub 푸시 완료 (`abe9e37` → `8f08226`)
 - ⚠️ NAS 업데이트 필요 (git reset --hard origin/main → npm run build → pm2 restart)
+
+---
+
+## 세션 73 — FEAT-035·036: 다중 NAS 자동 업데이트·APK 배포 구현
+
+> 날짜: 2026-07-02 | 커밋: `bec2bc3`
+
+### 구현 내용
+
+#### FEAT-036: 다중 NAS 서버 자동 업데이트
+
+**배경**: 기존 `POST /api/admin/update/apply`는 관리자 비밀번호 필수 → GitHub Actions 자동화 불가
+
+**구현 방법**:
+1. `src/nas-routes/admin.ts` — `POST /api/admin/update/webhook` 신규 추가
+   - `DEPLOY_WEBHOOK_SECRET` 환경변수로 인증 (APK webhook과 동일 시크릿 재사용)
+   - 비밀번호 없이 호출 가능 → CI/CD 자동화 적합
+   - 내부 로직: git fetch → git reset --hard origin/main → npm run build → pm2 restart
+   - `_updateState` 공유 → 관리자 UI의 "업데이트 상태" 화면에서도 진행 상황 확인 가능
+
+2. `.github/workflows/build-server.yml` 신규 작성
+   - **트리거**: `main` 브랜치 push (`.md`, `docs/**`, `build-apk.yml` 변경 제외)
+   - **방식**: `NAS_WEBHOOK_URL_1 ~ NAS_WEBHOOK_URL_5`에 병렬(`&`) curl 전송
+   - curl 옵션: `--retry 2`, `--max-time 30`, `-k`(자체서명 인증서 허용)
+   - Secret 미설정 시 graceful skip (workflow 실패 없이 종료)
+
+**GitHub Secrets 등록 방법**:
+```
+저장소 → Settings → Secrets and variables → Actions → New repository secret
+DEPLOY_WEBHOOK_SECRET = <NAS에 설정된 값과 동일>
+NAS_WEBHOOK_URL_1     = https://your-nas1.example.com:3443
+NAS_WEBHOOK_URL_2     = https://your-nas2.example.com:3443
+```
+
+**NAS 서버 설정**:
+```bash
+# pm2 ecosystem 또는 .env 에 추가
+DEPLOY_WEBHOOK_SECRET=<시크릿값>
+# 추가 후 재시작
+pm2 restart safetynote
+```
+
+---
+
+#### FEAT-035: 다중 NAS APK 자동 배포
+
+**구현**: `.github/workflows/build-apk.yml` 신규 작성
+
+- **트리거**: `dist-apk/**` 경로 파일 변경 시에만 실행
+- **APK 파일 구조**:
+  ```
+  dist-apk/
+  ├── safetynote.apk   # 실제 APK
+  ├── version.txt      # 버전 문자열 (예: 1.4.8)
+  └── release.txt      # 릴리스 노트 (선택)
+  ```
+- **방식**: GitHub raw URL → NAS가 직접 다운로드 (`POST /api/dist/apk/webhook`)
+- **Private repo 대응**: `GH_PAT` Secret 설정 시 URL에 토큰 삽입
+- `NAS_WEBHOOK_URL_1 ~ NAS_WEBHOOK_URL_5` 동시 병렬 전송 (서버 업데이트와 동일 URL Secret 공유)
+
+---
+
+### 수정/추가 파일
+
+| 파일 | 내용 |
+|------|------|
+| `src/nas-routes/admin.ts` | `POST /api/admin/update/webhook` 신규 추가 (96줄) |
+| `.github/workflows/build-server.yml` | FEAT-036: 다중 NAS 서버 자동 업데이트 workflow |
+| `.github/workflows/build-apk.yml` | FEAT-035: 다중 NAS APK 자동 배포 workflow |
+
+### GitHub Secrets 전체 목록
+
+| Secret 이름 | 용도 | 필수 여부 |
+|-------------|------|----------|
+| `DEPLOY_WEBHOOK_SECRET` | NAS 서버 webhook 인증 | ✅ 필수 |
+| `NAS_WEBHOOK_URL_1` | 첫 번째 NAS URL | ✅ 최소 1개 |
+| `NAS_WEBHOOK_URL_2` | 두 번째 NAS URL | 선택 |
+| `NAS_WEBHOOK_URL_3` | 세 번째 NAS URL | 선택 |
+| `NAS_WEBHOOK_URL_4` | 네 번째 NAS URL | 선택 |
+| `NAS_WEBHOOK_URL_5` | 다섯 번째 NAS URL | 선택 |
+| `GH_PAT` | GitHub Personal Access Token (APK private repo) | 선택 |
+
+### 커밋
+
+| 해시 | 내용 |
+|------|------|
+| `bec2bc3` | feat(FEAT-035·036): 다중 NAS 자동 업데이트·APK 배포 GitHub Actions 추가 |
+
+### 상태
+- ✅ node --check 통과
+- ✅ npm run build 성공 (255.99 kB)
+- ✅ GitHub 푸시 완료
+- ⚠️ NAS 업데이트 필요 (git reset --hard origin/main → npm run build → pm2 restart)
+- ⚠️ GitHub Secrets 등록 필요 (DEPLOY_WEBHOOK_SECRET, NAS_WEBHOOK_URL_1 이상)

@@ -9902,10 +9902,16 @@ async function showTbmDetail(tbmId) {
           style="padding:6px 14px;background:#4E3A63;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
           <i class="fas fa-print"></i> 인쇄
         </button>
+        ${_tbmTaskId ? `
+        <button onclick="this.closest('.modal-overlay').remove();_openTbmPhotoModal(null,${_tbmTaskId})"
+          style="padding:6px 14px;background:#0891B2;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
+          <i class="fas fa-camera"></i> 사진 등록
+        </button>` : ''}
+        ${allSigned ? `
         <button onclick="_tbmShare(${tbmId}, this)"
           style="padding:6px 14px;background:#0EA5E9;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
           <i class="fas fa-share-alt"></i> 공유
-        </button>
+        </button>` : ''}
         ${(currentUser?.role === 'admin' || tbm.conductor_id === currentUser?.id) ? `
         <button onclick="_deleteTbm(${tbmId},${_tbmTaskId||'null'})"
           style="padding:6px 14px;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
@@ -10262,6 +10268,14 @@ async function _loadTbmSigBadge(taskId) {
         ? '서명 없음'
         : `✍️ ${signedCount}/${total}명 서명`;
     badge.style.color = allSigned ? '#059669' : total === 0 ? '#9CA3AF' : '#B45309';
+
+    // 전원 서명 완료 시: 공유 버튼 표시 + 서명받기 버튼 숨김
+    const shareBtn = document.getElementById(`tbm-share-btn-${taskId}`);
+    const signBtn  = document.getElementById(`tbm-sign-btn-${taskId}`);
+    if (allSigned) {
+      if (shareBtn) { shareBtn.style.display = 'inline-flex'; }
+      if (signBtn)  { signBtn.style.display  = 'none'; }
+    }
   } catch(e) {
     const badge = document.getElementById(`tbm-sig-badge-${taskId}`);
     if (badge) { badge.textContent = '조회 실패'; badge.style.color = '#EF4444'; }
@@ -11163,6 +11177,21 @@ async function _tbmShare(tbmId, btnEl) {
   }
 }
 
+// task_id 기준으로 tbm_id를 조회한 후 _tbmShare 호출 (근로자 카드 공유 버튼)
+async function _tbmShareByTaskId(taskId, btnEl) {
+  if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+  try {
+    const res = await API.get(`/tasks/${taskId}/tbm-info`);
+    const tbmId = res.data?.tbm?.id;
+    if (!tbmId) { toast('TBM 정보를 찾을 수 없습니다.', 'error'); return; }
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-share-alt"></i> 공유'; }
+    await _tbmShare(tbmId, null);
+  } catch(e) {
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-share-alt"></i> 공유'; }
+    toast('TBM 공유 링크 생성에 실패했습니다.', 'error');
+  }
+}
+
 // ======= 근로자 - 내 작업 목록 =======
 // 나의작업현황 카드 클릭 → 내 작업 페이지로 필터 이동
 let _myTasksFilter = null;  // 'all' | 'working' | 'completed' | 'logs' | 'quantity'
@@ -11343,8 +11372,11 @@ async function renderMyTasksPage(container) {
                 ${t.status === 'assigned' ? `<button onclick="showChecklistAssessment(${t.id},this.dataset.title,this.dataset.cls)" data-title="${(t.title||'').replace(/"/g,'&quot;')}" data-cls="${t.work_class||'cable_install'}" class="btn btn-purple text-xs py-1 flex-1"><i class="fas fa-clipboard-list mr-1"></i>위험성(체크리스트)평가</button>` : ''}
                 ${t.status === 'in_progress' ? `<button onclick="showTbmForm(${t.id})" class="btn btn-warning text-xs py-1 flex-1"><i class="fas fa-users mr-1"></i>TBM 실시</button>` : ''}
                 ${t.status === 'tbm_done' ? `
-                  <button onclick="_openTbmSignPanel(${t.id})" class="btn text-xs py-1 flex-1 font-bold" style="background:linear-gradient(135deg,#D70072,#FF349E);color:white;border:none">
+                  <button id="tbm-sign-btn-${t.id}" onclick="_openTbmSignPanel(${t.id})" class="btn text-xs py-1 flex-1 font-bold" style="background:linear-gradient(135deg,#D70072,#FF349E);color:white;border:none">
                     <i class="fas fa-pen-nib mr-1"></i>서명 받기
+                  </button>
+                  <button id="tbm-share-btn-${t.id}" onclick="_tbmShareByTaskId(${t.id}, this)" style="display:none;padding:5px 10px;background:#0EA5E9;color:white;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;align-items:center;gap:3px">
+                    <i class="fas fa-share-alt"></i> 공유
                   </button>
                   <button onclick="changeTaskStatus(${t.id},'working')" class="btn btn-success text-xs py-1 flex-1"><i class="fas fa-play mr-1"></i>작업 개시</button>
                 ` : ''}

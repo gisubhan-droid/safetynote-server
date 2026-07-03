@@ -4297,20 +4297,24 @@ app.get('/tbm-share/:token', async (c) => {
       let grid = ''
       for (let i = 0; i < allPhotos.length; i += 2) {
         const L = allPhotos[i], R = allPhotos[i + 1]
-        grid += `<div style="display:contents">
-          <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
-            <img src="/tbm-share/${token}/photo/${L.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy">
-            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">[${_esc(L.section_name)}] ${_esc(L.label)}</div>
+        const Lcap = `[${L.section_name}] ${L.label || ''}`.trim()
+        const Rcap = R ? `[${R.section_name}] ${R.label || ''}`.trim() : ''
+        // onclick: _lbOpen(src, caption) — caption은 JSON.stringify로 안전하게 전달
+        grid += `<div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;cursor:pointer"
+            onclick="_lbOpen('/tbm-share/${token}/photo/${L.id}',${JSON.stringify(Lcap)})">
+            <img src="/tbm-share/${token}/photo/${L.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy" onerror="this.style.opacity='.3'">
+            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">${_esc(Lcap)}</div>
           </div>
-          ${R ? `<div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
-            <img src="/tbm-share/${token}/photo/${R.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy">
-            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">[${_esc(R.section_name)}] ${_esc(R.label)}</div>
-          </div>` : '<div></div>'}
-        </div>`
+          ${R ? `<div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;cursor:pointer"
+            onclick="_lbOpen('/tbm-share/${token}/photo/${R.id}',${JSON.stringify(Rcap)})">
+            <img src="/tbm-share/${token}/photo/${R.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy" onerror="this.style.opacity='.3'">
+            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">${_esc(Rcap)}</div>
+          </div>` : '<div></div>'}`
       }
       photoSectionHtml = `
         <div style="background:white;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)">
           <h3 style="font-size:13px;font-weight:700;color:#0369A1;margin:0 0 10px"><i class="fas fa-camera" style="margin-right:6px"></i>TBM 안전조치 촬영사진 <span style="font-size:11px;font-weight:400;color:#0284C7">${allPhotos.length}장</span></h3>
+          <p style="font-size:11px;color:#6B7280;margin:0 0 8px"><i class="fas fa-hand-pointer" style="margin-right:4px"></i>사진을 클릭하면 크게 볼 수 있습니다</p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${grid}</div>
         </div>`
     }
@@ -4321,6 +4325,9 @@ app.get('/tbm-share/:token', async (c) => {
     : '<span style="font-size:12px;color:#9CA3AF">정보 없음</span>'
 
   const expiresDate = (shareRow.expires_at || '').slice(0, 10)
+
+  // 지도 주소 (geo: 링크용)
+  const gpsAddr = tbm.task_gps_address || tbm.gps_address || tbm.location || ''
 
   return c.html(`<!DOCTYPE html>
 <html lang="ko">
@@ -4338,9 +4345,25 @@ app.get('/tbm-share/:token', async (c) => {
     .label { font-size: 11px; color: #9CA3AF; margin-bottom: 2px; }
     .value { font-size: 13px; font-weight: 600; color: #1F2937; }
     .badge { display:inline-block;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600; }
+    /* 사진 라이트박스 */
+    #_lb { display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;align-items:center;justify-content:center;flex-direction:column }
+    #_lb.open { display:flex }
+    #_lb img { max-width:96vw;max-height:80vh;object-fit:contain;border-radius:8px }
+    #_lb ._lb-cap { color:#e5e7eb;font-size:12px;margin-top:10px;text-align:center;max-width:90vw }
+    #_lb ._lb-close { position:absolute;top:16px;right:18px;color:white;font-size:28px;cursor:pointer;background:none;border:none;line-height:1 }
+    /* 지도 버튼 */
+    .map-btn { display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:8px;border:1px solid #BFDBFE;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;margin-top:6px }
+    .map-btn:hover { background:#DBEAFE }
   </style>
 </head>
 <body>
+  <!-- 사진 라이트박스 -->
+  <div id="_lb" onclick="if(event.target===this)_lbClose()">
+    <button class="_lb-close" onclick="_lbClose()">&times;</button>
+    <img id="_lb-img" src="" alt="">
+    <div class="_lb-cap" id="_lb-cap"></div>
+  </div>
+
   <div class="container">
     <!-- 헤더 -->
     <div style="background:linear-gradient(135deg,#1D4ED8,#3B82F6);color:white;border-radius:12px;padding:16px 20px;margin-bottom:12px">
@@ -4359,8 +4382,21 @@ app.get('/tbm-share/:token', async (c) => {
         <div><div class="label">TBM 실시 일시</div><div class="value">${_esc((tbm.tbm_date || '').slice(0, 16).replace('T', ' '))}</div></div>
         <div><div class="label">날씨/기온</div><div class="value">${_esc(tbm.weather) || '-'} / ${tbm.temperature != null ? _esc(tbm.temperature) + '°C' : '-'}</div></div>
       </div>
-      ${(tbm.task_gps_address || tbm.gps_address || tbm.location) ? `
-      <div style="margin-top:8px"><div class="label">TBM 실시 주소</div><div class="value" style="font-size:12px">${_esc(tbm.task_gps_address || tbm.gps_address || tbm.location) || '-'}</div></div>` : ''}
+      ${gpsAddr ? `
+      <div style="margin-top:8px">
+        <div class="label">TBM 실시 주소</div>
+        <div class="value" style="font-size:12px">${_esc(gpsAddr)}</div>
+        <a class="map-btn"
+           href="https://map.kakao.com/?q=${encodeURIComponent(gpsAddr)}"
+           target="_blank" rel="noopener">
+          <i class="fas fa-map-marker-alt"></i> 카카오맵
+        </a>
+        <a class="map-btn" style="margin-left:4px"
+           href="https://m.map.naver.com/search2/search.naver?query=${encodeURIComponent(gpsAddr)}"
+           target="_blank" rel="noopener">
+          <i class="fas fa-map"></i> 네이버지도
+        </a>
+      </div>` : ''}
     </div>
 
     <!-- 작업자 -->
@@ -4390,6 +4426,22 @@ app.get('/tbm-share/:token', async (c) => {
       이 페이지는 로그인 없이 열람 가능한 공개 링크입니다.
     </div>
   </div>
+
+  <script>
+    // ── 라이트박스 ──────────────────────────────────────────────────────────────
+    function _lbOpen(src, cap) {
+      document.getElementById('_lb-img').src = src;
+      document.getElementById('_lb-cap').textContent = cap || '';
+      document.getElementById('_lb').classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+    function _lbClose() {
+      document.getElementById('_lb').classList.remove('open');
+      document.getElementById('_lb-img').src = '';
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') _lbClose(); });
+  </script>
 </body>
 </html>`)
 })
@@ -4843,13 +4895,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260703b">
+  <link rel="stylesheet" href="/static/style.css?v=20260703c">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260703b"></script>
+  <script src="/static/app.js?v=20260703c"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260703b"></script>
+  <script src="/static/mobile-app.js?v=20260703c"></script>
 </body>
 </html>`)
 })

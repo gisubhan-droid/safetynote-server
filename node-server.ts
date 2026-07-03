@@ -2999,28 +2999,68 @@ app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
 // ─── FEAT-037: POST /api/tbm/:id/share-token (RULE-002: tbmExtraRoutes·tbmRoutes 앞에 등록) ───
 // 공유 토큰 발급 (로그인 필요, 7일 유효, 기존 유효 토큰 재사용)
+// 응답에 텍스트 복사용 작업 정보 포함
 app.post('/api/tbm/:id/share-token', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const tbmId = Number(c.req.param('id'))
-  const tbmRow = rawDb.prepare('SELECT id, task_id FROM tbm_records WHERE id = ?').get(tbmId) as any
+
+  // TBM + 작업 기본정보 조회 (텍스트 복사용)
+  const tbmRow = rawDb.prepare(`
+    SELECT tbm.id, tbm.task_id, tbm.attendees,
+           tk.work_number, tk.title AS task_title,
+           tk.gps_address AS task_gps_address,
+           sv.name AS supervisor_name
+    FROM tbm_records tbm
+    LEFT JOIN tasks tk ON tk.id = tbm.task_id
+    LEFT JOIN users sv ON sv.id = tk.supervisor_id
+    WHERE tbm.id = ?
+  `).get(tbmId) as any
   if (!tbmRow) return c.json({ error: 'TBM 없음' }, 404)
+
+  // 배정 작업자 목록
+  let assignedWorkers: string[] = []
+  if (tbmRow.task_id) {
+    try {
+      const wRows = rawDb.prepare(
+        `SELECT u.name FROM task_assignments ta JOIN users u ON u.id = ta.worker_id WHERE ta.task_id = ? ORDER BY u.name`
+      ).all(tbmRow.task_id) as any[]
+      assignedWorkers = wRows.map((r: any) => r.name).filter(Boolean)
+    } catch(_) {}
+  }
+
+  // attendees (TBM 참석자) — 배정 작업자와 다를 수 있으므로 별도 반환
+  let attendees: string[] = []
+  try { attendees = typeof tbmRow.attendees === 'string' ? JSON.parse(tbmRow.attendees) : (tbmRow.attendees || []) } catch(_) {}
 
   // 기존 유효 토큰 재사용 (7일 이내)
   const existing = rawDb.prepare(
     `SELECT token FROM tbm_share_tokens WHERE tbm_id = ? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1`
   ).get(tbmId) as any
+
+  let token: string
   if (existing?.token) {
-    return c.json({ token: existing.token, url: `/tbm-share/${existing.token}` })
+    token = existing.token
+  } else {
+    // 새 토큰 생성
+    token = crypto.randomUUID().replace(/-/g, '')
+    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+    rawDb.prepare(
+      `INSERT INTO tbm_share_tokens (token, tbm_id, task_id, expires_at) VALUES (?, ?, ?, ?)`
+    ).run(token, tbmId, tbmRow.task_id || null, expiresAt)
   }
 
-  // 새 토큰 생성
-  const token = crypto.randomUUID().replace(/-/g, '')
-  const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19)
-  rawDb.prepare(
-    `INSERT INTO tbm_share_tokens (token, tbm_id, task_id, expires_at) VALUES (?, ?, ?, ?)`
-  ).run(token, tbmId, tbmRow.task_id || null, expiresAt)
-  return c.json({ token, url: `/tbm-share/${token}` })
+  return c.json({
+    token,
+    url: `/tbm-share/${token}`,
+    // 텍스트 복사용 정보
+    work_number:      tbmRow.work_number || '',
+    task_title:       tbmRow.task_title || '',
+    supervisor_name:  tbmRow.supervisor_name || '',
+    assigned_workers: assignedWorkers,
+    attendees,
+    gps_address:      tbmRow.task_gps_address || ''
+  })
 })
 
 // ─── TBM 서명/결재 → nas-routes/tbm-extra.ts (RULE-002: tbmRoutes 앞에 마운트) ─
@@ -4198,13 +4238,16 @@ app.get('/tbm-share/:token', async (c) => {
   const tbmId = shareRow.tbm_id
   const taskId = shareRow.task_id
 
-  // TBM 기본 정보
+  // TBM 기본 정보 (tasks.manager_name 없음 → supervisor_id JOIN으로 담당자 조회)
   const tbm = rawDb.prepare(`
     SELECT t.*, u.name AS conductor_name,
-           tk.work_number, tk.title AS task_title, tk.manager_name, tk.gps_address
+           tk.work_number, tk.title AS task_title,
+           tk.gps_address AS task_gps_address,
+           sv.name AS supervisor_name
     FROM tbm_records t
     LEFT JOIN users u ON u.id = t.conductor_id
     LEFT JOIN tasks tk ON tk.id = t.task_id
+    LEFT JOIN users sv ON sv.id = tk.supervisor_id
     WHERE t.id = ?
   `).get(tbmId) as any
   if (!tbm) return c.json({ error: 'TBM 없음' }, 404)
@@ -4212,6 +4255,20 @@ app.get('/tbm-share/:token', async (c) => {
   // 참가자(작업자) 목록
   let attendees: string[] = []
   try { attendees = typeof tbm.attendees === 'string' ? JSON.parse(tbm.attendees) : (tbm.attendees || []) } catch(_) {}
+
+  // 배정 작업자 목록 (task_assignments → users)
+  let assignedWorkers: string[] = []
+  if (taskId) {
+    try {
+      const workerRows = rawDb.prepare(`
+        SELECT u.name FROM task_assignments ta
+        JOIN users u ON u.id = ta.worker_id
+        WHERE ta.task_id = ?
+        ORDER BY u.name
+      `).all(taskId || 0) as any[]
+      assignedWorkers = workerRows.map((r: any) => r.name).filter(Boolean)
+    } catch(_) {}
+  }
 
   // TBM 안전조치 사진 (task_id → checklist_assessments → tbm_photo_sections → tbm_photo_items)
   const checklistRows = rawDb.prepare(`
@@ -4297,13 +4354,13 @@ app.get('/tbm-share/:token', async (c) => {
     <div class="card">
       <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 10px"><i class="fas fa-info-circle" style="margin-right:5px;color:#3B82F6"></i>TBM 기본 정보</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div><div class="label">담당자</div><div class="value">${_esc(tbm.manager_name || tbm.conductor_name) || '-'}</div></div>
+        <div><div class="label">담당자</div><div class="value">${_esc(tbm.supervisor_name || tbm.conductor_name) || '-'}</div></div>
         <div><div class="label">TBM 실시자</div><div class="value">${_esc(tbm.conductor_name) || '-'}</div></div>
         <div><div class="label">TBM 실시 일시</div><div class="value">${_esc((tbm.tbm_date || '').slice(0, 16).replace('T', ' '))}</div></div>
         <div><div class="label">날씨/기온</div><div class="value">${_esc(tbm.weather) || '-'} / ${tbm.temperature != null ? _esc(tbm.temperature) + '°C' : '-'}</div></div>
       </div>
-      ${(tbm.gps_address || tbm.location) ? `
-      <div style="margin-top:8px"><div class="label">TBM 실시 주소</div><div class="value" style="font-size:12px">${_esc(tbm.gps_address || tbm.location) || '-'}</div></div>` : ''}
+      ${(tbm.task_gps_address || tbm.gps_address || tbm.location) ? `
+      <div style="margin-top:8px"><div class="label">TBM 실시 주소</div><div class="value" style="font-size:12px">${_esc(tbm.task_gps_address || tbm.gps_address || tbm.location) || '-'}</div></div>` : ''}
     </div>
 
     <!-- 작업자 -->
@@ -4786,13 +4843,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260703a">
+  <link rel="stylesheet" href="/static/style.css?v=20260703b">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260703a"></script>
+  <script src="/static/app.js?v=20260703b"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260703a"></script>
+  <script src="/static/mobile-app.js?v=20260703b"></script>
 </body>
 </html>`)
 })

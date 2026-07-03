@@ -11113,33 +11113,47 @@ async function _tbmShare(tbmId, btnEl) {
   if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 처리 중...'; }
   try {
     const res = await API.post(`/tbm/${tbmId}/share-token`);
-    const { url } = res.data;
-    const fullUrl = window.location.origin + url;
+    const d = res.data;
+    const fullUrl = window.location.origin + d.url;
     if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="fas fa-share-alt"></i> 공유'; }
-    // 클립보드 복사 시도
+
+    // ── 복사 텍스트 구성 ──────────────────────────────────────────
+    const workerList = (d.attendees && d.attendees.length > 0 ? d.attendees : d.assigned_workers) || [];
+    const lines = [];
+    if (d.work_number)    lines.push(`작업번호 : ${d.work_number}`);
+    if (d.task_title)     lines.push(`작업명   : ${d.task_title}`);
+    if (d.supervisor_name) lines.push(`담당자   : ${d.supervisor_name}`);
+    if (workerList.length) lines.push(`작업자   : ${workerList.join(', ')}`);
+    if (d.gps_address)    lines.push(`TBM실시 주소 : ${d.gps_address}`);
+    lines.push(`TBM사진은 아래 URL 클릭`);
+    lines.push(fullUrl);
+    const shareText = lines.join('\n');
+
+    // ── 클립보드 복사 시도 ────────────────────────────────────────
     try {
-      await navigator.clipboard.writeText(fullUrl);
-      toast('공유 링크가 클립보드에 복사되었습니다. (7일간 유효)', 'success');
+      await navigator.clipboard.writeText(shareText);
+      toast('TBM 공유 내용이 클립보드에 복사되었습니다. (링크 7일 유효)', 'success');
     } catch(_) {
-      // clipboard API 불가 시 모달로 URL 표시
+      // clipboard API 불가 시 모달로 내용 표시
       const m = document.createElement('div');
       m.className = 'modal-overlay modal-sm';
       m.innerHTML = `
         <div class="bg-white rounded-2xl overflow-hidden max-w-sm w-full mx-4">
           <div class="flex justify-between items-center px-4 py-3 border-b">
-            <span class="font-semibold text-sm"><i class="fas fa-share-alt mr-2 text-sky-500"></i>TBM 결과 공유 링크</span>
+            <span class="font-semibold text-sm"><i class="fas fa-share-alt mr-2 text-sky-500"></i>TBM 결과 공유</span>
             <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
           </div>
           <div class="p-4">
-            <p class="text-xs text-gray-500 mb-2">아래 링크를 복사하여 공유하세요 (7일 유효)</p>
-            <div id="_tbmShareUrl" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:10px;font-size:11px;word-break:break-all;color:#1F2937;user-select:all"></div>
-            <button onclick="const u=document.getElementById('_tbmShareUrl').textContent;navigator.clipboard.writeText(u).then(()=>{ toast('복사됨','success'); this.closest('.modal-overlay').remove(); })"
+            <p class="text-xs text-gray-500 mb-2">아래 내용을 복사하여 공유하세요 <span style="color:#0EA5E9">(링크 7일 유효)</span></p>
+            <textarea id="_tbmShareText" readonly
+              style="width:100%;height:160px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:10px;font-size:12px;line-height:1.6;color:#1F2937;resize:none;font-family:inherit"></textarea>
+            <button onclick="const t=document.getElementById('_tbmShareText');t.select();navigator.clipboard.writeText(t.value).catch(()=>{document.execCommand('copy');}).then(()=>{ toast('복사됨','success'); this.closest('.modal-overlay').remove(); })"
               style="margin-top:10px;width:100%;padding:8px;background:#0EA5E9;color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
               <i class="fas fa-copy mr-1"></i> 복사
             </button>
           </div>
         </div>`;
-      m.querySelector('#_tbmShareUrl').textContent = fullUrl;
+      m.querySelector('#_tbmShareText').value = shareText;
       m.addEventListener('click', e => { if (e.target === m) m.remove(); });
       document.body.appendChild(m);
     }

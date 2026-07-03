@@ -153,9 +153,11 @@ app.get('/reset/counts', async (c) => {
     work_reports  : count('work_reports'),
     splice_reports: count('splice_reports'),
     inspections   : count('inspections'),
-    tbm           : count('tbm_sessions'),
+    tbm           : count('tbm_records'),          // BUG-060: tbm_sessions → tbm_records
     education     : count('safety_education_sessions'),
     risk          : count('risk_assessments'),
+    notifications : count('notifications'),
+    signature_requests: count('signature_requests'),
     users         : count('users'),
   })
 })
@@ -203,12 +205,13 @@ app.post('/reset', async (c) => {
     delTable('splice_reports',      '접속일보')
   }
   if (targets.includes('tbm')) {
-    try {
-      delTable('tbm_signatures',      'TBM서명')
-      delTable('tbm_attendees',       'TBM참석자')
-      delTable('tbm_photos',          'TBM사진')
-      delTable('tbm_sessions',        'TBM')
-    } catch {}
+    // BUG-060: 올바른 테이블명으로 수정
+    // tbm_attendees  → 없음 (attendees는 tbm_records JSON 컬럼)
+    // tbm_photos     → tbm_photo_items + tbm_photo_sections (checklist_assessments 하위)
+    // tbm_sessions   → tbm_records
+    delTable('tbm_signatures',      'TBM서명')
+    delTable('tbm_share_tokens',    'TBM공유토큰')
+    delTable('tbm_records',         'TBM')
   }
   if (targets.includes('education')) {
     delTable('edu_photos',           '교육사진')
@@ -224,10 +227,11 @@ app.post('/reset', async (c) => {
     } catch {}
   }
   if (targets.includes('inspections')) {
-    try {
-      delTable('inspection_items',    '현장점검항목')
-      delTable('inspections',         '현장점검')
-    } catch {}
+    // BUG-060: inspection_photos, inspection_workers 연쇄 삭제 추가
+    delTable('inspection_photos',   '현장점검사진')
+    delTable('inspection_workers',  '현장점검작업자')
+    delTable('inspection_items',    '현장점검항목')
+    delTable('inspections',         '현장점검')
   }
   if (targets.includes('tasks')) {
     if (!targets.includes('work_reports')) {
@@ -241,28 +245,51 @@ app.post('/reset', async (c) => {
       delTable('splice_work_items',  '접속일보-공종')
       delTable('splice_reports',     '접속일보')
     }
-    delTable('task_assignments',    '작업배정')
-    delTable('task_checklist',      '작업체크리스트')
-    delTable('worklogs',            '작업로그')
-    delTable('hazards',             '위험요소')
-    delTable('tasks',               '작업')
+    if (!targets.includes('tbm')) {
+      // BUG-060: tasks 단독 삭제 시 TBM 연쇄 삭제
+      delTable('tbm_signatures',    'TBM서명')
+      delTable('tbm_share_tokens',  'TBM공유토큰')
+      delTable('tbm_records',       'TBM')
+    }
+    // BUG-060: checklist 연쇄 삭제 (task_checklist → 없는 테이블, 실제는 아래)
+    delTable('tbm_photo_items',             'TBM사진항목')
+    delTable('tbm_photo_sections',          'TBM사진섹션')
+    delTable('checklist_responses',         '체크리스트응답')
+    delTable('checklist_assessments',       '체크리스트평가')
+    delTable('task_photos',                 '작업사진')
+    delTable('task_stops',                  '작업중지')
+    delTable('task_assignments',            '작업배정')
+    delTable('worklogs',                    '작업로그')
+    delTable('hazards',                     '위험요소')
+    delTable('tasks',                       '작업')
   }
   if (targets.includes('constructions')) {
     if (!targets.includes('tasks')) {
-      delTable('work_report_extras', '외선일보-추가공종')
-      delTable('work_report_other',  '외선일보-기타공종')
-      delTable('work_report_cables', '외선일보-케이블')
-      delTable('work_report_lines',  '외선일보-내역')
-      delTable('work_reports',       '외선일보')
-      delTable('splice_work_items',  '접속일보-공종')
-      delTable('splice_reports',     '접속일보')
-      delTable('task_assignments',   '작업배정')
-      delTable('task_checklist',     '작업체크리스트')
-      delTable('worklogs',           '작업로그')
-      delTable('hazards',            '위험요소')
-      delTable('tasks',              '작업')
+      // BUG-060: constructions 단독 선택 시 하위 tasks 전체 연쇄 삭제
+      delTable('work_report_extras',          '외선일보-추가공종')
+      delTable('work_report_other',           '외선일보-기타공종')
+      delTable('work_report_cables',          '외선일보-케이블')
+      delTable('work_report_lines',           '외선일보-내역')
+      delTable('work_reports',                '외선일보')
+      delTable('splice_work_items',           '접속일보-공종')
+      delTable('splice_reports',              '접속일보')
+      if (!targets.includes('tbm')) {
+        delTable('tbm_signatures',            'TBM서명')
+        delTable('tbm_share_tokens',          'TBM공유토큰')
+        delTable('tbm_records',               'TBM')
+      }
+      delTable('tbm_photo_items',             'TBM사진항목')
+      delTable('tbm_photo_sections',          'TBM사진섹션')
+      delTable('checklist_responses',         '체크리스트응답')
+      delTable('checklist_assessments',       '체크리스트평가')
+      delTable('task_photos',                 '작업사진')
+      delTable('task_stops',                  '작업중지')
+      delTable('task_assignments',            '작업배정')
+      delTable('worklogs',                    '작업로그')
+      delTable('hazards',                     '위험요소')
+      delTable('tasks',                       '작업')
     }
-    delTable('constructions',       '공사')
+    delTable('constructions',                 '공사')
   }
   if (targets.includes('notifications')) {
     delTable('notifications',       '알림')

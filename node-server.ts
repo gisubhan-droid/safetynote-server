@@ -3010,10 +3010,10 @@ app.post('/api/tbm/:id/share-token', async (c) => {
     SELECT tbm.id, tbm.task_id, tbm.attendees,
            tk.work_number, tk.title AS task_title,
            tk.gps_address AS task_gps_address,
-           sv.name AS supervisor_name
+           tk.contractor_name,
+           tk.lgu_supervisor
     FROM tbm_records tbm
     LEFT JOIN tasks tk ON tk.id = tbm.task_id
-    LEFT JOIN users sv ON sv.id = tk.supervisor_id
     WHERE tbm.id = ?
   `).get(tbmId) as any
   if (!tbmRow) return c.json({ error: 'TBM 없음' }, 404)
@@ -3054,12 +3054,13 @@ app.post('/api/tbm/:id/share-token', async (c) => {
     token,
     url: `/tbm-share/${token}`,
     // 텍스트 복사용 정보
-    work_number:      tbmRow.work_number || '',
-    task_title:       tbmRow.task_title || '',
-    supervisor_name:  tbmRow.supervisor_name || '',
-    assigned_workers: assignedWorkers,
+    work_number:       tbmRow.work_number || '',
+    task_title:        tbmRow.task_title || '',
+    contractor_name:   tbmRow.contractor_name || '',   // 공사담당자 (담당자)
+    lgu_supervisor:    tbmRow.lgu_supervisor || '',    // 공사감독자
+    assigned_workers:  assignedWorkers,
     attendees,
-    gps_address:      tbmRow.task_gps_address || ''
+    gps_address:       tbmRow.task_gps_address || ''
   })
 })
 
@@ -4895,13 +4896,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260703d">
+  <link rel="stylesheet" href="/static/style.css?v=20260703e">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260703d"></script>
+  <script src="/static/app.js?v=20260703e"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260703d"></script>
+  <script src="/static/mobile-app.js?v=20260703e"></script>
 </body>
 </html>`)
 })

@@ -152,7 +152,7 @@ app.get('/reset/counts', async (c) => {
     tasks         : count('tasks'),
     work_reports  : count('work_reports'),
     splice_reports: count('splice_reports'),
-    inspections   : count('inspections'),
+    inspections   : count('site_inspections'),   // BUG-062: inspections → site_inspections
     tbm           : count('tbm_records'),          // BUG-060: tbm_sessions → tbm_records
     education     : count('safety_education_sessions'),
     risk          : count('risk_assessments'),
@@ -231,7 +231,7 @@ app.post('/reset', async (c) => {
     delTable('inspection_photos',   '현장점검사진')
     delTable('inspection_workers',  '현장점검작업자')
     delTable('inspection_items',    '현장점검항목')
-    delTable('inspections',         '현장점검')
+    delTable('site_inspections',         '현장점검')
   }
   if (targets.includes('tasks')) {
     if (!targets.includes('work_reports')) {
@@ -246,37 +246,71 @@ app.post('/reset', async (c) => {
       delTable('splice_reports',     '접속일보')
     }
     if (!targets.includes('tbm')) {
-      // BUG-060: tasks 단독 삭제 시 TBM 연쇄 삭제
+      // tasks 단독 삭제 시 TBM 연쇄 삭제
       delTable('tbm_signatures',    'TBM서명')
       delTable('tbm_share_tokens',  'TBM공유토큰')
       delTable('tbm_records',       'TBM')
     }
-    // BUG-060: checklist 연쇄 삭제 (task_checklist → 없는 테이블, 실제는 아래)
+    if (!targets.includes('risk')) {
+      // tasks 단독 삭제 시 위험성평가 연쇄 삭제 (risk_assessments → tasks FK)
+      delTable('risk_assessment_signatures', '위험성평가서명')
+      delTable('risk_assessment_items',      '위험성평가항목')
+      delTable('risk_assessments',           '위험성평가')
+    }
+    if (!targets.includes('inspections')) {
+      // tasks 단독 삭제 시 현장점검 연쇄 삭제 (site_inspections → tasks FK)
+      delTable('inspection_photos',   '현장점검사진')
+      delTable('inspection_workers',  '현장점검작업자')
+      delTable('inspection_items',    '현장점검항목')
+      delTable('site_inspections',         '현장점검')
+    }
+    // BUG-062: 테이블명 오류 수정 + 누락 테이블 추가
+    // worklogs → work_logs (실제 테이블명)
+    // hazards  → hazard_reports (실제 테이블명)
+    // task_work_types, task_attachments 추가 (tasks FK 자식 테이블)
     delTable('tbm_photo_items',             'TBM사진항목')
     delTable('tbm_photo_sections',          'TBM사진섹션')
     delTable('checklist_responses',         '체크리스트응답')
     delTable('checklist_assessments',       '체크리스트평가')
     delTable('task_photos',                 '작업사진')
     delTable('task_stops',                  '작업중지')
+    delTable('task_work_types',             '작업공종')
+    delTable('task_attachments',            '작업첨부파일')
     delTable('task_assignments',            '작업배정')
-    delTable('worklogs',                    '작업로그')
-    delTable('hazards',                     '위험요소')
+    delTable('work_logs',                   '작업로그')
+    delTable('hazard_reports',              '위험요소')
     delTable('tasks',                       '작업')
   }
   if (targets.includes('constructions')) {
     if (!targets.includes('tasks')) {
-      // BUG-060: constructions 단독 선택 시 하위 tasks 전체 연쇄 삭제
-      delTable('work_report_extras',          '외선일보-추가공종')
-      delTable('work_report_other',           '외선일보-기타공종')
-      delTable('work_report_cables',          '외선일보-케이블')
-      delTable('work_report_lines',           '외선일보-내역')
-      delTable('work_reports',                '외선일보')
-      delTable('splice_work_items',           '접속일보-공종')
-      delTable('splice_reports',              '접속일보')
+      // constructions 단독 선택 시 하위 tasks 전체 연쇄 삭제
+      // BUG-062: 테이블명 오류 수정 + 누락 테이블 추가
+      if (!targets.includes('work_reports')) {
+        delTable('work_report_extras',        '외선일보-추가공종')
+        delTable('work_report_other',         '외선일보-기타공종')
+        delTable('work_report_cables',        '외선일보-케이블')
+        delTable('work_report_lines',         '외선일보-내역')
+        delTable('work_reports',              '외선일보')
+      }
+      if (!targets.includes('splice_reports')) {
+        delTable('splice_work_items',         '접속일보-공종')
+        delTable('splice_reports',            '접속일보')
+      }
       if (!targets.includes('tbm')) {
         delTable('tbm_signatures',            'TBM서명')
         delTable('tbm_share_tokens',          'TBM공유토큰')
         delTable('tbm_records',               'TBM')
+      }
+      if (!targets.includes('risk')) {
+        delTable('risk_assessment_signatures','위험성평가서명')
+        delTable('risk_assessment_items',     '위험성평가항목')
+        delTable('risk_assessments',          '위험성평가')
+      }
+      if (!targets.includes('inspections')) {
+        delTable('inspection_photos',         '현장점검사진')
+        delTable('inspection_workers',        '현장점검작업자')
+        delTable('inspection_items',          '현장점검항목')
+        delTable('site_inspections',               '현장점검')
       }
       delTable('tbm_photo_items',             'TBM사진항목')
       delTable('tbm_photo_sections',          'TBM사진섹션')
@@ -284,9 +318,11 @@ app.post('/reset', async (c) => {
       delTable('checklist_assessments',       '체크리스트평가')
       delTable('task_photos',                 '작업사진')
       delTable('task_stops',                  '작업중지')
+      delTable('task_work_types',             '작업공종')
+      delTable('task_attachments',            '작업첨부파일')
       delTable('task_assignments',            '작업배정')
-      delTable('worklogs',                    '작업로그')
-      delTable('hazards',                     '위험요소')
+      delTable('work_logs',                   '작업로그')
+      delTable('hazard_reports',              '위험요소')
       delTable('tasks',                       '작업')
     }
     delTable('constructions',                 '공사')

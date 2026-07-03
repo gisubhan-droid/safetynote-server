@@ -1,6 +1,6 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-02 (세션 76)
+> 최종 업데이트: 2026-07-02 (세션 77)
 > **서버 현재 버전: `23007db`** ← 최신 (GitHub) — 수동/자동 업데이트 모드 선택 UI + 버전 태그
 > **NAS 배포 버전: `23007db`** ✅ 최신 반영 완료
 > **캐시 버전: v=20260702a**
@@ -10,6 +10,8 @@
 > - BUG-056: TBM 위험성(체크리스트)평가 화면 — TBM 안전조치 사진 미리보기 안 됨
 > - BUG-057: TBM 회의록 출력 — 서명란 2열 배치 + 안전조치 사진 하단 2열 배치
 > - BUG-058: TBM 상세 모달 — 참가자 서명 2열 배치 + TBM 촬영사진 미리보기 섹션 추가
+> **평가대기 목록 (FEAT)**
+> - FEAT-037: TBM 완료 결과 공유 기능 — 웹공유(Web Share API) + 코피 + 공개 URL (7일 유효, 로그인 불필요)
 
 ---
 
@@ -49,6 +51,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-037 | 77 | 2026-07-02 | ⏳ 대기 | TBM 완료 결과 공유 — Web Share API + 공개 URL(`/tbm-share/{token}`) + 사진 2열 / 로그인 불필요 / 7일 유효 | — |
 | FEAT-036 | 73 | 2026-07-02 | ✅ 구현 | 다중 NAS 자동 업데이트 — `build-server.yml` + `POST /api/admin/update/webhook` / GitHub Secrets 등록 후 즉시 동작 | `bec2bc3` |
 | FEAT-035 | 73 | 2026-07-02 | ✅ 구현 | 다중 NAS APK 자동배포 — `build-apk.yml` (dist-apk/** push 시 NAS_WEBHOOK_URL_1~5 동시 전송) / GitHub Secrets 등록 후 즉시 동작 | `bec2bc3` |
 | FEAT-034 | 67(A) | 2026-06-24 | ✅ 완료 | 사이드바 메뉴 순서 변경 (공사현황 → 5번으로 이동) | `5bc8514` |
@@ -4492,4 +4495,113 @@ const photoSectionHtml = tbmSections.length > 0 ? `
 - BUG-057(회의록 출력 서명 2열 + 사진)과 같은 배치로 통합 작업 효율적
 - 서명 2열 시 홀수 인원 처리: 마지막 카드 colspan=2 또는 빈 카드로 처리
 - 사진 토큰 전달: `photoImgSrc(p.id)` 함수 사용 (토큰 자동 포함)
+
+
+---
+
+## 세션 77 — FEAT-037: TBM 완료 결과 공유 기능 (Web Share API + 공개 URL)
+
+### 작업 개요
+- **세션**: 77
+- **날짜**: 2026-07-02
+- **상태**: ⏳ 일괄 작업 대기
+
+### 요청 내용
+TBM 완료 후 결과를 SNS·문자로 전송할 수 있는 공유 버튼 추가
+
+### 포함 내용 (공유 페이지)
+| 항목 | 내용 |
+|------|------|
+| 작업번호 | `tasks.work_number` (WKS~ 형식) |
+| 작업명 | `tasks.title` |
+| 담당자 | `construction_sites.manager_name` (공사담당자) |
+| 작업자 | `task_assignments` JOIN `users.name` (배정된 전체 작업자) |
+| TBM 사진 | `tbm_photo_items` 2열 그리드, 항목별 라벨 표시, 클릭 시 원본 확인 |
+
+### 기술 구현 방식
+
+#### ① 공유 토큰 생성 (신규 DB 테이블)
+```sql
+-- migrations/0055_tbm_share_tokens.sql
+CREATE TABLE IF NOT EXISTS tbm_share_tokens (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  token       TEXT UNIQUE NOT NULL,          -- 랜덤 12자리 토큰
+  tbm_id      INTEGER NOT NULL,
+  task_id     INTEGER,
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  expires_at  DATETIME,                      -- 7일 유효
+  view_count  INTEGER DEFAULT 0
+);
+```
+
+#### ② 신규 API 엔드포인트 (인증 불필요)
+```
+POST /api/tbm/:id/share-token   ← 토큰 생성 (인증 필요)
+GET  /tbm-share/:token          ← 공개 결과 페이지 (인증 불필요)
+GET  /tbm-share/:token/photo/:photoId  ← 공개 사진 서빙 (토큰 인증)
+```
+
+#### ③ 공유 버튼 (showTbmDetail 모달 하단)
+```javascript
+// 모바일: navigator.share() → OS 공유 시트 (카카오톡, 문자, 라인 등)
+// PC: 클립보드 복사 + 토스트 알림
+async function _tbmShare(tbmId) {
+  const res = await API.post(`/tbm/${tbmId}/share-token`);
+  const url = `${location.origin}/tbm-share/${res.data.token}`;
+  const text = `TBM 결과 공유\n작업번호: ${tbm.task_number}\n작업명: ${tbm.task_title}`;
+
+  if (navigator.share) {
+    await navigator.share({ title: 'TBM 결과', text, url });
+  } else {
+    navigator.clipboard.writeText(url);
+    toast('링크가 복사되었습니다', 'success');
+  }
+}
+```
+
+#### ④ 공개 결과 페이지 (`/tbm-share/:token`)
+- 로그인 없이 접근 가능
+- A4 스타일 흰 배경, 모바일 최적화
+- 헤더: SafetyNOTE 로고 + "TBM 완료 결과"
+- 기본정보 카드: 작업번호, 작업명, 담당자, 작업자
+- TBM 사진: 2열 그리드 (항목명 + 사진)
+- 만료 안내: "이 링크는 7일간 유효합니다"
+- 만료 시: "만료된 링크입니다" 안내 페이지
+
+### 수정 대상 파일
+| 파일 | 수정 내용 |
+|------|---------|
+| `migrations/0055_tbm_share_tokens.sql` | 신규 — 공유 토큰 테이블 |
+| `src/nas-routes/tbm-extra.ts` | `POST /tbm/:id/share-token` 추가 |
+| `src/index.tsx` | `GET /tbm-share/:token` 공개 페이지 라우트 추가 |
+| `public/static/app.js` | `showTbmDetail()` 하단 공유 버튼 추가 + `_tbmShare()` 함수 |
+
+### 공개 페이지 레이아웃 목표
+```
+┌─────────────────────────────────┐
+│  SafetyNOTE   TBM 완료 결과     │
+├─────────────────────────────────┤
+│  ✅ TBM 완료                    │
+│  작업번호: WKS-20260702-001      │
+│  작업명:  26년 블랑합체 및…      │
+│  담당자:  홍길동                 │
+│  작업자:  송영민, 박세진, 김만석  │
+│  실시일시: 2026.07.02 04:00     │
+├─────────────────────────────────┤
+│  📸 안전조치 사진                │
+│  ┌─────────┐  ┌─────────┐      │
+│  │ 사진①  │  │ 사진②  │      │
+│  │ 라벨명  │  │ 라벨명  │      │
+│  └─────────┘  └─────────┘      │
+├─────────────────────────────────┤
+│  🔗 이 링크는 7일간 유효합니다   │
+└─────────────────────────────────┘
+```
+
+### 수정 시 주의사항
+- 공개 사진 API는 `tbm_share_tokens` 토큰 유효성 검증 후 서빙
+- 토큰은 `crypto.randomBytes(9).toString('hex')` 또는 `Math.random` 방식 (18자리)
+- `expires_at = new Date(Date.now() + 7*24*60*60*1000)` (UTC 기준)
+- `view_count` 증가 처리로 접근 통계 확인 가능
+- BUG-058(TBM 상세 모달 서명 2열+사진) 작업 시 공유 버튼도 함께 추가 권장
 

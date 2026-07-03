@@ -533,6 +533,26 @@ console.log('[DB] pragma 최적화 적용 완료 (WAL+NORMAL+32MB캐시+mmap256M
       console.error(`[AutoMigrate] ❌ Failed ${p.table}.${p.column}: ${e.message}`)
     }
   }
+  // FEAT-037: TBM 공유 토큰 테이블 (tbm_share_tokens)
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS tbm_share_tokens (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        token       TEXT UNIQUE NOT NULL,
+        tbm_id      INTEGER NOT NULL,
+        task_id     INTEGER,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at  DATETIME,
+        view_count  INTEGER DEFAULT 0
+      )
+    `)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_share_tokens_token  ON tbm_share_tokens(token)`)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_tbm_share_tokens_tbm_id ON tbm_share_tokens(tbm_id)`)
+    console.log('[AutoMigrate] ✅ tbm_share_tokens 테이블 준비')
+  } catch(e: any) {
+    console.warn('[AutoMigrate] tbm_share_tokens:', e.message)
+  }
+
   console.log('[AutoMigrate] 완료')
 })()
 
@@ -4066,9 +4086,251 @@ app.post('/api/photos/upload', async (c) => {
   }
 })
 
+// GET /api/tbm-photos/:id/img — TBM 안전조치 사진 서빙 (BUG-056)
+// tbm_photo_items.id → file_path 직접 서빙 (task_photos와 별도 테이블)
+app.get('/api/tbm-photos/:id/img', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const item = rawDb.prepare(
+    'SELECT file_path, file_name, mime_type FROM tbm_photo_items WHERE id = ?'
+  ).get(Number(id)) as any
+  if (!item || !item.file_path) return c.json({ error: 'TBM 사진 없음' }, 404)
+  try {
+    const fileBuffer = readFileSync(item.file_path)
+    return new Response(fileBuffer, {
+      headers: {
+        'Content-Type': item.mime_type || 'image/jpeg',
+        'Cache-Control': 'public, max-age=86400',
+        'Content-Disposition': `inline; filename="${item.file_name || 'photo.jpg'}"`,
+      },
+    })
+  } catch (_) {
+    return c.json({ error: '파일을 찾을 수 없습니다.' }, 404)
+  }
+})
+
 // ─── photosRoutes (src/routes/photos.ts) 마운트 — Cloudflare 빌드용, NAS에선 위 라우트가 우선 처리 ──
 // [BUG-033] NAS에서는 위 직접 구현 라우트가 우선 처리됨 (RULE-002: app.route 앞에 등록)
 app.route('/api/photos', photosRoutes)
+
+// ─── FEAT-037: TBM 완료 결과 공유 ─────────────────────────────────────────────
+// POST /api/tbm/:id/share-token — 공유 토큰 발급 (로그인 필요, 7일 유효)
+app.post('/api/tbm/:id/share-token', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const tbmId = Number(c.req.param('id'))
+  const tbmRow = rawDb.prepare('SELECT id, task_id FROM tbm_records WHERE id = ?').get(tbmId) as any
+  if (!tbmRow) return c.json({ error: 'TBM 없음' }, 404)
+
+  // 기존 유효 토큰 재사용 (7일 이내)
+  const existing = rawDb.prepare(
+    `SELECT token FROM tbm_share_tokens WHERE tbm_id = ? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1`
+  ).get(tbmId) as any
+  if (existing?.token) {
+    return c.json({ token: existing.token, url: `/tbm-share/${existing.token}` })
+  }
+
+  // 새 토큰 생성 (crypto.randomUUID — Web API)
+  const token = crypto.randomUUID().replace(/-/g, '')
+  const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+  rawDb.prepare(
+    `INSERT INTO tbm_share_tokens (token, tbm_id, task_id, expires_at) VALUES (?, ?, ?, ?)`
+  ).run(token, tbmId, tbmRow.task_id || null, expiresAt)
+  return c.json({ token, url: `/tbm-share/${token}` })
+})
+
+// GET /tbm-share/:token/photo/:photoId — 공유 사진 서빙 (인증 불필요)
+app.get('/tbm-share/:token/photo/:photoId', async (c) => {
+  const token = c.req.param('token')
+  const photoId = Number(c.req.param('photoId'))
+  const row = rawDb.prepare(
+    `SELECT id FROM tbm_share_tokens WHERE token = ? AND expires_at > datetime('now')`
+  ).get(token) as any
+  if (!row) return c.json({ error: '만료되었거나 유효하지 않은 링크' }, 403)
+
+  const item = rawDb.prepare(
+    'SELECT file_path, file_name, mime_type FROM tbm_photo_items WHERE id = ?'
+  ).get(photoId) as any
+  if (!item || !item.file_path) return c.json({ error: '사진 없음' }, 404)
+  try {
+    const fileBuffer = readFileSync(item.file_path)
+    return new Response(fileBuffer, {
+      headers: {
+        'Content-Type': item.mime_type || 'image/jpeg',
+        'Cache-Control': 'public, max-age=3600',
+        'Content-Disposition': `inline; filename="${item.file_name || 'photo.jpg'}"`,
+      },
+    })
+  } catch (_) {
+    return c.json({ error: '파일을 찾을 수 없습니다.' }, 404)
+  }
+})
+
+// GET /tbm-share/:token — 공개 TBM 결과 페이지 (인증 불필요, 7일 유효)
+app.get('/tbm-share/:token', async (c) => {
+  const token = c.req.param('token')
+  const shareRow = rawDb.prepare(
+    `SELECT tbm_id, task_id, expires_at FROM tbm_share_tokens WHERE token = ? AND expires_at > datetime('now')`
+  ).get(token) as any
+  if (!shareRow) {
+    return c.html(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>링크 만료 — Safety NOTE</title>
+      <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+      <style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#F9FAFB;margin:0}</style>
+    </head><body>
+      <div style="text-align:center;padding:32px">
+        <i class="fas fa-link-slash" style="font-size:48px;color:#EF4444;margin-bottom:16px"></i>
+        <h2 style="color:#1F2937;margin:0 0 8px">링크가 만료되었습니다</h2>
+        <p style="color:#6B7280;font-size:14px">이 TBM 공유 링크는 7일 후 자동으로 만료됩니다.</p>
+      </div>
+    </body></html>`, 410)
+  }
+
+  // 조회수 증가
+  rawDb.prepare(`UPDATE tbm_share_tokens SET view_count = view_count + 1 WHERE token = ?`).run(token)
+
+  const tbmId = shareRow.tbm_id
+  const taskId = shareRow.task_id
+
+  // TBM 기본 정보
+  const tbm = rawDb.prepare(`
+    SELECT t.*, u.name AS conductor_name,
+           tk.work_number, tk.title AS task_title, tk.manager_name, tk.gps_address
+    FROM tbm_records t
+    LEFT JOIN users u ON u.id = t.conductor_id
+    LEFT JOIN tasks tk ON tk.id = t.task_id
+    WHERE t.id = ?
+  `).get(tbmId) as any
+  if (!tbm) return c.json({ error: 'TBM 없음' }, 404)
+
+  // 참가자(작업자) 목록
+  let attendees: string[] = []
+  try { attendees = typeof tbm.attendees === 'string' ? JSON.parse(tbm.attendees) : (tbm.attendees || []) } catch(_) {}
+
+  // TBM 안전조치 사진 (checklist tbm_sections)
+  const checklistRows = rawDb.prepare(`
+    SELECT ca.section_name,
+      json_group_array(json_object(
+        'id', cpi.id,
+        'label', cpi.label,
+        'file_path', cpi.file_path
+      )) AS photos
+    FROM checklist_assignments ca
+    JOIN tbm_photo_items cpi ON cpi.assignment_id = ca.id
+    WHERE ca.task_id = ? AND cpi.file_path IS NOT NULL AND cpi.file_path != ''
+    GROUP BY ca.section_name
+  `).all(taskId || 0) as any[]
+
+  // 사진 2열 HTML 생성
+  let photoSectionHtml = ''
+  if (checklistRows.length > 0) {
+    const allPhotos: any[] = checklistRows.flatMap((sec: any) => {
+      let ps: any[] = []
+      try { ps = typeof sec.photos === 'string' ? JSON.parse(sec.photos) : [] } catch(_) {}
+      return ps.filter((p: any) => p.file_path).map((p: any) => ({ ...p, section_name: sec.section_name || '' }))
+    })
+    if (allPhotos.length > 0) {
+      let grid = ''
+      for (let i = 0; i < allPhotos.length; i += 2) {
+        const L = allPhotos[i], R = allPhotos[i + 1]
+        grid += `<div style="display:contents">
+          <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
+            <img src="/tbm-share/${token}/photo/${L.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy">
+            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">[${L.section_name}] ${L.label||''}</div>
+          </div>
+          ${R ? `<div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
+            <img src="/tbm-share/${token}/photo/${R.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy">
+            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">[${R.section_name}] ${R.label||''}</div>
+          </div>` : '<div></div>'}
+        </div>`
+      }
+      photoSectionHtml = `
+        <div style="background:white;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+          <h3 style="font-size:13px;font-weight:700;color:#0369A1;margin:0 0 10px"><i class="fas fa-camera" style="margin-right:6px"></i>TBM 안전조치 촬영사진 <span style="font-size:11px;font-weight:400;color:#0284C7">${allPhotos.length}장</span></h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${grid}</div>
+        </div>`
+    }
+  }
+
+  const attendeeListHtml = attendees.length > 0
+    ? attendees.map((name: string) => `<span style="display:inline-block;background:#F3F4F6;border-radius:9999px;padding:3px 10px;font-size:12px;margin:2px">${name}</span>`).join('')
+    : '<span style="font-size:12px;color:#9CA3AF">정보 없음</span>'
+
+  const expiresDate = (shareRow.expires_at || '').slice(0, 10)
+
+  return c.html(`<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>TBM 결과 — ${tbm.task_title || '작업'}</title>
+  <link rel="icon" type="image/png" href="/static/app-icon.png">
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, 'Noto Sans KR', sans-serif; background: #F1F5F9; margin: 0; padding: 0; }
+    .container { max-width: 480px; margin: 0 auto; padding: 16px; }
+    .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .label { font-size: 11px; color: #9CA3AF; margin-bottom: 2px; }
+    .value { font-size: 13px; font-weight: 600; color: #1F2937; }
+    .badge { display:inline-block;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 헤더 -->
+    <div style="background:linear-gradient(135deg,#1D4ED8,#3B82F6);color:white;border-radius:12px;padding:16px 20px;margin-bottom:12px">
+      <div style="font-size:11px;opacity:.75;margin-bottom:4px"><i class="fas fa-hard-hat" style="margin-right:4px"></i>TBM (Tool Box Meeting) 완료 결과</div>
+      <h1 style="font-size:16px;font-weight:700;margin:0 0 4px">${tbm.task_title || '작업명 없음'}</h1>
+      ${tbm.work_number ? `<div style="font-size:11px;opacity:.8">작업번호: ${tbm.work_number}</div>` : ''}
+      <div style="font-size:11px;opacity:.7;margin-top:6px"><i class="fas fa-clock" style="margin-right:4px"></i>이 링크는 ${expiresDate}까지 유효합니다</div>
+    </div>
+
+    <!-- 기본 정보 -->
+    <div class="card">
+      <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 10px"><i class="fas fa-info-circle" style="margin-right:5px;color:#3B82F6"></i>TBM 기본 정보</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><div class="label">담당자</div><div class="value">${tbm.manager_name || tbm.conductor_name || '-'}</div></div>
+        <div><div class="label">TBM 실시자</div><div class="value">${tbm.conductor_name || '-'}</div></div>
+        <div><div class="label">TBM 실시 일시</div><div class="value">${(tbm.tbm_date || '').slice(0, 16).replace('T', ' ')}</div></div>
+        <div><div class="label">날씨/기온</div><div class="value">${tbm.weather || '-'} / ${tbm.temperature != null ? tbm.temperature + '°C' : '-'}</div></div>
+      </div>
+      ${(tbm.gps_address || tbm.location) ? `
+      <div style="margin-top:8px"><div class="label">TBM 실시 주소</div><div class="value" style="font-size:12px">${tbm.gps_address || tbm.location || '-'}</div></div>` : ''}
+    </div>
+
+    <!-- 작업자 -->
+    <div class="card">
+      <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 8px"><i class="fas fa-users" style="margin-right:5px;color:#10B981"></i>참석 작업자 <span style="font-size:11px;font-weight:400;color:#9CA3AF">${attendees.length}명</span></h3>
+      <div style="line-height:2">${attendeeListHtml}</div>
+    </div>
+
+    <!-- TBM 사진 -->
+    ${photoSectionHtml}
+
+    <!-- 안전 주의사항 -->
+    ${tbm.safety_topics ? `
+    <div class="card">
+      <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 8px"><i class="fas fa-book" style="margin-right:5px;color:#3B82F6"></i>작업 내용 및 안전교육</h3>
+      <div style="font-size:12px;color:#374151;white-space:pre-wrap;background:#F9FAFB;padding:10px;border-radius:8px">${tbm.safety_topics}</div>
+    </div>` : ''}
+    ${tbm.precautions ? `
+    <div class="card">
+      <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 8px"><i class="fas fa-exclamation-triangle" style="margin-right:5px;color:#F59E0B"></i>주의사항</h3>
+      <div style="font-size:12px;color:#374151;white-space:pre-wrap;background:#FFFBEB;padding:10px;border-radius:8px">${tbm.precautions}</div>
+    </div>` : ''}
+
+    <!-- 푸터 -->
+    <div style="text-align:center;padding:12px 0;font-size:11px;color:#9CA3AF">
+      <i class="fas fa-shield-alt" style="margin-right:4px"></i>Safety NOTE — 현장 안전관리 시스템<br>
+      이 페이지는 로그인 없이 열람 가능한 공개 링크입니다.
+    </div>
+  </div>
+</body>
+</html>`)
+})
 
 // ─── 첨부파일 API → nas-routes/attachments-nas.ts ──────────────────────────────
 app.route('/api/attachments', attachmentsNasRoutes)
@@ -4519,13 +4781,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260702a">
+  <link rel="stylesheet" href="/static/style.css?v=20260703a">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260702a"></script>
+  <script src="/static/app.js?v=20260703a"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260702a"></script>
+  <script src="/static/mobile-app.js?v=20260703a"></script>
 </body>
 </html>`)
 })

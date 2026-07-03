@@ -6353,7 +6353,7 @@ async function showTaskDetail(id, openTbmTab) {
               return `<div class="mb-2 p-2 bg-white rounded-lg border border-blue-100">
                 <div class="text-xs font-medium text-blue-700 mb-1"><i class="fas fa-shield-alt mr-1"></i>${sec.section_name}</div>
                 ${photos.map(p => `<div class="flex items-center gap-2 py-1">
-                  ${p.file_path ? `<img src="${photoImgSrc(p.id)}" class="w-10 h-10 object-cover rounded" onerror="this.style.opacity='0.3'">` : `<div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center"><i class="fas fa-camera text-gray-300"></i></div>`}
+                  ${p.file_path ? `<img src="${tbmPhotoImgSrc(p.id)}" class="w-10 h-10 object-cover rounded cursor-pointer" onclick="showTbmPhotoPreview('${tbmPhotoImgSrc(p.id)}','${(p.label||'').replace(/'/g,"\\'")}');" onerror="this.style.opacity='0.3'">` : `<div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center"><i class="fas fa-camera text-gray-300"></i></div>`}
                   <span class="text-xs ${p.file_path?'text-green-600':'text-red-500'}">${p.label} ${p.file_path?'<i class=\'fas fa-check\'></i>':'(미등록)'}</span>
                 </div>`).join('')}
               </div>`;
@@ -7702,6 +7702,30 @@ async function uploadAttachAndRefresh(taskId, files) {
 function photoImgSrc(photoId) {
   const token = localStorage.getItem('token') || '';
   return `/api/photos/${photoId}/img${token ? '?token=' + encodeURIComponent(token) : ''}`;
+}
+
+// BUG-056: TBM 안전조치 사진 전용 (tbm_photo_items.id 기반)
+function tbmPhotoImgSrc(photoItemId) {
+  const token = localStorage.getItem('token') || '';
+  return `/api/tbm-photos/${photoItemId}/img${token ? '?token=' + encodeURIComponent(token) : ''}`;
+}
+
+// BUG-056: TBM 사진 클릭 시 원본 크게 보기
+function showTbmPhotoPreview(src, caption) {
+  const m = document.createElement('div');
+  m.className = 'modal-overlay modal-sm';
+  m.innerHTML = `
+    <div class="bg-white rounded-2xl overflow-hidden max-w-xl w-full mx-4">
+      <div class="flex justify-between items-center px-4 py-3 border-b">
+        <span class="font-semibold text-sm">${caption || 'TBM 안전조치 사진'}</span>
+        <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+      </div>
+      <div class="p-2">
+        <img src="${src}" class="w-full rounded-lg" style="max-height:70vh;object-fit:contain;" onerror="this.alt='사진 로드 실패'">
+      </div>
+    </div>`;
+  m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+  document.body.appendChild(m);
 }
 
 function loadPhotoData(img, photoId) {
@@ -9580,6 +9604,14 @@ async function showTbmDetail(tbmId) {
       const tbm = res.data;
       const signatures = Array.isArray(sigsRes.data) ? sigsRes.data : [];
       const approval = approvalRes.data || {};
+      // BUG-058: TBM 안전조치 사진 (체크리스트 tbm_sections)
+      let _tbmDetailSections = [];
+      if (tbm.task_id) {
+        try {
+          const clRes = await API.get('/checklist/task/' + tbm.task_id);
+          _tbmDetailSections = clRes.data?.tbm_sections || [];
+        } catch(_) {}
+      }
       const mySig = signatures.find(s => s.user_id === currentUser.id);
       // tbm_done 카드 배지도 함께 갱신 (task_id 기준)
       if (tbm.task_id) {
@@ -9737,10 +9769,10 @@ async function showTbmDetail(tbmId) {
             </div>
           </div>
 
-          <!-- 참가자별 서명 현황 -->
+          <!-- 참가자별 서명 현황 (BUG-058: 2열 grid) -->
           <div style="margin-bottom:10px">
             ${attendeeRows.length > 0
-              ? attendeeRows.join('')
+              ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">${attendeeRows.join('')}</div>`
               : '<div style="font-size:11px;color:#9CA3AF;text-align:center;padding:8px"><i class="fas fa-pen-nib" style="margin-right:4px"></i>서명 없음</div>'}
           </div>
 
@@ -9830,11 +9862,45 @@ async function showTbmDetail(tbmId) {
             </div>` : ''}
           </div>`;
         })()}
+
+        <!-- BUG-058: TBM 안전조치 촬영사진 미리보기 섹션 -->
+        ${(() => {
+          const secs = (_tbmDetailSections || []);
+          const allPhotos = secs.flatMap(sec => {
+            let ps = [];
+            try { ps = typeof sec.photos === 'string' ? JSON.parse(sec.photos) : (sec.photos || []); } catch(_) {}
+            return ps.filter(p => p.file_path).map(p => ({ ...p, section_name: sec.section_name || '' }));
+          });
+          if (!allPhotos.length) return '';
+          const photoItems = allPhotos.map(p =>
+            `<div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;cursor:pointer"
+              onclick="showTbmPhotoPreview('${tbmPhotoImgSrc(p.id)}','${(p.label||'').replace(/'/g,"\\'")}')">
+              <img src="${tbmPhotoImgSrc(p.id)}" style="width:100%;aspect-ratio:4/3;object-fit:cover" onerror="this.style.opacity='.3'">
+              <div style="padding:3px 5px;font-size:10px;color:#374151;background:#F9FAFB;border-top:1px solid #E5E7EB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                [${p.section_name}] ${p.label||''}
+              </div>
+            </div>`
+          ).join('');
+          return `
+          <div style="background:#F0F9FF;border:1.5px solid #BAE6FD;border-radius:12px;padding:12px 14px;margin-bottom:8px">
+            <div style="font-size:12px;font-weight:700;color:#0369A1;margin-bottom:8px">
+              <i class="fas fa-camera" style="margin-right:4px"></i>TBM 안전조치 촬영사진
+              <span style="font-size:10px;font-weight:400;color:#0284C7;margin-left:5px">${allPhotos.length}장</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              ${photoItems}
+            </div>
+          </div>`;
+        })()}
       </div>
       <div class="modal-footer" style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid #E5E7EB;background:white;border-radius:0 0 12px 12px">
         <button onclick="_tbmPrint(${tbmId})"
           style="padding:6px 14px;background:#4E3A63;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
           <i class="fas fa-print"></i> 인쇄
+        </button>
+        <button onclick="_tbmShare(${tbmId})"
+          style="padding:6px 14px;background:#0EA5E9;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
+          <i class="fas fa-share-alt"></i> 공유
         </button>
         ${(currentUser?.role === 'admin' || tbm.conductor_id === currentUser?.id) ? `
         <button onclick="_deleteTbm(${tbmId},${_tbmTaskId||'null'})"
@@ -10437,6 +10503,15 @@ async function _tbmPrint(tbmId) {
     const signatures = Array.isArray(sigsRes.data) ? sigsRes.data : [];
     const approval = approvalRes.data || {};
 
+    // BUG-057: 체크리스트(TBM 사진) 조회 — task_id 기반
+    let tbmChecklistSections = [];
+    if (tbm.task_id) {
+      try {
+        const clRes = await API.get('/checklist/task/' + tbm.task_id);
+        tbmChecklistSections = clRes.data?.tbm_sections || [];
+      } catch(_) {}
+    }
+
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
     const printDt = new Date().toLocaleString('ko-KR');
 
@@ -10453,39 +10528,56 @@ async function _tbmPrint(tbmId) {
     // 미서명 참석자 (이름 목록에 있지만 서명 없는 사람)
     const unsignedAttendees = allAttendees.filter(name => !signedNames.has(name));
 
-    const sigRowsHtml = orderedSigs.map(s => {
-      const roleLabel = s.role === 'conductor' ? '실시자' : '참석자';
-      const sigImg = s.sign_data
-        ? `<img src="${s.sign_data}" style="max-height:38px;max-width:100%;object-fit:contain;display:block;margin:0 auto">`
-        : '<span style="color:#ccc;font-size:8pt">미서명</span>';
-      return `<tr>
-        <td style="text-align:center;font-weight:700;width:52px">${roleLabel}</td>
-        <td style="width:72px">${s.user_name || '-'}</td>
-        <td style="width:66px;text-align:center">${s.position || '-'}</td>
-        <td style="width:72px;text-align:center;font-size:8pt">${(s.signed_at || '').slice(0, 10)}</td>
-        <td style="text-align:center;height:46px;vertical-align:middle">${sigImg}</td>
-      </tr>`;
-    }).join('');
-
-    // 미서명 참석자 행
-    const unsignedRows = unsignedAttendees.map(name => `<tr>
-      <td style="text-align:center;width:52px">참석자</td>
-      <td style="width:72px">${name}</td>
-      <td style="width:66px;text-align:center">-</td>
-      <td style="width:72px;text-align:center;font-size:8pt"></td>
-      <td style="text-align:center;height:46px"></td>
-    </tr>`).join('');
-
-    // 추가 빈 서명란 (최소 minBlankRows 보장)
-    const totalSigned = orderedSigs.length + unsignedAttendees.length;
-    const extraBlanks = Math.max(minBlankRows, (allAttendees.length > totalSigned ? 0 : minBlankRows));
-    const blankRows = Array(extraBlanks).fill(`<tr>
-      <td style="text-align:center;width:52px">참석자</td>
-      <td style="width:72px"></td>
-      <td style="width:66px;text-align:center"></td>
-      <td style="width:72px;text-align:center"></td>
-      <td style="height:46px"></td>
-    </tr>`).join('');
+    // ── BUG-057: 서명란 2열 구성 (인원별 2명씩 좌우 배치) ───────────────────
+    // 전체 서명 슬롯 = 서명완료 + 미서명참석자 + 빈슬롯(최소 2)
+    function _makeSigCell(roleLabel, name, sigImg, dateStr, isBold) {
+      return `
+        <td style="border:1pt solid #888;text-align:center;font-weight:${isBold?'700':'400'};width:44px;padding:3px 2px">${roleLabel}</td>
+        <td style="border:1pt solid #888;width:60px;padding:3px 4px">${name}</td>
+        <td style="border:1pt solid #888;width:52px;text-align:center;padding:3px 2px">-</td>
+        <td style="border:1pt solid #888;width:60px;text-align:center;font-size:7.5pt;padding:2px">${dateStr}</td>
+        <td style="border:1pt solid #888;text-align:center;height:46px;vertical-align:middle;min-width:60px">${sigImg}</td>`;
+    }
+    function _makeBlankCell() {
+      return `
+        <td style="border:1pt solid #888;width:44px;padding:3px 2px"></td>
+        <td style="border:1pt solid #888;width:60px;padding:3px 4px"></td>
+        <td style="border:1pt solid #888;width:52px"></td>
+        <td style="border:1pt solid #888;width:60px"></td>
+        <td style="border:1pt solid #888;height:46px;min-width:60px"></td>`;
+    }
+    // 모든 슬롯 배열 생성
+    const allSigSlots = [
+      ...orderedSigs.map(s => {
+        const roleLabel = s.role === 'conductor' ? '실시자' : '참석자';
+        const sigImg = s.sign_data
+          ? `<img src="${s.sign_data}" style="max-height:36px;max-width:100%;object-fit:contain;display:block;margin:0 auto">`
+          : '<span style="color:#ccc;font-size:7.5pt">미서명</span>';
+        return { type:'sig', roleLabel, name: s.user_name||'-', sigImg, dateStr:(s.signed_at||'').slice(0,10) };
+      }),
+      ...unsignedAttendees.map(name => ({
+        type:'unsigned', roleLabel:'참석자', name, sigImg:'<span style="color:#ccc;font-size:7.5pt">미서명</span>', dateStr:''
+      }))
+    ];
+    // 최소 빈 슬롯 추가 (짝수 맞추기 + 최소 2개)
+    const totalSlots = allSigSlots.length;
+    const blanksNeeded = Math.max(minBlankRows, totalSlots % 2 === 0 ? minBlankRows : 1);
+    for (let i = 0; i < blanksNeeded; i++) allSigSlots.push({ type:'blank' });
+    // 2열 행 생성
+    const sigRowsHtml = (() => {
+      let rows = '';
+      for (let i = 0; i < allSigSlots.length; i += 2) {
+        const L = allSigSlots[i];
+        const R = allSigSlots[i+1] || { type:'blank' };
+        const leftCell  = L.type==='blank' ? _makeBlankCell() : _makeSigCell(L.roleLabel, L.name, L.sigImg, L.dateStr, L.type==='sig');
+        const rightCell = R.type==='blank' ? _makeBlankCell() : _makeSigCell(R.roleLabel, R.name, R.sigImg, R.dateStr, R.type==='sig');
+        rows += `<tr style="border-right:2pt solid #aaa">${leftCell}<td style="width:6px;background:#f5f5f5;border-top:1pt solid #bbb;border-bottom:1pt solid #bbb"></td>${rightCell}</tr>`;
+      }
+      return rows;
+    })();
+    // 구버전 변수 호환 (사용하지 않지만 참조 오류 방지)
+    const unsignedRows = '';
+    const blankRows = '';
 
     // ── 누락 필수항목 경고 체크 ──────────────────────────────────────────────
     const warns = [];
@@ -10816,22 +10908,26 @@ async function _tbmPrint(tbmId) {
     <div class="section-hdr">④ 특이사항 / 현장 전달사항</div>
     <div class="content-box" style="min-height:36px">${(tbm.special_notes).replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>` : ''}
 
-    <!-- 서명란 -->
+    <!-- ⑤ 서명란 (BUG-057: 2열 배치) -->
     <div class="section-hdr" style="margin-top:8px">⑤ 서명란 <span style="font-size:8pt;font-weight:400;color:#999">(실시자 및 전체 참석 근로자 서명)</span></div>
-    <table class="sig-table">
+    <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
       <thead>
-        <tr>
-          <th style="width:52px">구분</th>
-          <th style="width:72px">성명</th>
-          <th style="width:66px">직책</th>
-          <th style="width:78px">서명일시</th>
-          <th>서명</th>
+        <tr style="background:#f0eeef">
+          <th style="border:1pt solid #888;width:44px;padding:3px 2px;text-align:center">구분</th>
+          <th style="border:1pt solid #888;width:60px;padding:3px 4px;text-align:center">성명</th>
+          <th style="border:1pt solid #888;width:52px;padding:3px 2px;text-align:center">직책</th>
+          <th style="border:1pt solid #888;width:60px;padding:3px 2px;text-align:center">서명일시</th>
+          <th style="border:1pt solid #888;padding:3px 2px;text-align:center">서명</th>
+          <th style="border:none;width:6px;background:#f5f5f5"></th>
+          <th style="border:1pt solid #888;width:44px;padding:3px 2px;text-align:center">구분</th>
+          <th style="border:1pt solid #888;width:60px;padding:3px 4px;text-align:center">성명</th>
+          <th style="border:1pt solid #888;width:52px;padding:3px 2px;text-align:center">직책</th>
+          <th style="border:1pt solid #888;width:60px;padding:3px 2px;text-align:center">서명일시</th>
+          <th style="border:1pt solid #888;padding:3px 2px;text-align:center">서명</th>
         </tr>
       </thead>
       <tbody>
         ${sigRowsHtml}
-        ${unsignedRows}
-        ${blankRows}
       </tbody>
     </table>
 
@@ -10839,6 +10935,42 @@ async function _tbmPrint(tbmId) {
     <div style="font-size:7.5pt;color:#888;margin-top:4px;line-height:1.5">
       ※ 교육 실시자는 반드시 서명란에 서명하여야 하며, 참석 근로자 전원이 서명함으로써 본 교육 참여를 확인합니다.
     </div>
+
+    <!-- ⑥ TBM 안전조치 사진 (BUG-057: 하단 2열) -->
+    ${(() => {
+      const secs = (tbmChecklistSections || []);
+      const allPhotos = secs.flatMap(sec => {
+        let ps = []; try { ps = typeof sec.photos==='string' ? JSON.parse(sec.photos) : (sec.photos||[]); } catch(_){}
+        return ps.filter(p => p.file_path).map(p => ({ ...p, section_name: sec.section_name }));
+      });
+      if (!allPhotos.length) return '';
+      const token = localStorage.getItem('token') || '';
+      const photoGrid = (() => {
+        let g = '';
+        for (let i=0; i<allPhotos.length; i+=2) {
+          const L = allPhotos[i], R = allPhotos[i+1];
+          g += '<tr>';
+          g += '<td style="padding:4px;width:50%;vertical-align:top">';
+          g += '<div style="border:1pt solid #ddd;border-radius:4px;overflow:hidden;text-align:center">';
+          g += '<img src="/api/tbm-photos/'+L.id+'/img?token=' + encodeURIComponent(token) + '" style="width:100%;max-height:100px;object-fit:cover;">';
+          g += '<div style="font-size:7.5pt;padding:2px 4px;background:#f9f9f9;color:#555">['+L.section_name+'] '+L.label+'</div>';
+          g += '</div></td>';
+          if (R) {
+            g += '<td style="padding:4px;width:50%;vertical-align:top">';
+            g += '<div style="border:1pt solid #ddd;border-radius:4px;overflow:hidden;text-align:center">';
+            g += '<img src="/api/tbm-photos/'+R.id+'/img?token=' + encodeURIComponent(token) + '" style="width:100%;max-height:100px;object-fit:cover;">';
+            g += '<div style="font-size:7.5pt;padding:2px 4px;background:#f9f9f9;color:#555">['+R.section_name+'] '+R.label+'</div>';
+            g += '</div></td>';
+          } else {
+            g += '<td style="width:50%"></td>';
+          }
+          g += '</tr>';
+        }
+        return g;
+      })();
+      return '<div class="section-hdr" style="margin-top:8px">⑥ TBM 안전조치 사진</div>'
+           + '<table style="width:100%;border-collapse:collapse">' + photoGrid + '</table>';
+    })()}
 
     <!-- 푸터 -->
     <div class="foot-note">
@@ -10969,6 +11101,49 @@ async function _tbmPrint(tbmId) {
     setTimeout(() => pw.focus(), 200);
   } catch(e) {
     toast(e.message || 'TBM 인쇄 데이터 로딩 실패', 'error');
+  }
+}
+
+// FEAT-037: TBM 완료 결과 공유 — 클립보드 복사 (공개 URL, 7일 유효)
+async function _tbmShare(tbmId) {
+  try {
+    const btn = document.querySelector(`[onclick="_tbmShare(${tbmId})"]`);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 처리 중...'; }
+    const res = await API.post(`/tbm/${tbmId}/share-token`);
+    const { url } = res.data;
+    // 절대 URL 생성 (현재 서버 origin 기준)
+    const fullUrl = window.location.origin + url;
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-share-alt"></i> 공유'; }
+    // 클립보드 복사
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      toast('공유 링크가 클립보드에 복사되었습니다. (7일간 유효)', 'success');
+    } catch(_) {
+      // clipboard API 불가 시 모달로 URL 표시
+      const m = document.createElement('div');
+      m.className = 'modal-overlay modal-sm';
+      m.innerHTML = `
+        <div class="bg-white rounded-2xl overflow-hidden max-w-sm w-full mx-4">
+          <div class="flex justify-between items-center px-4 py-3 border-b">
+            <span class="font-semibold text-sm"><i class="fas fa-share-alt mr-2 text-sky-500"></i>TBM 결과 공유 링크</span>
+            <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+          </div>
+          <div class="p-4">
+            <p class="text-xs text-gray-500 mb-2">아래 링크를 복사하여 공유하세요 (7일 유효)</p>
+            <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:10px;font-size:11px;word-break:break-all;color:#1F2937;user-select:all">${fullUrl}</div>
+            <button onclick="navigator.clipboard.writeText('${fullUrl.replace(/'/g,"\\'")}').then(()=>{ toast('복사됨','success'); this.closest('.modal-overlay').remove(); })"
+              style="margin-top:10px;width:100%;padding:8px;background:#0EA5E9;color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+              <i class="fas fa-copy mr-1"></i> 복사
+            </button>
+          </div>
+        </div>`;
+      m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+      document.body.appendChild(m);
+    }
+  } catch(e) {
+    toast(e.response?.data?.error || 'TBM 공유 링크 생성에 실패했습니다.', 'error');
+    const btn = document.querySelector(`[onclick="_tbmShare(${tbmId})"]`);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-share-alt"></i> 공유'; }
   }
 }
 

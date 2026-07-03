@@ -386,6 +386,7 @@ function runCmd(
 function resolveNpmBin(): string {
   const candidates = [
     process.env.NPM_EXEC,
+    '/volume1/@appstore/Node.js_v20/usr/local/bin/npm',
     '/volume1/@appstore/Node.js_v18/usr/local/bin/npm',
     '/usr/local/bin/npm',
     '/usr/bin/npm',
@@ -395,6 +396,33 @@ function resolveNpmBin(): string {
     if (c && (c === 'npm' || existsSync(c))) return c
   }
   return 'npm'
+}
+
+// git remote URL 자동 교정 (BUG-061)
+// NAS의 .git/config 가 구버전 repo URL을 가리키는 경우 자동 수정
+const CORRECT_REMOTE_URL = 'https://github.com/gisubhan-droid/safetynote-server.git'
+const OLD_REMOTE_URLS    = [
+  'https://github.com/Jinwoo-Yeom/safetynote.git',
+  'https://github.com/Jinwoo-Yeom/safetynote-server.git',
+]
+async function ensureCorrectRemote(cwd: string): Promise<string> {
+  const getUrl = await runCmd('git', ['remote', 'get-url', 'origin'], cwd, 5000)
+  const currentUrl = getUrl.stdout.trim()
+  if (!currentUrl) {
+    // remote 자체가 없으면 추가
+    await runCmd('git', ['remote', 'add', 'origin', CORRECT_REMOTE_URL], cwd, 5000)
+    return `remote 없음 → origin 추가: ${CORRECT_REMOTE_URL}`
+  }
+  if (OLD_REMOTE_URLS.includes(currentUrl) || !currentUrl.includes('gisubhan-droid/safetynote-server')) {
+    // 구버전 URL → 자동 교정
+    const setRes = await runCmd('git', ['remote', 'set-url', 'origin', CORRECT_REMOTE_URL], cwd, 5000)
+    if (setRes.code === 0) {
+      return `remote URL 자동 수정: ${currentUrl} → ${CORRECT_REMOTE_URL}`
+    } else {
+      return `remote URL 수정 실패(${setRes.stderr.trim()}) — 현재: ${currentUrl}`
+    }
+  }
+  return `remote OK: ${currentUrl}`
 }
 
 // ─── GET /api/admin/update/status ───────────────────────────────────────────
@@ -423,6 +451,10 @@ app.post('/update/check', async (c) => {
 
   ;(async () => {
     try {
+      // ── remote URL 자동 교정 (BUG-061) ──────────────────────────
+      const remoteMsg = await ensureCorrectRemote(process.cwd())
+      _addUpdateLog(remoteMsg)
+
       const fetchRes = await runCmd('git', ['fetch', 'origin', 'main'], process.cwd(), 20000)
       if (fetchRes.code !== 0) {
         _addUpdateLog(`fetch 실패: ${fetchRes.stderr.trim()}`)
@@ -501,7 +533,9 @@ app.post('/update/apply', async (c) => {
         } else { _addUpdateLog('DB 파일 없음 — 백업 건너뜀') }
       } catch (be: any) { _addUpdateLog(`DB 백업 오류(무시): ${be.message}`) }
 
-      // ── 2. git fetch + reset --hard (로컬 변경사항 자동 처리) ──
+      // ── 2. git remote URL 자동 교정 + fetch + reset --hard ──────
+      const remoteMsg = await ensureCorrectRemote(cwd)
+      _addUpdateLog(remoteMsg)
       _addUpdateLog('git fetch origin 시작...')
       const fetchRes = await runCmd('git', ['fetch', 'origin', 'main'], cwd, 60000)
       if (fetchRes.code !== 0) {

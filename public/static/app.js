@@ -6659,6 +6659,11 @@ async function showTaskDetail(id, openTbmTab) {
     // 첨부파일 목록 비동기 로드 (HTML 렌더 후 즉시 호출)
     loadAttachments(task.id);
 
+    // tbm_done 상태: 관리자 상세화면 공유 버튼 비동기 토글 (서명완료 시 표시)
+    if (task.status === 'tbm_done') {
+      _loadTaskShareBtn(task.id);
+    }
+
     // TBM 탭 자동 전환 (차단 모달에서 "TBM 확인하기" 클릭 시)
     if (openTbmTab) {
       setTimeout(() => {
@@ -6729,9 +6734,14 @@ function getTaskActionButtons(task, isWorker) {
   if (task.status === 'in_progress') {
     btns.push(`<button onclick="showTbmForm(${task.id})" class="btn btn-warning"><i class="fas fa-users"></i> TBM 실시</button>`);
   }
-  // [단계4] tbm_done: 작업 개시
+  // [단계4] tbm_done: 작업 개시 + 공유(서명완료 시 비동기 표시)
   if (task.status === 'tbm_done') {
     btns.push(`<button onclick="changeTaskStatus(${task.id},'working')" class="btn btn-success"><i class="fas fa-play"></i> 작업 개시</button>`);
+    // 공유 버튼: 초기 hidden → _loadTaskShareBtn 비동기 조회 후 전원 서명완료 시 표시
+    btns.push(`<button id="task-share-btn-${task.id}" onclick="_tbmShareByTaskId(${task.id}, this)"
+      style="display:none;padding:6px 14px;background:#0EA5E9;color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;align-items:center;gap:4px">
+      <i class="fas fa-share-alt"></i> 공유
+    </button>`);
   }
   // [단계5] working: 작업완료 버튼 (작업개시 이후 단계)
   if (task.status === 'working') {
@@ -10270,15 +10280,48 @@ async function _loadTbmSigBadge(taskId) {
     badge.style.color = allSigned ? '#059669' : total === 0 ? '#9CA3AF' : '#B45309';
 
     // 전원 서명 완료 시: 공유 버튼 표시 + 서명받기 버튼 숨김
-    const shareBtn = document.getElementById(`tbm-share-btn-${taskId}`);
-    const signBtn  = document.getElementById(`tbm-sign-btn-${taskId}`);
+    const shareBtn     = document.getElementById(`tbm-share-btn-${taskId}`);   // 근로자 카드 버튼
+    const taskShareBtn = document.getElementById(`task-share-btn-${taskId}`);  // 관리자 상세 버튼
+    const signBtn      = document.getElementById(`tbm-sign-btn-${taskId}`);
     if (allSigned) {
-      if (shareBtn) { shareBtn.style.display = 'inline-flex'; }
-      if (signBtn)  { signBtn.style.display  = 'none'; }
+      if (shareBtn)     { shareBtn.style.display     = 'inline-flex'; }
+      if (taskShareBtn) { taskShareBtn.style.display = 'inline-flex'; }
+      if (signBtn)      { signBtn.style.display      = 'none'; }
     }
   } catch(e) {
     const badge = document.getElementById(`tbm-sig-badge-${taskId}`);
     if (badge) { badge.textContent = '조회 실패'; badge.style.color = '#EF4444'; }
+  }
+}
+
+// ── 관리자 작업 상세화면 공유 버튼 비동기 토글 ─────────────────────────────
+// showTaskDetail 렌더 후 tbm_done 상태에서 호출 → 전원 서명완료 시 task-share-btn 표시
+async function _loadTaskShareBtn(taskId) {
+  try {
+    const res = await API.get(`/tasks/${taskId}/tbm-info`);
+    const tbmInfo = res.data?.tbm;
+    if (!tbmInfo?.id) return;
+
+    const [tbmRes, sigRes] = await Promise.all([
+      API.get(`/tbm/${tbmInfo.id}`),
+      API.get(`/tbm/${tbmInfo.id}/signatures`)
+    ]);
+    const tbm = tbmRes.data || {};
+    const sigs = Array.isArray(sigRes.data) ? sigRes.data : [];
+    const attendees = Array.isArray(tbm.attendees) ? tbm.attendees : [];
+    const signedNames = new Set(sigs.map(s => s.user_name || '').filter(Boolean));
+    const signedCount = attendees.length > 0
+      ? attendees.filter(n => signedNames.has(n)).length
+      : sigs.length;
+    const total = attendees.length || sigs.length;
+    const allSigned = total > 0 && signedCount >= total;
+
+    if (allSigned) {
+      const shareBtn = document.getElementById(`task-share-btn-${taskId}`);
+      if (shareBtn) { shareBtn.style.display = 'inline-flex'; }
+    }
+  } catch(e) {
+    // 조회 실패 시 버튼 미표시 (silent fail)
   }
 }
 

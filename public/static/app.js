@@ -20070,9 +20070,18 @@ async function renderSysUserMgmtPage(container) {
     function renderSysUserRow(u) {
       const info = getRoleDisplay(u.role, u.position, u.sub_role);
       const uiRole = dbRoleToUi(u.role, u.position, u.sub_role);
+      const isSelf = u.id === currentUser.id;
       return `
-      <tr style="border-bottom:1px solid #F5F0F8"
+      <tr data-uid="${u.id}" style="border-bottom:1px solid #F5F0F8"
           onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background=''">
+        <td class="px-3 py-2 text-center" style="width:36px">
+          ${isSelf
+            ? `<span title="본인 계정은 선택 불가" style="display:inline-block;width:15px;height:15px;border-radius:3px;background:#EDE9F0;cursor:not-allowed"></span>`
+            : `<input type="checkbox" class="sys-user-chk" data-uid="${u.id}" data-name="${u.name.replace(/"/g,'&quot;')}"
+                style="width:15px;height:15px;accent-color:#685182;cursor:pointer;vertical-align:middle"
+                onclick="event.stopPropagation()" onchange="_onSysUserChkChange()">`
+          }
+        </td>
         <td class="px-3 py-2">
           <div class="font-bold text-sm text-gray-900">${u.name}</div>
           <div class="text-xs text-gray-400">@${u.username}</div>
@@ -20092,12 +20101,12 @@ async function renderSysUserMgmtPage(container) {
             <button class="btn btn-outline py-1 px-2 text-xs" onclick="showEditUserModal(${u.id})" title="정보 수정">
               <i class="fas fa-edit"></i>
             </button>
-            ${u.id !== currentUser.id ? `
+            ${!isSelf ? `
             <button class="btn btn-warning py-1 px-2 text-xs" onclick="deactivateUser(${u.id})" title="비활성화">
               <i class="fas fa-ban"></i>
             </button>
             <button class="btn btn-danger py-1 px-2 text-xs"
-              onclick="hardDeleteUser(${u.id},'${u.name.replace(/'/g,"\\'")}',true)"
+              onclick="hardDeleteUser(${u.id},'${u.name.replace(/'/g,"\'")}',true)"
               title="완전삭제">
               <i class="fas fa-trash"></i>
             </button>` : ''}
@@ -20105,14 +20114,21 @@ async function renderSysUserMgmtPage(container) {
         </td>
       </tr>`;
     }
-
-    function buildSysUserTable(userList) {
+    function buildSysUserTable(userList, roleValue) {
       if (!userList.length) return `<p class="text-xs text-gray-300 text-center py-4">해당 역할의 사용자가 없습니다.</p>`;
+      const selectableCount = userList.filter(u => u.id !== currentUser.id).length;
       return `
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:#F5F0F8;border-bottom:2px solid #D8D0DC">
+              <th class="px-3 py-2 text-center" style="width:36px">
+                ${selectableCount > 0
+                  ? `<input type="checkbox" class="sys-user-grp-all" data-role="${roleValue}"
+                      style="width:15px;height:15px;accent-color:#685182;cursor:pointer;vertical-align:middle"
+                      title="그룹 전체 선택" onclick="event.stopPropagation()" onchange="_onSysUserGrpAll(this,'${roleValue}')">`
+                  : ''}
+              </th>
               <th class="px-3 py-2 text-xs font-black text-gray-500 text-left">이름</th>
               <th class="px-3 py-2 text-xs font-black text-gray-500 text-left">역할</th>
               <th class="px-3 py-2 text-xs font-black text-gray-500 text-left">연락처</th>
@@ -20151,6 +20167,24 @@ async function renderSysUserMgmtPage(container) {
         </div>
       </div>
 
+      <!-- 선택 삭제 툴바 (선택 시 자동 표시) -->
+      <div id="sys-user-bulk-toolbar" class="hidden items-center justify-between px-4 py-2.5 rounded-xl mb-3"
+        style="background:#FFF0F5;border:1.5px solid #F9A8D4">
+        <span class="text-sm font-bold" style="color:#D70072">
+          <i class="fas fa-check-square mr-1.5"></i>
+          <span id="sys-user-sel-count">0</span>명 선택됨
+        </span>
+        <div class="flex gap-2">
+          <button onclick="_sysUserDeselectAll()" class="btn text-xs py-1 px-3"
+            style="background:#F5F0F8;color:#685182;border:1px solid #D8D0DC">
+            <i class="fas fa-times mr-1"></i>선택 해제
+          </button>
+          <button onclick="_sysUserBulkDelete()" class="btn btn-danger text-xs py-1 px-3">
+            <i class="fas fa-trash mr-1"></i>선택 삭제
+          </button>
+        </div>
+      </div>
+
       <!-- 역할별 전체 카운트 카드 (전체 7종) -->
       <div class="grid grid-cols-7 gap-2 mb-5">
         ${ROLE_UI_OPTIONS.map(ro => {
@@ -20179,7 +20213,7 @@ async function renderSysUserMgmtPage(container) {
           <i id="sysug-arrow-${rg.value}" class="fas fa-chevron-down text-xs transition-transform ${isOpen ? 'rotate-180' : ''}" style="color:${rg.display.color}"></i>
         </div>
         <div id="sysug-body-${rg.value}" class="${isOpen ? '' : 'hidden'}">
-          ${buildSysUserTable(rg.members)}
+          ${buildSysUserTable(rg.members, rg.value)}
         </div>
       </div>`;
       }).join('')}
@@ -22480,6 +22514,92 @@ async function resetUserPassword(id) {
     await API.put(`/users/${id}/reset-password`, { newPassword: newPwd });
     toast('비밀번호가 초기화되었습니다.');
   } catch(e) { toast('실패', 'error'); }
+}
+
+// ======= 계정관리 — 체크박스 선택 삭제 기능 =======
+
+/** 툴바 카운터 갱신 + 표시/숨김 */
+function _onSysUserChkChange() {
+  const checked = document.querySelectorAll('.sys-user-chk:checked');
+  const toolbar  = document.getElementById('sys-user-bulk-toolbar');
+  const countEl  = document.getElementById('sys-user-sel-count');
+  if (!toolbar) return;
+  if (checked.length > 0) {
+    toolbar.classList.remove('hidden');
+    toolbar.classList.add('flex');
+  } else {
+    toolbar.classList.add('hidden');
+    toolbar.classList.remove('flex');
+  }
+  if (countEl) countEl.textContent = checked.length;
+
+  // 그룹별 전체선택 체크박스 indeterminate/checked 상태 동기화
+  document.querySelectorAll('.sys-user-grp-all').forEach(grpChk => {
+    const roleVal = grpChk.dataset.role;
+    const grpChks = document.querySelectorAll(`.sys-user-chk[data-role="${roleVal}"]`);
+    // data-role이 없는 경우엔 같은 테이블 내 체크박스로 판별
+    const tableChks = grpChk.closest('table')?.querySelectorAll('.sys-user-chk') || [];
+    const total   = tableChks.length;
+    const chkCnt  = Array.from(tableChks).filter(c => c.checked).length;
+    grpChk.indeterminate = chkCnt > 0 && chkCnt < total;
+    grpChk.checked = total > 0 && chkCnt === total;
+  });
+}
+
+/** 그룹 전체 선택/해제 */
+function _onSysUserGrpAll(grpChk, roleValue) {
+  const table = grpChk.closest('table');
+  if (!table) return;
+  table.querySelectorAll('.sys-user-chk').forEach(c => { c.checked = grpChk.checked; });
+  _onSysUserChkChange();
+}
+
+/** 선택 해제 */
+function _sysUserDeselectAll() {
+  document.querySelectorAll('.sys-user-chk').forEach(c => { c.checked = false; });
+  document.querySelectorAll('.sys-user-grp-all').forEach(c => { c.checked = false; c.indeterminate = false; });
+  _onSysUserChkChange();
+}
+
+/** 선택 계정 일괄 완전삭제 */
+async function _sysUserBulkDelete() {
+  const checked = Array.from(document.querySelectorAll('.sys-user-chk:checked'));
+  if (!checked.length) { toast('삭제할 계정을 선택하세요.', 'warning'); return; }
+
+  const names = checked.map(c => c.dataset.name).join(', ');
+  const ids   = checked.map(c => Number(c.dataset.uid));
+
+  const ok = await showDeleteConfirm(
+    `${ids.length}명 계정 일괄 삭제`,
+    `<strong>${names}</strong><br><br>선택한 ${ids.length}명의 계정과 작업 배정 정보가 함께 삭제됩니다.<br>` +
+    `<span style="color:#D70072;font-weight:700">이 작업은 되돌릴 수 없습니다.</span>`
+  );
+  if (!ok) return;
+
+  // 툴바 버튼 비활성화
+  const delBtn = document.querySelector('button[onclick="_sysUserBulkDelete()"]');
+  if (delBtn) { delBtn.disabled = true; delBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>삭제 중...'; }
+
+  let successCount = 0;
+  const errors = [];
+
+  for (const id of ids) {
+    try {
+      await API.delete(`/users/${id}/hard-delete`);
+      successCount++;
+    } catch(e) {
+      const name = checked.find(c => Number(c.dataset.uid) === id)?.dataset.name || String(id);
+      errors.push(`${name}: ${e.response?.data?.error || e.message}`);
+    }
+  }
+
+  if (errors.length === 0) {
+    toast(`${successCount}명 계정이 삭제되었습니다.`, 'success');
+  } else {
+    toast(`${successCount}명 삭제 완료, ${errors.length}명 실패: ` + errors.join(' / '), 'warning');
+  }
+
+  _reloadUserPage();
 }
 
 // 현재 페이지(업무중사용자 or 계정관리)를 재로드하는 공통 헬퍼

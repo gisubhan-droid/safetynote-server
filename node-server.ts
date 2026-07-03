@@ -2997,6 +2997,32 @@ app.patch('/api/tasks/:id/status', async (c) => {
 app.route('/api/tasks', taskRoutes)
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
+// ─── FEAT-037: POST /api/tbm/:id/share-token (RULE-002: tbmExtraRoutes·tbmRoutes 앞에 등록) ───
+// 공유 토큰 발급 (로그인 필요, 7일 유효, 기존 유효 토큰 재사용)
+app.post('/api/tbm/:id/share-token', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const tbmId = Number(c.req.param('id'))
+  const tbmRow = rawDb.prepare('SELECT id, task_id FROM tbm_records WHERE id = ?').get(tbmId) as any
+  if (!tbmRow) return c.json({ error: 'TBM 없음' }, 404)
+
+  // 기존 유효 토큰 재사용 (7일 이내)
+  const existing = rawDb.prepare(
+    `SELECT token FROM tbm_share_tokens WHERE tbm_id = ? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1`
+  ).get(tbmId) as any
+  if (existing?.token) {
+    return c.json({ token: existing.token, url: `/tbm-share/${existing.token}` })
+  }
+
+  // 새 토큰 생성
+  const token = crypto.randomUUID().replace(/-/g, '')
+  const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+  rawDb.prepare(
+    `INSERT INTO tbm_share_tokens (token, tbm_id, task_id, expires_at) VALUES (?, ?, ?, ?)`
+  ).run(token, tbmId, tbmRow.task_id || null, expiresAt)
+  return c.json({ token, url: `/tbm-share/${token}` })
+})
+
 // ─── TBM 서명/결재 → nas-routes/tbm-extra.ts (RULE-002: tbmRoutes 앞에 마운트) ─
 app.route('/api/tbm', tbmExtraRoutes)
 app.route('/api/tbm', tbmRoutes)
@@ -4114,32 +4140,6 @@ app.get('/api/tbm-photos/:id/img', async (c) => {
 // [BUG-033] NAS에서는 위 직접 구현 라우트가 우선 처리됨 (RULE-002: app.route 앞에 등록)
 app.route('/api/photos', photosRoutes)
 
-// ─── FEAT-037: TBM 완료 결과 공유 ─────────────────────────────────────────────
-// POST /api/tbm/:id/share-token — 공유 토큰 발급 (로그인 필요, 7일 유효)
-app.post('/api/tbm/:id/share-token', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-  const tbmId = Number(c.req.param('id'))
-  const tbmRow = rawDb.prepare('SELECT id, task_id FROM tbm_records WHERE id = ?').get(tbmId) as any
-  if (!tbmRow) return c.json({ error: 'TBM 없음' }, 404)
-
-  // 기존 유효 토큰 재사용 (7일 이내)
-  const existing = rawDb.prepare(
-    `SELECT token FROM tbm_share_tokens WHERE tbm_id = ? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1`
-  ).get(tbmId) as any
-  if (existing?.token) {
-    return c.json({ token: existing.token, url: `/tbm-share/${existing.token}` })
-  }
-
-  // 새 토큰 생성 (crypto.randomUUID — Web API)
-  const token = crypto.randomUUID().replace(/-/g, '')
-  const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19)
-  rawDb.prepare(
-    `INSERT INTO tbm_share_tokens (token, tbm_id, task_id, expires_at) VALUES (?, ?, ?, ?)`
-  ).run(token, tbmId, tbmRow.task_id || null, expiresAt)
-  return c.json({ token, url: `/tbm-share/${token}` })
-})
-
 // GET /tbm-share/:token/photo/:photoId — 공유 사진 서빙 (인증 불필요)
 app.get('/tbm-share/:token/photo/:photoId', async (c) => {
   const token = c.req.param('token')
@@ -4168,6 +4168,10 @@ app.get('/tbm-share/:token/photo/:photoId', async (c) => {
 })
 
 // GET /tbm-share/:token — 공개 TBM 결과 페이지 (인증 불필요, 7일 유효)
+// XSS 방지용 HTML 이스케이프 헬퍼 (공개 페이지 전용)
+function _esc(s: any): string {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+}
 app.get('/tbm-share/:token', async (c) => {
   const token = c.req.param('token')
   const shareRow = rawDb.prepare(
@@ -4209,18 +4213,19 @@ app.get('/tbm-share/:token', async (c) => {
   let attendees: string[] = []
   try { attendees = typeof tbm.attendees === 'string' ? JSON.parse(tbm.attendees) : (tbm.attendees || []) } catch(_) {}
 
-  // TBM 안전조치 사진 (checklist tbm_sections)
+  // TBM 안전조치 사진 (task_id → checklist_assessments → tbm_photo_sections → tbm_photo_items)
   const checklistRows = rawDb.prepare(`
-    SELECT ca.section_name,
+    SELECT tps.section_name,
       json_group_array(json_object(
-        'id', cpi.id,
-        'label', cpi.label,
-        'file_path', cpi.file_path
+        'id', tpi.id,
+        'label', tpi.label,
+        'file_path', tpi.file_path
       )) AS photos
-    FROM checklist_assignments ca
-    JOIN tbm_photo_items cpi ON cpi.assignment_id = ca.id
-    WHERE ca.task_id = ? AND cpi.file_path IS NOT NULL AND cpi.file_path != ''
-    GROUP BY ca.section_name
+    FROM checklist_assessments ca
+    JOIN tbm_photo_sections tps ON tps.assessment_id = ca.id
+    JOIN tbm_photo_items tpi ON tpi.section_id = tps.id
+    WHERE ca.task_id = ? AND tpi.file_path IS NOT NULL AND tpi.file_path != ''
+    GROUP BY tps.id, tps.section_name
   `).all(taskId || 0) as any[]
 
   // 사진 2열 HTML 생성
@@ -4238,11 +4243,11 @@ app.get('/tbm-share/:token', async (c) => {
         grid += `<div style="display:contents">
           <div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
             <img src="/tbm-share/${token}/photo/${L.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy">
-            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">[${L.section_name}] ${L.label||''}</div>
+            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">[${_esc(L.section_name)}] ${_esc(L.label)}</div>
           </div>
           ${R ? `<div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden">
             <img src="/tbm-share/${token}/photo/${R.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy">
-            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">[${R.section_name}] ${R.label||''}</div>
+            <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">[${_esc(R.section_name)}] ${_esc(R.label)}</div>
           </div>` : '<div></div>'}
         </div>`
       }
@@ -4255,7 +4260,7 @@ app.get('/tbm-share/:token', async (c) => {
   }
 
   const attendeeListHtml = attendees.length > 0
-    ? attendees.map((name: string) => `<span style="display:inline-block;background:#F3F4F6;border-radius:9999px;padding:3px 10px;font-size:12px;margin:2px">${name}</span>`).join('')
+    ? attendees.map((name: string) => `<span style="display:inline-block;background:#F3F4F6;border-radius:9999px;padding:3px 10px;font-size:12px;margin:2px">${_esc(name)}</span>`).join('')
     : '<span style="font-size:12px;color:#9CA3AF">정보 없음</span>'
 
   const expiresDate = (shareRow.expires_at || '').slice(0, 10)
@@ -4265,7 +4270,7 @@ app.get('/tbm-share/:token', async (c) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>TBM 결과 — ${tbm.task_title || '작업'}</title>
+  <title>TBM 결과 — ${_esc(tbm.task_title) || '작업'}</title>
   <link rel="icon" type="image/png" href="/static/app-icon.png">
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <style>
@@ -4283,22 +4288,22 @@ app.get('/tbm-share/:token', async (c) => {
     <!-- 헤더 -->
     <div style="background:linear-gradient(135deg,#1D4ED8,#3B82F6);color:white;border-radius:12px;padding:16px 20px;margin-bottom:12px">
       <div style="font-size:11px;opacity:.75;margin-bottom:4px"><i class="fas fa-hard-hat" style="margin-right:4px"></i>TBM (Tool Box Meeting) 완료 결과</div>
-      <h1 style="font-size:16px;font-weight:700;margin:0 0 4px">${tbm.task_title || '작업명 없음'}</h1>
-      ${tbm.work_number ? `<div style="font-size:11px;opacity:.8">작업번호: ${tbm.work_number}</div>` : ''}
-      <div style="font-size:11px;opacity:.7;margin-top:6px"><i class="fas fa-clock" style="margin-right:4px"></i>이 링크는 ${expiresDate}까지 유효합니다</div>
+      <h1 style="font-size:16px;font-weight:700;margin:0 0 4px">${_esc(tbm.task_title) || '작업명 없음'}</h1>
+      ${tbm.work_number ? `<div style="font-size:11px;opacity:.8">작업번호: ${_esc(tbm.work_number)}</div>` : ''}
+      <div style="font-size:11px;opacity:.7;margin-top:6px"><i class="fas fa-clock" style="margin-right:4px"></i>이 링크는 ${_esc(expiresDate)}까지 유효합니다</div>
     </div>
 
     <!-- 기본 정보 -->
     <div class="card">
       <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 10px"><i class="fas fa-info-circle" style="margin-right:5px;color:#3B82F6"></i>TBM 기본 정보</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div><div class="label">담당자</div><div class="value">${tbm.manager_name || tbm.conductor_name || '-'}</div></div>
-        <div><div class="label">TBM 실시자</div><div class="value">${tbm.conductor_name || '-'}</div></div>
-        <div><div class="label">TBM 실시 일시</div><div class="value">${(tbm.tbm_date || '').slice(0, 16).replace('T', ' ')}</div></div>
-        <div><div class="label">날씨/기온</div><div class="value">${tbm.weather || '-'} / ${tbm.temperature != null ? tbm.temperature + '°C' : '-'}</div></div>
+        <div><div class="label">담당자</div><div class="value">${_esc(tbm.manager_name || tbm.conductor_name) || '-'}</div></div>
+        <div><div class="label">TBM 실시자</div><div class="value">${_esc(tbm.conductor_name) || '-'}</div></div>
+        <div><div class="label">TBM 실시 일시</div><div class="value">${_esc((tbm.tbm_date || '').slice(0, 16).replace('T', ' '))}</div></div>
+        <div><div class="label">날씨/기온</div><div class="value">${_esc(tbm.weather) || '-'} / ${tbm.temperature != null ? _esc(tbm.temperature) + '°C' : '-'}</div></div>
       </div>
       ${(tbm.gps_address || tbm.location) ? `
-      <div style="margin-top:8px"><div class="label">TBM 실시 주소</div><div class="value" style="font-size:12px">${tbm.gps_address || tbm.location || '-'}</div></div>` : ''}
+      <div style="margin-top:8px"><div class="label">TBM 실시 주소</div><div class="value" style="font-size:12px">${_esc(tbm.gps_address || tbm.location) || '-'}</div></div>` : ''}
     </div>
 
     <!-- 작업자 -->
@@ -4314,12 +4319,12 @@ app.get('/tbm-share/:token', async (c) => {
     ${tbm.safety_topics ? `
     <div class="card">
       <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 8px"><i class="fas fa-book" style="margin-right:5px;color:#3B82F6"></i>작업 내용 및 안전교육</h3>
-      <div style="font-size:12px;color:#374151;white-space:pre-wrap;background:#F9FAFB;padding:10px;border-radius:8px">${tbm.safety_topics}</div>
+      <div style="font-size:12px;color:#374151;white-space:pre-wrap;background:#F9FAFB;padding:10px;border-radius:8px">${_esc(tbm.safety_topics)}</div>
     </div>` : ''}
     ${tbm.precautions ? `
     <div class="card">
       <h3 style="font-size:13px;font-weight:700;color:#374151;margin:0 0 8px"><i class="fas fa-exclamation-triangle" style="margin-right:5px;color:#F59E0B"></i>주의사항</h3>
-      <div style="font-size:12px;color:#374151;white-space:pre-wrap;background:#FFFBEB;padding:10px;border-radius:8px">${tbm.precautions}</div>
+      <div style="font-size:12px;color:#374151;white-space:pre-wrap;background:#FFFBEB;padding:10px;border-radius:8px">${_esc(tbm.precautions)}</div>
     </div>` : ''}
 
     <!-- 푸터 -->

@@ -31916,8 +31916,8 @@ async function _upImportCsv(input, type) {
   try {
     const text = await file.text();
     const url = type === 'cable'
-      ? '/api/volume-unit-prices/import'
-      : '/api/splice-unit-prices/import';
+      ? '/volume-unit-prices/import'
+      : '/splice-unit-prices/import';
     const res = await API.post(url, text, {
       headers: { 'Content-Type': 'text/csv; charset=utf-8' }
     });

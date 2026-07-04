@@ -389,7 +389,7 @@ export function createSpliceUnitPricesRoutes() {
     ).all() as any[]
 
     const BOM = '\uFEFF'
-    const header = '공종키,공종명,단위,기본단가(원),야간추가금액(원),가공추가금액(원),정렬순서'
+    const header = '공종키,공종명,단위,기본단가(원),야간추가금액(원),신호수배치(원),정렬순서'
     const csvEsc = (v: any) => {
       const s = String(v ?? '')
       return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
@@ -442,12 +442,14 @@ export function createSpliceUnitPricesRoutes() {
       const iKey    = headers.findIndex(h => h.includes('키') || h === 'item_key')
       const iLabel  = headers.findIndex(h => h.includes('공종명') || h.includes('공종') || h === 'item_label')
       const iUnit   = headers.findIndex(h => h.includes('단위') || h === 'unit')
-      const iPrice  = headers.findIndex(h => (h.includes('기본단가') || h.includes('단가')) && !h.includes('야간') && !h.includes('가공'))
+      const iPrice  = headers.findIndex(h =>
+        (h.includes('기본단가') || h.includes('단가') || h.includes('기본'))
+        && !h.includes('야간') && !h.includes('가공') && !h.includes('신호'))
       const iNight  = headers.findIndex(h => h.includes('야간'))
-      const iAerial = headers.findIndex(h => h.includes('가공'))
+      const iAerial = headers.findIndex(h => h.includes('가공') || h.includes('신호수') || h.includes('aerial'))
 
       if (iKey < 0 || iLabel < 0 || iPrice < 0) {
-        return c.json({ error: '필수 컬럼 없음 — 공종키, 공종명, 기본단가(원) 컬럼이 필요합니다' }, 400)
+        return c.json({ error: '필수 컬럼 없음 — 공종키, 공종명, 기본단가(원) 또는 기본(원) 컬럼이 필요합니다' }, 400)
       }
 
       const dataLines = lines.slice(1)

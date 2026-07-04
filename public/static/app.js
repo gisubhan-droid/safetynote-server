@@ -31557,14 +31557,14 @@ async function renderUnitPricePage(container) {
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="px-4 py-3 bg-indigo-50 border-b border-indigo-100 text-xs text-indigo-700">
             * 접속 공종의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 접속 금액 계산에 반영됩니다.<br>
-            <span class="text-indigo-500">야간·가공 추가금액은 일보 작성 시 야간/가공 체크 여부에 따라 기본단가에 더해집니다.</span>
+            <span class="text-indigo-500">야간·신호수배치 추가금액은 일보 작성 시 야간/신호수배치 체크 여부에 따라 기본단가에 더해집니다.</span>
           </div>
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
               <th class="px-4 py-2 text-left border-b border-gray-100">공종 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-32">기본단가 (원)</th>
               <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-blue-50">야간 추가금액 (원)</th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-green-50">가공 추가금액 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-green-50">신호수배치 추가금액 (원)</th>
               <th class="px-4 py-2 text-center border-b border-gray-100 w-20">단위</th>
               <th class="w-10 border-b border-gray-100"></th>
             </tr></thead>

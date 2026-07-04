@@ -17710,6 +17710,8 @@ async function renderRiskItemsPage(container) {
             `).join('')
           }
         </div>
+
+        ${(window._currentUser?.role === 'admin') ? `<div id="ri-diag-panel" class="mt-4"></div>` : ''}
       </div>
     `;
 
@@ -17729,6 +17731,31 @@ async function renderRiskItemsPage(container) {
         if (badge) badge.textContent = '-';
       }
     });
+
+    // 관리자 전용: DB 진단 정보 비동기 로드 (BUG-076 디버깅)
+    if ((window._currentUser?.role === 'admin') && document.getElementById('ri-diag-panel')) {
+      try {
+        const diagRes = await API.get('/diagnostics/risk-db');
+        const d = diagRes.data || {};
+        const el = document.getElementById('ri-diag-panel');
+        if (el) {
+          const ok = (d.counts?.risk_assessment_items > 0);
+          el.innerHTML = `
+            <div style="background:${ok?'#F0FFF4':'#FFF5F5'};border:1px solid ${ok?'#BBF7D0':'#FCA5A5'};border-radius:10px;padding:10px 14px;font-size:11px;color:#374151">
+              <div style="font-weight:700;margin-bottom:6px;color:${ok?'#065F46':'#991B1B'}">
+                <i class="fas fa-database mr-1"></i>DB 진단 결과 (관리자)
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">
+                <span>work_categories: <b>${d.counts?.work_categories ?? '?'}건</b></span>
+                <span>work_types: <b>${d.counts?.work_types ?? '?'}건</b></span>
+                <span>risk_assessment_items: <b>${d.counts?.risk_assessment_items ?? '?'}건</b></span>
+                <span>활성 항목(is_active=1): <b>${d.counts?.items_active ?? '?'}건</b></span>
+              </div>
+              ${!ok ? '<div style="margin-top:6px;color:#DC2626;font-weight:600"><i class="fas fa-exclamation-triangle mr-1"></i>항목 데이터가 없습니다. 복원이 필요합니다.</div>' : ''}
+            </div>`;
+        }
+      } catch(diagErr) { /* 진단 실패는 무시 */ }
+    }
 
   } catch(e) {
     container.innerHTML = `<div class="page-container"><p class="text-red-500 p-6 text-center">데이터 로드 실패: ${e.message}</p></div>`;

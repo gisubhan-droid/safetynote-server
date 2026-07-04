@@ -17738,22 +17738,69 @@ async function renderRiskItemsPage(container) {
         const diagRes = await API.get('/diagnostics/risk-db');
         const d = diagRes.data || {};
         const el = document.getElementById('ri-diag-panel');
-        if (el) {
-          const ok = (d.counts?.risk_assessment_items > 0);
-          el.innerHTML = `
-            <div style="background:${ok?'#F0FFF4':'#FFF5F5'};border:1px solid ${ok?'#BBF7D0':'#FCA5A5'};border-radius:10px;padding:10px 14px;font-size:11px;color:#374151">
-              <div style="font-weight:700;margin-bottom:6px;color:${ok?'#065F46':'#991B1B'}">
-                <i class="fas fa-database mr-1"></i>DB 진단 결과 (관리자)
+        if (!el) return;
+        const totalItems  = d.counts?.risk_assessment_items ?? 0;
+        const activeItems = d.counts?.items_active ?? 0;
+        const ok = totalItems > 0 && activeItems > 0;
+        const partial = totalItems > 0 && activeItems === 0;
+
+        // work_type별 항목 수 테이블
+        const byTypeRows = (d.items_by_type || []).map(r =>
+          `<tr style="border-bottom:1px solid #E5E7EB">
+            <td style="padding:3px 8px;color:#6B7280">${r.type_id}</td>
+            <td style="padding:3px 8px">${r.cat_name||''}</td>
+            <td style="padding:3px 8px;font-weight:600">${r.type_name}</td>
+            <td style="padding:3px 8px;text-align:right;color:${r.active>0?'#065F46':'#DC2626'};font-weight:700">${r.active}건</td>
+            <td style="padding:3px 8px;text-align:right;color:#6B7280">(전체 ${r.total})</td>
+          </tr>`
+        ).join('');
+
+        el.innerHTML = `
+          <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:12px 14px;font-size:11px;color:#374151;margin-top:8px">
+            <div style="font-weight:700;margin-bottom:8px;color:#1E40AF;font-size:12px">
+              <i class="fas fa-database mr-1"></i>DB 진단 결과 (관리자 전용)
+            </div>
+            <!-- 요약 -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:10px">
+              <div style="background:#EFF6FF;border-radius:8px;padding:6px 10px;text-align:center">
+                <div style="font-size:18px;font-weight:700;color:#1D4ED8">${d.counts?.work_categories??0}</div>
+                <div style="color:#3B82F6;font-size:10px">대분류</div>
               </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">
-                <span>work_categories: <b>${d.counts?.work_categories ?? '?'}건</b></span>
-                <span>work_types: <b>${d.counts?.work_types ?? '?'}건</b></span>
-                <span>risk_assessment_items: <b>${d.counts?.risk_assessment_items ?? '?'}건</b></span>
-                <span>활성 항목(is_active=1): <b>${d.counts?.items_active ?? '?'}건</b></span>
+              <div style="background:#EFF6FF;border-radius:8px;padding:6px 10px;text-align:center">
+                <div style="font-size:18px;font-weight:700;color:#1D4ED8">${d.counts?.work_types??0}</div>
+                <div style="color:#3B82F6;font-size:10px">작업유형</div>
               </div>
-              ${!ok ? '<div style="margin-top:6px;color:#DC2626;font-weight:600"><i class="fas fa-exclamation-triangle mr-1"></i>항목 데이터가 없습니다. 복원이 필요합니다.</div>' : ''}
-            </div>`;
-        }
+              <div style="background:${ok?'#ECFDF5':'#FEF2F2'};border-radius:8px;padding:6px 10px;text-align:center">
+                <div style="font-size:18px;font-weight:700;color:${ok?'#065F46':'#DC2626'}">${totalItems}</div>
+                <div style="color:${ok?'#10B981':'#EF4444'};font-size:10px">전체 항목</div>
+              </div>
+              <div style="background:${ok?'#ECFDF5':partial?'#FFFBEB':'#FEF2F2'};border-radius:8px;padding:6px 10px;text-align:center">
+                <div style="font-size:18px;font-weight:700;color:${ok?'#065F46':partial?'#92400E':'#DC2626'}">${activeItems}</div>
+                <div style="color:${ok?'#10B981':partial?'#F59E0B':'#EF4444'};font-size:10px">활성(is_active=1)</div>
+              </div>
+            </div>
+            ${(!ok || partial) ? `<div style="margin-bottom:8px;padding:6px 10px;background:#FEF2F2;border-radius:8px;color:#DC2626;font-weight:600;font-size:11px">
+              <i class="fas fa-exclamation-triangle mr-1"></i>${totalItems===0?'항목 데이터가 없습니다. 전체 복원이 필요합니다.':'is_active=0인 항목이 있습니다. UPDATE로 활성화 필요'}
+            </div>` : `<div style="margin-bottom:8px;padding:6px 10px;background:#ECFDF5;border-radius:8px;color:#065F46;font-weight:600;font-size:11px">
+              <i class="fas fa-check-circle mr-1"></i>정상입니다.
+            </div>`}
+            <!-- work_type별 상세 -->
+            <details style="cursor:pointer">
+              <summary style="font-weight:600;color:#475569;margin-bottom:6px">▶ 작업유형별 항목 수 상세</summary>
+              <div style="overflow-x:auto;margin-top:6px">
+                <table style="width:100%;border-collapse:collapse;font-size:11px">
+                  <thead><tr style="background:#F1F5F9">
+                    <th style="padding:4px 8px;text-align:left;color:#64748B">ID</th>
+                    <th style="padding:4px 8px;text-align:left;color:#64748B">대분류</th>
+                    <th style="padding:4px 8px;text-align:left;color:#64748B">작업유형</th>
+                    <th style="padding:4px 8px;text-align:right;color:#64748B">활성항목</th>
+                    <th style="padding:4px 8px;text-align:right;color:#64748B">전체</th>
+                  </tr></thead>
+                  <tbody>${byTypeRows}</tbody>
+                </table>
+              </div>
+            </details>
+          </div>`;
       } catch(diagErr) { /* 진단 실패는 무시 */ }
     }
 

@@ -3078,30 +3078,58 @@ app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
 
 // ─── NAS 전용: DB 진단 API (BUG-075/076 디버깅용) ───────────────────────────
-// GET /api/diagnostics/risk-db — risk 관련 테이블 상태 조회
+// GET /api/diagnostics/risk-db — risk 관련 테이블 상태 + work_type별 항목 수 상세
 app.get('/api/diagnostics/risk-db', async (c) => {
   const user = getUser(c)
   if (!user || user.role !== 'admin') return c.json({ error: '관리자만 사용 가능' }, 403)
   try {
-    const tables = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[]).map(r => r.name)
+    const tables = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[]).map((r: any) => r.name)
     const hasCats  = tables.includes('work_categories')
     const hasTypes = tables.includes('work_types')
     const hasItems = tables.includes('risk_assessment_items')
 
-    const catCount  = hasCats  ? (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c : 0
-    const typeCount = hasTypes ? (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c : 0
-    const itemCount = hasItems ? (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c : 0
+    const catCount   = hasCats  ? (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c : 0
+    const typeCount  = hasTypes ? (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c : 0
+    const itemCount  = hasItems ? (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c : 0
     const itemActive = hasItems ? (rawDb.prepare("SELECT COUNT(*) as c FROM risk_assessment_items WHERE COALESCE(is_active,1)=1").get() as any).c : 0
 
     const cats  = hasCats  ? rawDb.prepare('SELECT id, name FROM work_categories ORDER BY id').all() : []
-    const types = hasTypes ? rawDb.prepare('SELECT id, category_id, name FROM work_types ORDER BY id LIMIT 30').all() : []
-    const itemCols = hasItems ? (rawDb.prepare('PRAGMA table_info(risk_assessment_items)').all() as any[]).map(r => r.name) : []
+    const types = hasTypes ? rawDb.prepare('SELECT id, category_id, name FROM work_types ORDER BY id').all() : []
+    const itemCols = hasItems ? (rawDb.prepare('PRAGMA table_info(risk_assessment_items)').all() as any[]).map((r: any) => r.name) : []
+
+    // work_type별 항목 수 (복원 상태 상세 파악용)
+    const itemsByType = (hasItems && hasTypes) ? rawDb.prepare(`
+      SELECT wt.id as type_id, wt.name as type_name, wc.name as cat_name,
+             COUNT(rai.id) as total,
+             SUM(CASE WHEN COALESCE(rai.is_active,1)=1 THEN 1 ELSE 0 END) as active
+      FROM work_types wt
+      LEFT JOIN work_categories wc ON wc.id = wt.category_id
+      LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id
+      GROUP BY wt.id ORDER BY wt.id
+    `).all() : []
+
+    // 최근 추가된 항목 5건 (복원 시점 확인용)
+    const recentItems = hasItems ? rawDb.prepare(`
+      SELECT id, work_type_id, hazard, created_at
+      FROM risk_assessment_items
+      ORDER BY id DESC LIMIT 5
+    `).all() : []
+
+    // 가장 오래된 항목 (기존 데이터 기준)
+    const oldestItem = hasItems ? rawDb.prepare(`
+      SELECT id, work_type_id, hazard, created_at
+      FROM risk_assessment_items
+      ORDER BY id ASC LIMIT 1
+    `).first() : null
 
     return c.json({
       tables_exist: { work_categories: hasCats, work_types: hasTypes, risk_assessment_items: hasItems },
       counts: { work_categories: catCount, work_types: typeCount, risk_assessment_items: itemCount, items_active: itemActive },
       work_categories: cats,
-      work_types_sample: types,
+      work_types: types,
+      items_by_type: itemsByType,
+      recent_items: recentItems,
+      oldest_item: oldestItem,
       risk_assessment_items_columns: itemCols,
     })
   } catch(e: any) {
@@ -5007,13 +5035,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260704f">
+  <link rel="stylesheet" href="/static/style.css?v=20260704g">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260704f"></script>
+  <script src="/static/app.js?v=20260704g"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260704f"></script>
+  <script src="/static/mobile-app.js?v=20260704g"></script>
 </body>
 </html>`)
 })

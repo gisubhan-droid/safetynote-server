@@ -17791,6 +17791,7 @@ async function renderRiskItemsPage(container) {
             </div>
             ${(!ok || partial) ? `<div style="margin-bottom:8px;padding:6px 10px;background:#FEF2F2;border-radius:8px;color:#DC2626;font-weight:600;font-size:11px">
               <i class="fas fa-exclamation-triangle mr-1"></i>${totalItems===0?'항목 데이터가 없습니다. 전체 복원이 필요합니다.':'is_active=0인 항목이 있습니다. UPDATE로 활성화 필요'}
+              ${totalItems===0 ? `<button onclick="riRestoreMasterData()" style="margin-left:8px;padding:3px 10px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px"><i class="fas fa-database mr-1"></i>마스터 데이터 복원</button>` : ''}
             </div>` : `<div style="margin-bottom:8px;padding:6px 10px;background:#ECFDF5;border-radius:8px;color:#065F46;font-weight:600;font-size:11px">
               <i class="fas fa-check-circle mr-1"></i>정상입니다.
             </div>`}
@@ -17842,6 +17843,23 @@ async function renderRiskItemsPage(container) {
 
   } catch(e) {
     container.innerHTML = `<div class="page-container"><p class="text-red-500 p-6 text-center">데이터 로드 실패: ${e.message}</p></div>`;
+  }
+}
+
+// [BUG-076] 위험성평가 마스터 데이터 복원
+async function riRestoreMasterData() {
+  if (!confirm('위험성평가 마스터 데이터를 복원하시겠습니까?\n기존 데이터는 유지되며, 누락된 데이터만 추가됩니다.')) return;
+  try {
+    const res = await API.post('/admin/risk-master-restore', {});
+    const d = res.data || {};
+    if (d.success) {
+      alert(`복원 완료!\n- 대분류: ${d.work_categories}건\n- 작업유형: ${d.work_types}건\n- 위험항목 추가: ${d.added}건 (이전: ${d.before} → 이후: ${d.after})\n\n페이지를 새로고침합니다.`);
+      navigateTo('risk-items');
+    } else {
+      alert('복원 실패: ' + (d.error || '알 수 없는 오류'));
+    }
+  } catch(e) {
+    alert('복원 API 오류: ' + (e?.message || e));
   }
 }
 

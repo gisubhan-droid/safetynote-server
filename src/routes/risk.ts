@@ -450,7 +450,7 @@ app.get('/categories/:category_id/types', async (c) => {
       `SELECT wt.id, wt.name, wt.code, wt.description,
        COUNT(rai.id) as item_count
        FROM work_types wt
-       LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND rai.is_active = 1
+       LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND COALESCE(rai.is_active, 1) = 1
        WHERE wt.category_id = ?
        GROUP BY wt.id ORDER BY wt.name`
     ).bind(category_id).all<any>()
@@ -473,7 +473,7 @@ app.get('/items/by-type', async (c) => {
       FROM risk_assessment_items rai
       LEFT JOIN work_types wt ON wt.id = rai.work_type_id
       LEFT JOIN work_categories wc ON wc.id = wt.category_id
-      WHERE rai.is_active = 1`
+      WHERE COALESCE(rai.is_active, 1) = 1`
     const params: any[] = []
 
     if (work_type_id) {
@@ -510,7 +510,7 @@ app.get('/items/standard-form', async (c) => {
      FROM risk_assessment_items rai
      LEFT JOIN work_types wt ON wt.id = rai.work_type_id
      LEFT JOIN work_categories wc ON wc.id = wt.category_id
-     WHERE rai.work_type_id = ? AND rai.is_active = 1
+     WHERE rai.work_type_id = ? AND COALESCE(rai.is_active, 1) = 1
      ORDER BY rai.category, rai.before_risk_level DESC, rai.id`
   ).bind(work_type_id).all<any>()
 
@@ -545,10 +545,10 @@ app.get('/items/summary', async (c) => {
       `SELECT wc.name as category_name, wc.code as category_code,
        wt.id as work_type_id, wt.name as work_type_name, wt.code as work_type_code,
        COUNT(rai.id) as item_count,
-       SUM(CASE WHEN rai.before_risk_level IN ('높음','매우높음') THEN 1 ELSE 0 END) as high_risk_count
+       SUM(CASE WHEN COALESCE(rai.before_risk_level,'') IN ('높음','매우높음') THEN 1 ELSE 0 END) as high_risk_count
        FROM work_types wt
        JOIN work_categories wc ON wc.id = wt.category_id
-       LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND rai.is_active = 1
+       LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND COALESCE(rai.is_active, 1) = 1
        GROUP BY wt.id ORDER BY wc.name, wt.name`
     ).all<any>()
     return c.json(result.results || [])
@@ -646,7 +646,7 @@ app.get('/items/manage', async (c) => {
        FROM risk_assessment_items rai
        JOIN work_types wt ON wt.id = rai.work_type_id
        JOIN work_categories wc ON wc.id = wt.category_id
-       WHERE rai.is_active = 1`
+       WHERE COALESCE(rai.is_active, 1) = 1`
     const params: any[] = []
 
     if (work_type_id) {
@@ -930,7 +930,7 @@ app.delete('/work-types/:id', async (c) => {
   if (!user || user.role !== 'admin') return c.json({ error: '관리자만 삭제 가능합니다.' }, 403)
   const id = c.req.param('id')
   try {
-    const itemCnt = await c.env.DB.prepare('SELECT COUNT(*) as c FROM risk_assessment_items WHERE work_type_id=? AND is_active=1').bind(Number(id)).first<any>()
+    const itemCnt = await c.env.DB.prepare('SELECT COUNT(*) as c FROM risk_assessment_items WHERE work_type_id=? AND COALESCE(is_active,1)=1').bind(Number(id)).first<any>()
     if (itemCnt && itemCnt.c > 0) return c.json({ error: `위험성평가 항목 ${itemCnt.c}건이 있어 삭제할 수 없습니다. 항목을 먼저 삭제하세요.` }, 409)
     await c.env.DB.prepare('DELETE FROM work_types WHERE id=?').bind(Number(id)).run()
     return c.json({ success: true })

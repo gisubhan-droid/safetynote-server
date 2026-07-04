@@ -2261,6 +2261,31 @@ function patchSchema() {
   } catch(e: any) {
     console.warn('[patchSchema v0.149] 컬럼 보완 실패 (무시):', e.message)
   }
+
+  // ── [v0.150 BUG-076] risk_assessment_items 빈 work_type → restore_risk_master_data.sql 자동 실행 ──
+  try {
+    const hasItems = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='risk_assessment_items'").get() as any)
+    const hasTypes = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_types'").get() as any)
+    if (hasItems && hasTypes) {
+      const totalItems = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+      if (totalItems === 0) {
+        // SQL 파일이 있으면 자동 실행
+        const sqlPath = require('path').join(process.cwd(), 'restore_risk_master_data.sql')
+        if (require('fs').existsSync(sqlPath)) {
+          const sql = require('fs').readFileSync(sqlPath, 'utf-8')
+          rawDb.exec(sql)
+          const restored = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+          console.log(`[patchSchema v0.150] risk_assessment_items 자동 복원 완료: ${restored}건`)
+        } else {
+          console.warn('[patchSchema v0.150] restore_risk_master_data.sql 없음 — 수동 복원 필요')
+        }
+      } else {
+        console.log(`[patchSchema v0.150] risk_assessment_items 데이터 있음 (${totalItems}건) — 자동 복원 생략`)
+      }
+    }
+  } catch(e: any) {
+    console.warn('[patchSchema v0.150] 자동 복원 실패 (무시):', e.message)
+  }
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)
@@ -3155,6 +3180,32 @@ app.get('/api/diagnostics/risk-db', async (c) => {
     })
   } catch(e: any) {
     return c.json({ error: e.message }, 500)
+  }
+})
+
+// ── [BUG-076] POST /api/admin/risk-master-restore — 위험성평가 마스터 데이터 복원 ──
+// restore_risk_master_data.sql 파일을 실행하여 work_categories/work_types/risk_assessment_items 복원
+// 기존 데이터와 충돌 없음 (INSERT OR IGNORE)
+app.post('/api/admin/risk-master-restore', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '로그인 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자만 실행 가능합니다.' }, 403)
+  try {
+    const sqlPath = require('path').join(process.cwd(), 'restore_risk_master_data.sql')
+    if (!require('fs').existsSync(sqlPath)) {
+      return c.json({ error: 'restore_risk_master_data.sql 파일이 없습니다. git pull 후 재시도하세요.' }, 404)
+    }
+    const sql = require('fs').readFileSync(sqlPath, 'utf-8') as string
+    const before = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+    rawDb.exec(sql)
+    const after = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+    const cats  = (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c
+    const types = (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c
+    console.log(`[BUG-076] risk master data restored: items ${before} → ${after}`)
+    return c.json({ success: true, before, after, added: after - before, work_categories: cats, work_types: types })
+  } catch(e: any) {
+    console.error('[BUG-076] risk-master-restore error:', e.message)
+    return c.json({ error: e.message || '복원 실패' }, 500)
   }
 })
 // ─── FEAT-037: POST /api/tbm/:id/share-token (RULE-002: tbmExtraRoutes·tbmRoutes 앞에 등록) ───

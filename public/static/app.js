@@ -15307,9 +15307,9 @@ async function renderAdminSettingsPage(container, _activeTab) {
       <!-- ────────────────────────────────────────────────── -->
       <!-- TAB: 푸시 알림 발송                               -->
       <!-- ────────────────────────────────────────────────── -->
-      <div id="spanel-push" class="settings-panel grid grid-cols-1 gap-4 ${firstTab !== 'push' ? 'hidden' : ''}">
+      <div id="spanel-push" class="settings-panel grid grid-cols-1 xl:grid-cols-2 gap-4 ${firstTab !== 'push' ? 'hidden' : ''}">
 
-        <!-- FCM 토큰 현황 -->
+        <!-- FCM 토큰 현황 + 푸시 발송 -->
         <div class="bg-white rounded-2xl shadow-sm p-5 border border-blue-100">
           <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
             <i class="fas fa-bell text-blue-500"></i> 푸시 알림 발송
@@ -15349,6 +15349,55 @@ async function renderAdminSettingsPage(container, _activeTab) {
             </button>
           </div>
         </div>
+
+        <!-- FCM 사용자별 등록 현황 카드 -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-gray-700 flex items-center gap-2">
+              <i class="fas fa-mobile-alt text-indigo-500"></i> 앱 등록 현황
+            </h3>
+            <button onclick="_loadFcmStatus()" class="text-xs text-gray-400 hover:text-blue-500 transition-colors flex items-center gap-1">
+              <i class="fas fa-sync-alt"></i> 새로고침
+            </button>
+          </div>
+
+          <!-- 탭: 전체 / 미등록 / 등록완료 -->
+          <div class="flex gap-1 mb-3" id="fcm-user-tabs">
+            <button onclick="_fcmSwitchTab('all')" id="fcm-tab-all"
+              class="fcm-tab flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white">
+              전체
+            </button>
+            <button onclick="_fcmSwitchTab('none')" id="fcm-tab-none"
+              class="fcm-tab flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all bg-gray-100 text-gray-500 hover:bg-gray-200">
+              미등록
+            </button>
+            <button onclick="_fcmSwitchTab('ok')" id="fcm-tab-ok"
+              class="fcm-tab flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all bg-gray-100 text-gray-500 hover:bg-gray-200">
+              등록완료
+            </button>
+          </div>
+
+          <!-- 검색 -->
+          <div class="relative mb-3">
+            <i class="fas fa-search absolute left-2.5 top-2 text-gray-300 text-xs"></i>
+            <input id="fcm-user-search" type="text" placeholder="이름 또는 역할 검색..."
+              class="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-blue-300"
+              oninput="_fcmRenderList()">
+          </div>
+
+          <!-- 사용자 목록 -->
+          <div id="fcm-user-list" class="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+            <div class="text-center text-gray-400 py-6 text-xs">
+              <i class="fas fa-spinner fa-spin mr-1"></i> 로딩 중...
+            </div>
+          </div>
+
+          <!-- 통계 요약 -->
+          <div id="fcm-user-summary" class="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400 flex items-center justify-between">
+            <span>—</span>
+          </div>
+        </div>
+
       </div>
 
       <!-- ────────────────────────────────────────────────── -->
@@ -16492,32 +16541,163 @@ async function saveAdminSettings() {
 
 // ─── FCM 푸시 알림 함수들 (Phase 2 — FEAT-025-FCM) ────────────────────────────
 
-/** 관리자 화면 — FCM 토큰 등록 현황 로드 */
+// ─── FCM 사용자 목록 전역 캐시 ───────────────────────────────────────────────
+window._fcmUsers    = [];   // 전체 users 배열 (API 응답)
+window._fcmTabKey   = 'all'; // 현재 탭: 'all' | 'none' | 'ok'
+
+/** 관리자 화면 — FCM 토큰 등록 현황 로드 (상단 배너 + 우측 목록 카드) */
 async function _loadFcmStatus() {
   const bar = document.getElementById('fcm-status-bar');
   if (!bar) return;
   try {
     const res = await API.get('/push/status');
-    const { total, with_token, without_token } = res.data;
-    const pct = total > 0 ? Math.round(with_token / total * 100) : 0;
-    const isZero = with_token === 0;
+    const { total, with_token, without_token, users } = res.data;
+    const noToken = without_token ?? (total - with_token);
+    const pct     = total > 0 ? Math.round(with_token / total * 100) : 0;
+    const isZero  = with_token === 0;
+
+    // ── 상단 배너 업데이트 ──
     bar.className = 'mb-4 p-3 rounded-xl border text-xs ' +
       (isZero ? 'bg-red-50 border-red-300 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700');
-    bar.innerHTML = isZero
-      ? `<div class="flex items-center gap-2 font-bold text-red-700">
+    if (isZero) {
+      bar.innerHTML =
+        `<div class="flex items-center gap-2 font-bold text-red-700">
            <i class="fas fa-exclamation-triangle"></i>
            FCM 토큰 등록된 기기 없음 — 앱에서 로그인해야 토큰이 등록됩니다.
          </div>
-         <div class="mt-1 text-red-500 text-xs">전체 사용자 ${total}명 중 앱 로그인 기록 없음. 앱 실행 후 로그인하면 자동 등록됩니다.</div>`
-      : `<div class="flex items-center justify-between mb-1">
-           <span><i class="fas fa-mobile-alt mr-1"></i> 앱 FCM 등록: <strong>${with_token}명</strong> / 전체 ${total}명 (미등록 ${without_token ?? (total - with_token)}명)</span>
+         <div class="mt-1 text-red-500 text-xs">전체 사용자 ${total}명 중 앱 로그인 기록 없음. 앱 실행 후 로그인하면 자동 등록됩니다.</div>`;
+    } else {
+      bar.innerHTML =
+        `<div class="flex items-center justify-between mb-1">
+           <span><i class="fas fa-mobile-alt mr-1"></i> 앱 FCM 등록: <strong>${with_token}명</strong> / 전체 ${total}명
+             ${noToken > 0 ? `<span class="ml-2 text-orange-500 font-semibold">(미등록 ${noToken}명 ⚠️)</span>` : `<span class="ml-2 text-green-600 font-semibold">✅ 전원 등록</span>`}
+           </span>
            <span class="font-bold">${pct}%</span>
          </div>
          <div class="w-full bg-blue-200 rounded-full h-1.5">
-           <div class="bg-blue-600 h-1.5 rounded-full" style="width:${pct}%"></div>
+           <div class="${noToken > 0 ? 'bg-blue-500' : 'bg-green-500'} h-1.5 rounded-full transition-all" style="width:${pct}%"></div>
          </div>`;
+    }
+
+    // ── 우측 사용자 목록 카드 업데이트 ──
+    window._fcmUsers = users || [];
+    _fcmUpdateTabBadges(with_token, noToken, total);
+    _fcmRenderList();
+
   } catch(e) {
     bar.innerHTML = `<i class="fas fa-exclamation-circle mr-1 text-red-400"></i> 현황 로드 실패`;
+  }
+}
+
+/** FCM 탭 배지(숫자) 업데이트 */
+function _fcmUpdateTabBadges(withToken, noToken, total) {
+  const tabAll  = document.getElementById('fcm-tab-all');
+  const tabNone = document.getElementById('fcm-tab-none');
+  const tabOk   = document.getElementById('fcm-tab-ok');
+  if (tabAll)  tabAll.textContent  = `전체 ${total}`;
+  if (tabNone) tabNone.textContent = `미등록 ${noToken}`;
+  if (tabOk)   tabOk.textContent   = `등록완료 ${withToken}`;
+}
+
+/** FCM 탭 전환 */
+function _fcmSwitchTab(key) {
+  window._fcmTabKey = key;
+  // 탭 스타일
+  document.querySelectorAll('.fcm-tab').forEach(btn => {
+    btn.classList.remove('bg-indigo-600', 'text-white', 'bg-red-500', 'bg-green-500');
+    btn.classList.add('bg-gray-100', 'text-gray-500');
+  });
+  const active = document.getElementById(`fcm-tab-${key}`);
+  if (active) {
+    active.classList.remove('bg-gray-100', 'text-gray-500');
+    if (key === 'none') active.classList.add('bg-red-500',   'text-white');
+    else if (key === 'ok') active.classList.add('bg-green-500', 'text-white');
+    else active.classList.add('bg-indigo-600', 'text-white');
+  }
+  _fcmRenderList();
+}
+
+/** FCM 역할 한글 변환 */
+function _fcmRoleLabel(role) {
+  return { admin:'관리자', supervisor:'현장감독', worker:'작업자', lgu:'LGU+' }[role] || role;
+}
+
+/** FCM 사용자 목록 렌더링 (탭 + 검색 필터 적용) */
+function _fcmRenderList() {
+  const listEl    = document.getElementById('fcm-user-list');
+  const summaryEl = document.getElementById('fcm-user-summary');
+  if (!listEl) return;
+
+  const tab    = window._fcmTabKey || 'all';
+  const search = (document.getElementById('fcm-user-search')?.value || '').trim().toLowerCase();
+  const users  = window._fcmUsers || [];
+
+  // 탭 필터
+  let filtered = users.filter(u => {
+    if (tab === 'none') return !u.has_token;
+    if (tab === 'ok')   return  u.has_token;
+    return true;
+  });
+
+  // 검색 필터
+  if (search) {
+    filtered = filtered.filter(u =>
+      (u.name || '').toLowerCase().includes(search) ||
+      _fcmRoleLabel(u.role).includes(search) ||
+      (u.position || '').toLowerCase().includes(search)
+    );
+  }
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = `<div class="text-center text-gray-300 py-8 text-xs">
+      <i class="fas fa-search text-2xl mb-2 block"></i>
+      ${search ? '검색 결과 없음' : tab === 'none' ? '미등록 사용자 없음 ✅' : '사용자 없음'}
+    </div>`;
+    if (summaryEl) summaryEl.innerHTML = `<span>총 ${filtered.length}명</span>`;
+    return;
+  }
+
+  const ROLE_COLOR = {
+    admin:      'bg-purple-100 text-purple-700',
+    supervisor: 'bg-blue-100 text-blue-700',
+    worker:     'bg-gray-100 text-gray-600',
+    lgu:        'bg-pink-100 text-pink-700',
+  };
+
+  listEl.innerHTML = filtered.map(u => {
+    const hasToken  = !!u.has_token;
+    const roleColor = ROLE_COLOR[u.role] || 'bg-gray-100 text-gray-600';
+    const statusIcon = hasToken
+      ? `<span class="flex items-center gap-1 text-green-600 font-semibold">
+           <i class="fas fa-check-circle"></i><span class="hidden sm:inline">등록</span>
+         </span>`
+      : `<span class="flex items-center gap-1 text-red-400 font-semibold">
+           <i class="fas fa-times-circle"></i><span class="hidden sm:inline">미등록</span>
+         </span>`;
+    const tokenPreview = hasToken && u.token_preview
+      ? `<span class="text-gray-300 font-mono text-xs ml-1 hidden xl:inline">${u.token_preview}</span>`
+      : '';
+    return `<div class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs ${hasToken ? 'bg-green-50 border border-green-100' : 'bg-red-50 border border-red-100'}">
+      <div class="flex-1 min-w-0">
+        <span class="font-semibold text-gray-800">${u.name || '-'}</span>
+        <span class="ml-1.5 px-1.5 py-0.5 rounded text-xs ${roleColor}">${_fcmRoleLabel(u.role)}</span>
+        ${u.position ? `<span class="text-gray-400 ml-1">${u.position}</span>` : ''}
+        ${tokenPreview}
+      </div>
+      <div class="shrink-0">${statusIcon}</div>
+    </div>`;
+  }).join('');
+
+  // 요약
+  const withCnt  = filtered.filter(u => u.has_token).length;
+  const noneCnt  = filtered.length - withCnt;
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <span>표시 ${filtered.length}명</span>
+      <span class="flex gap-3">
+        <span class="text-green-600"><i class="fas fa-check-circle mr-1"></i>등록 ${withCnt}</span>
+        <span class="text-red-400"><i class="fas fa-times-circle mr-1"></i>미등록 ${noneCnt}</span>
+      </span>`;
   }
 }
 

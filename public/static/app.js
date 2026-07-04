@@ -17958,23 +17958,34 @@ function _riRenderItemTable(panel, workTypeId, items) {
         <thead>
           <tr class="bg-blue-50 text-gray-600">
             <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 w-8">#</th>
-            <th class="px-3 py-2 text-left font-semibold border-b border-gray-200">위험요인</th>
-            <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 hidden sm:table-cell">안전대책</th>
-            <th class="px-3 py-2 text-center font-semibold border-b border-gray-200 w-16">위험도</th>
+            <th class="px-3 py-2 text-left font-semibold border-b border-gray-200">유해·위험요인</th>
+            <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 hidden md:table-cell">위험성 내용</th>
+            <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 hidden lg:table-cell">안전조치/감소대책</th>
+            <th class="px-3 py-2 text-center font-semibold border-b border-gray-200 w-20">개선전→후</th>
             ${canEdit ? `<th class="px-3 py-2 text-center font-semibold border-b border-gray-200 w-20">관리</th>` : ''}
           </tr>
         </thead>
         <tbody>
           ${items.map((item, idx) => {
-            const score = (item.likelihood || 1) * (item.severity || 1);
-            const scoreStyle = riskLevelStyleInline(score);
+            const bf = item.before_frequency || item.likelihood || 1;
+            const bs = item.before_severity  || item.severity   || 1;
+            const af = item.after_frequency  || 1;
+            const as_ = item.after_severity  || 1;
+            const bScore = bf * bs;
+            const aScore = af * as_;
+            const bLevel = calcRiskLevel(bf, bs);
+            const aLevel = calcRiskLevel(af, as_);
+            const cm = item.control_measures || item.countermeasure || '-';
             return `
               <tr class="hover:bg-gray-50 border-b border-gray-100 ri-row" data-item-id="${item.id}">
                 <td class="px-3 py-2 text-gray-400">${idx+1}</td>
-                <td class="px-3 py-2 text-gray-700">${item.hazard || '-'}</td>
-                <td class="px-3 py-2 text-gray-500 hidden sm:table-cell">${item.countermeasure || '-'}</td>
-                <td class="px-3 py-2 text-center">
-                  <span class="inline-block px-1.5 py-0.5 rounded text-xs font-bold" style="${scoreStyle}">${score}</span>
+                <td class="px-3 py-2 text-gray-700 font-medium">${item.hazard || '-'}</td>
+                <td class="px-3 py-2 text-gray-500 hidden md:table-cell">${item.risk_factor || '-'}</td>
+                <td class="px-3 py-2 text-gray-500 hidden lg:table-cell" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cm}</td>
+                <td class="px-3 py-2 text-center whitespace-nowrap">
+                  <span class="inline-block px-1.5 py-0.5 rounded text-xs font-bold ${getRiskColor(bLevel)}">${bScore}</span>
+                  <span class="text-gray-300 mx-0.5">→</span>
+                  <span class="inline-block px-1.5 py-0.5 rounded text-xs font-bold ${getRiskColor(aLevel)}">${aScore}</span>
                 </td>
                 ${canEdit ? `
                 <td class="px-3 py-2 text-center">
@@ -17987,7 +17998,7 @@ function _riRenderItemTable(panel, workTypeId, items) {
       </table>
       ${canEdit ? `
       <div class="px-4 py-3 border-t border-gray-100 flex justify-end">
-        <button onclick="_riAddItemModal(${workTypeId},'${wtName.replace(/'/g,"\\'")}',document.getElementById('ri-panel-${workTypeId}'))"
+        <button onclick="_riAddItemModal(${workTypeId},'${wtName.replace(/'/g,"\'")}',document.getElementById('ri-panel-${workTypeId}'))"
           class="btn btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
           <i class="fas fa-plus"></i>항목 추가
         </button>
@@ -18012,42 +18023,111 @@ async function _riEditItem(itemId, workTypeId) {
   }
 }
 
-// 수정 모달 UI
+// ── 위험도 점수 실시간 업데이트 (수정/추가 모달 공용) ──
+function _riUpdateScore(prefix) {
+  const bf = parseInt(document.getElementById(`${prefix}-bfreq`)?.value) || 1;
+  const bs = parseInt(document.getElementById(`${prefix}-bsev`)?.value) || 1;
+  const af = parseInt(document.getElementById(`${prefix}-afreq`)?.value) || 1;
+  const as_ = parseInt(document.getElementById(`${prefix}-asev`)?.value) || 1;
+  const bEl = document.getElementById(`${prefix}-bscore`);
+  const aEl = document.getElementById(`${prefix}-ascore`);
+  if (bEl) { bEl.textContent = bf*bs; bEl.className = `risk-score ${getRiskColor(calcRiskLevel(bf,bs))}`; }
+  if (aEl) { aEl.textContent = af*as_; aEl.className = `risk-score ${getRiskColor(calcRiskLevel(af,as_))}`; }
+}
+
+// ── 빈도/강도 셀렉트 옵션 생성 헬퍼 ──
+function _riFreqOpts(id, val) {
+  return `<select id="${id}" class="form-input text-sm" onchange="_riUpdateScore('${id.split('-').slice(0,2).join('-')}')">
+    ${[1,2,3,4,5].map(v=>`<option value="${v}" ${val==v?'selected':''}>${v}</option>`).join('')}
+  </select>`;
+}
+
+// 수정 모달 UI — 위험성 평가 화면과 동일한 필드 구조
 function _riShowEditModal(item, workTypeId) {
   const existing = document.getElementById('ri-edit-modal');
   if (existing) existing.remove();
+
+  const p = 'ri-edit';
+  const bFreq = item.before_frequency || item.likelihood || 2;
+  const bSev  = item.before_severity  || item.severity   || 2;
+  const aFreq = item.after_frequency  || 1;
+  const aSev  = item.after_severity   || 2;
+  const bScore = bFreq * bSev;
+  const aScore = aFreq * aSev;
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.id = 'ri-edit-modal';
   modal.innerHTML = `
-    <div class="modal" style="max-width:520px">
+    <div class="modal" style="max-width:600px">
       <div class="modal-header">
         <h3 class="text-base font-bold">위험성평가 항목 수정</h3>
         <button onclick="document.getElementById('ri-edit-modal').remove()" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
-      <div class="modal-body space-y-4">
-        <div>
-          <label class="form-label">위험요인 <span class="text-red-500">*</span></label>
-          <input id="ri-edit-hazard" class="form-input" value="${(item.hazard||'').replace(/"/g,'&quot;')}" placeholder="위험요인을 입력하세요">
+      <div class="modal-body space-y-3">
+        <!-- 유해·위험요인 + 위험성 내용 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="form-label text-xs">유해·위험요인 (원인) <span class="text-red-500">*</span></label>
+            <input id="${p}-hazard" class="form-input text-sm" value="${(item.hazard||'').replace(/"/g,'&quot;')}" placeholder="위험요인을 입력하세요">
+          </div>
+          <div>
+            <label class="form-label text-xs">위험성 내용</label>
+            <input id="${p}-factor" class="form-input text-sm" value="${(item.risk_factor||'').replace(/"/g,'&quot;')}" placeholder="위험성 내용 (선택)">
+          </div>
         </div>
-        <div>
-          <label class="form-label">안전대책</label>
-          <textarea id="ri-edit-counter" class="form-input" rows="3" placeholder="안전대책을 입력하세요">${item.countermeasure||''}</textarea>
+        <!-- 개선 전 / 개선 후 -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-red-50 border border-red-100 rounded-lg p-3">
+            <div class="text-xs font-bold text-red-700 mb-2">개선 전</div>
+            <div class="flex gap-2 items-end">
+              <div class="flex-1">
+                <label class="form-label text-xs">빈도</label>
+                ${_riFreqOptsInline(p+'-bfreq', bFreq)}
+              </div>
+              <div class="flex-1">
+                <label class="form-label text-xs">강도</label>
+                ${_riFreqOptsInline(p+'-bsev', bSev)}
+              </div>
+              <div class="text-center">
+                <label class="form-label text-xs">위험도</label>
+                <div id="${p}-bscore" class="risk-score ${getRiskColor(calcRiskLevel(bFreq,bSev))}">${bScore}</div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-green-50 border border-green-100 rounded-lg p-3">
+            <div class="text-xs font-bold text-green-700 mb-2">개선 후</div>
+            <div class="flex gap-2 items-end">
+              <div class="flex-1">
+                <label class="form-label text-xs">빈도</label>
+                ${_riFreqOptsInline(p+'-afreq', aFreq)}
+              </div>
+              <div class="flex-1">
+                <label class="form-label text-xs">강도</label>
+                ${_riFreqOptsInline(p+'-asev', aSev)}
+              </div>
+              <div class="text-center">
+                <label class="form-label text-xs">위험도</label>
+                <div id="${p}-ascore" class="risk-score ${getRiskColor(calcRiskLevel(aFreq,aSev))}">${aScore}</div>
+              </div>
+            </div>
+          </div>
         </div>
+        <!-- 안전조치 / 감소대책 -->
+        <div>
+          <label class="form-label text-xs">안전조치 / 감소대책</label>
+          <textarea id="${p}-control" class="form-input text-sm" rows="3" placeholder="안전조치 및 감소대책을 입력하세요">${(item.control_measures||item.countermeasure||'').replace(/</g,'&lt;')}</textarea>
+        </div>
+        <!-- 담당자 + 비고 -->
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="form-label">가능성 (1~5)</label>
-            <input id="ri-edit-likelihood" type="number" min="1" max="5" class="form-input" value="${item.likelihood||1}">
+            <label class="form-label text-xs">담당자</label>
+            <input id="${p}-responsible" class="form-input text-sm" value="${(item.responsible||'관리감독자').replace(/"/g,'&quot;')}" placeholder="담당자">
           </div>
           <div>
-            <label class="form-label">중대성 (1~5)</label>
-            <input id="ri-edit-severity" type="number" min="1" max="5" class="form-input" value="${item.severity||1}">
+            <label class="form-label text-xs">비고</label>
+            <input id="${p}-note" class="form-input text-sm" value="${(item.note||'').replace(/"/g,'&quot;')}" placeholder="비고 (선택)">
           </div>
-        </div>
-        <div>
-          <label class="form-label">비고</label>
-          <input id="ri-edit-note" class="form-input" value="${(item.note||'').replace(/"/g,'&quot;')}" placeholder="비고 (선택)">
         </div>
       </div>
       <div class="modal-footer flex justify-end gap-2">
@@ -18056,24 +18136,60 @@ function _riShowEditModal(item, workTypeId) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+
+  // onchange 핸들러 연결 (innerHTML 내 함수 참조 보완)
+  ['bfreq','bsev','afreq','asev'].forEach(k => {
+    const el = document.getElementById(`${p}-${k}`);
+    if (el) el.addEventListener('change', () => {
+      const bf = parseInt(document.getElementById(`${p}-bfreq`)?.value)||1;
+      const bs = parseInt(document.getElementById(`${p}-bsev`)?.value)||1;
+      const af = parseInt(document.getElementById(`${p}-afreq`)?.value)||1;
+      const as_ = parseInt(document.getElementById(`${p}-asev`)?.value)||1;
+      const bEl = document.getElementById(`${p}-bscore`);
+      const aEl = document.getElementById(`${p}-ascore`);
+      if (bEl) { bEl.textContent=bf*bs; bEl.className=`risk-score ${getRiskColor(calcRiskLevel(bf,bs))}`; }
+      if (aEl) { aEl.textContent=af*as_; aEl.className=`risk-score ${getRiskColor(calcRiskLevel(af,as_))}`; }
+    });
+  });
+}
+
+// 빈도/강도 셀렉트 HTML 생성 (인라인, onchange는 addEventListener로 처리)
+function _riFreqOptsInline(id, val) {
+  return `<select id="${id}" class="form-input text-sm">
+    ${[1,2,3,4,5].map(v=>`<option value="${v}" ${val==v?'selected':''}>${v}</option>`).join('')}
+  </select>`;
 }
 
 // 수정 저장
 async function _riSaveEdit(itemId, workTypeId) {
-  const hazard = document.getElementById('ri-edit-hazard')?.value?.trim();
+  const p = 'ri-edit';
+  const hazard = document.getElementById(`${p}-hazard`)?.value?.trim();
   if (!hazard) { toast('위험요인을 입력하세요.', 'error'); return; }
+  const bf = parseInt(document.getElementById(`${p}-bfreq`)?.value)||1;
+  const bs = parseInt(document.getElementById(`${p}-bsev`)?.value)||1;
+  const af = parseInt(document.getElementById(`${p}-afreq`)?.value)||1;
+  const as_ = parseInt(document.getElementById(`${p}-asev`)?.value)||1;
   const body = {
     hazard,
-    countermeasure: document.getElementById('ri-edit-counter')?.value?.trim() || '',
-    likelihood: parseInt(document.getElementById('ri-edit-likelihood')?.value) || 1,
-    severity: parseInt(document.getElementById('ri-edit-severity')?.value) || 1,
-    note: document.getElementById('ri-edit-note')?.value?.trim() || ''
+    risk_factor:       document.getElementById(`${p}-factor`)?.value?.trim() || '',
+    before_frequency:  bf,
+    before_severity:   bs,
+    before_risk_level: calcRiskLevel(bf, bs),
+    after_frequency:   af,
+    after_severity:    as_,
+    after_risk_level:  calcRiskLevel(af, as_),
+    control_measures:  document.getElementById(`${p}-control`)?.value?.trim() || '',
+    countermeasure:    document.getElementById(`${p}-control`)?.value?.trim() || '',
+    responsible:       document.getElementById(`${p}-responsible`)?.value?.trim() || '관리감독자',
+    note:              document.getElementById(`${p}-note`)?.value?.trim() || '',
+    // 하위 호환: likelihood/severity 도 함께 전송
+    likelihood: bf,
+    severity:   bs
   };
   try {
     await API.put(`/risk/items/manage/${itemId}`, body);
     toast('수정되었습니다.', 'success');
     document.getElementById('ri-edit-modal')?.remove();
-    // 캐시 갱신 및 테이블 재렌더
     const panel = document.getElementById(`ri-panel-${workTypeId}`);
     if (panel?._cachedItems) {
       const idx = panel._cachedItems.findIndex(i => i.id === itemId);
@@ -18105,42 +18221,85 @@ async function _riDeleteItem(itemId, workTypeId, rowEl) {
   }
 }
 
-// 항목 추가 모달
+// 항목 추가 모달 — 위험성 평가 화면과 동일한 필드 구조
 function _riAddItemModal(workTypeId, workTypeName, panelEl) {
   const existing = document.getElementById('ri-add-modal');
   if (existing) existing.remove();
 
+  const p = 'ri-add';
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.id = 'ri-add-modal';
   modal.innerHTML = `
-    <div class="modal" style="max-width:520px">
+    <div class="modal" style="max-width:600px">
       <div class="modal-header">
         <h3 class="text-base font-bold">항목 추가 — ${workTypeName}</h3>
         <button onclick="document.getElementById('ri-add-modal').remove()" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
-      <div class="modal-body space-y-4">
-        <div>
-          <label class="form-label">위험요인 <span class="text-red-500">*</span></label>
-          <input id="ri-add-hazard" class="form-input" placeholder="위험요인을 입력하세요">
+      <div class="modal-body space-y-3">
+        <!-- 유해·위험요인 + 위험성 내용 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="form-label text-xs">유해·위험요인 (원인) <span class="text-red-500">*</span></label>
+            <input id="${p}-hazard" class="form-input text-sm" placeholder="위험요인을 입력하세요">
+          </div>
+          <div>
+            <label class="form-label text-xs">위험성 내용</label>
+            <input id="${p}-factor" class="form-input text-sm" placeholder="위험성 내용 (선택)">
+          </div>
         </div>
-        <div>
-          <label class="form-label">안전대책</label>
-          <textarea id="ri-add-counter" class="form-input" rows="3" placeholder="안전대책을 입력하세요"></textarea>
+        <!-- 개선 전 / 개선 후 -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-red-50 border border-red-100 rounded-lg p-3">
+            <div class="text-xs font-bold text-red-700 mb-2">개선 전</div>
+            <div class="flex gap-2 items-end">
+              <div class="flex-1">
+                <label class="form-label text-xs">빈도</label>
+                ${_riFreqOptsInline(p+'-bfreq', 2)}
+              </div>
+              <div class="flex-1">
+                <label class="form-label text-xs">강도</label>
+                ${_riFreqOptsInline(p+'-bsev', 2)}
+              </div>
+              <div class="text-center">
+                <label class="form-label text-xs">위험도</label>
+                <div id="${p}-bscore" class="risk-score ${getRiskColor(calcRiskLevel(2,2))}">4</div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-green-50 border border-green-100 rounded-lg p-3">
+            <div class="text-xs font-bold text-green-700 mb-2">개선 후</div>
+            <div class="flex gap-2 items-end">
+              <div class="flex-1">
+                <label class="form-label text-xs">빈도</label>
+                ${_riFreqOptsInline(p+'-afreq', 1)}
+              </div>
+              <div class="flex-1">
+                <label class="form-label text-xs">강도</label>
+                ${_riFreqOptsInline(p+'-asev', 2)}
+              </div>
+              <div class="text-center">
+                <label class="form-label text-xs">위험도</label>
+                <div id="${p}-ascore" class="risk-score ${getRiskColor(calcRiskLevel(1,2))}">2</div>
+              </div>
+            </div>
+          </div>
         </div>
+        <!-- 안전조치 / 감소대책 -->
+        <div>
+          <label class="form-label text-xs">안전조치 / 감소대책</label>
+          <textarea id="${p}-control" class="form-input text-sm" rows="3" placeholder="안전조치 및 감소대책을 입력하세요"></textarea>
+        </div>
+        <!-- 담당자 + 비고 -->
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="form-label">가능성 (1~5)</label>
-            <input id="ri-add-likelihood" type="number" min="1" max="5" class="form-input" value="1">
+            <label class="form-label text-xs">담당자</label>
+            <input id="${p}-responsible" class="form-input text-sm" value="관리감독자" placeholder="담당자">
           </div>
           <div>
-            <label class="form-label">중대성 (1~5)</label>
-            <input id="ri-add-severity" type="number" min="1" max="5" class="form-input" value="1">
+            <label class="form-label text-xs">비고</label>
+            <input id="${p}-note" class="form-input text-sm" placeholder="비고 (선택)">
           </div>
-        </div>
-        <div>
-          <label class="form-label">비고</label>
-          <input id="ri-add-note" class="form-input" placeholder="비고 (선택)">
         </div>
       </div>
       <div class="modal-footer flex justify-end gap-2">
@@ -18149,26 +18308,54 @@ function _riAddItemModal(workTypeId, workTypeName, panelEl) {
       </div>
     </div>`;
   document.body.appendChild(modal);
-  document.getElementById('ri-add-hazard')?.focus();
+  document.getElementById(`${p}-hazard`)?.focus();
+
+  // onchange 핸들러 연결
+  ['bfreq','bsev','afreq','asev'].forEach(k => {
+    const el = document.getElementById(`${p}-${k}`);
+    if (el) el.addEventListener('change', () => {
+      const bf = parseInt(document.getElementById(`${p}-bfreq`)?.value)||1;
+      const bs = parseInt(document.getElementById(`${p}-bsev`)?.value)||1;
+      const af = parseInt(document.getElementById(`${p}-afreq`)?.value)||1;
+      const as_ = parseInt(document.getElementById(`${p}-asev`)?.value)||1;
+      const bEl = document.getElementById(`${p}-bscore`);
+      const aEl = document.getElementById(`${p}-ascore`);
+      if (bEl) { bEl.textContent=bf*bs; bEl.className=`risk-score ${getRiskColor(calcRiskLevel(bf,bs))}`; }
+      if (aEl) { aEl.textContent=af*as_; aEl.className=`risk-score ${getRiskColor(calcRiskLevel(af,as_))}`; }
+    });
+  });
 }
 
 // 항목 추가 저장
 async function _riSaveAdd(workTypeId) {
-  const hazard = document.getElementById('ri-add-hazard')?.value?.trim();
+  const p = 'ri-add';
+  const hazard = document.getElementById(`${p}-hazard`)?.value?.trim();
   if (!hazard) { toast('위험요인을 입력하세요.', 'error'); return; }
+  const bf = parseInt(document.getElementById(`${p}-bfreq`)?.value)||1;
+  const bs = parseInt(document.getElementById(`${p}-bsev`)?.value)||1;
+  const af = parseInt(document.getElementById(`${p}-afreq`)?.value)||1;
+  const as_ = parseInt(document.getElementById(`${p}-asev`)?.value)||1;
   const body = {
     work_type_id: workTypeId,
     hazard,
-    countermeasure: document.getElementById('ri-add-counter')?.value?.trim() || '',
-    likelihood: parseInt(document.getElementById('ri-add-likelihood')?.value) || 1,
-    severity: parseInt(document.getElementById('ri-add-severity')?.value) || 1,
-    note: document.getElementById('ri-add-note')?.value?.trim() || ''
+    risk_factor:       document.getElementById(`${p}-factor`)?.value?.trim() || '',
+    before_frequency:  bf,
+    before_severity:   bs,
+    before_risk_level: calcRiskLevel(bf, bs),
+    after_frequency:   af,
+    after_severity:    as_,
+    after_risk_level:  calcRiskLevel(af, as_),
+    control_measures:  document.getElementById(`${p}-control`)?.value?.trim() || '',
+    countermeasure:    document.getElementById(`${p}-control`)?.value?.trim() || '',
+    responsible:       document.getElementById(`${p}-responsible`)?.value?.trim() || '관리감독자',
+    note:              document.getElementById(`${p}-note`)?.value?.trim() || '',
+    likelihood: bf,
+    severity:   bs
   };
   try {
     const res = await API.post('/risk/items/manage', body);
     toast('항목이 추가되었습니다.', 'success');
     document.getElementById('ri-add-modal')?.remove();
-    // 캐시 갱신 및 테이블 재렌더
     const panel = document.getElementById(`ri-panel-${workTypeId}`);
     if (panel) {
       if (!panel._cachedItems) panel._cachedItems = [];

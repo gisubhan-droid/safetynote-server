@@ -166,8 +166,21 @@ app.delete('/:id', async (c) => {
     try {
       await c.env.DB.prepare(sql).run()
     } catch(e: any) {
-      console.error(`[risk DELETE /:id] step ${tbl} FAILED:`, e.message)
-      return c.json({ error: `[${tbl}] ${e.message}` }, 500)
+      // FK 오류면 PRAGMA로 FK 비활성화 후 재시도 (NAS DB 스키마 불일치 방어)
+      if (e.message?.includes('risk_assessments_old') || e.message?.includes('no such table')) {
+        try {
+          await c.env.DB.prepare(`PRAGMA foreign_keys = OFF`).run()
+          await c.env.DB.prepare(sql).run()
+          await c.env.DB.prepare(`PRAGMA foreign_keys = ON`).run()
+          console.warn(`[risk DELETE /:id] ${tbl}: FK 비활성화로 재시도 성공`)
+        } catch(e2: any) {
+          console.error(`[risk DELETE /:id] ${tbl} FAILED (retry):`, e2.message)
+          return c.json({ error: `[${tbl}] ${e2.message}` }, 500)
+        }
+      } else {
+        console.error(`[risk DELETE /:id] ${tbl} FAILED:`, e.message)
+        return c.json({ error: `[${tbl}] ${e.message}` }, 500)
+      }
     }
   }
   // signature_requests — 테이블 없을 수 있으므로 무시
@@ -178,7 +191,7 @@ app.delete('/:id', async (c) => {
   try {
     await c.env.DB.prepare(`DELETE FROM risk_assessments WHERE id=?`).bind(id).run()
   } catch(e: any) {
-    console.error(`[risk DELETE /:id] step risk_assessments FAILED:`, e.message)
+    console.error(`[risk DELETE /:id] risk_assessments FAILED:`, e.message)
     return c.json({ error: `[risk_assessments] ${e.message}` }, 500)
   }
   return c.json({ success: true })

@@ -2311,29 +2311,20 @@ function patchSchema() {
     console.warn('[patchSchema v0.151] 클린 리셋 실패 (무시):', e.message)
   }
 
-  // ── v0.152: risk_assessment_details FK 수정 ────────────────────────────────
-  // 0029 마이그레이션에서 risk_assessments를 재생성할 때
-  // risk_assessment_details의 FK가 "risk_assessments_old"를 참조하는 경우가 있음
-  // → INSERT/DELETE 시 "D1_ERROR: no such table: main.risk_assessments_old" 500 에러 발생
-  // → 테이블 재생성으로 FK를 올바른 risk_assessments 참조로 교정
-  try {
-    const radSql = (rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='risk_assessment_details'").get() as any)?.sql || ''
-    if (radSql.includes('risk_assessments_old')) {
-      console.log('[patchSchema v0.152] risk_assessment_details FK 오류 감지 (risk_assessments_old 참조) — 재생성 시작')
-      rawDb.exec('PRAGMA foreign_keys = OFF')
-      // 기존 컬럼 목록 확인
-      const radCols: any[] = rawDb.prepare('PRAGMA table_info(risk_assessment_details)').all() as any[]
-      const radColNames = radCols.map((r: any) => r.name)
-
-      // 새 테이블 생성 (FK를 risk_assessments로 수정)
-      const extraCols = radColNames.filter((c: string) => !['id','assessment_id','item_id','category','hazard','risk_factor',
-        'before_frequency','before_severity','before_risk_level','control_measures',
-        'after_frequency','after_severity','after_risk_level','is_confirmed',
-        'final_severity','final_risk_level','is_final','member_measures','final_frequency'].includes(c))
-      const extraColDefs = extraCols.map((c: string) => `  ${c} TEXT`).join(',\n')
-
-      rawDb.exec(`
-        CREATE TABLE IF NOT EXISTS risk_assessment_details_new (
+  // ── v0.152: risk_assessment_details + risk_assessment_members FK 수정 ────────
+  // 0029 마이그레이션에서 risk_assessments 재생성 시 연관 테이블들의 FK가
+  // "risk_assessments_old"를 참조한 채로 남아
+  // INSERT/DELETE 시 "D1_ERROR: no such table: main.risk_assessments_old" 발생
+  const _fixFkTargets: Array<{
+    name: string
+    newDdlFn: (extra: string) => string
+    baseCols: string[]
+    indexSql?: string
+  }> = [
+    {
+      name: 'risk_assessment_details',
+      newDdlFn: (extra) => `
+        CREATE TABLE risk_assessment_details_new (
           id               INTEGER PRIMARY KEY AUTOINCREMENT,
           assessment_id    INTEGER NOT NULL,
           item_id          INTEGER,
@@ -2353,30 +2344,61 @@ function patchSchema() {
           is_final         INTEGER DEFAULT 0,
           member_measures  TEXT,
           final_frequency  INTEGER DEFAULT 1
-          ${extraColDefs ? ',\n' + extraColDefs : ''}
+          ${extra ? ',\n' + extra : ''}
           , FOREIGN KEY (assessment_id) REFERENCES risk_assessments(id)
           , FOREIGN KEY (item_id)       REFERENCES risk_assessment_items(id)
-        )
-      `)
-
-      // 공통 컬럼만 복사
-      const commonCols = radColNames.filter((c: string) => ['id','assessment_id','item_id','category','hazard','risk_factor',
+        )`,
+      baseCols: ['id','assessment_id','item_id','category','hazard','risk_factor',
         'before_frequency','before_severity','before_risk_level','control_measures',
         'after_frequency','after_severity','after_risk_level','is_confirmed',
-        'final_severity','final_risk_level','is_final','member_measures','final_frequency'].includes(c) || extraCols.includes(c))
-      const colList = commonCols.join(', ')
-      rawDb.exec(`INSERT INTO risk_assessment_details_new (${colList}) SELECT ${colList} FROM risk_assessment_details`)
-      rawDb.exec('DROP TABLE risk_assessment_details')
-      rawDb.exec('ALTER TABLE risk_assessment_details_new RENAME TO risk_assessment_details')
-      rawDb.exec('CREATE INDEX IF NOT EXISTS idx_rad_assessment_id ON risk_assessment_details(assessment_id)')
+        'final_severity','final_risk_level','is_final','member_measures','final_frequency'],
+      indexSql: 'CREATE INDEX IF NOT EXISTS idx_rad_assessment_id ON risk_assessment_details(assessment_id)',
+    },
+    {
+      name: 'risk_assessment_members',
+      newDdlFn: (extra) => `
+        CREATE TABLE risk_assessment_members_new (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          assessment_id INTEGER NOT NULL REFERENCES risk_assessments(id) ON DELETE CASCADE,
+          user_id       INTEGER NOT NULL REFERENCES users(id),
+          role          TEXT    DEFAULT 'member',
+          assigned_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+          ${extra ? ',\n' + extra : ''}
+          , UNIQUE(assessment_id, user_id)
+        )`,
+      baseCols: ['id','assessment_id','user_id','role','assigned_at'],
+      indexSql: 'CREATE INDEX IF NOT EXISTS idx_ram_assessment_id ON risk_assessment_members(assessment_id)',
+    },
+  ]
+
+  for (const tgt of _fixFkTargets) {
+    try {
+      const tgtSql = (rawDb.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='${tgt.name}'`).get() as any)?.sql || ''
+      if (!tgtSql.includes('risk_assessments_old')) {
+        console.log(`[patchSchema v0.152] ${tgt.name} FK 정상 — 재생성 불필요`)
+        continue
+      }
+      console.log(`[patchSchema v0.152] ${tgt.name} FK 오류 감지 — 재생성 시작`)
+      rawDb.exec('PRAGMA foreign_keys = OFF')
+      const tgtCols: any[] = rawDb.prepare(`PRAGMA table_info(${tgt.name})`).all() as any[]
+      const tgtColNames = tgtCols.map((r: any) => r.name)
+      const extraCols = tgtColNames.filter((c: string) => !tgt.baseCols.includes(c))
+      const extraDefs = extraCols.map((c: string) => `  ${c} TEXT`).join(',\n')
+
+      rawDb.exec(`DROP TABLE IF EXISTS ${tgt.name}_new`)
+      rawDb.exec(tgt.newDdlFn(extraDefs))
+
+      const copyList = tgtColNames.join(', ')
+      rawDb.exec(`INSERT INTO ${tgt.name}_new (${copyList}) SELECT ${copyList} FROM ${tgt.name}`)
+      rawDb.exec(`DROP TABLE ${tgt.name}`)
+      rawDb.exec(`ALTER TABLE ${tgt.name}_new RENAME TO ${tgt.name}`)
+      if (tgt.indexSql) rawDb.exec(tgt.indexSql)
       rawDb.exec('PRAGMA foreign_keys = ON')
-      console.log('[patchSchema v0.152] risk_assessment_details FK 재생성 완료')
-    } else {
-      console.log('[patchSchema v0.152] risk_assessment_details FK 정상 — 재생성 불필요')
+      console.log(`[patchSchema v0.152] ${tgt.name} FK 재생성 완료`)
+    } catch(e: any) {
+      console.warn(`[patchSchema v0.152] ${tgt.name} FK 수정 실패 (무시):`, e.message)
+      try { rawDb.exec('PRAGMA foreign_keys = ON') } catch(_) {}
     }
-  } catch(e: any) {
-    console.warn('[patchSchema v0.152] risk_assessment_details FK 수정 실패 (무시):', e.message)
-    try { rawDb.exec('PRAGMA foreign_keys = ON') } catch(_) {}
   }
 }
 patchSchema()

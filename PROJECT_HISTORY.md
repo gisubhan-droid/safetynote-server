@@ -1,11 +1,12 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-04 (세션 100)
-> **서버 현재 버전: `9b64991`** ← 최신 (GitHub) — FEAT-046 분류별 항목 관리 메뉴 분리
-> **NAS 배포 버전: `ac4381e`** ← 업데이트 필요
+> 최종 업데이트: 2026-07-04 (세션 101)
+> **서버 현재 버전: `1410b65`** ← 최신 (GitHub) — BUG-073 patchSchema v0.148
+> **NAS 배포 버전: `1410b65`** ← 최신 적용 완료
 > **캐시 버전: v=20260704c**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
+> **NAS git 동기화**: `git pull` 실패 시 → `git fetch origin && git reset --hard origin/main`
 
 ---
 
@@ -17,6 +18,8 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-073 | 101 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 404 — FEAT-045/046 추가 테이블(`work_categories`/`work_types`/`risk_assessment_items`)이 NAS `patchSchema`에 누락 → DB 테이블 미존재 → `patchSchema v0.148`에 `CREATE TABLE IF NOT EXISTS` 3개 추가 / `fix_nas_duplicates_v2.sql`로 중복 72→18건 정리 / `patch_v0148.js` 긴급 패치 스크립트 추가 | `1410b65` |
+| BUG-072 | 101 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 NAS 미업데이트 시 `Promise.all` → 페이지 전체 오류 — `Promise.allSettled`로 변경 + 업데이트 안내 배너 표시 | `c4db7c8` |
 | BUG-071 | 99 | 2026-07-04 | ✅ 수정 | 전체 화면 반응형 레이아웃 — `app.js` 내 39개 페이지 컨테이너 `max-w-{xl~6xl} mx-auto` → `.page-container` 통일 / `style.css`에 `page-container` 반응형 규칙 추가: 모바일(100%), 태블릿(100%), 데스크톱(최대 1280px), 와이드(최대 1600px) / `space-y` CSS 포함 | `082eb54` |
 | BUG-070 | 96 | 2026-07-04 | ✅ 수정 | 신규 작업 등록 시 공사요청번호 미입력 → 서버 500 (`D1_ERROR: NOT NULL constraint failed: tasks.construction_id`) — `createTask()` 함수에 `construction_id` 클라이언트 validation 추가: `if (!data.construction_id) { toast('공사를 선택하거나 공사요청번호를 입력 후 연동하세요.', 'error'); return; }` (app.js ~5003줄) / 캐시 버전 `s→t` | `366c00f` |
 | BUG-069 | 92 | 2026-07-04 | ✅ 수정 | 외선·접속 엑셀 업로드 시 공종명 미반영 — `iLabel = findIndex(h => h.includes('공종명') \| h.includes('공종'))` 에서 `'공종키'.includes('공종')===true` 로 `iLabel=0`(공종키 열) 잘못 매칭 → `h.includes('공종')` 조건 제거, `h.includes('공종명')` 만 남김 (work-reports.ts, splice-reports.ts) | `9da4ea2` |

@@ -15269,10 +15269,10 @@ async function renderAdminSettingsPage(container, _activeTab) {
   try {
     const [settRes, folderRes] = await Promise.all([
       API.get('/admin/settings'),
-      API.get('/admin/folders').catch(() => ({ data: { root: '-', totalBytes: 0, imgCount: 0, docCount: 0, vidCount: 0, etcCount: 0 } }))
+      API.get('/admin/folders').catch(() => ({ data: { root: '-', totalBytes: 0, imgCount: 0, docCount: 0, vidCount: 0, etcCount: 0, yearStats: {} } }))
     ]);
     const { settings, effectiveUploadRoot } = settRes.data;
-    const { root: folderRoot, totalBytes = 0, imgCount = 0, docCount = 0, vidCount = 0, etcCount = 0 } = folderRes.data;
+    const { root: folderRoot, totalBytes = 0, imgCount = 0, docCount = 0, vidCount = 0, etcCount = 0, yearStats = {} } = folderRes.data;
 
     // 설정값 맵
     const sv = {};
@@ -15631,6 +15631,77 @@ async function renderAdminSettingsPage(container, _activeTab) {
           <button onclick="renderAdminSettingsPage(document.getElementById('page-content'),'files')" class="btn btn-outline btn-sm mt-4">
             <i class="fas fa-sync"></i> 새로고침
           </button>
+        </div>
+
+        <!-- ── 년도/월 계층 통계 ── -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 mt-4">
+          <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
+            <i class="fas fa-calendar-alt text-indigo-500"></i> 년도별 저장 현황
+          </h3>
+          <p class="text-xs text-gray-400 mb-4">공사요청번호 등록년도 기준 폴더 통계</p>
+          ${(() => {
+            const years = Object.keys(yearStats).filter(y => y !== '__other__' && /^\d{4}$/.test(y)).sort((a,b) => b.localeCompare(a));
+            if (years.length === 0) {
+              return `<div class="text-center text-gray-400 py-6 text-sm">
+                <i class="fas fa-folder-open text-3xl mb-2 block text-gray-300"></i>
+                년도별 폴더가 없습니다.<br>
+                <span class="text-xs text-gray-300">FEAT-042 이후 등록된 공사 파일부터 표시됩니다.</span>
+              </div>`;
+            }
+            return years.map(year => {
+              const yt = yearStats[year]['__total__'] || { bytes:0, imgCount:0, docCount:0, vidCount:0, etcCount:0 };
+              const ytFiles = (yt.imgCount||0) + (yt.docCount||0) + (yt.vidCount||0) + (yt.etcCount||0);
+              const months = Object.keys(yearStats[year])
+                .filter(m => m !== '__total__' && m !== '__other__' && /^(0[1-9]|1[0-2])$/.test(m))
+                .sort();
+              const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+              return `
+                <details class="mb-3 group" open>
+                  <summary class="flex items-center justify-between cursor-pointer select-none
+                    bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100
+                    rounded-xl px-4 py-3 hover:from-indigo-100 hover:to-purple-100 transition-colors">
+                    <div class="flex items-center gap-2">
+                      <i class="fas fa-calendar text-indigo-400 text-sm"></i>
+                      <span class="font-bold text-indigo-700 text-base">${year}년</span>
+                      <span class="text-xs text-gray-400 ml-1">${months.length}개월</span>
+                    </div>
+                    <div class="flex items-center gap-4">
+                      <span class="text-xs text-gray-500"><i class="fas fa-file mr-1"></i>${ytFiles.toLocaleString()}개</span>
+                      <span class="text-sm font-semibold text-indigo-600">${_formatBytes(yt.bytes)}</span>
+                      <i class="fas fa-chevron-down text-gray-400 text-xs group-open:rotate-180 transition-transform"></i>
+                    </div>
+                  </summary>
+                  <div class="mt-2 pl-2 space-y-2">
+                    ${months.length === 0
+                      ? `<div class="text-xs text-gray-400 py-2 pl-2">월 폴더 없음</div>`
+                      : months.map(m => {
+                          const ms = yearStats[year][m];
+                          const mFiles = (ms.imgCount||0) + (ms.docCount||0) + (ms.vidCount||0) + (ms.etcCount||0);
+                          const mIdx = parseInt(m, 10) - 1;
+                          const mLabel = monthNames[mIdx] || m + '월';
+                          return `
+                            <div class="flex items-center justify-between bg-gray-50 border border-gray-100
+                              rounded-lg px-4 py-2.5 hover:bg-gray-100 transition-colors">
+                              <div class="flex items-center gap-2">
+                                <div class="w-7 h-7 rounded-md bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                                  <span class="text-indigo-600 font-bold text-xs">${m}</span>
+                                </div>
+                                <span class="font-semibold text-gray-700 text-sm">${year}년 ${mLabel}</span>
+                              </div>
+                              <div class="flex items-center gap-4 text-xs text-gray-500">
+                                ${ms.imgCount ? `<span title="이미지"><i class="fas fa-image text-green-400 mr-0.5"></i>${ms.imgCount.toLocaleString()}</span>` : ''}
+                                ${ms.docCount ? `<span title="문서"><i class="fas fa-file-alt text-blue-400 mr-0.5"></i>${ms.docCount.toLocaleString()}</span>` : ''}
+                                ${ms.vidCount ? `<span title="동영상"><i class="fas fa-film text-purple-400 mr-0.5"></i>${ms.vidCount.toLocaleString()}</span>` : ''}
+                                ${ms.etcCount ? `<span title="기타"><i class="fas fa-file text-gray-400 mr-0.5"></i>${ms.etcCount.toLocaleString()}</span>` : ''}
+                                <span class="font-semibold text-gray-600 ml-1">${mFiles.toLocaleString()}개</span>
+                                <span class="font-bold text-indigo-500 min-w-[60px] text-right">${_formatBytes(ms.bytes)}</span>
+                              </div>
+                            </div>`;
+                        }).join('')}
+                  </div>
+                </details>`;
+            }).join('');
+          })()}
         </div>
       </div>
 

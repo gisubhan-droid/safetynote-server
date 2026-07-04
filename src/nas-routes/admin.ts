@@ -97,29 +97,45 @@ app.get('/folders', async (c) => {
   const DOC_EXT = new Set(['pdf','doc','docx','xls','xlsx','ppt','pptx','hwp','hwpx','txt','csv'])
   const VID_EXT = new Set(['mp4','avi','mov','mkv','wmv','flv'])
 
-  let totalBytes = 0
-  let imgCount   = 0
-  let docCount   = 0
-  let vidCount   = 0
-  let etcCount   = 0
+  // 파일 카운트 누적 헬퍼 타입
+  interface FileStat {
+    bytes: number
+    imgCount: number
+    docCount: number
+    vidCount: number
+    etcCount: number
+  }
+  const emptyStat = (): FileStat => ({ bytes: 0, imgCount: 0, docCount: 0, vidCount: 0, etcCount: 0 })
+  const addFile = (stat: FileStat, ext: string, size: number) => {
+    stat.bytes += size
+    if      (IMG_EXT.has(ext)) stat.imgCount++
+    else if (DOC_EXT.has(ext)) stat.docCount++
+    else if (VID_EXT.has(ext)) stat.vidCount++
+    else                        stat.etcCount++
+  }
 
-  function scanDir(dirPath: string) {
+  // 전체 합계
+  const total = emptyStat()
+
+  // 년도→월 계층 통계
+  // yearStats[year][month] = FileStat  (month: '01'~'12')
+  // yearStats[year]['__total__'] = 연간 합계
+  const yearStats: Record<string, Record<string, FileStat>> = {}
+
+  // 재귀 스캔 (어느 depth에서든 파일을 찾으면 stat에 누적)
+  function scanDir(dirPath: string, stat: FileStat) {
     try {
       const entries = readdirSync(dirPath, { withFileTypes: true })
       for (const e of entries) {
         if (e.name.startsWith('.')) continue
         const fullPath = join(dirPath, e.name)
         if (e.isDirectory()) {
-          scanDir(fullPath)
+          scanDir(fullPath, stat)
         } else {
           try {
             const st = statSync(fullPath)
-            totalBytes += st.size
             const ext = e.name.split('.').pop()?.toLowerCase() || ''
-            if (IMG_EXT.has(ext))      imgCount++
-            else if (DOC_EXT.has(ext)) docCount++
-            else if (VID_EXT.has(ext)) vidCount++
-            else                        etcCount++
+            addFile(stat, ext, st.size)
           } catch (_) {}
         }
       }
@@ -128,14 +144,101 @@ app.get('/folders', async (c) => {
 
   try {
     if (!existsSync(root)) {
-      return c.json({ root, totalBytes: 0, imgCount: 0, docCount: 0, vidCount: 0, etcCount: 0 })
+      return c.json({ root, totalBytes: 0, imgCount: 0, docCount: 0, vidCount: 0, etcCount: 0, yearStats: {} })
     }
-    scanDir(root)
+
+    // 루트 바로 아래 엔트리 순회
+    const rootEntries = readdirSync(root, { withFileTypes: true })
+    for (const e of rootEntries) {
+      if (e.name.startsWith('.')) continue
+      const fullPath = join(root, e.name)
+
+      if (e.isDirectory()) {
+        // 년도 폴더 여부 판별: 4자리 숫자
+        const isYearDir = /^\d{4}$/.test(e.name)
+
+        if (isYearDir) {
+          const year = e.name
+          if (!yearStats[year]) yearStats[year] = {}
+
+          // 년도 폴더 아래 월 폴더 순회
+          let yearDirEntries: ReturnType<typeof readdirSync> = []
+          try { yearDirEntries = readdirSync(fullPath, { withFileTypes: true }) } catch (_) {}
+
+          for (const me of yearDirEntries) {
+            if (me.name.startsWith('.')) continue
+            const monthPath = join(fullPath, me.name)
+
+            if (me.isDirectory()) {
+              // 월 폴더 여부 판별: 01~12 (2자리 숫자)
+              const isMonthDir = /^(0[1-9]|1[0-2])$/.test(me.name)
+              const month = isMonthDir ? me.name : '__other__'
+
+              if (!yearStats[year][month]) yearStats[year][month] = emptyStat()
+              scanDir(monthPath, yearStats[year][month])
+            } else {
+              // 년도 폴더 바로 아래 파일 (비정형)
+              try {
+                const st = statSync(join(fullPath, me.name))
+                const ext = me.name.split('.').pop()?.toLowerCase() || ''
+                if (!yearStats[year]['__other__']) yearStats[year]['__other__'] = emptyStat()
+                addFile(yearStats[year]['__other__'], ext, st.size)
+              } catch (_) {}
+            }
+          }
+
+          // 년도 합계 계산
+          const yearTotal = emptyStat()
+          for (const mStat of Object.values(yearStats[year])) {
+            yearTotal.bytes    += mStat.bytes
+            yearTotal.imgCount += mStat.imgCount
+            yearTotal.docCount += mStat.docCount
+            yearTotal.vidCount += mStat.vidCount
+            yearTotal.etcCount += mStat.etcCount
+          }
+          yearStats[year]['__total__'] = yearTotal
+
+          // 전체 합계에도 누적
+          total.bytes    += yearTotal.bytes
+          total.imgCount += yearTotal.imgCount
+          total.docCount += yearTotal.docCount
+          total.vidCount += yearTotal.vidCount
+          total.etcCount += yearTotal.etcCount
+
+        } else {
+          // 년도 패턴이 아닌 기존 폴더 (미분류) → 전체 합계에만 누적
+          const misc = emptyStat()
+          scanDir(fullPath, misc)
+          total.bytes    += misc.bytes
+          total.imgCount += misc.imgCount
+          total.docCount += misc.docCount
+          total.vidCount += misc.vidCount
+          total.etcCount += misc.etcCount
+        }
+
+      } else {
+        // 루트 바로 아래 파일 (거의 없지만 처리)
+        try {
+          const st = statSync(fullPath)
+          const ext = e.name.split('.').pop()?.toLowerCase() || ''
+          addFile(total, ext, st.size)
+        } catch (_) {}
+      }
+    }
+
   } catch (e) {
     return c.json({ error: '폴더 읽기 실패', detail: String(e) }, 500)
   }
 
-  return c.json({ root, totalBytes, imgCount, docCount, vidCount, etcCount })
+  return c.json({
+    root,
+    totalBytes: total.bytes,
+    imgCount:   total.imgCount,
+    docCount:   total.docCount,
+    vidCount:   total.vidCount,
+    etcCount:   total.etcCount,
+    yearStats,  // 년도→월 계층 통계 (신규)
+  })
 })
 
 // ─── GET /api/admin/reset/counts ────────────────────────────────────────────

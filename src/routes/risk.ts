@@ -814,4 +814,245 @@ app.delete('/items/manage/:itemId', async (c) => {
   }
 })
 
+// ─── 작업유형(work_types) 관리 ────────────────────────────────────────────────
+
+// GET /risk/work-types — 전체 작업유형 목록 (대분류 포함)
+app.get('/work-types', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT wt.id, wt.name, wt.code, wt.description, wt.category_id,
+       wc.name as category_name,
+       COUNT(rai.id) as item_count
+       FROM work_types wt
+       JOIN work_categories wc ON wc.id = wt.category_id
+       LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND rai.is_active = 1
+       GROUP BY wt.id ORDER BY wc.name, wt.name`
+    ).all<any>()
+    return c.json(result.results || [])
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// GET /risk/work-categories — 대분류 목록
+app.get('/work-categories', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
+    const result = await c.env.DB.prepare(
+      'SELECT * FROM work_categories ORDER BY name'
+    ).all<any>()
+    return c.json(result.results || [])
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// POST /risk/work-categories — 대분류 추가
+app.post('/work-categories', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  try {
+    const { name } = await c.req.json() as any
+    if (!name?.trim()) return c.json({ error: '대분류명 필요' }, 400)
+    const dup = await c.env.DB.prepare('SELECT id FROM work_categories WHERE name=?').bind(name.trim()).first<any>()
+    if (dup) return c.json({ error: '이미 존재하는 대분류입니다.' }, 409)
+    const r = await c.env.DB.prepare('INSERT INTO work_categories (name) VALUES (?)').bind(name.trim()).run()
+    return c.json({ success: true, id: r.meta.last_row_id })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// DELETE /risk/work-categories/:id — 대분류 삭제 (하위 유형 없을 때만)
+app.delete('/work-categories/:id', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자만 삭제 가능합니다.' }, 403)
+  const id = c.req.param('id')
+  try {
+    const child = await c.env.DB.prepare('SELECT id FROM work_types WHERE category_id=? LIMIT 1').bind(Number(id)).first<any>()
+    if (child) return c.json({ error: '하위 작업유형이 있어 삭제할 수 없습니다. 유형을 먼저 삭제하세요.' }, 409)
+    await c.env.DB.prepare('DELETE FROM work_categories WHERE id=?').bind(Number(id)).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// POST /risk/work-types — 작업유형 추가
+app.post('/work-types', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  try {
+    const { category_id, name, code, description } = await c.req.json() as any
+    if (!category_id || !name?.trim()) return c.json({ error: 'category_id, name 필요' }, 400)
+    const dup = await c.env.DB.prepare('SELECT id FROM work_types WHERE name=? AND category_id=?').bind(name.trim(), Number(category_id)).first<any>()
+    if (dup) return c.json({ error: '같은 대분류에 이미 동일한 유형명이 있습니다.' }, 409)
+    const r = await c.env.DB.prepare(
+      'INSERT INTO work_types (category_id, name, code, description) VALUES (?,?,?,?)'
+    ).bind(Number(category_id), name.trim(), (code||'').trim().toUpperCase(), (description||'').trim()).run()
+    return c.json({ success: true, id: r.meta.last_row_id })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// DELETE /risk/work-types/:id — 작업유형 삭제 (항목 없을 때만)
+app.delete('/work-types/:id', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자만 삭제 가능합니다.' }, 403)
+  const id = c.req.param('id')
+  try {
+    const itemCnt = await c.env.DB.prepare('SELECT COUNT(*) as c FROM risk_assessment_items WHERE work_type_id=? AND is_active=1').bind(Number(id)).first<any>()
+    if (itemCnt && itemCnt.c > 0) return c.json({ error: `위험성평가 항목 ${itemCnt.c}건이 있어 삭제할 수 없습니다. 항목을 먼저 삭제하세요.` }, 409)
+    await c.env.DB.prepare('DELETE FROM work_types WHERE id=?').bind(Number(id)).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// ─── 엑셀 템플릿 다운로드 ─────────────────────────────────────────────────────
+// GET /risk/items/template — 위험성평가 항목 입력양식 CSV 다운로드
+app.get('/items/template', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
+    // 작업유형 목록 주석으로 포함
+    const types = await c.env.DB.prepare(
+      'SELECT wt.id, wc.name as cat, wt.name, wt.code FROM work_types wt JOIN work_categories wc ON wc.id=wt.category_id ORDER BY wc.name, wt.name'
+    ).all<any>()
+    const typeList = (types.results || []).map((t: any) => `# ${t.id}\t${t.cat}\t${t.name}\t(${t.code})`).join('\n')
+
+    const header = '작업유형ID,분류,위험요인,위험사항,평가전빈도(1-5),평가전강도(1-5),감소대책,평가후빈도(1-5),평가후강도(1-5),담당자'
+    const sample1 = '17,1. 기계적 요인,1-1 협착위험 부분(감김 끼임),줄자 사용 시 손가락 끼임,1,1,안전장갑 착용,1,1,관리감독자'
+    const sample2 = '17,2. 전기적 요인,2-1 감전위험,전기공구 사용 시 감전,2,3,절연장갑 및 절연공구 사용,1,2,관리감독자'
+
+    const bom = '\uFEFF'
+    const content = bom +
+      '# =====================================================\n' +
+      '# SafetyNOTE 위험성평가 항목 입력 양식\n' +
+      '# 이 파일을 엑셀에서 열어 데이터 입력 후 저장하세요\n' +
+      '# =====================================================\n' +
+      '#\n' +
+      '# [빈도/강도 기준]\n' +
+      '# 1=거의없음/경미  2=가끔/보통  3=종종/중간  4=자주/심각  5=항상/치명\n' +
+      '#\n' +
+      '# [사용 가능한 작업유형ID 목록]\n' +
+      typeList + '\n' +
+      '#\n' +
+      header + '\n' +
+      sample1 + '\n' +
+      sample2 + '\n'
+
+    return new Response(content, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="risk_items_template.csv"'
+      }
+    })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// ─── 엑셀/CSV 업로드로 항목 일괄 등록 ───────────────────────────────────────
+// POST /risk/items/import — CSV 파싱 후 risk_assessment_items 일괄 INSERT
+app.post('/items/import', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  try {
+    const formData = await c.req.formData()
+    const file = formData.get('file') as File | null
+    if (!file) return c.json({ error: '파일이 없습니다.' }, 400)
+
+    const text = await file.text()
+    // BOM 제거
+    const clean = text.replace(/^\uFEFF/, '')
+    const lines = clean.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('#'))
+
+    if (lines.length < 2) return c.json({ error: '데이터 행이 없습니다. 헤더 + 데이터 행이 필요합니다.' }, 400)
+
+    // 헤더 파싱
+    const headers = lines[0].split(',').map(h => h.trim())
+    const iWorkTypeId    = headers.findIndex(h => h.includes('작업유형') || h.toLowerCase().includes('work_type'))
+    const iCategory      = headers.findIndex(h => h.includes('분류'))
+    const iHazard        = headers.findIndex(h => h.includes('위험요인') || h.includes('hazard'))
+    const iRiskFactor    = headers.findIndex(h => h.includes('위험사항') || h.includes('risk_factor'))
+    const iBeforeFreq    = headers.findIndex(h => h.includes('평가전빈도') || h.includes('before_frequency'))
+    const iBeforeSev     = headers.findIndex(h => h.includes('평가전강도') || h.includes('before_severity'))
+    const iControlMeas   = headers.findIndex(h => h.includes('감소대책') || h.includes('control'))
+    const iAfterFreq     = headers.findIndex(h => h.includes('평가후빈도') || h.includes('after_frequency'))
+    const iAfterSev      = headers.findIndex(h => h.includes('평가후강도') || h.includes('after_severity'))
+    const iResponsible   = headers.findIndex(h => h.includes('담당자') || h.includes('responsible'))
+
+    if (iWorkTypeId < 0 || iHazard < 0) {
+      return c.json({ error: '필수 컬럼 없음 — 작업유형ID, 위험요인 컬럼이 필요합니다.' }, 400)
+    }
+
+    function riskLevel(score: number): string {
+      if (score <= 4) return '낮음'
+      if (score <= 9) return '보통'
+      if (score <= 16) return '높음'
+      return '중대'
+    }
+
+    // 유효한 work_type ids 캐시
+    const validTypes = await c.env.DB.prepare('SELECT id FROM work_types').all<any>()
+    const validTypeIds = new Set((validTypes.results || []).map((r: any) => Number(r.id)))
+
+    let inserted = 0
+    let skipped = 0
+    const errors: string[] = []
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c2 => c2.trim().replace(/^"|"$/g, ''))
+      const workTypeId = Number(cols[iWorkTypeId] || 0)
+      const hazard     = cols[iHazard] || ''
+
+      if (!workTypeId || !hazard) { skipped++; continue }
+      if (!validTypeIds.has(workTypeId)) {
+        errors.push(`${i+1}행: 작업유형ID ${workTypeId} 없음`)
+        skipped++; continue
+      }
+
+      const bf  = Math.min(5, Math.max(1, Number(iBeforeFreq  >= 0 ? cols[iBeforeFreq]  : 1) || 1))
+      const bs  = Math.min(5, Math.max(1, Number(iBeforeSev   >= 0 ? cols[iBeforeSev]   : 1) || 1))
+      const af  = Math.min(5, Math.max(1, Number(iAfterFreq   >= 0 ? cols[iAfterFreq]   : 1) || 1))
+      const as_ = Math.min(5, Math.max(1, Number(iAfterSev    >= 0 ? cols[iAfterSev]    : 1) || 1))
+
+      try {
+        await c.env.DB.prepare(
+          `INSERT INTO risk_assessment_items
+           (work_type_id,category,hazard,risk_factor,
+            before_frequency,before_severity,before_risk_level,
+            control_measures,after_frequency,after_severity,after_risk_level,
+            responsible,is_active)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)`
+        ).bind(
+          workTypeId,
+          iCategory    >= 0 ? (cols[iCategory]    || '') : '',
+          hazard,
+          iRiskFactor  >= 0 ? (cols[iRiskFactor]  || '') : '',
+          bf, bs, riskLevel(bf * bs),
+          iControlMeas >= 0 ? (cols[iControlMeas] || '') : '',
+          af, as_, riskLevel(af * as_),
+          iResponsible >= 0 ? (cols[iResponsible] || '관리감독자') : '관리감독자'
+        ).run()
+        inserted++
+      } catch (rowErr: any) {
+        errors.push(`${i+1}행 오류: ${rowErr.message}`)
+        skipped++
+      }
+    }
+
+    return c.json({ success: true, inserted, skipped, errors: errors.slice(0, 10) })
+  } catch (e: any) {
+    console.error('[risk POST /items/import]', e.message)
+    return c.json({ error: e.message || '업로드 실패' }, 500)
+  }
+})
+
 export default app

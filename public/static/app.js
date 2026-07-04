@@ -17426,9 +17426,24 @@ async function renderRiskPage(container, mode) {
 
       <!-- ② 분류별 항목 조회 탭 -->
       <div id="rsection-items" class="hidden">
-        <div class="rounded-xl p-3 mb-4 text-sm" style="background:${modeLighter};color:${modeText};border:1px solid ${modeAccent}33">
-          <i class="fas fa-info-circle mr-1"></i>
-          작업유형별 표준 위험성평가 항목입니다. 유형을 클릭하면 세부 항목을 확인할 수 있습니다.
+        <!-- 툴바: 엑셀 다운로드/업로드 + 작업유형 관리 -->
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div class="text-xs text-gray-500">작업유형별 표준 위험성평가 항목 — 유형을 클릭하면 세부 항목을 확인합니다.</div>
+          ${!isWorker ? `
+          <div class="flex flex-wrap gap-2">
+            <a href="/api/risk/items/template" download="risk_items_template.csv"
+              class="btn btn-outline text-xs px-3 py-1.5 flex items-center gap-1" style="color:#059669;border-color:#059669">
+              <i class="fas fa-file-excel"></i> 양식 다운로드
+            </a>
+            <button onclick="showRiskItemImportModal()" class="btn text-xs px-3 py-1.5 flex items-center gap-1"
+              style="background:#059669;color:#fff;border:none">
+              <i class="fas fa-upload"></i> 엑셀 업로드
+            </button>
+            <button onclick="showRiskWorkTypeModal()" class="btn btn-outline text-xs px-3 py-1.5 flex items-center gap-1"
+              style="color:${modeAccent};border-color:${modeAccent}">
+              <i class="fas fa-plus"></i> 유형 관리
+            </button>
+          </div>` : ''}
         </div>
         <!-- 대분류 필터 -->
         <div class="flex flex-wrap gap-2 mb-4">
@@ -17462,7 +17477,7 @@ async function renderRiskPage(container, mode) {
               </div>`).join('')}
             </div>
           </div>`).join('')}
-          ${summary.length === 0 ? '<div class="empty-state"><p>위험성 평가 항목이 없습니다.</p></div>' : ''}
+          ${summary.length === 0 ? `<div class="empty-state"><i class="fas fa-shield-alt text-4xl text-gray-300 mb-3"></i><p class="text-gray-500">등록된 위험성평가 항목이 없습니다.<br>엑셀 업로드로 항목을 추가하세요.</p></div>` : ''}
         </div>
       </div>
     </div>`;
@@ -17499,6 +17514,217 @@ function switchRiskTab(tab, mode) {
       sec.classList.add('hidden');
     }
   });
+}
+
+// ─── 엑셀 업로드 모달 ────────────────────────────────────────────────────────
+function showRiskItemImportModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <h3 class="modal-title"><i class="fas fa-upload mr-2"></i>위험성평가 항목 엑셀 업로드</h3>
+        <button onclick="this.closest('.modal-overlay').remove()" class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div class="rounded-xl p-3 text-sm bg-green-50 text-green-800 border border-green-200">
+          <p class="font-semibold mb-1"><i class="fas fa-info-circle mr-1"></i>업로드 방법</p>
+          <ol class="list-decimal list-inside space-y-1 text-xs">
+            <li><strong>양식 다운로드</strong> 버튼으로 CSV 템플릿을 받으세요.</li>
+            <li>엑셀에서 열어 데이터를 입력 후 <strong>CSV로 저장</strong>하세요.</li>
+            <li>저장한 파일을 아래에서 선택하고 업로드하세요.</li>
+          </ol>
+        </div>
+        <div class="rounded-xl p-3 text-xs bg-amber-50 text-amber-800 border border-amber-200">
+          <i class="fas fa-exclamation-triangle mr-1"></i>
+          <strong>작업유형ID</strong>는 양식 파일 상단 주석에서 확인하세요. 잘못된 ID는 해당 행이 건너뜁니다.
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">CSV 파일 선택</label>
+          <input type="file" id="riskImportFile" accept=".csv,.xlsx,.xls"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div id="riskImportResult" class="hidden"></div>
+      </div>
+      <div class="modal-footer flex justify-between items-center">
+        <a href="/api/risk/items/template" download="risk_items_template.csv"
+          class="btn btn-outline text-xs px-3 py-1.5 flex items-center gap-1" style="color:#059669;border-color:#059669">
+          <i class="fas fa-file-excel"></i> 양식 다운로드
+        </a>
+        <div class="flex gap-2">
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">취소</button>
+          <button onclick="_doRiskItemImport()" class="btn btn-primary">
+            <i class="fas fa-upload mr-1"></i>업로드
+          </button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function _doRiskItemImport() {
+  const fileInput = document.getElementById('riskImportFile');
+  const resultDiv = document.getElementById('riskImportResult');
+  if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+    toast('파일을 선택하세요.', 'error'); return;
+  }
+  const file = fileInput.files[0];
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    resultDiv.innerHTML = '<div class="flex items-center gap-2 text-sm text-gray-500"><div class="spinner" style="width:18px;height:18px"></div> 업로드 중...</div>';
+    resultDiv.classList.remove('hidden');
+    const res = await axios.post('/api/risk/items/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    const d = res.data;
+    resultDiv.innerHTML = `
+      <div class="rounded-xl p-3 text-sm bg-green-50 border border-green-200 text-green-800">
+        <p class="font-bold mb-1"><i class="fas fa-check-circle mr-1"></i>업로드 완료</p>
+        <p>등록: <strong>${d.inserted}건</strong> / 건너뜀: ${d.skipped}건</p>
+        ${d.errors && d.errors.length > 0 ? `<p class="text-xs mt-1 text-amber-700">${d.errors.join('<br>')}</p>` : ''}
+      </div>`;
+    // 성공 시 페이지 새로고침 (2초 후)
+    if (d.inserted > 0) {
+      setTimeout(() => {
+        document.querySelector('.modal-overlay')?.remove();
+        const mode = document.getElementById('rtab-items')?.dataset?.mode || 'periodic';
+        navigateTo(document.getElementById('page-risk-periodic') ? 'risk-periodic' : 'risk-adhoc');
+      }, 1800);
+    }
+  } catch(e) {
+    const msg = e.response?.data?.error || e.message || '업로드 실패';
+    resultDiv.innerHTML = `<div class="rounded-xl p-3 text-sm bg-red-50 border border-red-200 text-red-700"><i class="fas fa-exclamation-circle mr-1"></i>${msg}</div>`;
+    resultDiv.classList.remove('hidden');
+  }
+}
+
+// ─── 작업유형 관리 모달 ──────────────────────────────────────────────────────
+async function showRiskWorkTypeModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `<div class="modal" style="max-width:640px"><div class="flex justify-center py-8"><div class="spinner"></div></div></div>`;
+  document.body.appendChild(modal);
+
+  async function _renderWorkTypeModal() {
+    try {
+      const [catsRes, typesRes] = await Promise.all([
+        API.get('/risk/work-categories'),
+        API.get('/risk/work-types')
+      ]);
+      const cats  = Array.isArray(catsRes.data)  ? catsRes.data  : [];
+      const types = Array.isArray(typesRes.data) ? typesRes.data : [];
+
+      // 대분류별 그룹
+      const catMap2 = {};
+      cats.forEach(c2 => { catMap2[c2.id] = { ...c2, types: [] }; });
+      types.forEach(t => { if (catMap2[t.category_id]) catMap2[t.category_id].types.push(t); });
+
+      modal.innerHTML = `
+        <div class="modal" style="max-width:640px">
+          <div class="modal-header">
+            <h3 class="modal-title"><i class="fas fa-sitemap mr-2"></i>작업유형 관리</h3>
+            <button onclick="this.closest('.modal-overlay').remove()" class="modal-close"><i class="fas fa-times"></i></button>
+          </div>
+          <div class="modal-body space-y-4" style="max-height:70vh;overflow-y:auto">
+            <!-- 대분류 추가 -->
+            <div class="border border-gray-200 rounded-xl p-3">
+              <p class="text-xs font-semibold text-gray-600 mb-2"><i class="fas fa-folder-plus mr-1"></i>대분류 추가</p>
+              <div class="flex gap-2">
+                <input id="newCatName" type="text" placeholder="대분류명 (예: 통신설비)" class="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+                <button onclick="_addWorkCategory()" class="btn btn-primary text-xs px-3">추가</button>
+              </div>
+            </div>
+            <!-- 유형 추가 -->
+            <div class="border border-gray-200 rounded-xl p-3">
+              <p class="text-xs font-semibold text-gray-600 mb-2"><i class="fas fa-plus-circle mr-1"></i>작업유형 추가</p>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <select id="newTypeCat" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+                  <option value="">대분류 선택</option>
+                  ${cats.map(c2 => `<option value="${c2.id}">${c2.name}</option>`).join('')}
+                </select>
+                <input id="newTypeName" type="text" placeholder="유형명 (예: 광케이블 시설)" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+              </div>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <input id="newTypeCode" type="text" placeholder="코드 (예: COMM-FIBER, 선택)" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+                <input id="newTypeDesc" type="text" placeholder="설명 (선택)" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+              </div>
+              <button onclick="_addWorkType()" class="btn btn-primary text-xs px-4">작업유형 추가</button>
+            </div>
+            <!-- 현재 목록 -->
+            <div>
+              <p class="text-xs font-semibold text-gray-600 mb-2"><i class="fas fa-list mr-1"></i>현재 목록 (${types.length}개 유형)</p>
+              ${Object.values(catMap2).map(cat => `
+              <div class="mb-3">
+                <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 mb-1">
+                  <span class="text-sm font-semibold text-gray-700"><i class="fas fa-folder mr-1 text-gray-400"></i>${cat.name}</span>
+                  <button onclick="_delWorkCategory(${cat.id},'${cat.name.replace(/'/g,"\\'")}',this)" class="text-xs text-red-400 hover:text-red-600 px-2 py-0.5 rounded border border-red-200 hover:border-red-400">삭제</button>
+                </div>
+                ${cat.types.length === 0 ? '<p class="text-xs text-gray-400 px-3 mb-1">유형 없음</p>' :
+                  cat.types.map(t => `
+                  <div class="flex items-center justify-between px-4 py-1.5 border-b border-gray-100 last:border-0">
+                    <div>
+                      <span class="text-sm text-gray-800">${t.name}</span>
+                      <span class="text-xs text-gray-400 ml-2">${t.code||''}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-gray-400">${t.item_count}건</span>
+                      <button onclick="_delWorkType(${t.id},'${t.name.replace(/'/g,"\\'")}',this)" class="text-xs text-red-400 hover:text-red-600 px-2 py-0.5 rounded border border-red-200 hover:border-red-400">삭제</button>
+                    </div>
+                  </div>`).join('')}
+              </div>`).join('')}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">닫기</button>
+          </div>
+        </div>`;
+    } catch(e) {
+      modal.innerHTML = `<div class="modal" style="max-width:640px"><div class="p-6 text-center text-red-500">${e.message}</div></div>`;
+    }
+  }
+
+  await _renderWorkTypeModal();
+
+  window._addWorkCategory = async function() {
+    const name = document.getElementById('newCatName')?.value?.trim();
+    if (!name) { toast('대분류명을 입력하세요.', 'error'); return; }
+    try {
+      await API.post('/risk/work-categories', { name });
+      toast('대분류가 추가되었습니다.', 'success');
+      await _renderWorkTypeModal();
+    } catch(e) { toast(e.response?.data?.error || '추가 실패', 'error'); }
+  };
+
+  window._addWorkType = async function() {
+    const category_id = document.getElementById('newTypeCat')?.value;
+    const name        = document.getElementById('newTypeName')?.value?.trim();
+    const code        = document.getElementById('newTypeCode')?.value?.trim();
+    const description = document.getElementById('newTypeDesc')?.value?.trim();
+    if (!category_id) { toast('대분류를 선택하세요.', 'error'); return; }
+    if (!name)        { toast('유형명을 입력하세요.', 'error'); return; }
+    try {
+      await API.post('/risk/work-types', { category_id, name, code, description });
+      toast('작업유형이 추가되었습니다.', 'success');
+      await _renderWorkTypeModal();
+    } catch(e) { toast(e.response?.data?.error || '추가 실패', 'error'); }
+  };
+
+  window._delWorkCategory = async function(id, name) {
+    if (!confirm(`대분류 "${name}"을(를) 삭제하시겠습니까?`)) return;
+    try {
+      await API.delete('/risk/work-categories/' + id);
+      toast('삭제되었습니다.', 'success');
+      await _renderWorkTypeModal();
+    } catch(e) { toast(e.response?.data?.error || '삭제 실패', 'error'); }
+  };
+
+  window._delWorkType = async function(id, name) {
+    if (!confirm(`작업유형 "${name}"을(를) 삭제하시겠습니까?\n(위험성평가 항목이 있으면 삭제할 수 없습니다.)`)) return;
+    try {
+      await API.delete('/risk/work-types/' + id);
+      toast('삭제되었습니다.', 'success');
+      await _renderWorkTypeModal();
+    } catch(e) { toast(e.response?.data?.error || '삭제 실패', 'error'); }
+  };
 }
 
 // 대분류 필터

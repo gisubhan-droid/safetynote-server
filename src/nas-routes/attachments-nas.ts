@@ -67,6 +67,8 @@ function genAttachFileName(originalName: string): string {
 
 /**
  * 파일 저장 폴더 반환 — 없으면 자동 생성
+ * 공사 연결 시: {root}/{년도}/{월}/{conFolder}/{taskFolder}/{stageDir}
+ * 미연결 시:    {root}/미분류/{taskFolder}/{stageDir}
  */
 function getUploadDir(
   task: {
@@ -74,6 +76,7 @@ function getUploadDir(
     work_date?: string | null;   planned_date?: string | null
     construction_type?: string | null
     con_request_no?: string | null; con_title?: string | null
+    con_created_at?: string | null
   } | string,
   stage: string = 'photo'
 ): string {
@@ -86,15 +89,32 @@ function getUploadDir(
     return dir
   }
 
-  const conFolder  = (task.con_request_no && task.con_title)
+  const hasConInfo = !!(task.con_request_no && task.con_title)
+  const conFolder  = hasConInfo
     ? safeFsName(`${task.con_request_no}_${task.con_title}`)
     : '미분류'
+
+  // 년도/월 폴더: 공사 등록일(con_created_at) 기준
+  let yearFolder  = ''
+  let monthFolder = ''
+  if (hasConInfo && task.con_created_at) {
+    const dt = new Date(task.con_created_at)
+    if (!isNaN(dt.getTime())) {
+      yearFolder  = String(dt.getFullYear())
+      monthFolder = String(dt.getMonth() + 1).padStart(2, '0')
+    }
+  }
+
   const taskNum    = safeFsName(task.sub_task_number || task.task_number || 'UNKNOWN')
   const workDate   = fmtDateStr(task.work_date || task.planned_date)
   const workType   = safeFsName(task.construction_type || '작업')
   const taskFolder = `${taskNum}_${workDate}_${workType}`
   const stageDir   = STAGE_DIRS[stage] || STAGE_DIRS.other
-  const dir        = join(root, conFolder, taskFolder, stageDir)
+
+  const basePath = (yearFolder && monthFolder)
+    ? join(root, yearFolder, monthFolder, conFolder)
+    : join(root, conFolder)
+  const dir = join(basePath, taskFolder, stageDir)
   mkdirSync(dir, { recursive: true })
   return dir
 }
@@ -191,7 +211,8 @@ app.post('/', async (c) => {
     const task = await DB.prepare(
       `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
               t.construction_type, t.construction_id,
-              c.request_no AS con_request_no, c.title AS con_title
+              c.request_no AS con_request_no, c.title AS con_title,
+              c.created_at AS con_created_at
        FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
        WHERE t.id = ?`
     ).bind(taskId).first()

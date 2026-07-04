@@ -23,6 +23,7 @@ function generateFileName(originalName: string): string {
 async function resolveInspectionDir(db: D1Database, taskId: number | null): Promise<string> {
   let conRequestNo: string | null = null
   let conTitle:     string | null = null
+  let conCreatedAt: string | null = null
   let taskNumber:   string | null = null
   let workDate:     string | null = null
   let workType:     string | null = null
@@ -30,7 +31,8 @@ async function resolveInspectionDir(db: D1Database, taskId: number | null): Prom
   if (taskId) {
     const task = await db.prepare(
       `SELECT t.task_number, t.sub_task_number, t.work_date, t.planned_date,
-              t.construction_type, c.request_no AS con_request_no, c.title AS con_title
+              t.construction_type, c.request_no AS con_request_no, c.title AS con_title,
+              c.created_at AS con_created_at
        FROM tasks t
        LEFT JOIN constructions c ON c.id = t.construction_id
        WHERE t.id = ?`
@@ -38,6 +40,7 @@ async function resolveInspectionDir(db: D1Database, taskId: number | null): Prom
     if (task) {
       conRequestNo = task.con_request_no
       conTitle     = task.con_title
+      conCreatedAt = task.con_created_at
       taskNumber   = task.sub_task_number || task.task_number
       workDate     = task.work_date || task.planned_date
       workType     = task.construction_type
@@ -52,7 +55,7 @@ async function resolveInspectionDir(db: D1Database, taskId: number | null): Prom
   } catch (_) {}
 
   const pathInfo = buildStoragePath({
-    uploadRoot, conRequestNo, conTitle,
+    uploadRoot, conRequestNo, conTitle, conCreatedAt,
     taskNumber, workDate, workType, stage: 'inspection',
   })
   return pathInfo.uploadDir

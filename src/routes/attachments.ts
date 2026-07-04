@@ -142,7 +142,8 @@ app.post('/', async (c) => {
       `SELECT t.id, t.task_number, t.sub_task_number, t.work_date, t.planned_date,
               t.construction_type, t.construction_id,
               c.request_no  AS con_request_no,
-              c.title       AS con_title
+              c.title       AS con_title,
+              c.created_at  AS con_created_at
        FROM tasks t
        LEFT JOIN constructions c ON c.id = t.construction_id
        WHERE t.id = ?`
@@ -161,12 +162,13 @@ app.post('/', async (c) => {
     const workDate  = task.work_date || task.planned_date
     const pathInfo  = buildStoragePath({
       uploadRoot,
-      conRequestNo: task.con_request_no,
-      conTitle:     task.con_title,
-      taskNumber:   taskNum,
+      conRequestNo:  task.con_request_no,
+      conTitle:      task.con_title,
+      conCreatedAt:  task.con_created_at,
+      taskNumber:    taskNum,
       workDate,
-      workType:     task.construction_type,
-      stage:        toStageKey(attachStage),
+      workType:      task.construction_type,
+      stage:         toStageKey(attachStage),
     })
     await fs.mkdir(pathInfo.uploadDir, { recursive: true })
 

@@ -57,7 +57,8 @@ async function fetchTaskWithCon(db: D1Database, taskId: number) {
   return db.prepare(
     `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
             t.construction_type, t.construction_id,
-            c.request_no AS con_request_no, c.title AS con_title
+            c.request_no AS con_request_no, c.title AS con_title,
+            c.created_at AS con_created_at
      FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
      WHERE t.id = ?`
   ).bind(taskId).first<any>()
@@ -188,14 +189,15 @@ app.post('/', async (c) => {
 
         const pathInfo = buildStoragePath({
           uploadRoot,
-          conRequestNo: task.con_request_no,
-          conTitle:     task.con_title,
-          taskNumber:   task.sub_task_number || task.task_number,
-          workDate:     task.work_date || task.planned_date,
-          workType:     task.construction_type,
+          conRequestNo:  task.con_request_no,
+          conTitle:      task.con_title,
+          conCreatedAt:  task.con_created_at,
+          taskNumber:    task.sub_task_number || task.task_number,
+          workDate:      task.work_date || task.planned_date,
+          workType:      task.construction_type,
           stage,
-          photoType:    photoType,   // before/progress/after → 하위 폴더 분리
-          caption:      caption,     // 설명 입력값 → 추가 하위 폴더 생성
+          photoType:     photoType,   // before/progress/after → 하위 폴더 분리
+          caption:       caption,     // 설명 입력값 → 추가 하위 폴더 생성
         })
         await fs.mkdir(pathInfo.uploadDir, { recursive: true })
 

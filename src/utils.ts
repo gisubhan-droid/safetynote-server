@@ -17,17 +17,19 @@ export function getUser(c: any): any {
 
 // ─── 저장소 경로 생성 유틸리티 ────────────────────────────────────────────────
 //
-// 폴더 구조:
+// 폴더 구조 (FEAT-042 — 공사 등록년도/월 계층 추가):
 //   {uploadRoot}/
-//     {공사요청번호}_{공사명}/          ← 공사 단위 루트
-//       {서브번호}_{작업일}_{작업종류}/ ← 작업 단위
-//         01_작업지시서/
-//         02_TBM/
-//         03_작업사진/
-//         04_현장점검/
-//         05_기타/
+//     {등록년도}/                        ← 공사 등록년도 (FEAT-042 신규)
+//       {등록월}/                        ← 공사 등록월 2자리 (FEAT-042 신규)
+//         {공사요청번호}_{공사명}/        ← 공사 단위 루트
+//           {서브번호}_{작업일}_{작업종류}/ ← 작업 단위
+//             01_작업지시서/
+//             02_TBM/
+//             03_작업사진/
+//             04_현장점검/
+//             05_기타/
 //
-// 공사 미연결(construction_id = null) 작업의 경우:
+// 공사 미연결(construction_id = null) 작업의 경우 (년도/월 폴더 없음):
 //   {uploadRoot}/미분류/{작업번호}_{작업일}_{작업종류}/{단계폴더}/
 
 export const STAGE_DIRS = {
@@ -75,46 +77,65 @@ function fmtDate(d: string | null | undefined): string {
 
 export interface StoragePathInfo {
   /** 업로드 루트 (절대 or 상대) */
-  uploadRoot: string
+  uploadRoot:  string
+  /** 년도 폴더명 e.g. "2024" (공사 등록년도, 미분류 시 비어있음) */
+  yearFolder:  string
+  /** 월 폴더명 e.g. "07" (공사 등록월 2자리, 미분류 시 비어있음) */
+  monthFolder: string
   /** 공사 폴더명 e.g. "REQ-2024-001_한전지중화공사" */
-  conFolder:  string
+  conFolder:   string
   /** 작업 폴더명 e.g. "T-2024-0001_2024-07-01_청약개통" */
-  taskFolder: string
+  taskFolder:  string
   /** 단계 폴더명 e.g. "01_작업지시서" */
-  stageDir:   string
-  /** 최종 업로드 경로 (conFolder / taskFolder / stageDir[/ photoSubDir]) */
-  uploadDir:  string
+  stageDir:    string
+  /** 최종 업로드 경로 ({year}/{month}/conFolder/taskFolder/stageDir[/photoSubDir]) */
+  uploadDir:   string
 }
 
 /**
  * 저장 경로를 조합해 반환.
- * @param opts.uploadRoot   시스템 설정 upload_root_path (default: './public/uploads')
- * @param opts.conRequestNo 공사 요청번호  (construction.request_no)
- * @param opts.conTitle     공사명         (construction.title)
- * @param opts.taskNumber   작업 번호      (task.task_number or sub_task_number)
- * @param opts.workDate     작업 예정일    (task.work_date or planned_date)
- * @param opts.workType     작업 종류      (task.construction_type)
- * @param opts.stage        파일 단계      ('order'|'tbm'|'photo'|'inspection'|'other')
- * @param opts.photoType    사진 유형      ('before'|'progress'|'after') — photo 단계일 때 하위 폴더 생성
- * @param opts.caption      사진 설명      — 입력값 있으면 photo_type 폴더 아래 추가 하위 폴더 생성
+ * @param opts.uploadRoot    시스템 설정 upload_root_path (default: './public/uploads')
+ * @param opts.conRequestNo  공사 요청번호  (construction.request_no)
+ * @param opts.conTitle      공사명         (construction.title)
+ * @param opts.conCreatedAt  공사 등록일시  (construction.created_at) — 년도/월 폴더 생성에 사용
+ * @param opts.taskNumber    작업 번호      (task.task_number or sub_task_number)
+ * @param opts.workDate      작업 예정일    (task.work_date or planned_date)
+ * @param opts.workType      작업 종류      (task.construction_type)
+ * @param opts.stage         파일 단계      ('order'|'tbm'|'photo'|'inspection'|'other')
+ * @param opts.photoType     사진 유형      ('before'|'progress'|'after') — photo 단계일 때 하위 폴더 생성
+ * @param opts.caption       사진 설명      — 입력값 있으면 photo_type 폴더 아래 추가 하위 폴더 생성
  */
 export function buildStoragePath(opts: {
-  uploadRoot?:   string
-  conRequestNo?: string | null
-  conTitle?:     string | null
-  taskNumber?:   string | null
-  workDate?:     string | null
-  workType?:     string | null
-  stage?:        StageKey
-  photoType?:    string | null
-  caption?:      string | null
+  uploadRoot?:    string
+  conRequestNo?:  string | null
+  conTitle?:      string | null
+  conCreatedAt?:  string | null
+  taskNumber?:    string | null
+  workDate?:      string | null
+  workType?:      string | null
+  stage?:         StageKey
+  photoType?:     string | null
+  caption?:       string | null
 }): StoragePathInfo {
   const root      = (opts.uploadRoot || './public/uploads').replace(/\/+$/, '')
   const stage     = opts.stage || 'other'
   const stageDir  = STAGE_DIRS[stage] || STAGE_DIRS.other
 
+  const hasConInfo = !!(opts.conRequestNo && opts.conTitle)
+
+  // 년도/월 폴더: 공사 등록일(conCreatedAt) 기준 — 공사 미연결 시 빈 문자열
+  let yearFolder  = ''
+  let monthFolder = ''
+  if (hasConInfo && opts.conCreatedAt) {
+    const dt = new Date(opts.conCreatedAt)
+    if (!isNaN(dt.getTime())) {
+      yearFolder  = String(dt.getFullYear())
+      monthFolder = String(dt.getMonth() + 1).padStart(2, '0')
+    }
+  }
+
   // 공사 폴더: "{request_no}_{공사명}"  / 미연결 시 "미분류"
-  const conFolder = (opts.conRequestNo && opts.conTitle)
+  const conFolder = hasConInfo
     ? safeName(`${opts.conRequestNo}_${opts.conTitle}`)
     : '미분류'
 
@@ -124,9 +145,15 @@ export function buildStoragePath(opts: {
   const workType = safeName(opts.workType    || '작업')
   const taskFolder = `${taskNum}_${workDate}_${workType}`
 
+  // 최종 기본경로: 공사 연결 시 → {root}/{year}/{month}/{conFolder}
+  //               미연결 시    → {root}/미분류
+  const basePath = (yearFolder && monthFolder)
+    ? `${root}/${yearFolder}/${monthFolder}/${conFolder}`
+    : `${root}/${conFolder}`
+
   // photo 단계일 때 photo_type에 따라 하위 폴더 추가
   // before → 01_작업 전 / progress → 02_작업 중 / after → 03_작업 후
-  let uploadDir = `${root}/${conFolder}/${taskFolder}/${stageDir}`
+  let uploadDir = `${basePath}/${taskFolder}/${stageDir}`
   if (stage === 'photo' && opts.photoType) {
     const subDir = PHOTO_TYPE_DIRS[opts.photoType]
     if (subDir) {
@@ -137,6 +164,6 @@ export function buildStoragePath(opts: {
     }
   }
 
-  return { uploadRoot: root, conFolder, taskFolder, stageDir, uploadDir }
+  return { uploadRoot: root, yearFolder, monthFolder, conFolder, taskFolder, stageDir, uploadDir }
 }
 

@@ -15532,9 +15532,11 @@ async function renderAdminSettingsPage(container, _activeTab) {
               </div>
               <div class="text-xs text-blue-700 space-y-1 font-mono leading-relaxed">
                 <div><i class="fas fa-folder text-yellow-500 mr-1"></i><span class="font-semibold">{루트}/</span></div>
-                <div class="pl-4"><i class="fas fa-folder text-yellow-400 mr-1"></i><span class="font-semibold">{공사요청번호}_{공사명}/</span></div>
-                <div class="pl-8"><i class="fas fa-folder text-yellow-300 mr-1"></i><span>{서브작업번호}_{작업일}_{작업종류}/</span></div>
-                <div class="pl-12 space-y-0.5">
+                <div class="pl-4"><i class="fas fa-folder text-yellow-500 mr-1"></i><span class="font-semibold">{공사요청번호등록년도}/</span></div>
+                <div class="pl-8"><i class="fas fa-folder text-yellow-400 mr-1"></i><span class="font-semibold">{공사요청번호등록월}/</span></div>
+                <div class="pl-12"><i class="fas fa-folder text-yellow-400 mr-1"></i><span class="font-semibold">{공사요청번호}_{공사명}/</span></div>
+                <div class="pl-16"><i class="fas fa-folder text-yellow-300 mr-1"></i><span>{서브작업번호}_{작업일}_{작업종류}/</span></div>
+                <div class="pl-20 space-y-0.5">
                   <div><i class="fas fa-folder-open text-blue-400 mr-1"></i>01_작업지시서/</div>
                   <div><i class="fas fa-folder-open text-green-400 mr-1"></i>02_TBM/</div>
                   <div><i class="fas fa-folder-open text-orange-400 mr-1"></i>03_작업사진/</div>
@@ -15544,7 +15546,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
               </div>
               <p class="text-xs text-blue-600 mt-1 pt-2 border-t border-blue-200">
                 <i class="fas fa-info-circle mr-1"></i>
-                단계별 폴더명은 시스템 내부 고정값입니다. 공사와 연결되지 않은 작업은 <code class="bg-blue-100 px-1 rounded">미분류/</code> 폴더에 저장됩니다.
+                단계별 폴더명은 시스템 내부 고정값입니다. 공사와 연결되지 않은 작업은 <code class="bg-blue-100 px-1 rounded">미분류/</code> 폴더에 저장됩니다. 년도/월은 공사 등록일 기준으로 자동 생성됩니다.
               </p>
             </div>
           </div>

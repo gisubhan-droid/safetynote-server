@@ -17639,12 +17639,18 @@ async function showRiskWorkTypeModal() {
 async function renderRiskItemsPage(container) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
-    const [catRes, typeRes] = await Promise.all([
+    // Promise.allSettled: 하나가 실패해도 페이지 전체 오류 방지
+    const [catResult, typeResult] = await Promise.allSettled([
       API.get('/risk/work-categories'),
       API.get('/risk/work-types')
     ]);
-    const cats = Array.isArray(catRes.data) ? catRes.data : [];
-    const types = Array.isArray(typeRes.data) ? typeRes.data : [];
+    const cats  = (catResult.status  === 'fulfilled' && Array.isArray(catResult.value.data))
+                  ? catResult.value.data : [];
+    const types = (typeResult.status === 'fulfilled' && Array.isArray(typeResult.value.data))
+                  ? typeResult.value.data : [];
+
+    // API 누락 경고 (NAS 미업데이트 상황 대비)
+    const apiMissing = catResult.status === 'rejected' || typeResult.status === 'rejected';
 
     const role = window._currentUser?.role || '';
     const isWorker = role === 'worker';
@@ -17661,6 +17667,15 @@ async function renderRiskItemsPage(container) {
           </button>` : ''}
         </div>
 
+        ${apiMissing ? `
+        <div class="rounded-xl p-3 mb-4 text-sm bg-amber-50 text-amber-800 border border-amber-300 flex items-start gap-2">
+          <i class="fas fa-exclamation-triangle mt-0.5 shrink-0"></i>
+          <div>
+            <p class="font-semibold">서버 업데이트가 필요합니다</p>
+            <p class="text-xs mt-0.5">분류별 항목 API가 현재 서버에 없습니다. NAS에서 <code>git pull && pm2 restart</code>를 실행해 주세요.</p>
+          </div>
+        </div>` : ''}
+
         <!-- 대분류 필터 -->
         <div class="flex flex-wrap gap-2 mb-4" id="ri-cat-filter">
           <button onclick="riFilterCat('all',this)" class="risk-cat-btn btn btn-primary text-xs px-3 py-1">전체</button>
@@ -17669,7 +17684,10 @@ async function renderRiskItemsPage(container) {
 
         <!-- 작업유형별 아코디언 -->
         <div id="ri-type-list" class="space-y-2">
-          ${types.length === 0 ? '<p class="text-gray-400 text-sm py-8 text-center">등록된 작업유형이 없습니다.</p>' :
+          ${types.length === 0 ? `<div class="text-center py-10 text-gray-400">
+            <i class="fas fa-list-check text-4xl mb-3"></i>
+            <p class="text-sm">${apiMissing ? '서버 업데이트 후 이용 가능합니다.' : '등록된 작업유형이 없습니다.'}</p>
+          </div>` :
             types.map(t => `
               <div class="risk-cat-block border border-gray-200 rounded-lg overflow-hidden" data-cat="${t.category_name || ''}">
                 <div class="flex items-center justify-between px-4 py-3 bg-gray-50 cursor-pointer hover:bg-gray-100 ri-type-header"

@@ -17958,6 +17958,7 @@ function _riRenderItemTable(panel, workTypeId, items) {
         <thead>
           <tr class="bg-blue-50 text-gray-600">
             <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 w-8">#</th>
+            <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 hidden sm:table-cell w-28">분류</th>
             <th class="px-3 py-2 text-left font-semibold border-b border-gray-200">유해·위험요인</th>
             <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 hidden md:table-cell">위험성 내용</th>
             <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 hidden lg:table-cell">안전조치/감소대책</th>
@@ -17979,6 +17980,7 @@ function _riRenderItemTable(panel, workTypeId, items) {
             return `
               <tr class="hover:bg-gray-50 border-b border-gray-100 ri-row" data-item-id="${item.id}">
                 <td class="px-3 py-2 text-gray-400">${idx+1}</td>
+                <td class="px-3 py-2 hidden sm:table-cell">${_riCategoryBadge(item.category||'')}</td>
                 <td class="px-3 py-2 text-gray-700 font-medium">${item.hazard || '-'}</td>
                 <td class="px-3 py-2 text-gray-500 hidden md:table-cell">${item.risk_factor || '-'}</td>
                 <td class="px-3 py-2 text-gray-500 hidden lg:table-cell" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cm}</td>
@@ -18065,6 +18067,13 @@ function _riShowEditModal(item, workTypeId) {
         <button onclick="document.getElementById('ri-edit-modal').remove()" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body space-y-3">
+        <!-- 항목 분류 -->
+        <div>
+          <label class="form-label text-xs">항목 분류</label>
+          <select id="${p}-category" class="form-input text-sm">
+            ${RISK_CATEGORIES.map(cat => `<option value="${cat}" ${(item.category||'')=== cat ? 'selected' : ''}>${cat || '(분류 없음)'}</option>`).join('')}
+          </select>
+        </div>
         <!-- 유해·위험요인 + 위험성 내용 -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
@@ -18153,6 +18162,34 @@ function _riShowEditModal(item, workTypeId) {
   });
 }
 
+// 위험성 평가 항목 분류 고정 목록
+const RISK_CATEGORIES = [
+  '',
+  '1. 기계적 요인',
+  '2. 전기적 요인',
+  '3. 화학적 요인',
+  '4. 생물학적 요인',
+  '5. 작업특성 요인',
+  '6. 작업환경 요인'
+];
+
+// category 배지 색상 (분류별 구분)
+function _riCategoryBadge(cat) {
+  if (!cat) return '';
+  const colorMap = {
+    '1. 기계적 요인':   'bg-orange-100 text-orange-700',
+    '2. 전기적 요인':   'bg-yellow-100 text-yellow-700',
+    '3. 화학적 요인':   'bg-purple-100 text-purple-700',
+    '4. 생물학적 요인': 'bg-green-100 text-green-700',
+    '5. 작업특성 요인': 'bg-blue-100 text-blue-700',
+    '6. 작업환경 요인': 'bg-teal-100 text-teal-700',
+  };
+  const cls = colorMap[cat] || 'bg-gray-100 text-gray-600';
+  // 숫자+점 이후 짧은 라벨만 표시 (예: "기계적 요인")
+  const label = cat.replace(/^\d+\.\s*/, '');
+  return `<span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium ${cls} whitespace-nowrap">${label}</span>`;
+}
+
 // 빈도/강도 셀렉트 HTML 생성 (인라인, onchange는 addEventListener로 처리)
 function _riFreqOptsInline(id, val) {
   return `<select id="${id}" class="form-input text-sm">
@@ -18171,6 +18208,7 @@ async function _riSaveEdit(itemId, workTypeId) {
   const as_ = parseInt(document.getElementById(`${p}-asev`)?.value)||1;
   const body = {
     hazard,
+    category:          document.getElementById(`${p}-category`)?.value ?? '',
     risk_factor:       document.getElementById(`${p}-factor`)?.value?.trim() || '',
     before_frequency:  bf,
     before_severity:   bs,
@@ -18237,6 +18275,13 @@ function _riAddItemModal(workTypeId, workTypeName, panelEl) {
         <button onclick="document.getElementById('ri-add-modal').remove()" class="modal-close"><i class="fas fa-times"></i></button>
       </div>
       <div class="modal-body space-y-3">
+        <!-- 항목 분류 -->
+        <div>
+          <label class="form-label text-xs">항목 분류</label>
+          <select id="${p}-category" class="form-input text-sm">
+            ${RISK_CATEGORIES.map(cat => `<option value="${cat}">${cat || '(분류 없음)'}</option>`).join('')}
+          </select>
+        </div>
         <!-- 유해·위험요인 + 위험성 내용 -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
@@ -18338,6 +18383,7 @@ async function _riSaveAdd(workTypeId) {
   const body = {
     work_type_id: workTypeId,
     hazard,
+    category:          document.getElementById(`${p}-category`)?.value ?? '',
     risk_factor:       document.getElementById(`${p}-factor`)?.value?.trim() || '',
     before_frequency:  bf,
     before_severity:   bs,

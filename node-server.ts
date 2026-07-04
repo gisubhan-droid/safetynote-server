@@ -3176,19 +3176,30 @@ app.get('/api/diagnostics/risk-db', async (c) => {
       GROUP BY rai.work_type_id ORDER BY rai.work_type_id
     `).all() : []
 
+    // created_at 컬럼 존재 여부 확인 (patchSchema v0.151 이전 DB 방어)
+    const hasCreatedAt = itemCols.includes('created_at')
+    const hasCategoryCol = itemCols.includes('category')
+
     // 최근 추가된 항목 5건 (복원 시점 확인용)
     const recentItems = hasItems ? rawDb.prepare(`
-      SELECT id, work_type_id, hazard, created_at
+      SELECT id, work_type_id, hazard${hasCreatedAt ? ', created_at' : ", '' as created_at"}
       FROM risk_assessment_items
       ORDER BY id DESC LIMIT 5
     `).all() : []
 
     // 가장 오래된 항목 (기존 데이터 기준)
     const oldestItem = hasItems ? rawDb.prepare(`
-      SELECT id, work_type_id, hazard, created_at
+      SELECT id, work_type_id, hazard${hasCreatedAt ? ', created_at' : ", '' as created_at"}
       FROM risk_assessment_items
       ORDER BY id ASC LIMIT 1
-    `).first() : null
+    `).get() : null
+
+    // category 컬럼 분포 (분류별 항목 현황 파악용)
+    const categoryDist = (hasItems && hasCategoryCol) ? rawDb.prepare(`
+      SELECT COALESCE(category,'') as category, COUNT(*) as cnt
+      FROM risk_assessment_items
+      GROUP BY category ORDER BY category
+    `).all() : []
 
     return c.json({
       tables_exist: { work_categories: hasCats, work_types: hasTypes, risk_assessment_items: hasItems },
@@ -3201,6 +3212,7 @@ app.get('/api/diagnostics/risk-db', async (c) => {
       recent_items: recentItems,
       oldest_item: oldestItem,
       risk_assessment_items_columns: itemCols,
+      category_distribution: categoryDist,
     })
   } catch(e: any) {
     return c.json({ error: e.message }, 500)

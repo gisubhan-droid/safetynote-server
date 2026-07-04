@@ -15638,7 +15638,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
           <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
             <i class="fas fa-calendar-alt text-indigo-500"></i> 년도별 저장 현황
           </h3>
-          <p class="text-xs text-gray-400 mb-4">공사요청번호 등록년도 기준 폴더 통계</p>
+          <p class="text-xs text-gray-400 mb-4">공사요청번호 등록년도 기준 폴더 통계 &nbsp;·&nbsp; <span class="text-indigo-400">월 항목 클릭 시 상세 조회</span></p>
           ${(() => {
             const years = Object.keys(yearStats).filter(y => y !== '__other__' && /^\d{4}$/.test(y)).sort((a,b) => b.localeCompare(a));
             if (years.length === 0) {
@@ -15681,12 +15681,16 @@ async function renderAdminSettingsPage(container, _activeTab) {
                           const mLabel = monthNames[mIdx] || m + '월';
                           return `
                             <div class="flex items-center justify-between bg-gray-50 border border-gray-100
-                              rounded-lg px-4 py-2.5 hover:bg-gray-100 transition-colors">
+                              rounded-lg px-4 py-2.5 hover:bg-indigo-50 hover:border-indigo-200
+                              transition-colors cursor-pointer group/mrow"
+                              onclick="_showFolderDetail('${year}','${m}')"
+                              title="${year}년 ${mLabel} 상세 조회">
                               <div class="flex items-center gap-2">
-                                <div class="w-7 h-7 rounded-md bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                                <div class="w-7 h-7 rounded-md bg-indigo-100 group-hover/mrow:bg-indigo-200 flex items-center justify-center flex-shrink-0 transition-colors">
                                   <span class="text-indigo-600 font-bold text-xs">${m}</span>
                                 </div>
-                                <span class="font-semibold text-gray-700 text-sm">${year}년 ${mLabel}</span>
+                                <span class="font-semibold text-gray-700 text-sm group-hover/mrow:text-indigo-700 transition-colors">${year}년 ${mLabel}</span>
+                                <i class="fas fa-search text-indigo-300 text-xs group-hover/mrow:text-indigo-500 transition-colors ml-1"></i>
                               </div>
                               <div class="flex items-center gap-4 text-xs text-gray-500">
                                 ${ms.imgCount ? `<span title="이미지"><i class="fas fa-image text-green-400 mr-0.5"></i>${ms.imgCount.toLocaleString()}</span>` : ''}
@@ -15695,6 +15699,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
                                 ${ms.etcCount ? `<span title="기타"><i class="fas fa-file text-gray-400 mr-0.5"></i>${ms.etcCount.toLocaleString()}</span>` : ''}
                                 <span class="font-semibold text-gray-600 ml-1">${mFiles.toLocaleString()}개</span>
                                 <span class="font-bold text-indigo-500 min-w-[60px] text-right">${_formatBytes(ms.bytes)}</span>
+                                <i class="fas fa-chevron-right text-indigo-300 text-xs group-hover/mrow:text-indigo-500 transition-colors"></i>
                               </div>
                             </div>`;
                         }).join('')}
@@ -16548,6 +16553,148 @@ function _formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   const val = bytes / Math.pow(1024, i);
   return val.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+// ─── 저장 폴더 현황: 년도/월 상세 조회 모달 ───────────────────────────────
+async function _showFolderDetail(year, month) {
+  const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  const mIdx = parseInt(month, 10) - 1;
+  const mLabel = monthNames[mIdx] || month + '월';
+  const title = `${year}년 ${mLabel} 저장 현황`;
+
+  // 로딩 모달 먼저 표시
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:680px;width:95vw">
+      <div class="modal-header" style="background:linear-gradient(135deg,#4F46E5,#7C3AED);color:white">
+        <h3 class="modal-title flex items-center gap-2">
+          <i class="fas fa-folder-open"></i> ${title}
+        </h3>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()" style="color:white">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body" id="folderDetailBody" style="max-height:70vh;overflow-y:auto">
+        <div class="flex items-center justify-center py-12 text-gray-400">
+          <i class="fas fa-spinner fa-spin text-2xl mr-3"></i> 폴더 목록을 불러오는 중...
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  try {
+    const res = await API.get(`/admin/folders/detail?year=${year}&month=${month}`);
+    const data = res.data;
+    const body = document.getElementById('folderDetailBody');
+    if (!body) return;
+
+    const folders = data.folders || [];
+    const totalFiles = (data.imgCount||0) + (data.docCount||0) + (data.vidCount||0) + (data.etcCount||0);
+
+    // 파일 타입별 색상/아이콘
+    const typeInfo = [
+      { key:'imgCount', icon:'fa-image',    color:'text-green-500',  bg:'bg-green-50',  border:'border-green-200',  label:'이미지' },
+      { key:'docCount', icon:'fa-file-alt', color:'text-blue-500',   bg:'bg-blue-50',   border:'border-blue-200',   label:'문서'   },
+      { key:'vidCount', icon:'fa-film',     color:'text-purple-500', bg:'bg-purple-50', border:'border-purple-200', label:'동영상' },
+      { key:'etcCount', icon:'fa-file',     color:'text-gray-500',   bg:'bg-gray-50',   border:'border-gray-200',   label:'기타'   },
+    ];
+
+    body.innerHTML = `
+      <!-- 요약 카드 -->
+      <div class="p-4 border-b border-gray-100">
+        <div class="flex items-center gap-3 bg-gradient-to-r from-indigo-50 to-purple-50
+          border border-indigo-100 rounded-xl p-3 mb-3">
+          <div class="w-9 h-9 rounded-full bg-indigo-400 flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-hdd text-white text-sm"></i>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500">총 저장 용량</div>
+            <div class="text-xl font-bold text-gray-800">${_formatBytes(data.totalBytes||0)}</div>
+          </div>
+          <div class="ml-auto text-right">
+            <div class="text-xs text-gray-400">전체 파일</div>
+            <div class="text-base font-semibold text-gray-600">${totalFiles.toLocaleString()}개</div>
+          </div>
+        </div>
+        <!-- 파일 타입 요약 -->
+        <div class="grid grid-cols-4 gap-2">
+          ${typeInfo.map(t => {
+            const cnt = data[t.key] || 0;
+            return `<div class="flex flex-col items-center ${t.bg} ${t.border} border rounded-lg py-2 px-1">
+              <i class="fas ${t.icon} ${t.color} mb-1 text-sm"></i>
+              <span class="text-xs text-gray-500">${t.label}</span>
+              <span class="font-bold text-sm text-gray-700">${cnt.toLocaleString()}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- 공사폴더 목록 -->
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-bold text-gray-700">
+            <i class="fas fa-folder text-yellow-400 mr-1"></i>
+            공사 폴더 목록
+          </span>
+          <span class="text-xs text-gray-400">${folders.length}개 폴더</span>
+        </div>
+        ${folders.length === 0
+          ? `<div class="text-center text-gray-400 py-8 text-sm">
+              <i class="fas fa-folder-open text-3xl block mb-2 text-gray-300"></i>
+              이 기간에 저장된 공사 폴더가 없습니다.
+            </div>`
+          : `<div class="space-y-2">
+              ${folders.map((f, idx) => {
+                const fc = (f.imgCount||0) + (f.docCount||0) + (f.vidCount||0) + (f.etcCount||0);
+                // 공사폴더명 파싱: {공사요청번호}_{공사명} 형태
+                const parts = f.name.split('_');
+                const reqNo = parts[0] || '';
+                const conName = parts.slice(1).join('_') || f.name;
+                const pct = data.totalBytes > 0 ? Math.round((f.bytes / data.totalBytes) * 100) : 0;
+                return `
+                  <div class="border border-gray-100 rounded-xl p-3 hover:bg-gray-50 transition-colors">
+                    <div class="flex items-start justify-between mb-2">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <div class="w-6 h-6 rounded bg-yellow-100 flex items-center justify-center flex-shrink-0 text-xs font-bold text-yellow-600">
+                          ${idx + 1}
+                        </div>
+                        <div class="min-w-0">
+                          <div class="text-sm font-semibold text-gray-800 truncate" title="${f.name}">
+                            ${conName || f.name}
+                          </div>
+                          ${reqNo ? `<div class="text-xs text-gray-400">요청번호: ${reqNo}</div>` : ''}
+                        </div>
+                      </div>
+                      <div class="text-right flex-shrink-0 ml-2">
+                        <div class="text-sm font-bold text-indigo-600">${_formatBytes(f.bytes)}</div>
+                        <div class="text-xs text-gray-400">${fc.toLocaleString()}개</div>
+                      </div>
+                    </div>
+                    <!-- 용량 비율 바 -->
+                    <div class="w-full bg-gray-100 rounded-full h-1.5 mb-2">
+                      <div class="bg-indigo-400 h-1.5 rounded-full" style="width:${Math.min(pct,100)}%"></div>
+                    </div>
+                    <!-- 파일 종류 -->
+                    <div class="flex gap-3 text-xs text-gray-500">
+                      ${f.imgCount ? `<span><i class="fas fa-image text-green-400 mr-0.5"></i>${f.imgCount.toLocaleString()}</span>` : ''}
+                      ${f.docCount ? `<span><i class="fas fa-file-alt text-blue-400 mr-0.5"></i>${f.docCount.toLocaleString()}</span>` : ''}
+                      ${f.vidCount ? `<span><i class="fas fa-film text-purple-400 mr-0.5"></i>${f.vidCount.toLocaleString()}</span>` : ''}
+                      ${f.etcCount ? `<span><i class="fas fa-file text-gray-400 mr-0.5"></i>${f.etcCount.toLocaleString()}</span>` : ''}
+                      ${!f.imgCount && !f.docCount && !f.vidCount && !f.etcCount ? `<span class="text-gray-300">파일 없음</span>` : ''}
+                    </div>
+                  </div>`;
+              }).join('')}
+            </div>`}
+      </div>`;
+  } catch(e) {
+    const body = document.getElementById('folderDetailBody');
+    if (body) body.innerHTML = `<div class="text-center text-red-400 py-8">
+      <i class="fas fa-exclamation-triangle text-2xl block mb-2"></i>
+      폴더 정보를 불러오지 못했습니다.<br>
+      <span class="text-xs text-gray-400">${e?.message || '알 수 없는 오류'}</span>
+    </div>`;
+  }
 }
 
 /** 확장자 컬러 뱃지 HTML 생성 헬퍼 */

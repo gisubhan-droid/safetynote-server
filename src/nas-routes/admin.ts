@@ -241,6 +241,127 @@ app.get('/folders', async (c) => {
   })
 })
 
+// ─── GET /api/admin/folders/detail ──────────────────────────────────────────
+// 쿼리: ?year=2026  또는  ?year=2026&month=07
+// year만 → 해당 년도 폴더 아래 월별 공사폴더 목록 요약 반환
+// year+month → 해당 년도/월 폴더 아래 공사폴더(서브작업) 목록 + 통계 반환
+app.get('/folders/detail', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const root  = getUploadRootNow()
+  const year  = (c.req.query('year')  || '').trim()
+  const month = (c.req.query('month') || '').trim()
+
+  if (!year || !/^\d{4}$/.test(year)) {
+    return c.json({ error: 'year 파라미터가 올바르지 않습니다. (예: 2026)' }, 400)
+  }
+  if (month && !/^(0[1-9]|1[0-2])$/.test(month)) {
+    return c.json({ error: 'month 파라미터가 올바르지 않습니다. (예: 07)' }, 400)
+  }
+
+  const IMG_EXT = new Set(['jpg','jpeg','png','gif','webp','heic','bmp','tiff','svg'])
+  const DOC_EXT = new Set(['pdf','doc','docx','xls','xlsx','ppt','pptx','hwp','hwpx','txt','csv'])
+  const VID_EXT = new Set(['mp4','avi','mov','mkv','wmv','flv'])
+
+  interface FolderStat {
+    name: string        // 폴더명 (예: 202501010001_공사명)
+    bytes: number
+    imgCount: number
+    docCount: number
+    vidCount: number
+    etcCount: number
+    fileCount: number
+  }
+
+  // 한 디렉터리 재귀 스캔 → 합계 반환
+  function scanDir(dirPath: string): { bytes: number; img: number; doc: number; vid: number; etc: number } {
+    let bytes = 0, img = 0, doc = 0, vid = 0, etc = 0
+    try {
+      const entries = readdirSync(dirPath, { withFileTypes: true })
+      for (const e of entries) {
+        if (e.name.startsWith('.')) continue
+        const fp = join(dirPath, e.name)
+        if (e.isDirectory()) {
+          const sub = scanDir(fp)
+          bytes += sub.bytes; img += sub.img; doc += sub.doc; vid += sub.vid; etc += sub.etc
+        } else {
+          try {
+            const st = statSync(fp)
+            bytes += st.size
+            const ext = e.name.split('.').pop()?.toLowerCase() || ''
+            if      (IMG_EXT.has(ext)) img++
+            else if (DOC_EXT.has(ext)) doc++
+            else if (VID_EXT.has(ext)) vid++
+            else                        etc++
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    return { bytes, img, doc, vid, etc }
+  }
+
+  // 스캔 대상 경로 결정
+  const scanRoot = month
+    ? join(root, year, month)
+    : join(root, year)
+
+  if (!existsSync(scanRoot)) {
+    return c.json({
+      root, year, month: month || null,
+      path: scanRoot,
+      folders: [],
+      totalBytes: 0, imgCount: 0, docCount: 0, vidCount: 0, etcCount: 0,
+    })
+  }
+
+  const folders: FolderStat[] = []
+  let totalBytes = 0, totalImg = 0, totalDoc = 0, totalVid = 0, totalEtc = 0
+
+  try {
+    const entries = readdirSync(scanRoot, { withFileTypes: true })
+    for (const e of entries) {
+      if (e.name.startsWith('.') || !e.isDirectory()) continue
+      const fp = join(scanRoot, e.name)
+
+      // month 지정 시: 공사폴더(또는 하위 작업폴더) 직접 스캔
+      // month 미지정 시: 월 폴더 → 그 하위를 합산
+      if (month) {
+        // {루트}/{년도}/{월}/{공사폴더}/...
+        const s = scanDir(fp)
+        const fc: FolderStat = {
+          name: e.name,
+          bytes: s.bytes, imgCount: s.img, docCount: s.doc, vidCount: s.vid, etcCount: s.etc,
+          fileCount: s.img + s.doc + s.vid + s.etc,
+        }
+        folders.push(fc)
+        totalBytes += s.bytes; totalImg += s.img; totalDoc += s.doc; totalVid += s.vid; totalEtc += s.etc
+      } else {
+        // e.name = 월 폴더 (01~12) 또는 미분류
+        const s = scanDir(fp)
+        const fc: FolderStat = {
+          name: e.name,
+          bytes: s.bytes, imgCount: s.img, docCount: s.doc, vidCount: s.vid, etcCount: s.etc,
+          fileCount: s.img + s.doc + s.vid + s.etc,
+        }
+        folders.push(fc)
+        totalBytes += s.bytes; totalImg += s.img; totalDoc += s.doc; totalVid += s.vid; totalEtc += s.etc
+      }
+    }
+    // 이름순 정렬
+    folders.sort((a, b) => a.name.localeCompare(b.name))
+  } catch (e) {
+    return c.json({ error: '폴더 읽기 실패', detail: String(e) }, 500)
+  }
+
+  return c.json({
+    root, year, month: month || null,
+    path: scanRoot,
+    folders,
+    totalBytes, imgCount: totalImg, docCount: totalDoc, vidCount: totalVid, etcCount: totalEtc,
+  })
+})
+
 // ─── GET /api/admin/reset/counts ────────────────────────────────────────────
 app.get('/reset/counts', async (c) => {
   const user = getUser(c)

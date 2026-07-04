@@ -2262,29 +2262,40 @@ function patchSchema() {
     console.warn('[patchSchema v0.149] 컬럼 보완 실패 (무시):', e.message)
   }
 
-  // ── [v0.150 BUG-076] risk_assessment_items 빈 work_type → restore_risk_master_data.sql 자동 실행 ──
+  // ── [v0.150 BUG-076] risk_assessment_items 클린 리셋 — reset_risk_master_data.sql 자동 실행 ──
+  // NAS DB에 잘못된(구버전) work_categories/work_types/risk_assessment_items가 있을 경우
+  // reset_risk_master_data.sql 로 완전 교체한다. (work_type_id=17~34 기준)
   try {
     const hasItems = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='risk_assessment_items'").get() as any)
     const hasTypes = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_types'").get() as any)
-    if (hasItems && hasTypes) {
-      const totalItems = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
-      if (totalItems === 0) {
-        // SQL 파일이 있으면 자동 실행
-        const sqlPath = require('path').join(process.cwd(), 'restore_risk_master_data.sql')
+    const hasCats  = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_categories'").get() as any)
+    if (hasItems && hasTypes && hasCats) {
+      // 개발 DB 기준: work_types.id 범위는 17~34, work_categories.id 범위는 9~17
+      // NAS에 기존 다른 데이터가 있으면 reset_risk_master_data.sql로 교체
+      const minTypeId = (rawDb.prepare('SELECT MIN(id) as m FROM work_types').get() as any)?.m ?? 0
+      const maxTypeId = (rawDb.prepare('SELECT MAX(id) as m FROM work_types').get() as any)?.m ?? 0
+      const typeCount = (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c
+      const itemCount = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+      // 정상: work_types 18건, id 17~34, items 744건
+      const isClean = (typeCount === 18 && minTypeId === 17 && maxTypeId === 34 && itemCount >= 700)
+      if (!isClean) {
+        const sqlPath = require('path').join(process.cwd(), 'reset_risk_master_data.sql')
         if (require('fs').existsSync(sqlPath)) {
+          console.log(`[patchSchema v0.150] 비정상 데이터 감지 — types:${typeCount}(${minTypeId}~${maxTypeId}) items:${itemCount} — 클린 리셋 시작`)
           const sql = require('fs').readFileSync(sqlPath, 'utf-8')
           rawDb.exec(sql)
-          const restored = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
-          console.log(`[patchSchema v0.150] risk_assessment_items 자동 복원 완료: ${restored}건`)
+          const afterItems = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+          const afterTypes = (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c
+          console.log(`[patchSchema v0.150] 클린 리셋 완료 — categories:9 types:${afterTypes} items:${afterItems}`)
         } else {
-          console.warn('[patchSchema v0.150] restore_risk_master_data.sql 없음 — 수동 복원 필요')
+          console.warn('[patchSchema v0.150] reset_risk_master_data.sql 없음 — git pull 후 pm2 restart 필요')
         }
       } else {
-        console.log(`[patchSchema v0.150] risk_assessment_items 데이터 있음 (${totalItems}건) — 자동 복원 생략`)
+        console.log(`[patchSchema v0.150] 정상 데이터 확인 — types:${typeCount} items:${itemCount} — 리셋 생략`)
       }
     }
   } catch(e: any) {
-    console.warn('[patchSchema v0.150] 자동 복원 실패 (무시):', e.message)
+    console.warn('[patchSchema v0.150] 클린 리셋 실패 (무시):', e.message)
   }
 }
 patchSchema()
@@ -3183,29 +3194,35 @@ app.get('/api/diagnostics/risk-db', async (c) => {
   }
 })
 
-// ── [BUG-076] POST /api/admin/risk-master-restore — 위험성평가 마스터 데이터 복원 ──
-// restore_risk_master_data.sql 파일을 실행하여 work_categories/work_types/risk_assessment_items 복원
-// 기존 데이터와 충돌 없음 (INSERT OR IGNORE)
+// ── [BUG-076] POST /api/admin/risk-master-restore — 위험성평가 마스터 데이터 클린 리셋 ──
+// reset_risk_master_data.sql 파일을 실행하여 work_categories/work_types/risk_assessment_items 완전 교체
+// ⚠️ 기존 NAS의 분류별 항목 데이터가 모두 삭제되고 개발 DB 기준으로 교체됨
 app.post('/api/admin/risk-master-restore', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '로그인 필요' }, 401)
   if (user.role !== 'admin') return c.json({ error: '관리자만 실행 가능합니다.' }, 403)
   try {
-    const sqlPath = require('path').join(process.cwd(), 'restore_risk_master_data.sql')
+    const sqlPath = require('path').join(process.cwd(), 'reset_risk_master_data.sql')
     if (!require('fs').existsSync(sqlPath)) {
-      return c.json({ error: 'restore_risk_master_data.sql 파일이 없습니다. git pull 후 재시도하세요.' }, 404)
+      return c.json({ error: 'reset_risk_master_data.sql 파일이 없습니다. git pull 후 재시도하세요.' }, 404)
     }
     const sql = require('fs').readFileSync(sqlPath, 'utf-8') as string
-    const before = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+    const beforeItems = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+    const beforeTypes = (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c
+    const beforeCats  = (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c
     rawDb.exec(sql)
-    const after = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
-    const cats  = (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c
-    const types = (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c
-    console.log(`[BUG-076] risk master data restored: items ${before} → ${after}`)
-    return c.json({ success: true, before, after, added: after - before, work_categories: cats, work_types: types })
+    const afterItems = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+    const afterTypes = (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c
+    const afterCats  = (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c
+    console.log(`[BUG-076] risk master clean reset: cats ${beforeCats}→${afterCats} types ${beforeTypes}→${afterTypes} items ${beforeItems}→${afterItems}`)
+    return c.json({
+      success: true,
+      before: { work_categories: beforeCats, work_types: beforeTypes, risk_assessment_items: beforeItems },
+      after:  { work_categories: afterCats,  work_types: afterTypes,  risk_assessment_items: afterItems }
+    })
   } catch(e: any) {
     console.error('[BUG-076] risk-master-restore error:', e.message)
-    return c.json({ error: e.message || '복원 실패' }, 500)
+    return c.json({ error: e.message || '클린 리셋 실패' }, 500)
   }
 })
 // ─── FEAT-037: POST /api/tbm/:id/share-token (RULE-002: tbmExtraRoutes·tbmRoutes 앞에 등록) ───

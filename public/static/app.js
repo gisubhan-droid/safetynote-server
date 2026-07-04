@@ -17742,7 +17742,10 @@ async function renderRiskItemsPage(container) {
         el.style.display = ''; // 권한 있는 경우만 표시
         const totalItems  = d.counts?.risk_assessment_items ?? 0;
         const activeItems = d.counts?.items_active ?? 0;
-        const ok = totalItems > 0 && activeItems > 0;
+        const totalTypes  = d.counts?.work_types ?? 0;
+        const totalCats   = d.counts?.work_categories ?? 0;
+        // 정상 조건: categories=9, types=18, items≥700 (개발DB 기준)
+        const ok = (totalCats === 9 && totalTypes === 18 && totalItems >= 700 && activeItems > 0);
         const partial = totalItems > 0 && activeItems === 0;
 
         const byTypeRows = (d.items_by_type || []).map(r =>
@@ -17789,11 +17792,21 @@ async function renderRiskItemsPage(container) {
                 <div style="color:${ok?'#10B981':partial?'#F59E0B':'#EF4444'};font-size:10px">활성(is_active=1)</div>
               </div>
             </div>
-            ${(!ok || partial) ? `<div style="margin-bottom:8px;padding:6px 10px;background:#FEF2F2;border-radius:8px;color:#DC2626;font-weight:600;font-size:11px">
-              <i class="fas fa-exclamation-triangle mr-1"></i>${totalItems===0?'항목 데이터가 없습니다. 전체 복원이 필요합니다.':'is_active=0인 항목이 있습니다. UPDATE로 활성화 필요'}
-              ${totalItems===0 ? `<button onclick="riRestoreMasterData()" style="margin-left:8px;padding:3px 10px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px"><i class="fas fa-database mr-1"></i>마스터 데이터 복원</button>` : ''}
-            </div>` : `<div style="margin-bottom:8px;padding:6px 10px;background:#ECFDF5;border-radius:8px;color:#065F46;font-weight:600;font-size:11px">
-              <i class="fas fa-check-circle mr-1"></i>정상입니다.
+            ${(!ok || partial) ? `<div style="margin-bottom:8px;padding:8px 12px;background:#FEF2F2;border-radius:8px;color:#DC2626;font-weight:600;font-size:11px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+              <span><i class="fas fa-exclamation-triangle mr-1"></i>${
+                totalItems===0 ? '항목 데이터 없음 — 클린 리셋이 필요합니다.' :
+                totalTypes !== 18 ? `작업유형 불일치 (현재 ${totalTypes}건, 정상 18건) — 클린 리셋이 필요합니다.` :
+                partial ? 'is_active=0 항목 있음 — 클린 리셋 권장' :
+                `데이터 이상 (categories:${totalCats} types:${totalTypes} items:${totalItems}) — 클린 리셋 필요`
+              }</span>
+              <button onclick="riRestoreMasterData()" style="padding:4px 12px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;white-space:nowrap">
+                <i class="fas fa-sync-alt mr-1"></i>클린 리셋 실행
+              </button>
+            </div>` : `<div style="margin-bottom:8px;padding:6px 10px;background:#ECFDF5;border-radius:8px;color:#065F46;font-weight:600;font-size:11px;display:flex;align-items:center;justify-content:space-between">
+              <span><i class="fas fa-check-circle mr-1"></i>정상 (categories:${totalCats} types:${totalTypes} items:${totalItems})</span>
+              <button onclick="riRestoreMasterData()" style="padding:3px 10px;background:#6B7280;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px">
+                <i class="fas fa-sync-alt mr-1"></i>재리셋
+              </button>
             </div>`}
             <!-- work_type별 상세 -->
             <details style="cursor:pointer">
@@ -17846,20 +17859,33 @@ async function renderRiskItemsPage(container) {
   }
 }
 
-// [BUG-076] 위험성평가 마스터 데이터 복원
+// [BUG-076] 위험성평가 마스터 데이터 클린 리셋
 async function riRestoreMasterData() {
-  if (!confirm('위험성평가 마스터 데이터를 복원하시겠습니까?\n기존 데이터는 유지되며, 누락된 데이터만 추가됩니다.')) return;
+  if (!confirm(
+    '⚠️ 분류별 항목 클린 리셋\n\n' +
+    'NAS의 기존 work_categories / work_types / risk_assessment_items 데이터를\n' +
+    '개발 DB 기준 데이터로 완전 교체합니다.\n\n' +
+    '• 대분류 9건, 작업유형 18건, 위험항목 744건으로 교체\n' +
+    '• 기존 NAS의 분류별 항목 데이터는 삭제됩니다\n\n' +
+    '계속하시겠습니까?'
+  )) return;
   try {
     const res = await API.post('/admin/risk-master-restore', {});
     const d = res.data || {};
     if (d.success) {
-      alert(`복원 완료!\n- 대분류: ${d.work_categories}건\n- 작업유형: ${d.work_types}건\n- 위험항목 추가: ${d.added}건 (이전: ${d.before} → 이후: ${d.after})\n\n페이지를 새로고침합니다.`);
+      const b = d.before, a = d.after;
+      alert(
+        '✅ 클린 리셋 완료!\n\n' +
+        `이전: categories ${b.work_categories}건 / types ${b.work_types}건 / items ${b.risk_assessment_items}건\n` +
+        `이후: categories ${a.work_categories}건 / types ${a.work_types}건 / items ${a.risk_assessment_items}건\n\n` +
+        '페이지를 새로고침합니다.'
+      );
       navigateTo('risk-items');
     } else {
-      alert('복원 실패: ' + (d.error || '알 수 없는 오류'));
+      alert('클린 리셋 실패: ' + (d.error || '알 수 없는 오류'));
     }
   } catch(e) {
-    alert('복원 API 오류: ' + (e?.message || e));
+    alert('API 오류: ' + (e?.response?.data?.error || e?.message || e));
   }
 }
 

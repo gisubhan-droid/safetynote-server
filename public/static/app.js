@@ -31410,15 +31410,18 @@ async function renderUnitPricePage(container) {
     const splicePrices = spliceRes.data.prices || [];
 
     // ── 외선 공종 행 생성 (공종키|공종명|단위|단가|삭제) — FEAT-039
-    const mkPriceRows = (prices) => prices.map(p => `
+    const mkPriceRows = (prices) => prices.map(p => {
+      const cblLbl = (p.item_label || '').replace(/"/g,'&quot;');
+      const cblMissing = !p.item_label || p.item_label === p.item_key;
+      return `
       <tr class="border-b border-gray-50 hover:bg-gray-50" data-key="${p.item_key}">
         <td class="px-2 py-1.5" style="width:90px;min-width:80px">
           <span class="text-xs text-gray-400 font-mono">${p.item_key}</span>
         </td>
         <td class="px-2 py-1.5" style="min-width:120px">
           <input type="text" maxlength="40"
-            class="up-cable-label-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
-            data-key="${p.item_key}" value="${(p.item_label||'').replace(/"/g,'&quot;')}" placeholder="공종명">
+            class="up-cable-label-input w-full border rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent ${cblMissing ? 'border-orange-300 bg-orange-50' : 'border-transparent'}"
+            data-key="${p.item_key}" value="${cblLbl}" placeholder="공종명 입력 필요">
         </td>
         <td class="px-2 py-1.5 text-center" style="width:56px;min-width:48px">
           <input type="text" maxlength="10"
@@ -31436,18 +31439,22 @@ async function renderUnitPricePage(container) {
             <i class="fas fa-trash-alt"></i>
           </button>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     // ── 접속 공종 행 생성 (공종키|공종명|단위|기본|야간|신호수|삭제) — BUG-066 반응형
-    const mkSplicePriceRows = (prices) => prices.map(p => `
-      <tr class="border-b border-gray-50 hover:bg-indigo-50 group" data-key="${p.item_key}">
+    const mkSplicePriceRows = (prices) => prices.map(p => {
+      const lbl = (p.item_label || '').replace(/"/g,'&quot;');
+      const isLabelMissing = !p.item_label || p.item_label === p.item_key;
+      return `
+      <tr class="border-b border-gray-50 hover:bg-indigo-50" data-key="${p.item_key}">
         <td class="px-2 py-1.5" style="width:90px;min-width:80px">
           <span class="text-xs text-gray-400 font-mono">${p.item_key}</span>
         </td>
         <td class="px-2 py-1.5" style="min-width:100px">
           <input type="text" maxlength="40"
-            class="up-splice-label-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-indigo-300 focus:bg-indigo-50 hover:border-gray-200 bg-transparent"
-            data-key="${p.item_key}" value="${p.item_label.replace(/"/g,'&quot;')}" placeholder="공종명">
+            class="up-splice-label-input w-full border rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-indigo-300 focus:bg-indigo-50 hover:border-gray-200 bg-transparent ${isLabelMissing ? 'border-orange-300 bg-orange-50' : 'border-transparent'}"
+            data-key="${p.item_key}" value="${lbl}" placeholder="공종명 입력 필요">
         </td>
         <td class="px-2 py-1.5 text-center" style="width:52px;min-width:44px">
           <input type="text" maxlength="10"
@@ -31472,12 +31479,13 @@ async function renderUnitPricePage(container) {
             placeholder="0" onfocus="this.classList.remove('text-gray-300')">
         </td>
         <td class="px-2 py-1.5 text-center" style="width:36px">
-          <button onclick="_upDeleteSpliceItem('${p.item_key}','${p.item_label}')"
+          <button onclick="_upDeleteSpliceItem('${p.item_key}','${p.item_label||p.item_key}')"
             class="text-gray-300 hover:text-red-500 text-sm transition">
             <i class="fas fa-trash-alt"></i>
           </button>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     container.innerHTML = `
     <div class="w-full max-w-full px-3 py-4 space-y-4">
@@ -31508,16 +31516,19 @@ async function renderUnitPricePage(container) {
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
             * 외선 공종의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 금액 계산에 반영됩니다.
+            <span class="text-orange-500 ml-1"><i class="fas fa-exclamation-circle mr-1"></i>주황색 행은 공종명 미입력 — 클릭하여 수정 후 저장하세요.</span>
           </div>
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto" style="max-height:60vh;overflow-y:auto">
           <table class="w-full text-sm" style="table-layout:auto;min-width:360px">
-            <thead><tr class="bg-gray-50 text-gray-600 text-xs">
-              <th class="px-2 py-2 text-left border-b border-gray-100" style="width:90px">공종키</th>
-              <th class="px-2 py-2 text-left border-b border-gray-100">공종명 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
-              <th class="px-2 py-2 text-center border-b border-gray-100" style="width:56px">단위</th>
-              <th class="px-2 py-2 text-right border-b border-gray-100" style="width:120px">단가 (원)</th>
-              <th class="border-b border-gray-100" style="width:36px"></th>
-            </tr></thead>
+            <thead style="position:sticky;top:0;z-index:10">
+              <tr class="text-gray-600 text-xs">
+              <th class="px-2 py-2 text-left border-b border-gray-200 bg-gray-50" style="width:90px">공종키</th>
+              <th class="px-2 py-2 text-left border-b border-gray-200 bg-gray-50">공종명 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
+              <th class="px-2 py-2 text-center border-b border-gray-200 bg-gray-50" style="width:56px">단위</th>
+              <th class="px-2 py-2 text-right border-b border-gray-200 bg-gray-50" style="width:120px">단가 (원)</th>
+              <th class="border-b border-gray-200 bg-gray-50" style="width:36px"></th>
+              </tr>
+            </thead>
             <tbody id="up-cable-tbody">${mkPriceRows(cablePrices)}</tbody>
           </table>
           </div>
@@ -31566,19 +31577,22 @@ async function renderUnitPricePage(container) {
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="px-4 py-3 bg-indigo-50 border-b border-indigo-100 text-xs text-indigo-700">
             * 접속 공종의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 접속 금액 계산에 반영됩니다.<br>
-            <span class="text-indigo-500">야간·신호수배치 추가금액은 일보 작성 시 야간/신호수배치 체크 여부에 따라 기본단가에 더해집니다.</span>
+            <span class="text-indigo-500">야간·신호수배치 추가금액은 일보 작성 시 야간/신호수배치 체크 여부에 따라 기본단가에 더해집니다.</span><br>
+            <span class="text-orange-500"><i class="fas fa-exclamation-circle mr-1"></i>주황색 행은 공종명 미입력 — 클릭하여 수정 후 저장하세요.</span>
           </div>
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto" style="max-height:60vh;overflow-y:auto">
           <table class="w-full text-sm" style="table-layout:auto;min-width:520px">
-            <thead><tr class="bg-gray-50 text-gray-600 text-xs">
-              <th class="px-2 py-2 text-left border-b border-gray-100" style="width:90px">공종키</th>
-              <th class="px-2 py-2 text-left border-b border-gray-100">공종명 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
-              <th class="px-2 py-2 text-center border-b border-gray-100" style="width:52px">단위</th>
-              <th class="px-2 py-2 text-right border-b border-gray-100" style="width:100px">기본 (원)</th>
-              <th class="px-2 py-2 text-right border-b border-gray-100 bg-blue-50" style="width:100px">야간 (원)</th>
-              <th class="px-2 py-2 text-right border-b border-gray-100 bg-green-50" style="width:100px">신호수 (원)</th>
-              <th class="border-b border-gray-100" style="width:36px"></th>
-            </tr></thead>
+            <thead style="position:sticky;top:0;z-index:10">
+              <tr class="text-gray-600 text-xs">
+              <th class="px-2 py-2 text-left border-b border-gray-200 bg-gray-50" style="width:90px">공종키</th>
+              <th class="px-2 py-2 text-left border-b border-gray-200 bg-gray-50">공종명 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
+              <th class="px-2 py-2 text-center border-b border-gray-200 bg-gray-50" style="width:52px">단위</th>
+              <th class="px-2 py-2 text-right border-b border-gray-200 bg-gray-50" style="width:100px">기본 (원)</th>
+              <th class="px-2 py-2 text-right border-b border-gray-200 bg-blue-50" style="width:100px">야간 (원)</th>
+              <th class="px-2 py-2 text-right border-b border-gray-200 bg-green-50" style="width:100px">신호수 (원)</th>
+              <th class="border-b border-gray-200 bg-gray-50" style="width:36px"></th>
+              </tr>
+            </thead>
             <tbody id="up-splice-tbody">${mkSplicePriceRows(splicePrices)}</tbody>
           </table>
           </div>
@@ -31668,22 +31682,34 @@ async function _upAddCableItem() {
     toast(`'${label}' 공종이 추가되었습니다.`);
     if (labelEl) labelEl.value = '';
     if (priceEl) priceEl.value = '';
-    // 테이블에 즉시 행 추가
+    // 테이블에 즉시 행 추가 — 열 순서: 공종키|공종명|단위|단가|삭제 (FEAT-039 기준)
     const tbody = document.getElementById('up-cable-tbody');
     if (tbody) {
       const tr = document.createElement('tr');
-      tr.className = 'border-b border-gray-50 hover:bg-gray-50 group';
+      tr.className = 'border-b border-gray-50 hover:bg-gray-50';
       tr.dataset.key = item_key;
       tr.innerHTML = `
-        <td class="px-4 py-2 text-gray-700 font-medium text-sm">${label}</td>
-        <td class="px-4 py-2 text-right">
+        <td class="px-2 py-1.5" style="width:90px;min-width:80px">
+          <span class="text-xs text-gray-400 font-mono">${item_key}</span>
+        </td>
+        <td class="px-2 py-1.5" style="min-width:120px">
+          <input type="text" maxlength="40"
+            class="up-cable-label-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
+            data-key="${item_key}" value="${label.replace(/"/g,'&quot;')}" placeholder="공종명">
+        </td>
+        <td class="px-2 py-1.5 text-center" style="width:56px;min-width:48px">
+          <input type="text" maxlength="10"
+            class="up-cable-unit-input w-full border border-transparent rounded-lg px-1 py-1 text-sm text-center text-gray-500 focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
+            data-key="${item_key}" value="식" placeholder="단위">
+        </td>
+        <td class="px-2 py-1.5 text-right" style="width:120px;min-width:100px">
           <input type="number" min="0" step="100"
-            class="up-cable-input w-36 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
+            class="up-cable-input w-full border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
             data-key="${item_key}" value="${price}">
         </td>
-        <td class="px-3 py-2 text-center w-10">
+        <td class="px-2 py-1.5 text-center" style="width:36px">
           <button onclick="_upDeleteCableItem('${item_key}','${label}')"
-            class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
+            class="text-gray-300 hover:text-red-500 text-sm transition">
             <i class="fas fa-trash-alt"></i>
           </button>
         </td>`;
@@ -31733,32 +31759,44 @@ async function _upAddSpliceItem() {
     if (labelEl) labelEl.value = '';
     if (unitEl)  unitEl.value  = '';
     if (priceEl) priceEl.value = '';
-    // 테이블에 즉시 행 추가
+    // 테이블에 즉시 행 추가 — 열 순서: 공종키|공종명|단위|기본|야간|신호수|삭제 (BUG-065 기준)
     const tbody = document.getElementById('up-splice-tbody');
     if (tbody) {
       const tr = document.createElement('tr');
-      tr.className = 'border-b border-gray-50 hover:bg-indigo-50 group';
+      tr.className = 'border-b border-gray-50 hover:bg-indigo-50';
       tr.dataset.key = item_key;
       tr.innerHTML = `
-        <td class="px-4 py-2 text-gray-700 font-medium text-sm">${label}</td>
-        <td class="px-4 py-2 text-right">
+        <td class="px-2 py-1.5" style="width:90px;min-width:80px">
+          <span class="text-xs text-gray-400 font-mono">${item_key}</span>
+        </td>
+        <td class="px-2 py-1.5" style="min-width:100px">
+          <input type="text" maxlength="40"
+            class="up-splice-label-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-indigo-300 focus:bg-indigo-50 hover:border-gray-200 bg-transparent"
+            data-key="${item_key}" value="${label.replace(/"/g,'&quot;')}" placeholder="공종명">
+        </td>
+        <td class="px-2 py-1.5 text-center" style="width:52px;min-width:44px">
+          <input type="text" maxlength="10"
+            class="up-splice-unit-input w-full border border-transparent rounded-lg px-1 py-1 text-sm text-center text-gray-500 focus:outline-none focus:border-indigo-300 focus:bg-indigo-50 hover:border-gray-200 bg-transparent"
+            data-key="${item_key}" value="${unit.replace(/"/g,'&quot;')}" placeholder="단위">
+        </td>
+        <td class="px-2 py-1.5 text-right" style="width:100px;min-width:88px">
           <input type="number" min="0" step="100"
-            class="up-splice-input w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300"
+            class="up-splice-input w-full border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300"
             data-key="${item_key}" value="${price}">
         </td>
-        <td class="px-4 py-2 text-right">
+        <td class="px-2 py-1.5 text-right" style="width:100px;min-width:88px">
           <input type="number" min="0" step="100"
-            class="up-splice-input-night w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 text-gray-300"
+            class="up-splice-input-night w-full border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 text-gray-300"
             data-key="${item_key}" value="0" placeholder="0" onfocus="this.classList.remove('text-gray-300')">
         </td>
-        <td class="px-4 py-2 text-right">
+        <td class="px-2 py-1.5 text-right" style="width:100px;min-width:88px">
           <input type="number" min="0" step="100"
-            class="up-splice-input-aerial w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 text-gray-300"
+            class="up-splice-input-aerial w-full border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 text-gray-300"
             data-key="${item_key}" value="0" placeholder="0" onfocus="this.classList.remove('text-gray-300')">
         </td>
-        <td class="px-3 py-2 text-center w-10">
+        <td class="px-2 py-1.5 text-center" style="width:36px">
           <button onclick="_upDeleteSpliceItem('${item_key}','${label}')"
-            class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
+            class="text-gray-300 hover:text-red-500 text-sm transition">
             <i class="fas fa-trash-alt"></i>
           </button>
         </td>`;

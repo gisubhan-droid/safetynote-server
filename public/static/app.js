@@ -17711,7 +17711,7 @@ async function renderRiskItemsPage(container) {
           }
         </div>
 
-        ${(['admin','manager','supervisor'].includes(currentUser?.role)) ? `<div id="ri-diag-panel" class="mt-4"></div>` : ''}
+        <div id="ri-diag-panel" class="mt-4" style="display:none"></div>
       </div>
     `;
 
@@ -17732,13 +17732,14 @@ async function renderRiskItemsPage(container) {
       }
     });
 
-    // 관리자/매니저/감독자 전용: DB 진단 정보 비동기 로드 (BUG-076 디버깅)
-    if ((['admin','manager','supervisor'].includes(currentUser?.role)) && document.getElementById('ri-diag-panel')) {
+    // DB 진단 정보 비동기 로드 — API가 403이면 자동 숨김 (권한 없는 계정)
+    {
       try {
         const diagRes = await API.get('/diagnostics/risk-db');
         const d = diagRes.data || {};
         const el = document.getElementById('ri-diag-panel');
         if (!el) return;
+        el.style.display = ''; // 권한 있는 경우만 표시
         const totalItems  = d.counts?.risk_assessment_items ?? 0;
         const activeItems = d.counts?.items_active ?? 0;
         const ok = totalItems > 0 && activeItems > 0;
@@ -17827,7 +17828,16 @@ async function renderRiskItemsPage(container) {
               </div>
             </details>` : ''}
           </div>`;
-      } catch(diagErr) { /* 진단 실패는 무시 */ }
+      } catch(diagErr) {
+        // 403 = 권한없음, 패널 계속 숨김. 그외 오류는 간단 메시지
+        const el = document.getElementById('ri-diag-panel');
+        if (el && diagErr?.response?.status !== 403) {
+          el.style.display = '';
+          el.innerHTML = `<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;font-size:11px;color:#DC2626">
+            <i class="fas fa-exclamation-triangle mr-1"></i>진단 API 오류: ${diagErr?.message || '알 수 없는 오류'}
+          </div>`;
+        }
+      }
     }
 
   } catch(e) {

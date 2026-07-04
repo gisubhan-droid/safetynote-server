@@ -3081,7 +3081,9 @@ app.route('/api/risk', riskRoutes)
 // GET /api/diagnostics/risk-db — risk 관련 테이블 상태 + work_type별 항목 수 상세
 app.get('/api/diagnostics/risk-db', async (c) => {
   const user = getUser(c)
-  if (!user || !['admin','manager'].includes(user.role)) return c.json({ error: '관리자만 사용 가능' }, 403)
+  if (!user) return c.json({ error: '로그인 필요' }, 401)
+  // worker 제외, admin/supervisor/manager 모두 허용
+  if (user.role === 'worker') return c.json({ error: '관리자만 사용 가능' }, 403)
   try {
     const tables = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[]).map((r: any) => r.name)
     const hasCats  = tables.includes('work_categories')
@@ -5054,13 +5056,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260704i">
+  <link rel="stylesheet" href="/static/style.css?v=20260704j">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260704i"></script>
+  <script src="/static/app.js?v=20260704j"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260704i"></script>
+  <script src="/static/mobile-app.js?v=20260704j"></script>
 </body>
 </html>`)
 })

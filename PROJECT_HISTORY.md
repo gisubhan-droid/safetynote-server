@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-04 (세션 101)
-> **서버 현재 버전: `1410b65`** ← 최신 (GitHub) — BUG-073 patchSchema v0.148
-> **NAS 배포 버전: `1410b65`** ← 최신 적용 완료
+> 최종 업데이트: 2026-07-04 (세션 102)
+> **서버 현재 버전: `9088ddc`** ← 최신 (GitHub) — BUG-074 GET /:id 라우트 순서 수정
+> **NAS 배포 버전: `1410b65`** ← git pull 필요
 > **캐시 버전: v=20260704c**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
@@ -18,6 +18,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-074 | 102 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 브라우저 404 — `src/routes/risk.ts`에서 `app.get('/:id', ...)` 라우트가 83번째 줄에 등록되어 이후의 `work-categories`, `work-types`, `items/by-work-type` 등 모든 GET 경로를 선점(Hono는 등록 순서 우선) → curl 직접 호출은 401(API 존재) 이지만 브라우저 인증 요청은 `/:id`에서 매칭되어 DB 조회 후 404 반환 → `/:id` 라우트를 파일 맨 끝(1070번째)으로 이동 | `9088ddc` |
 | BUG-073 | 101 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 404 — FEAT-045/046 추가 테이블(`work_categories`/`work_types`/`risk_assessment_items`)이 NAS `patchSchema`에 누락 → DB 테이블 미존재 → `patchSchema v0.148`에 `CREATE TABLE IF NOT EXISTS` 3개 추가 / `fix_nas_duplicates_v2.sql`로 중복 72→18건 정리 / `patch_v0148.js` 긴급 패치 스크립트 추가 | `1410b65` |
 | BUG-072 | 101 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 NAS 미업데이트 시 `Promise.all` → 페이지 전체 오류 — `Promise.allSettled`로 변경 + 업데이트 안내 배너 표시 | `c4db7c8` |
 | BUG-071 | 99 | 2026-07-04 | ✅ 수정 | 전체 화면 반응형 레이아웃 — `app.js` 내 39개 페이지 컨테이너 `max-w-{xl~6xl} mx-auto` → `.page-container` 통일 / `style.css`에 `page-container` 반응형 규칙 추가: 모바일(100%), 태블릿(100%), 데스크톱(최대 1280px), 와이드(최대 1600px) / `space-y` CSS 포함 | `082eb54` |

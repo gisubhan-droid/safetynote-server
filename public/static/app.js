@@ -31409,27 +31409,30 @@ async function renderUnitPricePage(container) {
     const cablePrices  = cableRes.data.prices  || [];
     const splicePrices = spliceRes.data.prices || [];
 
-    // ── 외선 공종 행 생성 (공종명편집 + 단가 + 단위편집 + 삭제버튼) — BUG-066 반응형
+    // ── 외선 공종 행 생성 (공종키|공종명|단위|단가|삭제) — FEAT-039
     const mkPriceRows = (prices) => prices.map(p => `
-      <tr class="border-b border-gray-50 hover:bg-gray-50 group" data-key="${p.item_key}">
+      <tr class="border-b border-gray-50 hover:bg-gray-50" data-key="${p.item_key}">
+        <td class="px-2 py-1.5" style="width:90px;min-width:80px">
+          <span class="text-xs text-gray-400 font-mono">${p.item_key}</span>
+        </td>
         <td class="px-2 py-1.5" style="min-width:120px">
           <input type="text" maxlength="40"
             class="up-cable-label-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
-            data-key="${p.item_key}" value="${p.item_label.replace(/"/g,'&quot;')}" placeholder="공종명">
-        </td>
-        <td class="px-2 py-1.5 text-right" style="width:120px;min-width:100px">
-          <input type="number" min="0" step="100"
-            class="up-cable-input w-full border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
-            data-key="${p.item_key}" value="${p.unit_price || 0}">
+            data-key="${p.item_key}" value="${(p.item_label||'').replace(/"/g,'&quot;')}" placeholder="공종명">
         </td>
         <td class="px-2 py-1.5 text-center" style="width:56px;min-width:48px">
           <input type="text" maxlength="10"
             class="up-cable-unit-input w-full border border-transparent rounded-lg px-1 py-1 text-sm text-center text-gray-500 focus:outline-none focus:border-pink-300 focus:bg-pink-50 hover:border-gray-200 bg-transparent"
             data-key="${p.item_key}" value="${(p.unit||'식').replace(/"/g,'&quot;')}" placeholder="단위">
         </td>
+        <td class="px-2 py-1.5 text-right" style="width:120px;min-width:100px">
+          <input type="number" min="0" step="100"
+            class="up-cable-input w-full border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-pink-300"
+            data-key="${p.item_key}" value="${p.unit_price || 0}">
+        </td>
         <td class="px-2 py-1.5 text-center" style="width:36px">
-          <button onclick="_upDeleteCableItem('${p.item_key}','${p.item_label}')"
-            class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
+          <button onclick="_upDeleteCableItem('${p.item_key}','${(p.item_label||p.item_key)}')"
+            class="text-gray-300 hover:text-red-500 text-sm transition">
             <i class="fas fa-trash-alt"></i>
           </button>
         </td>
@@ -31470,7 +31473,7 @@ async function renderUnitPricePage(container) {
         </td>
         <td class="px-2 py-1.5 text-center" style="width:36px">
           <button onclick="_upDeleteSpliceItem('${p.item_key}','${p.item_label}')"
-            class="opacity-0 group-hover:opacity-100 transition text-gray-300 hover:text-red-500 text-sm">
+            class="text-gray-300 hover:text-red-500 text-sm transition">
             <i class="fas fa-trash-alt"></i>
           </button>
         </td>
@@ -31507,11 +31510,12 @@ async function renderUnitPricePage(container) {
             * 외선 공종의 단가를 수정 후 <strong>저장</strong>을 눌러주세요. 물량통계 금액 계산에 반영됩니다.
           </div>
           <div class="overflow-x-auto">
-          <table class="w-full text-sm" style="table-layout:auto;min-width:300px">
+          <table class="w-full text-sm" style="table-layout:auto;min-width:360px">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
-              <th class="px-2 py-2 text-left border-b border-gray-100">공종 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
-              <th class="px-2 py-2 text-right border-b border-gray-100" style="width:120px">단가 (원)</th>
+              <th class="px-2 py-2 text-left border-b border-gray-100" style="width:90px">공종키</th>
+              <th class="px-2 py-2 text-left border-b border-gray-100">공종명 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
               <th class="px-2 py-2 text-center border-b border-gray-100" style="width:56px">단위</th>
+              <th class="px-2 py-2 text-right border-b border-gray-100" style="width:120px">단가 (원)</th>
               <th class="border-b border-gray-100" style="width:36px"></th>
             </tr></thead>
             <tbody id="up-cable-tbody">${mkPriceRows(cablePrices)}</tbody>

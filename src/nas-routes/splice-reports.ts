@@ -455,6 +455,17 @@ export function createSpliceUnitPricesRoutes() {
       const dataLines = lines.slice(1)
       let upserted = 0, skipped = 0
 
+      // ── 공종키 접두어 검증: 접속은 반드시 'b'로 시작해야 함 ──
+      const parsed = dataLines.map(l => parseCSVLine(l))
+      const invalidKeys = parsed
+        .map(cols => (cols[iKey] || '').trim())
+        .filter(k => k && !k.toLowerCase().startsWith('b'))
+      if (invalidKeys.length > 0) {
+        return c.json({
+          error: `접속 단가 파일 오류: 공종키는 반드시 'b'로 시작해야 합니다.\n잘못된 공종키: ${invalidKeys.slice(0,5).join(', ')}${invalidKeys.length > 5 ? ` 외 ${invalidKeys.length - 5}건` : ''}\n(외선 단가는 외선 탭에서 업로드하세요)`
+        }, 400)
+      }
+
       const maxSort = (rawDb.prepare(`SELECT MAX(sort_order) AS m FROM splice_unit_prices`).get() as any)?.m || 0
       const stmtUpsert = rawDb.prepare(`
         INSERT INTO splice_unit_prices (item_key, item_label, unit, unit_price, night_price, aerial_price, sort_order)
@@ -481,7 +492,6 @@ export function createSpliceUnitPricesRoutes() {
         })
       })
 
-      const parsed = dataLines.map(l => parseCSVLine(l))
       doImport(parsed)
 
       return c.json({ ok: true, upserted, skipped, total: dataLines.length })

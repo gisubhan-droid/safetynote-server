@@ -15249,7 +15249,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
     container.innerHTML = '<p class="text-red-500 p-4">관리자 권한이 필요합니다.</p>';
     return;
   }
-  container.innerHTML = `<div class="max-w-3xl mx-auto"><div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="w-full"><div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i></div></div>`;
 
   try {
     const [settRes, folderRes] = await Promise.all([
@@ -15277,7 +15277,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
     const firstTab = _activeTab || 'push';
 
     container.innerHTML = `
-    <div class="max-w-3xl mx-auto space-y-4">
+    <div class="w-full space-y-4 px-2">
 
       <!-- 헤더 -->
       <div class="flex items-center gap-3 mb-1">
@@ -15291,12 +15291,12 @@ async function renderAdminSettingsPage(container, _activeTab) {
       </div>
 
       <!-- 탭 네비게이션 -->
-      <div class="flex gap-1.5 overflow-x-auto pb-1" id="settings-main-tabs">
+      <div class="flex flex-wrap gap-1.5 pb-1" id="settings-main-tabs">
         ${TABS.map((t, i) => `
           <button type="button"
             id="stab-${t.key}"
             onclick="switchSettingsTab('${t.key}')"
-            class="settings-main-tab flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all border
+            class="settings-main-tab flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all border
               ${t.key === firstTab
                 ? `bg-blue-600 text-white border-blue-600 shadow`
                 : `bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600`}">
@@ -15307,7 +15307,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
       <!-- ────────────────────────────────────────────────── -->
       <!-- TAB: 푸시 알림 발송                               -->
       <!-- ────────────────────────────────────────────────── -->
-      <div id="spanel-push" class="settings-panel space-y-4 ${firstTab !== 'push' ? 'hidden' : ''}">
+      <div id="spanel-push" class="settings-panel grid grid-cols-1 gap-4 ${firstTab !== 'push' ? 'hidden' : ''}">
 
         <!-- FCM 토큰 현황 -->
         <div class="bg-white rounded-2xl shadow-sm p-5 border border-blue-100">
@@ -15354,10 +15354,10 @@ async function renderAdminSettingsPage(container, _activeTab) {
       <!-- ────────────────────────────────────────────────── -->
       <!-- TAB: 파일 설정                                     -->
       <!-- ────────────────────────────────────────────────── -->
-      <div id="spanel-files" class="settings-panel space-y-4 ${firstTab !== 'files' ? 'hidden' : ''}">
+      <div id="spanel-files" class="settings-panel grid grid-cols-1 xl:grid-cols-2 gap-4 ${firstTab !== 'files' ? 'hidden' : ''}">
 
         <!-- 첨부파일 설정 -->
-        <div class="bg-white rounded-2xl shadow-sm p-5">
+        <div class="bg-white rounded-2xl shadow-sm p-5 xl:col-span-2">
           <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
             <i class="fas fa-paperclip text-blue-500"></i> 첨부파일 설정
           </h3>
@@ -15571,7 +15571,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
       <!-- ────────────────────────────────────────────────── -->
       <!-- TAB: GPS 주소 변환                                 -->
       <!-- ────────────────────────────────────────────────── -->
-      <div id="spanel-gps" class="settings-panel space-y-4 ${firstTab !== 'gps' ? 'hidden' : ''}">
+      <div id="spanel-gps" class="settings-panel grid grid-cols-1 gap-4 ${firstTab !== 'gps' ? 'hidden' : ''}">
         <div class="bg-white rounded-2xl shadow-sm p-5">
           <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
             <i class="fas fa-map-marker-alt text-red-500"></i> GPS 주소 변환 설정
@@ -15627,7 +15627,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
       <!-- ────────────────────────────────────────────────── -->
       <!-- TAB: APK 배포 관리                                 -->
       <!-- ────────────────────────────────────────────────── -->
-      <div id="spanel-apk" class="settings-panel space-y-4 ${firstTab !== 'apk' ? 'hidden' : ''}">
+      <div id="spanel-apk" class="settings-panel grid grid-cols-1 gap-4 ${firstTab !== 'apk' ? 'hidden' : ''}">
         <div class="bg-white rounded-2xl shadow-sm p-5 border border-green-100">
           <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
             <i class="fab fa-android text-green-500"></i> Android APK 배포 관리
@@ -15738,7 +15738,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
       <!-- ────────────────────────────────────────────────── -->
       <!-- TAB: 서버 업데이트 (Phase 5)                      -->
       <!-- ────────────────────────────────────────────────── -->
-      <div id="spanel-update" class="settings-panel space-y-4 ${firstTab !== 'update' ? 'hidden' : ''}">
+      <div id="spanel-update" class="settings-panel grid grid-cols-1 xl:grid-cols-2 gap-4 ${firstTab !== 'update' ? 'hidden' : ''}">
 
         <!-- 업데이트 모드 선택 -->
         <div class="bg-white rounded-2xl shadow-sm p-5">
@@ -15838,11 +15838,11 @@ async function renderAdminSettingsPage(container, _activeTab) {
         </div>
 
         <!-- 로그 영역 -->
-        <div class="bg-white rounded-2xl shadow-sm p-5">
+        <div class="bg-white rounded-2xl shadow-sm p-5 xl:row-span-3">
           <h3 class="font-bold text-gray-700 mb-2 flex items-center gap-2 text-sm">
             <i class="fas fa-terminal text-gray-400"></i> 실행 로그
           </h3>
-          <div id="upd-log" class="bg-gray-900 rounded-xl p-3 font-mono text-xs text-green-400 min-h-16 max-h-48 overflow-y-auto whitespace-pre-wrap">
+          <div id="upd-log" class="bg-gray-900 rounded-xl p-3 font-mono text-xs text-green-400 min-h-16 xl:min-h-72 max-h-96 overflow-y-auto whitespace-pre-wrap">
             <span class="text-gray-500">버전 확인 버튼을 누르면 로그가 표시됩니다.</span>
           </div>
         </div>
@@ -15850,7 +15850,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
       </div>
 
       <!-- TAB: 그룹별 권한 설정 (FEAT-027) -->
-      <div id="spanel-grpperm" class="settings-panel space-y-4 ${firstTab !== 'grpperm' ? 'hidden' : ''}">
+      <div id="spanel-grpperm" class="settings-panel grid grid-cols-1 gap-4 ${firstTab !== 'grpperm' ? 'hidden' : ''}">
         <div class="bg-white rounded-2xl shadow-sm p-5 border border-indigo-100">
           <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
             <i class="fas fa-users-cog text-indigo-500"></i> 그룹별 권한 설정
@@ -15868,7 +15868,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
       </div>
 
       <!-- TAB: LGU+ 권한 설정 -->
-      <div id="spanel-lgu" class="settings-panel space-y-4 ${firstTab !== 'lgu' ? 'hidden' : ''}">
+      <div id="spanel-lgu" class="settings-panel grid grid-cols-1 xl:grid-cols-2 gap-4 ${firstTab !== 'lgu' ? 'hidden' : ''}">
         ${(function(){
           var lguMenuItems = [
             { key:'lgu_menu_dashboard',     label:'작업현황',      defaultOn:true  },
@@ -15915,7 +15915,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
             + '</div>';
         })()}
       </div>
-      <div id="spanel-info" class="settings-panel space-y-4 ${firstTab !== 'info' ? 'hidden' : ''}">
+      <div id="spanel-info" class="settings-panel grid grid-cols-1 xl:grid-cols-2 gap-4 ${firstTab !== 'info' ? 'hidden' : ''}">
 
         <!-- 서버 정보 -->
         <div class="bg-white rounded-2xl shadow-sm p-5">

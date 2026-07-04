@@ -279,6 +279,7 @@ const MENU_DEFINITIONS = [
   { id:'inspections',      label:'현장점검',         icon:'fas fa-search',            group:'메인' },
   { id:'risk-periodic',    label:'정기 위험성평가',   icon:'fas fa-calendar-check',    group:'위험성평가' },
   { id:'risk-adhoc',       label:'수시 위험성평가',   icon:'fas fa-bolt',              group:'위험성평가' },
+  { id:'risk-items',       label:'분류별 항목 관리',  icon:'fas fa-list-check',        group:'위험성평가' },
   { id:'hazards',          label:'위험(아차사고)신고',    icon:'fas fa-exclamation-triangle',group:'안전' },
   { id:'work-stops',       label:'작업중지현황',         icon:'fas fa-hand-paper',           group:'안전' },
   { id:'stats-task',          label:'작업통계',            icon:'fas fa-tasks',              group:'안전현황' },
@@ -2084,6 +2085,7 @@ function renderApp() {
     { id:'risk', icon:'fas fa-shield-alt', label:'위험성평가', group:'안전관리', children: [
       { id:'risk-periodic', icon:'fas fa-calendar-check', label:'정기 위험성평가' },
       { id:'risk-adhoc',    icon:'fas fa-bolt',           label:'수시 위험성평가' },
+      { id:'risk-items',    icon:'fas fa-list-check',     label:'분류별 항목 관리' },
     ]},
     { id:'edu', icon:'fas fa-graduation-cap', label:'안전교육', group:'안전관리', children: [
       { id:'edu-periodic',   icon:'fas fa-chalkboard-teacher', label:'정기안전교육' },
@@ -2769,7 +2771,7 @@ function getPageTitle(page) {
     users: '업무중사용자', 'suspended-users': '업무중지사용자', 'my-stats': '내 작업통계', 'hazard-report': '위험신고',
     'admin-settings': '시스템 설정',
     'legal-notices': '법령안내 관리',
-    'risk': '위험성평가', 'risk-periodic': '정기 위험성평가', 'risk-adhoc': '수시 위험성평가',
+    'risk': '위험성평가', 'risk-periodic': '정기 위험성평가', 'risk-adhoc': '수시 위험성평가', 'risk-items': '분류별 항목 관리',
     'periodic-risk': '위험성평가', 'checklist-risk': '작업 위험성평가(체크리스트)',
     'teams': '현장팀관리',
     'sys-user-mgmt': '계정관리',
@@ -2900,6 +2902,7 @@ function navigateTo(page) {
     case 'risk': navigateTo('risk-periodic'); return;
     case 'risk-periodic': renderRiskPeriodicPage(content); break;
     case 'risk-adhoc': renderRiskAdhocPage(content); break;
+    case 'risk-items': renderRiskItemsPage(content); break;
     case 'work-stops': renderWorkStopsPage(content); break;
     case 'periodic-risk': renderRiskPeriodicPage(content); break;
     case 'checklist-risk': renderChecklistRiskPage(content); break;
@@ -17323,10 +17326,7 @@ async function renderRiskPage(container, mode) {
       // 수시 페이지: adhoc + 기존 작업별(task) 위험성평가 모두 조회
       historyPromise = API.get('/risk').catch(() => ({ data: [] }));
     }
-    const [historyRes, summaryRes] = await Promise.all([
-      historyPromise,
-      API.get('/risk/items/summary').catch(() => ({ data: [] }))
-    ]);
+    const historyRes = await historyPromise;
 
     // axios는 response.data에 body가 들어있음
     let allRisks = Array.isArray(historyRes.data) ? historyRes.data : [];
@@ -17334,14 +17334,6 @@ async function renderRiskPage(container, mode) {
     if (mode === 'adhoc') {
       allRisks = allRisks.filter(r => r.assessment_type !== 'periodic');
     }
-    const summary  = Array.isArray(summaryRes.data)  ? summaryRes.data  : [];
-
-    // 카테고리별 그룹
-    const catMap = {};
-    summary.forEach(s => {
-      if (!catMap[s.category_name]) catMap[s.category_name] = [];
-      catMap[s.category_name].push(s);
-    });
 
     container.innerHTML = `
     <div class="page-container">
@@ -17363,19 +17355,16 @@ async function renderRiskPage(container, mode) {
       <!-- 탭 전환 -->
       <div id="legal-banner-risk_assessment" style="min-height:0"></div>
       <div class="flex border-b border-gray-200 mb-5">
-        <button id="rtab-history" onclick="switchRiskTab('history','${mode}')"
-          class="px-4 py-2 text-sm font-semibold border-b-2 -mb-px" style="border-color:${modeAccent};color:${modeAccent}">
+        <div class="px-4 py-2 text-sm font-semibold border-b-2 -mb-px" style="border-color:${modeAccent};color:${modeAccent}">
           <i class="fas fa-history mr-1"></i>평가 이력
           <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full" style="background:${modeLighter};color:${modeText}">${allRisks.length}</span>
-        </button>
-        <button id="rtab-items" onclick="switchRiskTab('items','${mode}')"
-          class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 -mb-px">
-          <i class="fas fa-list-check mr-1"></i>분류별 항목 조회
-          <span class="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">${summary.length}</span>
-        </button>
+        </div>
+        ${!isWorker ? `<button onclick="navigateTo('risk-items')" class="ml-auto px-3 py-2 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
+          <i class="fas fa-list-check"></i> 분류별 항목 관리
+        </button>` : ''}
       </div>
 
-      <!-- ① 평가 이력 탭 -->
+      <!-- 평가 이력 -->
       <div id="rsection-history">
         ${allRisks.length === 0
           ? `<div class="empty-state">
@@ -17423,97 +17412,14 @@ async function renderRiskPage(container, mode) {
         </div>`;
           }).join('')}
       </div>
-
-      <!-- ② 분류별 항목 조회 탭 -->
-      <div id="rsection-items" class="hidden">
-        <!-- 툴바: 엑셀 다운로드/업로드 + 작업유형 관리 -->
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <div class="text-xs text-gray-500">작업유형별 표준 위험성평가 항목 — 유형을 클릭하면 세부 항목을 확인합니다.</div>
-          ${!isWorker ? `
-          <div class="flex flex-wrap gap-2">
-            <a href="/api/risk/items/template" download="risk_items_template.csv"
-              class="btn btn-outline text-xs px-3 py-1.5 flex items-center gap-1" style="color:#059669;border-color:#059669">
-              <i class="fas fa-file-excel"></i> 양식 다운로드
-            </a>
-            <button onclick="showRiskItemImportModal()" class="btn text-xs px-3 py-1.5 flex items-center gap-1"
-              style="background:#059669;color:#fff;border:none">
-              <i class="fas fa-upload"></i> 엑셀 업로드
-            </button>
-            <button onclick="showRiskWorkTypeModal()" class="btn btn-outline text-xs px-3 py-1.5 flex items-center gap-1"
-              style="color:${modeAccent};border-color:${modeAccent}">
-              <i class="fas fa-plus"></i> 유형 관리
-            </button>
-          </div>` : ''}
-        </div>
-        <!-- 대분류 필터 -->
-        <div class="flex flex-wrap gap-2 mb-4">
-          <button onclick="filterRiskCat('all',this)" class="risk-cat-btn btn btn-primary text-xs px-3 py-1">전체</button>
-          ${Object.keys(catMap).map(cat => `
-            <button onclick="filterRiskCat('${cat.replace(/'/g,"\\'")}',this)" class="risk-cat-btn btn btn-outline text-xs px-3 py-1">${cat}</button>
-          `).join('')}
-        </div>
-        <!-- 유형 카드 -->
-        <div id="riskCatList">
-          ${Object.entries(catMap).map(([cat, types]) => `
-          <div class="risk-cat-block mb-4" data-cat="${cat}">
-            <div class="flex items-center gap-2 mb-2 px-1">
-              <i class="fas fa-folder" style="color:${modeAccent}"></i>
-              <span class="font-semibold text-sm text-gray-700">${cat}</span>
-              <span class="text-xs text-gray-400">${types.length}개 유형</span>
-            </div>
-            <div class="grid md:grid-cols-2 gap-2">
-              ${types.map(t => `
-              <div class="card py-3 px-4 flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer"
-                onclick="showRiskItemDetail(${t.work_type_id},'${t.work_type_name.replace(/'/g,"\\'")}')">
-                <div>
-                  <div class="font-medium text-sm text-gray-800">${t.work_type_name}</div>
-                  <div class="text-xs text-gray-400 mt-0.5">${t.work_type_code||''}</div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-xs px-2 py-1 rounded-full font-semibold" style="background:${modeLighter};color:${modeText}">${t.item_count}건</span>
-                  ${t.high_risk_count > 0 ? `<span class="text-xs bg-red-50 text-red-600 px-2 py-1 rounded-full font-semibold">⚠ ${t.high_risk_count}</span>` : ''}
-                  <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
-                </div>
-              </div>`).join('')}
-            </div>
-          </div>`).join('')}
-          ${summary.length === 0 ? `<div class="empty-state"><i class="fas fa-shield-alt text-4xl text-gray-300 mb-3"></i><p class="text-gray-500">등록된 위험성평가 항목이 없습니다.<br>엑셀 업로드로 항목을 추가하세요.</p></div>` : ''}
-        </div>
-      </div>
-    </div>`;
+    </div>
+    `;
     // 법령 배너 주입 (비동기)
     _injectLegalBanner('risk_assessment', 'legal-banner-risk_assessment');
   } catch(e) {
     console.error('renderRiskPage error:', e);
     container.innerHTML = `<div class="empty-state text-red-500"><p>${e.message || '오류가 발생했습니다.'}</p></div>`;
   }
-}
-
-// 탭 전환
-function switchRiskTab(tab, mode) {
-  // 브랜드 4색: 정기=보라(#685182), 수시=딥핑크(#D70072)
-  const accent  = mode === 'periodic' ? '#685182' : '#D70072';
-  const lighter = mode === 'periodic' ? '#EDE7F6' : '#FFE0F2';
-  const textC   = mode === 'periodic' ? '#4E3A63' : '#A8005A';
-  ['history','items'].forEach(t => {
-    const btn = document.getElementById(`rtab-${t}`);
-    const sec = document.getElementById(`rsection-${t}`);
-    if (!btn || !sec) return;
-    if (t === tab) {
-      btn.className = 'px-4 py-2 text-sm font-semibold border-b-2 -mb-px';
-      btn.style.borderColor = accent;
-      btn.style.color = accent;
-      // 카운트 뱃지 색상도 갱신
-      const badge = btn.querySelector('span');
-      if (badge) { badge.style.background = lighter; badge.style.color = textC; }
-      sec.classList.remove('hidden');
-    } else {
-      btn.className = 'px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 -mb-px';
-      btn.style.borderColor = '';
-      btn.style.color = '';
-      sec.classList.add('hidden');
-    }
-  });
 }
 
 // ─── 엑셀 업로드 모달 ────────────────────────────────────────────────────────
@@ -17587,7 +17493,7 @@ async function _doRiskItemImport() {
       setTimeout(() => {
         document.querySelector('.modal-overlay')?.remove();
         const mode = document.getElementById('rtab-items')?.dataset?.mode || 'periodic';
-        navigateTo(document.getElementById('page-risk-periodic') ? 'risk-periodic' : 'risk-adhoc');
+        navigateTo('risk-items');
       }, 1800);
     }
   } catch(e) {
@@ -17727,6 +17633,386 @@ async function showRiskWorkTypeModal() {
   };
 }
 
+// ─────────────────────────────────────────────────────────────
+// FEAT-046: 분류별 항목 관리 페이지
+// ─────────────────────────────────────────────────────────────
+async function renderRiskItemsPage(container) {
+  container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
+  try {
+    const [catRes, typeRes] = await Promise.all([
+      API.get('/risk/work-categories'),
+      API.get('/risk/work-types')
+    ]);
+    const cats = Array.isArray(catRes.data) ? catRes.data : [];
+    const types = Array.isArray(typeRes.data) ? typeRes.data : [];
+
+    const role = window._currentUser?.role || '';
+    const isWorker = role === 'worker';
+    const canEdit = !isWorker;
+
+    container.innerHTML = `
+      <div class="page-container space-y">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <i class="fas fa-list-check text-blue-500"></i>분류별 항목 관리
+          </h2>
+          ${canEdit ? `<button onclick="showRiskWorkTypeModal()" class="btn btn-outline text-xs px-3 py-1.5 flex items-center gap-1">
+            <i class="fas fa-cog"></i>작업유형 관리
+          </button>` : ''}
+        </div>
+
+        <!-- 대분류 필터 -->
+        <div class="flex flex-wrap gap-2 mb-4" id="ri-cat-filter">
+          <button onclick="riFilterCat('all',this)" class="risk-cat-btn btn btn-primary text-xs px-3 py-1">전체</button>
+          ${cats.map(cat => `<button onclick="riFilterCat('${cat.name.replace(/'/g,"\\'")}',this)" class="risk-cat-btn btn btn-outline text-xs px-3 py-1">${cat.name}</button>`).join('')}
+        </div>
+
+        <!-- 작업유형별 아코디언 -->
+        <div id="ri-type-list" class="space-y-2">
+          ${types.length === 0 ? '<p class="text-gray-400 text-sm py-8 text-center">등록된 작업유형이 없습니다.</p>' :
+            types.map(t => `
+              <div class="risk-cat-block border border-gray-200 rounded-lg overflow-hidden" data-cat="${t.category_name || ''}">
+                <div class="flex items-center justify-between px-4 py-3 bg-gray-50 cursor-pointer hover:bg-gray-100 ri-type-header"
+                     data-wt-id="${t.id}" data-wt-name="${(t.name||'').replace(/"/g,'&quot;')}" onclick="_riToggleType(${t.id}, this)">
+                  <div class="flex items-center gap-2">
+                    <i class="fas fa-chevron-right text-gray-400 text-xs ri-chevron transition-transform duration-200"></i>
+                    <span class="font-semibold text-gray-700 text-sm">${t.name}</span>
+                    ${t.category_name ? `<span class="text-xs text-gray-400 bg-gray-200 rounded px-2 py-0.5">${t.category_name}</span>` : ''}
+                  </div>
+                  <span class="text-xs text-gray-400 ri-count-badge" id="ri-count-${t.id}">
+                    <i class="fas fa-spinner fa-spin"></i>
+                  </span>
+                </div>
+                <div class="ri-item-panel hidden" id="ri-panel-${t.id}">
+                  <div class="p-3 text-center text-gray-400 text-sm">
+                    <i class="fas fa-spinner fa-spin mr-1"></i>로딩 중…
+                  </div>
+                </div>
+              </div>
+            `).join('')
+          }
+        </div>
+      </div>
+    `;
+
+    // 각 유형의 항목 수 비동기 로드
+    types.forEach(async t => {
+      try {
+        const res = await API.get(`/risk/items/by-work-type/${t.id}`);
+        const items = Array.isArray(res.data) ? res.data : [];
+        const badge = document.getElementById(`ri-count-${t.id}`);
+        if (badge) badge.textContent = `${items.length}건`;
+        // 패널에 캐시
+        const panel = document.getElementById(`ri-panel-${t.id}`);
+        if (panel) panel.dataset.loaded = '1';
+        panel._cachedItems = items;
+      } catch(e) {
+        const badge = document.getElementById(`ri-count-${t.id}`);
+        if (badge) badge.textContent = '-';
+      }
+    });
+
+  } catch(e) {
+    container.innerHTML = `<div class="page-container"><p class="text-red-500 p-6 text-center">데이터 로드 실패: ${e.message}</p></div>`;
+  }
+}
+
+// 대분류 필터 (risk-items 전용)
+function riFilterCat(cat, btn) {
+  document.querySelectorAll('#ri-cat-filter .risk-cat-btn').forEach(b => {
+    b.className = b.className.replace('btn-primary','btn-outline');
+  });
+  btn.className = btn.className.replace('btn-outline','btn-primary');
+  document.querySelectorAll('#ri-type-list .risk-cat-block').forEach(el => {
+    el.style.display = (cat === 'all' || el.dataset.cat === cat) ? '' : 'none';
+  });
+}
+
+// 유형 행 토글 + 항목 테이블 로드
+async function _riToggleType(workTypeId, headerEl) {
+  const panel = document.getElementById(`ri-panel-${workTypeId}`);
+  const chevron = headerEl.querySelector('.ri-chevron');
+  if (!panel) return;
+
+  const isOpen = !panel.classList.contains('hidden');
+  if (isOpen) {
+    panel.classList.add('hidden');
+    if (chevron) chevron.style.transform = '';
+    return;
+  }
+
+  panel.classList.remove('hidden');
+  if (chevron) chevron.style.transform = 'rotate(90deg)';
+
+  // 이미 로드된 경우 캐시 사용
+  if (panel.dataset.loaded === '1' && panel._cachedItems) {
+    _riRenderItemTable(panel, workTypeId, panel._cachedItems);
+    return;
+  }
+
+  panel.innerHTML = `<div class="p-3 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-1"></i>로딩 중…</div>`;
+  try {
+    const res = await API.get(`/risk/items/by-work-type/${workTypeId}`);
+    const items = Array.isArray(res.data) ? res.data : [];
+    panel._cachedItems = items;
+    panel.dataset.loaded = '1';
+    const badge = document.getElementById(`ri-count-${workTypeId}`);
+    if (badge) badge.textContent = `${items.length}건`;
+    _riRenderItemTable(panel, workTypeId, items);
+  } catch(e) {
+    panel.innerHTML = `<div class="p-3 text-red-400 text-sm text-center">로드 실패: ${e.message}</div>`;
+  }
+}
+
+// 항목 테이블 렌더링
+function _riRenderItemTable(panel, workTypeId, items) {
+  const role = window._currentUser?.role || '';
+  const canEdit = role !== 'worker';
+  const wtName = panel.closest('.risk-cat-block')?.querySelector('.ri-type-header')?.dataset?.wtName || '';
+
+  if (items.length === 0) {
+    panel.innerHTML = `
+      <div class="p-4 text-center">
+        <p class="text-gray-400 text-sm mb-3">등록된 항목이 없습니다.</p>
+        ${canEdit ? `<button onclick="_riAddItemModal(${workTypeId},'${wtName.replace(/'/g,"\\'")}',document.getElementById('ri-panel-${workTypeId}'))"
+          class="btn btn-primary text-xs px-3 py-1.5"><i class="fas fa-plus mr-1"></i>항목 추가</button>` : ''}
+      </div>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs border-collapse">
+        <thead>
+          <tr class="bg-blue-50 text-gray-600">
+            <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 w-8">#</th>
+            <th class="px-3 py-2 text-left font-semibold border-b border-gray-200">위험요인</th>
+            <th class="px-3 py-2 text-left font-semibold border-b border-gray-200 hidden sm:table-cell">안전대책</th>
+            <th class="px-3 py-2 text-center font-semibold border-b border-gray-200 w-16">위험도</th>
+            ${canEdit ? `<th class="px-3 py-2 text-center font-semibold border-b border-gray-200 w-20">관리</th>` : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item, idx) => {
+            const score = (item.likelihood || 1) * (item.severity || 1);
+            const scoreStyle = riskLevelStyleInline(score);
+            return `
+              <tr class="hover:bg-gray-50 border-b border-gray-100 ri-row" data-item-id="${item.id}">
+                <td class="px-3 py-2 text-gray-400">${idx+1}</td>
+                <td class="px-3 py-2 text-gray-700">${item.hazard || '-'}</td>
+                <td class="px-3 py-2 text-gray-500 hidden sm:table-cell">${item.countermeasure || '-'}</td>
+                <td class="px-3 py-2 text-center">
+                  <span class="inline-block px-1.5 py-0.5 rounded text-xs font-bold" style="${scoreStyle}">${score}</span>
+                </td>
+                ${canEdit ? `
+                <td class="px-3 py-2 text-center">
+                  <button onclick="_riEditItem(${item.id},${workTypeId})" class="text-xs text-blue-500 hover:text-blue-700 px-1.5 py-0.5 rounded border border-blue-200 hover:border-blue-400 mr-1">수정</button>
+                  <button onclick="_riDeleteItem(${item.id},${workTypeId},this.closest('tr'))" class="text-xs text-red-400 hover:text-red-600 px-1.5 py-0.5 rounded border border-red-200 hover:border-red-400">삭제</button>
+                </td>` : ''}
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      ${canEdit ? `
+      <div class="px-4 py-3 border-t border-gray-100 flex justify-end">
+        <button onclick="_riAddItemModal(${workTypeId},'${wtName.replace(/'/g,"\\'")}',document.getElementById('ri-panel-${workTypeId}'))"
+          class="btn btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
+          <i class="fas fa-plus"></i>항목 추가
+        </button>
+      </div>` : ''}
+    </div>`;
+}
+
+// 수정: 항목 데이터 로드 → 모달 표시
+async function _riEditItem(itemId, workTypeId) {
+  try {
+    const res = await API.get(`/risk/items/manage/${itemId}`);
+    _riShowEditModal(res.data, workTypeId);
+  } catch(e) {
+    // 항목 목록에서 찾기 (캐시 활용)
+    const panel = document.getElementById(`ri-panel-${workTypeId}`);
+    const cached = panel?._cachedItems;
+    if (cached) {
+      const item = cached.find(i => i.id === itemId);
+      if (item) { _riShowEditModal(item, workTypeId); return; }
+    }
+    toast('항목 정보를 불러오지 못했습니다.', 'error');
+  }
+}
+
+// 수정 모달 UI
+function _riShowEditModal(item, workTypeId) {
+  const existing = document.getElementById('ri-edit-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'ri-edit-modal';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <h3 class="text-base font-bold">위험성평가 항목 수정</h3>
+        <button onclick="document.getElementById('ri-edit-modal').remove()" class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div>
+          <label class="form-label">위험요인 <span class="text-red-500">*</span></label>
+          <input id="ri-edit-hazard" class="form-input" value="${(item.hazard||'').replace(/"/g,'&quot;')}" placeholder="위험요인을 입력하세요">
+        </div>
+        <div>
+          <label class="form-label">안전대책</label>
+          <textarea id="ri-edit-counter" class="form-input" rows="3" placeholder="안전대책을 입력하세요">${item.countermeasure||''}</textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="form-label">가능성 (1~5)</label>
+            <input id="ri-edit-likelihood" type="number" min="1" max="5" class="form-input" value="${item.likelihood||1}">
+          </div>
+          <div>
+            <label class="form-label">중대성 (1~5)</label>
+            <input id="ri-edit-severity" type="number" min="1" max="5" class="form-input" value="${item.severity||1}">
+          </div>
+        </div>
+        <div>
+          <label class="form-label">비고</label>
+          <input id="ri-edit-note" class="form-input" value="${(item.note||'').replace(/"/g,'&quot;')}" placeholder="비고 (선택)">
+        </div>
+      </div>
+      <div class="modal-footer flex justify-end gap-2">
+        <button onclick="document.getElementById('ri-edit-modal').remove()" class="btn btn-outline text-sm px-4">취소</button>
+        <button onclick="_riSaveEdit(${item.id},${workTypeId})" class="btn btn-primary text-sm px-4">저장</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+// 수정 저장
+async function _riSaveEdit(itemId, workTypeId) {
+  const hazard = document.getElementById('ri-edit-hazard')?.value?.trim();
+  if (!hazard) { toast('위험요인을 입력하세요.', 'error'); return; }
+  const body = {
+    hazard,
+    countermeasure: document.getElementById('ri-edit-counter')?.value?.trim() || '',
+    likelihood: parseInt(document.getElementById('ri-edit-likelihood')?.value) || 1,
+    severity: parseInt(document.getElementById('ri-edit-severity')?.value) || 1,
+    note: document.getElementById('ri-edit-note')?.value?.trim() || ''
+  };
+  try {
+    await API.put(`/risk/items/manage/${itemId}`, body);
+    toast('수정되었습니다.', 'success');
+    document.getElementById('ri-edit-modal')?.remove();
+    // 캐시 갱신 및 테이블 재렌더
+    const panel = document.getElementById(`ri-panel-${workTypeId}`);
+    if (panel?._cachedItems) {
+      const idx = panel._cachedItems.findIndex(i => i.id === itemId);
+      if (idx !== -1) panel._cachedItems[idx] = { ...panel._cachedItems[idx], ...body };
+      _riRenderItemTable(panel, workTypeId, panel._cachedItems);
+    }
+  } catch(e) {
+    toast(e.response?.data?.error || '수정 실패', 'error');
+  }
+}
+
+// 삭제
+async function _riDeleteItem(itemId, workTypeId, rowEl) {
+  if (!confirm('이 항목을 삭제하시겠습니까?')) return;
+  try {
+    await API.delete(`/risk/items/manage/${itemId}`);
+    toast('삭제되었습니다.', 'success');
+    rowEl?.remove();
+    // 캐시 갱신
+    const panel = document.getElementById(`ri-panel-${workTypeId}`);
+    if (panel?._cachedItems) {
+      panel._cachedItems = panel._cachedItems.filter(i => i.id !== itemId);
+      const badge = document.getElementById(`ri-count-${workTypeId}`);
+      if (badge) badge.textContent = `${panel._cachedItems.length}건`;
+      if (panel._cachedItems.length === 0) _riRenderItemTable(panel, workTypeId, []);
+    }
+  } catch(e) {
+    toast(e.response?.data?.error || '삭제 실패', 'error');
+  }
+}
+
+// 항목 추가 모달
+function _riAddItemModal(workTypeId, workTypeName, panelEl) {
+  const existing = document.getElementById('ri-add-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'ri-add-modal';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <h3 class="text-base font-bold">항목 추가 — ${workTypeName}</h3>
+        <button onclick="document.getElementById('ri-add-modal').remove()" class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div>
+          <label class="form-label">위험요인 <span class="text-red-500">*</span></label>
+          <input id="ri-add-hazard" class="form-input" placeholder="위험요인을 입력하세요">
+        </div>
+        <div>
+          <label class="form-label">안전대책</label>
+          <textarea id="ri-add-counter" class="form-input" rows="3" placeholder="안전대책을 입력하세요"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="form-label">가능성 (1~5)</label>
+            <input id="ri-add-likelihood" type="number" min="1" max="5" class="form-input" value="1">
+          </div>
+          <div>
+            <label class="form-label">중대성 (1~5)</label>
+            <input id="ri-add-severity" type="number" min="1" max="5" class="form-input" value="1">
+          </div>
+        </div>
+        <div>
+          <label class="form-label">비고</label>
+          <input id="ri-add-note" class="form-input" placeholder="비고 (선택)">
+        </div>
+      </div>
+      <div class="modal-footer flex justify-end gap-2">
+        <button onclick="document.getElementById('ri-add-modal').remove()" class="btn btn-outline text-sm px-4">취소</button>
+        <button onclick="_riSaveAdd(${workTypeId})" class="btn btn-primary text-sm px-4">추가</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('ri-add-hazard')?.focus();
+}
+
+// 항목 추가 저장
+async function _riSaveAdd(workTypeId) {
+  const hazard = document.getElementById('ri-add-hazard')?.value?.trim();
+  if (!hazard) { toast('위험요인을 입력하세요.', 'error'); return; }
+  const body = {
+    work_type_id: workTypeId,
+    hazard,
+    countermeasure: document.getElementById('ri-add-counter')?.value?.trim() || '',
+    likelihood: parseInt(document.getElementById('ri-add-likelihood')?.value) || 1,
+    severity: parseInt(document.getElementById('ri-add-severity')?.value) || 1,
+    note: document.getElementById('ri-add-note')?.value?.trim() || ''
+  };
+  try {
+    const res = await API.post('/risk/items/manage', body);
+    toast('항목이 추가되었습니다.', 'success');
+    document.getElementById('ri-add-modal')?.remove();
+    // 캐시 갱신 및 테이블 재렌더
+    const panel = document.getElementById(`ri-panel-${workTypeId}`);
+    if (panel) {
+      if (!panel._cachedItems) panel._cachedItems = [];
+      panel._cachedItems.push({ ...body, id: res.data?.id || Date.now() });
+      const badge = document.getElementById(`ri-count-${workTypeId}`);
+      if (badge) badge.textContent = `${panel._cachedItems.length}건`;
+      _riRenderItemTable(panel, workTypeId, panel._cachedItems);
+    }
+  } catch(e) {
+    toast(e.response?.data?.error || '추가 실패', 'error');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 대분류 필터 (기존 — 분류별 항목 조회 탭용)
+// ─────────────────────────────────────────────────────────────
 // 대분류 필터
 function filterRiskCat(cat, btn) {
   document.querySelectorAll('.risk-cat-btn').forEach(b => {

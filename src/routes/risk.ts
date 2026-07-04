@@ -716,14 +716,17 @@ app.post('/items/manage', async (c) => {
     const body = await c.req.json()
     const { work_type_id, category, hazard, risk_factor,
       before_frequency, before_severity, control_measures,
-      after_frequency, after_severity, responsible } = body
+      after_frequency, after_severity, responsible,
+      likelihood, severity, countermeasure, note } = body
 
     if (!work_type_id || !hazard) return c.json({ error: 'work_type_id, hazard 필요' }, 400)
 
-    const bf = Number(before_frequency) || 1
-    const bs = Number(before_severity) || 1
-    const af = Number(after_frequency) || 1
-    const as_ = Number(after_severity) || 1
+    // FEAT-046: likelihood/severity/countermeasure 필드도 허용
+    const bf = Number(before_frequency ?? likelihood) || 1
+    const bs = Number(before_severity ?? severity) || 1
+    const af = Number(after_frequency ?? likelihood) || 1
+    const as_ = Number(after_severity ?? severity) || 1
+    const cm = control_measures ?? countermeasure ?? ''
 
     function riskLevel(score: number) {
       if (score <= 4) return '낮음'
@@ -742,7 +745,7 @@ app.post('/items/manage', async (c) => {
     ).bind(
       Number(work_type_id), category || '', hazard, risk_factor || '',
       bf, bs, riskLevel(bf * bs),
-      control_measures || '', af, as_, riskLevel(af * as_),
+      cm, af, as_, riskLevel(af * as_),
       responsible || '관리감독자'
     ).run()
 
@@ -762,12 +765,15 @@ app.put('/items/manage/:itemId', async (c) => {
     const body = await c.req.json()
     const { category, hazard, risk_factor,
       before_frequency, before_severity, control_measures,
-      after_frequency, after_severity, responsible } = body
+      after_frequency, after_severity, responsible,
+      likelihood, severity, countermeasure, note } = body
 
-    const bf = Number(before_frequency) || 1
-    const bs = Number(before_severity) || 1
-    const af = Number(after_frequency) || 1
-    const as_ = Number(after_severity) || 1
+    // FEAT-046: likelihood/severity/countermeasure 필드도 허용
+    const bf = Number(before_frequency ?? likelihood) || 1
+    const bs = Number(before_severity ?? severity) || 1
+    const af = Number(after_frequency ?? likelihood) || 1
+    const as_ = Number(after_severity ?? severity) || 1
+    const cm = control_measures ?? countermeasure ?? ''
 
     function riskLevel(score: number) {
       if (score <= 4) return '낮음'
@@ -786,7 +792,7 @@ app.put('/items/manage/:itemId', async (c) => {
     ).bind(
       category || '', hazard, risk_factor || '',
       bf, bs, riskLevel(bf * bs),
-      control_measures || '', af, as_, riskLevel(af * as_),
+      cm, af, as_, riskLevel(af * as_),
       responsible || '관리감독자',
       Number(itemId)
     ).run()
@@ -801,7 +807,7 @@ app.put('/items/manage/:itemId', async (c) => {
 // 위험성 평가 항목 비활성화(삭제)
 app.delete('/items/manage/:itemId', async (c) => {
   const user = getUser(c)
-  if (!user || user.role !== 'admin') return c.json({ error: '관리자만 삭제 가능합니다.' }, 403)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
   const itemId = c.req.param('itemId')
   try {
     await c.env.DB.prepare(
@@ -811,6 +817,52 @@ app.delete('/items/manage/:itemId', async (c) => {
   } catch (e: any) {
     console.error('[risk DELETE /items/manage/:itemId]', e.message)
     return c.json({ error: e.message || '항목 삭제 실패' }, 500)
+  }
+})
+
+// FEAT-046: 작업유형별 항목 전체 조회 (리스트 페이지용)
+app.get('/items/by-work-type/:workTypeId', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const workTypeId = c.req.param('workTypeId')
+  try {
+    const result = await c.env.DB.prepare(
+      `SELECT rai.id, rai.work_type_id, rai.hazard, rai.risk_factor,
+              rai.before_frequency as likelihood, rai.before_severity as severity,
+              rai.control_measures as countermeasure, rai.responsible,
+              rai.after_frequency, rai.after_severity,
+              rai.category, rai.note, rai.is_active
+       FROM risk_assessment_items rai
+       WHERE rai.work_type_id = ? AND rai.is_active = 1
+       ORDER BY rai.id`
+    ).bind(Number(workTypeId)).all<any>()
+    return c.json(result.results || [])
+  } catch (e: any) {
+    console.error('[risk GET /items/by-work-type/:workTypeId]', e.message)
+    return c.json({ error: e.message || '항목 조회 실패' }, 500)
+  }
+})
+
+// FEAT-046: 단일 항목 조회
+app.get('/items/manage/:itemId', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const itemId = c.req.param('itemId')
+  try {
+    const row = await c.env.DB.prepare(
+      `SELECT rai.id, rai.work_type_id, rai.hazard, rai.risk_factor,
+              rai.before_frequency as likelihood, rai.before_severity as severity,
+              rai.control_measures as countermeasure, rai.responsible,
+              rai.after_frequency, rai.after_severity,
+              rai.category, rai.note
+       FROM risk_assessment_items rai
+       WHERE rai.id = ? AND rai.is_active = 1`
+    ).bind(Number(itemId)).first<any>()
+    if (!row) return c.json({ error: '항목 없음' }, 404)
+    return c.json(row)
+  } catch (e: any) {
+    console.error('[risk GET /items/manage/:itemId]', e.message)
+    return c.json({ error: e.message || '항목 조회 실패' }, 500)
   }
 })
 

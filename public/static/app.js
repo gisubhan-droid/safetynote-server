@@ -17711,7 +17711,7 @@ async function renderRiskItemsPage(container) {
           }
         </div>
 
-        ${(window._currentUser?.role === 'admin') ? `<div id="ri-diag-panel" class="mt-4"></div>` : ''}
+        ${(['admin','manager'].includes(window._currentUser?.role)) ? `<div id="ri-diag-panel" class="mt-4"></div>` : ''}
       </div>
     `;
 
@@ -17732,8 +17732,8 @@ async function renderRiskItemsPage(container) {
       }
     });
 
-    // 관리자 전용: DB 진단 정보 비동기 로드 (BUG-076 디버깅)
-    if ((window._currentUser?.role === 'admin') && document.getElementById('ri-diag-panel')) {
+    // 관리자/매니저 전용: DB 진단 정보 비동기 로드 (BUG-076 디버깅)
+    if ((['admin','manager'].includes(window._currentUser?.role)) && document.getElementById('ri-diag-panel')) {
       try {
         const diagRes = await API.get('/diagnostics/risk-db');
         const d = diagRes.data || {};
@@ -17744,7 +17744,6 @@ async function renderRiskItemsPage(container) {
         const ok = totalItems > 0 && activeItems > 0;
         const partial = totalItems > 0 && activeItems === 0;
 
-        // work_type별 항목 수 테이블
         const byTypeRows = (d.items_by_type || []).map(r =>
           `<tr style="border-bottom:1px solid #E5E7EB">
             <td style="padding:3px 8px;color:#6B7280">${r.type_id}</td>
@@ -17754,6 +17753,16 @@ async function renderRiskItemsPage(container) {
             <td style="padding:3px 8px;text-align:right;color:#6B7280">(전체 ${r.total})</td>
           </tr>`
         ).join('');
+
+        // orphan items 표시 (work_types 없는 wt_id 참조)
+        const orphanRows = (d.orphan_items || []).map(r =>
+          `<tr style="border-bottom:1px solid #FCA5A5;background:#FEF2F2">
+            <td style="padding:3px 8px;color:#DC2626;font-weight:700">wt_id=${r.work_type_id}</td>
+            <td style="padding:3px 8px;color:#DC2626">(work_types에 없음 — 고아)</td>
+            <td style="padding:3px 8px;text-align:right;color:#DC2626;font-weight:700">${r.cnt}건 누락</td>
+          </tr>`
+        ).join('');
+        const orphanTotal = (d.orphan_items || []).reduce((s, r) => s + (r.cnt||0), 0);
 
         el.innerHTML = `
           <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:12px 14px;font-size:11px;color:#374151;margin-top:8px">
@@ -17800,6 +17809,23 @@ async function renderRiskItemsPage(container) {
                 </table>
               </div>
             </details>
+            ${orphanTotal > 0 ? `
+            <details style="cursor:pointer;margin-top:8px" open>
+              <summary style="font-weight:600;color:#DC2626;margin-bottom:6px">⚠️ 고아 항목(orphan) ${orphanTotal}건 — work_types에 연결 없음</summary>
+              <div style="overflow-x:auto;margin-top:6px">
+                <table style="width:100%;border-collapse:collapse;font-size:11px">
+                  <thead><tr style="background:#FEE2E2">
+                    <th style="padding:4px 8px;text-align:left;color:#991B1B">work_type_id</th>
+                    <th style="padding:4px 8px;text-align:left;color:#991B1B">상태</th>
+                    <th style="padding:4px 8px;text-align:right;color:#991B1B">건수</th>
+                  </tr></thead>
+                  <tbody>${orphanRows}</tbody>
+                </table>
+                <div style="margin-top:6px;padding:6px 8px;background:#FEF2F2;border-radius:6px;color:#7F1D1D;font-size:10px">
+                  ⚠️ 위 항목들은 화면에 표시되지 않습니다. NAS SSH에서 <b>restore_items_v2.sql</b> 실행이 필요합니다.
+                </div>
+              </div>
+            </details>` : ''}
           </div>`;
       } catch(diagErr) { /* 진단 실패는 무시 */ }
     }

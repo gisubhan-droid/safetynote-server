@@ -3081,7 +3081,7 @@ app.route('/api/risk', riskRoutes)
 // GET /api/diagnostics/risk-db — risk 관련 테이블 상태 + work_type별 항목 수 상세
 app.get('/api/diagnostics/risk-db', async (c) => {
   const user = getUser(c)
-  if (!user || user.role !== 'admin') return c.json({ error: '관리자만 사용 가능' }, 403)
+  if (!user || !['admin','manager'].includes(user.role)) return c.json({ error: '관리자만 사용 가능' }, 403)
   try {
     const tables = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[]).map((r: any) => r.name)
     const hasCats  = tables.includes('work_categories')
@@ -3108,6 +3108,23 @@ app.get('/api/diagnostics/risk-db', async (c) => {
       GROUP BY wt.id ORDER BY wt.id
     `).all() : []
 
+    // items의 work_type_id 분포 (orphan 감지용: work_types에 없는 id 포함)
+    const itemsWtDist = hasItems ? rawDb.prepare(`
+      SELECT work_type_id, COUNT(*) as cnt,
+             SUM(CASE WHEN COALESCE(is_active,1)=1 THEN 1 ELSE 0 END) as active_cnt
+      FROM risk_assessment_items
+      GROUP BY work_type_id ORDER BY work_type_id
+    `).all() : []
+
+    // orphan items (work_types에 없는 work_type_id 참조하는 items)
+    const orphanItems = (hasItems && hasTypes) ? rawDb.prepare(`
+      SELECT rai.work_type_id, COUNT(rai.id) as cnt
+      FROM risk_assessment_items rai
+      LEFT JOIN work_types wt ON wt.id = rai.work_type_id
+      WHERE wt.id IS NULL
+      GROUP BY rai.work_type_id ORDER BY rai.work_type_id
+    `).all() : []
+
     // 최근 추가된 항목 5건 (복원 시점 확인용)
     const recentItems = hasItems ? rawDb.prepare(`
       SELECT id, work_type_id, hazard, created_at
@@ -3128,6 +3145,8 @@ app.get('/api/diagnostics/risk-db', async (c) => {
       work_categories: cats,
       work_types: types,
       items_by_type: itemsByType,
+      items_wt_distribution: itemsWtDist,
+      orphan_items: orphanItems,
       recent_items: recentItems,
       oldest_item: oldestItem,
       risk_assessment_items_columns: itemCols,
@@ -5035,13 +5054,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260704g">
+  <link rel="stylesheet" href="/static/style.css?v=20260704h">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260704g"></script>
+  <script src="/static/app.js?v=20260704h"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260704g"></script>
+  <script src="/static/mobile-app.js?v=20260704h"></script>
 </body>
 </html>`)
 })

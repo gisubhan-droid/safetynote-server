@@ -2310,6 +2310,74 @@ function patchSchema() {
   } catch(e: any) {
     console.warn('[patchSchema v0.151] 클린 리셋 실패 (무시):', e.message)
   }
+
+  // ── v0.152: risk_assessment_details FK 수정 ────────────────────────────────
+  // 0029 마이그레이션에서 risk_assessments를 재생성할 때
+  // risk_assessment_details의 FK가 "risk_assessments_old"를 참조하는 경우가 있음
+  // → INSERT/DELETE 시 "D1_ERROR: no such table: main.risk_assessments_old" 500 에러 발생
+  // → 테이블 재생성으로 FK를 올바른 risk_assessments 참조로 교정
+  try {
+    const radSql = (rawDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='risk_assessment_details'").get() as any)?.sql || ''
+    if (radSql.includes('risk_assessments_old')) {
+      console.log('[patchSchema v0.152] risk_assessment_details FK 오류 감지 (risk_assessments_old 참조) — 재생성 시작')
+      rawDb.exec('PRAGMA foreign_keys = OFF')
+      // 기존 컬럼 목록 확인
+      const radCols: any[] = rawDb.prepare('PRAGMA table_info(risk_assessment_details)').all() as any[]
+      const radColNames = radCols.map((r: any) => r.name)
+
+      // 새 테이블 생성 (FK를 risk_assessments로 수정)
+      const extraCols = radColNames.filter((c: string) => !['id','assessment_id','item_id','category','hazard','risk_factor',
+        'before_frequency','before_severity','before_risk_level','control_measures',
+        'after_frequency','after_severity','after_risk_level','is_confirmed',
+        'final_severity','final_risk_level','is_final','member_measures','final_frequency'].includes(c))
+      const extraColDefs = extraCols.map((c: string) => `  ${c} TEXT`).join(',\n')
+
+      rawDb.exec(`
+        CREATE TABLE IF NOT EXISTS risk_assessment_details_new (
+          id               INTEGER PRIMARY KEY AUTOINCREMENT,
+          assessment_id    INTEGER NOT NULL,
+          item_id          INTEGER,
+          category         TEXT NOT NULL DEFAULT '',
+          hazard           TEXT NOT NULL DEFAULT '',
+          risk_factor      TEXT NOT NULL DEFAULT '',
+          before_frequency INTEGER,
+          before_severity  INTEGER,
+          before_risk_level TEXT,
+          control_measures TEXT,
+          after_frequency  INTEGER,
+          after_severity   INTEGER,
+          after_risk_level TEXT,
+          is_confirmed     INTEGER DEFAULT 0,
+          final_severity   INTEGER DEFAULT 1,
+          final_risk_level TEXT,
+          is_final         INTEGER DEFAULT 0,
+          member_measures  TEXT,
+          final_frequency  INTEGER DEFAULT 1
+          ${extraColDefs ? ',\n' + extraColDefs : ''}
+          , FOREIGN KEY (assessment_id) REFERENCES risk_assessments(id)
+          , FOREIGN KEY (item_id)       REFERENCES risk_assessment_items(id)
+        )
+      `)
+
+      // 공통 컬럼만 복사
+      const commonCols = radColNames.filter((c: string) => ['id','assessment_id','item_id','category','hazard','risk_factor',
+        'before_frequency','before_severity','before_risk_level','control_measures',
+        'after_frequency','after_severity','after_risk_level','is_confirmed',
+        'final_severity','final_risk_level','is_final','member_measures','final_frequency'].includes(c) || extraCols.includes(c))
+      const colList = commonCols.join(', ')
+      rawDb.exec(`INSERT INTO risk_assessment_details_new (${colList}) SELECT ${colList} FROM risk_assessment_details`)
+      rawDb.exec('DROP TABLE risk_assessment_details')
+      rawDb.exec('ALTER TABLE risk_assessment_details_new RENAME TO risk_assessment_details')
+      rawDb.exec('CREATE INDEX IF NOT EXISTS idx_rad_assessment_id ON risk_assessment_details(assessment_id)')
+      rawDb.exec('PRAGMA foreign_keys = ON')
+      console.log('[patchSchema v0.152] risk_assessment_details FK 재생성 완료')
+    } else {
+      console.log('[patchSchema v0.152] risk_assessment_details FK 정상 — 재생성 불필요')
+    }
+  } catch(e: any) {
+    console.warn('[patchSchema v0.152] risk_assessment_details FK 수정 실패 (무시):', e.message)
+    try { rawDb.exec('PRAGMA foreign_keys = ON') } catch(_) {}
+  }
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)

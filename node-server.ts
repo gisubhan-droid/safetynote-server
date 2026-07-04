@@ -2182,6 +2182,57 @@ function patchSchema() {
     rawDb.pragma('foreign_keys = ON')
     console.warn('[patchSchema v0.147] inspection_workers FK 수정 실패:', e.message)
   }
+
+  // ── [v0.148 FEAT-045/046] work_categories + work_types + risk_assessment_items 테이블 생성 ──
+  // FEAT-045(엑셀 업/다운) + FEAT-046(분류별 항목 관리) 에서 사용
+  // NAS autoMigrate에 누락되어 API 404 / 서버 crash 발생 → 여기서 보완
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS work_categories (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT    NOT NULL UNIQUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS work_types (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_id INTEGER NOT NULL,
+        name        TEXT    NOT NULL,
+        code        TEXT,
+        description TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (category_id) REFERENCES work_categories(id)
+      )
+    `)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS risk_assessment_items (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_type_id        INTEGER NOT NULL,
+        category            TEXT    DEFAULT '',
+        hazard              TEXT    NOT NULL,
+        risk_factor         TEXT    DEFAULT '',
+        before_frequency    INTEGER DEFAULT 1,
+        before_severity     INTEGER DEFAULT 1,
+        before_risk_level   TEXT    DEFAULT '낮음',
+        control_measures    TEXT    DEFAULT '',
+        after_frequency     INTEGER DEFAULT 1,
+        after_severity      INTEGER DEFAULT 1,
+        after_risk_level    TEXT    DEFAULT '낮음',
+        responsible         TEXT    DEFAULT '관리감독자',
+        note                TEXT    DEFAULT '',
+        is_active           INTEGER DEFAULT 1,
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (work_type_id) REFERENCES work_types(id)
+      )
+    `)
+    // 인덱스
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_rai_work_type_id ON risk_assessment_items(work_type_id)`)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_rai_is_active    ON risk_assessment_items(is_active)`)
+    console.log('[patchSchema v0.148] work_categories/work_types/risk_assessment_items 테이블 준비 완료')
+  } catch(e: any) {
+    console.warn('[patchSchema v0.148] 테이블 생성 실패 (무시):', e.message)
+  }
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)

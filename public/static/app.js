@@ -31435,13 +31435,21 @@ async function renderUnitPricePage(container) {
         </td>
       </tr>`).join('');
 
-    // ── 접속 공종 행 생성 (공종명편집 + 기본단가 + 야간 + 가공 + 단위편집 + 삭제버튼)
+    // ── 접속 공종 행 생성 (공종키|공종명|단위|기본|야간|신호수|삭제) — BUG-065 열순서 변경
     const mkSplicePriceRows = (prices) => prices.map(p => `
       <tr class="border-b border-gray-50 hover:bg-indigo-50 group" data-key="${p.item_key}">
+        <td class="px-2 py-1.5 w-28">
+          <span class="text-xs text-gray-400 font-mono px-1">${p.item_key}</span>
+        </td>
         <td class="px-2 py-1.5">
           <input type="text" maxlength="40"
             class="up-splice-label-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-gray-700 font-medium focus:outline-none focus:border-indigo-300 focus:bg-indigo-50 hover:border-gray-200 bg-transparent"
             data-key="${p.item_key}" value="${p.item_label.replace(/"/g,'&quot;')}" placeholder="공종명">
+        </td>
+        <td class="px-2 py-1.5 w-20">
+          <input type="text" maxlength="10"
+            class="up-splice-unit-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-center text-gray-500 focus:outline-none focus:border-indigo-300 focus:bg-indigo-50 hover:border-gray-200 bg-transparent"
+            data-key="${p.item_key}" value="${(p.unit||'개소').replace(/"/g,'&quot;')}" placeholder="단위">
         </td>
         <td class="px-4 py-1.5 text-right">
           <input type="number" min="0" step="100"
@@ -31459,11 +31467,6 @@ async function renderUnitPricePage(container) {
             class="up-splice-input-aerial w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-indigo-300 ${p.aerial_price ? '' : 'text-gray-300'}"
             data-key="${p.item_key}" value="${p.aerial_price || 0}"
             placeholder="0" onfocus="this.classList.remove('text-gray-300')">
-        </td>
-        <td class="px-2 py-1.5 w-20">
-          <input type="text" maxlength="10"
-            class="up-splice-unit-input w-full border border-transparent rounded-lg px-2 py-1 text-sm text-center text-gray-500 focus:outline-none focus:border-indigo-300 focus:bg-indigo-50 hover:border-gray-200 bg-transparent"
-            data-key="${p.item_key}" value="${(p.unit||'개소').replace(/"/g,'&quot;')}" placeholder="단위">
         </td>
         <td class="px-3 py-1.5 text-center w-10">
           <button onclick="_upDeleteSpliceItem('${p.item_key}','${p.item_label}')"
@@ -31561,11 +31564,12 @@ async function renderUnitPricePage(container) {
           </div>
           <table class="w-full text-sm">
             <thead><tr class="bg-gray-50 text-gray-600 text-xs">
-              <th class="px-4 py-2 text-left border-b border-gray-100">공종 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-32">기본단가 (원)</th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-blue-50">야간 추가금액 (원)</th>
-              <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-green-50">신호수배치 추가금액 (원)</th>
-              <th class="px-4 py-2 text-center border-b border-gray-100 w-20">단위</th>
+              <th class="px-2 py-2 text-left border-b border-gray-100 w-28">공종키</th>
+              <th class="px-2 py-2 text-left border-b border-gray-100">공종명 <span class="text-gray-400 font-normal text-xs ml-1">(클릭하여 수정)</span></th>
+              <th class="px-2 py-2 text-center border-b border-gray-100 w-20">단위</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-32">기본 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-blue-50">야간 (원)</th>
+              <th class="px-4 py-2 text-right border-b border-gray-100 w-32 bg-green-50">신호수 (원)</th>
               <th class="w-10 border-b border-gray-100"></th>
             </tr></thead>
             <tbody id="up-splice-tbody">${mkSplicePriceRows(splicePrices)}</tbody>

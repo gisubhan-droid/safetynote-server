@@ -2860,6 +2860,20 @@ function navigateTo(page) {
   }
 
   const content = document.getElementById('page-content');
+
+  // site-map 이탈 시: page-content flex 스타일 리셋 + ResizeObserver 해제
+  if (page !== 'site-map') {
+    content.style.display = '';
+    content.style.flexDirection = '';
+    content.style.flex = '';
+    content.style.height = '';
+    content.style.boxSizing = '';
+    if (window._siteMapResizeObserver) {
+      window._siteMapResizeObserver.disconnect();
+      window._siteMapResizeObserver = null;
+    }
+  }
+
   showLoading(content);
 
   switch(page) {
@@ -32349,7 +32363,7 @@ async function renderSiteMapPage(container) {
   const userLabel = selUser ? selUser.name : '전체 사용자';
 
   container.innerHTML = `
-    <div class="max-w-5xl mx-auto">
+    <div id="siteMapRoot" style="display:flex;flex-direction:column;height:100%">
 
       <!-- 헤더 -->
       <div class="flex items-center justify-between mb-3">
@@ -32375,7 +32389,7 @@ async function renderSiteMapPage(container) {
       </div>
 
       <!-- ② 필터 바 (날짜 + 사용자) -->
-      <div class="card p-3 mb-3" style="background:#F5F0F8;border:1px solid #D8D0DC">
+      <div class="card p-3 mb-3" style="background:#F5F0F8;border:1px solid #D8D0DC;flex-shrink:0">
         <div class="flex flex-wrap items-center gap-2">
 
           <!-- 날짜 -->
@@ -32413,11 +32427,11 @@ async function renderSiteMapPage(container) {
         </div>
       </div>
 
-      <!-- ③ 지도 -->
-      <div id="leafletMap" style="width:100%;height:460px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;"></div>
+      <!-- ③ 지도 (flex-grow: 남은 공간 모두 차지) -->
+      <div id="leafletMap" style="width:100%;flex:1;min-height:300px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;"></div>
 
       <!-- ④ 범례 -->
-      <div class="flex gap-4 mt-3 text-sm flex-wrap" id="siteMapLegend">
+      <div class="flex gap-4 mt-3 text-sm flex-wrap" id="siteMapLegend" style="flex-shrink:0">
         ${TAB_DEFS.map(t => `
           <span class="flex items-center gap-1" style="color:#6B7280">
             <span style="display:inline-block;width:10px;height:10px;background:${t.color};border-radius:50%"></span>
@@ -32429,9 +32443,19 @@ async function renderSiteMapPage(container) {
       </div>
 
       <!-- ⑤ 위치 목록 -->
-      <div id="siteMapList" class="mt-4 space-y-2"></div>
+      <div id="siteMapList" class="mt-4 space-y-2" style="flex-shrink:0"></div>
     </div>
   `;
+
+  // page-content가 남은 화면을 모두 채우도록 flex 설정
+  const pageContent = document.getElementById('page-content');
+  if (pageContent) {
+    pageContent.style.display = 'flex';
+    pageContent.style.flexDirection = 'column';
+    pageContent.style.flex = '1';
+    pageContent.style.height = '100%';
+    pageContent.style.boxSizing = 'border-box';
+  }
 
   await loadLeafletMap();
 }
@@ -32494,6 +32518,20 @@ async function loadLeafletMap() {
   }).addTo(map);
 
   _kakaoMapInstance = map;
+
+  // ResizeObserver: 컨테이너 크기 변경 시 Leaflet 지도 자동 재조정
+  if (window._siteMapResizeObserver) {
+    window._siteMapResizeObserver.disconnect();
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    window._siteMapResizeObserver = new ResizeObserver(() => {
+      if (_kakaoMapInstance) {
+        _kakaoMapInstance.invalidateSize();
+      }
+    });
+    window._siteMapResizeObserver.observe(mapEl);
+  }
+
   await loadSiteMapMarkers(map);
 }
 

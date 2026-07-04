@@ -3873,7 +3873,7 @@ async function _renderDashboardInner(container) {
     };
 
     container.innerHTML = `
-    <div class="max-w-6xl mx-auto">
+    <div class="page-container">
 
       <!-- 기간 선택 UI -->
       <div class="card mb-4 py-3">
@@ -11319,7 +11319,7 @@ async function renderMyTasksPage(container) {
     const fm = activeFilter ? FILTER_META[activeFilter] : null;
 
     container.innerHTML = `
-    <div class="max-w-2xl mx-auto">
+    <div class="page-container">
       ${fm ? `
       <!-- 필터 배너 -->
       <div class="flex items-center justify-between mb-4 px-3 py-2 rounded-xl"
@@ -11579,7 +11579,7 @@ async function renderInspectionsPage(container) {
     ];
 
     container.innerHTML = `
-    <div class="max-w-5xl mx-auto">
+    <div class="page-container">
       <!-- 헤더 -->
       <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div>
@@ -12894,7 +12894,7 @@ async function renderHazardsPage(container) {
     const list = tab === 'nearmiss' ? nearmissList : dangerList;
 
     container.innerHTML = `
-    <div class="max-w-4xl mx-auto">
+    <div class="page-container">
 
       <!-- 상단 안내 배너 -->
       <div class="rounded-2xl p-4 mb-4 flex items-start gap-3"
@@ -13612,7 +13612,7 @@ async function renderStatsPage(container) {
     const monthOpts = Array.from({length:12},(_,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${String(i+1).padStart(2,'0')===month?'selected':''}>${i+1}월</option>`).join('');
 
     container.innerHTML = `
-    <div class="max-w-5xl mx-auto">
+    <div class="page-container">
       <div class="tab-bar">
         <div class="tab-item active" onclick="switchStatsTab('monthly',this)">월별 통계</div>
         <div class="tab-item" onclick="switchStatsTab('weekly',this)">주별 통계</div>
@@ -14377,7 +14377,7 @@ async function renderInspectionStatsPage(container) {
   const month = (now.getMonth() + 1).toString().padStart(2, '0');
 
   container.innerHTML = `
-  <div class="max-w-5xl mx-auto">
+  <div class="page-container">
     <div class="flex items-center gap-3 mb-5">
       <input id="insStatYear" type="number" value="${year}" class="form-control w-24" placeholder="연도">
       <select id="insStatMonth" class="form-control w-32">
@@ -19573,7 +19573,7 @@ async function renderChecklistRiskPage(container) {
     const res = await API.get('/tasks', { params: { status: 'assigned,in_progress,working', limit: 50 } });
     const tasks = Array.isArray(res.data) ? res.data : (res.data.tasks || []);
     container.innerHTML = `
-    <div class="max-w-3xl mx-auto">
+    <div class="page-container">
       <div class="bg-gradient-to-r from-purple-700 to-blue-600 text-white rounded-2xl p-4 mb-4 shadow">
         <h2 class="text-lg font-bold mb-1"><i class="fas fa-clipboard-list mr-2"></i>작업별 위험성(체크리스트)평가</h2>
         <p class="text-purple-200 text-xs">각 작업의 체크리스트 평가를 실시하고 작업 분류를 확정하세요.</p>
@@ -20459,7 +20459,7 @@ const _sysUserExpanded = new Set();
 async function renderSysUserMgmtPage(container) {
   // sysadmin 접근 제어
   if (dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) !== 'sysadmin') {
-    container.innerHTML = `<div class="max-w-lg mx-auto mt-16 text-center">
+    container.innerHTML = `<div class="page-container mt-16 text-center">
       <i class="fas fa-lock text-5xl mb-4" style="color:#D8D0DC"></i>
       <p class="text-gray-400 font-bold">시스템 관리자만 접근할 수 있는 메뉴입니다.</p>
     </div>`;
@@ -20558,7 +20558,7 @@ async function renderSysUserMgmtPage(container) {
     }
 
     container.innerHTML = `
-    <div class="max-w-6xl mx-auto">
+    <div class="page-container">
       <!-- 헤더 -->
       <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
@@ -20799,7 +20799,7 @@ async function renderUsersPage(container) {
     }
 
     container.innerHTML = `
-    <div class="max-w-6xl mx-auto">
+    <div class="page-container">
       <!-- 헤더 -->
       <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
@@ -21664,7 +21664,7 @@ async function renderTeamsPage(container) {
     const teams = res.data;
 
     container.innerHTML = `
-    <div class="max-w-4xl mx-auto">
+    <div class="page-container">
       <!-- 헤더 -->
       <div class="flex items-center justify-between mb-5">
         <div>
@@ -23217,7 +23217,7 @@ async function renderSuspendedUsersPage(container) {
     }
 
     container.innerHTML = `
-    <div class="max-w-6xl mx-auto">
+    <div class="page-container">
       <!-- 헤더 -->
       <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
@@ -23297,7 +23297,7 @@ async function renderWorkerSafetyStatsPage(container) {
   const curQ     = Math.ceil(curMonth / 3);
 
   container.innerHTML = `
-  <div class="max-w-6xl mx-auto">
+  <div class="page-container">
     <!-- 헤더 -->
     <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
       <div>
@@ -23824,7 +23824,7 @@ async function renderSignatureRequestsPage(container) {
     }
 
     container.innerHTML = `
-    <div class="max-w-lg mx-auto">
+    <div class="page-container">
       <!-- 탭 -->
       <div class="tab-bar mb-4">
         <div class="tab-item active" id="srtab-pending" onclick="_srSwitchTab('pending',this)">
@@ -23951,7 +23951,7 @@ async function renderMyProfilePage(container) {
     }
 
     container.innerHTML = `
-    <div class="max-w-2xl mx-auto">
+    <div class="page-container">
 
       <!-- 헤더 카드 -->
       <div class="rounded-2xl mb-5 overflow-hidden" style="background:linear-gradient(135deg,#685182 0%,#D70072 100%)">
@@ -24426,7 +24426,7 @@ async function renderMyStatsPage(container) {
     };
 
     container.innerHTML = `
-    <div class="max-w-2xl mx-auto">
+    <div class="page-container">
 
       <!-- ① 안전점수 메인 카드 -->
       <div class="rounded-2xl mb-4 overflow-hidden" style="background:linear-gradient(135deg,#685182 0%,#D70072 100%)">
@@ -24595,7 +24595,7 @@ async function renderMyStatsPage(container) {
 // ======= 근로자 위험 신고 페이지 =======
 function renderHazardReportPage(container) {
   container.innerHTML = `
-  <div class="max-w-lg mx-auto">
+  <div class="page-container">
 
     <!-- 위험신고 카드 -->
     <div class="rounded-2xl p-5 mb-3"
@@ -25027,7 +25027,7 @@ async function renderEducationPage(container, eduType) {
 
   const year = new Date().getFullYear();
   container.innerHTML = `
-    <div class="p-4 max-w-5xl mx-auto">
+    <div class="page-container">
       <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:${meta.bg}">
@@ -26940,7 +26940,7 @@ async function _deleteEduPhoto(photoId, sessionId, eduType) {
 async function renderEducationStatsPage(container) {
   const year = new Date().getFullYear();
   container.innerHTML = `
-    <div class="p-4 max-w-5xl mx-auto">
+    <div class="page-container">
       <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:#EDE9F7">
@@ -28281,7 +28281,7 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
   if (!content) return;
 
   // ── 외선/접속 두 목록을 병렬로 로드 ──────────────────────────────
-  content.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  content.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
 
   // 외선: tasks API
   let cableTasks = [], spliceReports = [], spliceTasks = [], allTasks = [];
@@ -28304,7 +28304,7 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
     try { errDetail = JSON.stringify(e.response?.data) || e.message; } catch(_) {}
     console.error('[report-write] splice-reports 로드 실패', errDetail, e.response?.status, e.response?.data);
     if (e.response?.status === 500) {
-      content.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 break-all"><b>서버 오류 (500)</b><br>${errDetail}<br><br><button onclick="renderReportWritePage(document.getElementById('page-content'),'splice')" class="mt-2 px-3 py-1 bg-red-100 rounded text-xs">다시 시도</button></div></div>`;
+      content.innerHTML = `<div class="page-container"><div class="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 break-all"><b>서버 오류 (500)</b><br>${errDetail}<br><br><button onclick="renderReportWritePage(document.getElementById('page-content'),'splice')" class="mt-2 px-3 py-1 bg-red-100 rounded text-xs">다시 시도</button></div></div>`;
       return;
     }
   }
@@ -28444,7 +28444,7 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
   };
 
   content.innerHTML = `
-  <div class="max-w-4xl mx-auto p-4 space-y-0">
+  <div class="page-container">
     <!-- 페이지 헤더 -->
     <div class="mb-3">
       <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -28546,7 +28546,7 @@ async function _reportWriteSelectType(type) {
 
 async function _reportWriteCableList(container, activeTab) {
   activeTab = activeTab || 'pending';
-  container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
     const res = await API.get('/tasks?status=working,work_completed,completed');
     const tasks = (res.data.tasks || []);
@@ -28604,7 +28604,7 @@ async function _reportWriteCableList(container, activeTab) {
     };
 
     container.innerHTML = `
-    <div class="max-w-4xl mx-auto p-4 space-y-0">
+    <div class="page-container">
       <!-- 헤더 -->
       <div class="flex items-center gap-3 mb-3">
         <button onclick="renderReportWritePage(document.getElementById('page-content'))"
@@ -28668,7 +28668,7 @@ function _rwCableTab(tab) {
 
 async function _reportWriteSpliceList(container, activeTab) {
   activeTab = activeTab || 'pending';
-  container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
   try {
     // 작업 목록과 접속일보 목록을 개별 조회
     let tasks = [], reports = [];
@@ -28747,7 +28747,7 @@ async function _reportWriteSpliceList(container, activeTab) {
     };
 
     container.innerHTML = `
-    <div class="max-w-4xl mx-auto p-4 space-y-0">
+    <div class="page-container">
       <!-- 헤더 -->
       <div class="flex items-center gap-3 mb-3">
         <button onclick="renderReportWritePage(document.getElementById('page-content'),'splice')"
@@ -28813,7 +28813,7 @@ function _rwSpliceTab(tab) {
 // 외선 작업일보 목록 페이지 (공량내역 탭 내부용 — 작성완료 열람)
 // ═══════════════════════════════════════════════════════════════
 async function renderWorkReportListPage(container) {
-  container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
     // 작업완료(일지대기) + 완료 상태 작업 목록 조회 (work_completed, completed)
     const res = await API.get('/tasks?status=working,work_completed,completed&limit=200');
@@ -28875,7 +28875,7 @@ async function renderWorkReportListPage(container) {
     };
 
     container.innerHTML = `
-    <div class="max-w-4xl mx-auto p-4 space-y-0">
+    <div class="page-container">
 
       <!-- 헤더 (엑셀 다운로드) -->
       <div class="flex items-center justify-end mb-3">
@@ -28971,7 +28971,7 @@ function downloadWorkReportListCSV() {
 // 외선일보 작성 폼
 // ═══════════════════════════════════════════════════════════════
 async function renderWorkReportForm(container, taskId) {
-  container.innerHTML = `<div class="max-w-6xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
     const [taskRes, reportRes, typesRes] = await Promise.all([
       API.get(`/tasks/${taskId}`),
@@ -29190,7 +29190,7 @@ async function renderWorkReportForm(container, taskId) {
     };
 
     container.innerHTML = `
-    <div class="max-w-6xl mx-auto p-3 space-y-4" id="wr-form-wrap">
+    <div class="page-container" id="wr-form-wrap">
 
       <!-- ── 헤더 ── -->
       <div class="flex items-center gap-3">
@@ -29777,7 +29777,7 @@ async function _finalSubmit(reportId, taskId) {
 // 접속일보 — 목록 페이지
 // ═══════════════════════════════════════════════════════════════
 async function renderSpliceReportListPage(container) {
-  container.innerHTML = `<div class="max-w-4xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
   try {
     const res = await API.get('/splice-reports');
     const reports = res.data.reports || [];
@@ -29811,7 +29811,7 @@ async function renderSpliceReportListPage(container) {
       </div>`;
 
     container.innerHTML = `
-    <div class="max-w-4xl mx-auto p-4 space-y-4">
+    <div class="page-container">
       <!-- 신규 작성 버튼 -->
       <div class="flex items-center justify-end">
         <button onclick="renderSpliceReportForm(document.getElementById('page-content'), null, null)"
@@ -29887,7 +29887,7 @@ const SPLICE_ITEMS_DEF = [
 ];
 
 async function renderSpliceReportForm(container, reportId, taskId) {
-  container.innerHTML = `<div class="max-w-3xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-indigo-400 text-2xl"></i></div></div>`;
   try {
     let report = null;
     let savedItems = [];
@@ -30065,7 +30065,7 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     const customRows = customItems.map(it => mkCustomRow(it)).join('');
 
     container.innerHTML = `
-    <div class="max-w-3xl mx-auto p-4 space-y-4">
+    <div class="page-container">
       <!-- 헤더 -->
       <div class="flex items-center gap-3">
         <button onclick="renderReportWritePage(document.getElementById('page-content'),'splice')" class="text-gray-400 hover:text-gray-600">
@@ -30395,7 +30395,7 @@ function _vsWeekRange(weekVal) {
 }
 
 async function renderVolumeStatsPage(container) {
-  container.innerHTML = `<div class="max-w-5xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
     // ── 조회 조건 읽기 ──
     const vsMode  = document.getElementById('vs-period-mode')?.value  || 'month';
@@ -30478,7 +30478,7 @@ async function renderVolumeStatsPage(container) {
     _volumeStatsCache.allItemKeys = allItemKeys;
 
     container.innerHTML = `
-    <div class="max-w-5xl mx-auto p-4 space-y-4">
+    <div class="page-container">
       <div class="flex items-center justify-between flex-wrap gap-2">
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
           <i class="fas fa-chart-bar text-pink-500"></i> 물량통계
@@ -31470,7 +31470,7 @@ function printVolumeStats() {
 let _cableDetailCache = [];
 
 async function renderCableDetailPage(container) {
-  container.innerHTML = `<div class="max-w-6xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-blue-400 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-blue-400 text-2xl"></i></div></div>`;
   try {
     // 조회 기간 계산 (mode: month/quarter/year)
     const mode  = document.getElementById('cd-period-mode')?.value  || 'month';
@@ -31535,7 +31535,7 @@ async function renderCableDetailPage(container) {
     });
 
     container.innerHTML = `
-    <div class="max-w-6xl mx-auto p-4 space-y-4">
+    <div class="page-container">
       <!-- 헤더 -->
       <div class="flex items-center justify-between flex-wrap gap-2">
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -31815,7 +31815,7 @@ async function renderUnitPricePage(container) {
   }
   // 현재 탭 상태 보존 (DOM 소멸 전)
   const savedTab = document.getElementById('up-active-tab')?.value || 'cable';
-  container.innerHTML = `<div class="max-w-xl mx-auto p-4"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
+  container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
     const [cableRes, spliceRes] = await Promise.all([
       API.get('/volume-unit-prices'),

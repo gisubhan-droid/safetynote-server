@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-04 (세션 98)
-> **서버 현재 버전: `330a4e7`** ← 최신 (GitHub) — FEAT-044 년도/월 클릭 상세 모달
+> 최종 업데이트: 2026-07-04 (세션 99)
+> **서버 현재 버전: `TBD`** ← 최신 (GitHub) — BUG-067 전체 화면 반응형 page-container 적용
 > **NAS 배포 버전: `ac4381e`** ← 업데이트 필요
-> **캐시 버전: v=20260703w**
+> **캐시 버전: v=20260704a**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
@@ -17,6 +17,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-071 | 99 | 2026-07-04 | ✅ 수정 | 전체 화면 반응형 레이아웃 — `app.js` 내 39개 페이지 컨테이너 `max-w-{xl~6xl} mx-auto` → `.page-container` 통일 / `style.css`에 `page-container` 반응형 규칙 추가: 모바일(100%), 태블릿(100%), 데스크톱(최대 1280px), 와이드(최대 1600px) / `space-y` CSS 포함 | `TBD` |
 | BUG-070 | 96 | 2026-07-04 | ✅ 수정 | 신규 작업 등록 시 공사요청번호 미입력 → 서버 500 (`D1_ERROR: NOT NULL constraint failed: tasks.construction_id`) — `createTask()` 함수에 `construction_id` 클라이언트 validation 추가: `if (!data.construction_id) { toast('공사를 선택하거나 공사요청번호를 입력 후 연동하세요.', 'error'); return; }` (app.js ~5003줄) / 캐시 버전 `s→t` | `366c00f` |
 | BUG-069 | 92 | 2026-07-04 | ✅ 수정 | 외선·접속 엑셀 업로드 시 공종명 미반영 — `iLabel = findIndex(h => h.includes('공종명') \| h.includes('공종'))` 에서 `'공종키'.includes('공종')===true` 로 `iLabel=0`(공종키 열) 잘못 매칭 → `h.includes('공종')` 조건 제거, `h.includes('공종명')` 만 남김 (work-reports.ts, splice-reports.ts) | `9da4ea2` |
 | BUG-068 | 91 | 2026-07-04 | ✅ 수정 | 단가관리 테이블 헤더 스크롤 시 사라짐 — `overflow-y:auto` + `max-height:60vh` + `thead position:sticky top:0` 적용 (외선·접속 모두) | `b3d011d` |

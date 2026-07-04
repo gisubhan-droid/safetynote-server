@@ -1002,6 +1002,52 @@ body {
   transform: translateX(20px);
 }
 
+/* ─── 페이지 컨테이너 반응형 — BUG-067 (세션 90) ────────────────────────── */
+/*
+  .page-container : 모든 페이지 최상위 래퍼
+  - 기존 max-w-{xl~6xl} mx-auto p-4 패턴을 대체
+  - 화면 크기에 따라 유동적으로 최대 너비·패딩 조정
+*/
+.page-container {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 16px 20px;
+  box-sizing: border-box;
+}
+/* 자식 섹션 간 기본 세로 간격 (기존 space-y-4 대체) */
+.page-container > * + * {
+  margin-top: 16px;
+}
+/* 태블릿 (769~1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .page-container {
+    padding: 14px 16px;
+    max-width: 100%;
+  }
+}
+/* 데스크톱 (1025~1440px) */
+@media (min-width: 1025px) and (max-width: 1440px) {
+  .page-container {
+    padding: 16px 24px;
+    max-width: 1280px;
+  }
+}
+/* 와이드 (>1440px) */
+@media (min-width: 1441px) {
+  .page-container {
+    padding: 16px 32px;
+    max-width: 1600px;
+  }
+}
+/* 모바일 (≤768px) */
+@media (max-width: 768px) {
+  .page-container {
+    padding: 12px 12px;
+    max-width: 100% !important;
+  }
+}
+
 /* ─── 현장위치 지도 — 화면 비율 자동 조정 ─────────────────────────────── */
 /* main-content가 뷰포트 전체 높이를 차지하도록 */
 .main-content {

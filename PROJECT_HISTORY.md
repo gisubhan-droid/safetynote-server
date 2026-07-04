@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-04 (세션 102)
-> **서버 현재 버전: `753d5b9`** ← 최신 (GitHub) — BUG-075 500 에러 해결 (patchSchema v0.149 + COALESCE)
+> **서버 현재 버전: `8b33ad6`** ← 최신 (GitHub) — BUG-076 legal-notices 404 + 진단 API
 > **NAS 배포 버전: `1410b65`** ← git pull + pm2 restart 필요
-> **캐시 버전: v=20260704d**
+> **캐시 버전: v=20260704e**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 > **NAS git 동기화**: `git pull` 실패 시 → `git fetch origin && git reset --hard origin/main`
@@ -18,6 +18,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-076 | 102 | 2026-07-04 | ✅ 수정 | 정기·수시 페이지 진입 시 콘솔 404 다수 — `_injectLegalBanner('risk_assessment', ...)` 가 `GET /api/legal-notices/risk_assessment` 호출, NAS DB에 `risk_assessment` 키 없으면 404 반환 (프론트 catch로 무시되지만 콘솔 빨간 에러) → `GET /:key` 에서 키 없을 때 `null 200` 반환으로 수정 + `legal_notices` 테이블 없는 구버전 DB 방어 / 진단 API `GET /api/diagnostics/risk-db` 추가 (admin 전용, DB 상태 원격 확인) / 캐시 `v=20260704e` | `8b33ad6` |
 | BUG-075 | 102 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 500 에러 — ① `risk_assessment_items` 테이블이 구버전 스키마로 이미 존재 → `CREATE TABLE IF NOT EXISTS` 무시 → `note`/`is_active` 등 컬럼 없음 → 쿼리 500 ② `is_active` 직접 참조 시 컬럼 없으면 WHERE 조건 자체가 500 → `patchSchema v0.149` 추가(safeAlter로 컬럼 13개 보장) + `GET /items/by-work-type` · `GET /items/manage/:id` · `GET /work-types` 모든 컬럼 `COALESCE` 방어처리 / 캐시 `v=20260704d` | `753d5b9` |
 | BUG-074 | 102 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 브라우저 404 — `src/routes/risk.ts`에서 `app.get('/:id', ...)` 라우트가 83번째 줄에 등록되어 이후의 `work-categories`, `work-types`, `items/by-work-type` 등 모든 GET 경로를 선점(Hono는 등록 순서 우선) → curl 직접 호출은 401(API 존재) 이지만 브라우저 인증 요청은 `/:id`에서 매칭되어 DB 조회 후 404 반환 → `/:id` 라우트를 파일 맨 끝(1070번째)으로 이동 | `9088ddc` |
 | BUG-073 | 101 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 404 — FEAT-045/046 추가 테이블(`work_categories`/`work_types`/`risk_assessment_items`)이 NAS `patchSchema`에 누락 → DB 테이블 미존재 → `patchSchema v0.148`에 `CREATE TABLE IF NOT EXISTS` 3개 추가 / `fix_nas_duplicates_v2.sql`로 중복 72→18건 정리 / `patch_v0148.js` 긴급 패치 스크립트 추가 | `1410b65` |

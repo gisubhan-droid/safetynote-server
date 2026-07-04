@@ -317,6 +317,7 @@ console.log('[DB] pragma 최적화 적용 완료 (WAL+NORMAL+32MB캐시+mmap256M
     { table: 'task_stops', column: 'stop_detail',    def: 'TEXT DEFAULT NULL' },
     { table: 'task_stops', column: 'reported_by',    def: 'INTEGER DEFAULT NULL' },
     { table: 'task_stops', column: 'photo_data',     def: 'TEXT DEFAULT NULL' },
+    { table: 'task_stops', column: 'notes',          def: 'TEXT DEFAULT NULL' },  // FIX-050: NAS 구버전 task_stops에 notes 컬럼 누락
   ]
 
   // ── task_stops 테이블 없으면 자동 생성 (0033 migration 미적용 대비) ──────────
@@ -2400,6 +2401,42 @@ function patchSchema() {
       try { rawDb.exec('PRAGMA foreign_keys = ON') } catch(_) {}
     }
   }
+
+  // ── [v0.153 FIX-050] 누락 컬럼 강제 확인 — PRAGMA table_info 직접 조회 ────────
+  // v0.149 ALTER가 NAS에서 실행됐음에도 note 컬럼 없는 경우 대비
+  // (v0.151 클린 리셋이 DELETE/INSERT만 하고 컬럼 구조는 건드리지 않지만
+  //  만약 v0.149 실행 전 서버가 크래시됐거나, 특정 NAS 상태에서 스킵된 경우 커버)
+  try {
+    // ① risk_assessment_items.note 컬럼 강제 확인
+    const raiCols = (rawDb.prepare(`PRAGMA table_info(risk_assessment_items)`).all() as any[]).map((r: any) => r.name)
+    if (!raiCols.includes('note')) {
+      rawDb.exec(`ALTER TABLE risk_assessment_items ADD COLUMN note TEXT DEFAULT ''`)
+      console.log('[patchSchema v0.153] ✅ risk_assessment_items.note 컬럼 추가 완료 (FIX-050)')
+    } else {
+      console.log('[patchSchema v0.153] risk_assessment_items.note 컬럼 이미 존재 — 생략')
+    }
+    // ② risk_assessment_items.category 컬럼도 동일하게 확인 (FEAT-047 방어)
+    if (!raiCols.includes('category')) {
+      rawDb.exec(`ALTER TABLE risk_assessment_items ADD COLUMN category TEXT DEFAULT ''`)
+      console.log('[patchSchema v0.153] ✅ risk_assessment_items.category 컬럼 추가 완료')
+    }
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.153] risk_assessment_items 컬럼 확인 실패 (무시):', e.message)
+  }
+
+  try {
+    // ③ task_stops.notes 컬럼 강제 확인
+    const tsCols = (rawDb.prepare(`PRAGMA table_info(task_stops)`).all() as any[]).map((r: any) => r.name)
+    if (!tsCols.includes('notes')) {
+      rawDb.exec(`ALTER TABLE task_stops ADD COLUMN notes TEXT DEFAULT NULL`)
+      console.log('[patchSchema v0.153] ✅ task_stops.notes 컬럼 추가 완료 (FIX-050)')
+    } else {
+      console.log('[patchSchema v0.153] task_stops.notes 컬럼 이미 존재 — 생략')
+    }
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.153] task_stops 컬럼 확인 실패 (무시):', e.message)
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)

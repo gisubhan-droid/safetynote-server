@@ -4796,3 +4796,66 @@ for (const tgt of _fixFkTargets) {
 - `ts.notes`: `task_stops.notes` 컬럼 누락 — 별도 확인 필요
 
 ---
+
+## 세션 80 — 2026-07-04
+
+### FIX-050: rai.note + ts.notes 컬럼 누락 수정
+
+#### 에러 메시지
+```
+[risk GET /items/by-work-type/:workTypeId] D1_ERROR: no such column: rai.note
+[tasks/stops] task_stops 쿼리 실패 (테이블/컬럼 없음): D1_ERROR: no such column: ts.notes
+```
+
+#### 근본 원인 분석
+
+**① `risk_assessment_items.note`**
+- patchSchema v0.149에서 `ALTER TABLE risk_assessment_items ADD COLUMN note TEXT DEFAULT ''` 존재
+- 실행 순서: v0.149(ALTER) → v0.151(클린 리셋 DELETE+INSERT) → v0.152(FK 수정)
+- v0.151은 데이터만 교체하고 컬럼 구조는 건드리지 않으므로 v0.149 ALTER는 보존되어야 함
+- **실제 원인**: 특정 NAS 상태에서 v0.149가 실행되지 않았거나 에러로 스킵됨
+  (v0.149 전체를 try-catch로 감싸 실패해도 조용히 무시하므로 추적 어려움)
+
+**② `task_stops.notes`**
+- `CREATE TABLE IF NOT EXISTS task_stops`에 `notes TEXT` 포함 — 신규 테이블에는 있음
+- 기존 safeAlt 패치 목록(line 315~320): `stop_category`, `stop_detail`, `reported_by`, `photo_data`만 있고 **`notes` 누락**
+- NAS DB에 구버전 `task_stops`가 이미 존재하므로 `IF NOT EXISTS`로 생성 안 됨
+- safeAlt 목록에 `notes`가 없어서 `ALTER TABLE ... ADD COLUMN notes`도 실행 안 됨
+
+#### 수정 내용
+
+**① safeAlt 목록에 `task_stops.notes` 추가 (`node-server.ts` line 320)**
+```typescript
+{ table: 'task_stops', column: 'notes', def: 'TEXT DEFAULT NULL' },  // FIX-050
+```
+
+**② patchSchema v0.153 추가 — PRAGMA table_info 직접 확인 방식**
+```typescript
+// ① risk_assessment_items.note 컬럼 — PRAGMA table_info로 존재 여부 직접 확인
+const raiCols = rawDb.prepare(`PRAGMA table_info(risk_assessment_items)`).all().map(r => r.name)
+if (!raiCols.includes('note')) {
+  rawDb.exec(`ALTER TABLE risk_assessment_items ADD COLUMN note TEXT DEFAULT ''`)
+  // ✅ 추가 완료 로그
+}
+// category 컬럼도 동일하게 확인 (FEAT-047 방어)
+
+// ② task_stops.notes 컬럼 — PRAGMA table_info로 직접 확인
+const tsCols = rawDb.prepare(`PRAGMA table_info(task_stops)`).all().map(r => r.name)
+if (!tsCols.includes('notes')) {
+  rawDb.exec(`ALTER TABLE task_stops ADD COLUMN notes TEXT DEFAULT NULL`)
+  // ✅ 추가 완료 로그
+}
+```
+
+#### 왜 기존 v0.149 방식이 충분하지 않았나
+- v0.149는 `try { _safeAlt(...) } catch { warn }` 구조 → 실패 시 에러 메시지만 출력하고 계속 진행
+- 이후 v0.153처럼 **실제 컬럼 존재 여부를 확인하지 않아** 패치 성공 여부 보장 불가
+- v0.153은 `PRAGMA table_info`로 컬럼 없을 때만 ALTER 실행 → 멱등성 보장
+
+#### 파일 수정 목록
+| 파일 | 변경 내용 |
+|------|-----------|
+| `node-server.ts` | line 320: safeAlt에 `task_stops.notes` 추가 |
+| `node-server.ts` | patchSchema v0.153 블록 추가 (PRAGMA table_info 기반 강제 확인) |
+
+---

@@ -486,7 +486,7 @@ export function createVolumeUnitPricesRoutes() {
       const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase())
       // 컬럼 인덱스 탐색 (헤더명 유연하게 대응)
       const iKey   = headers.findIndex(h => h.includes('키') || h === 'item_key')
-      const iLabel = headers.findIndex(h => h.includes('공종명') || h.includes('공종') || h === 'item_label')
+      const iLabel = headers.findIndex(h => h.includes('공종명') || h === 'item_label')
       const iPrice = headers.findIndex(h => h.includes('단가') || h === 'unit_price')
       const iUnit  = headers.findIndex(h => h.includes('단위') || h === 'unit')
 

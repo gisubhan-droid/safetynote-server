@@ -440,7 +440,7 @@ export function createSpliceUnitPricesRoutes() {
 
       const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase())
       const iKey    = headers.findIndex(h => h.includes('키') || h === 'item_key')
-      const iLabel  = headers.findIndex(h => h.includes('공종명') || h.includes('공종') || h === 'item_label')
+      const iLabel  = headers.findIndex(h => h.includes('공종명') || h === 'item_label')
       const iUnit   = headers.findIndex(h => h.includes('단위') || h === 'unit')
       const iPrice  = headers.findIndex(h =>
         (h.includes('기본단가') || h.includes('단가') || h.includes('기본'))

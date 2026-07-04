@@ -3076,6 +3076,38 @@ app.patch('/api/tasks/:id/status', async (c) => {
 app.route('/api/tasks', taskRoutes)
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
+
+// ─── NAS 전용: DB 진단 API (BUG-075/076 디버깅용) ───────────────────────────
+// GET /api/diagnostics/risk-db — risk 관련 테이블 상태 조회
+app.get('/api/diagnostics/risk-db', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자만 사용 가능' }, 403)
+  try {
+    const tables = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[]).map(r => r.name)
+    const hasCats  = tables.includes('work_categories')
+    const hasTypes = tables.includes('work_types')
+    const hasItems = tables.includes('risk_assessment_items')
+
+    const catCount  = hasCats  ? (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c : 0
+    const typeCount = hasTypes ? (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c : 0
+    const itemCount = hasItems ? (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c : 0
+    const itemActive = hasItems ? (rawDb.prepare("SELECT COUNT(*) as c FROM risk_assessment_items WHERE COALESCE(is_active,1)=1").get() as any).c : 0
+
+    const cats  = hasCats  ? rawDb.prepare('SELECT id, name FROM work_categories ORDER BY id').all() : []
+    const types = hasTypes ? rawDb.prepare('SELECT id, category_id, name FROM work_types ORDER BY id LIMIT 30').all() : []
+    const itemCols = hasItems ? (rawDb.prepare('PRAGMA table_info(risk_assessment_items)').all() as any[]).map(r => r.name) : []
+
+    return c.json({
+      tables_exist: { work_categories: hasCats, work_types: hasTypes, risk_assessment_items: hasItems },
+      counts: { work_categories: catCount, work_types: typeCount, risk_assessment_items: itemCount, items_active: itemActive },
+      work_categories: cats,
+      work_types_sample: types,
+      risk_assessment_items_columns: itemCols,
+    })
+  } catch(e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
 // ─── FEAT-037: POST /api/tbm/:id/share-token (RULE-002: tbmExtraRoutes·tbmRoutes 앞에 등록) ───
 // 공유 토큰 발급 (로그인 필요, 7일 유효, 기존 유효 토큰 재사용)
 // 응답에 텍스트 복사용 작업 정보 포함
@@ -4975,13 +5007,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260704d">
+  <link rel="stylesheet" href="/static/style.css?v=20260704e">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260704d"></script>
+  <script src="/static/app.js?v=20260704e"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260704d"></script>
+  <script src="/static/mobile-app.js?v=20260704e"></script>
 </body>
 </html>`)
 })

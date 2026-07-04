@@ -37,9 +37,15 @@ app.get('/:key', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const key = c.req.param('key')
-  const row = rawDb.prepare('SELECT * FROM legal_notices WHERE notice_key=?').get(key)
-  if (!row) return c.json({ error: '존재하지 않는 법령안내입니다.' }, 404)
-  return c.json(row)
+  try {
+    const row = rawDb.prepare('SELECT * FROM legal_notices WHERE notice_key=? AND is_active=1').get(key)
+    // BUG-076: 키가 없을 때 404 대신 null 반환 — 프론트에서 catch 없이도 조용히 처리 가능
+    if (!row) return c.json(null, 200)
+    return c.json(row)
+  } catch(e: any) {
+    // legal_notices 테이블 없는 구버전 DB 방어
+    return c.json(null, 200)
+  }
 })
 
 // POST / — 신규 추가 (admin만)

@@ -17652,7 +17652,7 @@ async function renderRiskItemsPage(container) {
     // API 누락 경고 (NAS 미업데이트 상황 대비)
     const apiMissing = catResult.status === 'rejected' || typeResult.status === 'rejected';
 
-    const role = window._currentUser?.role || '';
+    const role = (currentUser?.role) || '';
     const isWorker = role === 'worker';
     const canEdit = !isWorker;
 
@@ -17711,7 +17711,7 @@ async function renderRiskItemsPage(container) {
           }
         </div>
 
-        ${(['admin','manager'].includes(window._currentUser?.role)) ? `<div id="ri-diag-panel" class="mt-4"></div>` : ''}
+        ${(['admin','manager','supervisor'].includes(currentUser?.role)) ? `<div id="ri-diag-panel" class="mt-4"></div>` : ''}
       </div>
     `;
 
@@ -17732,8 +17732,8 @@ async function renderRiskItemsPage(container) {
       }
     });
 
-    // 관리자/매니저 전용: DB 진단 정보 비동기 로드 (BUG-076 디버깅)
-    if ((['admin','manager'].includes(window._currentUser?.role)) && document.getElementById('ri-diag-panel')) {
+    // 관리자/매니저/감독자 전용: DB 진단 정보 비동기 로드 (BUG-076 디버깅)
+    if ((['admin','manager','supervisor'].includes(currentUser?.role)) && document.getElementById('ri-diag-panel')) {
       try {
         const diagRes = await API.get('/diagnostics/risk-db');
         const d = diagRes.data || {};
@@ -17884,7 +17884,7 @@ async function _riToggleType(workTypeId, headerEl) {
 
 // 항목 테이블 렌더링
 function _riRenderItemTable(panel, workTypeId, items) {
-  const role = window._currentUser?.role || '';
+  const role = (currentUser?.role) || '';
   const canEdit = role !== 'worker';
   const wtName = panel.closest('.risk-cat-block')?.querySelector('.ri-type-header')?.dataset?.wtName || '';
 

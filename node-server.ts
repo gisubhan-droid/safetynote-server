@@ -2262,40 +2262,53 @@ function patchSchema() {
     console.warn('[patchSchema v0.149] 컬럼 보완 실패 (무시):', e.message)
   }
 
-  // ── [v0.150 BUG-076] risk_assessment_items 클린 리셋 — reset_risk_master_data.sql 자동 실행 ──
+  // ── [v0.151 BUG-076] risk_assessment_items 클린 리셋 — reset_risk_master_data.sql 자동 실행 ──
   // NAS DB에 잘못된(구버전) work_categories/work_types/risk_assessment_items가 있을 경우
-  // reset_risk_master_data.sql 로 완전 교체한다. (work_type_id=17~34 기준)
+  // reset_risk_master_data.sql 로 완전 교체한다.
+  // 정상 기준: work_categories 9건 && MIN(id)=9, work_types 18건 && MIN(id)=17, items>=700
   try {
     const hasItems = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='risk_assessment_items'").get() as any)
     const hasTypes = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_types'").get() as any)
     const hasCats  = (rawDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_categories'").get() as any)
     if (hasItems && hasTypes && hasCats) {
-      // 개발 DB 기준: work_types.id 범위는 17~34, work_categories.id 범위는 9~17
-      // NAS에 기존 다른 데이터가 있으면 reset_risk_master_data.sql로 교체
-      const minTypeId = (rawDb.prepare('SELECT MIN(id) as m FROM work_types').get() as any)?.m ?? 0
-      const maxTypeId = (rawDb.prepare('SELECT MAX(id) as m FROM work_types').get() as any)?.m ?? 0
+      // ① categories 체크 — 개발 DB 기준: 9건, MIN(id)=9 (NAS 구버전은 id=1부터 시작)
+      const catCount  = (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c
+      const minCatId  = (rawDb.prepare('SELECT MIN(id) as m FROM work_categories').get() as any)?.m ?? 0
+      // ② types 체크 — 개발 DB 기준: 18건, MIN(id)=17
       const typeCount = (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c
+      const minTypeId = (rawDb.prepare('SELECT MIN(id) as m FROM work_types').get() as any)?.m ?? 0
+      // ③ items 체크
       const itemCount = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
-      // 정상: work_types 18건, id 17~34, items 744건
-      const isClean = (typeCount === 18 && minTypeId === 17 && maxTypeId === 34 && itemCount >= 700)
+      // 정상 조건: categories 9건이며 id가 9부터 시작, types 18건이며 id가 17부터 시작, items 700+
+      const isClean = (catCount === 9 && minCatId === 9 && typeCount === 18 && minTypeId === 17 && itemCount >= 700)
+      console.log(`[patchSchema v0.151] 상태 — cats:${catCount}(min=${minCatId}) types:${typeCount}(min=${minTypeId}) items:${itemCount} isClean:${isClean}`)
       if (!isClean) {
-        const sqlPath = require('path').join(process.cwd(), 'reset_risk_master_data.sql')
-        if (require('fs').existsSync(sqlPath)) {
-          console.log(`[patchSchema v0.150] 비정상 데이터 감지 — types:${typeCount}(${minTypeId}~${maxTypeId}) items:${itemCount} — 클린 리셋 시작`)
-          const sql = require('fs').readFileSync(sqlPath, 'utf-8')
+        // SQL 파일 위치: 서버 파일과 같은 디렉토리 (process.cwd() 및 절대경로 모두 시도)
+        const cwd = process.cwd()
+        const scriptDir = (() => { try { return dirname(fileURLToPath(import.meta.url)) } catch(_) { return cwd } })()
+        const candidates = [
+          join(cwd, 'reset_risk_master_data.sql'),
+          join(scriptDir, 'reset_risk_master_data.sql'),
+          '/volume1/safetynote/reset_risk_master_data.sql'
+        ]
+        const sqlPath = candidates.find(p => existsSync(p)) ?? null
+        if (sqlPath) {
+          console.log(`[patchSchema v0.151] 비정상 데이터 감지 — cats:${catCount}(min=${minCatId}) types:${typeCount}(min=${minTypeId}) items:${itemCount} — 클린 리셋 시작: ${sqlPath}`)
+          const sql = readFileSync(sqlPath, 'utf-8')
           rawDb.exec(sql)
-          const afterItems = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+          const afterCats  = (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c
           const afterTypes = (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c
-          console.log(`[patchSchema v0.150] 클린 리셋 완료 — categories:9 types:${afterTypes} items:${afterItems}`)
+          const afterItems = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
+          console.log(`[patchSchema v0.151] ✅ 클린 리셋 완료 — categories:${afterCats} types:${afterTypes} items:${afterItems}`)
         } else {
-          console.warn('[patchSchema v0.150] reset_risk_master_data.sql 없음 — git pull 후 pm2 restart 필요')
+          console.warn(`[patchSchema v0.151] ⚠️ reset_risk_master_data.sql 없음 — 탐색 경로: ${candidates.join(', ')} — git pull 후 pm2 restart 필요`)
         }
       } else {
-        console.log(`[patchSchema v0.150] 정상 데이터 확인 — types:${typeCount} items:${itemCount} — 리셋 생략`)
+        console.log(`[patchSchema v0.151] ✅ 정상 데이터 확인 — 리셋 생략`)
       }
     }
   } catch(e: any) {
-    console.warn('[patchSchema v0.150] 클린 리셋 실패 (무시):', e.message)
+    console.warn('[patchSchema v0.151] 클린 리셋 실패 (무시):', e.message)
   }
 }
 patchSchema()
@@ -3202,11 +3215,18 @@ app.post('/api/admin/risk-master-restore', async (c) => {
   if (!user) return c.json({ error: '로그인 필요' }, 401)
   if (user.role !== 'admin') return c.json({ error: '관리자만 실행 가능합니다.' }, 403)
   try {
-    const sqlPath = require('path').join(process.cwd(), 'reset_risk_master_data.sql')
-    if (!require('fs').existsSync(sqlPath)) {
-      return c.json({ error: 'reset_risk_master_data.sql 파일이 없습니다. git pull 후 재시도하세요.' }, 404)
+    const cwd2 = process.cwd()
+    const scriptDir2 = (() => { try { return dirname(fileURLToPath(import.meta.url)) } catch(_) { return cwd2 } })()
+    const candidates2 = [
+      join(cwd2, 'reset_risk_master_data.sql'),
+      join(scriptDir2, 'reset_risk_master_data.sql'),
+      '/volume1/safetynote/reset_risk_master_data.sql'
+    ]
+    const sqlPath = candidates2.find(p => existsSync(p)) ?? null
+    if (!sqlPath) {
+      return c.json({ error: `reset_risk_master_data.sql 파일이 없습니다. 탐색 경로: ${candidates2.join(', ')} — git pull 후 재시도하세요.` }, 404)
     }
-    const sql = require('fs').readFileSync(sqlPath, 'utf-8') as string
+    const sql = readFileSync(sqlPath, 'utf-8') as string
     const beforeItems = (rawDb.prepare('SELECT COUNT(*) as c FROM risk_assessment_items').get() as any).c
     const beforeTypes = (rawDb.prepare('SELECT COUNT(*) as c FROM work_types').get() as any).c
     const beforeCats  = (rawDb.prepare('SELECT COUNT(*) as c FROM work_categories').get() as any).c

@@ -79,47 +79,6 @@ app.get('/', async (c) => {
   }
 })
 
-// 위험성 평가 상세
-app.get('/:id', async (c) => {
-  const user = getUser(c)
-  if (!user) return c.json({ error: '인증 필요' }, 401)
-  const id = c.req.param('id')
-  try {
-  const ra = await c.env.DB.prepare(
-    `SELECT ra.*, t.title as task_title,
-     COALESCE(ra.location, t.location) as location,
-     wt.name as work_type_name,
-     u.name as assessor_name
-     FROM risk_assessments ra
-     LEFT JOIN tasks t ON t.id = ra.task_id
-     LEFT JOIN work_types wt ON wt.id = t.work_type_id
-     LEFT JOIN users u ON u.id = ra.assessor_id
-     WHERE ra.id = ?`
-  ).bind(id).first<any>()
-  if (!ra) return c.json({ error: '평가 없음' }, 404)
-  const details = await c.env.DB.prepare(
-    'SELECT * FROM risk_assessment_details WHERE assessment_id = ? ORDER BY id'
-  ).bind(id).all<any>()
-  ra.details = details.results || []
-
-  // 평가위원 목록도 함께 반환
-  const members = await c.env.DB.prepare(
-    `SELECT ram.id, ram.user_id, ram.role, ram.assigned_at,
-     u.name, u.position, u.department
-     FROM risk_assessment_members ram
-     JOIN users u ON u.id = ram.user_id
-     WHERE ram.assessment_id = ?
-     ORDER BY CASE ram.role WHEN 'chair' THEN 0 ELSE 1 END, ram.assigned_at`
-  ).bind(id).all<any>()
-  ra.members = members.results || []
-
-  return c.json(ra)
-  } catch (e: any) {
-    console.error('[risk GET /:id]', e.message)
-    return c.json({ error: e.message || '평가 상세 조회 실패' }, 500)
-  }
-})
-
 // 위험성 평가 생성
 app.post('/', async (c) => {
   const user = getUser(c)
@@ -1104,6 +1063,47 @@ app.post('/items/import', async (c) => {
   } catch (e: any) {
     console.error('[risk POST /items/import]', e.message)
     return c.json({ error: e.message || '업로드 실패' }, 500)
+  }
+})
+
+// ─── 위험성 평가 상세 (반드시 마지막에 위치 — /:id 가 다른 경로를 덮어쓰지 않도록) ─
+app.get('/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  try {
+  const ra = await c.env.DB.prepare(
+    `SELECT ra.*, t.title as task_title,
+     COALESCE(ra.location, t.location) as location,
+     wt.name as work_type_name,
+     u.name as assessor_name
+     FROM risk_assessments ra
+     LEFT JOIN tasks t ON t.id = ra.task_id
+     LEFT JOIN work_types wt ON wt.id = t.work_type_id
+     LEFT JOIN users u ON u.id = ra.assessor_id
+     WHERE ra.id = ?`
+  ).bind(id).first<any>()
+  if (!ra) return c.json({ error: '평가 없음' }, 404)
+  const details = await c.env.DB.prepare(
+    'SELECT * FROM risk_assessment_details WHERE assessment_id = ? ORDER BY id'
+  ).bind(id).all<any>()
+  ra.details = details.results || []
+
+  // 평가위원 목록도 함께 반환
+  const members = await c.env.DB.prepare(
+    `SELECT ram.id, ram.user_id, ram.role, ram.assigned_at,
+     u.name, u.position, u.department
+     FROM risk_assessment_members ram
+     JOIN users u ON u.id = ram.user_id
+     WHERE ram.assessment_id = ?
+     ORDER BY CASE ram.role WHEN 'chair' THEN 0 ELSE 1 END, ram.assigned_at`
+  ).bind(id).all<any>()
+  ra.members = members.results || []
+
+  return c.json(ra)
+  } catch (e: any) {
+    console.error('[risk GET /:id]', e.message)
+    return c.json({ error: e.message || '평가 상세 조회 실패' }, 500)
   }
 })
 

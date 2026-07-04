@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-04 (세션 102)
-> **서버 현재 버전: `9088ddc`** ← 최신 (GitHub) — BUG-074 GET /:id 라우트 순서 수정
-> **NAS 배포 버전: `1410b65`** ← git pull 필요
-> **캐시 버전: v=20260704c**
+> **서버 현재 버전: `753d5b9`** ← 최신 (GitHub) — BUG-075 500 에러 해결 (patchSchema v0.149 + COALESCE)
+> **NAS 배포 버전: `1410b65`** ← git pull + pm2 restart 필요
+> **캐시 버전: v=20260704d**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 > **NAS git 동기화**: `git pull` 실패 시 → `git fetch origin && git reset --hard origin/main`
@@ -18,6 +18,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-075 | 102 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 500 에러 — ① `risk_assessment_items` 테이블이 구버전 스키마로 이미 존재 → `CREATE TABLE IF NOT EXISTS` 무시 → `note`/`is_active` 등 컬럼 없음 → 쿼리 500 ② `is_active` 직접 참조 시 컬럼 없으면 WHERE 조건 자체가 500 → `patchSchema v0.149` 추가(safeAlter로 컬럼 13개 보장) + `GET /items/by-work-type` · `GET /items/manage/:id` · `GET /work-types` 모든 컬럼 `COALESCE` 방어처리 / 캐시 `v=20260704d` | `753d5b9` |
 | BUG-074 | 102 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 브라우저 404 — `src/routes/risk.ts`에서 `app.get('/:id', ...)` 라우트가 83번째 줄에 등록되어 이후의 `work-categories`, `work-types`, `items/by-work-type` 등 모든 GET 경로를 선점(Hono는 등록 순서 우선) → curl 직접 호출은 401(API 존재) 이지만 브라우저 인증 요청은 `/:id`에서 매칭되어 DB 조회 후 404 반환 → `/:id` 라우트를 파일 맨 끝(1070번째)으로 이동 | `9088ddc` |
 | BUG-073 | 101 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 404 — FEAT-045/046 추가 테이블(`work_categories`/`work_types`/`risk_assessment_items`)이 NAS `patchSchema`에 누락 → DB 테이블 미존재 → `patchSchema v0.148`에 `CREATE TABLE IF NOT EXISTS` 3개 추가 / `fix_nas_duplicates_v2.sql`로 중복 72→18건 정리 / `patch_v0148.js` 긴급 패치 스크립트 추가 | `1410b65` |
 | BUG-072 | 101 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 NAS 미업데이트 시 `Promise.all` → 페이지 전체 오류 — `Promise.allSettled`로 변경 + 업데이트 안내 배너 표시 | `c4db7c8` |

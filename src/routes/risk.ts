@@ -785,14 +785,22 @@ app.get('/items/by-work-type/:workTypeId', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const workTypeId = c.req.param('workTypeId')
   try {
+    // COALESCE로 컬럼 누락 시 기본값 사용 (BUG-075: 구버전 DB 호환)
     const result = await c.env.DB.prepare(
-      `SELECT rai.id, rai.work_type_id, rai.hazard, rai.risk_factor,
-              rai.before_frequency as likelihood, rai.before_severity as severity,
-              rai.control_measures as countermeasure, rai.responsible,
-              rai.after_frequency, rai.after_severity,
-              rai.category, rai.note, rai.is_active
+      `SELECT rai.id, rai.work_type_id, rai.hazard,
+              COALESCE(rai.risk_factor, '') as risk_factor,
+              COALESCE(rai.before_frequency, 1) as likelihood,
+              COALESCE(rai.before_severity, 1)  as severity,
+              COALESCE(rai.control_measures, '') as countermeasure,
+              COALESCE(rai.responsible, '관리감독자') as responsible,
+              COALESCE(rai.after_frequency, 1) as after_frequency,
+              COALESCE(rai.after_severity, 1)  as after_severity,
+              COALESCE(rai.category, '')  as category,
+              COALESCE(rai.note, '')       as note,
+              COALESCE(rai.is_active, 1)   as is_active
        FROM risk_assessment_items rai
-       WHERE rai.work_type_id = ? AND rai.is_active = 1
+       WHERE rai.work_type_id = ?
+         AND COALESCE(rai.is_active, 1) = 1
        ORDER BY rai.id`
     ).bind(Number(workTypeId)).all<any>()
     return c.json(result.results || [])
@@ -809,13 +817,18 @@ app.get('/items/manage/:itemId', async (c) => {
   const itemId = c.req.param('itemId')
   try {
     const row = await c.env.DB.prepare(
-      `SELECT rai.id, rai.work_type_id, rai.hazard, rai.risk_factor,
-              rai.before_frequency as likelihood, rai.before_severity as severity,
-              rai.control_measures as countermeasure, rai.responsible,
-              rai.after_frequency, rai.after_severity,
-              rai.category, rai.note
+      `SELECT rai.id, rai.work_type_id, rai.hazard,
+              COALESCE(rai.risk_factor, '') as risk_factor,
+              COALESCE(rai.before_frequency, 1) as likelihood,
+              COALESCE(rai.before_severity, 1)  as severity,
+              COALESCE(rai.control_measures, '') as countermeasure,
+              COALESCE(rai.responsible, '관리감독자') as responsible,
+              COALESCE(rai.after_frequency, 1) as after_frequency,
+              COALESCE(rai.after_severity, 1)  as after_severity,
+              COALESCE(rai.category, '') as category,
+              COALESCE(rai.note, '')     as note
        FROM risk_assessment_items rai
-       WHERE rai.id = ? AND rai.is_active = 1`
+       WHERE rai.id = ? AND COALESCE(rai.is_active, 1) = 1`
     ).bind(Number(itemId)).first<any>()
     if (!row) return c.json({ error: '항목 없음' }, 404)
     return c.json(row)
@@ -838,7 +851,8 @@ app.get('/work-types', async (c) => {
        COUNT(rai.id) as item_count
        FROM work_types wt
        JOIN work_categories wc ON wc.id = wt.category_id
-       LEFT JOIN risk_assessment_items rai ON rai.work_type_id = wt.id AND rai.is_active = 1
+       LEFT JOIN risk_assessment_items rai
+         ON rai.work_type_id = wt.id AND COALESCE(rai.is_active, 1) = 1
        GROUP BY wt.id ORDER BY wc.name, wt.name`
     ).all<any>()
     return c.json(result.results || [])

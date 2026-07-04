@@ -2233,6 +2233,34 @@ function patchSchema() {
   } catch(e: any) {
     console.warn('[patchSchema v0.148] 테이블 생성 실패 (무시):', e.message)
   }
+
+  // ── [v0.149 BUG-075] risk_assessment_items 컬럼 누락 보완 ──────────────────
+  // v0.148에서 CREATE TABLE IF NOT EXISTS 로 생성하지만,
+  // 기존에 다른 스키마로 생성된 테이블이 있으면 IF NOT EXISTS는 아무것도 안 함
+  // → safeAlter 로 누락 컬럼 개별 추가 보장
+  try {
+    const _safeAlt = (sql: string) => {
+      try { rawDb.exec(sql) } catch(e: any) {
+        if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.149]', e.message)
+      }
+    }
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN risk_factor TEXT DEFAULT ''`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN before_frequency INTEGER DEFAULT 1`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN before_severity INTEGER DEFAULT 1`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN before_risk_level TEXT DEFAULT '낮음'`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN control_measures TEXT DEFAULT ''`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN after_frequency INTEGER DEFAULT 1`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN after_severity INTEGER DEFAULT 1`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN after_risk_level TEXT DEFAULT '낮음'`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN responsible TEXT DEFAULT '관리감독자'`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN note TEXT DEFAULT ''`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN is_active INTEGER DEFAULT 1`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN category TEXT DEFAULT ''`)
+    _safeAlt(`ALTER TABLE risk_assessment_items ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`)
+    console.log('[patchSchema v0.149] risk_assessment_items 컬럼 보완 완료')
+  } catch(e: any) {
+    console.warn('[patchSchema v0.149] 컬럼 보완 실패 (무시):', e.message)
+  }
 }
 patchSchema()
 // 서버 시작 시 tbm_signatures 테이블 + 잔여 트리거 정리 (1회)
@@ -4947,13 +4975,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260704c">
+  <link rel="stylesheet" href="/static/style.css?v=20260704d">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260704c"></script>
+  <script src="/static/app.js?v=20260704d"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260704c"></script>
+  <script src="/static/mobile-app.js?v=20260704d"></script>
 </body>
 </html>`)
 })

@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-04 (세션 99)
-> **서버 현재 버전: `082eb54`** ← 최신 (GitHub) — BUG-071 전체 화면 반응형 page-container 적용
+> 최종 업데이트: 2026-07-04 (세션 100)
+> **서버 현재 버전: `9b64991`** ← 최신 (GitHub) — FEAT-046 분류별 항목 관리 메뉴 분리
 > **NAS 배포 버전: `ac4381e`** ← 업데이트 필요
-> **캐시 버전: v=20260704a**
+> **캐시 버전: v=20260704c**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 
@@ -57,6 +57,8 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-046 | 100 | 2026-07-04 | ✅ 구현 | 위험성평가 하위 메뉴 3개 재편 — 정기/수시/분류별 항목 관리 분리 / renderRiskPage: 이력만 표시 + 분류별 항목 탭 제거 / 신규 renderRiskItemsPage: 대분류 필터+작업유형 아코디언+항목 수정·삭제·추가 / 백엔드 API 추가: GET /risk/items/by-work-type/:id, GET /risk/items/manage/:id / PUT·POST 필드 호환(likelihood/severity/countermeasure) / 캐시 v=20260704c | `9b64991` |
+| FEAT-045 | 99 | 2026-07-04 | ✅ 구현 | 분류별 항목 조회 탭에 엑셀 양식 다운로드/CSV 업로드 + 작업유형 관리 버튼 추가 — `GET /api/risk/items/template`, `POST /api/risk/items/import`, work-types/work-categories CRUD API | `a825e74` |
 | FEAT-044 | 98 | 2026-07-04 | ✅ 구현 | 저장 폴더 현황 년도/월 클릭 시 공사폴더 상세 모달 — `GET /api/admin/folders/detail?year&month` 엔드포인트 추가 / 클라이언트: 월 로우 클릭 → 상세 모달 (요약카드+파일타입+공사폴더목록+용량비율바) | `330a4e7` |
 | FEAT-043 | 97 | 2026-07-04 | ✅ 구현 | 저장 폴더 현황 — 공사요청번호 등록년도/월별 계층 통계 추가 — `/api/admin/folders`에 `yearStats` 반환 (4자리 년도 폴더 자동 감지 → 01~12 월 폴더 스캔 → bytes/imgCount/docCount/vidCount/etcCount) / 클라이언트 UI: 년도별 아코디언 + 월별 파일 종류·용량 표시 / FEAT-042 경로 구조 기반 | `17557d2` |
 | FEAT-042 | 95 | 2026-07-04 | ✅ 구현 | 파일 저장 경로 폴더 구조에 년도/월 계층 추가 — `{루트}/{년도}/{월}/{공사요청번호}_{공사명}/...` / `constructions.created_at` 기준 년도·월 자동 추출 / 미연결(미분류) 작업은 기존 구조 유지 / UI 안내 블록·서버사이드 4개 파일 수정 (`src/utils.ts`, `src/routes/photos.ts`, `src/routes/inspections.ts`, `src/routes/attachments.ts`, `src/nas-routes/attachments-nas.ts`) | `2e38b2a` |

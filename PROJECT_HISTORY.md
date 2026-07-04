@@ -17,6 +17,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-070 | 96 | 2026-07-04 | ✅ 수정 | 신규 작업 등록 시 공사요청번호 미입력 → 서버 500 (`D1_ERROR: NOT NULL constraint failed: tasks.construction_id`) — `createTask()` 함수에 `construction_id` 클라이언트 validation 추가: `if (!data.construction_id) { toast('공사를 선택하거나 공사요청번호를 입력 후 연동하세요.', 'error'); return; }` (app.js ~5003줄) / 캐시 버전 `s→t` | `366c00f` |
 | BUG-069 | 92 | 2026-07-04 | ✅ 수정 | 외선·접속 엑셀 업로드 시 공종명 미반영 — `iLabel = findIndex(h => h.includes('공종명') \| h.includes('공종'))` 에서 `'공종키'.includes('공종')===true` 로 `iLabel=0`(공종키 열) 잘못 매칭 → `h.includes('공종')` 조건 제거, `h.includes('공종명')` 만 남김 (work-reports.ts, splice-reports.ts) | `9da4ea2` |
 | BUG-068 | 91 | 2026-07-04 | ✅ 수정 | 단가관리 테이블 헤더 스크롤 시 사라짐 — `overflow-y:auto` + `max-height:60vh` + `thead position:sticky top:0` 적용 (외선·접속 모두) | `b3d011d` |
 | BUG-067 | 91 | 2026-07-04 | ✅ 수정 | 수동 추가 시 공종명이 공종키 열에 입력됨 — `_upAddCableItem`·`_upAddSpliceItem` DOM 삽입 코드를 FEAT-039 열 구조(공종키\|공종명\|단위\|단가\|삭제)에 맞게 수정 / 공종명=공종키인 행 주황색 강조+안내 | `b3d011d` |

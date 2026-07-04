@@ -156,23 +156,34 @@ app.delete('/:id', async (c) => {
   if (!row) return c.json({ error: '존재하지 않습니다.' }, 404)
   if (row.status === 'completed') return c.json({ error: '완료된 위험성평가는 삭제할 수 없습니다.' }, 400)
   // 연관 데이터 먼저 삭제 (FK CASCADE 없는 테이블 모두 명시 삭제)
-  // 1) risk_assessment_details — FK: assessment_id → risk_assessments(id) [CASCADE 없음]
-  await c.env.DB.prepare(`DELETE FROM risk_assessment_details     WHERE assessment_id=?`).bind(id).run()
-  // 2) risk_assessment_members — FK: assessment_id → risk_assessments(id) [CASCADE 있음이지만 명시 삭제]
-  await c.env.DB.prepare(`DELETE FROM risk_assessment_members     WHERE assessment_id=?`).bind(id).run()
-  // 3) risk_assessment_signatures — FK: assessment_id → risk_assessments(id) [CASCADE 있음이지만 명시 삭제]
-  //    NAS DB 일부 버전에서 CASCADE 미적용 상태 대비
-  await c.env.DB.prepare(`DELETE FROM risk_assessment_signatures  WHERE assessment_id=?`).bind(id).run()
-  // 4) signature_requests (ref_type='risk_assessment') — 외래키 없음, ref_id로 연결
-  //    테이블 미존재 NAS 버전 방어: try-catch로 무시
+  // 각 단계 개별 try-catch로 정확한 에러 위치 파악
+  const steps: Array<[string, string]> = [
+    ['risk_assessment_details',    `DELETE FROM risk_assessment_details    WHERE assessment_id=${id}`],
+    ['risk_assessment_members',    `DELETE FROM risk_assessment_members    WHERE assessment_id=${id}`],
+    ['risk_assessment_signatures', `DELETE FROM risk_assessment_signatures WHERE assessment_id=${id}`],
+  ]
+  for (const [tbl, sql] of steps) {
+    try {
+      await c.env.DB.prepare(sql).run()
+    } catch(e: any) {
+      console.error(`[risk DELETE /:id] step ${tbl} FAILED:`, e.message)
+      return c.json({ error: `[${tbl}] ${e.message}` }, 500)
+    }
+  }
+  // signature_requests — 테이블 없을 수 있으므로 무시
   try {
     await c.env.DB.prepare(`DELETE FROM signature_requests WHERE ref_type='risk_assessment' AND ref_id=?`).bind(id).run()
-  } catch(_) { /* 테이블 없을 수 있음 — 무시 */ }
-  // 5) 본 레코드 삭제
-  await c.env.DB.prepare(`DELETE FROM risk_assessments            WHERE id=?`).bind(id).run()
+  } catch(_) {}
+  // 본 레코드 삭제
+  try {
+    await c.env.DB.prepare(`DELETE FROM risk_assessments WHERE id=?`).bind(id).run()
+  } catch(e: any) {
+    console.error(`[risk DELETE /:id] step risk_assessments FAILED:`, e.message)
+    return c.json({ error: `[risk_assessments] ${e.message}` }, 500)
+  }
   return c.json({ success: true })
   } catch (e: any) {
-    console.error('[risk DELETE /:id]', e.message)
+    console.error('[risk DELETE /:id] outer catch:', e.message)
     return c.json({ error: e.message || '평가 삭제 실패' }, 500)
   }
 })

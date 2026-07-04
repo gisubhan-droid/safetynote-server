@@ -4654,3 +4654,145 @@ async function _tbmShare(tbmId) {
 - **TBM 실시 주소**: `tbm_records.gps_address` 우선, 없으면 `tbm_records.location` fallback
 - BUG-058(TBM 상세 모달 서명 2열+사진) 동시 작업 시 공유 버튼도 함께 추가
 
+---
+
+## 세션 79 — FEAT-047: 분류별 항목 category 관리 + FIX-048/049: 위험성평가 등록·삭제 500 에러 수정 ✅
+
+### 작업 일자
+2026-07-04
+
+### 커밋 이력
+| 커밋 | 내용 |
+|------|------|
+| `ac142d8` | FEAT-047: category 분류 관리 + 진단API 500 수정 |
+| `09f29f0` | FIX-048: patchSchema v0.152 — risk_assessment_details FK 수정 |
+| `fd62cb8` | FIX-049: 위험성평가 삭제 500 에러 수정 — 연관 테이블 명시 삭제 강화 |
+| `5f3dc68` | FIX-049b: NAS 직접 실행용 DB 수정 스크립트 추가 |
+| `02ce5b0` | DEBUG-049c: 삭제 라우트 단계별 에러 로깅 |
+| `55b990b` | FIX-049d: risk_assessment_members FK 수정 추가 + DB 경로 자동 탐지 |
+
+---
+
+### FEAT-047: 분류별 항목 관리 — category 필드 관리 기능
+
+#### 배경
+`risk_assessment_items.category` 컬럼(기계적/전기적/화학적/생물학적/작업특성/작업환경 요인 7종)을
+분류별 항목 관리 화면에서 수정·등록할 수 없었음.
+
+#### 변경 파일
+- `public/static/app.js`
+- `node-server.ts` (진단 API 수정)
+
+#### 구현 내용
+
+**① `RISK_CATEGORIES` 상수 정의**
+```javascript
+const RISK_CATEGORIES = [
+  '', '1. 기계적 요인', '2. 전기적 요인', '3. 화학적 요인',
+  '4. 생물학적 요인', '5. 작업특성 요인', '6. 작업환경 요인'
+];
+```
+
+**② `_riCategoryBadge()` 헬퍼 — 분류별 색상 배지**
+| 분류 | 색상 |
+|------|------|
+| 기계적 요인 | 주황 (`bg-orange-100`) |
+| 전기적 요인 | 노랑 (`bg-yellow-100`) |
+| 화학적 요인 | 보라 (`bg-purple-100`) |
+| 생물학적 요인 | 초록 (`bg-green-100`) |
+| 작업특성 요인 | 파랑 (`bg-blue-100`) |
+| 작업환경 요인 | 틸 (`bg-teal-100`) |
+
+**③ 수정 모달 (`_riShowEditModal`) — category 드롭다운 추가**
+- 유해·위험요인 행 위에 "항목 분류" 셀렉트 추가
+- 현재 `item.category` 값 자동 selected 처리
+- `_riSaveEdit` body에 `category` 필드 포함하여 PUT 전송
+
+**④ 추가 모달 (`_riAddItemModal`) — category 드롭다운 추가**
+- 동일 `RISK_CATEGORIES` 목록 셀렉트
+- `_riSaveAdd` body에 `category` 필드 포함하여 POST 전송
+
+**⑤ 목록 테이블 (`_riRenderItemTable`) — 분류 컬럼 추가**
+- 헤더: `#` | **분류** | 유해·위험요인 | 위험성 내용 | 안전조치 | 개선전→후
+- 각 행에 `_riCategoryBadge(item.category)` 배지 표시 (sm: 이상)
+
+**⑥ 진단 API 수정 (`GET /api/diagnostics/risk-db`)**
+- `created_at` 컬럼 미존재 방어: `hasCreatedAt` 플래그로 동적 SELECT
+- `.first()` → `.get()` 교체 (better-sqlite3 호환)
+- `category_distribution` 필드 추가 (분류별 건수 현황)
+
+---
+
+### FIX-048 / FIX-049: 위험성평가 등록·삭제 500 에러
+
+#### 에러 메시지
+```
+D1_ERROR: no such table: main.risk_assessments_old
+```
+
+#### 근본 원인
+마이그레이션 `0029_fix_foreign_keys_to_tasks.sql`에서 `risk_assessments` 테이블을
+재생성(`RENAME TO risk_assessments_old` → 신규 생성)할 때,
+연관 테이블들의 FK DDL이 **임시 테이블명 `risk_assessments_old`를 참조한 채로 DB에 저장**됨.
+
+**영향받은 테이블:**
+| 테이블 | 현상 |
+|--------|------|
+| `risk_assessment_details` | INSERT(등록) 시 500 |
+| `risk_assessment_members` | DELETE(삭제) 시 500 |
+
+#### 진단 과정
+1. 초기: `scripts/fix-risk-details-fk.cjs`가 `/volume1/safetynote/safety.db`를 탐색
+2. **실제 NAS DB 경로**: `/volume1/safetynote/data/safety.db` (서브디렉토리)
+   → 스크립트가 엉뚱한 DB를 수정하여 효과 없었음
+3. PM2 로그 확인으로 실제 에러 위치 특정:
+   ```
+   [risk DELETE /:id] step risk_assessment_members FAILED: D1_ERROR: no such table: main.risk_assessments_old
+   ```
+
+#### 수정 내용
+
+**① patchSchema v0.152 (`node-server.ts`)**
+```typescript
+// 서버 시작 시 두 테이블 모두 자동 수정
+const _fixFkTargets = [
+  { name: 'risk_assessment_details', ... },
+  { name: 'risk_assessment_members', ... },
+]
+for (const tgt of _fixFkTargets) {
+  // sqlite_master에서 DDL 조회 → risk_assessments_old 포함 시 재생성
+  // 기존 데이터 전량 보존, PRAGMA foreign_keys OFF/ON
+}
+```
+
+**② `scripts/fix-risk-details-fk.cjs` v2**
+- DB 경로 자동 탐지 순서: `data/safety.db` → `safety.db`
+- 두 테이블(`details` + `members`) 모두 수정 대상
+- 정상 DB에서는 "수정 불필요"로 안전 종료
+
+**③ 삭제 라우트 강화 (`src/routes/risk.ts`)**
+- 삭제 순서: `details` → `members` → `signatures` → `signature_requests` → 본 레코드
+- `risk_assessments_old` 에러 시 `PRAGMA foreign_keys=OFF`로 재시도 (최후 안전장치)
+
+#### 해결 확인
+- NAS PM2 로그: `[patchSchema v0.152] risk_assessment_members FK 재생성 완료` ✅
+- 정기 위험성평가 등록 정상 ✅
+- 등록된 항목 삭제 정상 ✅
+
+#### 재발 방지
+- patchSchema v0.152가 서버 시작 시 항상 실행되므로 동일 문제 재발 없음
+- 긴급 수동 수정 스크립트: `node /volume1/safetynote/scripts/fix-risk-details-fk.cjs`
+
+---
+
+### 잔여 에러 (미해결)
+```
+[risk GET /items/by-work-type/:workTypeId] D1_ERROR: no such column: rai.note
+[tasks/stops] task_stops 쿼리 실패 (테이블/컬럼 없음): D1_ERROR: no such column: ts.notes
+```
+- `rai.note`: `risk_assessment_items.note` 컬럼이 NAS DB에 없음
+  → patchSchema v0.149에서 ALTER 추가 대상이나 NAS DB에 미적용 상태
+  → **다음 세션에서 수정 필요**
+- `ts.notes`: `task_stops.notes` 컬럼 누락 — 별도 확인 필요
+
+---

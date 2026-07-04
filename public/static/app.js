@@ -5000,6 +5000,7 @@ async function createTask() {
     worker_ids: workerIds
   };
   if (!data.title) { toast('작업명을 입력하세요.', 'error'); return; }
+  if (!data.construction_id) { toast('공사를 선택하거나 공사요청번호를 입력 후 연동하세요.', 'error'); return; }
 
   // _forceCreate 플래그: showCreateTaskFromConstruction에서 completed 공사 confirm 후 설정
   const forceCreate = window.__taskCreateForceFlag === true;

@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-04 (세션 102)
-> **서버 현재 버전: `8b33ad6`** ← 최신 (GitHub) — BUG-076 legal-notices 404 + 진단 API
-> **NAS 배포 버전: `1410b65`** ← git pull + pm2 restart 필요
-> **캐시 버전: v=20260704e**
+> **서버 현재 버전: `6066b06`** ← 최신 (GitHub) — 진단 패널 상세화 (work_type별 항목 수)
+> **NAS 배포 버전: `6066b06`** (git pull + pm2 restart 필요)
+> **캐시 버전: v=20260704g**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 > **NAS git 동기화**: `git pull` 실패 시 → `git fetch origin && git reset --hard origin/main`

@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-05 (세션 105)
-> **서버 현재 버전: `d329cf0` ← 최신 (GitHub) — PLAN-UI-001 Option C 구현 완료 (아이콘 레일 + 플라이아웃)**
+> 최종 업데이트: 2026-07-05 (세션 105 — v3.0 태깅)
+> **서버 현재 버전: `338bc7d` ← 최신 (GitHub) — v3.0 정식 릴리즈 (Option C + 버그픽스)**
 > **NAS 배포 버전: `347d747`** (git pull 후 pm2 restart — FIX-054 3445 포트 변경 반영)
 > **캐시 버전: v=20260704g**
 > **APK 최신**: v1.4.7
@@ -5254,7 +5254,29 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 
 ---
 
-## 세션 105 — 2026-07-05
+## 세션 105 — 2026-07-05 ★ v3.0 정식 릴리즈
+
+### PLAN-UI-001 Option C 구현 완료 + v3.0 배포 전 검토 (버그 2건 수정)
+
+#### 배포 전 검토에서 발견·수정된 버그
+
+**[BUG-FIX-1] 모바일 하단 탭바 이중 표시 (`mobile-app.js`)**
+- 원인: `app.js`의 `.bottom-nav`(그룹탭)와 `mobile-app.js`의 `#mobile-nav-bar`(홈/내작업/TBM 탭)가 모바일에서 동시에 렌더링
+- 수정: `buildMobileNav()` 내 `#icon-rail` 존재 확인 → 있으면 PWA 탭바 생성 Skip
+- 수정: `navigateTo` 래핑도 `#icon-rail` 존재 시 Skip (syncFlyoutActive가 active 관리 담당)
+
+**[BUG-FIX-2] 모바일 CSS `margin-left` 충돌 (`style.css`)**
+- 원인: 기존 사이드바 규칙 `margin-left: 0 !important`(L783)가 Option C의 `margin-left: 52px`(L740)를 덮어씀
+- 수정: Option C 모바일/데스크톱 규칙에 `!important` 추가
+
+#### v3.0 버전 태깅
+- `app.js` 헤더: `v3.0 (20260705a)`
+- `node-server.ts` 캐시버스팅: `?v=20260704j` → `?v=20260705v300`
+- `service-worker.js`: `sn-static-v11` → `sn-static-v12` (구버전 캐시 완전 폐기)
+
+**커밋**: `338bc7d` — fix: v3.0 배포 전 검토 버그 2건 수정 + 버전 v3.0 태깅
+
+---
 
 ### PLAN-UI-001 Option C 구현 완료 (아이콘 레일 56px + 플라이아웃 패널 220px)
 

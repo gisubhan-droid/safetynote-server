@@ -15992,6 +15992,148 @@ async function renderAdminSettingsPage(container, _activeTab) {
           </div>
         </div>
 
+        <!-- ─── FEAT-053: 버전 롤백 패널 ─────────────────────────── -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 col-span-1 xl:col-span-2">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-gray-700 flex items-center gap-2">
+              <i class="fas fa-history text-orange-500"></i> 버전 롤백
+              <span class="text-xs font-normal text-gray-400">업데이트 후 문제 발생 시 이전 버전으로 복원</span>
+            </h3>
+            <button onclick="_rbTogglePanel()" id="rb-toggle-btn"
+              class="text-xs px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 hover:bg-orange-50 transition-all flex items-center gap-1">
+              <i class="fas fa-chevron-down" id="rb-toggle-icon"></i> 펼치기
+            </button>
+          </div>
+
+          <!-- 롤백 패널 본문 (기본 숨김) -->
+          <div id="rb-panel-body" class="hidden">
+
+            <!-- 경고 배너 -->
+            <div class="flex items-start gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 mb-4 text-sm text-orange-800">
+              <i class="fas fa-exclamation-triangle text-orange-500 mt-0.5 shrink-0"></i>
+              <div>
+                <p class="font-semibold mb-0.5">주의: 롤백은 소스코드를 이전 버전으로 되돌립니다.</p>
+                <p class="text-xs text-orange-700">DB 데이터는 소스 롤백과 무관하게 유지됩니다. DB까지 복원하려면 아래 'DB 백업 복원' 탭을 사용하세요.</p>
+              </div>
+            </div>
+
+            <!-- 탭 전환 -->
+            <div class="flex gap-1 mb-4 border-b border-gray-100 pb-2">
+              <button id="rb-tab-commits" onclick="_rbShowTab('commits')"
+                class="px-4 py-2 text-sm font-semibold rounded-t-lg text-blue-700 bg-blue-50 border border-blue-200 border-b-0">
+                <i class="fas fa-code-branch mr-1"></i>커밋 롤백
+              </button>
+              <button id="rb-tab-db" onclick="_rbShowTab('db')"
+                class="px-4 py-2 text-sm font-semibold rounded-t-lg text-gray-500 hover:bg-gray-50">
+                <i class="fas fa-database mr-1"></i>DB 백업 복원
+              </button>
+            </div>
+
+            <!-- ─ 탭A: 커밋 롤백 ────────────────────────────────── -->
+            <div id="rb-pane-commits">
+              <div class="flex items-center justify-between mb-2">
+                <p class="text-xs text-gray-500">최근 커밋 목록에서 복원할 버전을 선택하세요.</p>
+                <button onclick="_rbLoadHistory()"
+                  class="text-xs px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-all flex items-center gap-1">
+                  <i class="fas fa-sync-alt"></i> 새로고침
+                </button>
+              </div>
+              <!-- 커밋 목록 테이블 -->
+              <div class="overflow-x-auto rounded-xl border border-gray-100 mb-3">
+                <table class="w-full text-xs">
+                  <thead class="bg-gray-50 text-gray-500">
+                    <tr>
+                      <th class="text-left px-3 py-2 font-semibold w-20">해시</th>
+                      <th class="text-left px-3 py-2 font-semibold w-36">날짜</th>
+                      <th class="text-left px-3 py-2 font-semibold">커밋 메시지</th>
+                      <th class="text-right px-3 py-2 font-semibold w-20">선택</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rb-commit-list">
+                    <tr><td colspan="4" class="text-center py-6 text-gray-400">
+                      <i class="fas fa-spinner fa-spin mr-1"></i>목록 로딩 중...
+                    </td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <!-- 선택된 커밋 표시 + 비밀번호 확인 폼 -->
+              <div id="rb-commit-form" class="hidden bg-orange-50 border border-orange-200 rounded-xl p-4">
+                <p class="text-sm font-semibold text-orange-800 mb-1">
+                  <i class="fas fa-undo-alt mr-1"></i>
+                  <span id="rb-selected-hash" class="font-mono">—</span> 커밋으로 롤백
+                </p>
+                <p class="text-xs text-orange-700 mb-3" id="rb-selected-msg">—</p>
+                <div class="flex gap-2">
+                  <input type="password" id="rb-commit-pw" placeholder="관리자 비밀번호"
+                    class="flex-1 border border-orange-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-orange-400 bg-white"
+                    onkeydown="if(event.key==='Enter') _rbApplyRollback()">
+                  <button onclick="_rbApplyRollback()"
+                    class="bg-orange-600 hover:bg-orange-700 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-all flex items-center gap-2">
+                    <i class="fas fa-undo-alt"></i> 롤백 실행
+                  </button>
+                  <button onclick="document.getElementById('rb-commit-form').classList.add('hidden')"
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-600 rounded-xl px-3 py-2 text-sm transition-all">취소</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ─ 탭B: DB 백업 복원 ─────────────────────────────── -->
+            <div id="rb-pane-db" class="hidden">
+              <div class="flex items-center justify-between mb-2">
+                <p class="text-xs text-gray-500">업데이트 전 자동 생성된 DB 백업 파일을 복원합니다.</p>
+                <button onclick="_rbLoadBackups()"
+                  class="text-xs px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-all flex items-center gap-1">
+                  <i class="fas fa-sync-alt"></i> 새로고침
+                </button>
+              </div>
+              <!-- 경고 -->
+              <div class="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3 text-xs text-red-700">
+                <i class="fas fa-exclamation-circle text-red-500 shrink-0 mt-0.5"></i>
+                <span><b>주의:</b> DB 복원 시 복원 시점 이후의 모든 데이터(공사·작업·보고서 등)가 손실됩니다. 복원 전 현재 DB를 자동 저장합니다.</span>
+              </div>
+              <!-- 백업 목록 -->
+              <div class="overflow-x-auto rounded-xl border border-gray-100 mb-3">
+                <table class="w-full text-xs">
+                  <thead class="bg-gray-50 text-gray-500">
+                    <tr>
+                      <th class="text-left px-3 py-2 font-semibold">파일명</th>
+                      <th class="text-left px-3 py-2 font-semibold w-36">생성 시각</th>
+                      <th class="text-right px-3 py-2 font-semibold w-20">크기</th>
+                      <th class="text-right px-3 py-2 font-semibold w-20">선택</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rb-backup-list">
+                    <tr><td colspan="4" class="text-center py-6 text-gray-400">
+                      <i class="fas fa-spinner fa-spin mr-1"></i>목록 로딩 중...
+                    </td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <!-- 선택된 백업 복원 폼 -->
+              <div id="rb-db-form" class="hidden bg-red-50 border border-red-200 rounded-xl p-4">
+                <p class="text-sm font-semibold text-red-800 mb-1">
+                  <i class="fas fa-database mr-1"></i>
+                  <span id="rb-selected-backup" class="font-mono">—</span> 복원
+                </p>
+                <p class="text-xs text-red-700 mb-3">이 작업은 되돌릴 수 없습니다. 현재 DB는 자동 백업 후 교체됩니다.</p>
+                <div class="flex gap-2">
+                  <input type="password" id="rb-db-pw" placeholder="관리자 비밀번호"
+                    class="flex-1 border border-red-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-400 bg-white"
+                    onkeydown="if(event.key==='Enter') _rbApplyRestoreDb()">
+                  <button onclick="_rbApplyRestoreDb()"
+                    class="bg-red-600 hover:bg-red-700 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-all flex items-center gap-2">
+                    <i class="fas fa-database"></i> DB 복원
+                  </button>
+                  <button onclick="document.getElementById('rb-db-form').classList.add('hidden')"
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-600 rounded-xl px-3 py-2 text-sm transition-all">취소</button>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /rb-panel-body -->
+        </div>
+        <!-- ─── /FEAT-053 롤백 패널 ─────────────────────────────── -->
+
       </div>
 
       <!-- TAB: 그룹별 권한 설정 (FEAT-027) -->
@@ -16556,6 +16698,221 @@ function _formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   const val = bytes / Math.pow(1024, i);
   return val.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+// ─────────────────────────────────────────────────────────────
+// FEAT-053 — 버전 롤백 UI 함수 (_rb* 네임스페이스)
+// ─────────────────────────────────────────────────────────────
+
+let _rbCurrentHash   = '';   // 커밋 목록에서 선택한 해시
+let _rbCurrentBackup = '';   // 백업 목록에서 선택한 파일명
+
+/** 롤백 패널 펼치기/접기 */
+function _rbTogglePanel() {
+  const body   = document.getElementById('rb-panel-body');
+  const icon   = document.getElementById('rb-toggle-icon');
+  const btn    = document.getElementById('rb-toggle-btn');
+  if (!body) return;
+  const isHidden = body.classList.contains('hidden');
+  if (isHidden) {
+    body.classList.remove('hidden');
+    if (icon) { icon.className = 'fas fa-chevron-up'; }
+    if (btn)  { btn.querySelector('span') ? btn.lastChild.textContent = ' 접기' : null; }
+    btn.innerHTML = '<i class="fas fa-chevron-up" id="rb-toggle-icon"></i> 접기';
+    // 패널 열릴 때 커밋 목록 자동 로드
+    _rbLoadHistory();
+  } else {
+    body.classList.add('hidden');
+    btn.innerHTML = '<i class="fas fa-chevron-down" id="rb-toggle-icon"></i> 펼치기';
+  }
+}
+
+/** 탭 전환 (commits / db) */
+function _rbShowTab(tab) {
+  const paneCommits = document.getElementById('rb-pane-commits');
+  const paneDb      = document.getElementById('rb-pane-db');
+  const tabCommits  = document.getElementById('rb-tab-commits');
+  const tabDb       = document.getElementById('rb-tab-db');
+  if (!paneCommits || !paneDb) return;
+
+  const activeClass   = 'px-4 py-2 text-sm font-semibold rounded-t-lg text-blue-700 bg-blue-50 border border-blue-200 border-b-0';
+  const inactiveClass = 'px-4 py-2 text-sm font-semibold rounded-t-lg text-gray-500 hover:bg-gray-50';
+
+  if (tab === 'commits') {
+    paneCommits.classList.remove('hidden');
+    paneDb.classList.add('hidden');
+    if (tabCommits) tabCommits.className = activeClass;
+    if (tabDb)      tabDb.className = inactiveClass;
+    _rbLoadHistory();
+  } else {
+    paneCommits.classList.add('hidden');
+    paneDb.classList.remove('hidden');
+    if (tabCommits) tabCommits.className = inactiveClass;
+    if (tabDb)      tabDb.className = activeClass.replace('text-blue-700 bg-blue-50 border border-blue-200 border-b-0', 'text-orange-700 bg-orange-50 border border-orange-200 border-b-0');
+    _rbLoadBackups();
+  }
+}
+
+/** 커밋 목록 로드 */
+async function _rbLoadHistory() {
+  const tbody = document.getElementById('rb-commit-list');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" class="text-center py-6 text-gray-400"><i class="fas fa-spinner fa-spin mr-1"></i>로딩 중...</td></tr>';
+  try {
+    const res  = await API.get('/admin/update/history');
+    const data = res.data;
+    if (!data.commits || data.commits.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center py-6 text-gray-400">커밋 이력이 없습니다.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.commits.map(c => {
+      const isCurrent = c.isCurrent;
+      const rowCls    = isCurrent ? 'bg-blue-50' : 'hover:bg-gray-50';
+      const badge     = isCurrent
+        ? '<span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700">현재</span>'
+        : '';
+      const btnDisabled = isCurrent ? 'opacity-40 cursor-not-allowed' : 'hover:bg-orange-600 hover:text-white cursor-pointer';
+      return `<tr class="${rowCls} border-b border-gray-50 last:border-0 transition-colors">
+        <td class="px-3 py-2 font-mono text-gray-700 select-all">${c.hash}${badge}</td>
+        <td class="px-3 py-2 text-gray-500 whitespace-nowrap">${c.date}</td>
+        <td class="px-3 py-2 text-gray-700 max-w-xs truncate" title="${c.message.replace(/"/g,'&quot;')}">${c.message}</td>
+        <td class="px-3 py-2 text-right">
+          <button onclick="_rbSelectCommit('${c.hash}', \`${c.message.replace(/`/g,"'")}\`)"
+            ${isCurrent ? 'disabled' : ''}
+            class="text-xs px-2 py-1 rounded-lg border border-orange-300 text-orange-600 transition-all ${btnDisabled}">
+            선택
+          </button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-red-400">
+      <i class="fas fa-exclamation-circle mr-1"></i>목록 조회 실패: ${e.message}</td></tr>`;
+  }
+}
+
+/** 커밋 선택 → 롤백 확인 폼 표시 */
+function _rbSelectCommit(hash, message) {
+  _rbCurrentHash = hash;
+  const form  = document.getElementById('rb-commit-form');
+  const hashEl = document.getElementById('rb-selected-hash');
+  const msgEl  = document.getElementById('rb-selected-msg');
+  if (form && hashEl && msgEl) {
+    hashEl.textContent = hash;
+    msgEl.textContent  = message;
+    form.classList.remove('hidden');
+    document.getElementById('rb-commit-pw')?.focus();
+  }
+}
+
+/** 커밋 롤백 실행 */
+async function _rbApplyRollback() {
+  const pw = document.getElementById('rb-commit-pw')?.value || '';
+  if (!pw) { toast('관리자 비밀번호를 입력하세요', 'error'); return; }
+  if (!_rbCurrentHash) { toast('롤백할 커밋을 선택하세요', 'error'); return; }
+
+  if (!confirm(`"${_rbCurrentHash}" 커밋으로 롤백합니다.\n\n현재 버전이 이전 버전으로 교체됩니다. 계속하시겠습니까?`)) return;
+
+  document.getElementById('rb-commit-form')?.classList.add('hidden');
+  document.getElementById('rb-commit-pw').value = '';
+
+  // 업데이트 로그 영역에 진행상황 표시
+  _updSetBanner('롤백 시작 중...', 'pulling');
+  if (_updPollingTimer) { clearInterval(_updPollingTimer); _updPollingTimer = null; }
+
+  try {
+    await API.post('/admin/update/rollback', {
+      confirm_password: pw,
+      target_hash:      _rbCurrentHash,
+    });
+    _updPollingTimer = setInterval(_updLoadStatus, 2000);
+    toast(`롤백 시작됨 (${_rbCurrentHash})`, 'success');
+  } catch(e) {
+    const msg = e.response?.data?.error || e.message;
+    _updSetBanner('롤백 실패: ' + msg, 'error');
+    toast('롤백 실패: ' + msg, 'error');
+  }
+}
+
+/** DB 백업 목록 로드 */
+async function _rbLoadBackups() {
+  const tbody = document.getElementById('rb-backup-list');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" class="text-center py-6 text-gray-400"><i class="fas fa-spinner fa-spin mr-1"></i>로딩 중...</td></tr>';
+  try {
+    const res  = await API.get('/admin/update/backups');
+    const data = res.data;
+    if (!data.backups || data.backups.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center py-6 text-gray-400">백업 파일이 없습니다.<br><span class="text-xs">업데이트 적용 시 자동 생성됩니다.</span></td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.backups.map(b => {
+      const isBeforeUpdate  = b.filename.includes('_before_update');
+      const isBeforeRollback = b.filename.includes('_before_rollback');
+      const isBeforeRestore = b.filename.includes('_before_restore');
+      const typeBadge = isBeforeUpdate
+        ? '<span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-700">업데이트전</span>'
+        : isBeforeRollback
+          ? '<span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-700">롤백전</span>'
+          : isBeforeRestore
+            ? '<span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-purple-100 text-purple-700">복원전</span>'
+            : '';
+      return `<tr class="hover:bg-gray-50 border-b border-gray-50 last:border-0 transition-colors">
+        <td class="px-3 py-2 font-mono text-gray-700 text-xs">${b.filename}${typeBadge}</td>
+        <td class="px-3 py-2 text-gray-500 whitespace-nowrap">${b.mtime}</td>
+        <td class="px-3 py-2 text-right text-gray-500">${_formatBytes(b.size)}</td>
+        <td class="px-3 py-2 text-right">
+          <button onclick="_rbSelectBackup('${b.filename}')"
+            class="text-xs px-2 py-1 rounded-lg border border-red-300 text-red-600 hover:bg-red-600 hover:text-white transition-all cursor-pointer">
+            선택
+          </button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-red-400">
+      <i class="fas fa-exclamation-circle mr-1"></i>목록 조회 실패: ${e.message}</td></tr>`;
+  }
+}
+
+/** 백업 선택 → DB 복원 확인 폼 표시 */
+function _rbSelectBackup(filename) {
+  _rbCurrentBackup = filename;
+  const form     = document.getElementById('rb-db-form');
+  const fileEl   = document.getElementById('rb-selected-backup');
+  if (form && fileEl) {
+    fileEl.textContent = filename;
+    form.classList.remove('hidden');
+    document.getElementById('rb-db-pw')?.focus();
+  }
+}
+
+/** DB 백업 복원 실행 */
+async function _rbApplyRestoreDb() {
+  const pw = document.getElementById('rb-db-pw')?.value || '';
+  if (!pw) { toast('관리자 비밀번호를 입력하세요', 'error'); return; }
+  if (!_rbCurrentBackup) { toast('복원할 백업 파일을 선택하세요', 'error'); return; }
+
+  if (!confirm(`"${_rbCurrentBackup}" 파일로 DB를 복원합니다.\n\n⚠️ 복원 이후의 모든 데이터가 삭제됩니다.\n현재 DB는 자동 저장됩니다. 계속하시겠습니까?`)) return;
+
+  document.getElementById('rb-db-form')?.classList.add('hidden');
+  document.getElementById('rb-db-pw').value = '';
+
+  _updSetBanner('DB 복원 시작 중...', 'restarting');
+  if (_updPollingTimer) { clearInterval(_updPollingTimer); _updPollingTimer = null; }
+
+  try {
+    await API.post('/admin/update/restore-db', {
+      confirm_password: pw,
+      filename:         _rbCurrentBackup,
+    });
+    _updPollingTimer = setInterval(_updLoadStatus, 2000);
+    toast('DB 복원 시작됨', 'success');
+  } catch(e) {
+    const msg = e.response?.data?.error || e.message;
+    _updSetBanner('DB 복원 실패: ' + msg, 'error');
+    toast('DB 복원 실패: ' + msg, 'error');
+  }
 }
 
 // ─── 저장 폴더 현황: 년도/월 상세 조회 모달 ───────────────────────────────

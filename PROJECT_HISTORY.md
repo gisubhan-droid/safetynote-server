@@ -5119,3 +5119,72 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 - [x] SSH 비활성화 완료
 
 ---
+
+## 세션 81 — 2026-07-05
+
+### FEAT-053: 웹 기반 버전 롤백 시스템 구현
+
+**요청 배경**: SSH 비활성화 상태에서 업데이트 후 문제 발생 시 브라우저만으로 이전 버전 복원
+
+---
+
+#### 구현 내용
+
+**백엔드 — `src/nas-routes/admin.ts`에 롤백 API 4개 추가:**
+
+| 엔드포인트 | 메서드 | 기능 |
+|---|---|---|
+| `/api/admin/update/history` | GET | 최근 20개 커밋 목록 조회 (git log) |
+| `/api/admin/update/backups` | GET | backups/ 폴더 DB 백업 목록 조회 |
+| `/api/admin/update/rollback` | POST | 선택 커밋으로 코드 롤백 (DB백업→reset→build→restart) |
+| `/api/admin/update/restore-db` | POST | 선택 DB 백업 파일 복원 (현재DB저장→교체→restart) |
+
+**보안 설계:**
+- 모든 API: `admin` 역할 필수
+- rollback/restore-db: 관리자 비밀번호 재확인 필수
+- restore-db: 파일명 경로 탐색 방지 (`/\\` 포함 불허)
+- target_hash: 정규식 검증 (`/^[a-f0-9]{4,40}$/`)
+
+**롤백 흐름 (코드 롤백):**
+```
+1. DB 자동 백업 → backups/safety_{stamp}_before_rollback.db
+2. git reset --hard {target_hash}
+3. npm run build (프론트엔드 재빌드)
+4. pm2 restart safetynote
+```
+
+**DB 복원 흐름:**
+```
+1. 현재 DB 임시 저장 → backups/safety_{stamp}_before_restore.db
+2. backups/{filename} → data/safety.db 복사
+3. pm2 restart safetynote
+```
+
+**프론트엔드 — `public/static/app.js`:**
+
+시스템설정 > 서버 업데이트 탭 하단에 **버전 롤백** 패널 추가:
+- 기본 접힘 상태, "펼치기" 버튼으로 토글
+- **커밋 롤백 탭**: 최근 20개 커밋 목록 테이블 / 현재 버전 배지 / 선택→비밀번호→실행
+- **DB 백업 복원 탭**: 백업 파일 목록 테이블 / 파일 유형 배지(업데이트전/롤백전/복원전) / 선택→비밀번호→실행
+- 롤백/복원 진행상황은 기존 실행 로그 영역에 실시간 표시 (2초 폴링)
+
+**추가된 JS 함수:**
+- `_rbTogglePanel()` — 롤백 패널 펼치기/접기
+- `_rbShowTab(tab)` — 탭 전환 (commits/db)
+- `_rbLoadHistory()` — 커밋 목록 API 호출 및 테이블 렌더
+- `_rbSelectCommit(hash, msg)` — 커밋 선택 → 확인 폼 표시
+- `_rbApplyRollback()` — 코드 롤백 실행
+- `_rbLoadBackups()` — DB 백업 목록 API 호출 및 테이블 렌더
+- `_rbSelectBackup(filename)` — 백업 선택 → 확인 폼 표시
+- `_rbApplyRestoreDb()` — DB 복원 실행
+
+### 완료 항목
+- [x] GET /api/admin/update/history 구현
+- [x] GET /api/admin/update/backups 구현
+- [x] POST /api/admin/update/rollback 구현
+- [x] POST /api/admin/update/restore-db 구현
+- [x] app.js 버전 롤백 패널 UI 추가
+- [x] app.js 롤백 JS 함수 구현 (_rb* 네임스페이스)
+- [x] admin.ts 라우트 헤더 주석 업데이트
+
+---

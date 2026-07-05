@@ -1,17 +1,22 @@
 /**
  * admin.ts — NAS 관리자 전용 라우트
  *
- * 포함 라우트 (9개):
+ * 포함 라우트:
  *   GET  /api/admin/settings
  *   PATCH /api/admin/settings
  *   GET  /api/app-version
  *   GET  /api/admin/folders
+ *   GET  /api/admin/folders/detail
  *   GET  /api/admin/reset/counts
  *   POST /api/admin/reset
  *   GET  /api/admin/update/status
  *   POST /api/admin/update/check
  *   POST /api/admin/update/apply
- *   POST /api/admin/update/webhook  ← FEAT-036: GitHub Actions 자동 업데이트 (DEPLOY_WEBHOOK_SECRET 인증)
+ *   POST /api/admin/update/webhook  ← FEAT-036: GitHub Actions 자동 업데이트
+ *   GET  /api/admin/update/history  ← FEAT-053: 롤백용 커밋 목록
+ *   GET  /api/admin/update/backups  ← FEAT-053: DB 백업 목록
+ *   POST /api/admin/update/rollback ← FEAT-053: 특정 커밋으로 코드 롤백
+ *   POST /api/admin/update/restore-db ← FEAT-053: DB 백업 파일 복원
  *   GET  /qr/:userId  ← node-server.ts에서 별도 마운트
  *
  * 의존:
@@ -864,6 +869,272 @@ app.post('/update/apply', async (c) => {
   })()
 
   return c.json({ ok: true, message: '업데이트 시작됨' })
+})
+
+// ─── GET /api/admin/update/history — FEAT-053 롤백: 최근 커밋 목록 ───────────────
+// git log --oneline -15 결과 반환 (커밋 해시 + 메시지 + 날짜)
+app.get('/update/history', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const cwd = process.cwd()
+  try {
+    // 현재 HEAD 해시 (짧은 형식)
+    const headRes = await runCmd('git', ['rev-parse', '--short', 'HEAD'], cwd, 5000)
+    const headHash = headRes.stdout.trim()
+
+    // 최근 15개 커밋 (해시|날짜|메시지 형식)
+    const logRes = await runCmd(
+      'git',
+      ['log', '--format=%h|%ad|%s', '--date=format:%Y-%m-%d %H:%M', '-20'],
+      cwd, 10000
+    )
+    if (logRes.code !== 0) {
+      return c.json({ error: 'git log 실패', detail: logRes.stderr.trim() }, 500)
+    }
+
+    const commits = logRes.stdout.trim().split('\n').filter(Boolean).map(line => {
+      const [hash, date, ...msgParts] = line.split('|')
+      return {
+        hash:    hash?.trim() || '',
+        date:    date?.trim() || '',
+        message: msgParts.join('|').trim() || '',
+        isCurrent: (hash?.trim() || '') === headHash,
+      }
+    })
+
+    return c.json({ commits, currentHash: headHash })
+  } catch (e: any) {
+    return c.json({ error: '커밋 목록 조회 실패', detail: e.message }, 500)
+  }
+})
+
+// ─── GET /api/admin/update/backups — FEAT-053 롤백: DB 백업 목록 ─────────────────
+app.get('/update/backups', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const backupDir = join(process.cwd(), 'backups')
+  try {
+    if (!existsSync(backupDir)) {
+      return c.json({ backups: [] })
+    }
+    const files = readdirSync(backupDir)
+      .filter(f => f.endsWith('.db'))
+      .map(f => {
+        try {
+          const st = statSync(join(backupDir, f))
+          return {
+            filename: f,
+            size:     st.size,
+            mtime:    st.mtime.toISOString().slice(0, 16).replace('T', ' '),
+          }
+        } catch {
+          return { filename: f, size: 0, mtime: '' }
+        }
+      })
+      // 최신 파일이 위로 (mtime 역순)
+      .sort((a, b) => (b.mtime > a.mtime ? 1 : -1))
+      .slice(0, 20)  // 최대 20개
+
+    return c.json({ backups: files })
+  } catch (e: any) {
+    return c.json({ error: '백업 목록 조회 실패', detail: e.message }, 500)
+  }
+})
+
+// ─── POST /api/admin/update/rollback — FEAT-053 롤백: 특정 커밋으로 복원 ─────────
+// body: { confirm_password, target_hash }
+// 동작: DB 자동 백업 → git reset --hard {target_hash} → npm run build → pm2 restart
+app.post('/update/rollback', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  if (_updateState.status === 'pulling' || _updateState.status === 'restarting')
+    return c.json({ error: '업데이트/롤백 진행 중입니다.' }, 409)
+
+  const rawDb = getRawDb()
+  const body = await c.req.json().catch(() => ({})) as any
+  const { confirm_password, target_hash } = body
+
+  if (!target_hash || typeof target_hash !== 'string' || !/^[a-f0-9]{4,40}$/.test(target_hash))
+    return c.json({ error: '유효하지 않은 커밋 해시입니다.' }, 400)
+
+  const userRow = rawDb.prepare(`SELECT password_hash FROM users WHERE id=?`).get(user.id) as any
+  if (!userRow || !confirm_password || userRow.password_hash !== String(confirm_password))
+    return c.json({ error: '비밀번호가 올바르지 않습니다.' }, 403)
+
+  _updateState.status    = 'pulling'
+  _updateState.message   = `롤백 준비 중... (${target_hash})`
+  _updateState.log       = []
+  _updateState.updatedAt = null
+  _addUpdateLog(`롤백 시작 → 대상 커밋: ${target_hash}`)
+
+  const cwd = process.cwd()
+
+  ;(async () => {
+    try {
+      // ── 1. DB 자동 백업 (롤백 전) ─────────────────────────────
+      _addUpdateLog('DB 백업 중...')
+      const dbSrc     = String(process.env.DB_PATH || join(cwd, 'data/safety.db'))
+      const backupDir  = join(cwd, 'backups')
+      const stamp      = new Date().toISOString().slice(0, 16).replace(/[-T:]/g, '')
+      const backupPath = join(backupDir, `safety_${stamp}_before_rollback.db`)
+      try {
+        await runCmd('mkdir', ['-p', backupDir], cwd, 5000)
+        if (existsSync(dbSrc)) {
+          const cpRes = await runCmd('cp', [dbSrc, backupPath], cwd, 10000)
+          _addUpdateLog(
+            cpRes.code === 0
+              ? `DB 백업 완료: backups/safety_${stamp}_before_rollback.db`
+              : `DB 백업 경고: ${cpRes.stderr.trim()}`
+          )
+        } else { _addUpdateLog('DB 파일 없음 — 백업 건너뜀') }
+      } catch (be: any) { _addUpdateLog(`DB 백업 오류(무시): ${be.message}`) }
+
+      // ── 2. git reset --hard {target_hash} ─────────────────────
+      _addUpdateLog(`git reset --hard ${target_hash} 실행...`)
+      const resetRes = await runCmd('git', ['reset', '--hard', target_hash], cwd, 30000)
+      if (resetRes.code !== 0) {
+        _addUpdateLog(`git reset 실패: ${resetRes.stderr.trim()}`)
+        _updateState.status  = 'error'
+        _updateState.message = `롤백 실패: ${resetRes.stderr.trim().slice(0, 100)}`
+        return
+      }
+      _addUpdateLog(`git reset 완료 ✅  → ${resetRes.stdout.trim()}`)
+
+      const newCommit = await runCmd('git', ['rev-parse', '--short', 'HEAD'], cwd, 5000)
+      _updateState.currentCommit = newCommit.stdout.trim()
+      _updateState.updatedAt     = new Date().toISOString()
+      const kstNow = new Date(Date.now() + 9 * 3600 * 1000)
+      _updateState.appliedAt = kstNow.toISOString().replace('T', ' ').slice(0, 19)
+
+      // ── 3. npm run build ──────────────────────────────────────
+      _updateState.status  = 'restarting'
+      _updateState.message = '프론트엔드 빌드 중... (30초~1분 소요)'
+      _addUpdateLog('npm run build 시작...')
+
+      const npmBin = resolveNpmBin()
+      const buildRes = await runCmd(npmBin, ['run', 'build'], cwd, 120000)
+      if (buildRes.code !== 0) {
+        _addUpdateLog(`npm run build 실패: ${buildRes.stderr.trim().slice(0, 200)}`)
+        _updateState.status  = 'error'
+        _updateState.message = `빌드 실패: ${buildRes.stderr.trim().slice(0, 100)}`
+        return
+      }
+      _addUpdateLog('npm run build 완료 ✅')
+
+      // ── 4. pm2 restart ────────────────────────────────────────
+      _updateState.message = '서버 재시작 중... 잠시 후 페이지를 새로고침하세요'
+      _addUpdateLog('pm2 restart safetynote 실행...')
+
+      setTimeout(async () => {
+        const restartRes = await runCmd('pm2', ['restart', 'safetynote'], cwd, 15000)
+        if (restartRes.code === 0) {
+          _addUpdateLog('pm2 restart 완료 ✅')
+          _updateState.status  = 'done'
+          _updateState.message = `롤백 완료! (${_updateState.currentCommit})`
+        } else {
+          _addUpdateLog(`pm2 restart 실패: ${restartRes.stderr.trim()}`)
+          _updateState.status  = 'error'
+          _updateState.message = `서버 재시작 실패: ${restartRes.stderr.trim().slice(0, 80)}`
+        }
+      }, 1000)
+
+    } catch (e: any) {
+      _addUpdateLog(`롤백 오류: ${e.message}`)
+      _updateState.status  = 'error'
+      _updateState.message = `오류: ${e.message}`
+    }
+  })()
+
+  return c.json({ ok: true, message: '롤백 시작됨' })
+})
+
+// ─── POST /api/admin/update/restore-db — FEAT-053 롤백: DB 백업 복원 ────────────
+// body: { confirm_password, filename }
+// 동작: backups/{filename} → data/safety.db 복사 후 pm2 restart
+app.post('/update/restore-db', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  if (_updateState.status === 'pulling' || _updateState.status === 'restarting')
+    return c.json({ error: '업데이트/롤백 진행 중입니다.' }, 409)
+
+  const rawDb = getRawDb()
+  const body = await c.req.json().catch(() => ({})) as any
+  const { confirm_password, filename } = body
+
+  // 파일명 보안 검증 (경로 탐색 방지 — 파일명에 / \ .. 포함 불허)
+  if (!filename || typeof filename !== 'string' ||
+      /[/\\]/.test(filename) || !filename.endsWith('.db')) {
+    return c.json({ error: '유효하지 않은 파일명입니다.' }, 400)
+  }
+
+  const userRow = rawDb.prepare(`SELECT password_hash FROM users WHERE id=?`).get(user.id) as any
+  if (!userRow || !confirm_password || userRow.password_hash !== String(confirm_password))
+    return c.json({ error: '비밀번호가 올바르지 않습니다.' }, 403)
+
+  const cwd        = process.cwd()
+  const backupDir  = join(cwd, 'backups')
+  const srcPath    = join(backupDir, filename)
+  const dbDest     = String(process.env.DB_PATH || join(cwd, 'data/safety.db'))
+
+  if (!existsSync(srcPath))
+    return c.json({ error: `백업 파일을 찾을 수 없습니다: ${filename}` }, 404)
+
+  _updateState.status  = 'restarting'
+  _updateState.message = `DB 복원 중: ${filename}`
+  _updateState.log     = []
+  _addUpdateLog(`DB 복원 시작: ${filename} → ${dbDest}`)
+
+  ;(async () => {
+    try {
+      // ── 현재 DB 백업 (복원 전 안전망) ─────────────────────────
+      const stamp      = new Date().toISOString().slice(0, 16).replace(/[-T:]/g, '')
+      const preSavePath = join(backupDir, `safety_${stamp}_before_restore.db`)
+      if (existsSync(dbDest)) {
+        const preCp = await runCmd('cp', [dbDest, preSavePath], cwd, 10000)
+        _addUpdateLog(
+          preCp.code === 0
+            ? `현재 DB 임시 저장: safety_${stamp}_before_restore.db`
+            : `현재 DB 임시 저장 실패(무시): ${preCp.stderr.trim()}`
+        )
+      }
+
+      // ── 백업 파일 → DB 경로 복사 ──────────────────────────────
+      const cpRes = await runCmd('cp', [srcPath, dbDest], cwd, 15000)
+      if (cpRes.code !== 0) {
+        _addUpdateLog(`DB 복사 실패: ${cpRes.stderr.trim()}`)
+        _updateState.status  = 'error'
+        _updateState.message = `DB 복원 실패: ${cpRes.stderr.trim().slice(0, 100)}`
+        return
+      }
+      _addUpdateLog('DB 파일 복사 완료 ✅')
+
+      // ── pm2 restart ───────────────────────────────────────────
+      _addUpdateLog('pm2 restart safetynote 실행...')
+      setTimeout(async () => {
+        const restartRes = await runCmd('pm2', ['restart', 'safetynote'], cwd, 15000)
+        if (restartRes.code === 0) {
+          _addUpdateLog('pm2 restart 완료 ✅')
+          _updateState.status  = 'done'
+          _updateState.message = `DB 복원 완료! 서버가 재시작됩니다.`
+        } else {
+          _addUpdateLog(`pm2 restart 실패: ${restartRes.stderr.trim()}`)
+          _updateState.status  = 'error'
+          _updateState.message = `서버 재시작 실패: ${restartRes.stderr.trim().slice(0, 80)}`
+        }
+      }, 1000)
+
+    } catch (e: any) {
+      _addUpdateLog(`DB 복원 오류: ${e.message}`)
+      _updateState.status  = 'error'
+      _updateState.message = `오류: ${e.message}`
+    }
+  })()
+
+  return c.json({ ok: true, message: 'DB 복원 시작됨' })
 })
 
 // ─── POST /api/admin/update/webhook — FEAT-036 ───────────────────────────────

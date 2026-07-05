@@ -2068,195 +2068,258 @@ function renderApp() {
     })
     .filter(Boolean);
 
-  const allManagerMenuItems = [
-    { id:'dashboard',   icon:'fas fa-tasks',                label:'작업현황' },
-    { id:'tasks',       icon:'fas fa-clipboard-list',       label:'작업관리' },
-    { id:'inspections', icon:'fas fa-search',               label:'현장점검' },
-    { id:'site-map',    icon:'fas fa-map-marked-alt',       label:'현장위치 지도' },
-    { id:'constructions', icon:'fas fa-hard-hat',            label:'공사현황' },
-    { id:'hazards',     icon:'fas fa-exclamation-triangle', label:'위험(아차사고)신고' },
-    { divider: true, label: '안전관리' },
-    { id:'stats', icon:'fas fa-chart-bar', label:'안전현황', group:'안전관리', children: [
-      { id:'stats-task',          icon:'fas fa-tasks',          label:'작업통계' },
-      { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
-      { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
-      { id:'work-stops',          icon:'fas fa-hand-paper',     label:'작업중지현황' },
-    ]},
-    { id:'risk', icon:'fas fa-shield-alt', label:'위험성평가', group:'안전관리', children: [
-      { id:'risk-periodic', icon:'fas fa-calendar-check', label:'정기 위험성평가' },
-      { id:'risk-adhoc',    icon:'fas fa-bolt',           label:'수시 위험성평가' },
-      { id:'risk-items',    icon:'fas fa-list-check',     label:'분류별 항목 관리' },
-    ]},
-    { id:'edu', icon:'fas fa-graduation-cap', label:'안전교육', group:'안전관리', children: [
-      { id:'edu-periodic',   icon:'fas fa-chalkboard-teacher', label:'정기안전교육' },
-      { id:'edu-hire',       icon:'fas fa-user-plus',          label:'채용시안전교육' },
-      { id:'edu-job-change', icon:'fas fa-exchange-alt',       label:'작업내용변경시교육' },
-      { id:'edu-special',    icon:'fas fa-hard-hat',           label:'특별안전교육' },
-      { id:'edu-supervisor', icon:'fas fa-user-tie',           label:'관리감독자교육' },
-      { id:'edu-stats',      icon:'fas fa-chart-bar',          label:'교육현황통계' },
-    ]},
-    { id:'sign-requests', icon:'fas fa-pen-fancy', label:'서명요청', group:'안전관리' },
-    { divider: true, label: '현장공량관리' },
-    { id:'field-volume', icon:'fas fa-chart-line', label:'현장공량관리', group:'현장공량관리', children: [
-      { id:'volume-stats',     icon:'fas fa-chart-bar',        label:'물량통계' },
-      { id:'report-write',     icon:'fas fa-pen-to-square',    label:'작업일보 작성' },
-      { id:'field-report',     icon:'fas fa-list-alt',         label:'공량내역' },
-      { id:'cable-detail',     icon:'fas fa-cable-car',        label:'광케이블 현황' },
-      ...(dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin' ? [
-        { id:'unit-price',     icon:'fas fa-tags',             label:'단가 관리' },
-      ] : []),
-    ]},
-    { divider: true, label: '관리' },
-    { id:'personnel', icon:'fas fa-users', label:'사용자관리', children: [
-      { id:'users',           icon:'fas fa-id-badge',       label:'업무중사용자' },
-      { id:'suspended-users', icon:'fas fa-user-slash',     label:'업무중지사용자' },
-      { id:'teams',           icon:'fas fa-people-group',   label:'현장팀관리' },
-      ...(dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin' ? [
-        { id:'sys-user-mgmt', icon:'fas fa-user-shield', label:'계정관리' },
-      ] : []),
-    ]},
+  // ── Option C: 아이콘 레일 + 플라이아웃 ─────────────────────────────────────
+  // 관리자/감독자 메뉴 그룹 정의 (5개 그룹)
+  const isSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
+  const allManagerGroups = [
+    {
+      id: 'work', icon: 'fas fa-hard-hat', label: '현장작업', color: '#60a5fa',
+      items: [
+        { id:'dashboard',     icon:'fas fa-tasks',           label:'작업현황' },
+        { id:'tasks',         icon:'fas fa-clipboard-list',  label:'작업관리' },
+        { id:'constructions', icon:'fas fa-hard-hat',        label:'공사현황' },
+        { id:'site-map',      icon:'fas fa-map-marked-alt',  label:'현장위치 지도' },
+      ]
+    },
+    {
+      id: 'safety', icon: 'fas fa-shield-alt', label: '안전점검', color: '#f87171',
+      items: [
+        { id:'inspections', icon:'fas fa-search',               label:'현장점검' },
+        { id:'hazards',     icon:'fas fa-exclamation-triangle', label:'위험신고' },
+        { id:'risk', icon:'fas fa-shield-alt', label:'위험성평가', children: [
+          { id:'risk-periodic', icon:'fas fa-calendar-check', label:'정기 위험성평가' },
+          { id:'risk-adhoc',    icon:'fas fa-bolt',           label:'수시 위험성평가' },
+          { id:'risk-items',    icon:'fas fa-list-check',     label:'분류별 항목 관리' },
+        ]},
+      ]
+    },
+    {
+      id: 'edu', icon: 'fas fa-clipboard-check', label: '안전관리', color: '#a78bfa',
+      items: [
+        { id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
+          { id:'stats-task',          icon:'fas fa-tasks',          label:'작업통계' },
+          { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
+          { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
+          { id:'work-stops',          icon:'fas fa-hand-paper',     label:'작업중지현황' },
+        ]},
+        { id:'edu', icon:'fas fa-graduation-cap', label:'안전교육', children: [
+          { id:'edu-periodic',   icon:'fas fa-chalkboard-teacher', label:'정기안전교육' },
+          { id:'edu-hire',       icon:'fas fa-user-plus',          label:'채용시안전교육' },
+          { id:'edu-job-change', icon:'fas fa-exchange-alt',       label:'작업내용변경시교육' },
+          { id:'edu-special',    icon:'fas fa-hard-hat',           label:'특별안전교육' },
+          { id:'edu-supervisor', icon:'fas fa-user-tie',           label:'관리감독자교육' },
+          { id:'edu-stats',      icon:'fas fa-chart-bar',          label:'교육현황통계' },
+        ]},
+        { id:'sign-requests', icon:'fas fa-pen-fancy', label:'서명요청' },
+      ]
+    },
+    {
+      id: 'volume', icon: 'fas fa-chart-line', label: '현장공량', color: '#34d399',
+      items: [
+        { id:'volume-stats',  icon:'fas fa-chart-bar',      label:'물량통계' },
+        { id:'report-write',  icon:'fas fa-pen-to-square',  label:'작업일보 작성' },
+        { id:'field-report',  icon:'fas fa-list-alt',       label:'공량내역' },
+        { id:'cable-detail',  icon:'fas fa-cable-car',      label:'광케이블 현황' },
+        ...(isSysAdmin ? [{ id:'unit-price', icon:'fas fa-tags', label:'단가 관리' }] : []),
+      ]
+    },
+    {
+      id: 'mgmt', icon: 'fas fa-cogs', label: '관리/설정', color: '#fbbf24',
+      items: [
+        { id:'personnel', icon:'fas fa-users', label:'사용자관리', children: [
+          { id:'users',           icon:'fas fa-id-badge',     label:'업무중사용자' },
+          { id:'suspended-users', icon:'fas fa-user-slash',   label:'업무중지사용자' },
+          { id:'teams',           icon:'fas fa-people-group', label:'현장팀관리' },
+          ...(isSysAdmin ? [{ id:'sys-user-mgmt', icon:'fas fa-user-shield', label:'계정관리' }] : []),
+        ]},
+        { id:'my-profile',     icon:'fas fa-user-cog',      label:'내 계정' },
+        ...(currentUser.role === 'admin' || currentUser.role === 'supervisor' ? [
+          { id:'admin-settings', icon:'fas fa-cogs',          label:'시스템 설정' },
+          { id:'legal-notices',  icon:'fas fa-balance-scale', label:'법령안내 관리' },
+        ] : []),
+      ]
+    },
   ];
 
-  // LGU+ 전용 메뉴: 서버 설정(lgu_menu_*)에 따라 동적으로 구성
-  // 기본: 작업현황 / 현장점검 / 현장위치 지도 (요구사항)
-  var lguAllMenuCandidates = [
-    { id:'constructions', icon:'fas fa-hard-hat',         label:'공사현황',       settingKey:'lgu_menu_constructions' },
-    { id:'dashboard',     icon:'fas fa-tasks',            label:'작업현황',       settingKey:'lgu_menu_dashboard' },
-    { id:'tasks',         icon:'fas fa-clipboard-list',   label:'작업관리',       settingKey:'lgu_menu_tasks' },
-    { id:'inspections',   icon:'fas fa-search',           label:'현장점검',       settingKey:'lgu_menu_inspections' },
-    { id:'site-map',      icon:'fas fa-map-marked-alt',   label:'현장위치 지도',  settingKey:'lgu_menu_site_map' },
+  // 근로자 그룹 정의
+  const workerGroups = [
+    {
+      id: 'mytask', icon: 'fas fa-tasks', label: '내 작업', color: '#60a5fa',
+      items: [
+        { id:'my-tasks',    icon:'fas fa-tasks',          label:'내 작업' },
+        { id:'report-write',icon:'fas fa-pen-to-square',  label:'작업일보 작성' },
+        { id:'my-stats',    icon:'fas fa-chart-bar',      label:'나의작업현황' },
+      ]
+    },
+    {
+      id: 'wsafety', icon: 'fas fa-shield-alt', label: '안전', color: '#f87171',
+      items: [
+        { id:'hazard-report', icon:'fas fa-exclamation-triangle', label:'위험신고' },
+        { id:'sign-requests', icon:'fas fa-pen-fancy',            label:'서명요청' },
+      ]
+    },
+    {
+      id: 'wme', icon: 'fas fa-user-cog', label: '내 정보', color: '#fbbf24',
+      items: [
+        { id:'my-profile', icon:'fas fa-user-cog', label:'내 계정' },
+      ]
+    },
   ];
-  var lguSettings = window.__lguMenuSettings || {};
-  var lguPlusMenuItems = lguAllMenuCandidates.filter(m => {
-    // 설정이 없으면 기본값 적용 (dashboard/inspections/site-map = '1', 나머지 = '0')
-    var defaultOn = ['lgu_menu_dashboard','lgu_menu_inspections','lgu_menu_site_map'].includes(m.settingKey);
-    var val = lguSettings[m.settingKey];
-    return val !== undefined ? val === '1' : defaultOn;
-  }).map(m => ({ id: m.id, icon: m.icon, label: m.label }));
 
-  // 안전현황 통계 (lgu_menu_stats 허용 시 추가)
-  if ((lguSettings['lgu_menu_stats'] || '0') === '1') {
-    lguPlusMenuItems.push({ divider: true, label: '안전현황' });
-    lguPlusMenuItems.push({ id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
-      { id:'stats-task',          icon:'fas fa-tasks',          label:'작업통계' },
-      { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
-      { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
-    ]});
-  }
-  lguPlusMenuItems.push({ id:'my-profile', icon:'fas fa-user-cog', label:'내 계정' });
+  // LGU+ 그룹 정의
+  const lguGroups = (() => {
+    var lguSettings = window.__lguMenuSettings || {};
+    var lguAllCandidates = [
+      { id:'constructions', icon:'fas fa-hard-hat',         label:'공사현황',      settingKey:'lgu_menu_constructions' },
+      { id:'dashboard',     icon:'fas fa-tasks',            label:'작업현황',      settingKey:'lgu_menu_dashboard' },
+      { id:'tasks',         icon:'fas fa-clipboard-list',   label:'작업관리',      settingKey:'lgu_menu_tasks' },
+      { id:'inspections',   icon:'fas fa-search',           label:'현장점검',      settingKey:'lgu_menu_inspections' },
+      { id:'site-map',      icon:'fas fa-map-marked-alt',   label:'현장위치 지도', settingKey:'lgu_menu_site_map' },
+    ];
+    var activeItems = lguAllCandidates.filter(m => {
+      var defaultOn = ['lgu_menu_dashboard','lgu_menu_inspections','lgu_menu_site_map'].includes(m.settingKey);
+      var val = lguSettings[m.settingKey];
+      return val !== undefined ? val === '1' : defaultOn;
+    }).map(m => ({ id: m.id, icon: m.icon, label: m.label }));
+    var statsItems = [];
+    if ((lguSettings['lgu_menu_stats'] || '0') === '1') {
+      statsItems = [{ id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
+        { id:'stats-task',          icon:'fas fa-tasks',          label:'작업통계' },
+        { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
+        { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
+      ]}];
+    }
+    return [{
+      id: 'lgu-main', icon: 'fas fa-building', label: '현장', color: '#60a5fa',
+      items: [...activeItems, ...statsItems, { id:'my-profile', icon:'fas fa-user-cog', label:'내 계정' }]
+    }];
+  })();
 
-  const menuItems = isLguPlus ? lguPlusMenuItems : isWorker ? [
-    { id:'my-tasks',         icon:'fas fa-tasks',                 label:'내 작업' },
-    { id:'report-write',     icon:'fas fa-pen-to-square',         label:'작업일보 작성' },
-    { id:'sign-requests',   icon:'fas fa-pen-fancy',             label:'서명요청' },
-    { id:'my-stats',        icon:'fas fa-chart-bar',             label:'나의작업현황' },
-    { id:'hazard-report',   icon:'fas fa-exclamation-triangle',  label:'위험신고' },
-    { id:'my-profile',      icon:'fas fa-user-cog',             label:'내 계정' },
-  ] : [
-    ...filterMenu(allManagerMenuItems),
-    { id:'my-profile',    icon:'fas fa-user-cog',  label:'내 계정' },
-    ...(currentUser.role === 'admin' || currentUser.role === 'supervisor' ? [
-      { divider: true, label: '시스템' },
-      { id:'admin-settings', icon:'fas fa-cogs', label:'시스템 설정' },
-      { id:'legal-notices',  icon:'fas fa-balance-scale', label:'법령안내 관리' },
-    ] : []),
-  ];
+  const groups = isLguPlus ? lguGroups : isWorker ? workerGroups : allManagerGroups;
+
+  // 현재 페이지가 속한 그룹 ID 찾기
+  const findActiveGroup = (gs, page) => {
+    for (const g of gs) {
+      for (const item of g.items) {
+        if (item.id === page) return g.id;
+        if (item.children && item.children.some(c => c.id === page)) return g.id;
+      }
+    }
+    return gs[0]?.id || '';
+  };
+  const activeGroupId = findActiveGroup(groups, currentPage);
+
+  // ── HTML 빌더 헬퍼 ─────────────────────────────────────
+  const buildRailGroups = (gs) => gs.map(g => {
+    const isActive = g.id === activeGroupId;
+    // 서명요청 배지: 안전관리(edu) 또는 안전(wsafety) 그룹에만 표시
+    const showBadge = g.id === 'edu' || g.id === 'wsafety' || g.id === 'lgu-main';
+    return `<div class="rail-group-btn${isActive ? ' active' : ''}" 
+                 onclick="openFlyout('${g.id}')" 
+                 title="${g.label}" id="rail-btn-${g.id}" data-color="${g.color}">
+      <i class="${g.icon}" style="color:${isActive ? g.color : ''}"></i>
+      <span>${g.label}</span>
+      ${showBadge ? `<span class="rail-badge hidden" id="rail-badge-${g.id}">0</span>` : ''}
+    </div>`;
+  }).join('');
+
+  const buildFlyoutItems = (items, grpColor) => items.map(item => {
+    if (item.children) {
+      // 서브메뉴 있는 항목
+      const hasActive = item.children.some(c => c.id === currentPage);
+      const subHtml = item.children.map(c => `
+        <div class="flyout-sub-item${c.id === currentPage ? ' active' : ''}"
+             onclick="safeNavigateTo('${c.id}')" id="fitem-${c.id}">
+          <i class="${c.icon}" style="color:${grpColor}99"></i>
+          <span>${c.label}</span>
+        </div>`).join('');
+      return `
+        <div class="flyout-nav-parent${hasActive ? ' open' : ''}" 
+             onclick="toggleFlyoutSub('fsub-${item.id}', this)">
+          <i class="${item.icon} p-icon" style="color:${grpColor}CC"></i>
+          <span style="flex:1">${item.label}</span>
+          <i class="fas fa-chevron-down p-arrow"></i>
+        </div>
+        <div class="flyout-sub${hasActive ? ' open' : ''}" id="fsub-${item.id}">
+          ${subHtml}
+        </div>`;
+    }
+    return `<div class="flyout-nav-item${item.id === currentPage ? ' active' : ''}"
+                 onclick="safeNavigateTo('${item.id}')" id="fitem-${item.id}">
+      <i class="${item.icon}" style="color:${grpColor}CC"></i>
+      <span>${item.label}</span>
+    </div>`;
+  }).join('');
+
+  const buildFlyoutPanels = (gs) => gs.map(g => `
+    <div class="flyout-group-panel" id="fpanel-${g.id}" style="display:none;height:100%;flex-direction:column">
+      <div class="flyout-header">
+        <i class="${g.icon}" style="color:${g.color}"></i>
+        <span>${g.label}</span>
+      </div>
+      <div class="flyout-nav">
+        ${buildFlyoutItems(g.items, g.color)}
+      </div>
+    </div>`).join('');
+
+  // ── 모바일 하단 탭 빌더 ────────────────────────────────
+  const buildBottomNav = (gs) => {
+    if (gs.length === 1) {
+      // LGU+: 단일 그룹 — 주요 페이지 직접 노출
+      const g = gs[0];
+      const flat = g.items.filter(i => !i.children).slice(0, 4);
+      return flat.map(item => `
+        <div class="bottom-nav-item${currentPage === item.id ? ' active' : ''}" onclick="safeNavigateTo('${item.id}')">
+          <i class="${item.icon}"></i>
+          <span>${item.label}</span>
+        </div>`).join('');
+    }
+    // 그룹 탭 (최대 5개)
+    return gs.map(g => {
+      const isActive = g.id === activeGroupId;
+      const showBadge = g.id === 'edu' || g.id === 'wsafety';
+      return `<div class="bottom-nav-group${isActive ? ' active' : ''}" 
+                   onclick="openFlyout('${g.id}')" id="bnav-${g.id}">
+        <i class="${g.icon}" style="${isActive ? `color:var(--t-primary)` : ''}"></i>
+        <span>${g.label}</span>
+        ${showBadge ? `<span class="bnav-badge" id="bnav-badge-${g.id}">0</span>` : ''}
+      </div>`;
+    }).join('');
+  };
 
   document.getElementById('app').innerHTML = `
-  <!-- 사이드바 -->
-  <div id="sidebar" class="sidebar">
-    <!-- 브랜드 바 -->
-    <div class="sidebar-brand-bar">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 bg-white rounded-xl flex items-center justify-center overflow-hidden shadow-sm flex-shrink-0">
-          <img src="/static/app-icon.png" alt="Safety NOTE" class="w-full h-full object-contain">
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-black text-white text-base tracking-tight leading-tight" style="letter-spacing:-0.3px">Safety NOTE</div>
-          <div class="text-xs mt-0.5" style="color:rgba(255,255,255,0.7);letter-spacing:0.01em">
-            <i class="fas fa-user-circle mr-1" style="opacity:0.85"></i>${currentUser.name}
-            <span style="opacity:0.45;margin:0 3px">·</span>
-            <span style="opacity:0.8">${currentUser.position || (isWorker ? '근로자' : '관리자')}</span>
-          </div>
-        </div>
+  <!-- Option C: 아이콘 레일 -->
+  <div id="icon-rail">
+    <div class="rail-brand">
+      <img src="/static/app-icon.png" alt="SN">
+    </div>
+    <div class="rail-groups">
+      ${buildRailGroups(groups)}
+    </div>
+    <div class="rail-footer">
+      <div class="rail-footer-btn" onclick="safeNavigateTo('my-profile')" title="내 계정">
+        <i class="fas fa-user-circle"></i>
+        <span>내계정</span>
       </div>
-    </div>
-
-    <!-- 사용자 카드 -->
-    <div class="sidebar-user-card">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-             style="background:rgba(255,255,255,0.22);border:1.5px solid rgba(255,255,255,0.35)">
-          <i class="fas fa-user text-sm text-white"></i>
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-bold text-sm text-white truncate">${currentUser.name}</div>
-          <div class="text-xs mt-0.5" style="color:rgba(255,255,255,0.6)">${
-            isLguPlus ? 'LGU+ 담당자 (열람전용)' :
-            (currentUser.position || (isWorker ? '근로자' : '관리자'))
-          }</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 내비게이션 메뉴 -->
-    <div class="sidebar-nav-area px-3 pb-3">
-      ${(()=>{
-        const GIC = {
-          '메인':       '#FF349E',   // --lgu-pink-l : 밝은 핑크
-          '안전관리':   '#8E72A8',   // 안전관리 통합 그룹 (퍼플)
-          '위험성평가': '#8E72A8',   // 연보라 (퍼플 계열)
-          '안전':       '#FF349E',   // 연빨강
-          '안전현황': '#8E72A8',   // --lgu-purple-l
-          '사용자관리':  '#8E72A8',   // 연파랑
-          '시스템':     '#C6C6C6',   // 연그레이
-        };
-        const iconColor = (g) => GIC[g] || 'rgba(255,255,255,0.65)';
-        const iconColorSub = (g) => {
-          const c = GIC[g];
-          return c ? c + 'CC' : 'rgba(255,255,255,0.5)'; // 자식은 약간 투명
-        };
-        return menuItems.map(item => {
-          // 구분선
-          if (item.divider) return `
-            <div class="sidebar-menu-divider">
-              ${item.label ? `<span>${item.label}</span>` : ''}
-            </div>`;
-          return item.children ? `
-        <div class="nav-item px-3 py-2.5 mb-1 cursor-pointer flex items-center gap-3 text-sm ${item.children.some(c=>c.id===currentPage)?'active':''}" 
-             onclick="toggleSubMenu('submenu-${item.id}', this)">
-          <i class="${item.icon} w-5 text-center" style="color:${iconColor(item.group)}"></i>
-          <span class="flex-1 text-white font-medium">${item.label}</span>
-          <i class="fas fa-chevron-down text-xs submenu-arrow transition-transform" style="color:rgba(255,255,255,0.4)"></i>
-        </div>
-        <div id="submenu-${item.id}" class="pl-3 mb-1 ${item.children.some(c=>c.id===currentPage)?'':'hidden'}">
-          ${item.children.map(child => `
-            <div class="nav-item px-3 py-2 mb-0.5 cursor-pointer flex items-center gap-3 text-sm ${currentPage===child.id?'active':''}" 
-                 onclick="safeNavigateTo('${child.id}')">
-              <i class="${child.icon} w-4 text-center text-xs" style="color:${iconColorSub(item.group)}"></i>
-              <span class="text-sm font-medium" style="color:rgba(255,255,255,0.8)">${child.label}</span>
-            </div>`).join('')}
-        </div>` : `
-        <div class="nav-item px-3 py-2.5 mb-1 cursor-pointer flex items-center gap-3 text-sm ${currentPage===item.id?'active':''}" 
-             onclick="safeNavigateTo('${item.id}')">
-          <i class="${item.icon} w-5 text-center" style="color:${iconColor(item.group)}"></i>
-          <span class="text-white font-medium">${item.label}</span>
-        </div>`;
-        }).join('');
-      })()}
-    </div>
-
-    <!-- 로그아웃 -->
-    <div class="sidebar-footer">
-      <div class="sidebar-divider mb-3"></div>
-      <div class="nav-item px-3 py-2.5 cursor-pointer flex items-center gap-3 text-sm" onclick="doLogout()"
-           style="color:rgba(255,180,180,0.85)">
-        <i class="fas fa-sign-out-alt w-5 text-center"></i>
+      <div class="rail-footer-btn rail-logout-btn" onclick="doLogout()" title="로그아웃">
+        <i class="fas fa-sign-out-alt"></i>
         <span>로그아웃</span>
       </div>
     </div>
   </div>
-  <div id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <!-- 플라이아웃 패널 -->
+  <div id="flyout-panel">
+    ${buildFlyoutPanels(groups)}
+  </div>
+
+  <!-- 플라이아웃 오버레이 (바깥 클릭 시 닫기) -->
+  <div id="flyout-overlay" onclick="closeFlyout()"></div>
+
+  <!-- 기존 사이드바 (호환성 유지, 숨김) -->
+  <div id="sidebar" class="sidebar" style="display:none"></div>
+  <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
 
   <!-- 메인 콘텐츠 -->
   <div class="main-content">
@@ -2300,54 +2363,13 @@ function renderApp() {
     <div id="page-content" class="p-4"></div>
   </div>
 
-  <!-- 하단 네비게이션 (모바일) -->
+  <!-- 하단 네비게이션 (모바일) — 그룹 탭 -->
   <div class="bottom-nav md:hidden">
-    ${isWorker ? `
-      <!-- 근로자 하단 메뉴: 내작업 / 서명요청 / 나의작업현황 / 위험신고 -->
-      <div class="bottom-nav-item ${currentPage==='my-tasks'?'active':''}" onclick="safeNavigateTo('my-tasks')">
-        <i class="fas fa-tasks"></i>
-        <span>내 작업</span>
-      </div>
-      <div class="bottom-nav-item ${currentPage==='sign-requests'?'active':''}" onclick="safeNavigateTo('sign-requests')" style="position:relative">
-        <span style="position:relative;display:inline-block">
-          <i class="fas fa-pen-fancy"></i>
-          <span id="bottom-sign-count" class="hidden absolute -top-1.5 -right-2 min-w-[15px] h-3.5 px-0.5 text-center rounded-full text-white font-bold leading-3.5"
-            style="font-size:9px;background:#D70072;line-height:14px">0</span>
-        </span>
-        <span>서명요청</span>
-      </div>
-      <div class="bottom-nav-item ${currentPage==='my-stats'?'active':''}" onclick="safeNavigateTo('my-stats')">
-        <i class="fas fa-chart-bar"></i>
-        <span>나의작업현황</span>
-      </div>
-      <div class="bottom-nav-item ${currentPage==='hazard-report'?'active':''}" onclick="safeNavigateTo('hazard-report')">
-        <i class="fas fa-exclamation-triangle"></i>
-        <span>위험신고</span>
-      </div>
-    ` : `
-      <!-- 관리자/감독자 하단 메뉴: 공사현황 / 서명요청 / 작업관리 / 현장점검 -->
-      <div class="bottom-nav-item ${currentPage==='constructions'?'active':''}" onclick="safeNavigateTo('constructions')">
-        <i class="fas fa-hard-hat"></i>
-        <span>공사현황</span>
-      </div>
-      <div class="bottom-nav-item ${currentPage==='sign-requests'?'active':''}" onclick="safeNavigateTo('sign-requests')" style="position:relative">
-        <span style="position:relative;display:inline-block">
-          <i class="fas fa-pen-fancy"></i>
-          <span id="bottom-sign-count" class="hidden absolute -top-1.5 -right-2 min-w-[15px] h-3.5 px-0.5 text-center rounded-full text-white font-bold leading-3.5"
-            style="font-size:9px;background:#D70072;line-height:14px">0</span>
-        </span>
-        <span>서명요청</span>
-      </div>
-      <div class="bottom-nav-item ${currentPage==='tasks'?'active':''}" onclick="safeNavigateTo('tasks')">
-        <i class="fas fa-clipboard-list"></i>
-        <span>작업관리</span>
-      </div>
-      <div class="bottom-nav-item ${currentPage==='inspections'?'active':''}" onclick="safeNavigateTo('inspections')">
-        <i class="fas fa-search"></i>
-        <span>현장점검</span>
-      </div>
-    `}
+    ${buildBottomNav(groups)}
   </div>`;
+
+  // buildLayout에서 생성한 그룹 데이터를 전역에 등록 (syncFlyoutActive에서 사용)
+  window._flyoutGroups = groups;
 
   navigateTo(currentPage);
   // 로그인 후 서명 요청 카운트 폴링 시작
@@ -2730,12 +2752,25 @@ async function refreshSignRequestCount() {
       hBadge.textContent = cnt > 99 ? '99+' : cnt;
       hBadge.classList.toggle('hidden', cnt === 0);
     }
-    // 하단 네비 배지
+    // 하단 네비 배지 (구형 4탭 — 호환성 유지)
     const bBadge = document.getElementById('bottom-sign-count');
     if (bBadge) {
       bBadge.textContent = cnt > 99 ? '99+' : cnt;
       bBadge.classList.toggle('hidden', cnt === 0);
     }
+    // Option C: 레일 배지 (안전관리 그룹 = edu, 근로자 wsafety)
+    ['edu', 'wsafety', 'lgu-main'].forEach(gid => {
+      const rBadge = document.getElementById('rail-badge-' + gid);
+      if (rBadge) {
+        rBadge.textContent = cnt > 99 ? '99+' : cnt;
+        rBadge.classList.toggle('hidden', cnt === 0);
+      }
+      const nBadge = document.getElementById('bnav-badge-' + gid);
+      if (nBadge) {
+        nBadge.textContent = cnt > 99 ? '99+' : cnt;
+        nBadge.classList.toggle('hidden', cnt === 0);
+      }
+    });
   } catch(_) {}
 }
 function startSignCountPoller() {
@@ -2925,6 +2960,8 @@ function navigateTo(page) {
     case 'sign-requests':  renderSignatureRequestsPage(content);         break;
     default: content.innerHTML = '<p class="text-gray-500 p-4">페이지를 찾을 수 없습니다.</p>';
   }
+  // 레일/플라이아웃 active 상태 동기화 (페이지 전환마다)
+  syncFlyoutActive(page);
 }
 
 function toggleSubMenu(id, el) {
@@ -2935,12 +2972,98 @@ function toggleSubMenu(id, el) {
 }
 
 function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('sidebar-overlay').classList.toggle('open');
+  // Option C: 레일은 항상 표시 — toggleSidebar는 플라이아웃 토글로 동작
+  const panel = document.getElementById('flyout-panel');
+  if (panel) {
+    if (panel.classList.contains('open')) closeFlyout();
+    else openFlyout(window._activeGroupId || '');
+  }
 }
 function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('sidebar-overlay').classList.remove('open');
+  closeFlyout();
+}
+
+// ── Option C: 아이콘 레일 + 플라이아웃 제어 함수 ─────────────────────────
+window._activeGroupId = '';
+window._flyoutGroups  = null; // buildLayout에서 설정
+
+function openFlyout(groupId) {
+  const panel   = document.getElementById('flyout-panel');
+  const overlay = document.getElementById('flyout-overlay');
+  if (!panel) return;
+
+  // 모든 패널 숨기기
+  panel.querySelectorAll('.flyout-group-panel').forEach(p => {
+    p.style.display = 'none';
+  });
+
+  // 해당 그룹 패널 표시
+  const target = document.getElementById('fpanel-' + groupId);
+  if (target) {
+    target.style.display = 'flex';
+    window._activeGroupId = groupId;
+  }
+
+  // 레일 버튼 active 상태 업데이트
+  document.querySelectorAll('.rail-group-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.id === 'rail-btn-' + groupId);
+    const i = btn.querySelector('i');
+    if (i) {
+      // 그룹 color 복원
+      const grpColor = btn.dataset.color || '';
+      i.style.color = btn.id === 'rail-btn-' + groupId ? grpColor : '';
+    }
+  });
+  // 하단 탭 active 상태
+  document.querySelectorAll('.bottom-nav-group').forEach(btn => {
+    btn.classList.toggle('active', btn.id === 'bnav-' + groupId);
+  });
+
+  panel.classList.add('open');
+  if (overlay) overlay.classList.add('open');
+}
+
+function closeFlyout() {
+  const panel   = document.getElementById('flyout-panel');
+  const overlay = document.getElementById('flyout-overlay');
+  if (panel)   panel.classList.remove('open');
+  if (overlay) overlay.classList.remove('open');
+}
+
+function toggleFlyoutSub(subId, parentEl) {
+  const sub = document.getElementById(subId);
+  if (!sub) return;
+  sub.classList.toggle('open');
+  parentEl.classList.toggle('open');
+}
+
+// 페이지 전환 시 레일/플라이아웃 active 상태 동기화
+function syncFlyoutActive(pageId) {
+  // 플라이아웃 내 아이템 active 갱신
+  document.querySelectorAll('.flyout-nav-item, .flyout-sub-item').forEach(el => {
+    el.classList.toggle('active', el.id === 'fitem-' + pageId);
+  });
+  // 플라이아웃은 닫기 (페이지 이동 후)
+  closeFlyout();
+  // 레일 버튼 active — 현재 페이지 그룹 찾기
+  if (window._flyoutGroups) {
+    let foundGrp = '';
+    for (const g of window._flyoutGroups) {
+      for (const item of g.items) {
+        if (item.id === pageId) { foundGrp = g.id; break; }
+        if (item.children && item.children.some(c => c.id === pageId)) { foundGrp = g.id; break; }
+      }
+      if (foundGrp) break;
+    }
+    if (foundGrp) {
+      document.querySelectorAll('.rail-group-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.id === 'rail-btn-' + foundGrp);
+      });
+      document.querySelectorAll('.bottom-nav-group').forEach(btn => {
+        btn.classList.toggle('active', btn.id === 'bnav-' + foundGrp);
+      });
+    }
+  }
 }
 
 // ======= 공사현황 =======

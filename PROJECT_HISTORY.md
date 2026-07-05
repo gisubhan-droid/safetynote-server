@@ -1,10 +1,12 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-05 (세션 105 — v3.0 태깅)
-> **서버 현재 버전: `338bc7d` ← 최신 (GitHub) — v3.0 정식 릴리즈 (Option C + 버그픽스)**
-> **NAS 배포 버전: `347d747`** (git pull 후 pm2 restart — FIX-054 3445 포트 변경 반영)
-> **캐시 버전: v=20260704g**
+> 최종 업데이트: 2026-07-05 (세션 105 — v3.0 정식 릴리즈)
+> **GitHub 최신: `ee1a077`** — v3.0 PROJECT_HISTORY 완료
+> **NAS 배포 필요: `ee1a077`** (git pull 후 pm2 restart)
+> **캐시 버전: `?v=20260705v300`** (service-worker v12)
+> **앱 버전: v3.0** (PLAN-UI-001 Option C 아이콘 레일)
 > **APK 최신**: v1.4.7
+> **직전 단계 복원**: `bash scripts/rollback.sh pre-v300` (v3.0 문제 시 즉시 실행)
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 > **NAS git 동기화**: `git pull` 실패 시 → `git fetch origin && git reset --hard origin/main`
 
@@ -93,6 +95,9 @@
 | RULE-004 | BUG-048-2 | JS 동적 조작에 사용하는 클래스는 초기 렌더링 HTML에도 반드시 동일하게 부여 |
 | RULE-005 | BUG-049 | 브라우저 업데이트 흐름: git reset → **npm run build** → pm2 restart (순서 준수) |
 | RULE-006 | BUG-050 | GPS 저장 테이블과 조회 쿼리 테이블이 일치해야 함 — GPS 저장 위치 변경 시 JOIN도 함께 수정 |
+| RULE-007 | v3.0 BUG-FIX-1 | `mobile-app.js`는 Option C(`#icon-rail`) 존재 시 `buildMobileNav()` + `navigateTo` 래핑 모두 Skip — 하단 탭바 이중 표시 방지 |
+| RULE-008 | v3.0 BUG-FIX-2 | 더 낮은 z-index 미디어 쿼리는 `!important`로 이깁니다 — Option C CSS 모바일/데스크톱 규칙에 `!important` 누락 금지 |
+| RULE-009 | v3.0 | `syncFlyoutActive` 호출은 switch 마지막에 한 번만 — 리다이렉트 코드(`return;`)에는 추가 불필요 (최종 페이지 navigateTo에서 처리됨) |
 
 ---
 

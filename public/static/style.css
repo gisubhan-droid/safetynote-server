@@ -724,23 +724,21 @@ body {
 }
 #flyout-overlay.open { display: block; }
 
-/* 메인 콘텐츠 — 레일 56px만큼 밀기
-   ※ 기존 사이드바 규칙(@media min-width:769px margin-left:240px)보다 우선하도록 !important */
-.main-content { margin-left: 56px !important; }
-.top-header   { left: 56px !important; }
+/* 메인 콘텐츠 — 레일 56px만큼 밀기 (데스크톱) */
+.main-content { margin-left: 56px; }
+.top-header   { left: 56px; }
 
 /* 기존 사이드바 숨기기 (Option C 사용 시) */
 .use-icon-rail #sidebar { display: none !important; }
 .use-icon-rail #sidebar-overlay { display: none !important; }
 
-/* 모바일: 레일+플라이아웃 오버레이
-   ※ 기존 사이드바 규칙(margin-left:0 !important)을 덮어쓰기 위해 !important 필요 */
+/* 모바일: 레일+플라이아웃 오버레이 */
 @media (max-width: 768px) {
   #icon-rail { width: 52px; }
   #flyout-panel { left: 52px; width: 210px; }
   #flyout-overlay { left: 52px; }
-  .main-content { margin-left: 52px !important; }
-  .top-header   { left: 52px !important; }
+  .main-content { margin-left: 52px; }
+  .top-header   { left: 52px; }
   /* 플라이아웃 열릴 때 배경 어둡게 */
   #flyout-overlay.open {
     display: block;
@@ -782,10 +780,14 @@ body {
   }
   .sidebar.open { transform: translateX(0); }
   .sidebar-overlay.open { display: block; }
-  .main-content { margin-left: 0 !important; padding-bottom: 70px; }
+  /* Option C(#icon-rail) 없는 구형 사이드바 레이아웃에만 적용 */
+  body:not(:has(#icon-rail)) .main-content { margin-left: 0 !important; padding-bottom: 70px; }
+  /* Option C 사용 시에는 margin-left: 52px 유지 (위 @media 768px 블록에서 선언) */
+  body:has(#icon-rail) .main-content { margin-left: 52px !important; padding-bottom: 70px; }
 }
 @media (min-width: 769px) {
-  .main-content { margin-left: 240px; }
+  /* Option C 없는 구형 사이드바 레이아웃 */
+  body:not(:has(#icon-rail)) .main-content { margin-left: 240px; }
 }
 
 /* 사이드바 메뉴 영역: 남은 공간 차지 + 세로 스크롤 */
@@ -1137,9 +1139,11 @@ body {
 }
 
 /* ─── 태블릿 (769~1024px) ───────────────────────────────────────── */
+/* RULE-008: Option C(#icon-rail) 사용 시 sidebar 기반 margin 적용 금지 */
 @media (min-width: 769px) and (max-width: 1024px) {
-  .sidebar       { width: 200px !important; }
-  .main-content  { margin-left: 200px !important; }
+  .sidebar { width: 200px !important; }
+  body:not(:has(#icon-rail)) .main-content { margin-left: 200px !important; }
+  /* Option C 태블릿: 레일 56px 유지 (글로벌 .main-content { margin-left:56px } 에서 이미 처리) */
 }
 
 /* ─── 키보드 열림 시 하단 탭바 숨김 ────────────────────────────── */

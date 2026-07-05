@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-05 (세션 106 — v3.0 BUG-077 핫픽스 + 로드맵 현행화)
-> **GitHub 최신: `da466fa`** — 로드맵 현행화 + BUG-077 핫픽스 기록
-> **NAS 현재: `da466fa`** ✅ 적용 완료
+> 최종 업데이트: 2026-07-05 (세션 106 — BUG-078 APK 다운로드 수정)
+> **GitHub 최신: `7cf5d61`** — BUG-078 APK 다운로드 실패 수정
+> **NAS 배포 필요: `7cf5d61`** — git pull 후 node scripts/patch_apk_url.js && pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -21,6 +21,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-078 | 106 | 2026-07-05 | ✅ 수정 | **로그인 화면 APK 다운로드 "파일 없음" 오류** — `system_settings.apk_url`이 NAS 로컬 경로(`/api/dist/apk/download`)로 설정되어 있으나 실제 APK 파일이 NAS에 없어 404 반환 → `scripts/patch_apk_url.js` 신규 생성: DB의 `apk_url`을 GitHub Releases 직접 URL(`https://github.com/gisubhan-droid/safetynote-android/releases/download/v1.4.7/safetynote-v1.4.7.apk`)로 패치 + `apk_version=1.4.7` 최신화 | `7cf5d61` |
 | BUG-077 | 106 | 2026-07-05 | ✅ 수정 | **모바일 아이콘 레일이 메인 콘텐츠 위에 겹침** — CSS `!important` 선언 순서 충돌: `style.css` 내 Option C `margin-left: 52px !important`(L742)보다 기존 사이드바 `margin-left: 0 !important`(L785)가 나중에 선언되어 덮어씀 → 동일 specificity의 `!important`는 선언 순서가 우선이기 때문 → 해결: 기존 사이드바 `@media(max-width:768px)` 규칙을 `body:not(:has(#icon-rail)) .main-content`로 분리 + Option C `!important` 제거 + 태블릿 `@media(769~1024px) margin-left:200px !important`도 동일하게 `body:not(:has(#icon-rail))`로 분리 | `6c4db00` |
 | BUG-076 | 102 | 2026-07-04 | ✅ 수정 | 정기·수시 페이지 진입 시 콘솔 404 다수 — `_injectLegalBanner('risk_assessment', ...)` 가 `GET /api/legal-notices/risk_assessment` 호출, NAS DB에 `risk_assessment` 키 없으면 404 반환 (프론트 catch로 무시되지만 콘솔 빨간 에러) → `GET /:key` 에서 키 없을 때 `null 200` 반환으로 수정 + `legal_notices` 테이블 없는 구버전 DB 방어 / 진단 API `GET /api/diagnostics/risk-db` 추가 (admin 전용, DB 상태 원격 확인) / 캐시 `v=20260704e` | `8b33ad6` |
 | BUG-075 | 102 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 500 에러 — ① `risk_assessment_items` 테이블이 구버전 스키마로 이미 존재 → `CREATE TABLE IF NOT EXISTS` 무시 → `note`/`is_active` 등 컬럼 없음 → 쿼리 500 ② `is_active` 직접 참조 시 컬럼 없으면 WHERE 조건 자체가 500 → `patchSchema v0.149` 추가(safeAlter로 컬럼 13개 보장) + `GET /items/by-work-type` · `GET /items/manage/:id` · `GET /work-types` 모든 컬럼 `COALESCE` 방어처리 / 캐시 `v=20260704d` | `753d5b9` |

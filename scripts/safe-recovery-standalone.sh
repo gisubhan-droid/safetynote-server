@@ -186,9 +186,9 @@ def do_restart():
         ] if os.path.isfile(p)), NODE_BIN)
     run(f"{PM2_BIN} delete {APP_NAME}")
     code2, out2 = run(
-        f"PORT={env_port} {PM2_BIN} start {TSX_BIN} "
-        f"--name {APP_NAME} --interpreter {node_bin} "
-        f"--cwd {INSTALL_DIR} -- node-server.ts"
+        f"PORT={env_port} {PM2_BIN} start node-server.ts "
+        f"--name {APP_NAME} --interpreter {TSX_BIN} --interpreter-args '' "
+        f"--cwd {INSTALL_DIR}"
     )
     return (code2 == 0, "PM2 재등록 완료" if code2 == 0 else f"PM2 실패: {out2[:200]}")
 
@@ -627,10 +627,11 @@ function doRestart() {
     ];
     nodeBin = candidates.find(p => { try { return fs.statSync(p).isFile(); } catch(e) { return false; } }) || NODE_BIN;
   }
-  const cmd = 'PORT=' + envPort + ' ' + PM2_BIN + ' start ' + TSX_BIN +
+  const cmd = 'PORT=' + envPort + ' ' + PM2_BIN + ' start node-server.ts' +
     ' --name ' + APP_NAME +
-    ' --interpreter ' + nodeBin +
-    ' --cwd ' + INSTALL_DIR + ' -- node-server.ts';
+    ' --interpreter ' + TSX_BIN +
+    ' --interpreter-args ""' +
+    ' --cwd ' + INSTALL_DIR;
   r = run(cmd);
   return r.code === 0
     ? { ok: true,  msg: 'PM2 재등록 완료' }

@@ -268,11 +268,11 @@ auto_git_rollback() {
   # PM2 재시작
   "$PM2_BIN" delete "$APP_NAME" 2>/dev/null || true
   cd "$INSTALL_DIR" || true
-  PORT=$PORT "$PM2_BIN" start "$TSX_BIN" \
+  PORT=$PORT "$PM2_BIN" start node-server.ts \
     --name "$APP_NAME" \
-    --interpreter "$NODE_BIN" \
+    --interpreter "$TSX_BIN" \
+    --interpreter-args "" \
     --cwd "$INSTALL_DIR" \
-    -- node-server.ts \
     >> "$LOG_FILE" 2>&1
   "$PM2_BIN" save 2>/dev/null || true
 
@@ -353,11 +353,11 @@ main() {
 
     "$PM2_BIN" delete "$APP_NAME" 2>/dev/null || true
     cd "$INSTALL_DIR" || { log "[ERROR] cd $INSTALL_DIR 실패"; exit 1; }
-    PORT=$PORT "$PM2_BIN" start "$TSX_BIN" \
+    PORT=$PORT "$PM2_BIN" start node-server.ts \
       --name "$APP_NAME" \
-      --interpreter "$NODE_BIN" \
+      --interpreter "$TSX_BIN" \
+      --interpreter-args "" \
       --cwd "$INSTALL_DIR" \
-      -- node-server.ts \
       2>> "$LOG_FILE"
     "$PM2_BIN" save 2>/dev/null || true
 

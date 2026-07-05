@@ -341,11 +341,11 @@ do_action() {
         local ENV_PORT=3443
         local _P; _P=$(grep -E "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
         [ -n "$_P" ] && ENV_PORT="$_P"
-        PORT=$ENV_PORT "$PM2_BIN" start "$TSX_BIN" \
+        PORT=$ENV_PORT "$PM2_BIN" start node-server.ts \
           --name "$APP_NAME" \
-          --interpreter "$NODE_BIN" \
-          --cwd "$INSTALL_DIR" \
-          -- node-server.ts >> "$LOG_FILE" 2>&1 \
+          --interpreter "$TSX_BIN" \
+          --interpreter-args "" \
+          --cwd "$INSTALL_DIR" >> "$LOG_FILE" 2>&1 \
           && RESULT="PM2 재등록 후 시작 완료" \
           || { OK=false; RESULT="PM2 시작 실패 — 로그를 확인하세요"; }
       }
@@ -395,11 +395,11 @@ do_action() {
         local ENV_PORT=3443
         local _P2; _P2=$(grep -E "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
         [ -n "$_P2" ] && ENV_PORT="$_P2"
-        PORT=$ENV_PORT "$PM2_BIN" start "$TSX_BIN" \
+        PORT=$ENV_PORT "$PM2_BIN" start node-server.ts \
           --name "$APP_NAME" \
-          --interpreter "$NODE_BIN" \
-          --cwd "$INSTALL_DIR" \
-          -- node-server.ts >> "$LOG_FILE" 2>&1 \
+          --interpreter "$TSX_BIN" \
+          --interpreter-args "" \
+          --cwd "$INSTALL_DIR" >> "$LOG_FILE" 2>&1 \
           && RESULT="$RESULT | PM2 시작 완료 ✅" \
           || { OK=false; RESULT="$RESULT | PM2 시작 실패"; }
       fi
@@ -535,8 +535,8 @@ def do_restart():
         ] if os.path.isfile(p)), NODE_BIN)
     code2, out2 = run(
         f"PORT={env_port} {PM2_BIN} delete {APP_NAME} ; "
-        f"cd {INSTALL_DIR} && PORT={env_port} {PM2_BIN} start {TSX_BIN} "
-        f"--name {APP_NAME} --interpreter {node_bin} --cwd {INSTALL_DIR} -- node-server.ts"
+        f"cd {INSTALL_DIR} && PORT={env_port} {PM2_BIN} start node-server.ts "
+        f"--name {APP_NAME} --interpreter {TSX_BIN} --interpreter-args '' --cwd {INSTALL_DIR}"
     )
     ok2 = code2 == 0
     return ok2, ("PM2 재등록 완료" if ok2 else f"PM2 시작 실패: {out2[:200]}")

@@ -7,7 +7,7 @@
 # 목적:
 #   SSH 비활성화 환경에서 PM2 프로세스가 중단될 경우 자동 복구
 #   일정 횟수 이상 crash 반복 시 → 이전 git 커밋으로 자동 롤백
-#   롤백도 실패 시 → 비상 복구 웹서버(3444포트) 자동 가동
+#   롤백도 실패 시 → 비상 복구 웹서버(3445포트) 자동 가동
 #
 # DSM 등록 방법:
 #   제어판 → 작업 스케줄러 → 생성 → 예약된 작업 → 사용자 정의 스크립트
@@ -20,7 +20,7 @@
 #
 # 로그 위치    : /var/log/safetynote-watchdog.log
 # crash 카운터 : /var/run/safetynote-crash-count
-# 비상 복구    : http://NAS_IP:3444  (서버가 살아날 때까지 유지)
+# 비상 복구    : http://NAS_IP:3445  (서버가 살아날 때까지 유지)
 # =============================================================================
 
 # ─── 설정값 ──────────────────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ CRASH_COUNT_FILE="/var/run/safetynote-crash-count"
 
 # 비상 복구 웹서버 스크립트
 RECOVERY_SCRIPT="$INSTALL_DIR/scripts/safe-recovery.sh"
-RECOVERY_PORT=3444
+RECOVERY_PORT=3445
 RECOVERY_PID_FILE="/var/run/safetynote-recovery.pid"
 
 # Node.js / PM2 경로 (Synology DSM Node.js v18 패키지 기준)
@@ -188,7 +188,7 @@ stop_recovery_server() {
     fi
     rm -f "$RECOVERY_PID_FILE"
   fi
-  # 포트 3444에 남아있는 프로세스 강제 종료
+  # 포트 3445에 남아있는 프로세스 강제 종료
   if command -v fuser &>/dev/null; then
     fuser -k "${RECOVERY_PORT}/tcp" 2>/dev/null || true
   fi

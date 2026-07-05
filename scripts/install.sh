@@ -274,8 +274,9 @@ JWT_SECRET=${JWT_SECRET_VAL}
 # ── APK 자동 배포 Webhook 시크릿 ──────────────────────
 DEPLOY_WEBHOOK_SECRET=safetynote-nas-$(date +%Y)
 
-# ── 비상 복구 서버 비밀번호 (포트 3444) ────────────────
-# 메인 서버 접속 불가 시 http://NAS_IP:3444 에서 사용
+# ── 비상 복구 서버 비밀번호 (포트 3445) ────────────────
+# 메인 서버 접속 불가 시 http://NAS_IP:3445 에서 사용
+# (3444는 Android FCM 전용 포트 — 충돌 방지로 3445 사용)
 # ⚠️ 보안을 위해 이 값을 변경하세요!
 RECOVERY_PASSWORD=recovery1234
 
@@ -426,7 +427,7 @@ fi
 echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
 echo -e "${GREEN}║${NC}  🚨 비상 복구 (서버 완전 다운 시)                   ${GREEN}║${NC}"
 echo -e "${GREEN}║${NC}   메인 서버 접속 불가 → watchdog이 자동 가동         ${GREEN}║${NC}"
-printf "${GREEN}║${NC}   비상 복구 주소 : http://%-31s${GREEN}║${NC}\n" "${NAS_IP}:3444"
+printf "${GREEN}║${NC}   비상 복구 주소 : http://%-31s${GREEN}║${NC}\n" "${NAS_IP}:3445"
 echo -e "${GREEN}║${NC}   비밀번호: .env 파일의 RECOVERY_PASSWORD 값         ${GREEN}║${NC}"
 echo -e "${GREEN}║${NC}   (기본값: recovery1234 — 변경 강력 권장!)           ${GREEN}║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"

@@ -5092,3 +5092,30 @@ tail -f /var/log/safetynote-watchdog.log
 | SSH 포트 변경 | 없음 | 보안 강화 방법으로 SSH 포트 변경 안내 추가 (22→5022) |
 
 ---
+
+---
+
+## FIX-052: pm2-watchdog.sh --cwd 버그 수정
+
+> 작업일: 2026-07-05  
+> 상태: ✅ 완료
+
+### 원인
+`pm2-watchdog.sh`에서 `pm2 start` 시 `--cwd` 옵션 누락
+→ watchdog 실행 위치(`/root`)가 PM2 작업 디렉토리로 설정됨
+→ `/root/node-server.ts` 탐색 → 파일 없음 → 556회 크래시 반복
+
+### 수정
+```bash
+cd "$INSTALL_DIR"
+pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
+```
+
+### 완료 항목
+- [x] FIX-052 수정 및 git push
+- [x] NAS git pull + pm2 수동 복구
+- [x] DSM 작업 스케줄러 Watchdog 등록 (5분 간격)
+- [x] Watchdog 테스트 통과 (pm2 stop → 자동 복구 확인)
+- [x] SSH 비활성화 완료
+
+---

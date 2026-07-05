@@ -5035,3 +5035,60 @@ if (!tsCols.includes('notes')) {
 4. **단계적 배포**: Phase별 순차 배포 vs 한 번에 전체 배포
 
 ---
+
+---
+
+## FEAT-051: PM2 자동복구 Watchdog — SSH 비활성화 환경 대비
+
+> 작업일: 2026-07-05  
+> 상태: ✅ 완료
+
+### 배경
+- SSH를 비활성화해도 SafetyNOTE 서비스 운영 및 업데이트(webhook)에는 문제 없음
+- 단, PM2 프로세스가 크래시 시 재시작할 수단이 없음 → Watchdog 필요
+
+### 구현 내용
+
+**① `scripts/pm2-watchdog.sh` 신규 생성**
+- PM2 프로세스 상태 확인 (`pm2 describe safetynote`)
+- `online` 아니면 자동으로 `pm2 start` 재실행
+- Node.js / tsx / pm2 경로 자동 탐색 (DSM 패키지 경로 포함)
+- `.env`에서 PORT 자동 읽기
+- 로그: `/var/log/safetynote-watchdog.log` (500줄 자동 정리)
+- 정상 동작 중에는 로그 미기록 (불필요한 로그 방지)
+
+**② `scripts/install.sh` Step 9 추가**
+- 설치 시 `synoscheduler` CLI로 DSM 작업 스케줄러 자동 등록 시도
+- 자동 등록 실패 시 수동 등록 방법을 설치 완료 화면에 출력
+
+### DSM 수동 등록 방법 (자동 등록 실패 시)
+```
+DSM → 제어판 → 작업 스케줄러 → 생성 → 예약된 작업 → 사용자 정의 스크립트
+  작업 이름 : SafetyNOTE PM2 자동복구
+  사용자    : root
+  반복      : 매일 / 모든 시간 / 5분 간격
+  스크립트  : bash /volume1/safetynote/scripts/pm2-watchdog.sh
+```
+
+### 로그 확인
+```bash
+tail -f /var/log/safetynote-watchdog.log
+```
+
+---
+
+## TODO: 배포설명서(설치가이드 PPT/문서) 수정 필요 항목
+
+> 상태: 📋 기록만 (미착수) — 다음 문서 작업 세션에서 반영
+
+### 수정 필요 내용
+
+| 항목 | 현재 내용 | 수정 필요 내용 |
+|------|-----------|----------------|
+| SSH 안내 | SSH 활성화 필수로 안내 | SSH 선택사항 — 보안상 비활성화 또는 포트 변경 권장으로 변경 |
+| PM2 자동복구 | 없음 | DSM 작업 스케줄러 Watchdog 등록 단계 추가 |
+| 업데이트 방법 | SSH + git pull 방법만 안내 | 브라우저 업데이트(시스템설정 탭) 방법 위주로 변경, SSH는 선택 |
+| 도메인 연결 | 없음 | linkmax.co.kr 등 자체 도메인 연결 방법 추가 (DNS A레코드, DSM Let's Encrypt) |
+| SSH 포트 변경 | 없음 | 보안 강화 방법으로 SSH 포트 변경 안내 추가 (22→5022) |
+
+---

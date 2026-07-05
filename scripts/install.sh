@@ -322,6 +322,48 @@ else
 fi
 
 # =============================================================================
+# Step 9: DSM 작업 스케줄러 — PM2 자동복구 Watchdog 등록
+# =============================================================================
+step "Step 9: PM2 자동복구 Watchdog 등록 (SSH 비활성화 환경 대비)"
+
+WATCHDOG_SCRIPT="$INSTALL_DIR/scripts/pm2-watchdog.sh"
+SYNO_TASK_CONF="/usr/syno/etc/scheduled_task"
+WATCHDOG_REGISTERED=false
+
+# watchdog 스크립트 실행 권한 부여
+if [ -f "$WATCHDOG_SCRIPT" ]; then
+  chmod +x "$WATCHDOG_SCRIPT"
+  ok "watchdog 스크립트 실행 권한 설정: $WATCHDOG_SCRIPT"
+else
+  warn "watchdog 스크립트 없음: $WATCHDOG_SCRIPT (git pull 후 재시도)"
+fi
+
+# DSM 작업 스케줄러 자동 등록 시도
+# Synology DSM 7.x: /usr/syno/bin/synoscheduler 또는 직접 conf 파일 생성
+SYNO_SCHED_BIN=""
+for _bin in /usr/syno/bin/synoscheduler /usr/bin/synoscheduler; do
+  [ -x "$_bin" ] && SYNO_SCHED_BIN="$_bin" && break
+done
+
+if [ -n "$SYNO_SCHED_BIN" ]; then
+  # synoscheduler CLI로 등록 시도
+  "$SYNO_SCHED_BIN" --add \
+    --name "SafetyNOTE PM2 자동복구" \
+    --user root \
+    --minute "*/5" \
+    --script "bash $WATCHDOG_SCRIPT" 2>/dev/null \
+  && WATCHDOG_REGISTERED=true \
+  || true
+fi
+
+if [ "$WATCHDOG_REGISTERED" = true ]; then
+  ok "DSM 작업 스케줄러 자동 등록 완료 (5분 간격)"
+else
+  # 자동 등록 실패 시 — 수동 등록 안내 출력
+  warn "DSM 작업 스케줄러 수동 등록 필요 (아래 안내 참고)"
+fi
+
+# =============================================================================
 # 설치 완료 출력
 # =============================================================================
 NAS_IP=$(ip route get 1 2>/dev/null | awk '{print $7; exit}' \
@@ -357,5 +399,16 @@ echo -e "${GREEN}╠════════════════════
 echo -e "${GREEN}║${NC}  🔄 향후 업데이트 방법                               ${GREEN}║${NC}"
 echo -e "${GREEN}║${NC}   브라우저: 시스템설정 → 서버 업데이트 탭            ${GREEN}║${NC}"
 echo -e "${GREEN}║${NC}   수동SSH:  cd ${INSTALL_DIR} && git pull && pm2 restart $APP_NAME ${GREEN}║${NC}"
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║${NC}  🛡️  PM2 자동복구 Watchdog (SSH 비활성화 시 필수)    ${GREEN}║${NC}"
+if [ "$WATCHDOG_REGISTERED" = true ]; then
+echo -e "${GREEN}║${NC}   ✅ DSM 작업 스케줄러 자동 등록 완료 (5분 간격)    ${GREEN}║${NC}"
+else
+echo -e "${GREEN}║${NC}   ⚠️  아직 미등록 — DSM에서 수동 등록 필요:          ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   제어판 → 작업 스케줄러 → 생성 → 예약된 작업       ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   사용자: root / 반복: 매 5분                        ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   스크립트:                                          ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   bash ${WATCHDOG_SCRIPT}   ${GREEN}║${NC}"
+fi
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""

@@ -44,7 +44,8 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 NODE_PATH="/volume1/@appstore/Node.js_v18/usr/local/bin"
-export PATH="$NODE_PATH:/usr/local/bin:/usr/bin:/bin:$PATH"
+NODE_PATH_V20="/volume1/@appstore/Node.js_v20/usr/local/bin"
+export PATH="$NODE_PATH_V20:$NODE_PATH:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 LOG_FILE="/var/log/safetynote-watchdog.log"
 
@@ -68,7 +69,11 @@ done
 for c in "$NODE_PATH/node" "/volume1/@appstore/Node.js_v20/usr/local/bin/node" "/usr/local/bin/node"; do
   [ -x "$c" ] && NODE_BIN="$c" && break
 done
-TSX_BIN="$INSTALL_DIR/node_modules/.bin/tsx"
+# tsx: node_modules/.bin 우선, 없으면 v20/v18 전역 탐색
+for c in "$INSTALL_DIR/node_modules/.bin/tsx" "$NODE_PATH_V20/tsx" "$NODE_PATH/tsx" "/usr/local/bin/tsx"; do
+  [ -x "$c" ] && TSX_BIN="$c" && break
+done
+[ -z "$TSX_BIN" ] && TSX_BIN="$INSTALL_DIR/node_modules/.bin/tsx"
 
 # ─── 상태 수집 헬퍼 ─────────────────────────────────────────────────────────
 get_pm2_status() {
@@ -344,7 +349,6 @@ do_action() {
         PORT=$ENV_PORT "$PM2_BIN" start node-server.ts \
           --name "$APP_NAME" \
           --interpreter "$TSX_BIN" \
-          --interpreter-args "" \
           --cwd "$INSTALL_DIR" >> "$LOG_FILE" 2>&1 \
           && RESULT="PM2 재등록 후 시작 완료" \
           || { OK=false; RESULT="PM2 시작 실패 — 로그를 확인하세요"; }
@@ -398,7 +402,6 @@ do_action() {
         PORT=$ENV_PORT "$PM2_BIN" start node-server.ts \
           --name "$APP_NAME" \
           --interpreter "$TSX_BIN" \
-          --interpreter-args "" \
           --cwd "$INSTALL_DIR" >> "$LOG_FILE" 2>&1 \
           && RESULT="$RESULT | PM2 시작 완료 ✅" \
           || { OK=false; RESULT="$RESULT | PM2 시작 실패"; }
@@ -536,7 +539,7 @@ def do_restart():
     code2, out2 = run(
         f"PORT={env_port} {PM2_BIN} delete {APP_NAME} ; "
         f"cd {INSTALL_DIR} && PORT={env_port} {PM2_BIN} start node-server.ts "
-        f"--name {APP_NAME} --interpreter {TSX_BIN} --interpreter-args '' --cwd {INSTALL_DIR}"
+        f"--name {APP_NAME} --interpreter {TSX_BIN} --cwd {INSTALL_DIR}"
     )
     ok2 = code2 == 0
     return ok2, ("PM2 재등록 완료" if ok2 else f"PM2 시작 실패: {out2[:200]}")

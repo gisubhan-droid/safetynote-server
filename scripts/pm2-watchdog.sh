@@ -39,9 +39,10 @@ RECOVERY_SCRIPT="$INSTALL_DIR/scripts/safe-recovery.sh"
 RECOVERY_PORT=3445
 RECOVERY_PID_FILE="/var/run/safetynote-recovery.pid"
 
-# Node.js / PM2 경로 (Synology DSM Node.js v18 패키지 기준)
+# Node.js / PM2 경로 (Synology DSM Node.js v18/v20 패키지 기준)
 NODE_PATH="/volume1/@appstore/Node.js_v18/usr/local/bin"
-export PATH="$NODE_PATH:/usr/local/bin:/usr/bin:/bin:$PATH"
+NODE_PATH_V20="/volume1/@appstore/Node.js_v20/usr/local/bin"
+export PATH="$NODE_PATH_V20:$NODE_PATH:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 # ─── 유틸 함수 ───────────────────────────────────────────────────────────────
 timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
@@ -92,16 +93,18 @@ find_node() {
   echo ""
 }
 
-# tsx 실행 파일 탐색
+# tsx 실행 파일 탐색 (절대경로 우선 — DSM 작업 스케줄러 PATH 제한 대응)
 find_tsx() {
   local candidates=(
     "$INSTALL_DIR/node_modules/.bin/tsx"
+    "$NODE_PATH_V20/tsx"
     "$NODE_PATH/tsx"
     "/usr/local/bin/tsx"
   )
   for p in "${candidates[@]}"; do
     [ -x "$p" ] && echo "$p" && return
   done
+  command -v tsx 2>/dev/null && return
   echo ""
 }
 
@@ -271,7 +274,6 @@ auto_git_rollback() {
   PORT=$PORT "$PM2_BIN" start node-server.ts \
     --name "$APP_NAME" \
     --interpreter "$TSX_BIN" \
-    --interpreter-args "" \
     --cwd "$INSTALL_DIR" \
     >> "$LOG_FILE" 2>&1
   "$PM2_BIN" save 2>/dev/null || true
@@ -356,7 +358,6 @@ main() {
     PORT=$PORT "$PM2_BIN" start node-server.ts \
       --name "$APP_NAME" \
       --interpreter "$TSX_BIN" \
-      --interpreter-args "" \
       --cwd "$INSTALL_DIR" \
       2>> "$LOG_FILE"
     "$PM2_BIN" save 2>/dev/null || true

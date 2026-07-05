@@ -63,7 +63,7 @@ PM2_BIN=$(find_bin pm2 \
 NODE_BIN=$(find_bin node \
   "$NODE_PATH_V18/node" "$NODE_PATH_V20/node" "/usr/local/bin/node")
 TSX_BIN=$(find_bin tsx \
-  "$INSTALL_DIR/node_modules/.bin/tsx" "$NODE_PATH_V18/tsx" "/usr/local/bin/tsx")
+  "$INSTALL_DIR/node_modules/.bin/tsx" "$NODE_PATH_V20/tsx" "$NODE_PATH_V18/tsx" "/usr/local/bin/tsx")
 NPM_BIN=$(find_bin npm \
   "$NODE_PATH_V18/npm" "$NODE_PATH_V20/npm" "/usr/local/bin/npm")
 
@@ -187,7 +187,7 @@ def do_restart():
     run(f"{PM2_BIN} delete {APP_NAME}")
     code2, out2 = run(
         f"PORT={env_port} {PM2_BIN} start node-server.ts "
-        f"--name {APP_NAME} --interpreter {TSX_BIN} --interpreter-args '' "
+        f"--name {APP_NAME} --interpreter {TSX_BIN} "
         f"--cwd {INSTALL_DIR}"
     )
     return (code2 == 0, "PM2 재등록 완료" if code2 == 0 else f"PM2 실패: {out2[:200]}")
@@ -630,7 +630,6 @@ function doRestart() {
   const cmd = 'PORT=' + envPort + ' ' + PM2_BIN + ' start node-server.ts' +
     ' --name ' + APP_NAME +
     ' --interpreter ' + TSX_BIN +
-    ' --interpreter-args ""' +
     ' --cwd ' + INSTALL_DIR;
   r = run(cmd);
   return r.code === 0

@@ -274,6 +274,11 @@ JWT_SECRET=${JWT_SECRET_VAL}
 # ── APK 자동 배포 Webhook 시크릿 ──────────────────────
 DEPLOY_WEBHOOK_SECRET=safetynote-nas-$(date +%Y)
 
+# ── 비상 복구 서버 비밀번호 (포트 3444) ────────────────
+# 메인 서버 접속 불가 시 http://NAS_IP:3444 에서 사용
+# ⚠️ 보안을 위해 이 값을 변경하세요!
+RECOVERY_PASSWORD=recovery1234
+
 # ── 앱 버전 ────────────────────────────────────────────
 APP_VERSION=1.4
 EOF
@@ -327,15 +332,23 @@ fi
 step "Step 9: PM2 자동복구 Watchdog 등록 (SSH 비활성화 환경 대비)"
 
 WATCHDOG_SCRIPT="$INSTALL_DIR/scripts/pm2-watchdog.sh"
+RECOVERY_SCRIPT="$INSTALL_DIR/scripts/safe-recovery.sh"
 SYNO_TASK_CONF="/usr/syno/etc/scheduled_task"
 WATCHDOG_REGISTERED=false
 
-# watchdog 스크립트 실행 권한 부여
+# watchdog / safe-recovery 스크립트 실행 권한 부여
 if [ -f "$WATCHDOG_SCRIPT" ]; then
   chmod +x "$WATCHDOG_SCRIPT"
   ok "watchdog 스크립트 실행 권한 설정: $WATCHDOG_SCRIPT"
 else
   warn "watchdog 스크립트 없음: $WATCHDOG_SCRIPT (git pull 후 재시도)"
+fi
+
+if [ -f "$RECOVERY_SCRIPT" ]; then
+  chmod +x "$RECOVERY_SCRIPT"
+  ok "safe-recovery 스크립트 실행 권한 설정: $RECOVERY_SCRIPT"
+else
+  warn "safe-recovery 스크립트 없음: $RECOVERY_SCRIPT (git pull 후 재시도)"
 fi
 
 # DSM 작업 스케줄러 자동 등록 시도
@@ -410,5 +423,11 @@ echo -e "${GREEN}║${NC}   사용자: root / 반복: 매 5분                  
 echo -e "${GREEN}║${NC}   스크립트:                                          ${GREEN}║${NC}"
 echo -e "${GREEN}║${NC}   bash ${WATCHDOG_SCRIPT}   ${GREEN}║${NC}"
 fi
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║${NC}  🚨 비상 복구 (서버 완전 다운 시)                   ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   메인 서버 접속 불가 → watchdog이 자동 가동         ${GREEN}║${NC}"
+printf "${GREEN}║${NC}   비상 복구 주소 : http://%-31s${GREEN}║${NC}\n" "${NAS_IP}:3444"
+echo -e "${GREEN}║${NC}   비밀번호: .env 파일의 RECOVERY_PASSWORD 값         ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   (기본값: recovery1234 — 변경 강력 권장!)           ${GREEN}║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""

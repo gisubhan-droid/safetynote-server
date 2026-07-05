@@ -5188,3 +5188,68 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 - [x] admin.ts 라우트 헤더 주석 업데이트
 
 ---
+
+### FEAT-053b: 비상 복구 시스템 — 서버 접속 불가 시 자동 복구
+
+**요청**: 서버 업데이트 후 접속 자체가 안 될 때 (브라우저 롤백 UI도 열 수 없는 상황) 복구 방법
+
+---
+
+#### 구현 내용
+
+**1. pm2-watchdog.sh v2.0 — crash 자동 감지 + 자동 롤백 + 비상 서버 연계**
+
+| 단계 | 조건 | 동작 |
+|---|---|---|
+| 정상 | PM2 online | crash 카운터 리셋, 비상 서버 종료 |
+| 재시작 | crash 1~2회 | 일반 pm2 재시작 시도 |
+| 자동 롤백 | crash 3회 도달 | DB 백업 → git reset HEAD~1 → build → restart |
+| 비상 서버 | 롤백도 실패 | safe-recovery.sh 자동 가동 (포트 3444) |
+
+새로 추가된 기능:
+- `CRASH_THRESHOLD=3`: 임계값 (15분 동안 계속 죽으면 롤백 실행)
+- `CRASH_COUNT_FILE=/var/run/safetynote-crash-count`: crash 횟수 영속화
+- `auto_git_rollback()`: HEAD~1 자동 롤백 함수
+- `start_recovery_server()` / `stop_recovery_server()`: 비상 서버 관리
+
+**2. safe-recovery.sh (신규) — 비상 복구 웹서버**
+
+- Python3 기반 순수 HTTP 서버 (포트 3444)
+- Synology NAS에 Python3 패키지 설치 시 자동 동작
+- 복구 기능:
+  1. PM2 재시작
+  2. npm install + 재시작 (패키지 mismatch 복구)
+  3. 커밋 롤백 (선택한 커밋으로 git reset + build + restart)
+  4. DB 백업 복원 (백업 파일 선택 → DB 교체 → restart)
+  5. 서버 로그 확인
+- 비밀번호: `.env`의 `RECOVERY_PASSWORD` (기본: `recovery1234`)
+- 보안: 파일명 경로 탐색 방지, 커밋 해시 정규식 검증
+
+**3. install.sh 업데이트**
+
+- .env에 `RECOVERY_PASSWORD=recovery1234` 항목 추가
+- `safe-recovery.sh` 실행 권한 자동 설정
+- 설치 완료 화면에 비상 복구 주소(`:3444`) 출력
+
+**전체 복구 시나리오 흐름:**
+```
+업데이트 적용 → 서버 crash
+  └→ watchdog (5분마다)
+       ├→ crash 1~2회: pm2 재시작 시도
+       ├→ crash 3회: git HEAD~1 자동 롤백 + build + restart
+       │    ├→ 성공: 서버 복구 완료 ✅
+       │    └→ 실패: safe-recovery.sh 자동 가동
+       │             └→ http://NAS_IP:3444 접속
+       │                  ├→ PM2 재시작
+       │                  ├→ 커밋 선택 롤백
+       │                  └→ DB 백업 복원
+       └→ (서버 정상화 시 비상 서버 자동 종료)
+```
+
+### 완료 항목
+- [x] pm2-watchdog.sh v2.0: crash 카운터 + 자동 롤백 + 비상 서버 연계
+- [x] safe-recovery.sh 신규 생성 (비상 복구 웹서버)
+- [x] install.sh: RECOVERY_PASSWORD + safe-recovery 권한 + 안내 출력
+- [x] PROJECT_HISTORY.md 기록
+
+---

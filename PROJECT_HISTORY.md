@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-05 (세션 103)
-> **서버 현재 버전: `(pending)` ← 최신 (GitHub) — FIX-055 비상복구 standalone 스크립트 추가**
+> 최종 업데이트: 2026-07-05 (세션 104)
+> **서버 현재 버전: `cd532c8` ← 최신 (GitHub) — PM2 재등록 --interpreter 절대경로 강제 (DSM PATH 대응)**
 > **NAS 배포 버전: `347d747`** (git pull 후 pm2 restart — FIX-054 3445 포트 변경 반영)
 > **캐시 버전: v=20260704g**
 > **APK 최신**: v1.4.7
@@ -5251,6 +5251,45 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 - [x] safe-recovery.sh 신규 생성 (비상 복구 웹서버)
 - [x] install.sh: RECOVERY_PASSWORD + safe-recovery 권한 + 안내 출력
 - [x] PROJECT_HISTORY.md 기록
+
+---
+
+## 세션 104 — 2026-07-05
+
+### PM2 재등록 시 `--interpreter` 절대경로 강제 (DSM PATH 제한 대응)
+
+**문제**: watchdog/비상복구 스크립트가 PM2를 재등록할 때 `--interpreter node`(단순 명령어)로 등록
+→ DSM 작업 스케줄러의 제한된 PATH 환경에서 PM2 재시작 시 `node` 명령어를 찾지 못해 오류 발생
+
+**원인**: DSM 작업 스케줄러는 PATH가 매우 제한적이어서 `/usr/local/bin/node` 등 경로가 등록되지 않음
+→ PM2가 재시작 시 `--interpreter node`를 해석 못하고 `/root/node-server.ts` 형태의 오류 발생
+
+**해결**: 3개 파일에서 NODE_BIN 절대경로 강제 탐색으로 변경
+
+**수정 내역**:
+
+1. **`pm2-watchdog.sh`**: `find_pm2()` / `find_node()` 함수를 절대경로 우선 탐색으로 재작성
+   - candidates 배열: `$NODE_PATH/node`, v20/v18 전체경로, `/usr/local/bin/node` 순으로 탐색
+   - `command -v`는 마지막 fallback으로 이동
+
+2. **`safe-recovery-standalone.sh`**: Python3 `do_restart()` + Node.js `doRestart()` 양쪽 모두
+   ```python
+   node_bin = NODE_BIN if NODE_BIN and NODE_BIN.startswith("/") else \
+       next((p for p in [v18_path, v20_path, "/usr/local/bin/node"] if os.path.isfile(p)), NODE_BIN)
+   ```
+
+3. **`safe-recovery.sh`**: NODE_BIN 탐색 루프에 v20 경로 추가 + Python3 `do_restart()`에 동일 절대경로 보완 로직 추가
+
+**커밋**: `cd532c8` — "fix: PM2 재등록 시 --interpreter 절대경로 강제 (DSM PATH 제한 대응)"
+
+### 완료 항목
+- [x] pm2-watchdog.sh: find_pm2()/find_node() 절대경로 우선 탐색으로 변경
+- [x] safe-recovery-standalone.sh: Python3 do_restart() 절대경로 보완
+- [x] safe-recovery-standalone.sh: Node.js doRestart() 절대경로 보완
+- [x] safe-recovery.sh: NODE_BIN 루프에 v20 경로 추가
+- [x] safe-recovery.sh: Python3 do_restart() node_bin 절대경로 보완 로직 추가
+- [x] 3개 파일 bash -n 문법 검사 통과
+- [x] git commit & push (cd532c8)
 
 ---
 

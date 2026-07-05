@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-04 (세션 102)
-> **서버 현재 버전: `6066b06`** ← 최신 (GitHub) — 진단 패널 상세화 (work_type별 항목 수)
-> **NAS 배포 버전: `6066b06`** (git pull + pm2 restart 필요)
+> 최종 업데이트: 2026-07-05 (세션 103)
+> **서버 현재 버전: `(pending)` ← 최신 (GitHub) — FIX-055 비상복구 standalone 스크립트 추가**
+> **NAS 배포 버전: `347d747`** (git pull 후 pm2 restart — FIX-054 3445 포트 변경 반영)
 > **캐시 버전: v=20260704g**
 > **APK 최신**: v1.4.7
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
@@ -5250,6 +5250,50 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 - [x] pm2-watchdog.sh v2.0: crash 카운터 + 자동 롤백 + 비상 서버 연계
 - [x] safe-recovery.sh 신규 생성 (비상 복구 웹서버)
 - [x] install.sh: RECOVERY_PASSWORD + safe-recovery 권한 + 안내 출력
+- [x] PROJECT_HISTORY.md 기록
+
+---
+
+## 세션 103 — 2026-07-05
+
+### FIX-055: 비상 복구 서버 standalone 실행 방식 추가
+
+**문제**: `192.168.111.111:3445` 접속 시 `ERR_CONNECTION_REFUSED`
+
+**원인 분석**:
+- `safe-recovery.sh`는 watchdog이 `crash 3회`를 감지한 경우에만 자동 실행됨
+- 메인 서버(3443)가 `online` 상태이면 watchdog이 비상 서버를 가동하지 않음
+- SSH 비활성화 환경에서 수동으로 `safe-recovery.sh`를 직접 실행할 방법 없음
+
+**해결**: `scripts/safe-recovery-standalone.sh` 신규 생성
+
+**핵심 특징**:
+- 메인 서버 상태와 **완전 무관** — 항상 실행 가능
+- **Python3 우선 / Node.js fallback** 자동 전환 (어느 쪽이든 동작)
+- 이전 인스턴스 자동 정리 후 재시작 (PID 관리)
+- DSM 작업 스케줄러에서 **수동 [실행] 버튼** 한 번으로 즉시 가동
+- 동일한 포트 3445, 동일한 복구 UI
+
+**DSM 작업 스케줄러 등록 방법**:
+```
+작업 이름: SafetyNOTE 비상복구 서버 시작
+사용자   : root
+반복     : 실행 안 함
+스크립트 :
+  bash /volume1/safetynote/scripts/safe-recovery-standalone.sh
+```
+→ [실행] 클릭 → 결과 보기에서 "✅ 비상 복구 서버 가동 완료" 확인
+→ `http://192.168.111.111:3445` 접속
+
+**수정 파일**:
+- `scripts/safe-recovery-standalone.sh` — 신규 생성 (Python3+Node.js 이중 fallback)
+- `scripts/install.sh` — standalone 권한 설정 + 수동 실행 안내 추가
+- `PROJECT_HISTORY.md` — 세션 103 기록
+
+### 완료 항목
+- [x] scripts/safe-recovery-standalone.sh 신규 생성
+- [x] Python3 없을 경우 Node.js fallback 자동 전환 구현
+- [x] install.sh: standalone 권한 설정 + DSM 수동 실행 안내 추가
 - [x] PROJECT_HISTORY.md 기록
 
 ---

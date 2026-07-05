@@ -334,10 +334,11 @@ step "Step 9: PM2 자동복구 Watchdog 등록 (SSH 비활성화 환경 대비)"
 
 WATCHDOG_SCRIPT="$INSTALL_DIR/scripts/pm2-watchdog.sh"
 RECOVERY_SCRIPT="$INSTALL_DIR/scripts/safe-recovery.sh"
+STANDALONE_SCRIPT="$INSTALL_DIR/scripts/safe-recovery-standalone.sh"
 SYNO_TASK_CONF="/usr/syno/etc/scheduled_task"
 WATCHDOG_REGISTERED=false
 
-# watchdog / safe-recovery 스크립트 실행 권한 부여
+# watchdog / safe-recovery / standalone 스크립트 실행 권한 부여
 if [ -f "$WATCHDOG_SCRIPT" ]; then
   chmod +x "$WATCHDOG_SCRIPT"
   ok "watchdog 스크립트 실행 권한 설정: $WATCHDOG_SCRIPT"
@@ -350,6 +351,13 @@ if [ -f "$RECOVERY_SCRIPT" ]; then
   ok "safe-recovery 스크립트 실행 권한 설정: $RECOVERY_SCRIPT"
 else
   warn "safe-recovery 스크립트 없음: $RECOVERY_SCRIPT (git pull 후 재시도)"
+fi
+
+if [ -f "$STANDALONE_SCRIPT" ]; then
+  chmod +x "$STANDALONE_SCRIPT"
+  ok "safe-recovery-standalone 스크립트 실행 권한 설정: $STANDALONE_SCRIPT"
+else
+  warn "safe-recovery-standalone 스크립트 없음: $STANDALONE_SCRIPT (git pull 후 재시도)"
 fi
 
 # DSM 작업 스케줄러 자동 등록 시도
@@ -426,9 +434,16 @@ echo -e "${GREEN}║${NC}   bash ${WATCHDOG_SCRIPT}   ${GREEN}║${NC}"
 fi
 echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
 echo -e "${GREEN}║${NC}  🚨 비상 복구 (서버 완전 다운 시)                   ${GREEN}║${NC}"
-echo -e "${GREEN}║${NC}   메인 서버 접속 불가 → watchdog이 자동 가동         ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   ① watchdog이 crash 3회 감지 시 자동 가동           ${GREEN}║${NC}"
 printf "${GREEN}║${NC}   비상 복구 주소 : http://%-31s${GREEN}║${NC}\n" "${NAS_IP}:3445"
 echo -e "${GREEN}║${NC}   비밀번호: .env 파일의 RECOVERY_PASSWORD 값         ${GREEN}║${NC}"
 echo -e "${GREEN}║${NC}   (기본값: recovery1234 — 변경 강력 권장!)           ${GREEN}║${NC}"
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║${NC}  🆘 비상 복구 서버 수동 즉시 실행 (언제든 가능)      ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   DSM 작업 스케줄러 → 생성 → 예약된 작업            ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   사용자: root / 반복: 실행 안 함                    ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   스크립트:                                          ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   bash ${STANDALONE_SCRIPT}  ${GREEN}║${NC}"
+echo -e "${GREEN}║${NC}   → [실행] 클릭 후 http://${NAS_IP}:3445 접속        ${GREEN}║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""

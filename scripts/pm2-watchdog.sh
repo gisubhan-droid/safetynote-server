@@ -65,9 +65,9 @@ trim_log() {
 # PM2 실행 파일 탐색 (절대경로 우선 — DSM 작업 스케줄러 PATH 제한 대응)
 find_pm2() {
   local candidates=(
-    "$NODE_PATH/pm2"
-    "/volume1/@appstore/Node.js_v20/usr/local/bin/pm2"
     "/usr/local/bin/pm2"
+    "$NODE_PATH_V20/pm2"
+    "$NODE_PATH/pm2"
     "/usr/bin/pm2"
     "$INSTALL_DIR/node_modules/.bin/pm2"
   )
@@ -271,10 +271,11 @@ auto_git_rollback() {
   # PM2 재시작
   "$PM2_BIN" delete "$APP_NAME" 2>/dev/null || true
   cd "$INSTALL_DIR" || true
-  PORT=$PORT "$PM2_BIN" start node-server.ts \
+  PORT=$PORT "$PM2_BIN" start "$TSX_BIN" \
     --name "$APP_NAME" \
-    --interpreter "$TSX_BIN" \
+    --interpreter "$NODE_BIN" \
     --cwd "$INSTALL_DIR" \
+    -- node-server.ts \
     >> "$LOG_FILE" 2>&1
   "$PM2_BIN" save 2>/dev/null || true
 
@@ -355,10 +356,11 @@ main() {
 
     "$PM2_BIN" delete "$APP_NAME" 2>/dev/null || true
     cd "$INSTALL_DIR" || { log "[ERROR] cd $INSTALL_DIR 실패"; exit 1; }
-    PORT=$PORT "$PM2_BIN" start node-server.ts \
+    PORT=$PORT "$PM2_BIN" start "$TSX_BIN" \
       --name "$APP_NAME" \
-      --interpreter "$TSX_BIN" \
+      --interpreter "$NODE_BIN" \
       --cwd "$INSTALL_DIR" \
+      -- node-server.ts \
       2>> "$LOG_FILE"
     "$PM2_BIN" save 2>/dev/null || true
 

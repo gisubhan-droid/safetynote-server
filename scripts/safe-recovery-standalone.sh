@@ -58,8 +58,8 @@ find_bin() {
 }
 
 PM2_BIN=$(find_bin pm2 \
-  "$NODE_PATH_V18/pm2" "$NODE_PATH_V20/pm2" \
-  "/usr/local/bin/pm2" "$INSTALL_DIR/node_modules/.bin/pm2")
+  "/usr/local/bin/pm2" "$NODE_PATH_V20/pm2" "$NODE_PATH_V18/pm2" \
+  "$INSTALL_DIR/node_modules/.bin/pm2")
 NODE_BIN=$(find_bin node \
   "$NODE_PATH_V18/node" "$NODE_PATH_V20/node" "/usr/local/bin/node")
 TSX_BIN=$(find_bin tsx \
@@ -186,9 +186,9 @@ def do_restart():
         ] if os.path.isfile(p)), NODE_BIN)
     run(f"{PM2_BIN} delete {APP_NAME}")
     code2, out2 = run(
-        f"PORT={env_port} {PM2_BIN} start node-server.ts "
-        f"--name {APP_NAME} --interpreter {TSX_BIN} "
-        f"--cwd {INSTALL_DIR}"
+        f"PORT={env_port} {PM2_BIN} start {TSX_BIN} "
+        f"--name {APP_NAME} --interpreter {node_bin} "
+        f"--cwd {INSTALL_DIR} -- node-server.ts"
     )
     return (code2 == 0, "PM2 재등록 완료" if code2 == 0 else f"PM2 실패: {out2[:200]}")
 
@@ -627,10 +627,10 @@ function doRestart() {
     ];
     nodeBin = candidates.find(p => { try { return fs.statSync(p).isFile(); } catch(e) { return false; } }) || NODE_BIN;
   }
-  const cmd = 'PORT=' + envPort + ' ' + PM2_BIN + ' start node-server.ts' +
+  const cmd = 'PORT=' + envPort + ' ' + PM2_BIN + ' start ' + TSX_BIN +
     ' --name ' + APP_NAME +
-    ' --interpreter ' + TSX_BIN +
-    ' --cwd ' + INSTALL_DIR;
+    ' --interpreter ' + nodeBin +
+    ' --cwd ' + INSTALL_DIR + ' -- node-server.ts';
   r = run(cmd);
   return r.code === 0
     ? { ok: true,  msg: 'PM2 재등록 완료' }

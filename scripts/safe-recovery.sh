@@ -59,7 +59,7 @@ find_bin() {
 PM2_BIN=$(find_bin pm2)
 NODE_BIN=$(find_bin node)
 NPM_BIN=$(find_bin npm)
-for c in "$NODE_PATH/pm2" "/usr/local/bin/pm2" "$INSTALL_DIR/node_modules/.bin/pm2"; do
+for c in "/usr/local/bin/pm2" "$NODE_PATH_V20/pm2" "$NODE_PATH/pm2" "$INSTALL_DIR/node_modules/.bin/pm2"; do
   [ -x "$c" ] && PM2_BIN="$c" && break
 done
 for c in "$NODE_PATH/npm" "/volume1/@appstore/Node.js_v20/usr/local/bin/npm" "/usr/local/bin/npm"; do
@@ -346,10 +346,11 @@ do_action() {
         local ENV_PORT=3443
         local _P; _P=$(grep -E "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
         [ -n "$_P" ] && ENV_PORT="$_P"
-        PORT=$ENV_PORT "$PM2_BIN" start node-server.ts \
+        PORT=$ENV_PORT "$PM2_BIN" start "$TSX_BIN" \
           --name "$APP_NAME" \
-          --interpreter "$TSX_BIN" \
-          --cwd "$INSTALL_DIR" >> "$LOG_FILE" 2>&1 \
+          --interpreter "$NODE_BIN" \
+          --cwd "$INSTALL_DIR" \
+          -- node-server.ts >> "$LOG_FILE" 2>&1 \
           && RESULT="PM2 재등록 후 시작 완료" \
           || { OK=false; RESULT="PM2 시작 실패 — 로그를 확인하세요"; }
       }
@@ -399,10 +400,11 @@ do_action() {
         local ENV_PORT=3443
         local _P2; _P2=$(grep -E "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
         [ -n "$_P2" ] && ENV_PORT="$_P2"
-        PORT=$ENV_PORT "$PM2_BIN" start node-server.ts \
+        PORT=$ENV_PORT "$PM2_BIN" start "$TSX_BIN" \
           --name "$APP_NAME" \
-          --interpreter "$TSX_BIN" \
-          --cwd "$INSTALL_DIR" >> "$LOG_FILE" 2>&1 \
+          --interpreter "$NODE_BIN" \
+          --cwd "$INSTALL_DIR" \
+          -- node-server.ts >> "$LOG_FILE" 2>&1 \
           && RESULT="$RESULT | PM2 시작 완료 ✅" \
           || { OK=false; RESULT="$RESULT | PM2 시작 실패"; }
       fi
@@ -538,8 +540,8 @@ def do_restart():
         ] if os.path.isfile(p)), NODE_BIN)
     code2, out2 = run(
         f"PORT={env_port} {PM2_BIN} delete {APP_NAME} ; "
-        f"cd {INSTALL_DIR} && PORT={env_port} {PM2_BIN} start node-server.ts "
-        f"--name {APP_NAME} --interpreter {TSX_BIN} --cwd {INSTALL_DIR}"
+        f"cd {INSTALL_DIR} && PORT={env_port} {PM2_BIN} start {TSX_BIN} "
+        f"--name {APP_NAME} --interpreter {NODE_BIN} --cwd {INSTALL_DIR} -- node-server.ts"
     )
     ok2 = code2 == 0
     return ok2, ("PM2 재등록 완료" if ok2 else f"PM2 시작 실패: {out2[:200]}")

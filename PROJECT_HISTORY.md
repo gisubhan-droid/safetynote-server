@@ -1,12 +1,13 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-05 (세션 105 — v3.0 정식 릴리즈)
-> **GitHub 최신: `ee1a077`** — v3.0 PROJECT_HISTORY 완료
-> **NAS 배포 필요: `ee1a077`** (git pull 후 pm2 restart)
+> 최종 업데이트: 2026-07-05 (세션 106 — v3.0 BUG-077 핫픽스)
+> **GitHub 최신: `6c4db00`** — BUG-077 모바일 margin-left 겹침 수정
+> **NAS 배포 필요: `6c4db00`** (git pull 후 pm2 restart safetynote)
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
-> **앱 버전: v3.0** (PLAN-UI-001 Option C 아이콘 레일)
+> **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
-> **직전 단계 복원**: `bash scripts/rollback.sh pre-v300` (v3.0 문제 시 즉시 실행)
+> **직전 단계 복원**: `bash scripts/rollback.sh pre-hotfix` (핫픽스 전 상태)
+> **v3.0 이전 복원**: `bash scripts/rollback.sh pre-v300` (v2.x 최신 안정)
 > **배포 원칙**: 모든 수정 완료 후 NAS 1회 통합 배포
 > **NAS git 동기화**: `git pull` 실패 시 → `git fetch origin && git reset --hard origin/main`
 
@@ -20,6 +21,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-077 | 106 | 2026-07-05 | ✅ 수정 | **모바일 아이콘 레일이 메인 콘텐츠 위에 겹침** — CSS `!important` 선언 순서 충돌: `style.css` 내 Option C `margin-left: 52px !important`(L742)보다 기존 사이드바 `margin-left: 0 !important`(L785)가 나중에 선언되어 덮어씀 → 동일 specificity의 `!important`는 선언 순서가 우선이기 때문 → 해결: 기존 사이드바 `@media(max-width:768px)` 규칙을 `body:not(:has(#icon-rail)) .main-content`로 분리 + Option C `!important` 제거 + 태블릿 `@media(769~1024px) margin-left:200px !important`도 동일하게 `body:not(:has(#icon-rail))`로 분리 | `6c4db00` |
 | BUG-076 | 102 | 2026-07-04 | ✅ 수정 | 정기·수시 페이지 진입 시 콘솔 404 다수 — `_injectLegalBanner('risk_assessment', ...)` 가 `GET /api/legal-notices/risk_assessment` 호출, NAS DB에 `risk_assessment` 키 없으면 404 반환 (프론트 catch로 무시되지만 콘솔 빨간 에러) → `GET /:key` 에서 키 없을 때 `null 200` 반환으로 수정 + `legal_notices` 테이블 없는 구버전 DB 방어 / 진단 API `GET /api/diagnostics/risk-db` 추가 (admin 전용, DB 상태 원격 확인) / 캐시 `v=20260704e` | `8b33ad6` |
 | BUG-075 | 102 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 500 에러 — ① `risk_assessment_items` 테이블이 구버전 스키마로 이미 존재 → `CREATE TABLE IF NOT EXISTS` 무시 → `note`/`is_active` 등 컬럼 없음 → 쿼리 500 ② `is_active` 직접 참조 시 컬럼 없으면 WHERE 조건 자체가 500 → `patchSchema v0.149` 추가(safeAlter로 컬럼 13개 보장) + `GET /items/by-work-type` · `GET /items/manage/:id` · `GET /work-types` 모든 컬럼 `COALESCE` 방어처리 / 캐시 `v=20260704d` | `753d5b9` |
 | BUG-074 | 102 | 2026-07-04 | ✅ 수정 | 분류별 항목 관리 브라우저 404 — `src/routes/risk.ts`에서 `app.get('/:id', ...)` 라우트가 83번째 줄에 등록되어 이후의 `work-categories`, `work-types`, `items/by-work-type` 등 모든 GET 경로를 선점(Hono는 등록 순서 우선) → curl 직접 호출은 401(API 존재) 이지만 브라우저 인증 요청은 `/:id`에서 매칭되어 DB 조회 후 404 반환 → `/:id` 라우트를 파일 맨 끝(1070번째)으로 이동 | `9088ddc` |
@@ -96,8 +98,9 @@
 | RULE-005 | BUG-049 | 브라우저 업데이트 흐름: git reset → **npm run build** → pm2 restart (순서 준수) |
 | RULE-006 | BUG-050 | GPS 저장 테이블과 조회 쿼리 테이블이 일치해야 함 — GPS 저장 위치 변경 시 JOIN도 함께 수정 |
 | RULE-007 | v3.0 BUG-FIX-1 | `mobile-app.js`는 Option C(`#icon-rail`) 존재 시 `buildMobileNav()` + `navigateTo` 래핑 모두 Skip — 하단 탭바 이중 표시 방지 |
-| RULE-008 | v3.0 BUG-FIX-2 | 더 낮은 z-index 미디어 쿼리는 `!important`로 이깁니다 — Option C CSS 모바일/데스크톱 규칙에 `!important` 누락 금지 |
+| RULE-008 | v3.0 BUG-FIX-2 | **CSS `!important` 선언 순서 규칙**: 동일 specificity의 `!important`는 **파일 내 나중에 선언된 것이 이김** — Option C와 기존 사이드바 규칙은 반드시 `body:has(#icon-rail)` / `body:not(:has(#icon-rail))`로 **선택자 분리**할 것. 모바일(≤768px) + 태블릿(769~1024px) + 데스크톱(≥769px) 모든 미디어쿼리에 동일 원칙 적용 |
 | RULE-009 | v3.0 | `syncFlyoutActive` 호출은 switch 마지막에 한 번만 — 리다이렉트 코드(`return;`)에는 추가 불필요 (최종 페이지 navigateTo에서 처리됨) |
+| RULE-010 | BUG-077 | `style.css`에 새 미디어쿼리로 `.main-content` margin/layout 추가 시 반드시 `body:not(:has(#icon-rail))` 선택자를 붙여 Option C와 분리할 것 — 단순 `.main-content { ... }` 선언은 Option C 레이아웃을 덮어쓸 수 있음 |
 
 ---
 

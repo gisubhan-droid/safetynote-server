@@ -23,8 +23,12 @@ PM2_APP="${PM2_APP:-safetynote}"
 # ║  커밋 맵 — 세션별 복원 포인트 (최신순)                       ║
 # ╚══════════════════════════════════════════════════════════════╝
 declare -A COMMIT_MAP=(
+  # ── v3.0 핫픽스 (세션 106) ─────────────────────────────────
+  ["v300-hotfix"]="6c4db00"   # ★현재 — BUG-077 모바일 margin-left 겹침 수정
+  ["pre-hotfix"]="baf7b23"    # 핫픽스 직전 (v3.0 최종 검토 완료 상태)
+
   # ── v3.0 릴리즈 (세션 105) ─────────────────────────────────
-  ["v300-latest"]="ee1a077"   # ★현재 — v3.0 + PROJECT_HISTORY 기록 완료
+  ["v300-latest"]="ee1a077"   # v3.0 + PROJECT_HISTORY 기록 완료
   ["v300"]="338bc7d"          # v3.0 정식 — Option C + 버그픽스 2건
   ["v300-optc"]="d329cf0"     # v3.0 Option C 구현 완료 (버그픽스 전)
   ["pre-v300"]="9111ac2"      # ★v3.0 적용 직전 = v2.x 최신 안정 상태
@@ -58,7 +62,9 @@ declare -A COMMIT_MAP=(
 # ║  버전별 설명                                                 ║
 # ╚══════════════════════════════════════════════════════════════╝
 declare -A DESC_MAP=(
-  ["v300-latest"]="★현재 — v3.0 PROJECT_HISTORY + 문서 완료 (ee1a077)"
+  ["v300-hotfix"]="★현재 — BUG-077 모바일 아이콘 레일 겹침 핫픽스 (:has(#icon-rail) 선택자 분리) (6c4db00)"
+  ["pre-hotfix"]="핫픽스 직전 — v3.0 최종 검토 완료 상태 (baf7b23)"
+  ["v300-latest"]="v3.0 PROJECT_HISTORY + 문서 완료 (ee1a077)"
   ["v300"]="v3.0 정식 릴리즈 — Option C UI + 버그픽스(모바일 이중탭/CSS충돌) + 캐시 v300 (338bc7d)"
   ["v300-optc"]="v3.0 Option C 구현 (버그픽스 전) — 아이콘 레일 56px + 플라이아웃 220px (d329cf0)"
   ["pre-v300"]="★ v3.0 적용 직전 = v2.x 최신 안정 상태 ← v3.0에 문제 시 여기로 (9111ac2)"
@@ -81,8 +87,8 @@ BLUE='\033[0;34m'; CYAN='\033[0;36m'; MAGENTA='\033[0;35m'; NC='\033[0m'
 
 print_header() {
   echo -e "\n${CYAN}╔══════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║   SafetyNOTE 롤백 툴  v3.0                  ║${NC}"
-  echo -e "${CYAN}║   현재 운영 버전: v3.0 (Option C UI)         ║${NC}"
+  echo -e "${CYAN}║   SafetyNOTE 롤백 툴  v3.0-hotfix             ║${NC}"
+  echo -e "${CYAN}║   현재 운영 버전: v3.0-hotfix (BUG-077 수정)  ║${NC}"
   echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}\n"
 }
 
@@ -94,8 +100,8 @@ print_versions() {
 
   echo -e "${BLUE}── 복원 포인트 (최신 → 과거) ────────────────────${NC}\n"
 
-  local ORDER=(prev latest v300-latest v300 v300-optc pre-v300 s104 pre-s104 s103 s102-safe s102 pre-s102 s101 pre-s101 s100 pre-s100)
-  local STARS=("prev" "latest" "pre-v300" "s102-safe")
+  local ORDER=(prev latest v300-hotfix pre-hotfix v300-latest v300 v300-optc pre-v300 s104 pre-s104 s103 s102-safe s102 pre-s102 s101 pre-s101 s100 pre-s100)
+  local STARS=("prev" "latest" "v300-hotfix" "pre-v300" "s102-safe")
 
   for key in "${ORDER[@]}"; do
     local commit="${COMMIT_MAP[$key]:-?}"

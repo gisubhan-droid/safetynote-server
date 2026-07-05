@@ -1,6 +1,6 @@
-// SafetyNOTE Service Worker v11
-const STATIC_CACHE = 'sn-static-v11';
-const API_CACHE    = 'sn-api-v11';
+// SafetyNOTE Service Worker v12 (v3.0 — Option C 아이콘 레일)
+const STATIC_CACHE = 'sn-static-v12';
+const API_CACHE    = 'sn-api-v12';
 
 // Network First 대상: 자주 업데이트되는 파일 (항상 서버에서 최신 버전을 받아옴)
 const NETWORK_FIRST_URLS = [

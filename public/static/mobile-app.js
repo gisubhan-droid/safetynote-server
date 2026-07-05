@@ -169,6 +169,8 @@
 
   function buildMobileNav() {
     if (document.getElementById('mobile-nav-bar')) return;
+    // Option C(아이콘 레일) 사용 중이면 별도 탭바 불필요 — .bottom-nav가 그 역할을 함
+    if (document.getElementById('icon-rail')) return;
     const nav = document.createElement('nav');
     nav.id = 'mobile-nav-bar';
     nav.setAttribute('role', 'navigation');
@@ -202,10 +204,12 @@
     badge.style.display = count > 0 ? 'flex' : 'none';
   };
 
-  // navigateTo 래핑 — 탭 active 연동
+  // navigateTo 래핑 — 탭 active 연동 (Option C 아이콘 레일 없는 경우만)
   const _wrapNav = setInterval(() => {
     if (typeof window.navigateTo === 'function') {
       clearInterval(_wrapNav);
+      // Option C: #icon-rail 사용 시 syncFlyoutActive가 active 관리 → 래핑 불필요
+      if (document.getElementById('icon-rail')) return;
       const _orig = window.navigateTo;
       window.navigateTo = page => { _orig(page); setNavActive(page); };
     }

@@ -724,21 +724,23 @@ body {
 }
 #flyout-overlay.open { display: block; }
 
-/* 메인 콘텐츠 — 레일 56px만큼 밀기 */
-.main-content { margin-left: 56px; }
-.top-header   { left: 56px; }
+/* 메인 콘텐츠 — 레일 56px만큼 밀기
+   ※ 기존 사이드바 규칙(@media min-width:769px margin-left:240px)보다 우선하도록 !important */
+.main-content { margin-left: 56px !important; }
+.top-header   { left: 56px !important; }
 
 /* 기존 사이드바 숨기기 (Option C 사용 시) */
 .use-icon-rail #sidebar { display: none !important; }
 .use-icon-rail #sidebar-overlay { display: none !important; }
 
-/* 모바일: 레일+플라이아웃 오버레이 */
+/* 모바일: 레일+플라이아웃 오버레이
+   ※ 기존 사이드바 규칙(margin-left:0 !important)을 덮어쓰기 위해 !important 필요 */
 @media (max-width: 768px) {
   #icon-rail { width: 52px; }
   #flyout-panel { left: 52px; width: 210px; }
   #flyout-overlay { left: 52px; }
-  .main-content { margin-left: 52px; }
-  .top-header   { left: 52px; }
+  .main-content { margin-left: 52px !important; }
+  .top-header   { left: 52px !important; }
   /* 플라이아웃 열릴 때 배경 어둡게 */
   #flyout-overlay.open {
     display: block;

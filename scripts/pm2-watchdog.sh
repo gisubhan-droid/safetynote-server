@@ -158,10 +158,12 @@ main() {
   # PM2 프로세스 삭제 후 재등록
   "$PM2_BIN" delete "$APP_NAME" 2>/dev/null || true
 
-  # 재시작
+  # 재시작 — --cwd 반드시 명시 (없으면 watchdog 실행 디렉토리(/root 등)로 잘못 설정됨)
+  cd "$INSTALL_DIR" || { log "[ERROR] cd $INSTALL_DIR 실패"; exit 1; }
   PORT=$PORT "$PM2_BIN" start "$TSX_BIN" \
     --name "$APP_NAME" \
     --interpreter "$NODE_BIN" \
+    --cwd "$INSTALL_DIR" \
     -- node-server.ts \
     2>> "$LOG_FILE"
 

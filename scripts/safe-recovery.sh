@@ -64,7 +64,8 @@ done
 for c in "$NODE_PATH/npm" "/volume1/@appstore/Node.js_v20/usr/local/bin/npm" "/usr/local/bin/npm"; do
   [ -x "$c" ] && NPM_BIN="$c" && break
 done
-for c in "$NODE_PATH/node" "/usr/local/bin/node"; do
+# Node.js: 절대경로 강제 (DSM 작업 스케줄러 PATH 제한 대응)
+for c in "$NODE_PATH/node" "/volume1/@appstore/Node.js_v20/usr/local/bin/node" "/usr/local/bin/node"; do
   [ -x "$c" ] && NODE_BIN="$c" && break
 done
 TSX_BIN="$INSTALL_DIR/node_modules/.bin/tsx"
@@ -525,10 +526,17 @@ def do_restart():
                     env_port = l.split("=",1)[1].strip()
     except: pass
     os.environ["PORT"] = env_port
+    # DSM PATH 제한 대응: NODE_BIN 절대경로 보완
+    node_bin = NODE_BIN if NODE_BIN and NODE_BIN.startswith("/") else \
+        next((p for p in [
+            "/volume1/@appstore/Node.js_v18/usr/local/bin/node",
+            "/volume1/@appstore/Node.js_v20/usr/local/bin/node",
+            "/usr/local/bin/node"
+        ] if os.path.isfile(p)), NODE_BIN)
     code2, out2 = run(
         f"PORT={env_port} {PM2_BIN} delete {APP_NAME} ; "
         f"cd {INSTALL_DIR} && PORT={env_port} {PM2_BIN} start {TSX_BIN} "
-        f"--name {APP_NAME} --interpreter {NODE_BIN} --cwd {INSTALL_DIR} -- node-server.ts"
+        f"--name {APP_NAME} --interpreter {node_bin} --cwd {INSTALL_DIR} -- node-server.ts"
     )
     ok2 = code2 == 0
     return ok2, ("PM2 재등록 완료" if ok2 else f"PM2 시작 실패: {out2[:200]}")

@@ -167,18 +167,27 @@ def recent_log():
 
 def do_restart():
     if not PM2_BIN: return False, "PM2를 찾을 수 없습니다"
+    # restart 먼저 시도
     code, _ = run(f"{PM2_BIN} restart {APP_NAME}")
     if code == 0: return True, "PM2 재시작 완료"
+    # restart 실패 시 delete + start (절대경로 강제)
     env_port = "3443"
     try:
         with open(ENV_FILE) as f:
             for l in f:
                 if l.startswith("PORT="): env_port = l.split("=",1)[1].strip()
     except: pass
+    # NODE_BIN이 단순 'node'이면 절대경로로 보완
+    node_bin = NODE_BIN if NODE_BIN and NODE_BIN.startswith("/") else \
+        next((p for p in [
+            "/volume1/@appstore/Node.js_v18/usr/local/bin/node",
+            "/volume1/@appstore/Node.js_v20/usr/local/bin/node",
+            "/usr/local/bin/node"
+        ] if os.path.isfile(p)), NODE_BIN)
     run(f"{PM2_BIN} delete {APP_NAME}")
     code2, out2 = run(
         f"PORT={env_port} {PM2_BIN} start {TSX_BIN} "
-        f"--name {APP_NAME} --interpreter {NODE_BIN} "
+        f"--name {APP_NAME} --interpreter {node_bin} "
         f"--cwd {INSTALL_DIR} -- node-server.ts"
     )
     return (code2 == 0, "PM2 재등록 완료" if code2 == 0 else f"PM2 실패: {out2[:200]}")
@@ -608,9 +617,19 @@ function doRestart() {
       if (l.startsWith('PORT=')) envPort = l.split('=')[1].trim();
     });
   } catch(e) {}
+  // NODE_BIN이 단순 'node'이면 절대경로로 보완
+  let nodeBin = NODE_BIN;
+  if (!nodeBin || !nodeBin.startsWith('/')) {
+    const candidates = [
+      '/volume1/@appstore/Node.js_v18/usr/local/bin/node',
+      '/volume1/@appstore/Node.js_v20/usr/local/bin/node',
+      '/usr/local/bin/node'
+    ];
+    nodeBin = candidates.find(p => { try { return fs.statSync(p).isFile(); } catch(e) { return false; } }) || NODE_BIN;
+  }
   const cmd = 'PORT=' + envPort + ' ' + PM2_BIN + ' start ' + TSX_BIN +
     ' --name ' + APP_NAME +
-    ' --interpreter ' + NODE_BIN +
+    ' --interpreter ' + nodeBin +
     ' --cwd ' + INSTALL_DIR + ' -- node-server.ts';
   r = run(cmd);
   return r.code === 0

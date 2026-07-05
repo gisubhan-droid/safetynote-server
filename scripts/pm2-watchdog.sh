@@ -61,11 +61,11 @@ trim_log() {
   fi
 }
 
-# PM2 실행 파일 탐색
+# PM2 실행 파일 탐색 (절대경로 우선 — DSM 작업 스케줄러 PATH 제한 대응)
 find_pm2() {
-  if command -v pm2 &>/dev/null; then echo "pm2"; return; fi
   local candidates=(
     "$NODE_PATH/pm2"
+    "/volume1/@appstore/Node.js_v20/usr/local/bin/pm2"
     "/usr/local/bin/pm2"
     "/usr/bin/pm2"
     "$INSTALL_DIR/node_modules/.bin/pm2"
@@ -73,20 +73,22 @@ find_pm2() {
   for p in "${candidates[@]}"; do
     [ -x "$p" ] && echo "$p" && return
   done
+  command -v pm2 2>/dev/null && return
   echo ""
 }
 
-# Node.js 실행 파일 탐색
+# Node.js 실행 파일 탐색 (절대경로 우선 — DSM 작업 스케줄러 PATH 제한 대응)
 find_node() {
-  if command -v node &>/dev/null; then echo "node"; return; fi
   local candidates=(
     "$NODE_PATH/node"
+    "/volume1/@appstore/Node.js_v20/usr/local/bin/node"
     "/usr/local/bin/node"
     "/usr/bin/node"
   )
   for p in "${candidates[@]}"; do
     [ -x "$p" ] && echo "$p" && return
   done
+  command -v node 2>/dev/null && return
   echo ""
 }
 
@@ -103,9 +105,8 @@ find_tsx() {
   echo ""
 }
 
-# npm 실행 파일 탐색
+# npm 실행 파일 탐색 (절대경로 우선)
 find_npm() {
-  if command -v npm &>/dev/null; then echo "npm"; return; fi
   local candidates=(
     "$NODE_PATH/npm"
     "/volume1/@appstore/Node.js_v20/usr/local/bin/npm"

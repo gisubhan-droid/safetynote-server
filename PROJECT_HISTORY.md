@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-05 (세션 104)
-> **서버 현재 버전: `cd532c8` ← 최신 (GitHub) — PM2 재등록 --interpreter 절대경로 강제 (DSM PATH 대응)**
+> 최종 업데이트: 2026-07-05 (세션 105)
+> **서버 현재 버전: `d329cf0` ← 최신 (GitHub) — PLAN-UI-001 Option C 구현 완료 (아이콘 레일 + 플라이아웃)**
 > **NAS 배포 버전: `347d747`** (git pull 후 pm2 restart — FIX-054 3445 포트 변경 반영)
 > **캐시 버전: v=20260704g**
 > **APK 최신**: v1.4.7
@@ -5251,6 +5251,26 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 - [x] safe-recovery.sh 신규 생성 (비상 복구 웹서버)
 - [x] install.sh: RECOVERY_PASSWORD + safe-recovery 권한 + 안내 출력
 - [x] PROJECT_HISTORY.md 기록
+
+---
+
+## 세션 105 — 2026-07-05
+
+### PLAN-UI-001 Option C 구현 완료 (아이콘 레일 56px + 플라이아웃 패널 220px)
+
+**변경 파일**
+- `public/static/style.css` — 아이콘 레일(`#icon-rail`), 플라이아웃(`#flyout-panel`), 모바일 그룹탭 CSS 전체 추가
+- `public/static/app.js` — 메뉴 그룹 데이터 구조(5그룹/3그룹/1그룹) + HTML 빌더 + 플라이아웃 제어 함수 전면 교체
+
+**수정 상세 (이번 세션)**
+1. `buildRailGroups` — `data-color="${g.color}"` 속성 추가 → `openFlyout` 내 색상 복원 정상 동작
+2. `window._flyoutGroups = groups` 설정 — `buildLayout` 내 HTML 삽입 직후 → `syncFlyoutActive` 그룹 탐색 활성화
+3. `navigateTo()` 끝에 `syncFlyoutActive(page)` 호출 추가 → 페이지 전환 시 레일/하단탭 active 자동 갱신
+4. `refreshSignRequestCount()` — `rail-badge-{gid}` / `bnav-badge-{gid}` 배지 연동 추가 (edu/wsafety/lgu-main)
+
+**커밋**: `d329cf0` — feat: PLAN-UI-001 Option C 구현 완료
+
+**다음 작업**: NAS git pull + pm2 restart + 동작 확인
 
 ---
 

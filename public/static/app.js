@@ -29113,6 +29113,7 @@ let _frCacheRows      = [];
 let _frCacheExtras    = [];
 let _frCacheExtrasSnap= {}; // report_id → { item_key: unit_price_snapshot } (단가 불변)
 let _frCacheItemKeys  = [];
+let _frCacheLabelMap  = {}; // [BUG-086] item_key → item_label 캐시 (엑셀 헤더용)
 let _frCachePriceMap  = {};
 let _frCacheIsWorker  = false;
 // 공량내역 접속탭 엑셀 다운로드용 전역 캐시
@@ -29235,6 +29236,7 @@ async function renderFieldReportPage(container) {
     const allItemKeys = WR_EXTRA_ORDER_DB.filter(k => existingKeys.has(k));
     extras.forEach(ex => { if (!WR_EXTRA_ORDER_DB.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
     _frCacheItemKeys = allItemKeys;
+    _frCacheLabelMap = labelMap; // [BUG-086] item_key → item_label 캐시 저장 (엑셀 헤더용)
 
     // ── 공유 조회 조건 바 ──
     const sharedFilterBar = `
@@ -29836,7 +29838,7 @@ function downloadFieldReportCSV() {
       alert('다운로드할 데이터가 없습니다. 먼저 조회해 주세요.'); return;
     }
     const baseHeaders = ['완료일','작업자(팀)','요청번호','구분','신설(M)','철거(M)','이설(M)'];
-    const extraHeaders = _frCacheItemKeys.slice();
+    const extraHeaders = _frCacheItemKeys.map(k => _frCacheLabelMap[k] || k); // [BUG-086] item_key → item_label 변환
     const headers = _frCacheIsWorker
       ? [...baseHeaders, ...extraHeaders]
       : [...baseHeaders, ...extraHeaders, '합계금액(원)'];

@@ -2439,9 +2439,10 @@ function patchSchema() {
   }
   // ── [v0.154 FEAT-048] LGU+ 역할 단일화: role='lgu' → role='lgu_plus' ─────────
   // role='lgu' 방식을 완전히 제거하고 role='lgu_plus' 단일 역할로 통일
-  // ① users 테이블 role CHECK에 'lgu_plus' 추가 (테이블 재생성)
+  // ① users 테이블 role CHECK에 'lgu_plus' 추가 (테이블 재생성, better-sqlite3 안전 방식)
   // ② 기존 role='lgu' 데이터를 role='lgu_plus'로 일괄 마이그레이션
   // ③ sub_role='lgu_plus' + role='worker' 방식도 role='lgu_plus'로 통일
+  // [BUG-081 fix] rawDb.exec() 다중 DDL → 개별 실행 방식으로 변경 (better-sqlite3 호환)
   ;(function patchLguPlusUnify() {
     try {
       const usersSchema = (rawDb.prepare("SELECT sql FROM sqlite_master WHERE name='users'").get() as any)?.sql || ''
@@ -2449,10 +2450,11 @@ function patchSchema() {
       if (!usersSchema.includes("'lgu_plus'")) {
         console.log('[patchSchema v0.154] users.role CHECK에 lgu_plus 추가 — 테이블 재생성 시작')
         rawDb.pragma('foreign_keys = OFF')
-        rawDb.exec(`BEGIN;
-          CREATE TABLE IF NOT EXISTS users_v154 AS SELECT * FROM users WHERE 0;
-          DROP TABLE users_v154;
-          CREATE TABLE users_v154 (
+        try {
+          // 이전 실패 잔여물 정리
+          rawDb.exec(`DROP TABLE IF EXISTS users_v154`)
+          // 새 스키마로 임시 테이블 생성 (개별 실행 — better-sqlite3 안전 방식)
+          rawDb.exec(`CREATE TABLE users_v154 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
@@ -2479,45 +2481,56 @@ function patchSchema() {
             edu_special_date DATE, edu_supervisor_date DATE,
             fcm_token TEXT DEFAULT NULL,
             permissions TEXT DEFAULT NULL
-          );
-          INSERT INTO users_v154 SELECT
-            id, username, password_hash, name,
-            CASE WHEN role='lgu' THEN 'lgu_plus' ELSE role END,
-            department, phone, position, is_active, created_at, updated_at,
-            company, blood_type, emergency_contact, health_info,
-            edu_hire_date, edu_special_electric, edu_special_confined,
-            edu_special_loading, edu_experience_date, team_id, is_leader, is_pending,
-            rejection_reason, approved_by, approved_at, id_number,
-            privacy_agreed, privacy_agreed_at, security_agreed, security_agreed_at,
-            location_agreed, location_agreed_at, sub_role, grade,
-            edu_periodic_date, edu_job_change_date, edu_special_date, edu_supervisor_date,
-            COALESCE(fcm_token, NULL),
-            COALESCE(permissions, NULL)
-          FROM users;
-          DROP TABLE users;
-          ALTER TABLE users_v154 RENAME TO users;
-          COMMIT;`)
-        rawDb.pragma('foreign_keys = ON')
-        console.log('[patchSchema v0.154] ✅ users 재생성 완료 (lgu_plus 추가)')
+          )`)
+          // 데이터 복사 (트랜잭션으로 안전하게)
+          const copyTx = rawDb.transaction(() => {
+            rawDb.exec(`INSERT INTO users_v154 SELECT
+              id, username, password_hash, name,
+              CASE WHEN role='lgu' THEN 'lgu_plus' ELSE role END,
+              department, phone, position, is_active, created_at, updated_at,
+              company, blood_type, emergency_contact, health_info,
+              edu_hire_date, edu_special_electric, edu_special_confined,
+              edu_special_loading, edu_experience_date, team_id, is_leader, is_pending,
+              rejection_reason, approved_by, approved_at, id_number,
+              privacy_agreed, privacy_agreed_at, security_agreed, security_agreed_at,
+              location_agreed, location_agreed_at, sub_role, grade,
+              edu_periodic_date, edu_job_change_date, edu_special_date, edu_supervisor_date,
+              fcm_token, permissions
+            FROM users`)
+            rawDb.exec(`DROP TABLE users`)
+            rawDb.exec(`ALTER TABLE users_v154 RENAME TO users`)
+          })
+          copyTx()
+          rawDb.pragma('foreign_keys = ON')
+          console.log('[patchSchema v0.154] ✅ users 재생성 완료 (lgu_plus 추가)')
+        } catch (innerErr: any) {
+          // 재생성 실패 시 임시 테이블 정리 후 foreign_keys 복원
+          try { rawDb.exec(`DROP TABLE IF EXISTS users_v154`) } catch(_) {}
+          rawDb.pragma('foreign_keys = ON')
+          console.error('[patchSchema v0.154] users 재생성 실패 (무시, 구버전 유지):', innerErr.message)
+        }
       } else {
         console.log('[patchSchema v0.154] users.role CHECK에 이미 lgu_plus 포함 — 재생성 생략')
       }
 
       // ② role='lgu' → role='lgu_plus' 데이터 마이그레이션 (재생성 성공 여부와 무관하게 실행)
-      const migrated = rawDb.prepare(
-        `UPDATE users SET role='lgu_plus' WHERE role='lgu'`
-      ).run()
-      if (migrated.changes > 0) {
-        console.log(`[patchSchema v0.154] ✅ role='lgu' → 'lgu_plus' 마이그레이션 ${migrated.changes}건 완료`)
-      }
+      // CHECK 제약이 아직 없어도 실행 — 이미 'lgu_plus' CHECK가 있는 경우에만 유효
+      try {
+        const migrated = rawDb.prepare(`UPDATE users SET role='lgu_plus' WHERE role='lgu'`).run()
+        if (migrated.changes > 0) {
+          console.log(`[patchSchema v0.154] ✅ role='lgu' → 'lgu_plus' 마이그레이션 ${migrated.changes}건 완료`)
+        }
+      } catch (_) {}
 
       // ③ sub_role='lgu_plus' + role='worker' 방식 → role='lgu_plus', sub_role='' 통일
-      const unified = rawDb.prepare(
-        `UPDATE users SET role='lgu_plus', sub_role='' WHERE sub_role='lgu_plus' AND role='worker'`
-      ).run()
-      if (unified.changes > 0) {
-        console.log(`[patchSchema v0.154] ✅ sub_role='lgu_plus'+role='worker' → role='lgu_plus' 통일 ${unified.changes}건 완료`)
-      }
+      try {
+        const unified = rawDb.prepare(
+          `UPDATE users SET role='lgu_plus', sub_role='' WHERE sub_role='lgu_plus' AND role='worker'`
+        ).run()
+        if (unified.changes > 0) {
+          console.log(`[patchSchema v0.154] ✅ sub_role='lgu_plus'+role='worker' → role='lgu_plus' 통일 ${unified.changes}건 완료`)
+        }
+      } catch (_) {}
 
       // ④ group_permissions 테이블 lgu_plus 그룹 권한 갱신 (이미 있으면 유지)
       try {

@@ -30,32 +30,29 @@ app.get('/dashboard', async (c) => {
     }
     // periodStart/periodEnd가 null이면 전체 기간
 
-    // planned_date 기간 조건절 생성
+    // planned_date 기간 조건절 생성 (t. 별칭 통일 — BUG-081)
+    // 모든 쿼리에서 tasks 테이블을 't'로 별칭하므로 t.planned_date 형태 사용
     const periodWhere = periodStart && periodEnd
       ? `AND t.planned_date BETWEEN '${periodStart}' AND '${periodEnd}'`
-      : ''
-    const periodWhereNoAlias = periodStart && periodEnd
-      ? `AND planned_date BETWEEN '${periodStart}' AND '${periodEnd}'`
       : ''
 
     const today = new Date().toISOString().split('T')[0]
 
     // [FEAT-048] LGU+ 역할 판별: role='lgu_plus' 단일 + 구버전 호환 (role='lgu', sub_role='lgu_plus')
     const isLgu = user.role === 'lgu_plus' || user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
-    // LGU+ 전용 WHERE 조건 (constructions JOIN 필요, COALESCE NULL→-1 처리)
-    const lguJoin   = isLgu ? `LEFT JOIN constructions con ON con.id = t.construction_id` : ''
-    const lguWhere  = isLgu ? `AND COALESCE(con.is_auto_request_no, -1) = 0` : ''
-    // alias 없는 단순 tasks 쿼리용 (taskCounts, highRiskCount, categoryStats)
-    const lguJoinSimple  = isLgu ? `LEFT JOIN constructions con ON con.id = tasks.construction_id` : ''
-    const lguWhereSimple = isLgu ? `AND COALESCE(con.is_auto_request_no, -1) = 0` : ''
+    // [BUG-081] 모든 쿼리를 't' 별칭으로 통일 — constructions.status와 tasks.status 모호성 방지
+    // constructions 테이블에도 status 컬럼이 있으므로 반드시 t.컬럼명 형태로 명시 필요
+    const lguJoin  = isLgu ? `LEFT JOIN constructions con ON con.id = t.construction_id` : ''
+    const lguWhere = isLgu ? `AND COALESCE(con.is_auto_request_no, -1) = 0` : ''
 
     const [taskCounts, recentTasks, highRiskCount, categoryStats, todayTasks] = await Promise.all([
       // [LGU+ 필터] 기간 필터 적용한 작업 상태별 건수
+      // [BUG-081] 'tasks' → 't' 별칭 통일: t.status, t.planned_date 명시
       c.env.DB.prepare(
-        `SELECT tasks.status, COUNT(*) as count FROM tasks
-         ${lguJoinSimple}
-         WHERE 1=1 ${periodWhereNoAlias} ${lguWhereSimple}
-         GROUP BY tasks.status`
+        `SELECT t.status, COUNT(*) as count FROM tasks t
+         ${lguJoin}
+         WHERE 1=1 ${periodWhere} ${lguWhere}
+         GROUP BY t.status`
       ).all<any>(),
       // [LGU+ 필터] 진행중 작업 (기간 내)
       c.env.DB.prepare(
@@ -66,24 +63,26 @@ app.get('/dashboard', async (c) => {
          ORDER BY t.updated_at DESC LIMIT 10`
       ).all<any>(),
       // [LGU+ 필터] 고위험 작업건수: risk_level = 'high', 완료/취소 제외
+      // [BUG-081] t.risk_level, t.status 명시 — constructions.status 모호성 제거
       c.env.DB.prepare(
-        `SELECT COUNT(*) as count FROM tasks
-         ${lguJoinSimple}
-         WHERE risk_level = 'high'
-           AND status NOT IN ('completed','cancelled')
-           ${periodWhereNoAlias} ${lguWhereSimple}`
+        `SELECT COUNT(*) as count FROM tasks t
+         ${lguJoin}
+         WHERE t.risk_level = 'high'
+           AND t.status NOT IN ('completed','cancelled')
+           ${periodWhere} ${lguWhere}`
       ).first<any>(),
       // [LGU+ 필터] 공사종류별 배정현황: construction_type 기준 전체/진행중/완료 작업 수 (기간 필터)
+      // [BUG-081] t.construction_type, t.status 명시 — 모호성 제거
       c.env.DB.prepare(
         `SELECT
-           CASE WHEN tasks.construction_type = '' OR tasks.construction_type IS NULL THEN '미분류' ELSE tasks.construction_type END as category_name,
+           CASE WHEN t.construction_type = '' OR t.construction_type IS NULL THEN '미분류' ELSE t.construction_type END as category_name,
            COUNT(*) as total_count,
-           SUM(CASE WHEN tasks.status IN ('working','in_progress','tbm_done','assigned') THEN 1 ELSE 0 END) as active_count,
-           SUM(CASE WHEN tasks.status = 'completed' THEN 1 ELSE 0 END) as completed_count
-         FROM tasks
-         ${lguJoinSimple}
-         WHERE 1=1 ${periodWhereNoAlias} ${lguWhereSimple}
-         GROUP BY tasks.construction_type
+           SUM(CASE WHEN t.status IN ('working','in_progress','tbm_done','assigned') THEN 1 ELSE 0 END) as active_count,
+           SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed_count
+         FROM tasks t
+         ${lguJoin}
+         WHERE 1=1 ${periodWhere} ${lguWhere}
+         GROUP BY t.construction_type
          ORDER BY total_count DESC`
       ).all<any>(),
       // [LGU+ 필터] 금일 예정 작업: planned_date = 오늘, 상태·공사종류 포함

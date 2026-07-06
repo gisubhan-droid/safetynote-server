@@ -3387,6 +3387,89 @@ app.patch('/api/tasks/:id/status', async (c) => {
   return c.json({ success: true })
 })
 
+// ─── [BUG-087] NAS 전용: DELETE /api/tasks/:id — rawDb로 완전한 연쇄 삭제 ────
+// tasks.ts(Cloudflare D1)의 safeDelete 체인이 NAS SQLite FK 환경에서 실패하는 문제 해결
+// rawDb를 직접 사용하여 FK pragma 비활성화 후 순차 삭제
+app.delete('/api/tasks/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  // [FEAT-053] 시스템관리자만 삭제 가능
+  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
+  if (!isSysAdmin) return c.json({ error: '시스템 관리자만 삭제할 수 있습니다.' }, 403)
+
+  const id = Number(c.req.param('id'))
+  if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
+
+  // [FEAT-053] 완료(completed) 상태 확인
+  const taskRow: any = rawDb.prepare(`SELECT id, status, title FROM tasks WHERE id = ?`).get(id)
+  if (!taskRow) return c.json({ error: '작업을 찾을 수 없습니다.' }, 404)
+  if (taskRow.status !== 'completed') {
+    return c.json({ error: `완료된 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
+  }
+
+  try {
+    // FK 제약 임시 비활성화 (NAS SQLite 환경에서 안전한 연쇄 삭제)
+    rawDb.exec('PRAGMA foreign_keys = OFF')
+
+    const sd = (sql: string, ...params: any[]) => {
+      try { rawDb.prepare(sql).run(...params) } catch(e: any) {
+        if (!e.message?.includes('no such table') && !e.message?.includes('no such column'))
+          console.warn(`[BUG-087/safeDelete] ${e.message} | SQL: ${sql.slice(0,80)}`)
+      }
+    }
+
+    // ① TBM 관련 (tbm_records 참조 자식 먼저)
+    sd(`DELETE FROM tbm_signatures   WHERE tbm_id IN (SELECT id FROM tbm_records WHERE task_id=?)`, id)
+    sd(`DELETE FROM tbm_share_tokens WHERE tbm_id IN (SELECT id FROM tbm_records WHERE task_id=?)`, id)
+    sd(`DELETE FROM signature_requests WHERE ref_type='tbm' AND ref_id IN (SELECT id FROM tbm_records WHERE task_id=?)`, id)
+    sd(`DELETE FROM notifications      WHERE ref_type='tbm' AND ref_id IN (SELECT id FROM tbm_records WHERE task_id=?)`, id)
+    sd(`DELETE FROM tbm_records WHERE task_id=?`, id)
+
+    // ② checklist 관련
+    sd(`DELETE FROM tbm_photo_items WHERE section_id IN (SELECT id FROM tbm_photo_sections WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?))`, id)
+    sd(`DELETE FROM tbm_photo_sections WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?)`, id)
+    sd(`DELETE FROM checklist_responses WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?)`, id)
+    sd(`DELETE FROM checklist_assessments WHERE task_id=?`, id)
+
+    // ③ risk 관련
+    sd(`DELETE FROM risk_assessment_details WHERE assessment_id IN (SELECT id FROM risk_assessments WHERE task_id=?)`, id)
+    sd(`DELETE FROM risk_assessments WHERE task_id=?`, id)
+
+    // ④ 기타 task 연관 테이블
+    sd(`DELETE FROM task_stops        WHERE task_id=?`, id)
+    sd(`DELETE FROM work_logs         WHERE task_id=?`, id)
+    sd(`DELETE FROM task_photos       WHERE task_id=?`, id)
+    sd(`DELETE FROM notifications     WHERE ref_type='task' AND ref_id=?`, id)
+    sd(`DELETE FROM signature_requests WHERE ref_type='task' AND ref_id=?`, id)
+
+    // ⑤ 첨부파일 물리 삭제
+    try {
+      const attRows: any[] = rawDb.prepare(`SELECT file_path FROM task_attachments WHERE task_id=?`).all(id)
+      for (const att of attRows) {
+        if (att.file_path) {
+          try { require('fs').unlinkSync(att.file_path) } catch(_) {}
+        }
+      }
+    } catch(_) {}
+    sd(`DELETE FROM task_attachments WHERE task_id=?`, id)
+    sd(`DELETE FROM task_assignments WHERE task_id=?`, id)
+    sd(`DELETE FROM task_work_types  WHERE task_id=?`, id)
+
+    // ⑥ tasks 본체 삭제
+    rawDb.prepare(`DELETE FROM tasks WHERE id=?`).run(id)
+
+    console.log(`[BUG-087] 작업 삭제 완료: task_id=${id} title="${taskRow.title}" by ${user.name}`)
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[BUG-087] 작업 삭제 실패:', e.message)
+    return c.json({ error: e.message || '삭제 실패' }, 500)
+  } finally {
+    // FK 제약 반드시 재활성화
+    try { rawDb.exec('PRAGMA foreign_keys = ON') } catch(_) {}
+  }
+})
+
 app.route('/api/tasks', taskRoutes)
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
@@ -4416,28 +4499,38 @@ app.get('/api/constructions/request-no-seq', async (c) => {
   return c.json({ next_no: nextNo, seq: nextSeq, prefix })
 })
 
-// ─── NAS 전용: 공사 삭제 ────────────────────────────────────────────────────
-// [TASK-001] RULE-002 준수 — app.route('/api/constructions') 마운트 앞에 등록
-// 연결된 tasks 존재 시 차단
+// ─── NAS 전용: 공사 삭제 (FEAT-053 업데이트) ────────────────────────────────
+// [TASK-001 → FEAT-053] RULE-002 준수 — app.route('/api/constructions') 마운트 앞에 등록
+// 시스템관리자 전용, 완료(completed/settled) 상태만 허용
 app.delete('/api/constructions/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
+  // [FEAT-053] 시스템관리자만 삭제 가능
+  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
+  if (!isSysAdmin) return c.json({ error: '시스템 관리자만 삭제할 수 있습니다.' }, 403)
+
   const id = parseInt(c.req.param('id'))
   if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
 
-  // 연결 작업 존재 여부 확인 (차단 조건)
-  const linked = rawDb.prepare(
-    `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ?`
-  ).get(id) as any
-  if ((linked?.cnt ?? 0) > 0) {
-    return c.json({ error: `연결된 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 삭제하거나 연결을 해제해 주세요.` }, 409)
-  }
-
-  const con = rawDb.prepare(`SELECT id, title FROM constructions WHERE id = ?`).get(id) as any
+  const con = rawDb.prepare(`SELECT id, title, status FROM constructions WHERE id = ?`).get(id) as any
   if (!con) return c.json({ error: '공사 없음' }, 404)
 
+  // [FEAT-053] 완료(completed) 또는 정산완료(settled) 상태만 삭제 허용
+  if (con.status !== 'completed' && con.status !== 'settled') {
+    return c.json({ error: `완료되거나 정산완료된 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}` }, 409)
+  }
+
+  // 진행 중인 작업 잔존 여부 확인
+  const linked = rawDb.prepare(
+    `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ? AND status NOT IN ('completed','cancelled')`
+  ).get(id) as any
+  if ((linked?.cnt ?? 0) > 0) {
+    return c.json({ error: `진행 중인 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 완료하거나 취소해 주세요.` }, 409)
+  }
+
   rawDb.prepare(`DELETE FROM constructions WHERE id = ?`).run(id)
+  console.log(`[FEAT-053] 공사 삭제 완료: id=${id} title="${con.title}" by ${user.name}`)
   return c.json({ success: true, message: `"${con.title}" 공사가 삭제되었습니다.` })
 })
 

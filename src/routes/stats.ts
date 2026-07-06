@@ -40,38 +40,53 @@ app.get('/dashboard', async (c) => {
 
     const today = new Date().toISOString().split('T')[0]
 
+    // [BUG-079/FEAT-047] LGU+ 역할 판별: role='lgu' OR sub_role='lgu_plus'
+    const isLgu = user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
+    // LGU+ 전용 WHERE 조건 (constructions JOIN 필요, COALESCE NULL→-1 처리)
+    const lguJoin   = isLgu ? `LEFT JOIN constructions con ON con.id = t.construction_id` : ''
+    const lguWhere  = isLgu ? `AND COALESCE(con.is_auto_request_no, -1) = 0` : ''
+    // alias 없는 단순 tasks 쿼리용 (taskCounts, highRiskCount, categoryStats)
+    const lguJoinSimple  = isLgu ? `LEFT JOIN constructions con ON con.id = tasks.construction_id` : ''
+    const lguWhereSimple = isLgu ? `AND COALESCE(con.is_auto_request_no, -1) = 0` : ''
+
     const [taskCounts, recentTasks, highRiskCount, categoryStats, todayTasks] = await Promise.all([
-      // 기간 필터 적용한 작업 상태별 건수
+      // [LGU+ 필터] 기간 필터 적용한 작업 상태별 건수
       c.env.DB.prepare(
-        `SELECT status, COUNT(*) as count FROM tasks WHERE 1=1 ${periodWhereNoAlias} GROUP BY status`
+        `SELECT tasks.status, COUNT(*) as count FROM tasks
+         ${lguJoinSimple}
+         WHERE 1=1 ${periodWhereNoAlias} ${lguWhereSimple}
+         GROUP BY tasks.status`
       ).all<any>(),
-      // 진행중 작업 (기간 내)
+      // [LGU+ 필터] 진행중 작업 (기간 내)
       c.env.DB.prepare(
         `SELECT t.*, wc.name as category_name FROM tasks t
          LEFT JOIN work_categories wc ON wc.id = t.category_id
-         WHERE t.status IN ('working','in_progress','tbm_done','assigned') ${periodWhere}
+         ${lguJoin}
+         WHERE t.status IN ('working','in_progress','tbm_done','assigned') ${periodWhere} ${lguWhere}
          ORDER BY t.updated_at DESC LIMIT 10`
       ).all<any>(),
-      // 고위험 작업건수: risk_level = 'high', 완료/취소 제외
+      // [LGU+ 필터] 고위험 작업건수: risk_level = 'high', 완료/취소 제외
       c.env.DB.prepare(
         `SELECT COUNT(*) as count FROM tasks
+         ${lguJoinSimple}
          WHERE risk_level = 'high'
            AND status NOT IN ('completed','cancelled')
-           ${periodWhereNoAlias}`
+           ${periodWhereNoAlias} ${lguWhereSimple}`
       ).first<any>(),
-      // 공사종류별 배정현황: construction_type 기준 전체/진행중/완료 작업 수 (기간 필터)
+      // [LGU+ 필터] 공사종류별 배정현황: construction_type 기준 전체/진행중/완료 작업 수 (기간 필터)
       c.env.DB.prepare(
         `SELECT
-           CASE WHEN construction_type = '' OR construction_type IS NULL THEN '미분류' ELSE construction_type END as category_name,
+           CASE WHEN tasks.construction_type = '' OR tasks.construction_type IS NULL THEN '미분류' ELSE tasks.construction_type END as category_name,
            COUNT(*) as total_count,
-           SUM(CASE WHEN status IN ('working','in_progress','tbm_done','assigned') THEN 1 ELSE 0 END) as active_count,
-           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count
+           SUM(CASE WHEN tasks.status IN ('working','in_progress','tbm_done','assigned') THEN 1 ELSE 0 END) as active_count,
+           SUM(CASE WHEN tasks.status = 'completed' THEN 1 ELSE 0 END) as completed_count
          FROM tasks
-         WHERE 1=1 ${periodWhereNoAlias}
-         GROUP BY construction_type
+         ${lguJoinSimple}
+         WHERE 1=1 ${periodWhereNoAlias} ${lguWhereSimple}
+         GROUP BY tasks.construction_type
          ORDER BY total_count DESC`
       ).all<any>(),
-      // 금일 예정 작업: planned_date = 오늘, 상태·공사종류 포함
+      // [LGU+ 필터] 금일 예정 작업: planned_date = 오늘, 상태·공사종류 포함
       c.env.DB.prepare(
         `SELECT t.id, t.task_number, t.title, t.location, t.status,
                 t.construction_type, t.risk_level, t.planned_date,
@@ -79,7 +94,8 @@ app.get('/dashboard', async (c) => {
          FROM tasks t
          LEFT JOIN task_assignments ta ON ta.task_id = t.id
          LEFT JOIN users u ON u.id = ta.worker_id
-         WHERE t.planned_date = ?
+         ${lguJoin}
+         WHERE t.planned_date = ? ${lguWhere}
          GROUP BY t.id
          ORDER BY t.status, t.id`
       ).bind(today).all<any>()

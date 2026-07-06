@@ -2566,6 +2566,15 @@ function patchSchema() {
       console.warn('[patchSchema v0.155] lgu_menu 기본값 교정 실패 (무시):', e.message)
     }
   })()
+  // ── [v0.156 FEAT-055] 교육 점심시간 제외 여부 컬럼 추가 ──────────────────────
+  // lunch_break: 1=점심시간(12~13시) 제외 적용, 0=미적용(기본값)
+  try {
+    rawDb.exec(`ALTER TABLE safety_education_sessions ADD COLUMN lunch_break INTEGER DEFAULT 0`)
+    console.log('[patchSchema v0.156] ✅ safety_education_sessions.lunch_break 컬럼 추가')
+  } catch (e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.156] lunch_break 컬럼 추가 실패 (무시):', e.message)
+    else console.log('[patchSchema v0.156] lunch_break 컬럼 이미 존재 — 생략')
+  }
   // ─────────────────────────────────────────────────────────────────────────────
 }
 patchSchema()

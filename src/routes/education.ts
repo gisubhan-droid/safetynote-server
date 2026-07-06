@@ -250,6 +250,7 @@ app.post('/sessions', async (c) => {
       start_time, end_time, edu_content,
       instructor, location, quarter, year,
       target_type, special_work_type, notes,
+      lunch_break,
       attendees = []
     } = body
 
@@ -270,8 +271,9 @@ app.post('/sessions', async (c) => {
     const result = await DB.prepare(`
       INSERT INTO safety_education_sessions
         (edu_type, edu_subject, edu_date, edu_hours, start_time, end_time, edu_content,
-         instructor, location, quarter, year, target_type, special_work_type, notes, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         instructor, location, quarter, year, target_type, special_work_type, notes,
+         lunch_break, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       edu_type, edu_subject, edu_date, edu_hours,
       start_time || null, end_time || null,
@@ -279,7 +281,9 @@ app.post('/sessions', async (c) => {
       instructor || null, location || null,
       quarter || null, computedYear,
       target_type || null, special_work_type || null,
-      notes || null, user.id
+      notes || null,
+      lunch_break ? 1 : 0,
+      user.id
     ).run()
 
     const sessionId = Number(result.meta.last_row_id)
@@ -322,6 +326,7 @@ app.put('/sessions/:id', async (c) => {
       start_time, end_time, edu_content,
       instructor, location, quarter, year,
       target_type, special_work_type, notes,
+      lunch_break,
       attendees
     } = body
 
@@ -331,6 +336,7 @@ app.put('/sessions/:id', async (c) => {
         start_time = ?, end_time = ?, edu_content = ?,
         instructor = ?, location = ?, quarter = ?, year = ?,
         target_type = ?, special_work_type = ?, notes = ?,
+        lunch_break = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).bind(
@@ -339,7 +345,9 @@ app.put('/sessions/:id', async (c) => {
       instructor || null, location || null,
       quarter || null, year || new Date(edu_date).getFullYear(),
       target_type || null, special_work_type || null,
-      notes || null, id
+      notes || null,
+      lunch_break ? 1 : 0,
+      id
     ).run()
 
     // 참석자 업데이트 (전달된 경우) — DELETE 후 배치 INSERT

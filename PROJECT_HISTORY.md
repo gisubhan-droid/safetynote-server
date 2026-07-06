@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 111 — FEAT-054 서브작업번호 필수 validation + FEAT-055 교육 점심시간 제외 계산)
-> **GitHub 최신: `0d58b9f`** — feat(FEAT-054+055): 서브작업번호 필수 validation + 교육 점심시간 제외
-> **NAS 배포 필요: `0d58b9f`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 111 — FEAT-055 후속: lunch_break DB/서버 보완)
+> **GitHub 최신: `(커밋 예정)`** — fix(FEAT-055): lunch_break DB 컬럼 + education.ts POST/PUT 보완
+> **NAS 배포 필요: `(커밋 예정)`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -80,7 +80,7 @@
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
 
-| FEAT-055 | 111 | 2026-07-06 | ✅ 구현 | **교육 점심시간(12:00~13:00) 제외 자동계산** — ①`app.js _calcEduHours()`: 점심시간 제외 체크박스(`esf-lunch-break`) checked 시 교육시간과 12:00~13:00 겹치는 분(overlap) 계산 후 `diffMin`에서 차감. 겹침 구간이 없거나 체크 해제 시 기존 단순 시간차 계산 유지. `overlapStart=max(시작,720)`, `overlapEnd=min(종료,780)`, `overlap>0`일 때만 차감 ②`app.js 교육 모달(line~27094)`: 시간 그리드(`<div class="grid grid-cols-3">`) 닫힌 div 직후에 `esf-lunch-break` 체크박스 행 추가 — 수정 시 `session?.lunch_break` 값으로 checked 초기화, onchange=`_calcEduHours()` ③`app.js submitEduSession()`: `lunch_break: lunchBreak(0\|1)` payload 추가 | `0d58b9f` |
+| FEAT-055 | 111 | 2026-07-06 | ✅ 구현 | **교육 점심시간(12:00~13:00) 제외 자동계산** — ①`app.js _calcEduHours()`: 점심시간 제외 체크박스(`esf-lunch-break`) checked 시 교육시간과 12:00~13:00 겹치는 분(overlap) 계산 후 `diffMin`에서 차감. 겹침 구간이 없거나 체크 해제 시 기존 단순 시간차 계산 유지. `overlapStart=max(시작,720)`, `overlapEnd=min(종료,780)`, `overlap>0`일 때만 차감 ②`app.js 교육 모달(line~27094)`: 시간 그리드(`<div class="grid grid-cols-3">`) 닫힌 div 직후에 `esf-lunch-break` 체크박스 행 추가 — 수정 시 `session?.lunch_break` 값으로 checked 초기화, onchange=`_calcEduHours()` ③`app.js submitEduSession()`: `lunch_break: lunchBreak(0\|1)` payload 추가 ④`node-server.ts patchSchema v0.156`: `safety_education_sessions.lunch_break INTEGER DEFAULT 0` safeAlter 추가 ⑤`src/routes/education.ts` POST/PUT: body destructuring·INSERT·UPDATE 모두 `lunch_break` 처리 추가 (`lunch_break ? 1 : 0` 바인딩) | `0d58b9f`+`(이번 커밋)` |
 | FEAT-054 | 111 | 2026-07-06 | ✅ 구현 | **서브작업번호 미입력 시 작업 등록 불가** — `app.js createTask()` (line~5183): `construction_id` validation 직후에 `if (!data.sub_task_number)` 체크 추가 → `toast('서브작업번호를 입력하세요.', 'error')` + `mSubTaskNo.focus()` + `return`. `mSubTaskNo` input에 `*` 필수 표시는 기존에 있었으나 서버 전송 전 클라이언트 validation이 없었음 | `0d58b9f` |
 | FEAT-053 | 110 | 2026-07-06 | ✅ 구현 | **완료된 작업/공사 삭제 — 시스템관리자 전용** — ①`tasks.ts DELETE /:id`: `user.role==='admin' && position==='시스템관리자'` 조건 추가 + `task.status !== 'completed'` 시 409 반환 ②`constructions.ts DELETE /:id`: 동일 sysadmin 조건 + `con.status NOT IN ('completed','settled')` 시 409, 진행중 작업 잔존 시 409 ③`app.js deleteTask()`: sysadmin 사전 체크 + 확인 메시지 강화 ④`app.js deleteConstruction()`: sysadmin 사전 체크 + 확인 메시지 강화 ⑤`app.js showTaskDetail()`: `_taskIsSysAdmin && completed` 일 때만 삭제 버튼 표시, sysadmin이지만 미완료 시 자물쇠 안내 ⑥`app.js showConstructionDetail()`: `_conCanDelete` 조건 동일 패턴 | `a61b71d` |
 | FEAT-052 | 110 | 2026-07-06 | ✅ 구현 | **TBM 완료 시 작업(예정)일 자동갱신** — FEAT-033(체크리스트 완료 기준 갱신)에 TBM 완료 트리거 추가. `node-server.ts`에 `POST /api/tbm` NAS 오버라이드 신규 등록(RULE-002 준수: tbmExtraRoutes·tbmRoutes 앞에 배치). TBM 생성 후 KST 날짜(`kstDateStr`)를 추출하여 `tasks.planned_date`보다 늦으면 자동 갱신. `planned_date=NULL` 또는 이미 TBM 날짜 이후이면 변경 없음. tbm.ts 원본 로직(INSERT/status 업데이트/결재 서명 요청/SSE 알림) 전부 이관하여 원본 라우트와 중복 처리 방지. 로그: `[FEAT-052] planned_date 자동갱신(TBM완료): task_id=N null → 2026-07-06` | `a61b71d` |

@@ -2330,6 +2330,11 @@ function renderApp() {
         <span>로그아웃</span>
       </div>
     </div>
+    <!-- FEAT-059: LinkMak 크레딧 — 아이콘 레일 최하단 -->
+    <div class="rail-credit" title="Powered by LinkMak Co.">
+      <span class="rail-credit-name">LinkMak</span>
+      <span class="rail-credit-sub">Co.,Ltd</span>
+    </div>
   </div>
 
   <!-- 플라이아웃 패널 -->
@@ -2385,6 +2390,13 @@ function renderApp() {
 
     <!-- 페이지 콘텐츠 -->
     <div id="page-content" class="p-4"></div>
+  </div>
+
+  <!-- FEAT-059: LinkMak 크레딧 바 — 메인 콘텐츠 하단 고정 (데스크톱) -->
+  <div id="app-credit-bar">
+    <span class="acb-text">Powered by</span>
+    <div class="acb-sep"></div>
+    <span class="acb-brand">LinkMak Co., Ltd.</span>
   </div>
 
   <!-- 하단 네비게이션 (모바일) — 그룹 탭 -->

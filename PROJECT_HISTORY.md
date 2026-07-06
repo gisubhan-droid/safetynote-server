@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 114 — BUG-091: TBM 회의록 담당자·서브작업번호·사진 페이지 잘림 수정)
-> **GitHub 최신: `87c954c`** — fix(BUG-091): TBM 회의록 담당자 레이블·서브작업번호·사진 페이지 잘림 수정
-> **NAS 배포 필요: `87c954c`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 115 — FEAT-058/059: 사이드바 아이콘 동적 크기 + LinkMak 크레딧)
+> **GitHub 최신: `TBD`** — feat(FEAT-058/059): 사이드바 아이콘 동적 크기·LinkMak 크레딧 표시
+> **NAS 배포 필요: `TBD`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -22,6 +22,8 @@
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
 
+| FEAT-059 | 115 | 2026-07-06 | ✅ 구현 | **LinkMak Co., Ltd. 크레딧 표시** — ①아이콘 레일 최하단에 `.rail-credit` 블록 추가: "LinkMak" / "Co.,Ltd" 2줄, opacity 0.4 → hover 0.85 전환, clamp 폰트 6~8px ②메인 콘텐츠 우하단 `#app-credit-bar` 고정 바 추가(height:22px): "Powered by" + "LinkMak Co., Ltd." (브랜드 컬러), 모바일(≤768px)에서 탭바 겹침 방지로 숨김 ③데스크톱 main-content padding-bottom:22px 추가 (크레딧바 가림 방지) | `TBD` |
+| FEAT-058 | 115 | 2026-07-06 | ✅ 구현 | **사이드바 아이콘 화면 크기 비례 동적 조절** — 기존 고정 px 값을 CSS `clamp()` + `vw` 단위로 전환하여 모바일(1배)→데스크톱(1.5배) 선형 보간. `#icon-rail` 너비 `56px→clamp(52px,5.5vw,72px)`, `.rail-group-btn` `44×44px→clamp(40px,3.8vw,60px)`, 아이콘 `16px→clamp(16px,1.7vw,24px)`, 레이블 `8px→clamp(7px,0.72vw,10px)`, 브랜드 로고 `28px→clamp(24px,2.6vw,38px)`. footer 버튼 동일 패턴 적용. `#flyout-panel left`, `.main-content margin-left`, `.top-header left` 도 모두 clamp 동기화. 모바일(@media≤768px) 오버라이드는 52px 고정 유지 (clamp 최솟값 보장) | `TBD` |
 | BUG-091 | 114 | 2026-07-06 | ✅ 수정 | **TBM 회의록 3가지 수정** — ①`관리감독자→담당자`: 행1 헤더 레이블 변경 ②`서브작업번호`: `task_number`+`sub_task_number` 조합 → `WKS-{main}-{sub}` 형식 출력, sub 없으면 main만, 둘 다 없으면 `WKS-` ③`사진 페이지 잘림 방지`: 사진 `<tr>/<td>/<div>/<img>` 전부 `page-break-inside:avoid;break-inside:avoid` + CSS `@media print { img,tr { page-break-inside:avoid } }` 추가. 백엔드: `tbm.ts` GET 목록(2개)+단건 쿼리 `t.sub_task_number` 컬럼 추가; `node-server.ts` NAS GET `/api/tbm/:id` rawDb 오버라이드 신규 등록(RULE-002, sub_task_number 포함) | `87c954c` |
 | BUG-090 | 113 | 2026-07-06 | ✅ 수정 | **TBM 회의록 출력 헤더 구조 4가지 수정** — ①`서명인원` 행 삭제: 출력물에서 서명인원 수 표시 행 제거 ②`수급업체→관리감독자`: `contractor_name` 레이블을 "수급업체" → "관리감독자"로 변경 ③헤더 레이아웃 이미지 기준 재배치: 행1(작업명+관리감독자), 행2(실시일시+TBM진행자+작업번호), 행3(실시장소+날씨기온+참석인원) 6열 구조로 재편. 작업번호는 기존 WKS- 형식 유지, 미입력 시 "WKS-" 표시 ④`info-table` CSS `table-layout:fixed` + th `width:62px`로 6열 균등 배분 | `564db77` |
 | BUG-089 | 112 | 2026-07-06 | ✅ 수정 | **TBM 회의록 결재 서명란 — 대표이사 제거, 총괄책임 2단계로 변경** — 결재 흐름 안전관리자→총괄책임→대표이사 3단계 → 안전관리자→총괄책임 2단계로 단순화. ①`node-server.ts` PDF 결재란: approval_ceo 행 제거, approval_general 표시명 "총괄책임" ②`app.js showTbmDetail` 결재 카드: cSig/canCeo 제거, 순서 안내 수정 ③`app.js _tbmPrint()` 결재 테이블: colgroup col 제거, 대표이사 th/td 제거, 안내텍스트 수정 ④`app.js LABELS/DESCS/_tbmApprovalSignInApp`: approval_ceo 항목 제거 ⑤`tbm-extra.ts`: validRoles→2개, signedRoles 쿼리→2단계, approval_general이 최종결재로 변경(PDF 자동생성 트리거), approval_ceo 블록 제거 | `1a13c16` |
@@ -4952,6 +4954,57 @@ for (const tgt of _fixFkTargets) {
 - [x] BUG-090: TBM 회의록 헤더 4가지 수정
 - [x] PROJECT_HISTORY 등재
 - [x] node --check + npm run build + git commit & push — `564db77`
+
+## 세션 115 — 2026-07-06
+
+### FEAT-058: 사이드바 아이콘 화면 크기 비례 동적 조절
+
+**배경**: 기존 아이콘 레일 아이콘/버튼이 모든 화면 크기에서 고정 px 값 사용 → 대형 모니터에서 너무 작고, 소형 모바일에서도 변화 없음
+
+**해결**: CSS `clamp(min, preferred-vw, max)` 으로 전환 — 모바일(1배) → 데스크톱(1.5배) 선형 보간
+
+| 요소 | 기존 | 변경 후 |
+|------|------|--------|
+| `#icon-rail` 너비 | `56px` | `clamp(52px, 5.5vw, 72px)` |
+| `.rail-group-btn` | `44×44px` | `clamp(40px, 3.8vw, 60px)` |
+| 아이콘 `font-size` | `16px` | `clamp(16px, 1.7vw, 24px)` |
+| 레이블 `font-size` | `8px` | `clamp(7px, 0.72vw, 10px)` |
+| 브랜드 로고 | `28px` | `clamp(24px, 2.6vw, 38px)` |
+| `border-radius` | `12px` | `clamp(10px, 1.1vw, 16px)` |
+| footer 버튼/아이콘 | `44px`/`15px` | 동일 clamp 패턴 |
+
+**연동 업데이트**: `#flyout-panel left`, `.main-content margin-left`, `.top-header left` → 전부 `clamp(52px, 5.5vw, 72px)` 동기화
+
+**모바일 보장**: `@media (max-width: 768px)` 오버라이드에서 52px 고정 유지 (clamp 최솟값 동일)
+
+**수정 파일**: `public/static/style.css`
+
+### FEAT-059: LinkMak Co., Ltd. 크레딧 표시
+
+**① 아이콘 레일 최하단 — `.rail-credit`**
+- `rail-footer` 아래 `.rail-credit` 블록 추가
+- "LinkMak" (font-weight:800) + "Co.,Ltd" 2줄 구성
+- `opacity: 0.4 → hover 0.85` 부드러운 전환
+- 폰트 크기 `clamp(6px, 0.58vw, 8px)` — 레일 크기와 비례
+
+**② 메인 콘텐츠 우하단 — `#app-credit-bar`**
+- `position:fixed; bottom:0; right:0` 고정 바 (height:22px)
+- "Powered by" + "│" + "**LinkMak Co., Ltd.**" (브랜드 primary 색상)
+- `left: clamp(52px, 5.5vw, 72px)` — icon-rail 너비와 동기화
+- 모바일(≤768px): `display:none` — 탭바와 겹침 방지
+- 데스크톱 `main-content padding-bottom:22px` 추가 — 크레딧바에 콘텐츠 가려지지 않도록
+
+**수정 파일**:
+- `public/static/style.css` — `.rail-credit*`, `#app-credit-bar` CSS 신규
+- `public/static/app.js` — rail-credit HTML, app-credit-bar HTML 삽입
+
+### 완료 항목
+- [x] FEAT-058: style.css clamp 적용 (icon-rail/btn/icon/label/logo)
+- [x] FEAT-058: flyout-panel/main-content/top-header clamp 동기화
+- [x] FEAT-059: style.css rail-credit / app-credit-bar CSS 신규
+- [x] FEAT-059: app.js rail-credit HTML / app-credit-bar HTML 삽입
+- [x] node --check ✅ / npm run build ✅ (270.22 kB)
+- [ ] git commit & push (진행 중)
 
 ## 세션 114 — 2026-07-06
 

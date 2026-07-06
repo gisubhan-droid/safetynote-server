@@ -341,13 +341,14 @@ app.get('/:id/approval-status', async (c) => {
       SELECT ts.*, u.name as user_display_name
       FROM tbm_signatures ts
       LEFT JOIN users u ON u.id = ts.user_id
-      WHERE ts.tbm_id = ? AND ts.role IN ('approval_general','approval_ceo','approval_safety')
+      WHERE ts.tbm_id = ? AND ts.role IN ('approval_general','approval_safety')
       ORDER BY ts.signed_at ASC
     `).all(id) as any[]
+    // BUG-089: approval_ceo 제거 — 안전관리자→총괄책임 2단계
     return c.json({
       approval_general: sigs.find(s => s.role === 'approval_general') || null,
-      approval_ceo:     sigs.find(s => s.role === 'approval_ceo')     || null,
       approval_safety:  sigs.find(s => s.role === 'approval_safety')  || null,
+      approval_ceo:     null,  // 하위호환 유지 (앱측에서 참조할 수 있음)
     })
   } catch (e: any) {
     console.error('[GET /tbm/:id/approval-status] 에러:', e?.message)
@@ -365,7 +366,8 @@ app.post('/:id/approval-sign', async (c) => {
     const body  = await c.req.json().catch(() => ({})) as any
     const { approval_role, sign_data } = body
 
-    const validRoles = ['approval_general', 'approval_ceo', 'approval_safety']
+    // BUG-089: approval_ceo 제거 — 안전관리자 → 총괄책임 2단계로 변경
+    const validRoles = ['approval_general', 'approval_safety']
     if (!validRoles.includes(approval_role))
       return c.json({ error: '유효하지 않은 결재 역할' }, 400)
 
@@ -379,14 +381,12 @@ app.post('/:id/approval-sign', async (c) => {
 
     // 서명 순서 잠금
     const existing = rawDb.prepare(`
-      SELECT role FROM tbm_signatures WHERE tbm_id = ? AND role IN ('approval_general','approval_ceo','approval_safety')
+      SELECT role FROM tbm_signatures WHERE tbm_id = ? AND role IN ('approval_general','approval_safety')
     `).all(id) as any[]
     const signedRoles = new Set(existing.map((s: any) => s.role))
 
     if (approval_role === 'approval_general' && !signedRoles.has('approval_safety'))
       return c.json({ error: '안전관리자 서명 후 총괄책임 서명이 가능합니다.' }, 409)
-    if (approval_role === 'approval_ceo' && !signedRoles.has('approval_general'))
-      return c.json({ error: '총괄책임 서명 후 대표이사 서명이 가능합니다.' }, 409)
     if (signedRoles.has(approval_role))
       return c.json({ error: '이미 서명된 결재란입니다.' }, 409)
 
@@ -431,37 +431,8 @@ app.post('/:id/approval-sign', async (c) => {
         }
       }
     } else if (approval_role === 'approval_general') {
-      const ceoUsers = rawDb.prepare(
-        `SELECT id, name FROM users WHERE position = '대표이사' AND is_active = 1`
-      ).all() as any[]
-      for (const ceo of ceoUsers) {
-        const already = rawDb.prepare(
-          `SELECT id FROM signature_requests WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type='approval_ceo' AND target_user_id=? AND status='pending'`
-        ).get(id, ceo.id)
-        if (!already) {
-          const info = rawDb.prepare(`
-            INSERT INTO signature_requests (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id)
-            VALUES ('tbm', ?, 'approval_ceo', ?, ?, ?, ?)
-          `).run(id, `[결재요청] ${tbmTitle}`, `총괄책임(${user.name}) 서명 완료. 대표이사 결재를 요청합니다.`, user.id, ceo.id)
-          sendToUser(ceo.id, {
-            type: 'sign_request', id: info.lastInsertRowid,
-            title: `[결재요청] ${tbmTitle}`,
-            requester: user.name, ref_type: 'tbm', ref_sub_type: 'approval_ceo',
-            message: `[TBM 결재] 총괄책임 서명 완료. 대표이사 결재를 요청합니다.`,
-            ts: Date.now()
-          })
-          sendFcmToUsers([ceo.id], {
-            title: `[결재요청] ${tbmTitle}`,
-            body:  `총괄책임 서명 완료. 대표이사 결재를 요청합니다.`,
-            data:  { type: 'sign_request', ref_type: 'tbm', ref_id: String(id) }
-          }).catch(() => {})
-          rawDb.prepare(`
-            INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
-            VALUES (?, 'sign_request', ?, ?, ?, 'tbm', 0)
-          `).run(ceo.id, `[결재요청] ${tbmTitle}`, `총괄책임 서명 완료. 대표이사 결재를 요청합니다.`, id)
-        }
-      }
-    } else if (approval_role === 'approval_ceo') {
+      // FEAT-056: BUG-089 — approval_general이 최종 결재
+      // 1) 안전관리자에게 결재 완료 SSE/FCM/알림
       const safetyUsers = rawDb.prepare(
         `SELECT id, name FROM users WHERE position = '안전관리자' AND is_active = 1`
       ).all() as any[]
@@ -469,25 +440,48 @@ app.post('/:id/approval-sign', async (c) => {
         sendToUser(su.id, {
           type: 'tbm_approval_done',
           title: `[TBM 결재완료] ${tbmTitle}`,
-          message: `[TBM 결재] 대표이사(${user.name}) 서명 완료. TBM 결재가 모두 완료되었습니다.`,
+          message: `[TBM 결재] 총괄책임(${user.name}) 서명 완료. TBM 결재가 모두 완료되었습니다.`,
           tbmId: id, ts: Date.now()
         })
         sendFcmToUsers([su.id], {
           title: `[TBM 결재완료] ${tbmTitle}`,
-          body:  `대표이사 서명 완료. TBM 결재가 모두 완료되었습니다.`,
+          body:  `총괄책임 서명 완료. TBM 결재가 모두 완료되었습니다.`,
           data:  { type: 'tbm_approval_done', ref_type: 'tbm', ref_id: String(id) }
         }).catch(() => {})
         rawDb.prepare(`
           INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
           VALUES (?, 'tbm_approval_done', ?, ?, ?, 'tbm', 0)
-        `).run(su.id, `[TBM 결재완료] ${tbmTitle}`, `대표이사 서명 완료. TBM 결재가 모두 완료되었습니다.`, id)
+        `).run(su.id, `[TBM 결재완료] ${tbmTitle}`, `총괄책임 서명 완료. TBM 결재가 모두 완료되었습니다.`, id)
+      }
+
+      // FEAT-056: 2) 작업 배정 근로자들에게 "TBM 결재 완료" FCM 발송
+      if (tbm.task_id) {
+        const taskWorkers = rawDb.prepare(
+          `SELECT DISTINCT u.id FROM task_assignments ta JOIN users u ON u.id = ta.worker_id
+           WHERE ta.task_id = ? AND u.is_active = 1`
+        ).all(tbm.task_id) as any[]
+        const workerIds = taskWorkers.map((w: any) => w.id)
+        if (workerIds.length > 0) {
+          sendFcmToUsers(workerIds, {
+            title: `[TBM 결재완료] ${tbmTitle}`,
+            body:  `TBM 결재가 완료되었습니다. 안전하게 작업을 진행하세요.`,
+            data:  { type: 'tbm_approval_done', ref_type: 'tbm', ref_id: String(id) }
+          }).catch(() => {})
+          // 근로자 notification 등록
+          for (const wid of workerIds) {
+            rawDb.prepare(`
+              INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+              VALUES (?, 'tbm_approval_done', ?, ?, ?, 'tbm', 0)
+            `).run(wid, `[TBM 결재완료] ${tbmTitle}`, `TBM 결재가 완료되었습니다. 안전하게 작업을 진행하세요.`, id)
+          }
+        }
       }
     }
 
+    // BUG-089: approval_ceo 제거
     const roleLabel: Record<string, string> = {
       approval_safety:  '안전관리자',
-      approval_general: '총괄책임(현장대리인)',
-      approval_ceo:     '대표이사',
+      approval_general: '총괄책임',
     }
     broadcastToRoles(['admin', 'supervisor'], {
       type: 'tbm_approval', tbmId: id,
@@ -497,8 +491,9 @@ app.post('/:id/approval-sign', async (c) => {
       ts: Date.now()
     })
 
-    // 대표이사 서명 완료 → PDF 자동 생성 (node-server.ts 글로벌 콜백)
-    if (approval_role === 'approval_ceo') {
+    // BUG-089: approval_general이 최종 결재 → PDF 자동 생성 (기존 approval_ceo에서 변경)
+    // FEAT-056: 총괄책임 서명 완료 시 PDF 자동 생성
+    if (approval_role === 'approval_general') {
       setImmediate(() => (global as any).__generateTbmApprovalPdf?.(id))
     }
 

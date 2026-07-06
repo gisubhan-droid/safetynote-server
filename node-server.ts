@@ -2956,9 +2956,9 @@ ${tbm.special_notes ? `<div class="sec"><div class="sec-t">특이사항</div><di
 <tbody>${attendeeRows}</tbody></table></div>
 <div class="sec"><div class="sec-t">결재란</div>
 <div class="aw">
+<!-- BUG-089: 안전관리자→총괄책임 서명만 표시, 대표이사 제외 -->
 <div class="ab"><div class="rl">안전관리자</div><div class="sn">${esc(sigMap['approval_safety']?.user_name||'미서명')}</div>${signCell(sigMap['approval_safety'])}<div class="at">${sigMap['approval_safety']?fmtDt(sigMap['approval_safety'].signed_at):''}</div></div>
-<div class="ab"><div class="rl">총괄책임(현장대리인)</div><div class="sn">${esc(sigMap['approval_general']?.user_name||'미서명')}</div>${signCell(sigMap['approval_general'])}<div class="at">${sigMap['approval_general']?fmtDt(sigMap['approval_general'].signed_at):''}</div></div>
-<div class="ab"><div class="rl">대표이사</div><div class="sn">${esc(sigMap['approval_ceo']?.user_name||'미서명')}</div>${signCell(sigMap['approval_ceo'])}<div class="at">${sigMap['approval_ceo']?fmtDt(sigMap['approval_ceo'].signed_at):''}</div></div>
+<div class="ab"><div class="rl">총괄책임</div><div class="sn">${esc(sigMap['approval_general']?.user_name||'미서명')}</div>${signCell(sigMap['approval_general'])}<div class="at">${sigMap['approval_general']?fmtDt(sigMap['approval_general'].signed_at):''}</div></div>
 </div></div>
 <div class="footer">생성일시: ${new Date().toLocaleString('ko-KR')} | Safety NOTE</div>
 </div></body></html>`
@@ -4808,6 +4808,25 @@ app.post('/api/photos', async (c) => {
         savedIds.push(result.lastInsertRowid as number)
       }
 
+      // FEAT-057: 사진 첨부 완료 → supervisor/safety 역할에게 FCM 알림
+      if (savedIds.length > 0) {
+        try {
+          const photoTypeLabel: Record<string, string> = {
+            before:   '착공 전', progress: '진행 중', after: '완료',
+            tbm: 'TBM', inspection: '점검', default: '작업',
+          }
+          const ptLabel = photoTypeLabel[photoType] || photoTypeLabel.default
+          const taskLabel = task.task_number
+            ? `${task.task_number}${task.sub_task_number ? '-' + task.sub_task_number : ''}`
+            : String(taskId)
+          sendFcmToRoles(['supervisor', 'safety'], {
+            title: `[사진 첨부] 작업 ${taskLabel}`,
+            body:  `${user.name}님이 ${ptLabel} 사진 ${savedIds.length}장을 첨부했습니다.`,
+            data:  { type: 'photo_uploaded', ref_type: 'task', ref_id: String(taskId) }
+          }).catch(() => {})
+        } catch (_) {}
+      }
+
       return c.json({ success: true, ids: savedIds, count: savedIds.length })
     } catch (e: any) {
       console.error('[사진] 업로드 오류:', e)
@@ -4829,6 +4848,21 @@ app.post('/api/photos', async (c) => {
     file_name || 'photo.jpg', file_data,
     file_size || 0, mime_type || 'image/jpeg', caption || ''
   )
+  // FEAT-057: base64 경로도 FCM 알림 발송
+  try {
+    const photoTypeLabel2: Record<string, string> = {
+      before: '착공 전', progress: '진행 중', after: '완료',
+      tbm: 'TBM', inspection: '점검', default: '작업',
+    }
+    const pt2 = photo_type || 'progress'
+    const pt2Label = photoTypeLabel2[pt2] || photoTypeLabel2.default
+    sendFcmToRoles(['supervisor', 'safety'], {
+      title: `[사진 첨부] 작업 ${task_id}`,
+      body:  `${user.name}님이 ${pt2Label} 사진을 첨부했습니다.`,
+      data:  { type: 'photo_uploaded', ref_type: 'task', ref_id: String(task_id) }
+    }).catch(() => {})
+  } catch (_) {}
+
   return c.json({ success: true, id: result.lastInsertRowid })
 })
 

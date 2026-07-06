@@ -10069,9 +10069,11 @@ async function showTbmDetail(tbmId) {
       // tbm_done 카드 배지도 함께 갱신 (task_id 기준)
       if (tbm.task_id) {
         const attendees = Array.isArray(tbm.attendees) ? tbm.attendees : [];
-        const signedNames = new Set(signatures.map(s => s.user_name || '').filter(Boolean));
-        const signedCount = attendees.length > 0 ? attendees.filter(n => signedNames.has(n)).length : signatures.length;
-        const total = attendees.length || signatures.length;
+        // BUG-088: 결재 서명(approval_*) 제외 — 근로자(attendee/conductor) 서명만 카운트
+        const workerSigsForBadge = signatures.filter(s => s.role === 'attendee' || s.role === 'conductor');
+        const signedNames = new Set(workerSigsForBadge.map(s => s.user_name || '').filter(Boolean));
+        const signedCount = attendees.length > 0 ? attendees.filter(n => signedNames.has(n)).length : workerSigsForBadge.length;
+        const total = attendees.length || workerSigsForBadge.length;
         const badge = document.getElementById(`tbm-sig-badge-${tbm.task_id}`);
         if (badge) {
           const allSigned = total > 0 && signedCount >= total;
@@ -10087,12 +10089,14 @@ async function showTbmDetail(tbmId) {
       const _tbmIsWorker = currentUser.role === 'worker';
 
       // ── 참가자 명단 기준 서명 현황 계산 ────────────────────────────────────
+      // BUG-088: 결재 서명(approval_*)은 카운트에서 제외 — 근로자 서명만 집계
       const attendees = Array.isArray(tbm.attendees) ? tbm.attendees : [];
-      // 이름→서명 매핑 (동명이인 시 첫 번째 서명 사용)
+      // 이름→서명 매핑 (동명이인 시 첫 번째 서명 사용) — attendee/conductor만
+      const workerSigs = signatures.filter(s => s.role === 'attendee' || s.role === 'conductor');
       const sigByName  = {};
-      for (const s of signatures) { if (s.user_name && !sigByName[s.user_name]) sigByName[s.user_name] = s; }
-      // 참가자 명단이 있으면 명단 기준, 없으면 서명자 목록만 표시
-      const signedCount   = signatures.length;
+      for (const s of workerSigs) { if (s.user_name && !sigByName[s.user_name]) sigByName[s.user_name] = s; }
+      // 참가자 명단이 있으면 명단 기준, 없으면 근로자 서명자 목록만 표시
+      const signedCount   = workerSigs.length;
       const totalCount    = attendees.length || signedCount;
       const unsignedNames = attendees.filter(n => !sigByName[n]);
       const allSigned     = attendees.length > 0 ? unsignedNames.length === 0 : signedCount > 0;
@@ -10262,12 +10266,13 @@ async function showTbmDetail(tbmId) {
           const hasSig   = r => !!(r && (r.sign_data || r.user_name));
           const sSig = approval.approval_safety;
           const gSig = approval.approval_general;
-          const cSig = approval.approval_ceo;
+          // BUG-089: 대표이사(approval_ceo) 제거 — 안전관리자 → 총괄책임 2단계로 변경
+          // const cSig = approval.approval_ceo;
 
-          // 서명 순서: 안전관리자 → 총괄책임(현장대리인) → 대표이사
+          // 서명 순서: 안전관리자 → 총괄책임
           const canSafety  = !hasSig(sSig) && (pos === '안전관리자' || isAdmin);
           const canGeneral = !hasSig(gSig) && hasSig(sSig) && (pos === '현장대리인' || isAdmin);
-          const canCeo     = !hasSig(cSig) && hasSig(gSig) && (pos === '대표이사'   || isAdmin);
+          // canCeo 제거됨
 
           function approvalCard(sig, approvalRole, label, canSign, locked) {
             const bg    = hasSig(sig) ? '#F0FDF4' : canSign ? '#EDE9FE' : '#F9FAFB';
@@ -10299,19 +10304,17 @@ async function showTbmDetail(tbmId) {
           <div style="background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:12px;padding:12px 14px;margin-bottom:8px">
             <div style="font-size:12px;font-weight:700;color:#4E3A63;margin-bottom:10px;display:flex;align-items:center;gap:6px">
               <i class="fas fa-stamp" style="color:#7C3AED"></i>결재 서명
-              <span style="font-size:10px;font-weight:400;color:#9CA3AF">안전관리자 → 총괄책임 → 대표이사 순</span>
+              <span style="font-size:10px;font-weight:400;color:#9CA3AF">안전관리자 → 총괄책임 순</span>
             </div>
             <div style="display:flex;gap:8px">
               ${approvalCard(sSig, 'approval_safety',  '안전관리자', canSafety, false)}
               ${approvalCard(gSig, 'approval_general', '총괄책임',   canGeneral, !hasSig(sSig))}
-              ${approvalCard(cSig, 'approval_ceo',     '대표이사',   canCeo,     !hasSig(gSig))}
             </div>
-            ${!canSafety && !canGeneral && !canCeo && (!hasSig(sSig) || !hasSig(gSig) || !hasSig(cSig)) ? `
+            ${!canSafety && !canGeneral && (!hasSig(sSig) || !hasSig(gSig)) ? `
             <div style="font-size:10px;color:#9CA3AF;margin-top:8px;text-align:center">
               <i class="fas fa-info-circle mr-1"></i>
               ${!hasSig(sSig) ? '안전관리자가 먼저 서명해야 합니다.' :
-                !hasSig(gSig) ? '안전관리자 서명 완료. 총괄책임 서명 대기 중입니다.' :
-                '총괄책임 서명 완료. 대표이사 서명 대기 중입니다.'}
+                '안전관리자 서명 완료. 총괄책임 서명 대기 중입니다.'}
             </div>` : ''}
           </div>`;
         })()}
@@ -10391,13 +10394,13 @@ async function showTbmDetail(tbmId) {
 async function _tbmApprovalSignInApp(tbmId, approvalRole) {
   const LABELS = {
     approval_safety:  '안전관리자 서명',
-    approval_general: '총괄책임(현장대리인) 결재 서명',
-    approval_ceo:     '대표이사 결재 서명',
+    approval_general: '총괄책임 결재 서명',
+    // BUG-089: approval_ceo 제거됨
   };
   const DESCS = {
     approval_safety:  '안전관리자로서 TBM 회의록을 확인하고 서명합니다.',
-    approval_general: '현장대리인으로서 TBM 회의록을 결재합니다.',
-    approval_ceo:     '대표이사로서 TBM 회의록을 최종 결재합니다.',
+    approval_general: '총괄책임으로서 TBM 회의록을 결재합니다.',
+    // BUG-089: approval_ceo 제거됨
   };
   const signData = await showSignaturePad({
     title:    LABELS[approvalRole] || '결재 서명',
@@ -11145,21 +11148,20 @@ async function _tbmPrint(tbmId) {
     }
 
     const hasSafetySign  = !!approval.approval_safety;
-    const hasCeoSign     = !!approval.approval_ceo;
     const hasGeneralSign = !!approval.approval_general;
+    // BUG-089: hasCeoSign 제거됨
 
     // 현재 로그인 사용자 직책 기반 서명 가능 여부
     const curPosition = (currentUser || {}).position || '';
     const curRole     = (currentUser || {}).role || '';
     const isAdmin     = curRole === 'admin';
 
-    // 서명 순서: 안전관리자 → 총괄책임(현장대리인) → 대표이사
+    // BUG-089: 서명 순서: 안전관리자 → 총괄책임 (대표이사 제거)
     // 안전관리자: 안전관리자 직책 또는 관리자 (첫 번째)
     const canSignSafety  = !hasSafetySign  && (curPosition === '안전관리자' || isAdmin);
     // 총괄책임: 현장대리인 직책 또는 관리자, + 안전관리자 서명 완료 후
     const canSignGeneral = !hasGeneralSign && hasSafetySign  && (curPosition === '현장대리인' || isAdmin);
-    // 대표이사: 대표이사 직책 or 관리자, + 총괄책임 서명 완료 후
-    const canSignCeo     = !hasCeoSign     && hasGeneralSign && (curPosition === '대표이사'  || isAdmin);
+    // canSignCeo 제거됨
 
     const approvalHtml = `
       <table style="border-collapse:collapse;font-size:8pt;float:right;margin-bottom:6px">
@@ -11167,23 +11169,23 @@ async function _tbmPrint(tbmId) {
           <col style="width:32px">
           <col style="width:80px">
           <col style="width:80px">
-          <col style="width:80px">
+          <!-- BUG-089: 대표이사 col 제거됨 -->
         </colgroup>
         <tr>
           <th rowspan="2" style="border:1px solid #888;padding:4px 6px;background:#f0eeef;text-align:center;vertical-align:middle;font-size:8pt;writing-mode:vertical-rl;letter-spacing:2px">결&nbsp;재</th>
           <th style="border:1px solid #888;padding:3px 0;background:#f0eeef;text-align:center">안전관리자</th>
           <th style="border:1px solid #888;padding:3px 0;background:#f0eeef;text-align:center">총괄책임</th>
-          <th style="border:1px solid #888;padding:3px 0;background:#f0eeef;text-align:center">대표이사</th>
+          <!-- BUG-089: 대표이사 열 제거됨 -->
         </tr>
         <tr style="height:60px">
           ${_approvalCell(approval.approval_safety, 'approval_safety', '안전관리자', canSignSafety)}
           ${_approvalCell(approval.approval_general,'approval_general','총괄책임',   canSignGeneral)}
-          ${_approvalCell(approval.approval_ceo,    'approval_ceo',    '대표이사',   canSignCeo)}
+          <!-- BUG-089: approval_ceo 셀 제거됨 -->
         </tr>
-        ${(!hasSafetySign || !hasGeneralSign || !hasCeoSign) ? `
+        ${(!hasSafetySign || !hasGeneralSign) ? `
         <tr class="no-print">
-          <td colspan="4" style="border:none;padding:3px 0;font-size:7pt;color:#9CA3AF;text-align:right">
-            서명 순서: 안전관리자 → 총괄책임(현장대리인) → 대표이사
+          <td colspan="3" style="border:none;padding:3px 0;font-size:7pt;color:#9CA3AF;text-align:right">
+            서명 순서: 안전관리자 → 총괄책임
           </td>
         </tr>` : ''}
       </table>
@@ -11578,13 +11580,13 @@ async function _tbmPrint(tbmId) {
     // 서명 순서: 안전관리자 → 총괄책임(현장대리인) → 대표이사
     const ROLE_LABELS = {
       approval_safety:  '안전관리자 서명',
-      approval_general: '총괄책임(현장대리인) 결재 서명',
-      approval_ceo:     '대표이사 결재 서명',
+      approval_general: '총괄책임 결재 서명',
+      // BUG-089: approval_ceo 제거됨
     };
     const ROLE_DESCS = {
       approval_safety:  '안전관리자로서 TBM 회의록을 확인하고 서명합니다.',
-      approval_general: '현장대리인으로서 TBM 회의록을 결재합니다.',
-      approval_ceo:     '대표이사로서 TBM 회의록을 최종 결재합니다.',
+      approval_general: '총괄책임으로서 TBM 회의록을 결재합니다.',
+      // BUG-089: approval_ceo 제거됨
     };
 
     window._tbmApprovalSign = function(role) {

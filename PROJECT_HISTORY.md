@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 108 — FEAT-049 LGU+ 메뉴 그룹 3분할 구조 개편)
-> **GitHub 최신: `6196837`** — FEAT-049 LGU+ 메뉴 그룹 3분할
-> **NAS 배포 필요: `6196837`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 108 — FEAT-050 폴더명 팀 추가·루트 버그 등재)
+> **GitHub 최신: `84cc33b`** — docs: BUG-084 등재
+> **NAS 배포 필요: `84cc33b`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -74,6 +74,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-050 | 108 | 2026-07-06 | 🔴 미구현 | **파일 저장 폴더명 패턴 변경 + 루트 폴더 생성 버그 수정** — ①**루트 버그**: getUploadDir() 5개 호출 위치 중 현장점검 multipart 사진(line 3800~3809)·TBM PDF(line 2881) 등에서 task 파라미터가 null이거나 팀명 정보 없이 문자열 폴백(|| 점검)으로 전달 → join(root, 미분류, 점검, stageDir) 경로 생성 → 공사 폴더 없이 루트 직접 저장. ②**폴더명 팀 추가**: 현재 taskFolder = ${taskNum}_${workDate}_${workType} 패턴에 _[작업팀] 추가 필요 — {서브작업번호}_{작업일}_{작업종류}_[작업팀] 형식. 작업팀은 일보/사진 작성자(uploading user)가 소속된 팀 기준. **수정 예정**: ① getUploadDir() 인터페이스에 team_name?: string 추가 + taskFolder 패턴 _${teamName} 후치 ② 5개 호출 위치(line 2881/3647/3800/4541/4642) 각 쿼리에 LEFT JOIN teams tm ON tm.id=u.team_id + tm.name AS team_name 추가 ③ null task 전달 위치에서 올바른 task 객체 조회 후 전달로 루트 생성 버그 해결 | — |
 | FEAT-049 | 108 | 2026-07-06 | ✅ 구현 | **LGU+ 메뉴 그룹 3분할 구조 개편** — 기존 단일 '현장' 그룹(최대 8개 메뉴 나열)을 3그룹으로 분리: ①**현장작업**(파란색): 작업현황→작업관리→공사현황→현장위치지도 ②**안전점검**(빨간색): 현장점검 ③**통계·정보**(노란색): 안전현황 서브메뉴(작업통계·현장점검통계·근로자안전준수현황)+내 계정. 활성 메뉴가 없는 그룹은 아이콘 레일 자동 제거. 메뉴 순서 업무 흐름(현황→관리→지도) 재정렬. 관리자/감독자 그룹명·색상 일관성 통일. `rail-badge` ID `lgu-main→lgu-safety` 교체 | `6196837` |
 | FEAT-048 | 106 | 2026-07-06 | ✅ 구현 | **LGU+ 역할 단일화 — role='lgu_plus' 독립 권한그룹 정의** — 기존 이중 구조(`role='lgu'` OR `sub_role='lgu_plus'+role='worker'`)를 `role='lgu_plus'` 단일 역할로 통일. **node-server.ts**: patchSchema v0.154(users 테이블 재생성+3단계 마이그레이션) + getUserGroupKey lgu_plus 분기 + checklist-lgu-notify 쿼리 3중화 + uiRoleToSubRole lgu_plus→'' 수정. **src/routes/auth.ts**: `/me` SELECT에 sub_role 추가. **5개 라우트(tasks/inspections/risk/tbm/stats)**: isLgu 조건 3중화. **src/routes/users.ts**: suspended/restore/PUT/:id에 lgu_plus 차단 추가(worker 동급). **app.js**: dbRoleToUi lgu_plus 최상단 분기·uiRoleToDb 수정·BULK_ROLE_MAP·updateUser sub_role 전송·9곳 판별조건. 구버전 호환 조건(role='lgu', sub_role='lgu_plus') 병행 유지 | `5adcee0` |
 | FEAT-047 | 106 | 2026-07-06 | ✅ 구현 | **LGU+ 역할 3개 메뉴 is_auto_request_no=0 조회 필터** — 작업관리(`GET /api/tasks`)·현장점검(`GET /api/inspections`)·위험성체크(`GET /api/risk`)·TBM(`GET /api/tbm`) 4개 API에 `role='lgu' OR sub_role='lgu_plus'` 조건 시 `COALESCE(con.is_auto_request_no,-1)=0` WHERE 필터 추가 + constructions LEFT JOIN 추가. 현장위치 지도는 tasks/tbm/risk API를 재사용하므로 자동 적용. BUG-039(세션61) `is_auto_request_no` 방향 반전·BUG-041(세션63) NULL처리 선행 수정의 후속 완성 | `40fac8b` |

@@ -10434,6 +10434,36 @@ async function _tbmApprovalSignInApp(tbmId, approvalRole) {
   }
 }
 
+// ── 교육일지 결재 서명 [FEAT-060] ────────────────────────────────────────────
+async function _eduApprovalSignInApp(sessionId, approvalRole, eduType) {
+  const LABELS = {
+    approval_safety:  '안전관리자 서명',
+    approval_general: '총괄책임 결재 서명',
+  };
+  const DESCS = {
+    approval_safety:  '안전관리자로서 교육일지를 확인하고 서명합니다.',
+    approval_general: '총괄책임으로서 교육일지를 결재합니다.',
+  };
+  const signData = await showSignaturePad({
+    title:    LABELS[approvalRole] || '결재 서명',
+    subtitle: DESCS[approvalRole]  || '',
+    penColor: '#1a1a1a'
+  });
+  if (signData === null) return;  // 취소
+  try {
+    await API.post(`/education/sessions/${sessionId}/approval-sign`, {
+      approval_role: approvalRole,
+      sign_data: signData
+    });
+    toast(LABELS[approvalRole] + ' 완료', 'success');
+    // 모달 갱신 (기존 모달 닫고 재오픈)
+    document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+    showEduDetailModal(sessionId, eduType);
+  } catch(e) {
+    toast(e.response?.data?.error || '결재 서명 처리 실패', 'error');
+  }
+}
+
 // ── TBM 서명 / 인쇄 전역 함수 ────────────────────────────────────────────────
 
 // 특정 참가자 이름으로 서명 받기 (참가자 행 클릭 시 호출)
@@ -27776,15 +27806,17 @@ async function _eduAttendeeUnsign(attendeeId, sessionId, eduType) {
 
 async function showEduDetailModal(sessionId, eduType) {
   const meta = EDU_TYPE_META[eduType];
-  let session, attendees = [], photos = [];
+  let session, attendees = [], photos = [], eduApproval = { approval_safety: null, approval_general: null };
   try {
-    const [sRes, pRes] = await Promise.all([
+    const [sRes, pRes, aRes] = await Promise.all([
       API.get(`/education/sessions/${sessionId}`),
       API.get(`/education/sessions/${sessionId}/photos`).catch(() => ({ data: [] })),
+      API.get(`/education/sessions/${sessionId}/approval-status`).catch(() => ({ data: { approval_safety: null, approval_general: null } })),
     ]);
-    session   = sRes.data.session;
-    attendees = sRes.data.attendees || [];
-    photos    = pRes.data || [];
+    session      = sRes.data.session;
+    attendees    = sRes.data.attendees || [];
+    photos       = pRes.data || [];
+    eduApproval  = aRes.data || { approval_safety: null, approval_general: null };
   } catch(e) { toast('불러오기 실패', 'error'); return; }
 
   const qLabel  = session.quarter ? `${session.quarter}분기 ` : '';
@@ -27924,6 +27956,61 @@ async function showEduDetailModal(sessionId, eduType) {
           ${photos.length > 8 ? `<div class="aspect-square rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-sm font-bold cursor-pointer" onclick="showEduPhotoModal(${sessionId},'${eduType}')">+${photos.length-8}</div>` : ''}
         </div>
       </div>` : ''}
+
+      <!-- ── 결재란 서명 [FEAT-060] ─────────────────────────────────────────── -->
+      ${(() => {
+        const pos     = currentUser?.position || '';
+        const role    = currentUser?.role || '';
+        const isAdmin = role === 'admin';
+        const hasSig  = r => !!(r && (r.sign_data || r.user_name));
+        const sSig    = eduApproval.approval_safety;
+        const gSig    = eduApproval.approval_general;
+
+        // 서명 가능 조건: 안전관리자 → 총괄책임 순서
+        const canSafety  = !hasSig(sSig) && (pos === '안전관리자' || isAdmin);
+        const canGeneral = !hasSig(gSig) && hasSig(sSig) && (pos === '현장대리인' || pos === '총괄책임자' || isAdmin);
+
+        function eduApprovalCard(sig, approvalRole, label, canSign, locked) {
+          const bg     = hasSig(sig) ? '#F0FDF4' : canSign ? '#EDE9FE' : '#F9FAFB';
+          const border = hasSig(sig) ? '#86EFAC'  : canSign ? '#A78BFA' : '#E5E7EB';
+          const sigImg = sig?.sign_data
+            ? `<img src="${sig.sign_data}" style="height:36px;max-width:80px;object-fit:contain;border:1px solid #d1d5db;border-radius:4px;background:#fff;display:block;margin:4px auto 2px">`
+            : '';
+          const sigName = sig?.user_name ? `<div style="font-size:10px;color:#374151;font-weight:700;margin-top:2px">${sig.user_name}</div>` : '';
+          const sigDate = sig?.signed_at ? `<div style="font-size:9px;color:#9CA3AF">${(sig.signed_at||'').slice(0,10)}</div>` : '';
+          const badge   = hasSig(sig)
+            ? `<div style="font-size:10px;color:#059669;font-weight:700;margin-bottom:2px"><i class="fas fa-check-circle mr-1"></i>서명완료</div>`
+            : locked ? `<div style="font-size:10px;color:#9CA3AF;margin-bottom:2px"><i class="fas fa-lock mr-1"></i>대기중</div>`
+            : `<div style="font-size:10px;color:#7C3AED;font-weight:700;margin-bottom:2px"><i class="fas fa-pen-nib mr-1"></i>서명필요</div>`;
+          return `
+            <div style="flex:1;background:${bg};border:1.5px solid ${border};border-radius:10px;padding:10px 8px;text-align:center;min-width:0">
+              <div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:4px">${label}</div>
+              ${badge}${sigImg}${sigName}${sigDate}
+              ${canSign ? `
+              <button onclick="_eduApprovalSignInApp(${sessionId},'${approvalRole}','${eduType}')"
+                style="margin-top:6px;width:100%;padding:5px 4px;background:#4E3A63;color:white;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer">
+                ✍ 서명하기
+              </button>` : ''}
+            </div>`;
+        }
+
+        return `
+        <div style="background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:12px;padding:12px 14px;margin-top:16px">
+          <div style="font-size:12px;font-weight:700;color:#4E3A63;margin-bottom:10px;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-stamp" style="color:#7C3AED"></i>결재 서명
+            <span style="font-size:10px;font-weight:400;color:#9CA3AF">안전관리자 → 총괄책임 순</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            ${eduApprovalCard(sSig, 'approval_safety',  '안전관리자', canSafety,  false)}
+            ${eduApprovalCard(gSig, 'approval_general', '총괄책임',   canGeneral, !hasSig(sSig))}
+          </div>
+          ${!canSafety && !canGeneral && (!hasSig(sSig) || !hasSig(gSig)) ? `
+          <div style="font-size:10px;color:#9CA3AF;margin-top:8px;text-align:center">
+            <i class="fas fa-info-circle mr-1"></i>
+            ${!hasSig(sSig) ? '안전관리자가 먼저 서명해야 합니다.' : '안전관리자 서명 완료. 총괄책임 서명 대기 중입니다.'}
+          </div>` : ''}
+        </div>`;
+      })()}
     </div>
 
     <!-- 푸터 -->
@@ -27939,15 +28026,17 @@ async function showEduDetailModal(sessionId, eduType) {
 
 // ─── 교육일지 출력 ────────────────────────────────────────────────────────────
 async function printEduLog(sessionId) {
-  let session, attendees = [], photos = [];
+  let session, attendees = [], photos = [], printApproval = { approval_safety: null, approval_general: null };
   try {
-    const [sRes, pRes] = await Promise.all([
+    const [sRes, pRes, aRes] = await Promise.all([
       API.get(`/education/sessions/${sessionId}`),
       API.get(`/education/sessions/${sessionId}/photos`).catch(() => ({ data: [] })),
+      API.get(`/education/sessions/${sessionId}/approval-status`).catch(() => ({ data: { approval_safety: null, approval_general: null } })),
     ]);
-    session   = sRes.data.session;
-    attendees = sRes.data.attendees || [];
-    photos    = pRes.data || [];
+    session        = sRes.data.session;
+    attendees      = sRes.data.attendees || [];
+    photos         = pRes.data || [];
+    printApproval  = aRes.data || { approval_safety: null, approval_general: null };
   } catch(e) { toast('데이터 불러오기 실패', 'error'); return; }
 
   const meta     = EDU_TYPE_META[session.edu_type] || { label: session.edu_type };
@@ -28234,8 +28323,24 @@ async function printEduLog(sessionId) {
           </tr>
           <tr>
             <td class="hdr" style="font-size:7.5pt;color:#555">서명</td>
-            <td class="box"></td>
-            <td class="box"></td>
+            <td class="box" style="position:relative;vertical-align:middle">
+              ${printApproval.approval_safety?.sign_data
+                ? `<img src="${printApproval.approval_safety.sign_data}" style="max-height:50px;max-width:70px;object-fit:contain;display:block;margin:0 auto">
+                   <div style="font-size:6.5pt;color:#555;text-align:center">${printApproval.approval_safety.user_name||''}</div>`
+                : printApproval.approval_safety?.user_name
+                  ? `<div style="font-size:8pt;font-weight:700;text-align:center;color:#333">${printApproval.approval_safety.user_name}</div>
+                     <div style="font-size:6pt;color:#aaa;text-align:center">✓</div>`
+                  : ''}
+            </td>
+            <td class="box" style="position:relative;vertical-align:middle">
+              ${printApproval.approval_general?.sign_data
+                ? `<img src="${printApproval.approval_general.sign_data}" style="max-height:50px;max-width:70px;object-fit:contain;display:block;margin:0 auto">
+                   <div style="font-size:6.5pt;color:#555;text-align:center">${printApproval.approval_general.user_name||''}</div>`
+                : printApproval.approval_general?.user_name
+                  ? `<div style="font-size:8pt;font-weight:700;text-align:center;color:#333">${printApproval.approval_general.user_name}</div>
+                     <div style="font-size:6pt;color:#aaa;text-align:center">✓</div>`
+                  : ''}
+            </td>
             <td class="box"></td>
           </tr>
         </table>

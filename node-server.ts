@@ -2575,6 +2575,24 @@ function patchSchema() {
     if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.156] lunch_break 컬럼 추가 실패 (무시):', e.message)
     else console.log('[patchSchema v0.156] lunch_break 컬럼 이미 존재 — 생략')
   }
+  // ── [v0.157 FEAT-060] 교육 결재 서명 테이블 생성 ─────────────────────────────
+  // safety_education_approvals: 안전보건교육 결재란 서명 (안전관리자→총괄책임 2단계)
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS safety_education_approvals (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id    INTEGER NOT NULL REFERENCES safety_education_sessions(id) ON DELETE CASCADE,
+      role          TEXT    NOT NULL,
+      user_id       INTEGER REFERENCES users(id),
+      user_name     TEXT    NOT NULL DEFAULT '',
+      user_position TEXT    DEFAULT '',
+      sign_method   TEXT    DEFAULT 'pad',
+      sign_data     TEXT,
+      signed_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(session_id, role)
+    )
+  `)
+  rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_edu_appr_session ON safety_education_approvals(session_id)`)
+  console.log('[patchSchema v0.157] ✅ safety_education_approvals 테이블 준비 완료')
   // ─────────────────────────────────────────────────────────────────────────────
 }
 patchSchema()

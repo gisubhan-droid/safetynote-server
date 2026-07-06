@@ -1,12 +1,14 @@
 /**
- * education-extra.ts — 안전교육 증빙사진 + 결과보고서 API (NAS 전용)
+ * education-extra.ts — 안전교육 증빙사진 + 결과보고서 + 결재 API (NAS 전용)
  *
- * 포함 라우트 (4개):
+ * 포함 라우트 (7개):
  *   GET    /api/education/sessions/:id/photos
  *   POST   /api/education/sessions/:id/photos
  *   DELETE /api/education/photos/:photoId
  *   GET    /api/education/sessions/:id/report
  *   PUT    /api/education/sessions/:id/report
+ *   GET    /api/education/sessions/:id/approval-status  [FEAT-060]
+ *   POST   /api/education/sessions/:id/approval-sign    [FEAT-060]
  *
  * 의존:
  *   - getRawDb(), getUser(), getUploadRootNow() from ../nas-db
@@ -122,5 +124,97 @@ export function registerEducationExtraRoutes(serverApp: any) {
         improvements=excluded.improvements, updated_at=CURRENT_TIMESTAMP
     `).run(sessionId, report_title||null, objectives||null, content_desc||null, outcomes||null, improvements||null, user.id)
     return c.json({ success: true })
+  })
+
+  // ─── GET /api/education/sessions/:id/approval-status [FEAT-060] ──────────
+  // 교육일지 결재 현황 조회 (안전관리자 / 총괄책임 2단계)
+  serverApp.get('/api/education/sessions/:id/approval-status', async (c: any) => {
+    try {
+      const user = getUser(c)
+      if (!user) return c.json({ error: '인증 필요' }, 401)
+      const rawDb     = getRawDb()
+      const sessionId = Number(c.req.param('id'))
+      const rows = rawDb.prepare(`
+        SELECT ea.*, u.name as user_display_name
+        FROM safety_education_approvals ea
+        LEFT JOIN users u ON u.id = ea.user_id
+        WHERE ea.session_id = ?
+        ORDER BY ea.signed_at ASC
+      `).all(sessionId) as any[]
+      return c.json({
+        approval_safety:  rows.find((r: any) => r.role === 'approval_safety')  || null,
+        approval_general: rows.find((r: any) => r.role === 'approval_general') || null,
+      })
+    } catch (e: any) {
+      console.error('[GET /education/sessions/:id/approval-status] 에러:', e?.message)
+      return c.json({ approval_safety: null, approval_general: null })
+    }
+  })
+
+  // ─── POST /api/education/sessions/:id/approval-sign [FEAT-060] ───────────
+  // 교육일지 결재 서명 저장 (안전관리자 → 총괄책임 순서 강제)
+  serverApp.post('/api/education/sessions/:id/approval-sign', async (c: any) => {
+    try {
+      const user = getUser(c)
+      if (!user) return c.json({ error: '인증 필요' }, 401)
+      const rawDb     = getRawDb()
+      const sessionId = Number(c.req.param('id'))
+      const body      = await c.req.json().catch(() => ({})) as any
+      const { approval_role, sign_data } = body
+
+      // 유효한 결재 역할만 허용
+      const validRoles = ['approval_safety', 'approval_general']
+      if (!validRoles.includes(approval_role))
+        return c.json({ error: '유효하지 않은 결재 역할' }, 400)
+
+      // 권한 체크: 안전관리자·현장대리인·총괄책임자·admin만 결재 가능
+      const pos     = user.position || ''
+      const canSign = user.role === 'admin' ||
+        ['안전관리자', '현장대리인', '총괄책임자'].includes(pos)
+      if (!canSign)
+        return c.json({ error: '결재 권한 없음 (안전관리자·현장대리인·총괄책임자만 가능)' }, 403)
+
+      // 세션 존재 확인
+      const session = rawDb.prepare(
+        `SELECT id FROM safety_education_sessions WHERE id=?`
+      ).get(sessionId)
+      if (!session) return c.json({ error: '교육 세션을 찾을 수 없습니다.' }, 404)
+
+      // 서명 순서 강제: approval_general은 approval_safety 이후만 가능
+      const existing = rawDb.prepare(`
+        SELECT role FROM safety_education_approvals WHERE session_id = ?
+      `).all(sessionId) as any[]
+      const signedRoles = new Set(existing.map((r: any) => r.role))
+
+      if (approval_role === 'approval_general' && !signedRoles.has('approval_safety'))
+        return c.json({ error: '안전관리자 서명 후 총괄책임 서명이 가능합니다.' }, 409)
+      if (signedRoles.has(approval_role))
+        return c.json({ error: '이미 서명된 결재란입니다.' }, 409)
+
+      const signMethod = sign_data ? 'pad' : 'account'
+      rawDb.prepare(`
+        INSERT INTO safety_education_approvals
+          (session_id, role, user_id, user_name, user_position, sign_method, sign_data, signed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(
+        sessionId,
+        approval_role,
+        user.id,
+        user.name || '',
+        pos,
+        signMethod,
+        sign_data || null
+      )
+
+      const roleLabel: Record<string, string> = {
+        approval_safety:  '안전관리자',
+        approval_general: '총괄책임',
+      }
+      console.log(`[edu approval-sign] session=${sessionId} role=${approval_role} signer=${user.name}`)
+      return c.json({ success: true, approval_role, signer: user.name, label: roleLabel[approval_role] })
+    } catch (e: any) {
+      console.error('[POST /education/sessions/:id/approval-sign] 에러:', e?.message)
+      return c.json({ error: e?.message || '결재 서명 처리 실패' }, 500)
+    }
   })
 }

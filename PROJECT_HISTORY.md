@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 116 — BUG-092: 교육 완료처리 권한 오류 수정)
-> **GitHub 최신: `89cbf8a`** — fix(BUG-092): 교육 완료처리/삭제 권한 role 코드 수정
-> **NAS 배포 필요: `89cbf8a`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 117 — FEAT-060: 교육일지 결재란 서명 기능 구현)
+> **GitHub 최신: TBD** — feat(FEAT-060): 교육일지 결재란 서명 기능 구현
+> **NAS 배포 필요: TBD** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -4992,7 +4992,63 @@ const canComplete = user.role === 'admin' ||
 - [x] education.ts DELETE 권한 조건 수정 (canDelete)
 - [x] education.ts complete 권한 조건 수정 (canComplete)
 - [x] npm run build ✅ (270.40 kB)
-- [ ] git commit & push (진행 중)
+- [x] git commit & push — `89cbf8a`
+
+## 세션 117 — 2026-07-06
+
+### FEAT-060: 교육일지 결재란 서명 기능 구현
+
+**요청**: 교육일지 결재란에 실제로 서명할 수 있도록 기능 구현
+
+**배경**: TBM은 `tbm_signatures` 테이블 + `tbm-extra.ts` 결재 API 완비. 교육은 참석자 서명(`safety_education_attendees.signature_data`)만 있고 결재란 DB·API·UI 전혀 없음.
+
+**구현 내용**:
+
+#### Step 1: DB 스키마 (node-server.ts patchSchema v0.157)
+```sql
+CREATE TABLE IF NOT EXISTS safety_education_approvals (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id    INTEGER NOT NULL REFERENCES safety_education_sessions(id) ON DELETE CASCADE,
+  role          TEXT NOT NULL,       -- 'approval_safety' | 'approval_general'
+  user_id       INTEGER REFERENCES users(id),
+  user_name     TEXT NOT NULL DEFAULT '',
+  user_position TEXT DEFAULT '',
+  sign_method   TEXT DEFAULT 'pad',
+  sign_data     TEXT,                -- base64 서명 이미지
+  signed_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(session_id, role)
+)
+```
+
+#### Step 2: API (education-extra.ts RULE-002 오버라이드)
+- `GET /api/education/sessions/:id/approval-status` — 결재 현황 조회
+- `POST /api/education/sessions/:id/approval-sign` — 서명 저장
+  - 권한: `admin` OR `supervisor`+position(`안전관리자`/`현장대리인`/`총괄책임자`)
+  - 순서 강제: `approval_general`은 `approval_safety` 이후만 가능
+
+#### Step 3: UI (app.js showEduDetailModal)
+- 교육 상세 모달 하단에 TBM과 동일한 2단 결재 카드 추가
+- `_eduApprovalSignInApp(sessionId, role, eduType)` 함수 신규 추가
+  - `showSignaturePad()` 호출 → `POST approval-sign` → 모달 갱신
+
+#### Step 4: 인쇄 반영 (app.js printEduLog)
+- `printApproval` 변수로 approval-status 로드
+- 출력 HTML 결재란 `<td class="box">` 에 서명 이미지 / 이름 표시
+
+**수정 파일**:
+| 파일 | 변경 내용 |
+|------|---------|
+| `node-server.ts` | patchSchema v0.157: `safety_education_approvals` 테이블 + 인덱스 |
+| `src/nas-routes/education-extra.ts` | GET/POST approval-status/approval-sign API 2개 추가 |
+| `public/static/app.js` | showEduDetailModal 결재란 UI, _eduApprovalSignInApp 함수, printEduLog 서명 반영 |
+
+### 완료 항목
+- [x] node-server.ts patchSchema v0.157 테이블 추가
+- [x] education-extra.ts GET/POST 결재 API 추가
+- [x] app.js 교육 상세 모달 결재 UI + _eduApprovalSignInApp 함수
+- [x] app.js printEduLog 결재란 서명 이미지 반영
+- [x] node --check + npm run build ✅ (270.40 kB)
+- [x] git commit & push — TBD
 
 ## 세션 115 — 2026-07-06
 

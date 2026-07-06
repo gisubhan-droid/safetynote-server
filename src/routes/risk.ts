@@ -18,6 +18,11 @@ app.get('/', async (c) => {
   if (user_id)        { conditions.push('ra.assessor_id = ?');     params.push(user_id) }
   if (date_from)      { conditions.push("date(ra.created_at) >= ?"); params.push(date_from) }
   if (date_to)        { conditions.push("date(ra.created_at) <= ?"); params.push(date_to) }
+  // [BUG-039] LGU+ 역할: is_auto_request_no=0 (요청번호 자동부여 미체크) 건만 조회 허용
+  const isLgu = user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
+  if (isLgu) {
+    conditions.push('COALESCE(con.is_auto_request_no, -1) = 0')
+  }
   const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : ''
   const order = ' ORDER BY ra.created_at DESC'
 
@@ -26,6 +31,7 @@ app.get('/', async (c) => {
   //           checklist_assessments 테이블에 저장되므로 해당 테이블도 LEFT JOIN
   let rows: any[] = []
   try {
+    // LGU+ 필터용 constructions JOIN 포함 (is_auto_request_no 조건)
     const q = `SELECT ra.*, t.title as task_title, t.status as task_status,
       COALESCE(ca.gps_lat, t.gps_lat) as gps_lat,
       COALESCE(ca.gps_lon, t.gps_lon) as gps_lon,
@@ -36,6 +42,7 @@ app.get('/', async (c) => {
       LEFT JOIN tasks t ON t.id = ra.task_id
       LEFT JOIN work_types wt ON wt.id = t.work_type_id
       LEFT JOIN users u ON u.id = ra.assessor_id
+      LEFT JOIN constructions con ON con.id = t.construction_id
       LEFT JOIN (
         SELECT task_id,
                gps_lat, gps_lon, gps_address
@@ -55,7 +62,8 @@ app.get('/', async (c) => {
         FROM risk_assessments ra
         LEFT JOIN tasks t ON t.id = ra.task_id
         LEFT JOIN work_types wt ON wt.id = t.work_type_id
-        LEFT JOIN users u ON u.id = ra.assessor_id${where}${order}`
+        LEFT JOIN users u ON u.id = ra.assessor_id
+        LEFT JOIN constructions con ON con.id = t.construction_id${where}${order}`
       const result = await c.env.DB.prepare(q).bind(...params).all<any>()
       rows = result.results || []
     } catch(_2) {
@@ -67,7 +75,8 @@ app.get('/', async (c) => {
         FROM risk_assessments ra
         LEFT JOIN tasks t ON t.id = ra.task_id
         LEFT JOIN work_types wt ON wt.id = t.work_type_id
-        LEFT JOIN users u ON u.id = ra.assessor_id${where}${order}`
+        LEFT JOIN users u ON u.id = ra.assessor_id
+        LEFT JOIN constructions con ON con.id = t.construction_id${where}${order}`
       const result = await c.env.DB.prepare(q).bind(...params).all<any>()
       rows = result.results || []
     }

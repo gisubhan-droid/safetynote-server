@@ -18,17 +18,24 @@ app.get('/', async (c) => {
   // 날짜 필터: tbm_date → created_at 기준 (work_date는 tbm_records에 없음)
   if (date_from) { wheres.push(`date(COALESCE(tbm.tbm_date, tbm.created_at)) >= ?`); params.push(date_from) }
   if (date_to)   { wheres.push(`date(COALESCE(tbm.tbm_date, tbm.created_at)) <= ?`); params.push(date_to) }
+  // [BUG-039] LGU+ 역할: is_auto_request_no=0 (요청번호 자동부여 미체크) 건만 조회 허용
+  const isLgu = user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
+  if (isLgu) {
+    wheres.push('COALESCE(con.is_auto_request_no, -1) = 0')
+  }
   const where = wheres.length ? ' WHERE ' + wheres.join(' AND ') : ''
   const order = ' ORDER BY tbm.created_at DESC'
 
   let rows: any[] = []
   try {
+    // LGU+ 필터용 constructions JOIN 포함 (is_auto_request_no 조건)
     const q = `SELECT tbm.*, t.title as task_title, t.task_number, t.contractor_name,
                      t.status as task_status,
                      u.name as conductor_name, u.position as conductor_position
       FROM tbm_records tbm
       LEFT JOIN tasks t ON t.id = tbm.task_id
-      LEFT JOIN users u ON u.id = tbm.conductor_id${where}${order}`
+      LEFT JOIN users u ON u.id = tbm.conductor_id
+      LEFT JOIN constructions con ON con.id = t.construction_id${where}${order}`
     const result = await c.env.DB.prepare(q).bind(...params).all<any>()
     rows = result.results || []
   } catch(_) {
@@ -39,7 +46,8 @@ app.get('/', async (c) => {
                      u.name as conductor_name, u.position as conductor_position
       FROM tbm_records tbm
       LEFT JOIN tasks t ON t.id = tbm.task_id
-      LEFT JOIN users u ON u.id = tbm.conductor_id${where}${order}`
+      LEFT JOIN users u ON u.id = tbm.conductor_id
+      LEFT JOIN constructions con ON con.id = t.construction_id${where}${order}`
     const result = await c.env.DB.prepare(q).bind(...params).all<any>()
     rows = result.results || []
   }

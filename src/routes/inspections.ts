@@ -74,10 +74,18 @@ app.get('/', async (c) => {
   if (user_id)     { wheres.push('si.inspector_id = ?');  params.push(user_id) }
   if (date_from)   { wheres.push(`date(COALESCE(si.inspection_date_only, si.created_at)) >= ?`); params.push(date_from) }
   if (date_to)     { wheres.push(`date(COALESCE(si.inspection_date_only, si.created_at)) <= ?`); params.push(date_to) }
+
+  // [BUG-039] LGU+ 역할: is_auto_request_no=0 (요청번호 자동부여 미체크) 건만 조회 허용
+  const isLgu = user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
+  if (isLgu) {
+    wheres.push('COALESCE(con.is_auto_request_no, -1) = 0')
+  }
+
   const where = wheres.length ? ' WHERE ' + wheres.join(' AND ') : ''
   const order = ' ORDER BY si.created_at DESC'
 
   // GPS 컬럼 포함 쿼리 먼저 시도 — 컬럼 없으면 fallback
+  // LGU+ 필터: constructions JOIN 추가 (is_auto_request_no 조건용)
   let rows: any[] = []
   try {
     const q = `SELECT si.*, u.name as inspector_name,
@@ -88,7 +96,8 @@ app.get('/', async (c) => {
                 t.work_order_address as task_work_order_address
              FROM site_inspections si
              LEFT JOIN users u ON u.id = si.inspector_id
-             LEFT JOIN tasks t ON t.id = si.task_id${where}${order}`
+             LEFT JOIN tasks t ON t.id = si.task_id
+             LEFT JOIN constructions con ON con.id = t.construction_id${where}${order}`
     const result = await c.env.DB.prepare(q).bind(...params).all<any>()
     rows = result.results || []
   } catch(_) {
@@ -101,7 +110,8 @@ app.get('/', async (c) => {
                 t.work_order_address as task_work_order_address
              FROM site_inspections si
              LEFT JOIN users u ON u.id = si.inspector_id
-             LEFT JOIN tasks t ON t.id = si.task_id${where}${order}`
+             LEFT JOIN tasks t ON t.id = si.task_id
+             LEFT JOIN constructions con ON con.id = t.construction_id${where}${order}`
     const result = await c.env.DB.prepare(q).bind(...params).all<any>()
     rows = result.results || []
   }

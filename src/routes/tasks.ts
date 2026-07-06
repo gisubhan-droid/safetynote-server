@@ -86,6 +86,12 @@ app.get('/', async (c) => {
     params.push(user.id)
   }
 
+  // [BUG-039/BUG-041] LGU+ 역할: is_auto_request_no=0 (요청번호 자동부여 미체크) 건만 조회 허용
+  // role='lgu' 또는 sub_role='lgu_plus' 모두 해당
+  if (user.role === 'lgu' || (user as any).sub_role === 'lgu_plus') {
+    wheres.push('COALESCE(con.is_auto_request_no, -1) = 0')
+  }
+
   if (status) {
     // 다중 상태 지원 (콤마 구분): assigned,in_progress,working
     const statuses = status.split(',').map((s: string) => s.trim()).filter(Boolean)

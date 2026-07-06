@@ -11274,8 +11274,9 @@ async function _tbmPrint(tbmId) {
     }
     @media print { .law-header-screen { display: none; } }
 
-    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 9pt; }
-    .info-table th { border: 1pt solid #888; padding: 4px 6px; background: #f0eeef; font-weight: 700; white-space: nowrap; width: 68px; text-align: center; }
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 9pt; table-layout: fixed; }
+    /* BUG-090: 6열 구조 — th(레이블) 좁게, td(값) 자동 배분 */
+    .info-table th { border: 1pt solid #888; padding: 4px 6px; background: #f0eeef; font-weight: 700; white-space: nowrap; width: 62px; text-align: center; }
     .info-table td { border: 1pt solid #888; padding: 4px 6px; }
 
     .section-hdr {
@@ -11367,32 +11368,34 @@ async function _tbmPrint(tbmId) {
 
     ${warnBanner}
 
-    <!-- 기본 정보 -->
+    <!-- 기본 정보 — BUG-090: 이미지 기준 헤더 재배치 -->
+    <!-- 행1: 작업명 | 관리감독자(수급업체→관리감독자)                      -->
+    <!-- 행2: 실시일시 | TBM진행자 | 작업번호(WKS-)                        -->
+    <!-- 행3: 실시장소 | 날씨/기온 | 참석인원                               -->
+    <!-- 서명인원 행 삭제(BUG-090)                                         -->
     <table class="info-table">
       <tr>
         <th>작업명</th>
         <td colspan="3">${(tbm.task_title || '-').replace(/</g,'&lt;')}</td>
+        <th>관리감독자</th>
+        <td>${(tbm.contractor_name || '-').replace(/</g,'&lt;')}</td>
       </tr>
       <tr>
         <th>실시일시</th>
         <td>${formatDateTime(tbm.tbm_date)}</td>
+        <th>TBM진행자</th>
+        <td>${(tbm.conductor_name || '-').replace(/</g,'&lt;')}</td>
+        <th>작업번호</th>
+        <td>${(tbm.task_number || 'WKS-').replace(/</g,'&lt;')}</td>
+      </tr>
+      <tr>
         <th>실시장소</th>
         <td>${(tbm.location || '-').replace(/</g,'&lt;')}</td>
-      </tr>
-      <tr>
-        <th>TBM 진행자</th>
-        <td>${(tbm.conductor_name || '-').replace(/</g,'&lt;')}</td>
         <th>날씨/기온</th>
         <td>${(tbm.weather || '-').replace(/</g,'&lt;')} / ${tbm.temperature || '-'}°C</td>
-      </tr>
-      <tr>
         <th>참석인원</th>
         <td>${tbm.workers_count || allAttendees.length || 0}명</td>
-        <th>서명인원</th>
-        <td>${signatures.length}명 (실시자 ${conductorSigs.length}명 · 참석자 ${attendeeSigs.length}명)</td>
       </tr>
-      ${tbm.task_number ? `<tr><th>작업번호</th><td colspan="3">${tbm.task_number}</td></tr>` : ''}
-      ${tbm.contractor_name ? `<tr><th>수급업체</th><td colspan="3">${(tbm.contractor_name||'').replace(/</g,'&lt;')}</td></tr>` : ''}
     </table>
 
     <!-- 참석자 명단 -->

@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 112 — BUG-088/089 수정 + FEAT-056/057 FCM 알림 추가)
-> **GitHub 최신: `1a13c16`** — fix(BUG-088/089)+feat(FEAT-056/057)
-> **NAS 배포 필요: `1a13c16`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 113 — BUG-090: TBM 회의록 헤더 구조 수정)
+> **GitHub 최신: `TBD`** — fix(BUG-090): TBM 회의록 헤더 재배치
+> **NAS 배포 필요: `TBD`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -22,6 +22,7 @@
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
 
+| BUG-090 | 113 | 2026-07-06 | ✅ 수정 | **TBM 회의록 출력 헤더 구조 4가지 수정** — ①`서명인원` 행 삭제: 출력물에서 서명인원 수 표시 행 제거 ②`수급업체→관리감독자`: `contractor_name` 레이블을 "수급업체" → "관리감독자"로 변경 ③헤더 레이아웃 이미지 기준 재배치: 행1(작업명+관리감독자), 행2(실시일시+TBM진행자+작업번호), 행3(실시장소+날씨기온+참석인원) 6열 구조로 재편. 작업번호는 기존 WKS- 형식 유지, 미입력 시 "WKS-" 표시 ④`info-table` CSS `table-layout:fixed` + th `width:62px`로 6열 균등 배분 | `TBD` |
 | BUG-089 | 112 | 2026-07-06 | ✅ 수정 | **TBM 회의록 결재 서명란 — 대표이사 제거, 총괄책임 2단계로 변경** — 결재 흐름 안전관리자→총괄책임→대표이사 3단계 → 안전관리자→총괄책임 2단계로 단순화. ①`node-server.ts` PDF 결재란: approval_ceo 행 제거, approval_general 표시명 "총괄책임" ②`app.js showTbmDetail` 결재 카드: cSig/canCeo 제거, 순서 안내 수정 ③`app.js _tbmPrint()` 결재 테이블: colgroup col 제거, 대표이사 th/td 제거, 안내텍스트 수정 ④`app.js LABELS/DESCS/_tbmApprovalSignInApp`: approval_ceo 항목 제거 ⑤`tbm-extra.ts`: validRoles→2개, signedRoles 쿼리→2단계, approval_general이 최종결재로 변경(PDF 자동생성 트리거), approval_ceo 블록 제거 | `1a13c16` |
 | BUG-088 | 112 | 2026-07-06 | ✅ 수정 | **TBM 회의록 서명인원 카운트에 결재 서명 포함되는 오류** — `showTbmDetail`의 서명 현황 계산 시 `signatures` 전체(approval_safety·general·ceo 포함)를 카운트 → 실제 근로자(attendee/conductor) 수보다 많은 숫자 표시. **해결**: ①`tbm-sig-badge` 카운트: `workerSigsForBadge = signatures.filter(s => s.role==='attendee'||s.role==='conductor')` 필터 적용 ②`showTbmDetail` 서명 현황 계산: `workerSigs = signatures.filter(role==='attendee'||'conductor')` 2곳 모두 적용 | `1a13c16` |
 | BUG-087 | 110 | 2026-07-06 | ✅ 수정 | **작업 삭제 시 FOREIGN KEY constraint failed (500)** — `tasks.ts DELETE /:id`의 `safeDelete` 체인에서 `tbm_records` 삭제 전 자식 테이블 누락: `tbm_signatures(REFERENCES tbm_records(id))`, `tbm_share_tokens(tbm_id)`, `signature_requests(ref_type='tbm')`, `notifications(ref_type='tbm')`가 먼저 삭제되지 않아 FK constraint 위반 → 500. **해결**: `tbm_records` 삭제 직전에 4개 테이블 safeDelete 순서 삽입(02770c6). **b: NAS rawDb 직접 연쇄삭제 오버라이드 추가** — `node-server.ts`에 `DELETE /api/tasks/:id` NAS 오버라이드 추가(taskRoutes 앞): `PRAGMA foreign_keys=OFF` 후 rawDb로 tbm_signatures·tbm_share_tokens·signature_requests·notifications·checklist·risk·task 관련 테이블 전부 순차 삭제, finally에서 FK 재활성화. 공사 삭제 NAS 오버라이드도 FEAT-053 sysadmin+상태 조건 적용 | `0a0d224` |

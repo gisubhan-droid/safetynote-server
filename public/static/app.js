@@ -2180,33 +2180,43 @@ function renderApp() {
     },
   ];
 
-  // LGU+ 그룹 정의
+  // LGU+ 그룹 정의 (3그룹 구조: 현장작업 / 안전점검 / 통계·정보)
+  // 각 그룹은 활성 메뉴가 하나도 없으면 아이콘 레일에서 자동 제거됨
   const lguGroups = (() => {
     var lguSettings = window.__lguMenuSettings || {};
-    var lguAllCandidates = [
-      { id:'constructions', icon:'fas fa-hard-hat',         label:'공사현황',      settingKey:'lgu_menu_constructions' },
-      { id:'dashboard',     icon:'fas fa-tasks',            label:'작업현황',      settingKey:'lgu_menu_dashboard' },
-      { id:'tasks',         icon:'fas fa-clipboard-list',   label:'작업관리',      settingKey:'lgu_menu_tasks' },
-      { id:'inspections',   icon:'fas fa-search',           label:'현장점검',      settingKey:'lgu_menu_inspections' },
-      { id:'site-map',      icon:'fas fa-map-marked-alt',   label:'현장위치 지도', settingKey:'lgu_menu_site_map' },
-    ];
-    var activeItems = lguAllCandidates.filter(m => {
-      var defaultOn = ['lgu_menu_dashboard','lgu_menu_inspections','lgu_menu_site_map'].includes(m.settingKey);
-      var val = lguSettings[m.settingKey];
-      return val !== undefined ? val === '1' : defaultOn;
-    }).map(m => ({ id: m.id, icon: m.icon, label: m.label }));
-    var statsItems = [];
-    if ((lguSettings['lgu_menu_stats'] || '0') === '1') {
-      statsItems = [{ id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
-        { id:'stats-task',          icon:'fas fa-tasks',          label:'작업통계' },
-        { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
-        { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
-      ]}];
+    var isOn = function(key, defaultOn) {
+      var val = lguSettings[key];
+      return val !== undefined ? val === '1' : (defaultOn === true);
+    };
+
+    // ── 그룹①: 현장작업 (작업현황·작업관리·공사현황·현장위치지도) ──────────────
+    var workItems = [];
+    if (isOn('lgu_menu_dashboard',     true))  workItems.push({ id:'dashboard',     icon:'fas fa-tasks',           label:'작업현황' });
+    if (isOn('lgu_menu_tasks',         true))  workItems.push({ id:'tasks',         icon:'fas fa-clipboard-list',  label:'작업관리' });
+    if (isOn('lgu_menu_constructions', false)) workItems.push({ id:'constructions', icon:'fas fa-hard-hat',        label:'공사현황' });
+    if (isOn('lgu_menu_site_map',      true))  workItems.push({ id:'site-map',      icon:'fas fa-map-marked-alt',  label:'현장위치 지도' });
+
+    // ── 그룹②: 안전점검 (현장점검) ──────────────────────────────────────────────
+    var safetyItems = [];
+    if (isOn('lgu_menu_inspections', true)) safetyItems.push({ id:'inspections', icon:'fas fa-search', label:'현장점검' });
+
+    // ── 그룹③: 통계·정보 (안전현황 통계 서브메뉴 + 내 계정) ──────────────────────
+    var infoItems = [];
+    if (isOn('lgu_menu_stats', true)) {
+      infoItems.push({ id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
+        { id:'stats-task',          icon:'fas fa-tasks',           label:'작업통계' },
+        { id:'stats-inspection',    icon:'fas fa-clipboard-check', label:'현장점검 통계' },
+        { id:'stats-worker-safety', icon:'fas fa-user-shield',     label:'근로자 안전준수 현황' },
+      ]});
     }
-    return [{
-      id: 'lgu-main', icon: 'fas fa-building', label: '현장', color: '#60a5fa',
-      items: [...activeItems, ...statsItems, { id:'my-profile', icon:'fas fa-user-cog', label:'내 계정' }]
-    }];
+    infoItems.push({ id:'my-profile', icon:'fas fa-user-cog', label:'내 계정' }); // 항상 표시
+
+    // 활성 메뉴가 있는 그룹만 레일에 노출
+    var groups = [];
+    if (workItems.length > 0)   groups.push({ id:'lgu-work',   icon:'fas fa-hard-hat',    label:'현장작업', color:'#60a5fa', items: workItems   });
+    if (safetyItems.length > 0) groups.push({ id:'lgu-safety', icon:'fas fa-shield-alt',  label:'안전점검', color:'#f87171', items: safetyItems });
+    groups.push(                             { id:'lgu-info',  icon:'fas fa-chart-bar',   label:'통계·정보', color:'#fbbf24', items: infoItems   });
+    return groups;
   })();
 
   const groups = isLguPlus ? lguGroups : isWorker ? workerGroups : allManagerGroups;
@@ -2226,8 +2236,8 @@ function renderApp() {
   // ── HTML 빌더 헬퍼 ─────────────────────────────────────
   const buildRailGroups = (gs) => gs.map(g => {
     const isActive = g.id === activeGroupId;
-    // 서명요청 배지: 안전관리(edu) 또는 안전(wsafety) 그룹에만 표시
-    const showBadge = g.id === 'edu' || g.id === 'wsafety' || g.id === 'lgu-main';
+    // 서명요청 배지: 안전관리(edu), 안전(wsafety), LGU+ 안전점검(lgu-safety) 그룹에 표시
+    const showBadge = g.id === 'edu' || g.id === 'wsafety' || g.id === 'lgu-safety';
     return `<div class="rail-group-btn${isActive ? ' active' : ''}" 
                  onclick="openFlyout('${g.id}')" 
                  title="${g.label}" id="rail-btn-${g.id}" data-color="${g.color}">
@@ -2772,8 +2782,8 @@ async function refreshSignRequestCount() {
       bBadge.textContent = cnt > 99 ? '99+' : cnt;
       bBadge.classList.toggle('hidden', cnt === 0);
     }
-    // Option C: 레일 배지 (안전관리 그룹 = edu, 근로자 wsafety)
-    ['edu', 'wsafety', 'lgu-main'].forEach(gid => {
+    // Option C: 레일 배지 (안전관리 그룹 = edu, 근로자 wsafety, LGU+ 안전점검 lgu-safety)
+    ['edu', 'wsafety', 'lgu-safety'].forEach(gid => {
       const rBadge = document.getElementById('rail-badge-' + gid);
       if (rBadge) {
         rBadge.textContent = cnt > 99 ? '99+' : cnt;

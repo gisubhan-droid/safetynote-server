@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 106 — FEAT-048 LGU+ 역할 단일화 완료)
-> **GitHub 최신: `5adcee0`** — FEAT-048 LGU+ role='lgu_plus' 독립 권한그룹 단일화
-> **NAS 배포 필요: `5adcee0`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 107 — BUG-081 대시보드 500 에러 SQL 모호성 수정)
+> **GitHub 최신: `4e36d2d`** — BUG-081 stats.ts 콜럼 모호성 + patchSchema v0.154 안전성
+> **NAS 배포 필요: `4e36d2d`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -21,6 +21,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-081 | 107 | 2026-07-06 | ✅ 수정 | **LGU+ 대시보드(GET /api/stats/dashboard) 500 에러** — BUG-080에서 `constructions LEFT JOIN` 없는 쿼리를 단순 `'tasks'` 원본 + `'t'` 별칭 혼재 방식으로 작성. `constructions` 테이블에도 `status` 콜럼 존재 → `highRiskCount` 쿼리 `WHERE status NOT IN (...)` 콜럼 AMBIGUOUS 에러 → Promise.all 1개 실패 → 전체 500. **해결**: 5개 쿼리 모두 `FROM tasks t` 별칭 통일 + `t.status`, `t.risk_level`, `t.planned_date`, `t.construction_type` 명시 + `lguJoinSimple`/`periodWhereNoAlias` 변수 제거 + patchSchema v0.154 `rawDb.exec()` 단일 BEGIN..COMMIT 일괄 실행 → better-sqlite3 비호환 문제 → 개별 exec 호출 + transaction 래퍼로 변경 | `4e36d2d` |
 | BUG-080 | 106 | 2026-07-06 | ✅ 수정 | **LGU+ 대시보드(작업현황) is_auto_request_no=0 필터 누락** — `stats.ts GET /dashboard` 5개 쿼리(상태별 건수·진행중 작업·고위험 건수·공사종류별 배정현황·금일 예정 작업) 모두 `constructions LEFT JOIN` + `COALESCE(con.is_auto_request_no,-1)=0` WHERE 조건 미적용 → LGU+ 사용자 대시보드에 전체 작업 노출. 서버 필터만으로 해결(클라이언트 추가 불필요) | `703a90a` |
 | BUG-079 | 106 | 2026-07-06 | ✅ 수정 | **LGU+ 3개 메뉴(현장위치 지도·현장점검·작업관리) 조회 안됨 — 3중 원인**: ① `auth.ts` `/login` 응답 `user` 객체에 `sub_role` 미포함 → `currentUser.sub_role=undefined` → `dbRoleToUi()` LGU+ 미감지 ② `app.js renderInspectionsPage()` `allTasks`에 LGU+ 클라이언트 필터(`is_auto_request_no===0`) 없음 ③ `app.js loadSiteMapMarkers()` working/completed 탭 `taskList`에 LGU+ 클라이언트 필터 없음. 서버 API 필터(`COALESCE(con.is_auto_request_no,-1)=0` WHERE)는 `40fac8b`에서 완료, 클라이언트 측+auth 누락이 실제 원인이었음. 작업관리 클라이언트 필터는 기존 코드(`line 4366~4370`)에 이미 존재 — `sub_role` auth 수정으로 해소 | `4f46c59` |
 | BUG-078 | 106 | 2026-07-05 | ✅ 수정 | **로그인 화면 APK 다운로드 "파일 없음" 오류** — `system_settings.apk_url`이 NAS 로컬 경로(`/api/dist/apk/download`)로 설정되어 있으나 실제 APK 파일이 NAS에 없어 404 반환 → `scripts/patch_apk_url.js` 신규 생성: DB의 `apk_url`을 GitHub Releases 직접 URL(`https://github.com/gisubhan-droid/safetynote-android/releases/download/v1.4.7/safetynote-v1.4.7.apk`)로 패치 + `apk_version=1.4.7` 최신화 | `7cf5d61` |
@@ -210,7 +211,7 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 
 | 우선순위 | 항목 | 내용 | 관련 |
 |---------|------|------|------|
-| 🔴 높음 | **NAS 배포** | `git pull && pm2 restart safetynote` 실행 필요 (FEAT-048 + BUG-080 + BUG-079 + FEAT-047 전체 포함) | `5adcee0` |
+| 🔴 높음 | **NAS 배포** | `git pull && pm2 restart safetynote` 실행 필요 (BUG-081 + FEAT-048 + BUG-080 + BUG-079 + FEAT-047 전체 포함) | `4e36d2d` |
 | 🔴 높음 | **BUG-078 APK URL NAS 적용** | 관리자 화면 → 시스템설정 → APK URL 입력란에 GitHub Releases URL 직접 입력 (git pull 불필요) | BUG-078 `7cf5d61` |
 | 🔴 높음 | **Option C 실사용 검증** | 모바일 전체 메뉴 탭·플라이아웃·배지 카운트 정상 여부 확인 | BUG-077 |
 | 🟡 중간 | **Phase 3 코드 구조 정리** | node-server.ts 인라인 라우트 → src/routes/ 분리 | Phase 3 |

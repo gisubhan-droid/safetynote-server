@@ -375,7 +375,11 @@ app.put('/sessions/:id', async (c) => {
 app.delete('/sessions/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  if (!['system_admin', 'safety_manager'].includes(user.role || '')) {
+  // BUG-092: 실제 DB role 기준으로 수정
+  // 허용: admin(시스템관리자) | supervisor+안전관리자 | supervisor+현장대리인(총괄책임자)
+  const canDelete = user.role === 'admin' ||
+    (user.role === 'supervisor' && ['안전관리자','현장대리인','총괄책임자'].includes(user.position || ''))
+  if (!canDelete) {
     return c.json({ error: '권한 없음' }, 403)
   }
 
@@ -407,8 +411,12 @@ app.delete('/sessions/:id', async (c) => {
 app.post('/sessions/:id/complete', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  if (!['system_admin', 'safety_manager'].includes(user.role || '')) {
-    return c.json({ error: '권한 없음 (관리자만 완료처리 가능)' }, 403)
+  // BUG-092: 실제 DB role 기준으로 수정
+  // 허용: admin(시스템관리자) | supervisor+안전관리자 | supervisor+현장대리인(총괄책임자)
+  const canComplete = user.role === 'admin' ||
+    (user.role === 'supervisor' && ['안전관리자','현장대리인','총괄책임자'].includes(user.position || ''))
+  if (!canComplete) {
+    return c.json({ error: '권한 없음 (안전관리자·현장대리인·시스템관리자만 완료처리 가능)' }, 403)
   }
 
   try {

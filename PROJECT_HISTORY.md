@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-06 (세션 117 — FEAT-060: 교육일지 결재란 서명 기능 구현)
-> **GitHub 최신: TBD** — feat(FEAT-060): 교육일지 결재란 서명 기능 구현
-> **NAS 배포 필요: TBD** — git pull 후 pm2 restart safetynote
+> **GitHub 최신: `82f9095`** — feat(FEAT-060): 교육일지 결재란 서명 기능 구현
+> **NAS 배포 필요: `82f9095`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -5048,7 +5048,7 @@ CREATE TABLE IF NOT EXISTS safety_education_approvals (
 - [x] app.js 교육 상세 모달 결재 UI + _eduApprovalSignInApp 함수
 - [x] app.js printEduLog 결재란 서명 이미지 반영
 - [x] node --check + npm run build ✅ (270.40 kB)
-- [x] git commit & push — TBD
+- [x] git commit & push — `82f9095`
 
 ## 세션 115 — 2026-07-06
 

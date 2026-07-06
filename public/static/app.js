@@ -15503,6 +15503,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
                 <option value="role:admin">관리자만</option>
                 <option value="role:supervisor">현장감독만</option>
                 <option value="role:worker">작업자만</option>
+                <option value="role:lgu_plus">LGU+ 사용자만</option>
               </select>
             </div>
             <div>
@@ -17461,7 +17462,8 @@ async function sendManualPush() {
 
   const targetLabel = {
     'all': '전체 사용자', 'role:admin': '관리자',
-    'role:supervisor': '현장감독', 'role:worker': '작업자'
+    'role:supervisor': '현장감독', 'role:worker': '작업자',
+    'role:lgu_plus': 'LGU+ 사용자'
   }[target] || target;
 
   // ── 발송 전 FCM 토큰 현황 사전 확인 ──
@@ -28948,7 +28950,11 @@ async function renderFieldReportPage(container) {
     const constructions = consRes.data.constructions || consRes.data.data || [];
     const unitPrices    = priceRes.data.prices || [];
     const priceMap = {};
-    unitPrices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
+    const labelMap = {}; // [BUG-084] item_key → item_label 매핑
+    unitPrices.forEach(p => {
+      priceMap[p.item_key] = p.unit_price || 0;
+      labelMap[p.item_key] = p.item_label || p.item_key; // label 없으면 key 표시 (하위 호환)
+    });
     const isWorker = currentUser && currentUser.role === 'worker';
     _frCacheRows = rows; _frCacheExtras = extras;
     _frCachePriceMap = priceMap; _frCacheIsWorker = isWorker;
@@ -28979,14 +28985,13 @@ async function renderFieldReportPage(container) {
       if (ex.unit_price_snapshot != null)
         extrasSnapMap[ex.report_id][ex.item_key] = ex.unit_price_snapshot;
     });
-    const WR_EXTRA_ORDER = [
-      'a000004','a000005','a000006','a000007','a000008',
-      'a000009','a000010','a000011','a000012','a000013',
-      'a000014','a000015','a000016','a000017','a000018'
-    ];
+    // [BUG-084] WR_EXTRA_ORDER 하드코딩 → DB sort_order 기반 순서 사용
+    // unitPrices는 이미 sort_order 순 정렬. a000001~a000003은 신설/철거/이설 고정 컬럼으로 별도 처리.
+    const WR_EXTRA_ORDER_DB = unitPrices.filter(p => p.item_key > 'a000003').map(p => p.item_key);
     const existingKeys = new Set(extras.map(ex => ex.item_key));
-    const allItemKeys = WR_EXTRA_ORDER.filter(k => existingKeys.has(k));
-    extras.forEach(ex => { if (!WR_EXTRA_ORDER.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
+    // DB 순서 우선, DB에 없는 기존 데이터 키는 뒤에 추가 (하위 호환)
+    const allItemKeys = WR_EXTRA_ORDER_DB.filter(k => existingKeys.has(k));
+    extras.forEach(ex => { if (!WR_EXTRA_ORDER_DB.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
     _frCacheItemKeys = allItemKeys;
 
     // ── 공유 조회 조건 바 ──
@@ -29089,8 +29094,9 @@ async function renderFieldReportPage(container) {
                 ${thInner(d.lbl, (cableColWidths[d.ci]||d.defW)-8)}${hideBtn(d.ci)}${cResizeHandle(d.ci)}</th>`).join('')}
               ${allItemKeys.map((k,ki)=>{
                 const ci = cableExtraStart + ki;
-                return `<th class="border border-gray-200 bg-yellow-50" data-col-idx="${ci}" style="${cThStyle(ci,52)}">
-                  ${thInner(k,(cableColWidths[ci]||52)-8)}${hideBtn(ci)}${cResizeHandle(ci)}</th>`;
+                const lbl = labelMap[k] || k; // [BUG-084] item_label 표시 (없으면 key)
+                return `<th class="border border-gray-200 bg-yellow-50" data-col-idx="${ci}" style="${cThStyle(ci,64)}" title="${k}">
+                  ${thInner(lbl,(cableColWidths[ci]||64)-8)}${hideBtn(ci)}${cResizeHandle(ci)}</th>`;
               }).join('')}
               ${!isWorker?`<th class="border border-gray-200 bg-green-50 font-bold" data-col-idx="${cableAmtColIdx}" style="${cThStyle(cableAmtColIdx,88)}">
                 ${thInner('합계금액(원)',(cableColWidths[cableAmtColIdx]||88)-8)}${hideBtn(cableAmtColIdx)}${cResizeHandle(cableAmtColIdx)}</th>`:''}
@@ -31875,9 +31881,13 @@ async function renderVolumeStatsPage(container) {
     // 전역 캐시 저장 (엑셀 다운로드용)
     const constructions = consRes.data.constructions || consRes.data.data || [];
     const unitPrices    = priceRes.data.prices || [];
-    // 단가 맵: item_key → unit_price
+    // 단가 맵: item_key → unit_price, [BUG-084] 라벨 맵: item_key → item_label
     const priceMap = {};
-    unitPrices.forEach(p => { priceMap[p.item_key] = p.unit_price || 0; });
+    const vsLabelMap = {};
+    unitPrices.forEach(p => {
+      priceMap[p.item_key] = p.unit_price || 0;
+      vsLabelMap[p.item_key] = p.item_label || p.item_key;
+    });
     // 근로자 권한은 단가/금액 숨김
     const isWorker = currentUser && currentUser.role === 'worker';
 
@@ -31895,16 +31905,12 @@ async function renderVolumeStatsPage(container) {
       extrasMap[ex.report_id][ex.item_key] = (extrasMap[ex.report_id][ex.item_key] || 0) + ex.qty;
     });
 
-    // extras에 등장하는 모든 item_key 목록 (헤더 컬럼 동적 생성 — WR_EXTRA_ITEMS 입력 순서 기준)
-    const WR_EXTRA_ORDER = [
-      'a000004','a000005','a000006','a000007','a000008',
-      'a000009','a000010','a000011','a000012','a000013',
-      'a000014','a000015','a000016','a000017','a000018'
-    ];
+    // [BUG-084] WR_EXTRA_ORDER 하드코딩 → DB sort_order 기반 순서 사용
+    const WR_EXTRA_ORDER_DB = unitPrices.filter(p => p.item_key > 'a000003').map(p => p.item_key);
     const existingKeys = new Set(extras.map(ex => ex.item_key));
-    const allItemKeys = WR_EXTRA_ORDER.filter(k => existingKeys.has(k));
-    // WR_EXTRA_ORDER에 없는 미등록 키는 뒤에 추가
-    extras.forEach(ex => { if (!WR_EXTRA_ORDER.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
+    const allItemKeys = WR_EXTRA_ORDER_DB.filter(k => existingKeys.has(k));
+    // DB에 없는 기존 데이터 키는 뒤에 추가 (하위 호환)
+    extras.forEach(ex => { if (!WR_EXTRA_ORDER_DB.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
     _volumeStatsCache.allItemKeys = allItemKeys;
 
     container.innerHTML = `
@@ -32228,7 +32234,7 @@ async function renderVolumeStatsPage(container) {
                   <th class="border border-gray-200 px-2 py-2 text-right">신설(M)</th>
                   <th class="border border-gray-200 px-2 py-2 text-right">철거(M)</th>
                   <th class="border border-gray-200 px-2 py-2 text-right">이설(M)</th>
-                  ${allItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center">${k}</th>`).join('')}
+                  ${allItemKeys.map(k=>`<th class="border border-gray-200 px-2 py-2 text-center" title="${k}">${vsLabelMap[k]||k}</th>`).join('')}
                   ${!isWorker ? `<th class="border border-gray-200 px-3 py-2 text-right bg-yellow-50">달성금액(원)</th>` : ''}
                 </tr>
               </thead>

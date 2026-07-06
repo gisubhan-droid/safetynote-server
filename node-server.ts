@@ -2749,6 +2749,7 @@ function getUploadDir(
     work_date?: string | null;   planned_date?: string | null
     construction_type?: string | null
     con_request_no?: string | null; con_title?: string | null
+    team_name?: string | null  // [FEAT-050] 작업팀명 추가
   } | string,
   stage: string = 'photo',
   photoType?: string,
@@ -2773,11 +2774,13 @@ function getUploadDir(
     ? safeFsName(`${task.con_request_no}_${task.con_title}`)
     : '미분류'
 
-  const taskNum    = safeFsName(task.sub_task_number || task.task_number || 'UNKNOWN')
-  const workDate   = fmtDateStr(task.work_date || task.planned_date)
-  const workType   = safeFsName(task.construction_type || '작업')
-  const taskFolder = `${taskNum}_${workDate}_${workType}`
-  const stageDir   = STAGE_DIRS[stage] || STAGE_DIRS.other
+  const taskNum  = safeFsName(task.sub_task_number || task.task_number || 'UNKNOWN')
+  const workDate = fmtDateStr(task.work_date || task.planned_date)
+  const workType = safeFsName(task.construction_type || '작업')
+  // [FEAT-050] 팀명 있으면 폴더명 뒤에 추가: {서브작업번호}_{작업일}_{작업종류}_[작업팀]
+  const teamSuffix  = task.team_name ? `_[${safeFsName(task.team_name)}]` : ''
+  const taskFolder  = `${taskNum}_${workDate}_${workType}${teamSuffix}`
+  const stageDir    = STAGE_DIRS[stage] || STAGE_DIRS.other
 
   // photo 단계 + photoType → 하위 폴더 추가
   // before → 01_작업 전 / progress → 02_작업 중 / after → 03_작업 후
@@ -2850,11 +2853,13 @@ async function generateTbmApprovalPdf(tbmId: number): Promise<void> {
              c.request_no         AS con_request_no,
              c.title              AS con_title,
              u.name               AS conductor_name,
-             u.position           AS conductor_position
+             u.position           AS conductor_position,
+             tm.name              AS team_name
       FROM   tbm_records tr
-      LEFT JOIN tasks         t ON t.id = tr.task_id
-      LEFT JOIN constructions c ON c.id = t.construction_id
-      LEFT JOIN users         u ON u.id = tr.conductor_id
+      LEFT JOIN tasks         t  ON t.id  = tr.task_id
+      LEFT JOIN constructions c  ON c.id  = t.construction_id
+      LEFT JOIN users         u  ON u.id  = tr.conductor_id
+      LEFT JOIN teams         tm ON tm.id = u.team_id
       WHERE  tr.id = ?
     `).get(tbmId) as any
     if (!tbm) { console.warn(`[PDF] TBM #${tbmId} 없음`); return }
@@ -2877,6 +2882,7 @@ async function generateTbmApprovalPdf(tbmId: number): Promise<void> {
       work_date: tbm.work_date, planned_date: tbm.planned_date,
       construction_type: tbm.construction_type,
       con_request_no: tbm.con_request_no, con_title: tbm.con_title,
+      team_name: tbm.team_name || null,  // [FEAT-050] 팀명 포함
     }
     const saveDir  = getUploadDir(taskObj, 'tbm')
     const dateStr  = new Date().toISOString().slice(0, 10).replace(/-/g, '')
@@ -3632,6 +3638,11 @@ app.post('/api/inspection-photos', async (c) => {
     ).get(Number(inspectionId)) as any
     if (!ins) return c.json({ error: '점검 없음' }, 404)
 
+    // [FEAT-050] 업로더(user) 소속 팀명 조회
+    const uploaderTeam = rawDb.prepare(
+      `SELECT tm.name AS team_name FROM users u LEFT JOIN teams tm ON tm.id = u.team_id WHERE u.id = ?`
+    ).get(user.id) as any
+
     // task_id 있으면 task 정보로 폴더 결정, 없으면 inspection 미분류 폴더
     let task: any = null
     if (ins.task_id) {
@@ -3642,6 +3653,8 @@ app.post('/api/inspection-photos', async (c) => {
          FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
          WHERE t.id = ?`
       ).get(Number(ins.task_id)) as any
+      // team_name 주입 (업로더 팀 기준)
+      if (task) task.team_name = uploaderTeam?.team_name || null
     }
 
     const uploadDir = getUploadDir(task || '점검', 'inspection')
@@ -3797,7 +3810,11 @@ app.post('/api/inspections', async (c) => {
   // ── 3) 사진 저장 (multipart) ──
   if (photoFiles.length > 0) {
     try {
-      const taskObj = task_id
+      // [FEAT-050] 업로더 팀명 조회 (루트 버그 수정 + 팀명 폴더 추가)
+      const inspUploaderTeam = rawDb.prepare(
+        `SELECT tm.name AS team_name FROM users u LEFT JOIN teams tm ON tm.id = u.team_id WHERE u.id = ?`
+      ).get(user.id) as any
+      const taskObj: any = task_id
         ? rawDb.prepare(
             `SELECT t.task_number, t.sub_task_number, t.work_date, t.planned_date,
                     t.construction_type, t.construction_id,
@@ -3806,6 +3823,9 @@ app.post('/api/inspections', async (c) => {
              WHERE t.id = ?`
           ).get(task_id)
         : null
+      // team_name 주입 (업로더 팀 기준)
+      if (taskObj) taskObj.team_name = inspUploaderTeam?.team_name || null
+      // task_id 없을 때: null → '점검' 문자열 폴백으로 루트 생성 버그 → null 유지하되 팀명 활용
       const uploadDir = getUploadDir(taskObj || '점검', 'inspection')
       const { mkdirSync: mkd } = await import('fs')
       mkdirSync(uploadDir, { recursive: true })
@@ -4527,14 +4547,19 @@ app.post('/api/photos', async (c) => {
       if (!taskId) return c.json({ error: 'task_id 필요' }, 400)
       if (files.length === 0) return c.json({ error: '파일 없음' }, 400)
 
-      // task + constructions 조회 (rawDb 동기)
+      // task + constructions 조회 (rawDb 동기), [FEAT-050] 업로더 팀명 포함
       const task = rawDb.prepare(
         `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
                 t.construction_type, t.construction_id,
-                c.request_no AS con_request_no, c.title AS con_title
-         FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+                c.request_no AS con_request_no, c.title AS con_title,
+                tm.name AS team_name
+         FROM tasks t
+         LEFT JOIN constructions c ON c.id = t.construction_id
+         LEFT JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?
+         LEFT JOIN users           wu ON wu.id = ta.worker_id
+         LEFT JOIN teams           tm ON tm.id = wu.team_id
          WHERE t.id = ?`
-      ).get(Number(taskId)) as any
+      ).get(user.id, Number(taskId)) as any
       if (!task) return c.json({ error: '작업을 찾을 수 없습니다' }, 404)
 
       const stage     = photoTypeToStage(photoType)
@@ -4627,15 +4652,21 @@ app.post('/api/photos/upload', async (c) => {
     if (!file || typeof file === 'string') return c.json({ error: '파일 없음 (photo 필드)' }, 400)
 
     // task 정보 조회 (task_id 있으면) — 없으면 미분류 폴더 사용
+    // [FEAT-050] 업로더 팀명 포함
     let task: any = null
     if (taskIdStr) {
       task = rawDb.prepare(
         `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
                 t.construction_type, t.construction_id,
-                c.request_no AS con_request_no, c.title AS con_title
-         FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+                c.request_no AS con_request_no, c.title AS con_title,
+                tm.name AS team_name
+         FROM tasks t
+         LEFT JOIN constructions c  ON c.id  = t.construction_id
+         LEFT JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?
+         LEFT JOIN users           wu ON wu.id = ta.worker_id
+         LEFT JOIN teams           tm ON tm.id = wu.team_id
          WHERE t.id = ?`
-      ).get(Number(taskIdStr)) as any
+      ).get(user.id, Number(taskIdStr)) as any
     }
 
     // 업로드 폴더: task 있으면 TBM 폴더, 없으면 미분류

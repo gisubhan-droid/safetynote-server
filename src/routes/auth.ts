@@ -56,6 +56,7 @@ app.post('/login', async (c) => {
       id: user.id, username: user.username, name: user.name,
       role: user.role, department: user.department,
       position: user.position, phone: user.phone,
+      sub_role: user.sub_role || '',   // [BUG-079] LGU+ 클라이언트 필터용 — 누락 시 현장점검/지도 필터 불가
       permissions,
     }
   })

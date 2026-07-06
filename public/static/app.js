@@ -11633,8 +11633,16 @@ async function renderInspectionsPage(container) {
       API.get('/tasks'),
       API.get(`/inspections?${insParams.toString()}`),
     ]);
-    const allTasks    = tasksRes.data.tasks || tasksRes.data || [];
+    const _rawAllTasks = tasksRes.data.tasks || tasksRes.data || [];
     const inspections = insRes.data || [];
+
+    // ── [BUG-079] LGU+ 클라이언트 필터: is_auto_request_no=0 건만 표시 ──────
+    // 서버에서 이미 필터되지만, sub_role 누락 등 방어를 위해 클라이언트도 적용
+    var _insMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+    var _insIsLgu = (_insMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
+    const allTasks = _insIsLgu
+      ? _rawAllTasks.filter(function(t) { return t.is_auto_request_no === 0; })
+      : _rawAllTasks;
 
     // ── 작업상태 탭 기준 필터링 ───────────────────────────────
     const filterByTab = (t) => {
@@ -34287,8 +34295,14 @@ async function loadSiteMapMarkers(map) {
       if (userId)   tp.set('worker_id',  userId);
       tp.set('limit', '500');
       const taskRes = await API.get(`/tasks?status=working&${tp.toString()}`);
-      const taskList = Array.isArray(taskRes.data) ? taskRes.data
+      const _rawTaskListW = Array.isArray(taskRes.data) ? taskRes.data
         : (taskRes.data?.tasks || taskRes.data?.items || []);
+      // [BUG-079] LGU+ 클라이언트 필터: is_auto_request_no=0 건만 표시
+      var _smMyUiRoleW = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+      var _smIsLguW = (_smMyUiRoleW === 'lgu_plus' || currentUser.role === 'lgu');
+      const taskList = _smIsLguW
+        ? _rawTaskListW.filter(function(t) { return t.is_auto_request_no === 0; })
+        : _rawTaskListW;
 
       if (taskList.length === 0) {
         // 데이터 없음 — 빈 목록으로 종료
@@ -34401,8 +34415,14 @@ async function loadSiteMapMarkers(map) {
       if (userId)   tp.set('worker_id',  userId);
       tp.set('limit', '500');
       const taskRes = await API.get(`/tasks?${tp.toString()}`);
-      const taskList = Array.isArray(taskRes.data) ? taskRes.data
+      const _rawTaskListC = Array.isArray(taskRes.data) ? taskRes.data
         : (taskRes.data?.tasks || taskRes.data?.items || []);
+      // [BUG-079] LGU+ 클라이언트 필터: is_auto_request_no=0 건만 표시
+      var _smMyUiRoleC = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+      var _smIsLguC = (_smMyUiRoleC === 'lgu_plus' || currentUser.role === 'lgu');
+      const taskList = _smIsLguC
+        ? _rawTaskListC.filter(function(t) { return t.is_auto_request_no === 0; })
+        : _rawTaskListC;
 
       if (taskList.length > 0) {
         const taskIds = taskList.map(t => t.id).filter(Boolean);

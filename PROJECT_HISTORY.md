@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-06 (세션 109 — FEAT-051 TBM + BUG-085 공량내역 수량 수정 + BUG-086 외선 엑셀 헤더 코드 표시)
-> **GitHub 최신: `TBD`** — fix(BUG-086): 외선 공량 엑셀 헤더 item_key 코드 → item_label 변환
-> **NAS 배포 필요: `TBD`** — git pull 후 pm2 restart safetynote
+> **GitHub 최신: `5029565`** — fix(BUG-086): 외선 공량 엑셀 헤더 item_key 코드 → item_label 변환
+> **NAS 배포 필요: `5029565`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -22,7 +22,7 @@
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
 
-| BUG-086 | 109 | 2026-07-06 | ✅ 수정 | **외선 공량 엑셀 다운로드 헤더 item_key 코드 표시** — `downloadFieldReportCSV()`에서 `extraHeaders = _frCacheItemKeys.slice()` 사용 시 raw item_key 배열(`['a000004',...]`)이 그대로 CSV 헤더에 사용됨. `renderFieldReportPage()`에서 빌드한 `labelMap`이 지역 변수라 CSV 함수에서 접근 불가한 것이 원인. **해결**: ① `let _frCacheLabelMap = {};` 전역 캐시 추가(line 29116) ② `renderFieldReportPage()`에서 `_frCacheLabelMap = labelMap;` 저장(line ~29239) ③ `extraHeaders = _frCacheItemKeys.map(k => _frCacheLabelMap[k] || k)` 변환(line ~29841) | `TBD` |
+| BUG-086 | 109 | 2026-07-06 | ✅ 수정 | **외선 공량 엑셀 다운로드 헤더 item_key 코드 표시** — `downloadFieldReportCSV()`에서 `extraHeaders = _frCacheItemKeys.slice()` 사용 시 raw item_key 배열(`['a000004',...]`)이 그대로 CSV 헤더에 사용됨. `renderFieldReportPage()`에서 빌드한 `labelMap`이 지역 변수라 CSV 함수에서 접근 불가한 것이 원인. **해결**: ① `let _frCacheLabelMap = {};` 전역 캐시 추가(line 29116) ② `renderFieldReportPage()`에서 `_frCacheLabelMap = labelMap;` 저장(line ~29239) ③ `extraHeaders = _frCacheItemKeys.map(k => _frCacheLabelMap[k] || k)` 변환(line ~29841) | `5029565` |
 | BUG-085 | 109 | 2026-07-06 | ✅ 수정 | **공량내역 외선탭 — 일보 작성 수량이 개별 행에 표시되지 않음** — `/work-reports/volume-stats` API가 `rows`를 `r.id AS report_id`로 반환하는데, 클라이언트 renderFieldReportPage()의 extrasMap 조회 시 `extrasMap[row.id]`를 사용 → `row.id=undefined` → 개별 행 extras 수량 항상 0 표시. 합계행(tfoot)은 extras 배열 직접 합산 방식이라 정상 표시됨. **해결**: `extrasMap[row.id]` → `extrasMap[row.report_id]` 3곳(합계금액 사전계산, tbody 행 렌더링 2곳) 수정. 추가: 구분 컬럼 `row.construction_work_class` → `row.work_class` (서버 alias 일치) 2곳 수정 | `c0bc6a5` |
 | BUG-084 | 108 | 2026-07-06 | ✅ 수정 | **공량내역 — 단가 매핑 불일치 및 헤더 공종코드 표시** — WR_EXTRA_ORDER 하드코딩 제거 → /volume-unit-prices API sort_order 기반 전환. 헤더 item_key → item_label 표시(labelMap/vsLabelMap). field-report/stats 양쪽 적용 | `38901af` |
 | BUG-083 | 108 | 2026-07-06 | ✅ 수정 | **전체 알림 발송 시 LGU+ 계정 알림 미수신** — 관리자 푸시 발송 UI(push-target select)에 `role:lgu_plus` 옵션 누락. `/push/send` 서버 쿼리는 `all`(is_active=1 전체) 및 `role:xxx`(role=? 바인딩) 모두 lgu_plus 포함 정상 동작 확인. **해결**: ① app.js push-target select에 `LGU+ 사용자만(role:lgu_plus)` 옵션 추가 ② `sendManualPush()` targetLabel 매핑에 `lgu_plus` 추가 | `38901af` |

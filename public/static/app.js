@@ -5180,6 +5180,12 @@ async function createTask() {
   };
   if (!data.title) { toast('작업명을 입력하세요.', 'error'); return; }
   if (!data.construction_id) { toast('공사를 선택하거나 공사요청번호를 입력 후 연동하세요.', 'error'); return; }
+  // FEAT-054: 서브작업번호 필수 입력 체크
+  if (!data.sub_task_number) {
+    toast('서브작업번호를 입력하세요.', 'error');
+    document.getElementById('mSubTaskNo')?.focus();
+    return;
+  }
 
   // _forceCreate 플래그: showCreateTaskFromConstruction에서 completed 공사 confirm 후 설정
   const forceCreate = window.__taskCreateForceFlag === true;
@@ -27091,6 +27097,17 @@ async function showEduSessionModal(sessionId, eduType) {
           </div>
         </div>
 
+        <!-- FEAT-055: 점심시간 제외 체크박스 -->
+        <div class="flex items-center gap-2 px-1">
+          <input type="checkbox" id="esf-lunch-break"
+            ${session?.lunch_break ? 'checked' : ''}
+            onchange="_calcEduHours()"
+            class="w-4 h-4 accent-purple-600 cursor-pointer">
+          <label for="esf-lunch-break" class="text-xs text-gray-600 cursor-pointer select-none">
+            점심시간 제외 <span class="text-gray-400">(12:00~13:00, 1시간)</span>
+          </label>
+        </div>
+
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-bold text-gray-600 mb-1">대상 구분</label>
@@ -27254,6 +27271,7 @@ async function showEduSessionModal(sessionId, eduType) {
 let _extRowIdx = 0;
 
 // ── 교육 시작/종료 시간 → 교육시간(h) 자동계산 ──────────────────────────
+// FEAT-055: 점심시간(12:00~13:00) 제외 옵션 지원
 function _calcEduHours() {
   const st = document.getElementById('esf-start-time')?.value;
   const et = document.getElementById('esf-end-time')?.value;
@@ -27261,7 +27279,24 @@ function _calcEduHours() {
   if (!st || !et || !hoursEl) return;
   const [sh, sm] = st.split(':').map(Number);
   const [eh, em] = et.split(':').map(Number);
-  const diffMin = (eh * 60 + em) - (sh * 60 + sm);
+  let diffMin = (eh * 60 + em) - (sh * 60 + sm);
+  if (diffMin <= 0) {
+    hoursEl.value = '';
+    return;
+  }
+  // FEAT-055: 점심시간 제외 체크 시 12:00~13:00 겹치는 구간 차감
+  const lunchBreak = document.getElementById('esf-lunch-break')?.checked;
+  if (lunchBreak) {
+    const startMin   = sh * 60 + sm;
+    const endMin     = eh * 60 + em;
+    const lunchStart = 12 * 60; // 720
+    const lunchEnd   = 13 * 60; // 780
+    const overlapStart = Math.max(startMin, lunchStart);
+    const overlapEnd   = Math.min(endMin,   lunchEnd);
+    if (overlapEnd > overlapStart) {
+      diffMin -= (overlapEnd - overlapStart);
+    }
+  }
   if (diffMin <= 0) {
     hoursEl.value = '';
     return;
@@ -27463,9 +27498,13 @@ async function submitEduSession(eduType, sessionId) {
     toast('시작·종료 시간을 확인하세요. 교육 시간이 계산되지 않았습니다.', 'error'); return;
   }
 
+  // FEAT-055: 점심시간 제외 여부 수집
+  const lunchBreak = document.getElementById('esf-lunch-break')?.checked ? 1 : 0;
+
   const body = {
     edu_type: eduType, edu_subject: subject,
     edu_date: date, start_time: startTime, end_time: endTime, edu_hours: hours,
+    lunch_break: lunchBreak,
     edu_content: eduContent || null,
     instructor, location, notes,
     target_type: target || null,

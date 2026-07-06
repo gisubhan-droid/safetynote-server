@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 108 — BUG-082 LGU+ 작업관리·현장위치지도·현장점검·작업통계 내용 없음 수정)
-> **GitHub 최신: `28e2f99`** — BUG-082 lgu_menu_* 설정 로딩 실패 수정
-> **NAS 배포 필요: `28e2f99`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 108 — FEAT-049 LGU+ 메뉴 그룹 3분할 구조 개편)
+> **GitHub 최신: `6196837`** — FEAT-049 LGU+ 메뉴 그룹 3분할
+> **NAS 배포 필요: `6196837`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -72,6 +72,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-049 | 108 | 2026-07-06 | ✅ 구현 | **LGU+ 메뉴 그룹 3분할 구조 개편** — 기존 단일 '현장' 그룹(최대 8개 메뉴 나열)을 3그룹으로 분리: ①**현장작업**(파란색): 작업현황→작업관리→공사현황→현장위치지도 ②**안전점검**(빨간색): 현장점검 ③**통계·정보**(노란색): 안전현황 서브메뉴(작업통계·현장점검통계·근로자안전준수현황)+내 계정. 활성 메뉴가 없는 그룹은 아이콘 레일 자동 제거. 메뉴 순서 업무 흐름(현황→관리→지도) 재정렬. 관리자/감독자 그룹명·색상 일관성 통일. `rail-badge` ID `lgu-main→lgu-safety` 교체 | `6196837` |
 | FEAT-048 | 106 | 2026-07-06 | ✅ 구현 | **LGU+ 역할 단일화 — role='lgu_plus' 독립 권한그룹 정의** — 기존 이중 구조(`role='lgu'` OR `sub_role='lgu_plus'+role='worker'`)를 `role='lgu_plus'` 단일 역할로 통일. **node-server.ts**: patchSchema v0.154(users 테이블 재생성+3단계 마이그레이션) + getUserGroupKey lgu_plus 분기 + checklist-lgu-notify 쿼리 3중화 + uiRoleToSubRole lgu_plus→'' 수정. **src/routes/auth.ts**: `/me` SELECT에 sub_role 추가. **5개 라우트(tasks/inspections/risk/tbm/stats)**: isLgu 조건 3중화. **src/routes/users.ts**: suspended/restore/PUT/:id에 lgu_plus 차단 추가(worker 동급). **app.js**: dbRoleToUi lgu_plus 최상단 분기·uiRoleToDb 수정·BULK_ROLE_MAP·updateUser sub_role 전송·9곳 판별조건. 구버전 호환 조건(role='lgu', sub_role='lgu_plus') 병행 유지 | `5adcee0` |
 | FEAT-047 | 106 | 2026-07-06 | ✅ 구현 | **LGU+ 역할 3개 메뉴 is_auto_request_no=0 조회 필터** — 작업관리(`GET /api/tasks`)·현장점검(`GET /api/inspections`)·위험성체크(`GET /api/risk`)·TBM(`GET /api/tbm`) 4개 API에 `role='lgu' OR sub_role='lgu_plus'` 조건 시 `COALESCE(con.is_auto_request_no,-1)=0` WHERE 필터 추가 + constructions LEFT JOIN 추가. 현장위치 지도는 tasks/tbm/risk API를 재사용하므로 자동 적용. BUG-039(세션61) `is_auto_request_no` 방향 반전·BUG-041(세션63) NULL처리 선행 수정의 후속 완성 | `40fac8b` |
 | FEAT-046 | 100 | 2026-07-04 | ✅ 구현 | 위험성평가 하위 메뉴 3개 재편 — 정기/수시/분류별 항목 관리 분리 / renderRiskPage: 이력만 표시 + 분류별 항목 탭 제거 / 신규 renderRiskItemsPage: 대분류 필터+작업유형 아코디언+항목 수정·삭제·추가 / 백엔드 API 추가: GET /risk/items/by-work-type/:id, GET /risk/items/manage/:id / PUT·POST 필드 호환(likelihood/severity/countermeasure) / 캐시 v=20260704c | `9b64991` |
@@ -212,7 +213,7 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 
 | 우선순위 | 항목 | 내용 | 관련 |
 |---------|------|------|------|
-| 🔴 높음 | **NAS 배포** | `git pull && pm2 restart safetynote` 실행 필요 (BUG-082 + BUG-081 + FEAT-048 + BUG-080 + BUG-079 + FEAT-047 전체 포함) | `28e2f99` |
+| 🔴 높음 | **NAS 배포** | `git pull && pm2 restart safetynote` 실행 필요 (FEAT-049 + BUG-082 + BUG-081 + FEAT-048 + BUG-080 + BUG-079 + FEAT-047 전체 포함) | `6196837` |
 | 🔴 높음 | **BUG-078 APK URL NAS 적용** | 관리자 화면 → 시스템설정 → APK URL 입력란에 GitHub Releases URL 직접 입력 (git pull 불필요) | BUG-078 `7cf5d61` |
 | 🔴 높음 | **Option C 실사용 검증** | 모바일 전체 메뉴 탭·플라이아웃·배지 카운트 정상 여부 확인 | BUG-077 |
 | 🟡 중간 | **Phase 3 코드 구조 정리** | node-server.ts 인라인 라우트 → src/routes/ 분리 | Phase 3 |

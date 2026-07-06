@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-05 (세션 106 — BUG-078 APK 다운로드 수정)
-> **GitHub 최신: `7cf5d61`** — BUG-078 APK 다운로드 실패 수정
-> **NAS 배포 필요: `7cf5d61`** — git pull 후 node scripts/patch_apk_url.js && pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 106 — LGU+ 3개 메뉴 is_auto_request_no=0 필터 적용)
+> **GitHub 최신: `40fac8b`** — LGU+ 작업관리/현장점검/현장위치지도 필터 적용
+> **NAS 배포 필요: `40fac8b`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -59,15 +59,16 @@
 | BUG-044 | 64 | 2026-06-24 | ✅ 수정 | GET/POST /api/inspections 500 — inspection_workers 구버전 DB 호환 | `ac1e739` |
 | BUG-043 | 64 | 2026-06-24 | ✅ 수정 | DELETE/PUT /api/inspections/:id 500 — inspection_workers 테이블 미존재 | `8b9e84e` |
 | BUG-042 | 64 | 2026-06-23 | ✅ 수정 | POST /api/inspections 500 — inspection_result 컬럼 누락 | `25b52c0` |
-| BUG-041 | 63 | 2026-06-23 | ✅ 수정 | LGU+ 공사 조회 오류 | — |
+| BUG-041 | 63 | 2026-06-23 | ✅ 수정 | LGU+ 공사 조회 NULL 처리 오류 — `construction_id=NULL` 건 fallback `-1` 적용 (미연결 공사 오포함 방지) | — |
 | BUG-040 | 62 | 2026-06-23 | ✅ 수정 | TBM 연쇄 알림 오류 | — |
-| BUG-036~039 | 61 | 2026-06-23 | ✅ 수정 | photo_type CHECK constraint + LGU+ 알림 조건 오류 | — |
+| BUG-036~039 | 61 | 2026-06-23 | ✅ 수정 | photo_type CHECK constraint + LGU+ 알림 조건 오류 (is_auto_request_no 방향 반전: `0`=수동입력=LGU+허용, `1`=자동부여=차단) | — |
 | BUG-030~034 | 58 | 2026-06-23 | ✅ 수정 | v0.143 미완성 항목 + 연속 버그 수정 | — |
 
 ### ✨ FEAT 목록
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-047 | 106 | 2026-07-06 | ✅ 구현 | **LGU+ 역할 3개 메뉴 is_auto_request_no=0 조회 필터** — 작업관리(`GET /api/tasks`)·현장점검(`GET /api/inspections`)·위험성체크(`GET /api/risk`)·TBM(`GET /api/tbm`) 4개 API에 `role='lgu' OR sub_role='lgu_plus'` 조건 시 `COALESCE(con.is_auto_request_no,-1)=0` WHERE 필터 추가 + constructions LEFT JOIN 추가. 현장위치 지도는 tasks/tbm/risk API를 재사용하므로 자동 적용. BUG-039(세션61) `is_auto_request_no` 방향 반전·BUG-041(세션63) NULL처리 선행 수정의 후속 완성 | `40fac8b` |
 | FEAT-046 | 100 | 2026-07-04 | ✅ 구현 | 위험성평가 하위 메뉴 3개 재편 — 정기/수시/분류별 항목 관리 분리 / renderRiskPage: 이력만 표시 + 분류별 항목 탭 제거 / 신규 renderRiskItemsPage: 대분류 필터+작업유형 아코디언+항목 수정·삭제·추가 / 백엔드 API 추가: GET /risk/items/by-work-type/:id, GET /risk/items/manage/:id / PUT·POST 필드 호환(likelihood/severity/countermeasure) / 캐시 v=20260704c | `9b64991` |
 | FEAT-045 | 99 | 2026-07-04 | ✅ 구현 | 분류별 항목 조회 탭에 엑셀 양식 다운로드/CSV 업로드 + 작업유형 관리 버튼 추가 — `GET /api/risk/items/template`, `POST /api/risk/items/import`, work-types/work-categories CRUD API | `a825e74` |
 | FEAT-044 | 98 | 2026-07-04 | ✅ 구현 | 저장 폴더 현황 년도/월 클릭 시 공사폴더 상세 모달 — `GET /api/admin/folders/detail?year&month` 엔드포인트 추가 / 클라이언트: 월 로우 클릭 → 상세 모달 (요약카드+파일타입+공사폴더목록+용량비율바) | `330a4e7` |
@@ -102,6 +103,7 @@
 | RULE-008 | v3.0 BUG-FIX-2 | **CSS `!important` 선언 순서 규칙**: 동일 specificity의 `!important`는 **파일 내 나중에 선언된 것이 이김** — Option C와 기존 사이드바 규칙은 반드시 `body:has(#icon-rail)` / `body:not(:has(#icon-rail))`로 **선택자 분리**할 것. 모바일(≤768px) + 태블릿(769~1024px) + 데스크톱(≥769px) 모든 미디어쿼리에 동일 원칙 적용 |
 | RULE-009 | v3.0 | `syncFlyoutActive` 호출은 switch 마지막에 한 번만 — 리다이렉트 코드(`return;`)에는 추가 불필요 (최종 페이지 navigateTo에서 처리됨) |
 | RULE-010 | BUG-077 | `style.css`에 새 미디어쿼리로 `.main-content` margin/layout 추가 시 반드시 `body:not(:has(#icon-rail))` 선택자를 붙여 Option C와 분리할 것 — 단순 `.main-content { ... }` 선언은 Option C 레이아웃을 덮어쓸 수 있음 |
+| RULE-011 | FEAT-047 | LGU+ 역할(`role='lgu' OR sub_role='lgu_plus'`) 대상 조회 API 신규 추가 시: ① tasks/inspections/risk/tbm 패턴과 동일하게 `constructions LEFT JOIN` 추가 ② `COALESCE(con.is_auto_request_no, -1) = 0` WHERE 조건 추가 ③ 구버전 DB fallback 쿼리에도 동일하게 적용 — 미적용 시 LGU+ 사용자가 자동부여 건을 조회하는 권한 누수 발생 |
 
 ---
 
@@ -200,16 +202,17 @@ Phase 5 ✅ 완료 (2026-06-21~세션81) — 브라우저 업데이트·롤백·
 Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미완
 ```
 
-### 📌 실질적 남은 작업 (2026-07-05 기준)
+### 📌 실질적 남은 작업 (2026-07-06 기준)
 
-| 우선순위 | 항목 | 내용 |
-|---------|------|------|
-| 🔴 높음 | **Option C 실사용 검증** | 모바일 전체 메뉴 탭·플라이아웃·배지 카운트 정상 여부 확인 |
-| 🟡 중간 | **Phase 3 코드 구조 정리** | node-server.ts 인라인 라우트 → src/routes/ 분리 |
-| 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 |
-| 🟢 낮음 | **배포설명서 수정** | SSH/Watchdog/브라우저업데이트/도메인 내용 현행화 |
-| 🟢 낮음 | **FCM 추가 트리거** | TBM 서명 완료 알림, 사진 첨부 알림 |
-| 🟢 낮음 | **Phase 4 NAS 설치 매뉴얼** | Phase 3·6 완료 후 작성 |
+| 우선순위 | 항목 | 내용 | 관련 |
+|---------|------|------|------|
+| 🔴 높음 | **BUG-078 APK URL NAS 적용** | 관리자 화면 → 시스템설정 → APK URL 입력란에 GitHub Releases URL 직접 입력 (git pull 불필요) | BUG-078 `7cf5d61` |
+| 🔴 높음 | **Option C 실사용 검증** | 모바일 전체 메뉴 탭·플라이아웃·배지 카운트 정상 여부 확인 | BUG-077 |
+| 🟡 중간 | **Phase 3 코드 구조 정리** | node-server.ts 인라인 라우트 → src/routes/ 분리 | Phase 3 |
+| 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 | Phase 6 |
+| 🟢 낮음 | **배포설명서 수정** | SSH/Watchdog/브라우저업데이트/도메인 내용 현행화 | — |
+| 🟢 낮음 | **FCM 추가 트리거** | TBM 서명 완료 알림, 사진 첨부 알림 | — |
+| 🟢 낮음 | **Phase 4 NAS 설치 매뉴얼** | Phase 3·6 완료 후 작성 | — |
 
 ---
 

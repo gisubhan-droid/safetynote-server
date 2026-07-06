@@ -682,8 +682,9 @@ function getUserGroupKey(u: any): string {
   if (role === 'supervisor' && pos === '총괄책임자')  return 'site_rep'
   if (role === 'supervisor' && pos === '관리감독자')  return 'engineer'
   if (role === 'supervisor') return 'engineer'
-  if (role === 'worker'  && pos === 'LGU+') return 'lgu_plus'
-  if (role === 'lgu')    return 'lgu_plus'
+  if (role === 'worker'  && pos === 'LGU+') return 'lgu_plus'  // 구버전 호환
+  if (role === 'lgu')      return 'lgu_plus'                    // 구버전 호환 (v0.154 마이그레이션 전 데이터 방어)
+  if (role === 'lgu_plus') return 'lgu_plus'                    // [FEAT-048] 신규 단일 역할
   return 'worker'
 }
 
@@ -2436,6 +2437,101 @@ function patchSchema() {
   } catch(e: any) {
     if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.153] task_stops 컬럼 확인 실패 (무시):', e.message)
   }
+  // ── [v0.154 FEAT-048] LGU+ 역할 단일화: role='lgu' → role='lgu_plus' ─────────
+  // role='lgu' 방식을 완전히 제거하고 role='lgu_plus' 단일 역할로 통일
+  // ① users 테이블 role CHECK에 'lgu_plus' 추가 (테이블 재생성)
+  // ② 기존 role='lgu' 데이터를 role='lgu_plus'로 일괄 마이그레이션
+  // ③ sub_role='lgu_plus' + role='worker' 방식도 role='lgu_plus'로 통일
+  ;(function patchLguPlusUnify() {
+    try {
+      const usersSchema = (rawDb.prepare("SELECT sql FROM sqlite_master WHERE name='users'").get() as any)?.sql || ''
+      // role CHECK에 'lgu_plus' 가 없으면 테이블 재생성
+      if (!usersSchema.includes("'lgu_plus'")) {
+        console.log('[patchSchema v0.154] users.role CHECK에 lgu_plus 추가 — 테이블 재생성 시작')
+        rawDb.pragma('foreign_keys = OFF')
+        rawDb.exec(`BEGIN;
+          CREATE TABLE IF NOT EXISTS users_v154 AS SELECT * FROM users WHERE 0;
+          DROP TABLE users_v154;
+          CREATE TABLE users_v154 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'supervisor', 'worker', 'lgu', 'lgu_plus')),
+            department TEXT,
+            phone TEXT,
+            position TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            company TEXT, blood_type TEXT, emergency_contact TEXT, health_info TEXT,
+            edu_hire_date TEXT, edu_special_electric TEXT, edu_special_confined TEXT,
+            edu_special_loading TEXT, edu_experience_date TEXT,
+            team_id INTEGER REFERENCES teams(id),
+            is_leader INTEGER DEFAULT 0, is_pending INTEGER DEFAULT 0,
+            rejection_reason TEXT DEFAULT NULL, approved_by INTEGER DEFAULT NULL,
+            approved_at DATETIME DEFAULT NULL, id_number TEXT,
+            privacy_agreed INTEGER DEFAULT 0, privacy_agreed_at DATETIME,
+            security_agreed INTEGER DEFAULT 0, security_agreed_at DATETIME,
+            location_agreed INTEGER DEFAULT 0, location_agreed_at DATETIME,
+            sub_role TEXT NOT NULL DEFAULT '', grade TEXT DEFAULT '',
+            edu_periodic_date DATE, edu_job_change_date DATE,
+            edu_special_date DATE, edu_supervisor_date DATE,
+            fcm_token TEXT DEFAULT NULL,
+            permissions TEXT DEFAULT NULL
+          );
+          INSERT INTO users_v154 SELECT
+            id, username, password_hash, name,
+            CASE WHEN role='lgu' THEN 'lgu_plus' ELSE role END,
+            department, phone, position, is_active, created_at, updated_at,
+            company, blood_type, emergency_contact, health_info,
+            edu_hire_date, edu_special_electric, edu_special_confined,
+            edu_special_loading, edu_experience_date, team_id, is_leader, is_pending,
+            rejection_reason, approved_by, approved_at, id_number,
+            privacy_agreed, privacy_agreed_at, security_agreed, security_agreed_at,
+            location_agreed, location_agreed_at, sub_role, grade,
+            edu_periodic_date, edu_job_change_date, edu_special_date, edu_supervisor_date,
+            COALESCE(fcm_token, NULL),
+            COALESCE(permissions, NULL)
+          FROM users;
+          DROP TABLE users;
+          ALTER TABLE users_v154 RENAME TO users;
+          COMMIT;`)
+        rawDb.pragma('foreign_keys = ON')
+        console.log('[patchSchema v0.154] ✅ users 재생성 완료 (lgu_plus 추가)')
+      } else {
+        console.log('[patchSchema v0.154] users.role CHECK에 이미 lgu_plus 포함 — 재생성 생략')
+      }
+
+      // ② role='lgu' → role='lgu_plus' 데이터 마이그레이션 (재생성 성공 여부와 무관하게 실행)
+      const migrated = rawDb.prepare(
+        `UPDATE users SET role='lgu_plus' WHERE role='lgu'`
+      ).run()
+      if (migrated.changes > 0) {
+        console.log(`[patchSchema v0.154] ✅ role='lgu' → 'lgu_plus' 마이그레이션 ${migrated.changes}건 완료`)
+      }
+
+      // ③ sub_role='lgu_plus' + role='worker' 방식 → role='lgu_plus', sub_role='' 통일
+      const unified = rawDb.prepare(
+        `UPDATE users SET role='lgu_plus', sub_role='' WHERE sub_role='lgu_plus' AND role='worker'`
+      ).run()
+      if (unified.changes > 0) {
+        console.log(`[patchSchema v0.154] ✅ sub_role='lgu_plus'+role='worker' → role='lgu_plus' 통일 ${unified.changes}건 완료`)
+      }
+
+      // ④ group_permissions 테이블 lgu_plus 그룹 권한 갱신 (이미 있으면 유지)
+      try {
+        rawDb.prepare(
+          `INSERT OR IGNORE INTO group_permissions (group_key, perm_key, perm_label, default_val)
+           VALUES ('lgu_plus','notify_lgu_tasks','LGU+ 대상 작업 알림 수신',1)`
+        ).run()
+      } catch(_) {}
+
+    } catch (e: any) {
+      rawDb.pragma('foreign_keys = ON')
+      console.error('[patchSchema v0.154] LGU+ 단일화 실패 (무시):', e.message)
+    }
+  })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
 patchSchema()
@@ -2983,10 +3079,12 @@ app.post('/api/auth/register', async (c) => {
   }
   // BUG-038: ui_role → sub_role 자동 변환
   // 자가가입(submitRegister)은 sub_role 대신 ui_role을 전송함
-  // safety/engineer/site_rep/lgu_plus/ceo/sysadmin 등 세부 역할을 sub_role에 저장
+  // safety/engineer/site_rep/ceo/sysadmin 등 세부 역할을 sub_role에 저장
+  // [FEAT-048] lgu_plus: role='lgu_plus' 단일 역할로 식별 → sub_role은 '' 저장
   const uiRoleToSubRole: Record<string, string> = {
     safety: 'safety', engineer: 'engineer', site_rep: 'site_rep',
-    lgu_plus: 'lgu_plus', ceo: 'ceo', sysadmin: 'sysadmin', worker: '',
+    lgu_plus: '',     // [FEAT-048] role='lgu_plus'가 단일 식별자 — sub_role 불필요
+    ceo: 'ceo', sysadmin: 'sysadmin', worker: '',
   }
   const effectiveSubRole = sub_role || (ui_role ? (uiRoleToSubRole[ui_role] ?? ui_role) : '')
   let permValue: string | null = null
@@ -4085,7 +4183,7 @@ app.patch('/api/checklist/:id/complete-lgu-notify', async (c) => {
 
     // LGU+ 역할 사용자 조회
     const lguUsers = rawDb.prepare(
-      `SELECT id FROM users WHERE (role='lgu' OR sub_role='lgu_plus') AND is_active=1`
+      `SELECT id FROM users WHERE (role='lgu_plus' OR role='lgu' OR sub_role='lgu_plus') AND is_active=1`  // [FEAT-048] lgu_plus 단일화 + 구버전 호환
     ).all() as any[]
     const lguIds = lguUsers.map((r: any) => r.id as number).filter(uid => uid !== user.id)
 

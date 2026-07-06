@@ -87,8 +87,8 @@ app.get('/', async (c) => {
   }
 
   // [BUG-039/BUG-041] LGU+ 역할: is_auto_request_no=0 (요청번호 자동부여 미체크) 건만 조회 허용
-  // role='lgu' 또는 sub_role='lgu_plus' 모두 해당
-  if (user.role === 'lgu' || (user as any).sub_role === 'lgu_plus') {
+  // [FEAT-048] role='lgu_plus' 단일 역할 + 구버전 호환 (role='lgu', sub_role='lgu_plus')
+  if (user.role === 'lgu_plus' || user.role === 'lgu' || (user as any).sub_role === 'lgu_plus') {
     wheres.push('COALESCE(con.is_auto_request_no, -1) = 0')
   }
 

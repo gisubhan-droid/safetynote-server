@@ -104,7 +104,7 @@ function uiRoleToDb(uiRole) {
   if (uiRole === 'worker')                                      return 'worker';
   if (uiRole === 'ceo')                                         return 'admin';
   if (uiRole === 'sysadmin')                                    return 'admin';  // 시스템관리자 → admin DB 역할
-  if (uiRole === 'lgu_plus')                                    return 'worker'; // LGU+ → worker DB 역할 (열람 전용)
+  if (uiRole === 'lgu_plus')                                    return 'lgu_plus'; // [FEAT-048] LGU+ 개별 DB 역할
   if (['safety','engineer','site_rep'].includes(uiRole))        return 'supervisor';
   // 이미 DB 값이 들어온 경우 그대로
   return uiRole;
@@ -113,11 +113,13 @@ function uiRoleToDb(uiRole) {
 // DB role + position → 가장 근접한 UI role 추정
 // (편집 모달에서 기존 DB 값으로 select 초기값 세팅 시 사용)
 function dbRoleToUi(dbRole, position, subRole) {
+  // [FEAT-048] role='lgu_plus' 단일 역할: sub_role 확인 전에 가장 먼저 처리
+  if (dbRole === 'lgu_plus') return 'lgu_plus';
   // sub_role이 명시적으로 저장된 경우 가장 우선 사용
   // (safety/engineer/site_rep/worker/lgu_plus/ceo/sysadmin)
   if (subRole) return subRole;
   if (dbRole === 'worker') {
-    // worker 하위 세분화: position='LGU+' 이면 lgu_plus
+    // worker 하위 세분화: position='LGU+' 이면 lgu_plus (구버전 호환)
     const pos = (position || '');
     if (pos === 'LGU+') return 'lgu_plus';
     return 'worker';
@@ -1970,7 +1972,7 @@ async function doLogin() {
     toast(`${currentUser.name}님 환영합니다!`);
     // [v0.142 LGU+] LGU+ 역할이면 메뉴 설정 사전 로드
     var loginUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-    if (loginUiRole === 'lgu_plus' || currentUser.role === 'lgu') {
+    if (loginUiRole === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu') { // [FEAT-048]
       await loadLguSettings().catch(function(){});
     }
     renderApp();
@@ -2032,7 +2034,7 @@ async function loadLguSettings() {
 // ======= 앱 레이아웃 =======
 function renderApp() {
   const myUiRoleForLayout = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-  const isWorker   = currentUser.role === 'worker' && myUiRoleForLayout !== 'lgu_plus';
+  const isWorker   = currentUser.role === 'worker' && myUiRoleForLayout !== 'lgu_plus' && currentUser.role !== 'lgu_plus'; // [FEAT-048]
   const isLguPlus  = myUiRoleForLayout === 'lgu_plus';
 
   // LGU+ 역할: 기본 허용 메뉴 (system_settings lgu_menu_* 설정에 따라 동적 변경)
@@ -3237,7 +3239,7 @@ async function renderConstructionsPage(container) {
     //   null/undefined → false ✅  0 → true ✅  1 → false ✅
     //   (null !== 1 → true 오필터링 취약점 완전 제거)
     var myUiRoleForCon = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-    var isLguPlusUser = (myUiRoleForCon === 'lgu_plus' || currentUser.role === 'lgu');
+    var isLguPlusUser = (myUiRoleForCon === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
     var list = isLguPlusUser
       ? rawList.filter(function(con) { return con.is_auto_request_no === 0; })
       : rawList;
@@ -3311,7 +3313,7 @@ async function showConstructionDetail(conId) {
     // BUG-040→FEAT-027 단순화: is_auto_request_no !== 0 인 경우 LGU+ 차단
     //   null/undefined/1 → 차단  |  0 → 허용(수동입력 공사) ✅
     var _conMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-    var _conIsLguPlus = (_conMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
+    var _conIsLguPlus = (_conMyUiRole === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
     if (_conIsLguPlus && con.is_auto_request_no !== 0) {
       overlay.querySelector('.modal').innerHTML = `
         <div class="modal-header" style="background:linear-gradient(135deg,#D70072,#685182);border-radius:20px 20px 0 0;border-bottom:none;padding:18px 24px">
@@ -4364,7 +4366,7 @@ async function renderTasksPage(container) {
     // BUG-040→FEAT-027 단순화: is_auto_request_no === 0 인 경우만 LGU+ 허용
     //   null/undefined → false ✅  0 → true ✅  1 → false ✅
     var _taskMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-    var _taskIsLguPlus = (_taskMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
+    var _taskIsLguPlus = (_taskMyUiRole === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
     const newTasks = _taskIsLguPlus
       ? _rawNewTasks.filter(function(t) { return t.is_auto_request_no === 0; })
       : _rawNewTasks;
@@ -11639,7 +11641,7 @@ async function renderInspectionsPage(container) {
     // ── [BUG-079] LGU+ 클라이언트 필터: is_auto_request_no=0 건만 표시 ──────
     // 서버에서 이미 필터되지만, sub_role 누락 등 방어를 위해 클라이언트도 적용
     var _insMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-    var _insIsLgu = (_insMyUiRole === 'lgu_plus' || currentUser.role === 'lgu');
+    var _insIsLgu = (_insMyUiRole === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
     const allTasks = _insIsLgu
       ? _rawAllTasks.filter(function(t) { return t.is_auto_request_no === 0; })
       : _rawAllTasks;
@@ -17345,7 +17347,7 @@ function _fcmSwitchTab(key) {
 
 /** FCM 역할 한글 변환 */
 function _fcmRoleLabel(role) {
-  return { admin:'관리자', supervisor:'현장감독', worker:'작업자', lgu:'LGU+' }[role] || role;
+  return { admin:'관리자', supervisor:'현장감독', worker:'작업자', lgu:'LGU+', lgu_plus:'LGU+' }[role] || role; // [FEAT-048] lgu_plus 추가
 }
 
 /** FCM 사용자 목록 렌더링 (탭 + 검색 필터 적용) */
@@ -23525,7 +23527,7 @@ const BULK_ROLE_MAP = {
   '공무':       { role:'supervisor', sub_role:'engineer' },
   '현장대리인': { role:'supervisor', sub_role:'site_rep' },
   'CEO':        { role:'admin',      sub_role:'ceo' },
-  'LGU+':       { role:'worker',     sub_role:'lgu_plus' },
+  'LGU+':       { role:'lgu_plus',   sub_role:'' },         // [FEAT-048] 단일 역할
   '시스템관리자':{ role:'admin',     sub_role:'sysadmin' },
 };
 
@@ -24304,7 +24306,8 @@ async function updateUser(id) {
       name: document.getElementById('euName').value.trim(),
       grade: document.getElementById('euGrade')?.value.trim() || '',
       role: uiRoleToDb(euiRole),
-      sub_role: euiRole,
+      // [FEAT-048] lgu_plus는 role='lgu_plus' 단일 식별자 사용 → sub_role 불필요('')
+      sub_role: euiRole === 'lgu_plus' ? '' : euiRole,
       company: document.getElementById('euCompany').value.trim(),
       department: document.getElementById('euDept').value.trim(),
       position: euPosition,
@@ -28754,7 +28757,7 @@ async function init() {
     currentPage = currentUser.role === 'worker' ? 'my-tasks' : 'dashboard';
     // [v0.142 LGU+] LGU+ 역할이면 메뉴 설정 사전 로드
     var meUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-    if (meUiRole === 'lgu_plus' || currentUser.role === 'lgu') {
+    if (meUiRole === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu') { // [FEAT-048]
       await loadLguSettings().catch(function(){});
     }
     renderApp();
@@ -34299,7 +34302,7 @@ async function loadSiteMapMarkers(map) {
         : (taskRes.data?.tasks || taskRes.data?.items || []);
       // [BUG-079] LGU+ 클라이언트 필터: is_auto_request_no=0 건만 표시
       var _smMyUiRoleW = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-      var _smIsLguW = (_smMyUiRoleW === 'lgu_plus' || currentUser.role === 'lgu');
+      var _smIsLguW = (_smMyUiRoleW === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
       const taskList = _smIsLguW
         ? _rawTaskListW.filter(function(t) { return t.is_auto_request_no === 0; })
         : _rawTaskListW;
@@ -34419,7 +34422,7 @@ async function loadSiteMapMarkers(map) {
         : (taskRes.data?.tasks || taskRes.data?.items || []);
       // [BUG-079] LGU+ 클라이언트 필터: is_auto_request_no=0 건만 표시
       var _smMyUiRoleC = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-      var _smIsLguC = (_smMyUiRoleC === 'lgu_plus' || currentUser.role === 'lgu');
+      var _smIsLguC = (_smMyUiRoleC === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
       const taskList = _smIsLguC
         ? _rawTaskListC.filter(function(t) { return t.is_auto_request_no === 0; })
         : _rawTaskListC;

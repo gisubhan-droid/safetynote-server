@@ -19,7 +19,8 @@ app.get('/', async (c) => {
   if (date_from) { wheres.push(`date(COALESCE(tbm.tbm_date, tbm.created_at)) >= ?`); params.push(date_from) }
   if (date_to)   { wheres.push(`date(COALESCE(tbm.tbm_date, tbm.created_at)) <= ?`); params.push(date_to) }
   // [BUG-039] LGU+ 역할: is_auto_request_no=0 (요청번호 자동부여 미체크) 건만 조회 허용
-  const isLgu = user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
+  // [FEAT-048] role='lgu_plus' 단일 역할 + 구버전 호환 (role='lgu', sub_role='lgu_plus')
+  const isLgu = user.role === 'lgu_plus' || user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
   if (isLgu) {
     wheres.push('COALESCE(con.is_auto_request_no, -1) = 0')
   }

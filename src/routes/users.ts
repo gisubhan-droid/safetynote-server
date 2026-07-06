@@ -167,7 +167,8 @@ app.get('/', async (c) => {
 app.get('/suspended', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  if (user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  // [FEAT-048] lgu_plus는 worker 동급 — 중지사용자 목록 접근 불가
+  if (user.role === 'worker' || user.role === 'lgu_plus' || user.role === 'lgu' || (user as any).sub_role === 'lgu_plus') return c.json({ error: '권한 없음' }, 403)
 
   try {
     const result = await c.env.DB.prepare(
@@ -188,7 +189,8 @@ app.get('/suspended', async (c) => {
 // 계정 복구 (중지 → 활성)
 app.post('/:id/restore', async (c) => {
   const user = getUser(c)
-  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  // [FEAT-048] lgu_plus는 worker 동급 — 계정 복구 권한 없음
+  if (!user || user.role === 'worker' || user.role === 'lgu_plus' || user.role === 'lgu' || (user as any).sub_role === 'lgu_plus') return c.json({ error: '권한 없음' }, 403)
   const id = c.req.param('id')
 
   try {
@@ -319,7 +321,8 @@ app.get('/:id', async (c) => {
 // 사용자 수정
 app.put('/:id', async (c) => {
   const user = getUser(c)
-  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  // [FEAT-048] lgu_plus는 worker 동급 — 타인 계정 수정 권한 없음
+  if (!user || user.role === 'worker' || user.role === 'lgu_plus' || user.role === 'lgu' || (user as any).sub_role === 'lgu_plus') return c.json({ error: '권한 없음' }, 403)
   const id = c.req.param('id')
 
   try {

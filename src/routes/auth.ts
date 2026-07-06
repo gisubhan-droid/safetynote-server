@@ -70,7 +70,8 @@ app.get('/me', async (c) => {
     const token = auth.replace('Bearer ', '')
     const decoded = decodeToken(token)
     const user = await c.env.DB.prepare(
-      'SELECT id, username, name, role, department, position, phone FROM users WHERE id = ?'
+      // [FEAT-048] sub_role 추가 — LGU+ 클라이언트 필터(dbRoleToUi) 정상 작동에 필요
+      'SELECT id, username, name, role, sub_role, department, position, phone FROM users WHERE id = ?'
     ).bind(decoded.id).first<any>()
     if (!user) return c.json({ error: '사용자를 찾을 수 없습니다.' }, 404)
     return c.json(user)

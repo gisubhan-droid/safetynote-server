@@ -40,8 +40,8 @@ app.get('/dashboard', async (c) => {
 
     const today = new Date().toISOString().split('T')[0]
 
-    // [BUG-079/FEAT-047] LGU+ 역할 판별: role='lgu' OR sub_role='lgu_plus'
-    const isLgu = user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
+    // [FEAT-048] LGU+ 역할 판별: role='lgu_plus' 단일 + 구버전 호환 (role='lgu', sub_role='lgu_plus')
+    const isLgu = user.role === 'lgu_plus' || user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
     // LGU+ 전용 WHERE 조건 (constructions JOIN 필요, COALESCE NULL→-1 처리)
     const lguJoin   = isLgu ? `LEFT JOIN constructions con ON con.id = t.construction_id` : ''
     const lguWhere  = isLgu ? `AND COALESCE(con.is_auto_request_no, -1) = 0` : ''

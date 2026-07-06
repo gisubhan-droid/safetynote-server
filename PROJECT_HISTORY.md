@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 108 — FEAT-050 폴더명 팀 추가·루트 버그 등재)
-> **GitHub 최신: `84cc33b`** — docs: BUG-084 등재
-> **NAS 배포 필요: `84cc33b`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 108 — BUG-083/084 수정 + FEAT-050 구현)
+> **GitHub 최신: `38901af`** — fix(BUG-083/084)+feat(FEAT-050) 3건 동시 수정
+> **NAS 배포 필요: `38901af`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -21,8 +21,10 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
-| BUG-084 | 108 | 2026-07-06 | 🔴 미수정 | **공량내역 — 단가 관리 공종과 매핑 불일치 및 일부 단가 미계산** — 공량내역(field-report) 테이블 헤더에 공종코드(`a000001`…)가 그대로 표시되고, 행별 단가 계산이 일부 적용 안 됨. **원인 3가지**: ① `WR_EXTRA_ORDER` 하드코딩 배열(`a000004`~`a000018`)이 `volume_unit_prices` DB 실제 키 목록과 불일치 — DB에 없는 키 무시·DB에 추가된 신규 키 순서 틀림 ② 공량내역 컬럼 헤더가 `item_key`(코드) 그대로 표시 — `volume_unit_prices.item_label`(공종명)으로 변환 필요 ③ 신설(M)·철거(M)·이설(M) 3개 기본 공종(`a000001`~`a000003`)은 `priceMap` 직접 조회로 계산되나, extras 항목 단가가 `unit_price_snapshot=NULL`인 기존 데이터는 `priceMap[k]||0` fallback 의존 — 단가 미입력 시 0 계산. **수정 예정**: ① `allItemKeys` 생성 시 `WR_EXTRA_ORDER` 대신 `volume_unit_prices` DB 순서(`sort_order`) 기반으로 전환 ② 헤더에 `item_label` 표시 (`item_key`는 툴팁으로) ③ `priceMap` fallback 정상 동작 여부 및 단가 0 경우 표시 방식 검토 | — |
-| BUG-083 | 108 | 2026-07-06 | 🔴 미수정 | **전체 알림 발송 시 LGU+ 계정 알림 미수신** — 관리자의 전체 알림(broadcast) 발송 테스트에서 LGU+ 역할 계정이 알림을 받지 못함. 예상 원인: ① 전체 알림 발송 대상 쿼리에 `role='lgu_plus'` 조건 누락 (기존 `role='lgu'`만 포함 또는 완전 미포함) ② FCM 토큰 조회 쿼리의 role 조건 미반영 ③ FEAT-048 lgu_plus 단일화 이후 broadcast 발송 로직 미업데이트. **수정 예정**: node-server.ts 전체 알림 발송 쿼리 및 FCM 대상자 조회 로직에 `role='lgu_plus'` 포함 여부 확인·수정 | — |
+
+| BUG-084 | 108 | 2026-07-06 | ✅ 수정 | **공량내역 — 단가 매핑 불일치 및 헤더 공종코드 표시** — WR_EXTRA_ORDER 하드코딩 제거 → /volume-unit-prices API sort_order 기반 전환. 헤더 item_key → item_label 표시(labelMap/vsLabelMap). field-report/stats 양쪽 적용 | `38901af` |
+| BUG-083 | 108 | 2026-07-06 | ✅ 수정 | **전체 알림 발송 시 LGU+ 계정 알림 미수신** — 관리자 푸시 발송 UI(push-target select)에 `role:lgu_plus` 옵션 누락. `/push/send` 서버 쿼리는 `all`(is_active=1 전체) 및 `role:xxx`(role=? 바인딩) 모두 lgu_plus 포함 정상 동작 확인. **해결**: ① app.js push-target select에 `LGU+ 사용자만(role:lgu_plus)` 옵션 추가 ② `sendManualPush()` targetLabel 매핑에 `lgu_plus` 추가 | `38901af` |
+
 | BUG-082 | 108 | 2026-07-06 | ✅ 수정 | **LGU+ 작업관리·현장위치지도·현장점검·작업통계 4개 화면 내용 없음** — `GET /api/admin/settings` 관리자 전용(403) → LGU+ 계정이 `lgu_menu_*` 설정값을 읽지 못함 → `window.__lguMenuSettings = {}` 빈 객체 → `lgu_menu_tasks='0'`, `lgu_menu_stats='0'` 기본값 → lguGroups에서 작업관리·작업통계 메뉴 항목 미포함 → 사이드바 메뉴 미표시 + `LGU_PLUS_ALLOWED_MENUS`에 미등록 → `canAccess` 실패. **해결**: ① patchSchema v0.155: `lgu_menu_tasks/stats` `'0'→'1'` 업데이트 ② `GET /api/lgu-menu-settings` 신규 엔드포인트(로그인된 모든 역할 허용, `lgu_menu_*` 키만 반환) ③ `app.js loadLguSettings()`: `/admin/settings` 대신 `/lgu-menu-settings` 호출 + admin만 추가로 `/admin/settings` 병행 호출 | `28e2f99` |
 | BUG-081 | 107 | 2026-07-06 | ✅ 수정 | **LGU+ 대시보드(GET /api/stats/dashboard) 500 에러** — BUG-080에서 `constructions LEFT JOIN` 없는 쿼리를 단순 `'tasks'` 원본 + `'t'` 별칭 혼재 방식으로 작성. `constructions` 테이블에도 `status` 콜럼 존재 → `highRiskCount` 쿼리 `WHERE status NOT IN (...)` 콜럼 AMBIGUOUS 에러 → Promise.all 1개 실패 → 전체 500. **해결**: 5개 쿼리 모두 `FROM tasks t` 별칭 통일 + `t.status`, `t.risk_level`, `t.planned_date`, `t.construction_type` 명시 + `lguJoinSimple`/`periodWhereNoAlias` 변수 제거 + patchSchema v0.154 `rawDb.exec()` 단일 BEGIN..COMMIT 일괄 실행 → better-sqlite3 비호환 문제 → 개별 exec 호출 + transaction 래퍼로 변경 | `4e36d2d` |
 | BUG-080 | 106 | 2026-07-06 | ✅ 수정 | **LGU+ 대시보드(작업현황) is_auto_request_no=0 필터 누락** — `stats.ts GET /dashboard` 5개 쿼리(상태별 건수·진행중 작업·고위험 건수·공사종류별 배정현황·금일 예정 작업) 모두 `constructions LEFT JOIN` + `COALESCE(con.is_auto_request_no,-1)=0` WHERE 조건 미적용 → LGU+ 사용자 대시보드에 전체 작업 노출. 서버 필터만으로 해결(클라이언트 추가 불필요) | `703a90a` |
@@ -74,7 +76,8 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
-| FEAT-050 | 108 | 2026-07-06 | 🔴 미구현 | **파일 저장 폴더명 패턴 변경 + 루트 폴더 생성 버그 수정** — ①**루트 버그**: getUploadDir() 5개 호출 위치 중 현장점검 multipart 사진(line 3800~3809)·TBM PDF(line 2881) 등에서 task 파라미터가 null이거나 팀명 정보 없이 문자열 폴백(|| 점검)으로 전달 → join(root, 미분류, 점검, stageDir) 경로 생성 → 공사 폴더 없이 루트 직접 저장. ②**폴더명 팀 추가**: 현재 taskFolder = ${taskNum}_${workDate}_${workType} 패턴에 _[작업팀] 추가 필요 — {서브작업번호}_{작업일}_{작업종류}_[작업팀] 형식. 작업팀은 일보/사진 작성자(uploading user)가 소속된 팀 기준. **수정 예정**: ① getUploadDir() 인터페이스에 team_name?: string 추가 + taskFolder 패턴 _${teamName} 후치 ② 5개 호출 위치(line 2881/3647/3800/4541/4642) 각 쿼리에 LEFT JOIN teams tm ON tm.id=u.team_id + tm.name AS team_name 추가 ③ null task 전달 위치에서 올바른 task 객체 조회 후 전달로 루트 생성 버그 해결 | — |
+
+| FEAT-050 | 108 | 2026-07-06 | ✅ 구현 | **파일 저장 폴더명 팀 추가 + 루트 폴더 생성 버그 수정** — getUploadDir() 인터페이스에 team_name?: string 추가. taskFolder 패턴: {서브작업번호}_{작업일}_{작업종류}_[작업팀]. 5개 호출 위치 쿼리 수정: ①TBM PDF conductor JOIN teams ②점검사진 addInsPhoto 업로더 팀 조회 주입 ③점검 POST multipart 업로더 팀 조회 주입 + 루트 버그 수정 ④작업사진 task_assignments JOIN teams ⑤TBM사진 task_assignments JOIN teams | `38901af` |
 | FEAT-049 | 108 | 2026-07-06 | ✅ 구현 | **LGU+ 메뉴 그룹 3분할 구조 개편** — 기존 단일 '현장' 그룹(최대 8개 메뉴 나열)을 3그룹으로 분리: ①**현장작업**(파란색): 작업현황→작업관리→공사현황→현장위치지도 ②**안전점검**(빨간색): 현장점검 ③**통계·정보**(노란색): 안전현황 서브메뉴(작업통계·현장점검통계·근로자안전준수현황)+내 계정. 활성 메뉴가 없는 그룹은 아이콘 레일 자동 제거. 메뉴 순서 업무 흐름(현황→관리→지도) 재정렬. 관리자/감독자 그룹명·색상 일관성 통일. `rail-badge` ID `lgu-main→lgu-safety` 교체 | `6196837` |
 | FEAT-048 | 106 | 2026-07-06 | ✅ 구현 | **LGU+ 역할 단일화 — role='lgu_plus' 독립 권한그룹 정의** — 기존 이중 구조(`role='lgu'` OR `sub_role='lgu_plus'+role='worker'`)를 `role='lgu_plus'` 단일 역할로 통일. **node-server.ts**: patchSchema v0.154(users 테이블 재생성+3단계 마이그레이션) + getUserGroupKey lgu_plus 분기 + checklist-lgu-notify 쿼리 3중화 + uiRoleToSubRole lgu_plus→'' 수정. **src/routes/auth.ts**: `/me` SELECT에 sub_role 추가. **5개 라우트(tasks/inspections/risk/tbm/stats)**: isLgu 조건 3중화. **src/routes/users.ts**: suspended/restore/PUT/:id에 lgu_plus 차단 추가(worker 동급). **app.js**: dbRoleToUi lgu_plus 최상단 분기·uiRoleToDb 수정·BULK_ROLE_MAP·updateUser sub_role 전송·9곳 판별조건. 구버전 호환 조건(role='lgu', sub_role='lgu_plus') 병행 유지 | `5adcee0` |
 | FEAT-047 | 106 | 2026-07-06 | ✅ 구현 | **LGU+ 역할 3개 메뉴 is_auto_request_no=0 조회 필터** — 작업관리(`GET /api/tasks`)·현장점검(`GET /api/inspections`)·위험성체크(`GET /api/risk`)·TBM(`GET /api/tbm`) 4개 API에 `role='lgu' OR sub_role='lgu_plus'` 조건 시 `COALESCE(con.is_auto_request_no,-1)=0` WHERE 필터 추가 + constructions LEFT JOIN 추가. 현장위치 지도는 tasks/tbm/risk API를 재사용하므로 자동 적용. BUG-039(세션61) `is_auto_request_no` 방향 반전·BUG-041(세션63) NULL처리 선행 수정의 후속 완성 | `40fac8b` |

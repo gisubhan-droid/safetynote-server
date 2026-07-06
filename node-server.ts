@@ -3589,6 +3589,123 @@ app.post('/api/tbm/:id/share-token', async (c) => {
   })
 })
 
+// ─── [FEAT-052] NAS 전용: POST /api/tbm — TBM 생성 후 planned_date 자동갱신 ──
+// RULE-002: tbmExtraRoutes·tbmRoutes 앞에 등록 (NAS에서 가로채기)
+// 로직: TBM 등록 시점의 KST 날짜가 tasks.planned_date보다 늦으면 자동 갱신
+// (FEAT-033 체크리스트 완료 자동갱신과 동일 패턴, TBM 완료 트리거 추가)
+app.post('/api/tbm', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  // ① 요청 본문 읽기 (tbm.ts 원본에 그대로 전달하기 위해 clone)
+  const body = await c.req.json().catch(() => ({})) as any
+  const { task_id, location, weather, temperature, workers_count, attendees,
+    safety_topics, precautions, special_notes, signature_data,
+    gps_address, gps_lat, gps_lon } = body
+
+  if (!task_id) return c.json({ error: 'task_id 필수' }, 400)
+
+  // ② TBM 레코드 삽입 (tbm.ts 원본 로직 동일)
+  let tbmId: number
+  try {
+    const ins = rawDb.prepare(
+      `INSERT INTO tbm_records (task_id, conductor_id, location, weather, temperature, workers_count,
+       attendees, safety_topics, precautions, special_notes, signature_data, status,
+       gps_address, gps_lat, gps_lon)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)`
+    ).run(
+      task_id, user.id, location || '', weather || '', temperature || '',
+      workers_count || 1, JSON.stringify(attendees || []),
+      safety_topics || '', precautions || '', special_notes || '',
+      signature_data || '',
+      gps_address || null, gps_lat || null, gps_lon || null
+    )
+    tbmId = Number(ins.lastInsertRowid)
+  } catch (e: any) {
+    console.error('[FEAT-052] TBM 삽입 실패:', e.message)
+    return c.json({ error: 'TBM 저장 실패' }, 500)
+  }
+
+  // ③ tasks 상태 → tbm_done (tbm.ts 원본 동일)
+  try {
+    rawDb.prepare(`UPDATE tasks SET status='tbm_done', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(task_id)
+  } catch(e: any) { console.warn('[FEAT-052] task status 업데이트 실패(무시):', e.message) }
+
+  // ④ [FEAT-052] TBM 등록 시점 KST 날짜가 planned_date보다 늦으면 자동 갱신
+  try {
+    const nowTs  = new Date()
+    const kstTs  = new Date(nowTs.getTime() + 9 * 60 * 60 * 1000)
+    const kstDateStr = kstTs.toISOString().slice(0, 10) // 'YYYY-MM-DD'
+    const pRow: any = rawDb.prepare(`SELECT planned_date FROM tasks WHERE id=?`).get(task_id)
+    const currentPlanned = pRow?.planned_date ? String(pRow.planned_date).slice(0, 10) : null
+    if (kstDateStr > (currentPlanned || '')) {
+      rawDb.prepare(`UPDATE tasks SET planned_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+        .run(kstDateStr, task_id)
+      console.log(`[FEAT-052] planned_date 자동갱신(TBM완료): task_id=${task_id} ${currentPlanned||'null'} → ${kstDateStr}`)
+    }
+  } catch(e: any) {
+    console.warn('[FEAT-052] planned_date 자동갱신 실패(무시):', e.message)
+  }
+
+  // ⑤ 안전관리자 결재 서명 요청 알림 (tbm.ts 원본 로직 이관)
+  try {
+    const taskRow: any = rawDb.prepare(`SELECT title, task_number FROM tasks WHERE id=?`).get(task_id)
+    const tbmTitle = `TBM: ${taskRow?.title || task_id}`
+    const safetyUsers: any[] = rawDb.prepare(
+      `SELECT id, name FROM users WHERE position='안전관리자' AND is_active=1`
+    ).all()
+    for (const su of safetyUsers) {
+      const already = rawDb.prepare(
+        `SELECT id FROM signature_requests WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type='approval_safety' AND target_user_id=? AND status='pending'`
+      ).get(tbmId, su.id)
+      if (!already) {
+        const reqIns = rawDb.prepare(`
+          INSERT INTO signature_requests (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id)
+          VALUES ('tbm', ?, 'approval_safety', ?, ?, ?, ?)
+        `).run(tbmId, `[결재요청] ${tbmTitle}`, `TBM이 완료되었습니다. 안전관리자 서명을 요청합니다.`, user.id, su.id)
+        sendToUser(su.id, {
+          type: 'sign_request', id: Number(reqIns.lastInsertRowid),
+          title: `[TBM 결재요청] ${tbmTitle}`,
+          requester: user.name, ref_type: 'tbm', ref_sub_type: 'approval_safety',
+          message: `[TBM 완료] TBM이 등록되었습니다. 안전관리자 서명을 요청합니다.`,
+          ts: Date.now()
+        })
+        rawDb.prepare(`
+          INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+          VALUES (?, 'sign_request', ?, ?, ?, 'tbm', 0)
+        `).run(su.id, `[TBM 결재요청] ${tbmTitle}`, `TBM이 등록되었습니다. 안전관리자 서명을 요청합니다.`, tbmId)
+      }
+    }
+  } catch(e: any) { console.warn('[FEAT-052] 결재 서명 요청 알림 실패(무시):', e.message) }
+
+  // ⑥ LGU+ FCM 알림 (tbm.ts 원본 로직 이관, FCM_NOTIFY_STATUSES에 tbm_done 포함)
+  try {
+    const FCM_TBM_COND = `(COALESCE(con.is_auto_request_no,-1)=0)`
+    const taskRow2: any = rawDb.prepare(
+      `SELECT t.title, t.task_number, t.work_number, t.sub_task_number, t.supervisor_id,
+              GROUP_CONCAT(ta.worker_id) as worker_ids,
+              c.is_auto_request_no
+       FROM tasks t
+       LEFT JOIN task_assignments ta ON ta.task_id=t.id
+       LEFT JOIN constructions c ON c.id=t.construction_id
+       WHERE t.id=? GROUP BY t.id`
+    ).get(task_id) as any
+    if (taskRow2) {
+      const tNum = taskRow2.work_number
+        ? (taskRow2.sub_task_number ? `${taskRow2.work_number}-${taskRow2.sub_task_number}` : taskRow2.work_number)
+        : (taskRow2.task_number || String(task_id))
+      const statusMsg = `[작업상태] \"${taskRow2.title || task_id}\": ${user.name}님이 상태를 [TBM완료]로 변경했습니다.`
+      // SSE 실시간 알림
+      const ssePayload = { type:'task_status', taskId:task_id, status:'tbm_done', statusLabel:'TBM완료',
+        actor:user.name, title:taskRow2.title||String(task_id), message:statusMsg, ts:Date.now() }
+      const sseAllTargets = getUsersWithPerm('notify_all_tasks', user.id)
+      for (const uid of sseAllTargets) sendToUser(uid, ssePayload)
+    }
+  } catch(e: any) { console.warn('[FEAT-052] SSE 알림 실패(무시):', e.message) }
+
+  return c.json({ success: true, id: tbmId })
+})
+
 // ─── TBM 서명/결재 → nas-routes/tbm-extra.ts (RULE-002: tbmRoutes 앞에 마운트) ─
 app.route('/api/tbm', tbmExtraRoutes)
 app.route('/api/tbm', tbmRoutes)

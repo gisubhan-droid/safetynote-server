@@ -3358,6 +3358,10 @@ async function showConstructionDetail(conId) {
     const activeTasks = tasks.filter(t => t.status !== 'cancelled');
     const allCompleted = activeTasks.length > 0 && activeTasks.every(t => t.status === 'completed');
 
+    // [FEAT-053] 삭제 버튼 표시 조건: sysadmin이고 공사가 완료/정산완료 상태
+    const _conIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
+    const _conCanDelete = _conIsSysAdmin && (con.status === 'completed' || con.status === 'settled');
+
     const stageLabel = { registered:'등록', in_progress:'진행중', completed:'완료', settlement_requested:'정산요청', settled:'정산완료' };
 
     overlay.querySelector('.modal').innerHTML = `
@@ -3481,13 +3485,18 @@ async function showConstructionDetail(conId) {
     </div>
     <!-- 하단 버튼 -->
     <div class="modal-footer flex justify-between">
-      <!-- 좌: 삭제 버튼 -->
+      <!-- 좌: 삭제 버튼 (sysadmin + 완료/정산완료 상태만 표시) [FEAT-053] -->
       <div>
-        <button onclick="deleteConstruction(${conId})"
-          class="btn font-bold"
-          style="background:white;color:#e53e3e;border:1.5px solid #e53e3e">
-          <i class="fas fa-trash-alt mr-1"></i> 삭제
-        </button>
+        ${_conCanDelete
+          ? `<button onclick="deleteConstruction(${conId})"
+              class="btn font-bold"
+              style="background:white;color:#e53e3e;border:1.5px solid #e53e3e">
+              <i class="fas fa-trash-alt mr-1"></i> 삭제
+            </button>`
+          : (_conIsSysAdmin
+              ? `<span class="text-xs text-gray-400" style="line-height:2.2"><i class="fas fa-lock mr-1"></i>완료/정산완료 상태만 삭제 가능</span>`
+              : '')
+        }
       </div>
       <!-- 우: 수정 + 상태 버튼 -->
       <div class="flex gap-2">
@@ -3911,11 +3920,17 @@ async function showEditConstructionModal(conId) {
   await showCreateConstructionModal(conId);
 }
 
-// ─── [TASK-001] 공사 삭제 ────────────────────────────────────────────────────
+// ─── [FEAT-053] 공사 삭제 — 시스템관리자 전용, 완료/정산완료 상태만 허용 ─────
 async function deleteConstruction(conId) {
+  // [FEAT-053] 클라이언트 권한 사전 체크
+  const _myUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+  if (_myUiRole !== 'sysadmin') {
+    toast('시스템 관리자만 삭제할 수 있습니다.', 'error', 4000);
+    return;
+  }
   const ok = await showConfirmDialog(
     '공사 삭제',
-    '이 공사를 삭제하면 복구할 수 없습니다.<br>정말 삭제하시겠습니까?',
+    '이 공사와 모든 연관 데이터를 삭제합니다.<br><strong style="color:#e53e3e">삭제하면 복구할 수 없습니다.</strong><br>정말 삭제하시겠습니까?',
     '삭제', '취소', 'danger'
   );
   if (!ok) return;
@@ -5802,18 +5817,27 @@ async function _doReassignWorkers(taskId, btnEl) {
   }
 }
 
-// ── 작업 삭제 ──────────────────────────────────────────────────────────────
+// ── [FEAT-053] 작업 삭제 — 시스템관리자 전용, completed 상태만 허용 ──────────
 async function deleteTask(id) {
-  const confirmed = await showDeleteConfirm('작업을 삭제하시겠습니까?', '삭제하면 복구할 수 없습니다.');
+  // [FEAT-053] 클라이언트 권한 사전 체크
+  const _myUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+  if (_myUiRole !== 'sysadmin') {
+    toast('시스템 관리자만 삭제할 수 있습니다.', 'error', 4000);
+    return;
+  }
+  const confirmed = await showDeleteConfirm(
+    '작업을 삭제하시겠습니까?',
+    '모든 연관 데이터(TBM·체크리스트·일지·사진 등)가 함께 삭제됩니다.<br><strong style="color:#e53e3e">삭제하면 복구할 수 없습니다.</strong>'
+  );
   if (!confirmed) return;
   try {
     await API.delete(`/tasks/${id}`);
-    toast('작업이 삭제되었습니다.');
+    toast('작업이 삭제되었습니다.', 'success');
     document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
     const pc = document.getElementById('page-content');
     if (pc) renderTasksPage(pc);
   } catch(e) {
-    toast(e.response?.data?.error || '삭제 실패', 'error');
+    toast(e.response?.data?.error || '삭제 실패', 'error', 4000);
   }
 }
 
@@ -6129,6 +6153,9 @@ async function showTaskDetail(id, openTbmTab) {
     const inspections = inspRes.data || [];
     const stops = stopsRes.data || [];
     const isWorker = currentUser.role === 'worker';
+    // [FEAT-053] 삭제 버튼 표시 조건: sysadmin이고 completed 상태
+    const _taskIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
+    const _taskCanDelete  = _taskIsSysAdmin && task.status === 'completed';
 
     modal.querySelector('.modal').innerHTML = `
     <div class="modal-header">
@@ -6475,15 +6502,18 @@ async function showTaskDetail(id, openTbmTab) {
 
         <!-- 작업 진행 버튼 -->
         <div class="mt-4">
-          <!-- [TASK-006] 삭제 버튼: 관리자/감독자 전용, 좌측 배치 -->
-          ${!isWorker ? `
+          <!-- [FEAT-053] 삭제 버튼: sysadmin 전용, completed 상태만 표시 -->
+          ${_taskCanDelete ? `
           <div class="mb-2">
             <button onclick="deleteTask(${task.id})"
               class="btn font-bold"
               style="background:white;color:#e53e3e;border:1.5px solid #e53e3e;font-size:0.8rem;padding:5px 14px">
               <i class="fas fa-trash-alt mr-1"></i> 작업 삭제
             </button>
-          </div>` : ''}
+          </div>` : (_taskIsSysAdmin && task.status !== 'completed' ? `
+          <div class="mb-2">
+            <span class="text-xs text-gray-400" style="line-height:2.2"><i class="fas fa-lock mr-1"></i>완료된 작업만 삭제 가능</span>
+          </div>` : '')}
           <!-- 워크플로우 액션 버튼 -->
           <div class="flex flex-wrap gap-2">
             ${getTaskActionButtons(task, isWorker)}

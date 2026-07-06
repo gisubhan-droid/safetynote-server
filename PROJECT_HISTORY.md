@@ -1,6 +1,6 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 109 — FEAT-051 TBM + BUG-085 공량내역 수량 수정 + BUG-086 외선 엑셀 헤더 코드 표시)
+> 최종 업데이트: 2026-07-06 (세션 110 — FEAT-052 TBM완료 planned_date 자동갱신 + FEAT-053 완료 작업/공사 삭제(sysadmin 전용))
 > **GitHub 최신: `5029565`** — fix(BUG-086): 외선 공량 엑셀 헤더 item_key 코드 → item_label 변환
 > **NAS 배포 필요: `5029565`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
@@ -79,6 +79,8 @@
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
 
+| FEAT-053 | 110 | 2026-07-06 | ✅ 구현 | **완료된 작업/공사 삭제 — 시스템관리자 전용** — ①`tasks.ts DELETE /:id`: `user.role==='admin' && position==='시스템관리자'` 조건 추가 + `task.status !== 'completed'` 시 409 반환 ②`constructions.ts DELETE /:id`: 동일 sysadmin 조건 + `con.status NOT IN ('completed','settled')` 시 409, 진행중 작업 잔존 시 409 ③`app.js deleteTask()`: sysadmin 사전 체크 + 확인 메시지 강화 ④`app.js deleteConstruction()`: sysadmin 사전 체크 + 확인 메시지 강화 ⑤`app.js showTaskDetail()`: `_taskIsSysAdmin && completed` 일 때만 삭제 버튼 표시, sysadmin이지만 미완료 시 자물쇠 안내 ⑥`app.js showConstructionDetail()`: `_conCanDelete` 조건 동일 패턴 | `TBD` |
+| FEAT-052 | 110 | 2026-07-06 | ✅ 구현 | **TBM 완료 시 작업(예정)일 자동갱신** — FEAT-033(체크리스트 완료 기준 갱신)에 TBM 완료 트리거 추가. `node-server.ts`에 `POST /api/tbm` NAS 오버라이드 신규 등록(RULE-002 준수: tbmExtraRoutes·tbmRoutes 앞에 배치). TBM 생성 후 KST 날짜(`kstDateStr`)를 추출하여 `tasks.planned_date`보다 늦으면 자동 갱신. `planned_date=NULL` 또는 이미 TBM 날짜 이후이면 변경 없음. tbm.ts 원본 로직(INSERT/status 업데이트/결재 서명 요청/SSE 알림) 전부 이관하여 원본 라우트와 중복 처리 방지. 로그: `[FEAT-052] planned_date 자동갱신(TBM완료): task_id=N null → 2026-07-06` | `TBD` |
 | FEAT-051 | 109 | 2026-07-06 | ✅ 구현 | **TBM 상세 수정 보완 — [object Object] 버그 수정 + 작업유형별 안전내용 자동기입** — ①`_buildTbmAutoText()` `tbmSecs.forEach`에서 `sec.title\|\|sec.question\|\|sec` fallback 시 sec 객체 그대로 삽입되어 `[object Object]` 출력되던 버그 수정: `sec.section_name\|\|sec.title\|\|sec.question\|\|sec.name\|\|항목 N` 순서로 안전하게 label 추출 ②`WORK_TYPE_SAFETY` 상수 정의: 5개 유형(바켓차량작업·전주승주·옥상옥탑작업·사다리사용작업·중장비사용) × [안전교육사항5항/TBM교육항목5항/주의사항5항] ③`showTbmForm()` 참석자 섹션 아래에 작업유형 칩 UI 추가 — 칩 클릭 시 `_toggleWorkTypeSafety()` 호출 → tbmTopics(안전교육+TBM항목)/tbmPrecautions(주의사항) textarea에 유형별 블록 추가, 재클릭 시 제거(토글) | `d416c53` |
 | FEAT-050 | 108 | 2026-07-06 | ✅ 구현 | **파일 저장 폴더명 팀 추가 + 루트 폴더 생성 버그 수정** — getUploadDir() 인터페이스에 team_name?: string 추가. taskFolder 패턴: {서브작업번호}_{작업일}_{작업종류}_[작업팀]. 5개 호출 위치 쿼리 수정: ①TBM PDF conductor JOIN teams ②점검사진 addInsPhoto 업로더 팀 조회 주입 ③점검 POST multipart 업로더 팀 조회 주입 + 루트 버그 수정 ④작업사진 task_assignments JOIN teams ⑤TBM사진 task_assignments JOIN teams | `38901af` |
 | FEAT-049 | 108 | 2026-07-06 | ✅ 구현 | **LGU+ 메뉴 그룹 3분할 구조 개편** — 기존 단일 '현장' 그룹(최대 8개 메뉴 나열)을 3그룹으로 분리: ①**현장작업**(파란색): 작업현황→작업관리→공사현황→현장위치지도 ②**안전점검**(빨간색): 현장점검 ③**통계·정보**(노란색): 안전현황 서브메뉴(작업통계·현장점검통계·근로자안전준수현황)+내 계정. 활성 메뉴가 없는 그룹은 아이콘 레일 자동 제거. 메뉴 순서 업무 흐름(현황→관리→지도) 재정렬. 관리자/감독자 그룹명·색상 일관성 통일. `rail-badge` ID `lgu-main→lgu-safety` 교체 | `6196837` |

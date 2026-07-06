@@ -392,26 +392,38 @@ app.post('/:id/settle-complete', async (c) => {
 
 // ─── [TASK-001] 공사 삭제 ────────────────────────────────────────────────────
 // 연결된 tasks 존재 시 409 차단
+// [FEAT-053] 공사 삭제 — 시스템관리자 전용, 완료(completed/settled) 상태만 허용
 app.delete('/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  // [FEAT-053] 시스템관리자만 삭제 가능
+  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
+  if (!isSysAdmin) return c.json({ error: '시스템 관리자만 삭제할 수 있습니다.' }, 403)
 
   const id = parseInt(c.req.param('id'))
   if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
 
   try {
-    // 연결 작업 존재 여부 확인
-    const linked = await c.env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ?`
-    ).bind(id).first<any>()
-    if ((linked?.cnt ?? 0) > 0) {
+    const con = await c.env.DB.prepare(`SELECT id, title, status FROM constructions WHERE id = ?`).bind(id).first<any>()
+    if (!con) return c.json({ error: '공사 없음' }, 404)
+
+    // [FEAT-053] 완료(completed) 또는 정산완료(settled) 상태만 삭제 허용
+    if (con.status !== 'completed' && con.status !== 'settled') {
       return c.json({
-        error: `연결된 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 삭제하거나 연결을 해제해 주세요.`
+        error: `완료되거나 정산완료된 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}`
       }, 409)
     }
 
-    const con = await c.env.DB.prepare(`SELECT id, title FROM constructions WHERE id = ?`).bind(id).first<any>()
-    if (!con) return c.json({ error: '공사 없음' }, 404)
+    // 연결 작업 존재 여부 확인 — 모든 작업이 completed/cancelled 인 경우만 허용
+    const linked = await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ? AND status NOT IN ('completed','cancelled')`
+    ).bind(id).first<any>()
+    if ((linked?.cnt ?? 0) > 0) {
+      return c.json({
+        error: `진행 중인 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 완료하거나 취소해 주세요.`
+      }, 409)
+    }
 
     await c.env.DB.prepare(`DELETE FROM constructions WHERE id = ?`).bind(id).run()
     return c.json({ success: true, message: `"${con.title}" 공사가 삭제되었습니다.` })

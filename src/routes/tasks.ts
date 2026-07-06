@@ -1109,11 +1109,23 @@ app.patch('/:id/work-class', async (c) => {
   return c.json({ success: true })
 })
 
-// 작업 삭제
+// 작업 삭제 — [FEAT-053] 시스템관리자(admin+position='시스템관리자') 전용, 완료(completed) 상태만 허용
 app.delete('/:id', async (c) => {
   const user = getUser(c)
-  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  // [FEAT-053] 시스템관리자만 삭제 가능
+  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
+  if (!isSysAdmin) return c.json({ error: '시스템 관리자만 삭제할 수 있습니다.' }, 403)
+
   const id = c.req.param('id')
+
+  // [FEAT-053] 완료(completed) 상태인 작업만 삭제 허용
+  const taskRow = await c.env.DB.prepare(`SELECT id, status, title FROM tasks WHERE id = ?`).bind(id).first<any>()
+  if (!taskRow) return c.json({ error: '작업을 찾을 수 없습니다.' }, 404)
+  if (taskRow.status !== 'completed') {
+    return c.json({ error: `완료된 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
+  }
 
   // 테이블이 없을 수 있으므로 각 DELETE를 개별 try/catch로 처리
   // (마이그레이션 미적용 NAS 환경 대비)

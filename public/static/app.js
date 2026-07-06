@@ -2018,17 +2018,29 @@ function doLogout() {
 // ======= [v0.142 LGU+] LGU+ 설정 로드 헬퍼 =======
 // 앱 초기화 또는 관리자 설정 변경 후 호출
 // window.__lguMenuSettings 에 system_settings lgu_* 값을 캐시
+// [BUG-082] /admin/settings 는 admin 전용(403) → LGU+ 역할이 읽을 수 없어 메뉴가 숨겨지는 버그 수정.
+//           별도 경량 API /api/lgu-menu-settings 로 전환 (로그인된 모든 역할 허용).
+//           관리자는 기존 /admin/settings 도 호출하여 전체 설정을 덮어씀.
 async function loadLguSettings() {
   try {
-    var res = await API.get('/admin/settings');
-    var settings = (res.data && res.data.settings) || [];
-    var map = {};
-    settings.forEach(function(s) { if (s.key && s.key.startsWith('lgu_')) map[s.key] = s.value; });
-    window.__lguMenuSettings = map;
+    // ① 모든 역할: lgu_menu_* 전용 경량 API 호출
+    var res = await API.get('/lgu-menu-settings');
+    var map = (res.data && res.data.settings) || {};
+    window.__lguMenuSettings = Object.assign({}, window.__lguMenuSettings || {}, map);
   } catch(e) {
-    // 권한 없음(403) 등: 기본값 사용
+    // 실패 시 기본값 유지 (빈 객체라도 보장)
     if (!window.__lguMenuSettings) window.__lguMenuSettings = {};
   }
+  try {
+    // ② admin 역할만 추가로 전체 설정 로드 (덮어쓰기)
+    if (currentUser && currentUser.role === 'admin') {
+      var adminRes = await API.get('/admin/settings');
+      var adminSettings = (adminRes.data && adminRes.data.settings) || [];
+      var adminMap = {};
+      adminSettings.forEach(function(s) { if (s.key && s.key.startsWith('lgu_')) adminMap[s.key] = s.value; });
+      window.__lguMenuSettings = Object.assign(window.__lguMenuSettings || {}, adminMap);
+    }
+  } catch(e) { /* admin 전용 API 실패 무시 */ }
 }
 
 // ======= 앱 레이아웃 =======

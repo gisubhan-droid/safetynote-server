@@ -2545,6 +2545,27 @@ function patchSchema() {
       console.error('[patchSchema v0.154] LGU+ 단일화 실패 (무시):', e.message)
     }
   })()
+
+  // ── [v0.155 BUG-082] LGU+ 메뉴 기본값 활성화: tasks/stats '0'→'1' ────────────
+  // [BUG-082] LGU+ 계정이 /admin/settings(관리자 전용)에 접근 불가해서
+  // lgu_menu_tasks, lgu_menu_stats 설정값을 읽지 못함.
+  // 실사용 환경에서는 작업관리·작업통계가 LGU+ 필수 메뉴이므로 기본값 '1'로 교정.
+  ;(function patchLguMenuDefaults() {
+    try {
+      const checkRow = rawDb.prepare(
+        `SELECT value FROM system_settings WHERE key='lgu_menu_tasks'`
+      ).get() as { value: string } | undefined
+      if (checkRow && checkRow.value === '0') {
+        rawDb.prepare(`UPDATE system_settings SET value='1' WHERE key='lgu_menu_tasks'`).run()
+        rawDb.prepare(`UPDATE system_settings SET value='1' WHERE key='lgu_menu_stats'`).run()
+        console.log('[patchSchema v0.155] ✅ lgu_menu_tasks/stats 기본값 0→1 업데이트 완료')
+      } else {
+        console.log('[patchSchema v0.155] lgu_menu_tasks/stats 기본값 이미 활성 — 스킵')
+      }
+    } catch (e: any) {
+      console.warn('[patchSchema v0.155] lgu_menu 기본값 교정 실패 (무시):', e.message)
+    }
+  })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
 patchSchema()
@@ -5363,6 +5384,28 @@ app.post('/api/group-permissions', async (c) => {
     return c.json({ error: e.message }, 500)
   }
 })
+
+// ─── [BUG-082] LGU+ 메뉴 설정 조회 (인증 필요, 역할 무관) ──────────────────────
+// GET /api/lgu-menu-settings
+// LGU+ 역할은 /admin/settings(관리자 전용)에 접근 불가 → loadLguSettings() 가 빈 객체 반환
+// → lgu_menu_tasks/stats 설정값을 읽지 못해 해당 메뉴가 사이드바에서 숨겨지고
+//   LGU_PLUS_ALLOWED_MENUS에도 포함되지 않아 화면 진입이 차단되는 버그 수정.
+// 해결: lgu_menu_* 키만 읽는 별도 경량 공개 API 제공 (로그인된 모든 역할 허용)
+app.get('/api/lgu-menu-settings', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
+    const rows = rawDb.prepare(
+      `SELECT key, value FROM system_settings WHERE key LIKE 'lgu_menu_%'`
+    ).all() as { key: string; value: string }[]
+    const settings: Record<string, string> = {}
+    for (const row of rows) settings[row.key] = row.value
+    return c.json({ settings })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+// ─────────────────────────────────────────────────────────────────────────────
 
 // SSE 연결 엔드포인트: GET /api/events
 // EventSource는 커스텀 헤더 불가 → ?token= 쿼리스트링으로도 인증 허용

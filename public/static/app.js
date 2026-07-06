@@ -29304,8 +29304,8 @@ async function renderFieldReportPage(container) {
     // 합계금액 총합 계산 (단가 불변 정책: extrasSnapMap 스냅샷 단가 우선, 없으면 현재 단가)
     let cableTotalAmt = 0;
     rows.forEach(row => {
-      const em  = extrasMap[row.id]     || {};
-      const esm = extrasSnapMap[row.id] || {};
+      const em  = extrasMap[row.report_id]     || {};  // [BUG-085] row.id → row.report_id (서버 AS alias)
+      const esm = extrasSnapMap[row.report_id] || {};
       const rowAmt = isWorker ? 0 : (
         (row.cable_new_m    || 0) * (priceMap['a000001'] || 0) +
         (row.cable_remove_m || 0) * (priceMap['a000002'] || 0) +
@@ -29346,8 +29346,8 @@ async function renderFieldReportPage(container) {
           </thead>
           <tbody>
             ${rows.map((row,ri)=>{
-              const em  = extrasMap[row.id]     || {};
-              const esm = extrasSnapMap[row.id] || {};
+              const em  = extrasMap[row.report_id]     || {};  // [BUG-085] row.id → row.report_id
+              const esm = extrasSnapMap[row.report_id] || {};
               const rowAmt = isWorker ? 0 : (
                 (row.cable_new_m    || 0) * (priceMap['a000001'] || 0) +
                 (row.cable_remove_m || 0) * (priceMap['a000002'] || 0) +
@@ -29364,8 +29364,8 @@ async function renderFieldReportPage(container) {
                   style="${cableHidden.includes(2)?'display:none':''}">${row.request_no||'-'}</td>
                 <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="3"
                   style="${cableHidden.includes(3)?'display:none':''}">
-                  <span class="inline-block px-1.5 py-0.5 rounded text-xs font-semibold ${wcBadgeClass(row.construction_work_class)}">
-                    ${cableWcLabel(row.construction_work_class)}
+                  <span class="inline-block px-1.5 py-0.5 rounded text-xs font-semibold ${wcBadgeClass(row.work_class)}">
+                    ${cableWcLabel(row.work_class)}
                   </span>
                 </td>
                 <td class="border border-gray-100 px-2 py-1.5 text-right bg-blue-50" data-col-idx="4"

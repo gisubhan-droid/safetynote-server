@@ -8437,6 +8437,217 @@ async function submitRiskAssessment(taskId) {
 }
 
 // ======= TBM 양식 =======
+
+// ─── [FEAT-051] 작업유형별 안전내용 상수 ──────────────────────────────────────
+// 5가지 유형별 [안전교육사항 / TBM교육항목 / 주의사항] 미리 정의 내용
+const WORK_TYPE_SAFETY = {
+  '바켓차량작업': {
+    label: '바켓차량작업',
+    icon: 'fa-truck',
+    safety: [
+      '바켓차량 작업 반경(5m) 내 출입 통제',
+      '고소작업 안전대 착용 및 안전고리 체결 확인',
+      '차량 아웃트리거 완전 전개 및 지반 침하 여부 확인',
+      '작업 전 차량 점검 및 이상 없음 확인',
+      '2인 1조 작업 원칙 준수 (1인 지상 감시)',
+    ],
+    tbm: [
+      '바켓 탑승 전 안전대 착용 상태 상호 확인',
+      '지상 감시자 배치 및 신호 체계 확인',
+      '차량 안전거리 확보 및 도로 점용 안전시설 설치',
+      '작업 중 고압선 접근 금지 확인',
+      '돌풍·강풍 시 즉시 작업 중단 기준 확인',
+    ],
+    precautions: [
+      '바켓 탑승 중 신체 외부 이탈 절대 금지',
+      '아웃트리거 미전개 상태 작업 금지',
+      '운전자 이탈 시 바켓 비워두고 안전핀 체결',
+      '강풍(풍속 10m/s 초과) 시 작업 중단',
+      '인근 고압선(LV/HV) 안전거리(충전부 2m↑) 유지',
+    ],
+  },
+  '전주승주': {
+    label: '전주승주',
+    icon: 'fa-person-arrow-up-from-line',
+    safety: [
+      '승주 전 전주 상태(균열·부식·매설깊이) 육안 점검',
+      '안전대 착용 및 안전고리 전주 결속 확인',
+      '승주용 발판볼트·슈라우드 체결 상태 확인',
+      '지상 감시자 1인 배치 및 통신 방법 확인',
+      '낙하물 위험 구역(반경 3m) 출입 통제',
+    ],
+    tbm: [
+      '전주 승주 전 전주 흔들림·기울기 측정 확인',
+      '안전대 D링·로프 마모 상태 확인',
+      '공구 및 자재 추락 방지(공구낙하방지끈) 확인',
+      '활선(充電) 여부 확인 및 충전부 접촉 금지 교육',
+      '우천·결빙 시 승주 금지 기준 확인',
+    ],
+    precautions: [
+      '안전대 미착용 승주 절대 금지',
+      '전주 균열·기울기 이상 시 작업 중단 및 보고',
+      '전주 정상부 작업 시 2중 안전고리 체결',
+      '강풍·우천·결빙 시 작업 즉시 중단',
+      '활선 작업 금지 — 정전 확인 후 작업',
+    ],
+  },
+  '옥상옥탑작업': {
+    label: '옥상옥탑작업',
+    icon: 'fa-building',
+    safety: [
+      '옥상 개구부·외곽 안전난간 설치 및 덮개 확인',
+      '개인보호구(안전모·안전대·안전화) 착용 확인',
+      '안전대 부착설비(로프·D링·앵커) 사전 설치 확인',
+      '출입구 잠금장치 확인 및 관계자 외 출입 통제',
+      '바닥 미끄럼 방지 및 낙하물 방지망 설치',
+    ],
+    tbm: [
+      '옥상 외곽부 1.5m 이내 작업 시 안전대 체결 의무',
+      '낙하물 위험 구역 지상 출입 통제 조치 확인',
+      '야간·우천 시 미끄럼 위험 강화 안전조치 확인',
+      '헬기 착륙장·방수 구조물 손상 금지 교육',
+      '긴급 대피 경로 및 연락체계 확인',
+    ],
+    precautions: [
+      '안전대 미체결 상태 외곽부 접근 금지',
+      '슬레이트·패널 지붕 직접 올라서기 금지',
+      '강풍·낙뢰·우천 시 즉시 작업 중단',
+      '지붕 취약부(채광창·환기구 덮개) 하중 집중 금지',
+      '작업 완료 후 개구부 복구 및 난간 원상태 확인',
+    ],
+  },
+  '사다리사용작업': {
+    label: '사다리사용작업',
+    icon: 'fa-stairs',
+    safety: [
+      '사다리 상단 2단(30cm 이상) 작업 금지 확인',
+      '사다리 기울기 각도(75°±5°) 준수 확인',
+      '사다리 미끄럼방지 장치 및 지반 안정성 확인',
+      '2인 1조 — 1인 하부 고정 지지 의무',
+      '사다리 위에서 공구·자재 직접 전달 금지',
+    ],
+    tbm: [
+      '사다리 사용 전 발판·지주 결함 육안 점검',
+      '사다리 상부 결속 또는 하부 고정 방법 확인',
+      '양 발 동시 딛기 원칙 및 신체 외측 이탈 금지 교육',
+      '자재 운반 시 등짐·손잡이 장비 사용 교육',
+      '설치 각도 불량 시 즉시 재설치 기준 확인',
+    ],
+    precautions: [
+      '사다리 최상단 2개 발판 탑승 절대 금지',
+      '1인 탑승 원칙 — 동시 다인 사용 금지',
+      '강풍(풍속 7m/s 초과) 시 사다리 작업 중단',
+      '알루미늄 사다리 활선 근접 사용 금지',
+      '젖은 손·발 사다리 접촉 금지',
+    ],
+  },
+  '중장비사용': {
+    label: '중장비사용',
+    icon: 'fa-truck-monster',
+    safety: [
+      '중장비 작업 반경(선회 반경+2m) 내 출입 통제',
+      '신호수 배치 및 신호 방법 사전 교육·확인',
+      '지반 지내력 확인 및 아웃트리거 패드 사용',
+      '장비 점검 일지 확인 및 이상 없음 서명',
+      '야간 작업 시 조명 및 반사형 안전조끼 착용',
+    ],
+    tbm: [
+      '운전원 자격증 및 특수건강검진 유효 기간 확인',
+      '인양·굴착 전 지하 매설물 위치 확인',
+      '줄걸이 와이어로프 상태(킹크·단선) 점검',
+      '장비 최대 허용 하중 초과 작업 금지 교육',
+      '작업 중단 시 붐·버켓 지상 안착 및 키 보관 교육',
+    ],
+    precautions: [
+      '장비 운전반경 내 작업자 절대 접근 금지',
+      '신호수 없는 단독 작업 금지',
+      '연약지반·경사면 장비 전도 위험 확인 후 진입',
+      '인양물 아래 작업자 통과 금지',
+      '강풍(풍속 10m/s 초과) 인양 작업 중단',
+    ],
+  },
+};
+
+// [FEAT-051] 선택된 작업유형의 안전내용을 tbmTopics/tbmPrecautions textarea에 추가
+function _applyWorkTypeSafety(typeKey) {
+  const wt = WORK_TYPE_SAFETY[typeKey];
+  if (!wt) return;
+
+  const topicsEl = document.getElementById('tbmTopics');
+  const precsEl  = document.getElementById('tbmPrecautions');
+  if (!topicsEl || !precsEl) return;
+
+  // 이미 같은 유형 블록이 있으면 추가 안 함
+  const marker = `[${wt.label}]`;
+  if (topicsEl.value.includes(marker)) {
+    toast(`"${wt.label}" 내용이 이미 입력되어 있습니다.`, 'warning');
+    return;
+  }
+
+  // tbmTopics 에 안전교육 + TBM항목 블록 추가
+  const topicsBlock = [
+    '',
+    `[안전 교육 사항 — ${wt.label}]`,
+    ...wt.safety.map((t, i) => `${i+1}. ${t}`),
+    '',
+    `[TBM 교육 항목 — ${wt.label}]`,
+    ...wt.tbm.map((t, i) => `${i+1}. ${t}`),
+  ].join('\n');
+
+  // tbmPrecautions 에 주의사항 블록 추가
+  const precsBlock = [
+    '',
+    `[주의사항 — ${wt.label}]`,
+    ...wt.precautions.map((t, i) => `${i+1}. ${t}`),
+  ].join('\n');
+
+  topicsEl.value = (topicsEl.value + topicsBlock).trimStart();
+  precsEl.value  = (precsEl.value  + precsBlock).trimStart();
+
+  // 해당 버튼 활성화 표시
+  const btn = document.querySelector(`.wt-chip[data-type="${typeKey}"]`);
+  if (btn) {
+    btn.classList.add('wt-chip--active');
+    btn.setAttribute('title', `${wt.label} 내용 추가됨 (다시 클릭 시 제거)`);
+  }
+  toast(`"${wt.label}" 안전 내용이 추가되었습니다.`, 'success');
+}
+
+// [FEAT-051] 작업유형 내용 제거 (토글)
+function _removeWorkTypeSafety(typeKey) {
+  const wt = WORK_TYPE_SAFETY[typeKey];
+  if (!wt) return;
+
+  const topicsEl = document.getElementById('tbmTopics');
+  const precsEl  = document.getElementById('tbmPrecautions');
+  if (!topicsEl || !precsEl) return;
+
+  // 해당 유형 블록 제거 (marker부터 다음 빈줄+블록 or 끝까지)
+  const escLabel = wt.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const blockRe  = new RegExp(`\\n?\\[안전 교육 사항 — ${escLabel}\\][\\s\\S]*?\\[TBM 교육 항목 — ${escLabel}\\][\\s\\S]*?(?=\\n\\[|$)`, 'g');
+  const precsRe  = new RegExp(`\\n?\\[주의사항 — ${escLabel}\\][\\s\\S]*?(?=\\n\\[|$)`, 'g');
+
+  topicsEl.value = topicsEl.value.replace(blockRe, '').trimEnd();
+  precsEl.value  = precsEl.value.replace(precsRe, '').trimEnd();
+
+  const btn = document.querySelector(`.wt-chip[data-type="${typeKey}"]`);
+  if (btn) {
+    btn.classList.remove('wt-chip--active');
+    btn.setAttribute('title', `${wt.label} 내용 추가`);
+  }
+  toast(`"${wt.label}" 내용이 제거되었습니다.`, 'info');
+}
+
+// [FEAT-051] 작업유형 칩 토글
+function _toggleWorkTypeSafety(typeKey) {
+  const btn = document.querySelector(`.wt-chip[data-type="${typeKey}"]`);
+  if (btn && btn.classList.contains('wt-chip--active')) {
+    _removeWorkTypeSafety(typeKey);
+  } else {
+    _applyWorkTypeSafety(typeKey);
+  }
+}
+
 // 체크리스트 응답 기반 자동 입력 텍스트 생성
 function _buildTbmAutoText(task, clData) {
   const responses  = Array.isArray(clData?.responses)    ? clData.responses    : [];
@@ -8476,7 +8687,11 @@ function _buildTbmAutoText(task, clData) {
     topicsLines.push('');
     topicsLines.push('[TBM 교육 항목]');
     tbmSecs.forEach((sec, i) => {
-      topicsLines.push(`${i+1}. ${sec.title || sec.question || sec}`);
+      // [FEAT-051 BUG] sec는 객체 — section_name 우선 사용 (title/question falsy시 [object Object] 방지)
+      const label = (typeof sec === 'string')
+        ? sec
+        : (sec.section_name || sec.title || sec.question || sec.name || `항목 ${i+1}`);
+      topicsLines.push(`${i+1}. ${label}`);
     });
   }
 
@@ -8693,6 +8908,33 @@ async function showTbmForm(taskId) {
         <div id="tbm-att-err" style="font-size:11px;color:#EF4444;margin-top:3px;display:none"></div>
         <!-- 숨김 input: 기존 submit 로직 호환 -->
         <input type="hidden" id="tbmAttendees" value="${(task.assigned_workers||[]).map(w=>w.name).join(',')}">
+      </div>
+
+      <!-- [FEAT-051] 작업유형별 안전내용 자동기입 칩 -->
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <i class="fas fa-hard-hat" style="color:#7C3AED;font-size:12px"></i>
+          <span style="font-weight:700;color:#374151">작업유형 안전내용 자동기입</span>
+          <span style="font-size:10px;font-weight:400;color:#9CA3AF">(해당 유형 선택 시 아래 항목에 자동 추가)</span>
+        </label>
+        <style>
+          .wt-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1.5px solid #C4B5FD;border-radius:20px;font-size:11px;font-weight:600;color:#5B21B6;background:#F5F3FF;cursor:pointer;transition:all .15s;user-select:none}
+          .wt-chip:hover{background:#EDE9FE;border-color:#7C3AED}
+          .wt-chip--active{background:#7C3AED!important;border-color:#5B21B6!important;color:#fff!important}
+          .wt-chip--active i{color:#fff!important}
+        </style>
+        <div style="display:flex;flex-wrap:wrap;gap:7px;padding:10px 12px;background:#FAFAFA;border:1.5px solid #E5E7EB;border-radius:10px">
+          ${Object.entries(WORK_TYPE_SAFETY).map(([key, wt]) =>
+            `<button type="button" class="wt-chip" data-type="${key}"
+              title="${wt.label} 안전내용 추가"
+              onclick="_toggleWorkTypeSafety('${key}')">
+              <i class="fas ${wt.icon}" style="font-size:10px;color:#7C3AED"></i>${wt.label}
+            </button>`
+          ).join('')}
+        </div>
+        <div style="font-size:10px;color:#9CA3AF;margin-top:4px">
+          <i class="fas fa-info-circle mr-1"></i>버튼 클릭 시 해당 유형 안전내용이 아래 교육사항·주의사항에 추가됩니다. 다시 클릭하면 제거됩니다.
+        </div>
       </div>
 
       <div class="form-group">

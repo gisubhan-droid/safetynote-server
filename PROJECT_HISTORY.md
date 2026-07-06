@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 113 — BUG-090: TBM 회의록 헤더 구조 수정)
-> **GitHub 최신: `564db77`** — fix(BUG-090): TBM 회의록 헤더 재배치
-> **NAS 배포 필요: `564db77`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-06 (세션 114 — BUG-091: TBM 회의록 담당자·서브작업번호·사진 페이지 잘림 수정)
+> **GitHub 최신: `TBD`** — fix(BUG-091): TBM 회의록 담당자 레이블·서브작업번호·사진 페이지 잘림 수정
+> **NAS 배포 필요: `TBD`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -22,6 +22,7 @@
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
 
+| BUG-091 | 114 | 2026-07-06 | ✅ 수정 | **TBM 회의록 3가지 수정** — ①`관리감독자→담당자`: 행1 헤더 레이블 변경 ②`서브작업번호`: `task_number`+`sub_task_number` 조합 → `WKS-{main}-{sub}` 형식 출력, sub 없으면 main만, 둘 다 없으면 `WKS-` ③`사진 페이지 잘림 방지`: 사진 `<tr>/<td>/<div>/<img>` 전부 `page-break-inside:avoid;break-inside:avoid` + CSS `@media print { img,tr { page-break-inside:avoid } }` 추가. 백엔드: `tbm.ts` GET 목록(2개)+단건 쿼리 `t.sub_task_number` 컬럼 추가; `node-server.ts` NAS GET `/api/tbm/:id` rawDb 오버라이드 신규 등록(RULE-002, sub_task_number 포함) | `TBD` |
 | BUG-090 | 113 | 2026-07-06 | ✅ 수정 | **TBM 회의록 출력 헤더 구조 4가지 수정** — ①`서명인원` 행 삭제: 출력물에서 서명인원 수 표시 행 제거 ②`수급업체→관리감독자`: `contractor_name` 레이블을 "수급업체" → "관리감독자"로 변경 ③헤더 레이아웃 이미지 기준 재배치: 행1(작업명+관리감독자), 행2(실시일시+TBM진행자+작업번호), 행3(실시장소+날씨기온+참석인원) 6열 구조로 재편. 작업번호는 기존 WKS- 형식 유지, 미입력 시 "WKS-" 표시 ④`info-table` CSS `table-layout:fixed` + th `width:62px`로 6열 균등 배분 | `564db77` |
 | BUG-089 | 112 | 2026-07-06 | ✅ 수정 | **TBM 회의록 결재 서명란 — 대표이사 제거, 총괄책임 2단계로 변경** — 결재 흐름 안전관리자→총괄책임→대표이사 3단계 → 안전관리자→총괄책임 2단계로 단순화. ①`node-server.ts` PDF 결재란: approval_ceo 행 제거, approval_general 표시명 "총괄책임" ②`app.js showTbmDetail` 결재 카드: cSig/canCeo 제거, 순서 안내 수정 ③`app.js _tbmPrint()` 결재 테이블: colgroup col 제거, 대표이사 th/td 제거, 안내텍스트 수정 ④`app.js LABELS/DESCS/_tbmApprovalSignInApp`: approval_ceo 항목 제거 ⑤`tbm-extra.ts`: validRoles→2개, signedRoles 쿼리→2단계, approval_general이 최종결재로 변경(PDF 자동생성 트리거), approval_ceo 블록 제거 | `1a13c16` |
 | BUG-088 | 112 | 2026-07-06 | ✅ 수정 | **TBM 회의록 서명인원 카운트에 결재 서명 포함되는 오류** — `showTbmDetail`의 서명 현황 계산 시 `signatures` 전체(approval_safety·general·ceo 포함)를 카운트 → 실제 근로자(attendee/conductor) 수보다 많은 숫자 표시. **해결**: ①`tbm-sig-badge` 카운트: `workerSigsForBadge = signatures.filter(s => s.role==='attendee'||s.role==='conductor')` 필터 적용 ②`showTbmDetail` 서명 현황 계산: `workerSigs = signatures.filter(role==='attendee'||'conductor')` 2곳 모두 적용 | `1a13c16` |
@@ -4931,7 +4932,79 @@ for (const tgt of _fixFkTargets) {
 - [x] FEAT-056: tbm-extra.ts approval_general 완료 시 안전관리자+근로자 FCM
 - [x] FEAT-057: node-server.ts POST /api/photos supervisor/safety FCM (multipart+json)
 - [x] PROJECT_HISTORY 등재
-- [ ] node --check + npm run build + git commit & push (진행 중)
+- [x] node --check + npm run build + git commit & push — `1a13c16`
+
+## 세션 113 — 2026-07-06
+
+### BUG-090: TBM 회의록 헤더 구조 4가지 수정
+
+**문제**: TBM 회의록 출력 헤더가 설계 이미지와 다른 구조
+
+**해결**:
+1. `서명인원` 행 삭제 — 출력물에서 서명인원 수 표시 행 제거
+2. `수급업체→관리감독자` — `contractor_name` 레이블 변경
+3. 헤더 레이아웃 재배치 — 행1(작업명+관리감독자), 행2(실시일시+TBM진행자+작업번호), 행3(실시장소+날씨기온+참석인원) 6열 구조
+4. `info-table` CSS `table-layout:fixed` + `th width:62px`로 6열 균등 배분
+
+**수정 파일**: `public/static/app.js`
+
+### 완료 항목
+- [x] BUG-090: TBM 회의록 헤더 4가지 수정
+- [x] PROJECT_HISTORY 등재
+- [x] node --check + npm run build + git commit & push — `564db77`
+
+## 세션 114 — 2026-07-06
+
+### BUG-091: TBM 회의록 3가지 수정
+
+#### ① 관리감독자 → 담당자
+
+**위치**: `app.js _tbmPrint()` 헤더 `info-table` 행1
+
+**변경**: `<th>관리감독자</th>` → `<th>담당자</th>`
+
+#### ② 서브작업번호(WKS-######-#####-####) 표시
+
+**문제**: 작업번호란에 `task_number`만 표시 → `WKS-` 또는 부정확한 값
+
+**해결 로직** (`app.js`):
+```javascript
+const sub = (tbm.sub_task_number || '').toString().trim();
+const main = (tbm.task_number || '').toString().trim();
+if (sub) return 'WKS-' + main.replace(/^WKS-/i,'') + '-' + sub; // WKS-{main}-{sub}
+if (main) return main.startsWith('WKS') ? main : 'WKS-' + main; // main만
+return 'WKS-'; // 둘 다 없음
+```
+
+**백엔드 (`src/routes/tbm.ts`)**: GET 목록 쿼리 2개 + GET 단건 쿼리 1개에 `t.sub_task_number` 추가
+
+**NAS 오버라이드 (`node-server.ts`, RULE-002)**: `app.get('/api/tbm/:id', ...)` rawDb 단건 조회 오버라이드 신규 등록 — `tbmExtraRoutes/tbmRoutes` 앞에 배치, `sub_task_number` 포함
+
+#### ③ 사진 인쇄/미리보기 페이지 잘림 방지
+
+**문제**: 출력 미리보기 시 사진이 2페이지에 걸쳐 잘림
+
+**해결**:
+- 사진 `<tr>`: `page-break-inside:avoid;break-inside:avoid` 추가
+- 사진 `<td>/<div>/<img>`: 동일 속성 추가
+- `max-height: 100px → 120px`, `display:block` 추가
+- CSS `@media print { img, tr { page-break-inside:avoid; break-inside:avoid } }` 추가
+- 사진 테이블 자체: `page-break-inside:auto` (행 단위로만 분리 허용)
+
+**수정 파일**:
+- `public/static/app.js` — 3가지 변경 (레이블, 작업번호 로직, 사진 page-break CSS)
+- `src/routes/tbm.ts` — GET 목록(2개)+단건(1개) 쿼리 `t.sub_task_number` 추가
+- `node-server.ts` — NAS GET `/api/tbm/:id` rawDb 오버라이드 신규 추가
+
+### 완료 항목
+- [x] app.js `관리감독자` → `담당자` 레이블 변경
+- [x] app.js 작업번호 `sub_task_number` 우선 조합 로직 (`WKS-{main}-{sub}`)
+- [x] app.js 사진 `<tr>/<td>/<div>/<img>` `page-break-inside:avoid` 적용
+- [x] app.js CSS `@media print img, tr { page-break-inside:avoid }` 추가
+- [x] src/routes/tbm.ts GET 목록(2개)+단건 쿼리 `t.sub_task_number` 추가
+- [x] node-server.ts NAS GET `/api/tbm/:id` rawDb 오버라이드 신규 추가 (RULE-002)
+- [x] node --check app.js ✅ / npm run build ✅ (270.22 kB)
+- [ ] PROJECT_HISTORY 등재 + git commit & push (진행 중)
 
 ## 세션 80 — 2026-07-04
 

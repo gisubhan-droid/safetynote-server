@@ -30,7 +30,8 @@ app.get('/', async (c) => {
   let rows: any[] = []
   try {
     // LGU+ 필터용 constructions JOIN 포함 (is_auto_request_no 조건)
-    const q = `SELECT tbm.*, t.title as task_title, t.task_number, t.contractor_name,
+    // BUG-091: sub_task_number 추가
+    const q = `SELECT tbm.*, t.title as task_title, t.task_number, t.sub_task_number, t.contractor_name,
                      t.status as task_status,
                      u.name as conductor_name, u.position as conductor_position
       FROM tbm_records tbm
@@ -41,7 +42,7 @@ app.get('/', async (c) => {
     rows = result.results || []
   } catch(_) {
     // contractor_name 없는 구버전 DB fallback
-    const q = `SELECT tbm.*, t.title as task_title, t.task_number,
+    const q = `SELECT tbm.*, t.title as task_title, t.task_number, t.sub_task_number,
                      '' as contractor_name,
                      t.status as task_status,
                      u.name as conductor_name, u.position as conductor_position
@@ -61,7 +62,8 @@ app.get('/:id', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = c.req.param('id')
   const tbm = await c.env.DB.prepare(
-    `SELECT tbm.*, t.title as task_title, t.location, t.task_number, t.contractor_name,
+    // BUG-091: sub_task_number 추가
+    `SELECT tbm.*, t.title as task_title, t.location, t.task_number, t.sub_task_number, t.contractor_name,
             u.name as conductor_name, u.position as conductor_position
      FROM tbm_records tbm
      LEFT JOIN tasks t ON t.id = tbm.task_id

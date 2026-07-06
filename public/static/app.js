@@ -11305,6 +11305,11 @@ async function _tbmPrint(tbmId) {
       font-size: 7.5pt; color: #777; text-align: right;
       margin-top: 8px; border-top: 0.5pt solid #ddd; padding-top: 4px;
     }
+    /* BUG-091: 사진 인쇄/미리보기 시 페이지 경계에서 잘리지 않도록 */
+    @media print {
+      img { page-break-inside: avoid; break-inside: avoid; }
+      tr  { page-break-inside: avoid; break-inside: avoid; }
+    }
     /* 결재 서명 패드 모달 */
     #approval-sign-modal {
       display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5);
@@ -11368,16 +11373,15 @@ async function _tbmPrint(tbmId) {
 
     ${warnBanner}
 
-    <!-- 기본 정보 — BUG-090: 이미지 기준 헤더 재배치 -->
-    <!-- 행1: 작업명 | 관리감독자(수급업체→관리감독자)                      -->
-    <!-- 행2: 실시일시 | TBM진행자 | 작업번호(WKS-)                        -->
+    <!-- 기본 정보 — BUG-090/091 헤더 재배치 -->
+    <!-- 행1: 작업명 | 담당자                                              -->
+    <!-- 행2: 실시일시 | TBM진행자 | 작업번호(WKS-######-#####-####)       -->
     <!-- 행3: 실시장소 | 날씨/기온 | 참석인원                               -->
-    <!-- 서명인원 행 삭제(BUG-090)                                         -->
     <table class="info-table">
       <tr>
         <th>작업명</th>
         <td colspan="3">${(tbm.task_title || '-').replace(/</g,'&lt;')}</td>
-        <th>관리감독자</th>
+        <th>담당자</th>
         <td>${(tbm.contractor_name || '-').replace(/</g,'&lt;')}</td>
       </tr>
       <tr>
@@ -11386,7 +11390,14 @@ async function _tbmPrint(tbmId) {
         <th>TBM진행자</th>
         <td>${(tbm.conductor_name || '-').replace(/</g,'&lt;')}</td>
         <th>작업번호</th>
-        <td>${(tbm.task_number || 'WKS-').replace(/</g,'&lt;')}</td>
+        <td>${(() => {
+          // BUG-091: 서브작업번호(WKS-######-#####-####) 우선 표시
+          const sub = (tbm.sub_task_number || '').toString().trim();
+          const main = (tbm.task_number || '').toString().trim();
+          if (sub) return 'WKS-' + main.replace(/^WKS-/i,'') + '-' + sub;
+          if (main) return main.startsWith('WKS') ? main : 'WKS-' + main;
+          return 'WKS-';
+        })()}</td>
       </tr>
       <tr>
         <th>실시장소</th>
@@ -11458,16 +11469,17 @@ async function _tbmPrint(tbmId) {
         let g = '';
         for (let i=0; i<allPhotos.length; i+=2) {
           const L = allPhotos[i], R = allPhotos[i+1];
-          g += '<tr>';
-          g += '<td style="padding:4px;width:50%;vertical-align:top">';
-          g += '<div style="border:1pt solid #ddd;border-radius:4px;overflow:hidden;text-align:center">';
-          g += '<img src="/api/tbm-photos/'+L.id+'/img?token=' + encodeURIComponent(token) + '" style="width:100%;max-height:100px;object-fit:cover;">';
+          // BUG-091: 각 행에 page-break-inside:avoid — 사진이 행 중간에서 잘리지 않도록
+          g += '<tr style="page-break-inside:avoid;break-inside:avoid">';
+          g += '<td style="padding:4px;width:50%;vertical-align:top;page-break-inside:avoid;break-inside:avoid">';
+          g += '<div style="border:1pt solid #ddd;border-radius:4px;overflow:hidden;text-align:center;page-break-inside:avoid;break-inside:avoid">';
+          g += '<img src="/api/tbm-photos/'+L.id+'/img?token=' + encodeURIComponent(token) + '" style="width:100%;max-height:120px;object-fit:cover;display:block">';
           g += '<div style="font-size:7.5pt;padding:2px 4px;background:#f9f9f9;color:#555">[' + (L.section_name||'').replace(/</g,'&lt;') + '] ' + (L.label||'').replace(/</g,'&lt;') + '</div>';
           g += '</div></td>';
           if (R) {
-            g += '<td style="padding:4px;width:50%;vertical-align:top">';
-            g += '<div style="border:1pt solid #ddd;border-radius:4px;overflow:hidden;text-align:center">';
-            g += '<img src="/api/tbm-photos/'+R.id+'/img?token=' + encodeURIComponent(token) + '" style="width:100%;max-height:100px;object-fit:cover;">';
+            g += '<td style="padding:4px;width:50%;vertical-align:top;page-break-inside:avoid;break-inside:avoid">';
+            g += '<div style="border:1pt solid #ddd;border-radius:4px;overflow:hidden;text-align:center;page-break-inside:avoid;break-inside:avoid">';
+            g += '<img src="/api/tbm-photos/'+R.id+'/img?token=' + encodeURIComponent(token) + '" style="width:100%;max-height:120px;object-fit:cover;display:block">';
             g += '<div style="font-size:7.5pt;padding:2px 4px;background:#f9f9f9;color:#555">[' + (R.section_name||'').replace(/</g,'&lt;') + '] ' + (R.label||'').replace(/</g,'&lt;') + '</div>';
             g += '</div></td>';
           } else {
@@ -11477,8 +11489,10 @@ async function _tbmPrint(tbmId) {
         }
         return g;
       })();
+      // BUG-091: 사진 섹션 전체를 page-break-inside:avoid 컨테이너로 감쌈
+      // 테이블 대신 div 2열 그리드 — 각 사진 셀에 page-break-inside:avoid 적용
       return '<div class="section-hdr" style="margin-top:8px">⑥ TBM 안전조치 사진</div>'
-           + '<table style="width:100%;border-collapse:collapse">' + photoGrid + '</table>';
+           + '<table style="width:100%;border-collapse:collapse;page-break-inside:auto">' + photoGrid + '</table>';
     })()}
 
     <!-- 푸터 -->

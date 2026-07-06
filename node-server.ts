@@ -3798,6 +3798,31 @@ app.post('/api/tbm', async (c) => {
   return c.json({ success: true, id: tbmId })
 })
 
+// ─── BUG-091: NAS TBM 단건 GET 오버라이드 — sub_task_number 포함 (RULE-002) ───
+// tbmRoutes의 GET /:id 는 t.sub_task_number 를 조회하지 않아 NAS에서 rawDb로 직접 조회
+app.get('/api/tbm/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  try {
+    const tbm: any = rawDb.prepare(`
+      SELECT tr.*, t.title as task_title, t.location, t.task_number, t.sub_task_number,
+             t.contractor_name, t.status as task_status,
+             u.name as conductor_name, u.position as conductor_position
+      FROM tbm_records tr
+      LEFT JOIN tasks t ON t.id = tr.task_id
+      LEFT JOIN users u ON u.id = tr.conductor_id
+      WHERE tr.id = ?
+    `).get(id)
+    if (!tbm) return c.json({ error: 'TBM 없음' }, 404)
+    tbm.attendees = tbm.attendees ? JSON.parse(tbm.attendees) : []
+    return c.json(tbm)
+  } catch(e: any) {
+    console.warn('[BUG-091] TBM 단건 GET 오류:', e.message)
+    return c.json({ error: 'TBM 조회 실패' }, 500)
+  }
+})
+
 // ─── TBM 서명/결재 → nas-routes/tbm-extra.ts (RULE-002: tbmRoutes 앞에 마운트) ─
 app.route('/api/tbm', tbmExtraRoutes)
 app.route('/api/tbm', tbmRoutes)

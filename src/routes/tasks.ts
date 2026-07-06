@@ -1141,12 +1141,22 @@ app.delete('/:id', async (c) => {
   }
 
   try {
-    // 연관 데이터 모두 삭제 (순서 중요)
+    // 연관 데이터 모두 삭제 (순서 중요 — FK 자식 테이블 먼저)
     // tbm_photo_sections는 checklist_assessments(assessment_id)에 연결됨
     await safeDelete('DELETE FROM tbm_photo_items WHERE section_id IN (SELECT id FROM tbm_photo_sections WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?))', id)
     await safeDelete('DELETE FROM tbm_photo_sections WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?)', id)
     await safeDelete('DELETE FROM checklist_responses WHERE assessment_id IN (SELECT id FROM checklist_assessments WHERE task_id=?)', id)
     await safeDelete('DELETE FROM checklist_assessments WHERE task_id = ?', id)
+    // [BUG-087] tbm_records 삭제 전에 참조 자식 테이블 먼저 삭제 (FK constraint 방지)
+    // tbm_signatures: REFERENCES tbm_records(id)
+    await safeDelete('DELETE FROM tbm_signatures WHERE tbm_id IN (SELECT id FROM tbm_records WHERE task_id=?)', id)
+    // tbm_share_tokens: tbm_id 참조
+    await safeDelete('DELETE FROM tbm_share_tokens WHERE tbm_id IN (SELECT id FROM tbm_records WHERE task_id=?)', id)
+    // signature_requests: ref_type='tbm', ref_id=tbm_id (FK 없지만 정합성)
+    await safeDelete('DELETE FROM signature_requests WHERE ref_type=\'tbm\' AND ref_id IN (SELECT id FROM tbm_records WHERE task_id=?)', id)
+    // notifications: ref_type='tbm', ref_id=tbm_id (FK 없지만 정합성)
+    await safeDelete('DELETE FROM notifications WHERE ref_type=\'tbm\' AND ref_id IN (SELECT id FROM tbm_records WHERE task_id=?)', id)
+    // tbm_records 본체 삭제
     await safeDelete('DELETE FROM tbm_records WHERE task_id = ?', id)
     await safeDelete('DELETE FROM task_stops WHERE task_id = ?', id)
     await safeDelete('DELETE FROM risk_assessment_details WHERE assessment_id IN (SELECT id FROM risk_assessments WHERE task_id=?)', id)

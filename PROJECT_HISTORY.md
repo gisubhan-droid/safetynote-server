@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-06 (세션 109 — FEAT-051 TBM 상세 수정 보완)
-> **GitHub 최신: TBD** — feat(FEAT-051): TBM [object Object] 버그 수정 + 작업유형 안전내용 자동기입
-> **NAS 배포 필요: TBD** — git pull 후 pm2 restart safetynote
+> **GitHub 최신: `d416c53`** — feat(FEAT-051): TBM [object Object] 버그 수정 + 작업유형 안전내용 자동기입
+> **NAS 배포 필요: `d416c53`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -77,7 +77,7 @@
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
 
-| FEAT-051 | 109 | 2026-07-06 | ✅ 구현 | **TBM 상세 수정 보완 — [object Object] 버그 수정 + 작업유형별 안전내용 자동기입** — ①`_buildTbmAutoText()` `tbmSecs.forEach`에서 `sec.title\|\|sec.question\|\|sec` fallback 시 sec 객체 그대로 삽입되어 `[object Object]` 출력되던 버그 수정: `sec.section_name\|\|sec.title\|\|sec.question\|\|sec.name\|\|항목 N` 순서로 안전하게 label 추출 ②`WORK_TYPE_SAFETY` 상수 정의: 5개 유형(바켓차량작업·전주승주·옥상옥탑작업·사다리사용작업·중장비사용) × [안전교육사항5항/TBM교육항목5항/주의사항5항] ③`showTbmForm()` 참석자 섹션 아래에 작업유형 칩 UI 추가 — 칩 클릭 시 `_toggleWorkTypeSafety()` 호출 → tbmTopics(안전교육+TBM항목)/tbmPrecautions(주의사항) textarea에 유형별 블록 추가, 재클릭 시 제거(토글) | TBD |
+| FEAT-051 | 109 | 2026-07-06 | ✅ 구현 | **TBM 상세 수정 보완 — [object Object] 버그 수정 + 작업유형별 안전내용 자동기입** — ①`_buildTbmAutoText()` `tbmSecs.forEach`에서 `sec.title\|\|sec.question\|\|sec` fallback 시 sec 객체 그대로 삽입되어 `[object Object]` 출력되던 버그 수정: `sec.section_name\|\|sec.title\|\|sec.question\|\|sec.name\|\|항목 N` 순서로 안전하게 label 추출 ②`WORK_TYPE_SAFETY` 상수 정의: 5개 유형(바켓차량작업·전주승주·옥상옥탑작업·사다리사용작업·중장비사용) × [안전교육사항5항/TBM교육항목5항/주의사항5항] ③`showTbmForm()` 참석자 섹션 아래에 작업유형 칩 UI 추가 — 칩 클릭 시 `_toggleWorkTypeSafety()` 호출 → tbmTopics(안전교육+TBM항목)/tbmPrecautions(주의사항) textarea에 유형별 블록 추가, 재클릭 시 제거(토글) | `d416c53` |
 | FEAT-050 | 108 | 2026-07-06 | ✅ 구현 | **파일 저장 폴더명 팀 추가 + 루트 폴더 생성 버그 수정** — getUploadDir() 인터페이스에 team_name?: string 추가. taskFolder 패턴: {서브작업번호}_{작업일}_{작업종류}_[작업팀]. 5개 호출 위치 쿼리 수정: ①TBM PDF conductor JOIN teams ②점검사진 addInsPhoto 업로더 팀 조회 주입 ③점검 POST multipart 업로더 팀 조회 주입 + 루트 버그 수정 ④작업사진 task_assignments JOIN teams ⑤TBM사진 task_assignments JOIN teams | `38901af` |
 | FEAT-049 | 108 | 2026-07-06 | ✅ 구현 | **LGU+ 메뉴 그룹 3분할 구조 개편** — 기존 단일 '현장' 그룹(최대 8개 메뉴 나열)을 3그룹으로 분리: ①**현장작업**(파란색): 작업현황→작업관리→공사현황→현장위치지도 ②**안전점검**(빨간색): 현장점검 ③**통계·정보**(노란색): 안전현황 서브메뉴(작업통계·현장점검통계·근로자안전준수현황)+내 계정. 활성 메뉴가 없는 그룹은 아이콘 레일 자동 제거. 메뉴 순서 업무 흐름(현황→관리→지도) 재정렬. 관리자/감독자 그룹명·색상 일관성 통일. `rail-badge` ID `lgu-main→lgu-safety` 교체 | `6196837` |
 | FEAT-048 | 106 | 2026-07-06 | ✅ 구현 | **LGU+ 역할 단일화 — role='lgu_plus' 독립 권한그룹 정의** — 기존 이중 구조(`role='lgu'` OR `sub_role='lgu_plus'+role='worker'`)를 `role='lgu_plus'` 단일 역할로 통일. **node-server.ts**: patchSchema v0.154(users 테이블 재생성+3단계 마이그레이션) + getUserGroupKey lgu_plus 분기 + checklist-lgu-notify 쿼리 3중화 + uiRoleToSubRole lgu_plus→'' 수정. **src/routes/auth.ts**: `/me` SELECT에 sub_role 추가. **5개 라우트(tasks/inspections/risk/tbm/stats)**: isLgu 조건 3중화. **src/routes/users.ts**: suspended/restore/PUT/:id에 lgu_plus 차단 추가(worker 동급). **app.js**: dbRoleToUi lgu_plus 최상단 분기·uiRoleToDb 수정·BULK_ROLE_MAP·updateUser sub_role 전송·9곳 판별조건. 구버전 호환 조건(role='lgu', sub_role='lgu_plus') 병행 유지 | `5adcee0` |

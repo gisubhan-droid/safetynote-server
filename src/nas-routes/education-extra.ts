@@ -167,10 +167,9 @@ export function registerEducationExtraRoutes(serverApp: any) {
       if (!validRoles.includes(approval_role))
         return c.json({ error: '유효하지 않은 결재 역할' }, 400)
 
-      // 권한 체크: 안전관리자·현장대리인·총괄책임자·admin만 결재 가능
-      const pos     = user.position || ''
-      const canSign = user.role === 'admin' ||
-        ['안전관리자', '현장대리인', '총괄책임자'].includes(pos)
+      // 권한 체크: worker·lgu·lgu_plus가 아니면 결재 가능 (TBM approval-sign과 동일 방식)
+      // sub_role='safety'(안전관리자), role='supervisor'(관리감독자류), role='admin' 모두 허용
+      const canSign = user.role !== 'worker' && user.role !== 'lgu' && user.role !== 'lgu_plus'
       if (!canSign)
         return c.json({ error: '결재 권한 없음 (안전관리자·현장대리인·총괄책임자만 가능)' }, 403)
 

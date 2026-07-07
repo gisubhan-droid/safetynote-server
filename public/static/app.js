@@ -10438,11 +10438,13 @@ async function _tbmApprovalSignInApp(tbmId, approvalRole) {
 async function _eduApprovalSignInApp(sessionId, approvalRole, eduType) {
   const LABELS = {
     approval_safety:  '안전관리자 서명',
-    approval_general: '총괄책임 결재 서명',
+    approval_general: '현장대리인 결재 서명',
+    approval_ceo:     '대표이사 최종 결재',
   };
   const DESCS = {
     approval_safety:  '안전관리자로서 교육일지를 확인하고 서명합니다.',
-    approval_general: '총괄책임으로서 교육일지를 결재합니다.',
+    approval_general: '현장대리인으로서 교육일지를 결재합니다.',
+    approval_ceo:     '대표이사로서 교육일지를 최종 결재합니다.',
   };
   const signData = await showSignaturePad({
     title:    LABELS[approvalRole] || '결재 서명',
@@ -10462,6 +10464,41 @@ async function _eduApprovalSignInApp(sessionId, approvalRole, eduType) {
   } catch(e) {
     toast(e.response?.data?.error || '결재 서명 처리 실패', 'error');
   }
+}
+
+// ── 출력 미리보기 공통 오버레이 헬퍼 (BUG-094: Android WebView window.close() 차단 대응) ─────
+// window.open() + window.close() 대신 현재 페이지 위에 전체화면 오버레이 iframe을 띄웁니다.
+// HTML 내부의 닫기 버튼은 window.parent.postMessage('closePrintOverlay','*') 를 호출합니다.
+function _openPrintOverlay(htmlContent) {
+  // 기존 오버레이 제거
+  const existing = document.getElementById('__print-overlay__');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = '__print-overlay__';
+  overlay.style.cssText = [
+    'position:fixed', 'inset:0', 'z-index:99999',
+    'background:#000', 'display:flex', 'flex-direction:column',
+  ].join(';');
+
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'flex:1;width:100%;border:none;';
+  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-modals allow-popups');
+
+  overlay.appendChild(iframe);
+  document.body.appendChild(overlay);
+
+  // iframe srcdoc 방식 (Android WebView 호환)
+  iframe.srcdoc = htmlContent;
+
+  // 닫기 메시지 수신
+  function _onCloseMsg(e) {
+    if (e.data === 'closePrintOverlay') {
+      overlay.remove();
+      window.removeEventListener('message', _onCloseMsg);
+    }
+  }
+  window.addEventListener('message', _onCloseMsg);
 }
 
 // ── TBM 서명 / 인쇄 전역 함수 ────────────────────────────────────────────────
@@ -11233,11 +11270,8 @@ async function _tbmPrint(tbmId) {
       </table>
       <div style="clear:both"></div>`;
 
-    // ── 새 창 미리보기 열기 (안전교육 일지와 동일한 방식) ───────────────────
-    const pw = window.open('', '_blank', 'width=900,height=1200');
-    if (!pw) { toast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해 주세요.', 'warn'); return; }
-
-    pw.document.write(`<!DOCTYPE html>
+    // ── 미리보기 오버레이 열기 (BUG-094: Android WebView 호환) ─────────────────
+    const _tbmPrintHtml = `<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -11389,7 +11423,7 @@ async function _tbmPrint(tbmId) {
       ${(tbm.task_title || '').replace(/</g,'&lt;')}
     </span>
     <button class="btn-print" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>
-    <button class="btn-close" onclick="window.close()">✕ 닫기</button>
+    <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
 
   <div class="a4-page">
@@ -11661,9 +11695,8 @@ async function _tbmPrint(tbmId) {
   </script>
 
 </body>
-</html>`);
-    pw.document.close();
-    setTimeout(() => pw.focus(), 200);
+</html>`;
+    _openPrintOverlay(_tbmPrintHtml);
   } catch(e) {
     toast(e.message || 'TBM 인쇄 데이터 로딩 실패', 'error');
   }
@@ -27957,18 +27990,20 @@ async function showEduDetailModal(sessionId, eduType) {
         </div>
       </div>` : ''}
 
-      <!-- ── 결재란 서명 [FEAT-060] ─────────────────────────────────────────── -->
+      <!-- ── 결재란 서명 [FEAT-060/061] 3단계: 안전관리자→현장대리인→대표이사 ── -->
       ${(() => {
         const pos     = currentUser?.position || '';
-        const role    = currentUser?.role || '';
-        const isAdmin = role === 'admin';
+        const curRole = currentUser?.role || '';
+        const isAdmin = curRole === 'admin';
         const hasSig  = r => !!(r && (r.sign_data || r.user_name));
         const sSig    = eduApproval.approval_safety;
         const gSig    = eduApproval.approval_general;
+        const cSig    = eduApproval.approval_ceo;
 
-        // 서명 가능 조건: 안전관리자 → 총괄책임 순서
+        // 서명 가능 조건 (3단계 순서 강제)
         const canSafety  = !hasSig(sSig) && (pos === '안전관리자' || isAdmin);
         const canGeneral = !hasSig(gSig) && hasSig(sSig) && (pos === '현장대리인' || pos === '총괄책임자' || isAdmin);
+        const canCeo     = !hasSig(cSig) && hasSig(gSig) && (pos === '대표이사' || isAdmin);
 
         function eduApprovalCard(sig, approvalRole, label, canSign, locked) {
           const bg     = hasSig(sig) ? '#F0FDF4' : canSign ? '#EDE9FE' : '#F9FAFB';
@@ -27994,20 +28029,29 @@ async function showEduDetailModal(sessionId, eduType) {
             </div>`;
         }
 
+        // 안내 메시지
+        const allDone = hasSig(sSig) && hasSig(gSig) && hasSig(cSig);
+        let hint = '';
+        if (!allDone) {
+          if (!hasSig(sSig))      hint = '안전관리자가 먼저 서명해야 합니다.';
+          else if (!hasSig(gSig)) hint = '안전관리자 서명 완료. 현장대리인 서명 대기 중입니다.';
+          else if (!hasSig(cSig)) hint = '현장대리인 서명 완료. 대표이사 최종 결재 대기 중입니다.';
+        }
+
         return `
         <div style="background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:12px;padding:12px 14px;margin-top:16px">
           <div style="font-size:12px;font-weight:700;color:#4E3A63;margin-bottom:10px;display:flex;align-items:center;gap:6px">
             <i class="fas fa-stamp" style="color:#7C3AED"></i>결재 서명
-            <span style="font-size:10px;font-weight:400;color:#9CA3AF">안전관리자 → 총괄책임 순</span>
+            <span style="font-size:10px;font-weight:400;color:#9CA3AF">안전관리자 → 현장대리인 → 대표이사 순</span>
           </div>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:6px">
             ${eduApprovalCard(sSig, 'approval_safety',  '안전관리자', canSafety,  false)}
-            ${eduApprovalCard(gSig, 'approval_general', '총괄책임',   canGeneral, !hasSig(sSig))}
+            ${eduApprovalCard(gSig, 'approval_general', '현장대리인', canGeneral, !hasSig(sSig))}
+            ${eduApprovalCard(cSig, 'approval_ceo',     '대표이사',   canCeo,     !hasSig(gSig))}
           </div>
-          ${!canSafety && !canGeneral && (!hasSig(sSig) || !hasSig(gSig)) ? `
+          ${hint ? `
           <div style="font-size:10px;color:#9CA3AF;margin-top:8px;text-align:center">
-            <i class="fas fa-info-circle mr-1"></i>
-            ${!hasSig(sSig) ? '안전관리자가 먼저 서명해야 합니다.' : '안전관리자 서명 완료. 총괄책임 서명 대기 중입니다.'}
+            <i class="fas fa-info-circle mr-1"></i>${hint}
           </div>` : ''}
         </div>`;
       })()}
@@ -28026,17 +28070,17 @@ async function showEduDetailModal(sessionId, eduType) {
 
 // ─── 교육일지 출력 ────────────────────────────────────────────────────────────
 async function printEduLog(sessionId) {
-  let session, attendees = [], photos = [], printApproval = { approval_safety: null, approval_general: null };
+  let session, attendees = [], photos = [], printApproval = { approval_safety: null, approval_general: null, approval_ceo: null };
   try {
     const [sRes, pRes, aRes] = await Promise.all([
       API.get(`/education/sessions/${sessionId}`),
       API.get(`/education/sessions/${sessionId}/photos`).catch(() => ({ data: [] })),
-      API.get(`/education/sessions/${sessionId}/approval-status`).catch(() => ({ data: { approval_safety: null, approval_general: null } })),
+      API.get(`/education/sessions/${sessionId}/approval-status`).catch(() => ({ data: { approval_safety: null, approval_general: null, approval_ceo: null } })),
     ]);
     session        = sRes.data.session;
     attendees      = sRes.data.attendees || [];
     photos         = pRes.data || [];
-    printApproval  = aRes.data || { approval_safety: null, approval_general: null };
+    printApproval  = aRes.data || { approval_safety: null, approval_general: null, approval_ceo: null };
   } catch(e) { toast('데이터 불러오기 실패', 'error'); return; }
 
   const meta     = EDU_TYPE_META[session.edu_type] || { label: session.edu_type };
@@ -28295,7 +28339,7 @@ async function printEduLog(sessionId) {
       ${session.edu_subject}
     </span>
     <button class="btn-print" onclick="window.print()">🖨️ 인쇄</button>
-    <button class="btn-close" onclick="window.close()">✕ 닫기</button>
+    <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
 
   <div class="a4-page">
@@ -28318,7 +28362,7 @@ async function printEduLog(sessionId) {
           <tr>
             <th class="hdr">결재</th>
             <th class="hdr">안전관리자</th>
-            <th class="hdr">총괄책임</th>
+            <th class="hdr">현장대리인</th>
             <th class="hdr">대표이사</th>
           </tr>
           <tr>
@@ -28341,7 +28385,15 @@ async function printEduLog(sessionId) {
                      <div style="font-size:6pt;color:#aaa;text-align:center">✓</div>`
                   : ''}
             </td>
-            <td class="box"></td>
+            <td class="box" style="position:relative;vertical-align:middle">
+              ${printApproval.approval_ceo?.sign_data
+                ? `<img src="${printApproval.approval_ceo.sign_data}" style="max-height:50px;max-width:70px;object-fit:contain;display:block;margin:0 auto">
+                   <div style="font-size:6.5pt;color:#555;text-align:center">${printApproval.approval_ceo.user_name||''}</div>`
+                : printApproval.approval_ceo?.user_name
+                  ? `<div style="font-size:8pt;font-weight:700;text-align:center;color:#333">${printApproval.approval_ceo.user_name}</div>
+                     <div style="font-size:6pt;color:#aaa;text-align:center">✓</div>`
+                  : ''}
+            </td>
           </tr>
         </table>
       </div>
@@ -28419,15 +28471,8 @@ async function printEduLog(sessionId) {
 </html>`;
   }
 
-  // ── 미리보기 창 열기 ──────────────────────────────────────────────────
-  const previewWin = window.open('', '_blank', 'width=960,height=900,scrollbars=yes');
-  if (!previewWin) {
-    toast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.', 'error');
-    return;
-  }
-  previewWin.document.write(buildPrintHtml());
-  previewWin.document.close();
-  previewWin.focus();
+  // ── 미리보기 오버레이 열기 (BUG-094: Android WebView 호환) ─────────────────
+  _openPrintOverlay(buildPrintHtml());
 }
 
 // ─── 서명지 출력 ─────────────────────────────────────────────────────────────
@@ -28443,13 +28488,8 @@ async function printEduSign(sessionId) {
   const qLabel = session.quarter ? `${session.quarter}분기 ` : '';
   const today  = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' }).replace(/\. /g,'-').replace('.','');
 
-  const previewWin = window.open('', '_blank', 'width=960,height=900,scrollbars=yes');
-  if (!previewWin) {
-    toast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.', 'error');
-    return;
-  }
-
-  previewWin.document.write(`<!DOCTYPE html>
+  // ── 미리보기 오버레이 열기 (BUG-094: Android WebView 호환) ─────────────────
+  const _eduSignHtml = `<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -28547,7 +28587,7 @@ async function printEduSign(sessionId) {
       ${session.edu_subject}
     </span>
     <button class="btn-print" onclick="window.print()">🖨️ 인쇄</button>
-    <button class="btn-close" onclick="window.close()">✕ 닫기</button>
+    <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
 
   <div class="a4-page">
@@ -28607,9 +28647,8 @@ async function printEduSign(sessionId) {
 
   </div><!-- /.a4-page -->
 </body>
-</html>`);
-  previewWin.document.close();
-  previewWin.focus();
+</html>`;
+  _openPrintOverlay(_eduSignHtml);
 }
 
 // ─── 증빙사진 모달 ────────────────────────────────────────────────────────────

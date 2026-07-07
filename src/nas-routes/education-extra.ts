@@ -128,8 +128,8 @@ export function registerEducationExtraRoutes(serverApp: any) {
     return c.json({ success: true })
   })
 
-  // ─── GET /api/education/sessions/:id/approval-status [FEAT-060] ──────────
-  // 교육일지 결재 현황 조회 (안전관리자 / 총괄책임 2단계)
+  // ─── GET /api/education/sessions/:id/approval-status [FEAT-060/061] ───────
+  // 교육일지 결재 현황 조회 (안전관리자 → 현장대리인 → 대표이사 3단계)
   serverApp.get('/api/education/sessions/:id/approval-status', async (c: any) => {
     try {
       const user = getUser(c)
@@ -146,15 +146,16 @@ export function registerEducationExtraRoutes(serverApp: any) {
       return c.json({
         approval_safety:  rows.find((r: any) => r.role === 'approval_safety')  || null,
         approval_general: rows.find((r: any) => r.role === 'approval_general') || null,
+        approval_ceo:     rows.find((r: any) => r.role === 'approval_ceo')     || null,
       })
     } catch (e: any) {
       console.error('[GET /education/sessions/:id/approval-status] 에러:', e?.message)
-      return c.json({ approval_safety: null, approval_general: null })
+      return c.json({ approval_safety: null, approval_general: null, approval_ceo: null })
     }
   })
 
-  // ─── POST /api/education/sessions/:id/approval-sign [FEAT-060] ───────────
-  // 교육일지 결재 서명 저장 (안전관리자 → 총괄책임 순서 강제)
+  // ─── POST /api/education/sessions/:id/approval-sign [FEAT-060/061] ─────────
+  // 교육일지 결재 서명 저장 (안전관리자 → 현장대리인 → 대표이사 3단계)
   serverApp.post('/api/education/sessions/:id/approval-sign', async (c: any) => {
     try {
       const user = getUser(c)
@@ -164,16 +165,16 @@ export function registerEducationExtraRoutes(serverApp: any) {
       const body      = await c.req.json().catch(() => ({})) as any
       const { approval_role, sign_data } = body
 
-      // 유효한 결재 역할만 허용
-      const validRoles = ['approval_safety', 'approval_general']
+      // 유효한 결재 역할만 허용 (3단계)
+      const validRoles = ['approval_safety', 'approval_general', 'approval_ceo']
       if (!validRoles.includes(approval_role))
         return c.json({ error: '유효하지 않은 결재 역할' }, 400)
 
-      // 권한 체크: worker·lgu·lgu_plus가 아니면 결재 가능 (TBM approval-sign과 동일 방식)
-      const pos     = user.position || ''   // ← BUG-093 수정: pos 정의 누락 복원
+      // 권한 체크: worker·lgu·lgu_plus가 아니면 결재 가능
+      const pos     = user.position || ''
       const canSign = user.role !== 'worker' && user.role !== 'lgu' && user.role !== 'lgu_plus'
       if (!canSign)
-        return c.json({ error: '결재 권한 없음 (안전관리자·현장대리인·총괄책임자만 가능)' }, 403)
+        return c.json({ error: '결재 권한 없음' }, 403)
 
       // 세션 존재 확인 (알림용 제목 포함)
       const session = rawDb.prepare(
@@ -184,14 +185,16 @@ export function registerEducationExtraRoutes(serverApp: any) {
       ).get(sessionId) as any
       if (!session) return c.json({ error: '교육 세션을 찾을 수 없습니다.' }, 404)
 
-      // 서명 순서 강제: approval_general은 approval_safety 이후만 가능
+      // 서명 순서 강제: 안전관리자 → 현장대리인 → 대표이사
       const existing = rawDb.prepare(
         `SELECT role FROM safety_education_approvals WHERE session_id = ?`
       ).all(sessionId) as any[]
       const signedRoles = new Set(existing.map((r: any) => r.role))
 
       if (approval_role === 'approval_general' && !signedRoles.has('approval_safety'))
-        return c.json({ error: '안전관리자 서명 후 총괄책임 서명이 가능합니다.' }, 409)
+        return c.json({ error: '안전관리자 서명 후 현장대리인 서명이 가능합니다.' }, 409)
+      if (approval_role === 'approval_ceo' && !signedRoles.has('approval_general'))
+        return c.json({ error: '현장대리인 서명 후 대표이사 서명이 가능합니다.' }, 409)
       if (signedRoles.has(approval_role))
         return c.json({ error: '이미 서명된 결재란입니다.' }, 409)
 
@@ -204,24 +207,25 @@ export function registerEducationExtraRoutes(serverApp: any) {
 
       const roleLabel: Record<string, string> = {
         approval_safety:  '안전관리자',
-        approval_general: '총괄책임',
+        approval_general: '현장대리인',
+        approval_ceo:     '대표이사',
       }
       const eduTitle = `교육: ${session.edu_subject || sessionId}`
       console.log(`[edu approval-sign] session=${sessionId} role=${approval_role} signer=${user.name}`)
 
-      // ── 단계별 알림 연쇄 (TBM approval-sign 패턴 동일) ─────────────────────
-      // [1] 안전관리자 서명 완료 → 총괄책임자(현장대리인)에게 결재 요청 알림
+      // ── 단계별 알림 연쇄 ────────────────────────────────────────────────────
+      // [1] 안전관리자 서명 완료 → 현장대리인에게 결재 요청
       if (approval_role === 'approval_safety') {
-        const generalUsers = rawDb.prepare(
+        const nextUsers = rawDb.prepare(
           `SELECT id, name FROM users WHERE position IN ('현장대리인','총괄책임자') AND is_active=1`
         ).all() as any[]
-        for (const gu of generalUsers) {
+        for (const nu of nextUsers) {
           try {
             const already = rawDb.prepare(
               `SELECT id FROM signature_requests
                WHERE ref_type='education' AND ref_id=? AND ref_sub_type='approval_general'
                AND target_user_id=? AND status='pending'`
-            ).get(sessionId, gu.id)
+            ).get(sessionId, nu.id)
             if (!already) {
               const info = rawDb.prepare(`
                 INSERT INTO signature_requests
@@ -229,34 +233,75 @@ export function registerEducationExtraRoutes(serverApp: any) {
                 VALUES ('education', ?, 'approval_general', ?, ?, ?, ?)
               `).run(sessionId,
                 `[결재요청] ${eduTitle}`,
-                `안전관리자(${user.name}) 서명 완료. 총괄책임 결재를 요청합니다.`,
-                user.id, gu.id)
-              sendToUser(gu.id, {
+                `안전관리자(${user.name}) 서명 완료. 현장대리인 결재를 요청합니다.`,
+                user.id, nu.id)
+              sendToUser(nu.id, {
                 type: 'sign_request', id: info.lastInsertRowid,
                 title: `[결재요청] ${eduTitle}`,
                 requester: user.name,
                 ref_type: 'education', ref_sub_type: 'approval_general',
-                message: `[교육 결재] 안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`,
+                message: `[교육 결재] 안전관리자 서명 완료. 현장대리인 결재를 요청합니다.`,
                 ts: Date.now()
               })
-              sendFcmToUsers([gu.id], {
+              sendFcmToUsers([nu.id], {
                 title: `[결재요청] ${eduTitle}`,
-                body:  `안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`,
+                body:  `안전관리자 서명 완료. 현장대리인 결재를 요청합니다.`,
                 data:  { type: 'sign_request', ref_type: 'education', ref_id: String(sessionId) }
               }).catch(() => {})
               rawDb.prepare(`
                 INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
                 VALUES (?, 'sign_request', ?, ?, ?, 'education', 0)
-              `).run(gu.id, `[결재요청] ${eduTitle}`,
-                `안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`, sessionId)
+              `).run(nu.id, `[결재요청] ${eduTitle}`,
+                `안전관리자 서명 완료. 현장대리인 결재를 요청합니다.`, sessionId)
             }
-          } catch(ne: any) {
-            console.warn('[edu approval-sign] 총괄책임 알림 실패(무시):', ne?.message)
-          }
+          } catch(ne: any) { console.warn('[edu approval-sign] 현장대리인 알림 실패(무시):', ne?.message) }
         }
       }
-      // [2] 총괄책임 서명 완료 → 안전관리자에게 완료 알림 + broadcast
+      // [2] 현장대리인 서명 완료 → 대표이사에게 결재 요청
       else if (approval_role === 'approval_general') {
+        const ceoUsers = rawDb.prepare(
+          `SELECT id, name FROM users WHERE (position='대표이사' OR role='admin') AND is_active=1`
+        ).all() as any[]
+        for (const cu of ceoUsers) {
+          try {
+            const already = rawDb.prepare(
+              `SELECT id FROM signature_requests
+               WHERE ref_type='education' AND ref_id=? AND ref_sub_type='approval_ceo'
+               AND target_user_id=? AND status='pending'`
+            ).get(sessionId, cu.id)
+            if (!already) {
+              const info = rawDb.prepare(`
+                INSERT INTO signature_requests
+                  (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id)
+                VALUES ('education', ?, 'approval_ceo', ?, ?, ?, ?)
+              `).run(sessionId,
+                `[결재요청] ${eduTitle}`,
+                `현장대리인(${user.name}) 서명 완료. 대표이사 결재를 요청합니다.`,
+                user.id, cu.id)
+              sendToUser(cu.id, {
+                type: 'sign_request', id: info.lastInsertRowid,
+                title: `[결재요청] ${eduTitle}`,
+                requester: user.name,
+                ref_type: 'education', ref_sub_type: 'approval_ceo',
+                message: `[교육 결재] 현장대리인 서명 완료. 대표이사 결재를 요청합니다.`,
+                ts: Date.now()
+              })
+              sendFcmToUsers([cu.id], {
+                title: `[결재요청] ${eduTitle}`,
+                body:  `현장대리인 서명 완료. 대표이사 결재를 요청합니다.`,
+                data:  { type: 'sign_request', ref_type: 'education', ref_id: String(sessionId) }
+              }).catch(() => {})
+              rawDb.prepare(`
+                INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+                VALUES (?, 'sign_request', ?, ?, ?, 'education', 0)
+              `).run(cu.id, `[결재요청] ${eduTitle}`,
+                `현장대리인 서명 완료. 대표이사 결재를 요청합니다.`, sessionId)
+            }
+          } catch(ne: any) { console.warn('[edu approval-sign] 대표이사 알림 실패(무시):', ne?.message) }
+        }
+      }
+      // [3] 대표이사 서명 완료 → 안전관리자에게 최종 완료 알림 + broadcast
+      else if (approval_role === 'approval_ceo') {
         const safetyUsers = rawDb.prepare(
           `SELECT id, name FROM users WHERE position='안전관리자' AND is_active=1`
         ).all() as any[]
@@ -265,28 +310,26 @@ export function registerEducationExtraRoutes(serverApp: any) {
             sendToUser(su.id, {
               type: 'edu_approval_done',
               title: `[교육 결재완료] ${eduTitle}`,
-              message: `총괄책임(${user.name}) 서명 완료. 교육일지 결재가 모두 완료되었습니다.`,
+              message: `대표이사(${user.name}) 서명 완료. 교육일지 결재가 모두 완료되었습니다.`,
               sessionId, ts: Date.now()
             })
             sendFcmToUsers([su.id], {
               title: `[교육 결재완료] ${eduTitle}`,
-              body:  `총괄책임 서명 완료. 교육일지 결재가 모두 완료되었습니다.`,
+              body:  `대표이사 서명 완료. 교육일지 결재가 완료되었습니다.`,
               data:  { type: 'edu_approval_done', ref_type: 'education', ref_id: String(sessionId) }
             }).catch(() => {})
             rawDb.prepare(`
               INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
               VALUES (?, 'edu_approval_done', ?, ?, ?, 'education', 0)
             `).run(su.id, `[교육 결재완료] ${eduTitle}`,
-              `총괄책임 서명 완료. 교육일지 결재가 모두 완료되었습니다.`, sessionId)
-          } catch(ne: any) {
-            console.warn('[edu approval-sign] 안전관리자 완료알림 실패(무시):', ne?.message)
-          }
+              `대표이사 서명 완료. 교육일지 결재가 모두 완료되었습니다.`, sessionId)
+          } catch(ne: any) { console.warn('[edu approval-sign] 완료알림 실패(무시):', ne?.message) }
         }
         broadcastToRoles(['admin', 'supervisor'], {
           type: 'edu_approval', sessionId,
           role: approval_role, roleLabel: roleLabel[approval_role],
           signer: user.name,
-          message: `[교육 결재] 총괄책임 ${user.name}님이 "${eduTitle}" 결재를 완료했습니다.`,
+          message: `[교육 결재완료] 대표이사 ${user.name}님이 "${eduTitle}" 최종 결재를 완료했습니다.`,
           ts: Date.now()
         })
       }

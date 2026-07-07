@@ -7527,18 +7527,18 @@ function changeTaskStatus(taskId, newStatus) {
             }
           }
         } catch(_) { /* TBM 조회 실패 시 차단하지 않고 진행 */ }
-        // ── GPS 조회를 상태변경 API와 병렬 실행 (최대 5초 대기) ───────────
+        // ── 3차 GPS — 작업개시 시점의 실제 현장 주소 취득 ─────────────────
         // GPS 실패/타임아웃 시 주소 없이 즉시 진행 (랙 방지)
         try {
-          const GPS_TIMEOUT_MS = 5000;
+          const GPS_TIMEOUT_MS = 8000;
           const gpsPromise = getGPSAddressWithConsent();
           const timeoutPromise = new Promise(res => setTimeout(() => res(null), GPS_TIMEOUT_MS));
-          const [gpsRes] = await Promise.all([
-            Promise.race([gpsPromise, timeoutPromise]),
-            // 상태변경 API는 GPS 결과와 무관하게 준비 — GPS 완료 후 body에 합산
-          ]);
+          const gpsRes = await Promise.race([gpsPromise, timeoutPromise]);
           if (gpsRes && !gpsRes.error && gpsRes.address) {
-            body.location = gpsRes.address;
+            // confirmed_address + source='working' 으로 서버에 전달 (tasks 테이블 갱신)
+            body.confirmed_address = gpsRes.address;
+            body.confirmed_address_source = 'working';
+            body.location = gpsRes.address;  // 하위 호환 유지
           }
         } catch(_) { /* GPS 실패 무시 — 주소 없이 상태만 변경 */ }
       }

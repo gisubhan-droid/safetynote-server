@@ -3243,7 +3243,7 @@ app.patch('/api/tasks/:id/status', async (c) => {
 
   const id = Number(c.req.param('id'))
   const body = await c.req.json().catch(() => ({})) as any
-  const { status, confirmed_address, work_started_at, work_completed_at } = body
+  const { status, confirmed_address, confirmed_address_source, work_started_at, work_completed_at } = body
 
   if (!status) return c.json({ error: 'status 필수' }, 400)
 
@@ -3257,9 +3257,14 @@ app.patch('/api/tasks/:id/status', async (c) => {
 
   try {
     if (status === 'working') {
+      // 3차 GPS: 작업개시 시점 주소 + source + at 함께 저장
+      const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+      const addrSource = confirmed_address_source || 'working'
       rawDb.prepare(
-        `UPDATE tasks SET status=?, confirmed_address=?, work_started_at=COALESCE(work_started_at,?), updated_at=CURRENT_TIMESTAMP WHERE id=?`
-      ).run(status, confirmed_address || null, work_started_at || new Date().toISOString(), id)
+        `UPDATE tasks SET status=?, confirmed_address=?, confirmed_address_source=?, confirmed_address_at=?,
+         work_started_at=COALESCE(work_started_at,?), updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).run(status, confirmed_address || null, confirmed_address ? addrSource : null, confirmed_address ? nowKst : null,
+            work_started_at || nowKst, id)
     } else if (status === 'work_completed') {
       rawDb.prepare(
         `UPDATE tasks SET status=?, work_completed_at=?, work_log_required=1, updated_at=CURRENT_TIMESTAMP WHERE id=?`
@@ -3643,8 +3648,10 @@ app.post('/api/tbm/:id/share-token', async (c) => {
   // TBM + 작업 기본정보 조회 (텍스트 복사용)
   const tbmRow = rawDb.prepare(`
     SELECT tbm.id, tbm.task_id, tbm.attendees,
+           tbm.gps_address,
            tk.work_number, tk.title AS task_title,
            tk.gps_address AS task_gps_address,
+           tk.confirmed_address AS task_confirmed_address,
            tk.contractor_name,
            tk.lgu_supervisor
     FROM tbm_records tbm
@@ -3695,7 +3702,7 @@ app.post('/api/tbm/:id/share-token', async (c) => {
     lgu_supervisor:    tbmRow.lgu_supervisor || '',    // 공사감독자
     assigned_workers:  assignedWorkers,
     attendees,
-    gps_address:       tbmRow.task_gps_address || ''
+    gps_address:       tbmRow.task_confirmed_address || tbmRow.gps_address || tbmRow.task_gps_address || ''
   })
 })
 
@@ -3740,6 +3747,30 @@ app.post('/api/tbm', async (c) => {
   try {
     rawDb.prepare(`UPDATE tasks SET status='tbm_done', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(task_id)
   } catch(e: any) { console.warn('[FEAT-052] task status 업데이트 실패(무시):', e.message) }
+
+  // ③-B confirmed_address 갱신: GPS 주소 우선, 없으면 location 텍스트 (tbm.ts 원본 동일)
+  // 2차 GPS — TBM 처리 시점의 실제 현장 주소를 tasks.confirmed_address에 저장
+  try {
+    const tbmConfirmedAddr = gps_address || location || ''
+    if (tbmConfirmedAddr) {
+      const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+      rawDb.prepare(
+        `UPDATE tasks SET confirmed_address=?, confirmed_address_source='tbm', confirmed_address_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+      ).run(tbmConfirmedAddr, nowKst, task_id)
+      console.log(`[FEAT-052] confirmed_address 갱신(TBM): task_id=${task_id} addr="${tbmConfirmedAddr}"`)
+    }
+    // TBM GPS 주소가 있고, work_start_address 미설정인 경우 기입
+    if (gps_address) {
+      const taskRowAddr: any = rawDb.prepare(`SELECT work_start_address FROM tasks WHERE id=?`).get(task_id)
+      if (!taskRowAddr?.work_start_address) {
+        const tbmTs = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+        rawDb.prepare(
+          `UPDATE tasks SET work_start_address=?, work_start_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+        ).run(gps_address, tbmTs, task_id)
+        console.log(`[FEAT-052] work_start_address 기입(TBM): task_id=${task_id} addr="${gps_address}"`)
+      }
+    }
+  } catch(e: any) { console.warn('[FEAT-052] confirmed_address 갱신 실패(무시):', e.message) }
 
   // ④ [FEAT-052] TBM 등록 시점 KST 날짜가 planned_date보다 늦으면 자동 갱신
   try {
@@ -5090,6 +5121,7 @@ app.get('/tbm-share/:token', async (c) => {
     SELECT t.*, u.name AS conductor_name,
            tk.work_number, tk.title AS task_title,
            tk.gps_address AS task_gps_address,
+           tk.confirmed_address AS task_confirmed_address,
            sv.name AS supervisor_name
     FROM tbm_records t
     LEFT JOIN users u ON u.id = t.conductor_id
@@ -5174,7 +5206,7 @@ app.get('/tbm-share/:token', async (c) => {
   const expiresDate = (shareRow.expires_at || '').slice(0, 10)
 
   // 지도 주소 (geo: 링크용)
-  const gpsAddr = tbm.task_gps_address || tbm.gps_address || tbm.location || ''
+  const gpsAddr = tbm.task_confirmed_address || tbm.gps_address || tbm.location || ''
 
   return c.html(`<!DOCTYPE html>
 <html lang="ko">

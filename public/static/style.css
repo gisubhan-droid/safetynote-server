@@ -622,7 +622,7 @@ body {
 }
 #icon-rail .rail-groups {
   flex: 1; width: 100%; overflow-y: auto; overflow-x: hidden;
-  padding: 6px 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 6px;
 }
 #icon-rail .rail-groups::-webkit-scrollbar { display: none; }
 .rail-group-btn {
@@ -653,8 +653,8 @@ body {
   line-height: 1;
 }
 #icon-rail .rail-footer {
-  width: 100%; padding: 6px 0 6px;
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  width: 100%; padding: 8px 0 6px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
   border-top: 1px solid rgba(255,255,255,0.12); flex-shrink: 0;
 }
 .rail-footer-btn {
@@ -824,6 +824,11 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 @media (max-width: 768px) {
   /* FEAT-058: 모바일은 clamp 최솏values인 52px으로 고정 */
   #icon-rail { width: 52px; }
+  /* 모바일 아이콘 버튼 간격 명시 — 겹침 방지 */
+  #icon-rail .rail-groups { gap: 5px; padding: 8px 0; }
+  #icon-rail .rail-footer { gap: 5px; padding: 8px 0 6px; }
+  .rail-group-btn { height: 42px; }
+  .rail-footer-btn { height: 42px; }
   #flyout-panel { left: 52px; width: 210px; }
   #flyout-overlay { left: 52px; }
   .main-content { margin-left: 52px; }

@@ -26073,8 +26073,8 @@ async function renderMyProfilePage(container) {
             let records = {};
             try { records = JSON.parse(u.edu_special_records || '{}'); } catch(_) {}
             const entries = Object.entries(records).filter(([k,v]) => v);
-            if (!entries.length) return '';
-            return `<div class="mt-2">
+            if (entries.length) {
+              return `<div class="mt-2">
               <div class="text-xs font-bold mb-2" style="color:#1D4ED8"><i class="fas fa-hard-hat mr-1"></i>특별안전교육 이수현황</div>
               <div class="grid grid-cols-2 gap-2">
                 ${entries.map(([type, date]) => `
@@ -26084,6 +26084,15 @@ async function renderMyProfilePage(container) {
                   </div>`).join('')}
               </div>
             </div>`;
+            }
+            // edu_special_records가 없으면 레거시 edu_special_date 폴백 표시
+            if (u.edu_special_date) {
+              return `<div class="mt-2 p-2 rounded-lg" style="background:#EFF6FF;border:1px solid #BFDBFE">
+                <div class="text-xs font-bold mb-1" style="color:#1D4ED8"><i class="fas fa-hard-hat mr-1"></i>특별안전교육 이수현황</div>
+                <div class="text-xs text-blue-800">${u.edu_special_date}</div>
+              </div>`;
+            }
+            return '';
           })()}
 
           <div class="grid grid-cols-2 gap-3 mt-2">

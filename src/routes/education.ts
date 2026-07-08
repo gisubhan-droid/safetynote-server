@@ -466,8 +466,10 @@ app.post('/sessions/:id/complete', async (c) => {
           console.warn(`[education complete] users.${col} 업데이트 실패 uid=${att.user_id}:`, e.message)
         }
 
-        // 특별안전교육: special_work_type이 있으면 edu_special_records JSON에 종류별 날짜 기록
-        if (eduType === 'special' && session.special_work_type) {
+        // 특별안전교육: edu_special_records JSON에 종류별 날짜 기록
+        // special_work_type이 NULL이어도 세션 제목 또는 '특별안전교육' 키로 기록
+        if (eduType === 'special') {
+          const workType = session.special_work_type || session.edu_subject || '특별안전교육'
           try {
             // 기존 records 조회
             const uRow: any = await DB.prepare(
@@ -479,9 +481,9 @@ app.post('/sessions/:id/complete', async (c) => {
               if (raw && raw !== '{}') records = JSON.parse(raw)
             } catch(_) {}
             // 해당 작업종류 날짜 갱신 (더 최신 날짜 우선)
-            const existing = records[session.special_work_type]
+            const existing = records[workType]
             if (!existing || eduDate > existing) {
-              records[session.special_work_type] = eduDate
+              records[workType] = eduDate
             }
             await DB.prepare(
               `UPDATE users SET edu_special_records = ? WHERE id = ?`
@@ -565,7 +567,9 @@ app.post('/sessions/:id/resync', async (c) => {
       }
 
       // 2) 특별안전교육: edu_special_records JSON 재기록
-      if (eduType === 'special' && session.special_work_type) {
+      // special_work_type이 NULL이어도 세션 제목 또는 '특별안전교육' 키로 기록
+      if (eduType === 'special') {
+        const workType = session.special_work_type || session.edu_subject || '특별안전교육'
         try {
           const uRow: any = await DB.prepare(
             `SELECT edu_special_records FROM users WHERE id = ?`
@@ -576,9 +580,9 @@ app.post('/sessions/:id/resync', async (c) => {
             if (raw && raw !== '{}') records = JSON.parse(raw)
           } catch(_) {}
           // 더 최신 날짜 우선 적용
-          const existing = records[session.special_work_type]
+          const existing = records[workType]
           if (!existing || eduDate > existing) {
-            records[session.special_work_type] = eduDate
+            records[workType] = eduDate
           }
           await DB.prepare(
             `UPDATE users SET edu_special_records = ? WHERE id = ?`

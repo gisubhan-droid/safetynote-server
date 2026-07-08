@@ -5597,10 +5597,12 @@ app.get('/qr/:userId', async (c) => {
     </div>\`;
   }
 
+  // 이수 이력이 있을 때만 행 반환 (없으면 빈 문자열)
   function eduRow(label, dateVal) {
+    if (!dateVal) return '';
     return \`<div class="edu-row">
       <span class="edu-name">\${label}</span>
-      \${dateVal ? \`<span class="edu-date">\${fmtDate(dateVal)}</span>\` : \`<span class="edu-none">미이수</span>\`}
+      <span class="edu-date">\${fmtDate(dateVal)}</span>
     </div>\`;
   }
 
@@ -5665,14 +5667,49 @@ app.get('/qr/:userId', async (c) => {
           </div>
         </div>\`}
 
-        <div class="edu-card">
-          <div class="section-title" style="color:#B45309"><i class="fas fa-graduation-cap"></i> 안전교육 이수 현황</div>
-          \${eduRow('채용시교육', u.edu_hire_date)}
-          \${eduRow('특별안전교육 — 전기작업', u.edu_special_electric)}
-          \${eduRow('특별안전교육 — 밀폐공간작업', u.edu_special_confined)}
-          \${eduRow('특별안전교육 — 하역작업', u.edu_special_loading)}
-          \${eduRow('체험안전교육', u.edu_experience_date)}
-        </div>
+        \${(() => {
+          // ── 교육 이수 이력 조합 ──────────────────────────────────────────
+          let eduRows = '';
+
+          // 1. 채용시교육
+          eduRows += eduRow('채용시교육', u.edu_hire_date);
+
+          // 2. 정기안전교육
+          eduRows += eduRow('정기안전교육', u.edu_periodic_date);
+
+          // 3. 특별안전교육 — edu_special_records(JSON) 우선, 없으면 레거시 컬럼
+          let specialRecords = {};
+          try { specialRecords = JSON.parse(u.edu_special_records || '{}'); } catch(_) {}
+          const specialEntries = Object.entries(specialRecords).filter(([,v]) => v);
+          if (specialEntries.length > 0) {
+            // edu_special_records 동적 항목
+            specialEntries.forEach(([type, date]) => {
+              eduRows += eduRow('특별안전교육 — ' + type, date);
+            });
+          } else {
+            // 레거시 고정 컬럼 fallback
+            eduRows += eduRow('특별안전교육 — 전기작업', u.edu_special_electric);
+            eduRows += eduRow('특별안전교육 — 밀폐공간작업', u.edu_special_confined);
+            eduRows += eduRow('특별안전교육 — 하역작업', u.edu_special_loading);
+          }
+
+          // 4. 작업내용 변경시 교육
+          eduRows += eduRow('작업내용변경 교육', u.edu_job_change_date);
+
+          // 5. 관리감독자 교육
+          eduRows += eduRow('관리감독자 교육', u.edu_supervisor_date);
+
+          // 6. 체험안전교육
+          eduRows += eduRow('체험안전교육', u.edu_experience_date);
+
+          // 이수 이력이 하나도 없으면 섹션 자체 표시하지 않음
+          if (!eduRows.trim()) return '';
+
+          return \`<div class="edu-card">
+            <div class="section-title" style="color:#B45309"><i class="fas fa-graduation-cap"></i> 안전교육 이수 현황</div>
+            \${eduRows}
+          </div>\`;
+        })()}
 
         <div style="margin-top:12px;padding:10px 14px;background:rgba(255,255,255,0.7);border-radius:10px;text-align:center">
           <p style="font-size:10px;color:#9CA3AF;line-height:1.6">

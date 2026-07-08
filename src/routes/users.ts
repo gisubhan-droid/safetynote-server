@@ -218,9 +218,11 @@ app.get('/qr-profile/:userId', async (c) => {
   try {
     const u = await c.env.DB.prepare(
       `SELECT id, name, role, sub_role, department, position, phone, created_at,
-              company, blood_type, emergency_contact,
+              company, blood_type, emergency_contact, health_info,
               edu_hire_date, edu_special_electric, edu_special_confined,
-              edu_special_loading, edu_experience_date
+              edu_special_loading, edu_experience_date,
+              edu_periodic_date, edu_job_change_date, edu_supervisor_date,
+              edu_special_records
        FROM users WHERE id = ? AND is_active = 1`
     ).bind(userId).first<any>()
 
@@ -287,6 +289,10 @@ app.get('/qr-profile/:userId', async (c) => {
       edu_special_confined: u.edu_special_confined || '',
       edu_special_loading: u.edu_special_loading || '',
       edu_experience_date: u.edu_experience_date || '',
+      edu_periodic_date: u.edu_periodic_date || '',
+      edu_job_change_date: u.edu_job_change_date || '',
+      edu_supervisor_date: u.edu_supervisor_date || '',
+      edu_special_records: u.edu_special_records || '{}',
       joined: u.created_at ? u.created_at.slice(0, 10) : '',
       current_task: currentTask || null,
       completed_tasks: completedCount?.cnt || 0,

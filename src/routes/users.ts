@@ -9,6 +9,7 @@ const EXTENDED_FIELDS = [
   'company', 'blood_type', 'emergency_contact', 'health_info',
   'edu_hire_date', 'edu_special_electric', 'edu_special_confined',
   'edu_special_loading', 'edu_experience_date',
+  'edu_special_records',  // 특별안전교육 종류별 이수현황 JSON {"작업종류":"날짜"}
 ]
 
 // 허용 메뉴 ID 목록 (유효성 검증용)
@@ -35,7 +36,7 @@ app.get('/me', async (c) => {
       `SELECT id, username, name, grade, role, sub_role, department, position, phone,
               company, blood_type, emergency_contact, health_info,
               edu_hire_date, edu_special_electric, edu_special_confined,
-              edu_special_loading, edu_experience_date
+              edu_special_loading, edu_experience_date, edu_special_records
        FROM users WHERE id = ? AND is_active = 1`
     ).bind(user.id).first<any>()
     if (!u) return c.json({ error: '사용자를 찾을 수 없습니다.' }, 404)
@@ -56,7 +57,7 @@ app.put('/me', async (c) => {
       name, department, position, phone,
       company, blood_type, emergency_contact, health_info,
       edu_hire_date, edu_special_electric, edu_special_confined,
-      edu_special_loading, edu_experience_date,
+      edu_special_loading, edu_experience_date, edu_special_records,
     } = body
 
     if (!name || !String(name).trim()) return c.json({ error: '이름은 필수입니다.' }, 400)
@@ -70,13 +71,17 @@ app.put('/me', async (c) => {
     const eduAllowed = canEditEduDates(me.role, me.position || '')
 
     if (eduAllowed) {
-      // 교육일 포함 전체 업데이트
+      // 교육일 포함 전체 업데이트 (특별안전교육 records JSON 포함)
+      const specialRecordsVal = edu_special_records != null
+        ? (typeof edu_special_records === 'string' ? edu_special_records : JSON.stringify(edu_special_records))
+        : null
       await c.env.DB.prepare(
         `UPDATE users SET
            name=?, department=?, position=?, phone=?,
            company=?, blood_type=?, emergency_contact=?, health_info=?,
            edu_hire_date=?, edu_special_electric=?, edu_special_confined=?,
            edu_special_loading=?, edu_experience_date=?,
+           edu_special_records=COALESCE(?, edu_special_records, '{}'),
            updated_at=CURRENT_TIMESTAMP
          WHERE id=?`
       ).bind(
@@ -85,6 +90,7 @@ app.put('/me', async (c) => {
         company || '', blood_type || '', emergency_contact || '', health_info || '',
         edu_hire_date || '', edu_special_electric || '', edu_special_confined || '',
         edu_special_loading || '', edu_experience_date || '',
+        specialRecordsVal,
         user.id
       ).run()
     } else {
@@ -307,7 +313,7 @@ app.get('/:id', async (c) => {
       `SELECT id, username, name, grade, role, sub_role, department, position, phone,
               company, blood_type, emergency_contact, health_info,
               edu_hire_date, edu_special_electric, edu_special_confined,
-              edu_special_loading, edu_experience_date,
+              edu_special_loading, edu_experience_date, edu_special_records,
               permissions, is_active, created_at
        FROM users WHERE id = ?`
     ).bind(id).first<any>()
@@ -331,7 +337,7 @@ app.put('/:id', async (c) => {
       name, grade, role, sub_role, department, position, phone, is_active,
       company, blood_type, emergency_contact, health_info,
       edu_hire_date, edu_special_electric, edu_special_confined,
-      edu_special_loading, edu_experience_date, permissions,
+      edu_special_loading, edu_experience_date, edu_special_records, permissions,
     } = body
 
     // permissions 처리: body에 permissions 키가 없으면 기존 DB 값 유지
@@ -354,11 +360,17 @@ app.put('/:id', async (c) => {
     }
     // hasPermissionsField가 false이면 permissions 컬럼을 UPDATE에서 제외 → 기존 값 유지
 
+    // edu_special_records: JSON 직렬화 처리
+    const specialRecordsVal = edu_special_records != null
+      ? (typeof edu_special_records === 'string' ? edu_special_records : JSON.stringify(edu_special_records))
+      : null
+
     const baseBinds: any[] = [
       name, grade || '', role, sub_role || '', department || '', position || '', phone || '',
       company || '', blood_type || '', emergency_contact || '', health_info || '',
       edu_hire_date || '', edu_special_electric || '', edu_special_confined || '',
       edu_special_loading || '', edu_experience_date || '',
+      specialRecordsVal,
     ]
     const endBinds: any[] = [is_active ?? 1, id]
     const allBinds = hasPermissionsField
@@ -370,7 +382,8 @@ app.put('/:id', async (c) => {
          name=?, grade=?, role=?, sub_role=?, department=?, position=?, phone=?,
          company=?, blood_type=?, emergency_contact=?, health_info=?,
          edu_hire_date=?, edu_special_electric=?, edu_special_confined=?,
-         edu_special_loading=?, edu_experience_date=?
+         edu_special_loading=?, edu_experience_date=?,
+         edu_special_records=COALESCE(?, edu_special_records, '{}')
          ${permissionsClause},
          is_active=?, updated_at=CURRENT_TIMESTAMP
        WHERE id=?`

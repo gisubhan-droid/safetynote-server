@@ -1134,6 +1134,15 @@ function patchSchema() {
   }
   console.log('[patchSchema] v0.110 users 교육 이수 컬럼 패치 완료')
 
+  // v0.160: users 테이블 특별안전교육 종류별 이수현황 JSON 컬럼 추가
+  // 형식: {"전기 기계·기구 점검":"2024-03-15","밀폐공간 작업":"2024-05-20"}
+  try {
+    rawDb.exec(`ALTER TABLE users ADD COLUMN edu_special_records TEXT DEFAULT '{}'`)
+    console.log('[patchSchema v0.160] ✅ users.edu_special_records 컬럼 추가')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.160 users]', e.message)
+  }
+
   // v0.111m: 서명 이미지(Canvas) 저장 컬럼 추가
   // ※ risk_assessment_signatures 테이블이 없으면 먼저 생성 (0049 migration 미적용 대비)
   try {

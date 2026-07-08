@@ -24584,12 +24584,15 @@ async function showEditUserModal(id) {
   ).join('');
 
   const eduFields = [
-    { id:'euEduHire',       label:'채용시교육 수료일',             val: u.edu_hire_date||'',         icon:'fa-user-check', col:'col-span-2' },
-    { id:'euEduElectric',   label:'특별안전교육 — 전기작업',       val: u.edu_special_electric||'',  icon:'fa-bolt',       col:'' },
-    { id:'euEduConfined',   label:'특별안전교육 — 밀폐공간작업',   val: u.edu_special_confined||'',  icon:'fa-wind',       col:'' },
-    { id:'euEduLoading',    label:'특별안전교육 — 하역작업',       val: u.edu_special_loading||'',   icon:'fa-truck',      col:'' },
-    { id:'euEduExperience', label:'체험안전교육 수료일',           val: u.edu_experience_date||'',   icon:'fa-vr-cardboard', col:'' },
+    { id:'euEduHire',       label:'채용시교육 수료일',   val: u.edu_hire_date||'',       icon:'fa-user-check',   col:'col-span-2' },
+    { id:'euEduExperience', label:'체험안전교육 수료일', val: u.edu_experience_date||'', icon:'fa-vr-cardboard', col:'col-span-2' },
   ];
+
+  // 특별안전교육 records 파싱 (시스템관리자 수정용)
+  const isSysadminViewer = currentUser && dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
+  let specialRecords = {};
+  try { specialRecords = JSON.parse(u.edu_special_records || '{}'); } catch(_) {}
+  const specialRecordsJson = JSON.stringify(specialRecords);
 
   modal.innerHTML = `
   <div class="modal" style="max-width:680px">
@@ -24675,13 +24678,55 @@ async function showEditUserModal(id) {
         <div class="text-xs font-black mb-3 flex items-center gap-2" style="color:#A8005A">
           <i class="fas fa-graduation-cap"></i> 안전교육 이수 현황
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <!-- 채용시교육 / 체험안전교육 -->
+        <div class="grid grid-cols-2 gap-3 mb-3">
           ${eduFields.map(f => `
           <div class="form-group ${f.col}">
             <label class="form-label text-xs"><i class="fas ${f.icon} mr-1" style="color:#A8005A"></i>${f.label}</label>
             <input id="${f.id}" class="form-control" type="date" value="${f.val}">
           </div>`).join('')}
         </div>
+
+        <!-- 특별안전교육 이수현황 (시스템관리자 전용 수정) -->
+        <div class="p-3 rounded-xl mb-2" style="background:#EFF6FF;border:1px solid #BFDBFE">
+          <div class="text-xs font-bold mb-2 flex items-center gap-2" style="color:#1D4ED8">
+            <i class="fas fa-hard-hat"></i> 특별안전교육 이수현황
+            ${isSysadminViewer
+              ? `<span class="text-xs px-2 py-0.5 rounded-full" style="background:#DBEAFE;color:#1D4ED8"><i class="fas fa-pen mr-1"></i>시스템관리자 수정 가능</span>`
+              : `<span class="text-xs px-2 py-0.5 rounded-full" style="background:#F3F4F6;color:#9CA3AF"><i class="fas fa-lock mr-1"></i>시스템관리자만 수정</span>`
+            }
+          </div>
+          <div id="euSpecialRecordsGrid" class="grid grid-cols-2 gap-2 mb-2">
+            ${(() => {
+              const entries = Object.entries(specialRecords);
+              if (!entries.length) return `<div class="col-span-2 text-xs text-gray-400 py-1">이수한 특별안전교육 없음 (교육 완료처리 시 자동 기록됨)</div>`;
+              return entries.map(([type, date]) => `
+                <div class="p-2 rounded-lg relative" style="background:#DBEAFE;border:1px solid #93C5FD">
+                  <div class="text-xs font-semibold text-blue-700 pr-4">${type}</div>
+                  ${isSysadminViewer
+                    ? `<input type="date" class="eu-special-date w-full mt-1 text-xs border border-blue-200 rounded px-1 py-0.5"
+                         data-type="${type.replace(/"/g,'&quot;')}" value="${date}">`
+                    : `<div class="text-xs text-blue-800 mt-0.5">${date}</div>`}
+                  ${isSysadminViewer
+                    ? `<button onclick="_euRemoveSpecial(this,'${type.replace(/'/g,'\\\'')}')"
+                         class="absolute top-1 right-1 text-red-400 hover:text-red-600"
+                         title="삭제"><i class="fas fa-times text-xs"></i></button>`
+                    : ''}
+                </div>`).join('');
+            })()}
+          </div>
+          ${isSysadminViewer ? `
+          <div class="flex gap-2 mt-1">
+            <select id="euSpecialAddType" class="flex-1 text-xs border border-blue-200 rounded-lg px-2 py-1.5 outline-none bg-white">
+              <option value="">-- 교육종류 선택 --</option>
+              ${SPECIAL_WORK_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+            </select>
+            <input type="date" id="euSpecialAddDate" class="text-xs border border-blue-200 rounded-lg px-2 py-1.5 outline-none">
+            <button onclick="_euAddSpecial()" class="px-3 py-1.5 text-xs rounded-lg font-bold text-white" style="background:#1D4ED8">추가</button>
+          </div>` : ''}
+        </div>
+        <!-- hidden JSON store -->
+        <input type="hidden" id="euSpecialRecordsHidden" value="${specialRecordsJson.replace(/"/g,'&quot;')}">
       </div>
 
       <!-- 비밀번호 초기화 -->
@@ -24739,13 +24784,25 @@ async function updateUser(id) {
       blood_type: document.getElementById('euBloodType').value,
       emergency_contact: document.getElementById('euEmergency').value.trim(),
       health_info: document.getElementById('euHealthInfo').value.trim(),
-      edu_hire_date: document.getElementById('euEduHire').value,
-      edu_special_electric: document.getElementById('euEduElectric').value,
-      edu_special_confined: document.getElementById('euEduConfined').value,
-      edu_special_loading: document.getElementById('euEduLoading').value,
+      edu_hire_date:       document.getElementById('euEduHire').value,
       edu_experience_date: document.getElementById('euEduExperience').value,
       is_active: 1,
     };
+    // 시스템관리자: 특별안전교육 records 수집
+    if (isSysadmin) {
+      try {
+        const hiddenVal = document.getElementById('euSpecialRecordsHidden')?.value || '{}';
+        const records = JSON.parse(hiddenVal.replace(/&quot;/g, '"'));
+        // 날짜 입력값 반영 (수정된 날짜 덮어쓰기)
+        document.querySelectorAll('.eu-special-date').forEach(inp => {
+          const t = inp.dataset.type;
+          const v = inp.value;
+          if (t && v) records[t] = v;
+          else if (t && !v) delete records[t];
+        });
+        payload.edu_special_records = JSON.stringify(records);
+      } catch(_) {}
+    }
     if (isSysadmin) payload.permissions = permissions;
     await API.put(`/users/${id}`, payload);
     toast('저장되었습니다.');
@@ -24761,6 +24818,51 @@ async function resetUserPassword(id) {
     await API.put(`/users/${id}/reset-password`, { newPassword: newPwd });
     toast('비밀번호가 초기화되었습니다.');
   } catch(e) { toast('실패', 'error'); }
+}
+
+// ─── 특별안전교육 이수현황 수정 헬퍼 (showEditUserModal 내부) ─────────────────
+function _euGetSpecialRecords() {
+  const hiddenEl = document.getElementById('euSpecialRecordsHidden');
+  if (!hiddenEl) return {};
+  try { return JSON.parse(hiddenEl.value.replace(/&quot;/g, '"')); } catch(_) { return {}; }
+}
+function _euSetSpecialRecords(records) {
+  const hiddenEl = document.getElementById('euSpecialRecordsHidden');
+  if (hiddenEl) hiddenEl.value = JSON.stringify(records).replace(/"/g, '&quot;');
+  // 그리드 재렌더
+  const grid = document.getElementById('euSpecialRecordsGrid');
+  if (!grid) return;
+  const entries = Object.entries(records);
+  if (!entries.length) {
+    grid.innerHTML = `<div class="col-span-2 text-xs text-gray-400 py-1">이수한 특별안전교육 없음</div>`;
+    return;
+  }
+  grid.innerHTML = entries.map(([type, date]) => `
+    <div class="p-2 rounded-lg relative" style="background:#DBEAFE;border:1px solid #93C5FD">
+      <div class="text-xs font-semibold text-blue-700 pr-4">${type}</div>
+      <input type="date" class="eu-special-date w-full mt-1 text-xs border border-blue-200 rounded px-1 py-0.5"
+        data-type="${type.replace(/"/g,'&quot;')}" value="${date}">
+      <button onclick="_euRemoveSpecial(this,'${type.replace(/'/g,"\\'")}')"
+        class="absolute top-1 right-1 text-red-400 hover:text-red-600" title="삭제">
+        <i class="fas fa-times text-xs"></i></button>
+    </div>`).join('');
+}
+function _euAddSpecial() {
+  const typeEl = document.getElementById('euSpecialAddType');
+  const dateEl = document.getElementById('euSpecialAddDate');
+  const type = typeEl?.value; const date = dateEl?.value;
+  if (!type) { toast('교육 종류를 선택하세요.', 'error'); return; }
+  if (!date) { toast('이수일을 입력하세요.', 'error'); return; }
+  const records = _euGetSpecialRecords();
+  records[type] = date;
+  _euSetSpecialRecords(records);
+  if (typeEl) typeEl.value = '';
+  if (dateEl) dateEl.value = '';
+}
+function _euRemoveSpecial(btn, type) {
+  const records = _euGetSpecialRecords();
+  delete records[type];
+  _euSetSpecialRecords(records);
 }
 
 // ======= 계정관리 — 체크박스 선택 삭제 기능 =======
@@ -25858,11 +25960,36 @@ async function renderMyProfilePage(container) {
             }
           </div>
           <div class="grid grid-cols-2 gap-3">
-            ${eduField('mpEduHire',      'fa-user-check',  '채용시교육 수료일',       u.edu_hire_date||'',        true)}
-            ${eduField('mpEduElectric',  'fa-bolt',        '전기작업 특별교육',       u.edu_special_electric||'', false)}
-            ${eduField('mpEduConfined',  'fa-wind',        '밀폐공간 특별교육',       u.edu_special_confined||'', false)}
-            ${eduField('mpEduLoading',   'fa-truck',       '하역작업 특별교육',       u.edu_special_loading||'',  false)}
-            ${eduField('mpEduExperience','fa-vr-cardboard','체험안전교육 수료일',     u.edu_experience_date||'',  false)}
+            ${eduField('mpEduHire', 'fa-user-check', '채용시교육 수료일', u.edu_hire_date||'', true)}
+          </div>
+
+          <!-- 정기안전교육 (고정) -->
+          ${u.edu_periodic_date ? `
+          <div class="mt-2 p-2 rounded-lg" style="background:#F3EFF8;border:1px solid #E2D9F3">
+            <div class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-chalkboard-teacher mr-1"></i>정기안전교육 이수현황</div>
+            <div class="text-sm" style="color:#4E3A63">${u.edu_periodic_date}</div>
+          </div>` : ''}
+
+          <!-- 특별안전교육 (받은 종류만 동적 표시) -->
+          ${(() => {
+            let records = {};
+            try { records = JSON.parse(u.edu_special_records || '{}'); } catch(_) {}
+            const entries = Object.entries(records).filter(([k,v]) => v);
+            if (!entries.length) return '';
+            return `<div class="mt-2">
+              <div class="text-xs font-bold mb-2" style="color:#1D4ED8"><i class="fas fa-hard-hat mr-1"></i>특별안전교육 이수현황</div>
+              <div class="grid grid-cols-2 gap-2">
+                ${entries.map(([type, date]) => `
+                  <div class="p-2 rounded-lg" style="background:#EFF6FF;border:1px solid #BFDBFE">
+                    <div class="text-xs text-blue-600 font-semibold truncate">${type}</div>
+                    <div class="text-xs text-blue-800 mt-0.5">${date}</div>
+                  </div>`).join('')}
+              </div>
+            </div>`;
+          })()}
+
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            ${eduField('mpEduExperience','fa-vr-cardboard','체험안전교육 수료일', u.edu_experience_date||'', false)}
           </div>
         </div>
 
@@ -26037,11 +26164,8 @@ async function saveMyProfile() {
 
   // 교육일 권한 있을 때만 페이로드에 포함
   if (canEditEdu) {
-    payload.edu_hire_date        = document.getElementById('mpEduHire').value;
-    payload.edu_special_electric = document.getElementById('mpEduElectric').value;
-    payload.edu_special_confined = document.getElementById('mpEduConfined').value;
-    payload.edu_special_loading  = document.getElementById('mpEduLoading').value;
-    payload.edu_experience_date  = document.getElementById('mpEduExperience').value;
+    payload.edu_hire_date       = document.getElementById('mpEduHire').value;
+    payload.edu_experience_date = document.getElementById('mpEduExperience').value;
   }
 
   try {

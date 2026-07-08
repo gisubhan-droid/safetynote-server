@@ -457,7 +457,6 @@ app.post('/sessions/:id/complete', async (c) => {
 
     let updatedCount = 0
     if (col) {
-      // users 테이블에 해당 컬럼이 없을 경우 조용히 스킵 (ALTER는 patchSchema에서 처리)
       for (const att of attendees) {
         try {
           await DB.prepare(`UPDATE users SET ${col} = ? WHERE id = ?`)
@@ -465,6 +464,31 @@ app.post('/sessions/:id/complete', async (c) => {
           updatedCount++
         } catch(e: any) {
           console.warn(`[education complete] users.${col} 업데이트 실패 uid=${att.user_id}:`, e.message)
+        }
+
+        // 특별안전교육: special_work_type이 있으면 edu_special_records JSON에 종류별 날짜 기록
+        if (eduType === 'special' && session.special_work_type) {
+          try {
+            // 기존 records 조회
+            const uRow: any = await DB.prepare(
+              `SELECT edu_special_records FROM users WHERE id = ?`
+            ).bind(att.user_id).first()
+            let records: Record<string, string> = {}
+            try {
+              const raw = uRow?.edu_special_records
+              if (raw && raw !== '{}') records = JSON.parse(raw)
+            } catch(_) {}
+            // 해당 작업종류 날짜 갱신 (더 최신 날짜 우선)
+            const existing = records[session.special_work_type]
+            if (!existing || eduDate > existing) {
+              records[session.special_work_type] = eduDate
+            }
+            await DB.prepare(
+              `UPDATE users SET edu_special_records = ? WHERE id = ?`
+            ).bind(JSON.stringify(records), att.user_id).run()
+          } catch(e: any) {
+            console.warn(`[education complete] edu_special_records 업데이트 실패 uid=${att.user_id}:`, e.message)
+          }
         }
       }
     }
@@ -474,6 +498,7 @@ app.post('/sessions/:id/complete', async (c) => {
       session_id: sessionId,
       edu_type: eduType,
       edu_date: eduDate,
+      special_work_type: session.special_work_type || null,
       updated_users: updatedCount,
     })
   } catch (e: any) {

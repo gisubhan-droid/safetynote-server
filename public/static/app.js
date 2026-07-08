@@ -11315,6 +11315,8 @@ async function _tbmPrint(tbmId) {
         margin: 0 auto;
         padding: 14mm 13mm 16mm 15mm;
         box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+        /* 화면에서도 두 페이지 내용이 자연스럽게 이어지도록 */
+        overflow: visible;
       }
       .print-toolbar {
         position: fixed; top: 0; left: 0; right: 0; z-index: 999;
@@ -11405,6 +11407,32 @@ async function _tbmPrint(tbmId) {
       .no-print { display:none !important; }
       .print-only { display:table-cell !important; }
       #approval-sign-modal { display:none !important; }
+    }
+
+    /* ── 2페이지 구분선 (화면 미리보기) ── */
+    .page2 {
+      page-break-before: always;
+      break-before: page;
+    }
+    @media screen {
+      .page2 {
+        border-top: 3px dashed #c0c0c0;
+        margin-top: 24px;
+        padding-top: 20px;
+        position: relative;
+      }
+      .page2::before {
+        content: '── 2페이지 시작 ──';
+        position: absolute;
+        top: -13px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #fff;
+        padding: 0 10px;
+        font-size: 8pt;
+        color: #aaa;
+        white-space: nowrap;
+      }
     }
   </style>
 </head>
@@ -11504,8 +11532,8 @@ async function _tbmPrint(tbmId) {
     <div class="section-hdr">④ 특이사항 / 현장 전달사항</div>
     <div class="content-box" style="min-height:36px">${(tbm.special_notes).replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>` : ''}
 
-    <!-- ⑤ 서명란 (BUG-057: 2열 배치) -->
-    <div class="section-hdr" style="margin-top:8px">⑤ 서명란 <span style="font-size:8pt;font-weight:400;color:#999">(실시자 및 전체 참석 근로자 서명)</span></div>
+    <!-- ⑤ 서명란 (2페이지 시작 — BUG-057: 2열 배치) -->
+    <div class="section-hdr page2" style="margin-top:8px">⑤ 서명란 <span style="font-size:8pt;font-weight:400;color:#999">(실시자 및 전체 참석 근로자 서명)</span></div>
     <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
       <thead>
         <tr style="background:#f0eeef">

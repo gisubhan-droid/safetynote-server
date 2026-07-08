@@ -24579,7 +24579,7 @@ function showCreateUserModal() {
             <input id="uEduLoading" class="form-control" type="date">
           </div>
           <div class="form-group">
-            <label class="form-label text-xs">체험안전교육 수료일</label>
+            <label class="form-label text-xs">대전안전체험교육 수료일</label>
             <input id="uEduExperience" class="form-control" type="date">
           </div>
         </div>
@@ -24683,7 +24683,7 @@ async function showEditUserModal(id) {
 
   const eduFields = [
     { id:'euEduHire',       label:'채용시교육 수료일',   val: u.edu_hire_date||'',       icon:'fa-user-check',   col:'col-span-2' },
-    { id:'euEduExperience', label:'체험안전교육 수료일', val: u.edu_experience_date||'', icon:'fa-vr-cardboard', col:'col-span-2' },
+    { id:'euEduExperience', label:'대전안전체험교육 수료일', val: u.edu_experience_date||'', icon:'fa-vr-cardboard', col:'col-span-2' },
   ];
 
   // 특별안전교육 records 파싱 (시스템관리자 수정용)
@@ -24776,7 +24776,7 @@ async function showEditUserModal(id) {
         <div class="text-xs font-black mb-3 flex items-center gap-2" style="color:#A8005A">
           <i class="fas fa-graduation-cap"></i> 안전교육 이수 현황
         </div>
-        <!-- 채용시교육 / 체험안전교육 -->
+        <!-- 채용시교육 / 대전안전체험교육 -->
         <div class="grid grid-cols-2 gap-3 mb-3">
           ${eduFields.map(f => `
           <div class="form-group ${f.col}">
@@ -26087,7 +26087,7 @@ async function renderMyProfilePage(container) {
           })()}
 
           <div class="grid grid-cols-2 gap-3 mt-2">
-            ${eduField('mpEduExperience','fa-vr-cardboard','체험안전교육 수료일', u.edu_experience_date||'', false)}
+            ${eduField('mpEduExperience','fa-vr-cardboard','대전안전체험교육 수료일', u.edu_experience_date||'', false)}
           </div>
         </div>
 

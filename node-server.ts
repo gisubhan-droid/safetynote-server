@@ -5699,8 +5699,8 @@ app.get('/qr/:userId', async (c) => {
           // 5. 관리감독자 교육
           eduRows += eduRow('관리감독자 교육', u.edu_supervisor_date);
 
-          // 6. 체험안전교육
-          eduRows += eduRow('체험안전교육', u.edu_experience_date);
+          // 6. 대전안전체험교육
+          eduRows += eduRow('대전안전체험교육', u.edu_experience_date);
 
           // 이수 이력이 하나도 없으면 섹션 자체 표시하지 않음
           if (!eduRows.trim()) return '';

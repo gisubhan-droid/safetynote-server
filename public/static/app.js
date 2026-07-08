@@ -11560,43 +11560,46 @@ async function _tbmPrint(tbmId) {
       ※ 교육 실시자는 반드시 서명란에 서명하여야 하며, 참석 근로자 전원이 서명함으로써 본 교육 참여를 확인합니다.
     </div>
 
-    <!-- ⑥ TBM 안전조치 사진 (BUG-057: 하단 2열) -->
+    <!-- ⑥ TBM 안전조치 사진 (BUG-057: TBM 상세 화면과 동일한 4:3 파란 카드 스타일) -->
     ${(() => {
       const secs = (tbmChecklistSections || []);
-      const allPhotos = secs.flatMap(sec => {
+      // 섹션별로 묶어서 처리 (섹션 헤더 + 사진들)
+      const secsWithPhotos = secs.map(sec => {
         let ps = []; try { ps = typeof sec.photos==='string' ? JSON.parse(sec.photos) : (sec.photos||[]); } catch(_){}
-        return ps.filter(p => p.file_path).map(p => ({ ...p, section_name: sec.section_name || '' }));
-      });
-      if (!allPhotos.length) return '';
+        return { ...sec, parsedPhotos: ps.filter(p => p.file_path) };
+      }).filter(sec => sec.parsedPhotos.length > 0);
+      if (!secsWithPhotos.length) return '';
       const token = localStorage.getItem('token') || '';
-      const photoGrid = (() => {
-        let g = '';
-        for (let i=0; i<allPhotos.length; i+=2) {
-          const L = allPhotos[i], R = allPhotos[i+1];
-          // BUG-091: 각 행에 page-break-inside:avoid — 사진이 행 중간에서 잘리지 않도록
-          g += '<tr style="page-break-inside:avoid;break-inside:avoid">';
-          g += '<td style="padding:4px;width:50%;vertical-align:top;page-break-inside:avoid;break-inside:avoid">';
-          g += '<div style="border:1pt solid #ddd;border-radius:4px;overflow:hidden;text-align:center;page-break-inside:avoid;break-inside:avoid">';
-          g += '<img src="/api/tbm-photos/'+L.id+'/img?token=' + encodeURIComponent(token) + '" style="width:100%;max-height:120px;object-fit:cover;display:block">';
-          g += '<div style="font-size:7.5pt;padding:2px 4px;background:#f9f9f9;color:#555">[' + (L.section_name||'').replace(/</g,'&lt;') + '] ' + (L.label||'').replace(/</g,'&lt;') + '</div>';
-          g += '</div></td>';
-          if (R) {
-            g += '<td style="padding:4px;width:50%;vertical-align:top;page-break-inside:avoid;break-inside:avoid">';
-            g += '<div style="border:1pt solid #ddd;border-radius:4px;overflow:hidden;text-align:center;page-break-inside:avoid;break-inside:avoid">';
-            g += '<img src="/api/tbm-photos/'+R.id+'/img?token=' + encodeURIComponent(token) + '" style="width:100%;max-height:120px;object-fit:cover;display:block">';
-            g += '<div style="font-size:7.5pt;padding:2px 4px;background:#f9f9f9;color:#555">[' + (R.section_name||'').replace(/</g,'&lt;') + '] ' + (R.label||'').replace(/</g,'&lt;') + '</div>';
-            g += '</div></td>';
-          } else {
-            g += '<td style="width:50%"></td>';
-          }
-          g += '</tr>';
-        }
-        return g;
-      })();
-      // BUG-091: 사진 섹션 전체를 page-break-inside:avoid 컨테이너로 감쌈
-      // 테이블 대신 div 2열 그리드 — 각 사진 셀에 page-break-inside:avoid 적용
-      return '<div class="section-hdr" style="margin-top:8px">⑥ TBM 안전조치 사진</div>'
-           + '<table style="width:100%;border-collapse:collapse;page-break-inside:auto">' + photoGrid + '</table>';
+
+      let html = '<div class="section-hdr page2" style="margin-top:8px">⑥ TBM 안전조치 사진</div>';
+
+      secsWithPhotos.forEach(sec => {
+        // 섹션 헤더 (파란 배경)
+        html += '<div style="background:#1D4ED8;color:white;padding:5px 10px;border-radius:6px 6px 0 0;font-size:8.5pt;font-weight:700;margin-top:10px;display:flex;align-items:center;gap:5px">'
+              + '<span style="font-size:9pt">&#9632;</span> ' + (sec.section_name||'').replace(/</g,'&lt;')
+              + '<span style="margin-left:auto;font-size:7.5pt;opacity:0.85;font-weight:400">' + sec.parsedPhotos.length + '장</span>'
+              + '</div>';
+
+        // 사진 그리드 컨테이너 (파란 카드 배경)
+        html += '<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-top:none;border-radius:0 0 6px 6px;padding:8px">';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+
+        sec.parsedPhotos.forEach(p => {
+          html += '<div style="border:1px solid #BFDBFE;border-radius:6px;overflow:hidden;background:white;page-break-inside:avoid;break-inside:avoid">';
+          html += '<div style="width:100%;aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">';
+          html += '<img src="/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(token) + '" '
+                + 'style="width:100%;height:100%;object-fit:cover;display:block">';
+          html += '</div>';
+          html += '<div style="padding:3px 6px;font-size:7.5pt;color:#1E40AF;background:#EFF6FF;border-top:1px solid #BFDBFE;line-height:1.4">'
+                + (p.label||'').replace(/</g,'&lt;')
+                + '</div>';
+          html += '</div>';
+        });
+
+        html += '</div></div>'; // grid + 컨테이너 닫기
+      });
+
+      return html;
     })()}
 
     <!-- 푸터 -->
@@ -21997,16 +22000,30 @@ async function _openTbmPhotoModal(assId, taskId) {
   } catch(e) { toast('사진 섹션 로드 실패', 'error'); }
 }
 
-// TBM 안전조치 사진 등록 모달
+// TBM 안전조치 사진 등록 모달 (다중 사진 지원)
 function showTbmPhotoModal(assId, taskId, sections) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
+
+  // 전체 사진 수 / 등록된 사진 수 계산
+  let totalPhotos = 0, donePhotos = 0;
+  sections.forEach(sec => {
+    let photos = [];
+    try { photos = typeof sec.photos === 'string' ? JSON.parse(sec.photos) : (sec.photos || []); } catch(e) {}
+    totalPhotos += photos.length;
+    donePhotos += photos.filter(p => p.file_path).length;
+  });
+
   modal.innerHTML = `
-  <div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto">
-    <div class="modal-header" style="background:linear-gradient(135deg,#4E3A63,#685182);color:white">
+  <div class="modal" style="max-width:620px;max-height:92vh;overflow-y:auto">
+    <div class="modal-header" style="background:linear-gradient(135deg,#1D4ED8,#2563EB);color:white">
       <div>
         <h3 class="font-bold"><i class="fas fa-camera mr-2"></i>TBM 안전조치 사진 등록</h3>
-        <div class="text-white/70 text-xs mt-0.5">체크리스트 결과에 따른 필수 안전조치 사진을 등록해 주세요.</div>
+        <div class="text-white/70 text-xs mt-0.5" id="tbmPhotoSubtitle">
+          ${donePhotos >= totalPhotos && totalPhotos > 0
+            ? `<i class="fas fa-check-circle mr-1 text-green-300"></i>모든 사진 등록 완료 (${donePhotos}/${totalPhotos})`
+            : `${donePhotos}/${totalPhotos} 등록 완료 — 미등록 ${totalPhotos - donePhotos}개 · 각 항목에 사진을 1장 이상 등록하세요`}
+        </div>
       </div>
       <button onclick="this.closest('.modal-overlay').remove()" class="text-white/80 text-xl"><i class="fas fa-times"></i></button>
     </div>
@@ -22014,53 +22031,83 @@ function showTbmPhotoModal(assId, taskId, sections) {
       ${sections.map(sec => {
         let photos = [];
         try { photos = typeof sec.photos === 'string' ? JSON.parse(sec.photos) : (sec.photos || []); } catch(e) { photos = []; }
+        const regPhotos = photos.filter(p => p.file_path);
+        const unregPhotos = photos.filter(p => !p.file_path);
+        const secLabel = sec.section_name || '섹션';
         return `
         <div class="mb-4 border border-blue-200 rounded-xl overflow-hidden" id="tbm-sec-${sec.id}">
-          <div class="px-3 py-2 bg-blue-50 flex items-center gap-2 border-b border-blue-100">
-            <i class="fas fa-shield-alt text-blue-600"></i>
-            <span class="font-semibold text-blue-800 text-sm">${sec.section_name}</span>
-            <span class="ml-auto text-xs text-blue-500">${photos.length}개 항목</span>
+          <div class="px-3 py-2 bg-blue-700 flex items-center gap-2">
+            <i class="fas fa-shield-alt text-blue-200"></i>
+            <span class="font-semibold text-white text-sm">${secLabel}</span>
+            <span class="ml-auto text-xs text-blue-200 font-medium" id="tbm-sec-cnt-${sec.id}">${regPhotos.length > 0 ? '✅ ' : ''}${regPhotos.length}/${photos.length} 등록</span>
           </div>
-          <div class="p-3 space-y-2">
-            ${photos.map(ph => `
-            <div class="flex items-center gap-3 p-2 rounded-lg border ${ph.file_path ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}" id="tbmph-${ph.id}">
-              ${ph.file_path
-                ? `<img src="${photoImgSrc(ph.id)}" class="w-12 h-12 object-cover rounded" onerror="this.style.opacity='0.3'">`
-                : `<div class="w-12 h-12 bg-white rounded border flex items-center justify-center"><i class="fas fa-camera text-gray-300 text-xl"></i></div>`
-              }
-              <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium ${ph.file_path ? 'text-green-700' : 'text-gray-700'}">${ph.label}</div>
-                <div class="text-xs ${ph.file_path ? 'text-green-500' : 'text-red-500'}">${ph.file_path ? '✅ 사진 등록 완료' : '⚠️ 사진 미등록'}</div>
+
+          <!-- 기존 등록된 사진 그리드 -->
+          <div id="tbm-sec-photos-${sec.id}" class="${regPhotos.length ? 'p-3 pb-2' : 'hidden'}">
+            <div class="grid grid-cols-2 gap-2">
+              ${regPhotos.map(ph => `
+              <div class="relative group border border-blue-200 rounded-lg overflow-hidden bg-white" id="tbmph-${ph.id}">
+                <div style="aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">
+                  <img src="${photoImgSrc(ph.id)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity='0.3'">
+                </div>
+                <div class="px-2 py-1 bg-blue-50 border-t border-blue-100 flex items-center gap-1">
+                  <span class="text-xs text-blue-700 flex-1 truncate">${ph.label}</span>
+                  <button onclick="deleteTbmSectionPhoto(${ph.id}, ${assId}, '${ph.label.replace(/'/g,"\\'")}', ${taskId}, ${sec.id})"
+                    class="flex-shrink-0 text-red-400 hover:text-red-600 p-0.5" title="삭제">
+                    <i class="fas fa-trash-alt text-xs"></i>
+                  </button>
+                </div>
+              </div>`).join('')}
+            </div>
+          </div>
+
+          <!-- 미등록 항목 목록 -->
+          <div id="tbm-sec-unreg-${sec.id}" class="${unregPhotos.length ? 'px-3 pt-2 pb-1' : 'hidden'}">
+            ${unregPhotos.map(ph => `
+            <div class="flex items-center gap-2 py-1.5 px-2 mb-1 rounded-lg border border-gray-200 bg-gray-50" id="tbmph-${ph.id}">
+              <div class="w-8 h-8 bg-white rounded border flex items-center justify-center flex-shrink-0">
+                <i class="fas fa-camera text-gray-300"></i>
               </div>
-              ${!ph.file_path ? `
-              <label class="btn btn-primary text-xs py-1.5 cursor-pointer flex-shrink-0">
-                <i class="fas fa-upload mr-1"></i>사진등록
-                <input type="file" accept="image/*" class="hidden" 
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-gray-600">${ph.label}</div>
+                <div class="text-xs text-red-400">⚠️ 미등록</div>
+              </div>
+              <label class="btn btn-primary text-xs py-1 cursor-pointer flex-shrink-0">
+                <i class="fas fa-upload mr-1"></i>등록
+                <input type="file" accept="image/*" capture="environment" class="hidden"
                   onchange="uploadTbmPhoto(this, ${assId}, ${sec.id}, ${ph.id}, '${ph.label.replace(/'/g,"\\'")}', ${taskId})">
-              </label>` : `
-              <button onclick="deleteTbmSectionPhoto(${ph.id}, ${assId}, '${ph.label.replace(/'/g,"\\'")}', ${taskId}, ${sec.id})" 
-                class="btn text-xs py-1 px-2 text-red-500 border border-red-200 flex-shrink-0">
-                <i class="fas fa-trash"></i>
-              </button>`}
+              </label>
             </div>`).join('')}
+          </div>
+
+          <!-- 사진 추가 버튼 (항상 표시) -->
+          <div class="px-3 pb-3 pt-1">
+            <label class="w-full flex items-center justify-center gap-2 py-2 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-medium cursor-pointer hover:bg-blue-50 transition-colors"
+              style="background:rgba(239,246,255,0.7)">
+              <i class="fas fa-plus-circle"></i>
+              <span>${secLabel} 사진 추가</span>
+              <input type="file" accept="image/*" capture="environment" class="hidden"
+                onchange="uploadTbmPhotoExtra(this, ${assId}, ${sec.id}, '${secLabel.replace(/'/g,"\\'")}', ${taskId})">
+            </label>
           </div>
         </div>`;
       }).join('')}
     </div>
     <div class="modal-footer">
-      <button id="tbmPhotoCompleteBtn" class="btn btn-primary">
-        <i class="fas fa-check mr-1"></i>완료
+      <button id="tbmPhotoCompleteBtn" class="btn btn-primary" style="${donePhotos >= totalPhotos && totalPhotos > 0 ? 'background:linear-gradient(135deg,#059669,#10B981)' : ''}">
+        <i class="fas fa-check${donePhotos >= totalPhotos && totalPhotos > 0 ? '-circle' : ''} mr-1"></i>
+        ${donePhotos >= totalPhotos && totalPhotos > 0 ? `모두 완료 (${donePhotos}/${totalPhotos}) — 닫기` : `완료 (${donePhotos}/${totalPhotos})`}
       </button>
     </div>
   </div>`;
-  // 기존 모달(작업상세 등) 위에 최상위 표시 — z-index 강제 설정
+
+  // 기존 모달(작업상세 등) 위에 최상위 표시
   modal.style.zIndex = '10020';
   document.body.appendChild(modal);
 
   // 완료 버튼: 모달 닫기 + 작업 상세 화면 즉시 갱신
   modal.querySelector('#tbmPhotoCompleteBtn').onclick = () => {
     modal.remove();
-    // 작업 상세 모달이 열려있으면 갱신, 없으면 새로 열기
     const openTaskModal = document.querySelector(`.modal[data-task-id="${taskId}"]`);
     if (openTaskModal) {
       openTaskModal.closest('.modal-overlay')?.remove();
@@ -22069,6 +22116,69 @@ function showTbmPhotoModal(assId, taskId, sections) {
   };
 }
 
+// 추가 사진 업로드 (이미 등록된 항목에 추가 or 새 섹션 사진 추가)
+async function uploadTbmPhotoExtra(input, assId, sectionId, sectionName, taskId) {
+  const file = input.files[0];
+  if (!file) return;
+  const label = sectionName;
+  const formData = new FormData();
+  formData.append('photo', file);
+  formData.append('label', label);
+  formData.append('section_id', sectionId);
+  if (taskId) formData.append('task_id', String(taskId));
+
+  // 로딩 토스트
+  toast(`${label} 사진 업로드 중...`, 'info');
+
+  try {
+    const result = await _uploadWithProgress('/api/photos/upload', formData, {
+      onProgress: (pct) => { _showUploadToast(label, pct, 1); }
+    });
+    _hideUploadToast();
+    if (!result.ok) throw new Error(result.data?.error || `HTTP ${result.status}`);
+
+    const { file_path, file_name, mime_type, id: uploadedPhotoId } = result.data;
+
+    // TBM 사진 아이템 DB 등록 (새 항목 생성)
+    const saveRes = await API.post(`/checklist/${assId}/tbm-photos`, {
+      section_id: sectionId, label, file_path, file_name, mime_type
+    });
+    const newPhotoItemId = saveRes.data?.id;
+    if (!newPhotoItemId) throw new Error('photo_item 생성 실패');
+
+    // 해당 섹션의 사진 그리드에 새 카드 추가
+    const secPhotosDiv = document.getElementById(`tbm-sec-photos-${sectionId}`);
+    if (secPhotosDiv) {
+      secPhotosDiv.classList.remove('hidden');
+      const grid = secPhotosDiv.querySelector('.grid');
+      if (grid) {
+        const newCard = document.createElement('div');
+        newCard.className = 'relative group border border-blue-200 rounded-lg overflow-hidden bg-white';
+        newCard.id = `tbmph-${newPhotoItemId}`;
+        newCard.innerHTML = `
+          <div style="aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">
+            <img src="${photoImgSrc(uploadedPhotoId)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity='0.3'">
+          </div>
+          <div class="px-2 py-1 bg-blue-50 border-t border-blue-100 flex items-center gap-1">
+            <span class="text-xs text-blue-700 flex-1 truncate">${label}</span>
+            <button onclick="deleteTbmSectionPhoto(${newPhotoItemId}, ${assId}, '${label.replace(/'/g,"\\'")}', ${taskId}, ${sectionId})"
+              class="flex-shrink-0 text-red-400 hover:text-red-600 p-0.5" title="삭제">
+              <i class="fas fa-trash-alt text-xs"></i>
+            </button>
+          </div>`;
+        grid.appendChild(newCard);
+      }
+    }
+
+    _refreshTbmPhotoModalStatus(assId, taskId);
+    toast(`${label} 사진 추가 완료`, 'success');
+  } catch(e) {
+    _hideUploadToast();
+    toast('업로드 실패: ' + (e.message || '알 수 없는 오류'), 'error');
+  }
+}
+
+// uploadTbmPhoto: 미등록 항목 슬롯에서 직접 업로드 (기존 photo_item 연결)
 async function uploadTbmPhoto(input, assId, sectionId, photoItemId, label, taskId) {
   const file = input.files[0];
   if (!file) return;
@@ -22079,128 +22189,122 @@ async function uploadTbmPhoto(input, assId, sectionId, photoItemId, label, taskI
   formData.append('photo_item_id', photoItemId);
   if (taskId) formData.append('task_id', String(taskId));
 
-  // 버튼 상태 표시 (로딩 중)
+  // 미등록 슬롯 로딩 표시
   const el = document.getElementById(`tbmph-${photoItemId}`);
   if (el) {
     el.style.opacity = '0.6';
     el.style.pointerEvents = 'none';
-    el.innerHTML = `
-      <div class="w-12 h-12 bg-white rounded border flex items-center justify-center flex-shrink-0">
-        <i class="fas fa-spinner fa-spin text-blue-400 text-xl"></i>
-      </div>
-      <div class="flex-1"><div class="text-sm font-medium text-gray-500">${label}</div>
-      <div class="text-xs text-blue-400">⏫ 업로드 중...</div></div>
-    `;
+    const statusDiv = el.querySelector('.text-red-400');
+    if (statusDiv) statusDiv.textContent = '⏫ 업로드 중...';
   }
 
   try {
-    // 사진 업로드 with 진행상황 토스트
     const result = await _uploadWithProgress('/api/photos/upload', formData, {
-      onProgress: (pct, loadedMB, totalMB) => {
-        _showUploadToast(label, pct, 1);
-      }
+      onProgress: (pct) => { _showUploadToast(label, pct, 1); }
     });
     _hideUploadToast();
-
     if (!result.ok) throw new Error(result.data?.error || `HTTP ${result.status}`);
 
     const { file_path, file_name, mime_type, id: uploadedPhotoId } = result.data;
 
-    // TBM 사진 아이템 DB 등록 → 새 photo_item id 반환
+    // TBM 사진 아이템 DB 등록
     const saveRes = await API.post(`/checklist/${assId}/tbm-photos`, {
       section_id: sectionId, label, file_path, file_name, mime_type
     });
     const newPhotoItemId = saveRes.data?.id || photoItemId;
 
-    // ── UI 즉시 완전 갱신 (삭제 버튼 포함) ──────────────────────────────
-    if (el) {
-      el.id = `tbmph-${newPhotoItemId}`;          // id를 새 photo_item id로 교체
-      el.style.opacity = '1';
-      el.style.pointerEvents = '';
-      el.className = 'flex items-center gap-3 p-2 rounded-lg border border-green-200 bg-green-50';
-      el.innerHTML = `
-        <img src="${photoImgSrc(uploadedPhotoId)}"
-             class="w-12 h-12 object-cover rounded flex-shrink-0"
-             onerror="this.style.opacity='0.3'">
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-medium text-green-700">${label}</div>
-          <div class="text-xs text-green-500">✅ 사진 등록 완료</div>
-        </div>
-        <button onclick="deleteTbmSectionPhoto(${newPhotoItemId}, ${assId}, '${label.replace(/'/g,"\\'")}', ${taskId}, ${sectionId})"
-          class="btn text-xs py-1 px-2 text-red-500 border border-red-200 flex-shrink-0"
-          title="사진 삭제">
-          <i class="fas fa-trash"></i>
-        </button>
-      `;
+    // 미등록 슬롯 제거
+    if (el) el.remove();
+
+    // 섹션 사진 그리드에 새 카드 추가
+    const secPhotosDiv = document.getElementById(`tbm-sec-photos-${sectionId}`);
+    if (secPhotosDiv) {
+      secPhotosDiv.classList.remove('hidden');
+      const grid = secPhotosDiv.querySelector('.grid');
+      if (grid) {
+        const newCard = document.createElement('div');
+        newCard.className = 'relative group border border-blue-200 rounded-lg overflow-hidden bg-white';
+        newCard.id = `tbmph-${newPhotoItemId}`;
+        newCard.innerHTML = `
+          <div style="aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">
+            <img src="${photoImgSrc(uploadedPhotoId)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity='0.3'">
+          </div>
+          <div class="px-2 py-1 bg-blue-50 border-t border-blue-100 flex items-center gap-1">
+            <span class="text-xs text-blue-700 flex-1 truncate">${label}</span>
+            <button onclick="deleteTbmSectionPhoto(${newPhotoItemId}, ${assId}, '${label.replace(/'/g,"\\'")}', ${taskId}, ${sectionId})"
+              class="flex-shrink-0 text-red-400 hover:text-red-600 p-0.5" title="삭제">
+              <i class="fas fa-trash-alt text-xs"></i>
+            </button>
+          </div>`;
+        grid.appendChild(newCard);
+      }
     }
 
-    // ── 모달 내 전체 완료 여부 체크 후 버튼 상태 갱신 ─────────────────────
-    _refreshTbmPhotoModalStatus(assId, taskId);
+    // 미등록 항목 컨테이너가 비었으면 숨기기
+    const unregDiv = document.getElementById(`tbm-sec-unreg-${sectionId}`);
+    if (unregDiv && !unregDiv.querySelector('[id^="tbmph-"]')) {
+      unregDiv.classList.add('hidden');
+    }
 
+    _refreshTbmPhotoModalStatus(assId, taskId);
     toast(`${label} 사진 등록 완료`, 'success');
   } catch(e) {
     _hideUploadToast();
     if (el) {
       el.style.opacity = '1';
       el.style.pointerEvents = '';
-      // 실패 시 원래 업로드 버튼 상태로 복구
-      el.className = 'flex items-center gap-3 p-2 rounded-lg border border-gray-200 bg-gray-50';
-      el.innerHTML = `
-        <div class="w-12 h-12 bg-white rounded border flex items-center justify-center flex-shrink-0">
-          <i class="fas fa-camera text-gray-300 text-xl"></i>
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-medium text-gray-700">${label}</div>
-          <div class="text-xs text-red-500">⚠️ 업로드 실패 — 다시 시도해주세요</div>
-        </div>
-        <label class="btn btn-primary text-xs py-1.5 cursor-pointer flex-shrink-0">
-          <i class="fas fa-upload mr-1"></i>재시도
-          <input type="file" accept="image/*" class="hidden"
-            onchange="uploadTbmPhoto(this, ${assId}, ${sectionId}, ${photoItemId}, '${label.replace(/'/g,"\\'")}', ${taskId})">
-        </label>
-      `;
+      const statusDiv = el.querySelector('.text-red-400');
+      if (statusDiv) statusDiv.textContent = '⚠️ 업로드 실패 — 다시 시도해주세요';
     }
     toast('업로드 실패: ' + (e.message || '알 수 없는 오류'), 'error');
   }
 }
 
-// TBM 사진 모달 내 완료 상태 실시간 갱신
+// TBM 사진 모달 내 완료 상태 실시간 갱신 (새 구조: 그리드 카드 기준)
 function _refreshTbmPhotoModalStatus(assId, taskId) {
-  const modalOverlay = document.querySelector('.modal-overlay:not([style*="z-index: 10000"])');
-  const modal = modalOverlay?.querySelector('.modal-body');
-  if (!modal) return;
+  // z-index 10020인 TBM 사진 모달 찾기
+  const modalOverlay = Array.from(document.querySelectorAll('.modal-overlay'))
+    .find(el => el.style.zIndex === '10020');
+  if (!modalOverlay) return;
+  const modalBody = modalOverlay.querySelector('.modal-body');
+  if (!modalBody) return;
 
-  const allItems = modal.querySelectorAll('[id^="tbmph-"]');
-  const doneItems = modal.querySelectorAll('[id^="tbmph-"] .text-green-500');
-  const total = allItems.length;
-  const done  = doneItems.length;
+  // 섹션별 카운트 갱신 (그리드 내 카드 수 = 등록된 사진 수)
+  modalBody.querySelectorAll('[id^="tbm-sec-"]').forEach(secEl => {
+    const secIdMatch = secEl.id.match(/tbm-sec-(\d+)$/);
+    if (!secIdMatch) return;
+    const secId = secIdMatch[1];
+    const photosGrid = secEl.querySelector(`#tbm-sec-photos-${secId} .grid`);
+    const regCount = photosGrid ? photosGrid.querySelectorAll('[id^="tbmph-"]').length : 0;
+    const unregDiv = secEl.querySelector(`#tbm-sec-unreg-${secId}`);
+    const unregCount = unregDiv ? unregDiv.querySelectorAll('[id^="tbmph-"]').length : 0;
+    const totalCount = regCount + unregCount;
 
-  // ── 섹션별 헤더 카운트 즉시 갱신 ──────────────────────────────
-  modal.querySelectorAll('[id^="tbm-sec-"]').forEach(secEl => {
-    const secItems = secEl.querySelectorAll('[id^="tbmph-"]');
-    const secDone  = secEl.querySelectorAll('[id^="tbmph-"] .text-green-500');
-    const cntEl = secEl.querySelector('.ml-auto.text-xs');
+    const cntEl = secEl.querySelector(`#tbm-sec-cnt-${secId}`);
     if (cntEl) {
-      const allDone = secDone.length >= secItems.length && secItems.length > 0;
-      cntEl.textContent = allDone
-        ? `✅ ${secDone.length}/${secItems.length} 완료`
-        : `${secDone.length}/${secItems.length} 완료`;
-      cntEl.className = `ml-auto text-xs ${allDone ? 'text-green-600 font-bold' : 'text-blue-500'}`;
+      cntEl.textContent = `${regCount > 0 ? '✅ ' : ''}${regCount}/${totalCount} 등록`;
+      cntEl.className = `text-xs font-medium ${regCount >= totalCount && totalCount > 0 ? 'text-green-300' : 'text-blue-200'}`;
     }
   });
 
-  // ── 모달 헤더 소제목 갱신 ──────────────────────────────────────
-  const subTitle = modalOverlay?.querySelector('.modal-header .text-white\\/70');
+  // 전체 카운트 집계
+  const allRegistered = modalBody.querySelectorAll('[id^="tbm-sec-photos-"] [id^="tbmph-"]').length;
+  const allUnreg = modalBody.querySelectorAll('[id^="tbm-sec-unreg-"] [id^="tbmph-"]').length;
+  const total = allRegistered + allUnreg;
+  const done = allRegistered;
+
+  // 헤더 소제목 갱신
+  const subTitle = modalOverlay.querySelector('#tbmPhotoSubtitle');
   if (subTitle) {
     if (done >= total && total > 0) {
       subTitle.innerHTML = `<i class="fas fa-check-circle mr-1 text-green-300"></i>모든 사진 등록 완료 (${done}/${total})`;
     } else {
-      subTitle.textContent = `${done}/${total} 등록 완료 — 미등록 ${total - done}개`;
+      subTitle.textContent = `${done}/${total} 등록 완료 — 미등록 ${total - done}개 · 각 항목에 사진을 1장 이상 등록하세요`;
     }
   }
 
-  // ── 완료 버튼 색상 및 텍스트 갱신 ────────────────────────────
-  const footer = modalOverlay?.querySelector('.modal-footer #tbmPhotoCompleteBtn');
+  // 완료 버튼 갱신
+  const footer = modalOverlay.querySelector('#tbmPhotoCompleteBtn');
   if (footer) {
     if (done >= total && total > 0) {
       footer.innerHTML = `<i class="fas fa-check-circle mr-1"></i>모두 완료 (${done}/${total}) — 닫기`;
@@ -22247,32 +22351,26 @@ function deleteTbmSectionPhoto(photoItemId, assId, label, taskId, sectionId) {
       m.remove();
       toast('삭제되었습니다.', 'success');
 
-      // ── 사진 모달이 열려있으면 해당 아이템만 즉시 미등록 상태로 갱신 ──────
+      // ── 사진 카드를 그리드에서 제거 ──────────────────────────────
       const photoEl = document.getElementById(`tbmph-${photoItemId}`);
       if (photoEl) {
-        photoEl.className = 'flex items-center gap-3 p-2 rounded-lg border border-gray-200 bg-gray-50';
-        photoEl.innerHTML = `
-          <div class="w-12 h-12 bg-white rounded border flex items-center justify-center flex-shrink-0">
-            <i class="fas fa-camera text-gray-300 text-xl"></i>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium text-gray-700">${label}</div>
-            <div class="text-xs text-red-500">⚠️ 사진 미등록</div>
-          </div>
-          <label class="btn btn-primary text-xs py-1.5 cursor-pointer flex-shrink-0">
-            <i class="fas fa-upload mr-1"></i>사진등록
-            <input type="file" accept="image/*" class="hidden"
-              onchange="uploadTbmPhoto(this, ${assId}, ${sectionId || 0}, ${photoItemId}, '${label.replace(/'/g,"\\'")}', ${taskId})">
-          </label>
-        `;
+        // 그리드 카드 제거 (새 구조)
+        photoEl.remove();
+        // 해당 섹션 그리드가 비었으면 컨테이너 숨기기
+        if (sectionId) {
+          const secPhotosDiv = document.getElementById(`tbm-sec-photos-${sectionId}`);
+          if (secPhotosDiv) {
+            const remaining = secPhotosDiv.querySelectorAll('[id^="tbmph-"]').length;
+            if (remaining === 0) secPhotosDiv.classList.add('hidden');
+          }
+        }
         _refreshTbmPhotoModalStatus(assId, taskId);
       } else {
         // 모달이 없으면 전체 다시 열기
         const res = await API.get(`/checklist/${assId}`);
         const sections = res.data.tbm_sections || [];
-        // 기존 사진 모달 제거
         document.querySelectorAll('.modal-overlay').forEach(ov => {
-          if (ov.querySelector('.modal-body [id^="tbmph-"]')) ov.remove();
+          if (ov.style.zIndex === '10020') ov.remove();
         });
         showTbmPhotoModal(assId, taskId, sections);
       }

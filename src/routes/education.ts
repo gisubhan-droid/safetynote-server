@@ -507,6 +507,104 @@ app.post('/sessions/:id/complete', async (c) => {
   }
 })
 
+// ─── 이수현황 소급 재동기화 ────────────────────────────────────────────────
+
+/**
+ * POST /api/education/sessions/:id/resync
+ * 이미 완료처리된 세션의 참석자 이수현황을 소급하여 재동기화
+ * - 시스템관리자(admin)만 가능
+ * - edu_special_records JSON에 작업종류별 날짜 재기록
+ * - 다른 교육 유형도 users 컬럼 재업데이트
+ */
+app.post('/sessions/:id/resync', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '시스템관리자만 재동기화 가능' }, 403)
+
+  try {
+    const { DB } = c.env
+    const sessionId = Number(c.req.param('id'))
+
+    const session: any = await DB.prepare(
+      'SELECT * FROM safety_education_sessions WHERE id = ?'
+    ).bind(sessionId).first()
+    if (!session) return c.json({ error: '교육 세션 없음' }, 404)
+    if (!session.is_completed) return c.json({ error: '완료처리된 세션이 아닙니다.' }, 400)
+
+    // 참석한 등록 사용자 (user_id 있는 경우만)
+    const attendees: any[] = (await DB.prepare(`
+      SELECT user_id FROM safety_education_attendees
+      WHERE session_id = ? AND attended = 1 AND user_id IS NOT NULL
+    `).bind(sessionId).all()).results
+
+    const eduDate = session.edu_date
+    const eduType = session.edu_type
+
+    const colMap: Record<string, string> = {
+      periodic:   'edu_periodic_date',
+      hire:       'edu_hire_date',
+      job_change: 'edu_job_change_date',
+      special:    'edu_special_date',
+      supervisor: 'edu_supervisor_date',
+    }
+    const col = colMap[eduType]
+
+    let updatedCount = 0
+    const errors: string[] = []
+
+    for (const att of attendees) {
+      // 1) 해당 교육유형 날짜 컬럼 업데이트
+      if (col) {
+        try {
+          await DB.prepare(`UPDATE users SET ${col} = ? WHERE id = ?`)
+            .bind(eduDate, att.user_id).run()
+          updatedCount++
+        } catch(e: any) {
+          errors.push(`uid=${att.user_id}: ${e.message}`)
+        }
+      }
+
+      // 2) 특별안전교육: edu_special_records JSON 재기록
+      if (eduType === 'special' && session.special_work_type) {
+        try {
+          const uRow: any = await DB.prepare(
+            `SELECT edu_special_records FROM users WHERE id = ?`
+          ).bind(att.user_id).first()
+          let records: Record<string, string> = {}
+          try {
+            const raw = uRow?.edu_special_records
+            if (raw && raw !== '{}') records = JSON.parse(raw)
+          } catch(_) {}
+          // 더 최신 날짜 우선 적용
+          const existing = records[session.special_work_type]
+          if (!existing || eduDate > existing) {
+            records[session.special_work_type] = eduDate
+          }
+          await DB.prepare(
+            `UPDATE users SET edu_special_records = ? WHERE id = ?`
+          ).bind(JSON.stringify(records), att.user_id).run()
+        } catch(e: any) {
+          errors.push(`uid=${att.user_id} special_records: ${e.message}`)
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      session_id: sessionId,
+      edu_type: eduType,
+      edu_date: eduDate,
+      special_work_type: session.special_work_type || null,
+      updated_users: updatedCount,
+      total_attendees: attendees.length,
+      errors: errors.length ? errors : undefined,
+    })
+  } catch (e: any) {
+    console.error('[education POST /sessions/:id/resync]', e.message)
+    return c.json({ error: e.message || '재동기화 실패' }, 500)
+  }
+})
+
 // ─── 참석자 추가/삭제 ──────────────────────────────────────────────────────
 
 /**

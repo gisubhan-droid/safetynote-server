@@ -27913,6 +27913,28 @@ async function completeEduSession(sessionId, eduType) {
 }
 
 
+// ─── 이수현황 소급 재적용 (시스템관리자 전용) ──────────────────────────────────────
+async function resyncEduSession(sessionId, eduType) {
+  const ok = await showSuccessConfirm(
+    '이수현황을 소급 재적용 하시겠습니까?',
+    '이 세션의 참석자 전원에게 교육 이수현황(edu_special_records 포함)을 다시 기록합니다.\n이미 더 최신 날짜가 있는 경우에는 덮어쓰지 않습니다.',
+    '재적용'
+  );
+  if (!ok) return;
+  try {
+    const res = await API.post(`/education/sessions/${sessionId}/resync`);
+    const d = res.data;
+    const warnMsg = d.errors?.length ? `\n⚠️ 일부 오류: ${d.errors.join(', ')}` : '';
+    toast(`이수현황 재적용 완료 — ${d.updated_users}/${d.total_attendees}명 업데이트${warnMsg}`, 'success');
+    // 모달 닫고 목록 새로고침
+    document.querySelector('.modal-overlay')?.remove();
+    await loadEduSessions(eduType);
+  } catch(e) {
+    const msg = e.response?.data?.error || e.message;
+    toast('재적용 실패: ' + msg, 'error');
+  }
+}
+
 // ── 교육 참석자 서명 패드 ──────────────────────────────────────────────────────
 // 교육 참석자 서명 요청 보내기 (참석자 자동 선택 + 서명 현황 표시)
 async function _eduSendSignRequest(sessionId, eduType) {
@@ -28144,7 +28166,12 @@ async function showEduDetailModal(sessionId, eduType) {
       ${session.is_completed ? `
       <span class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-green-50 text-green-700 border border-green-200">
         <i class="fas fa-check-circle"></i> 완료처리됨 (${(session.completed_at||'').split('T')[0]})
-      </span>` : `
+      </span>
+      ${currentUser && dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin' ? `
+      <button onclick="resyncEduSession(${sessionId},'${eduType}')"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white" style="background:#1D4ED8" title="참석자 이수현황을 현재 세션 정보로 소급 재적용합니다">
+        <i class="fas fa-sync-alt"></i> 이수현황 재적용
+      </button>` : ''}` : `
       <button onclick="completeEduSession(${sessionId},'${eduType}')"
         class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white ml-auto" style="background:#047857">
         <i class="fas fa-flag-checkered"></i> 완료처리

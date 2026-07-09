@@ -1,7 +1,7 @@
 /**
- * education-extra.ts — 안전교육 증빙사진 + 결과보고서 + 결재 API (NAS 전용)
+ * education-extra.ts — 안전교육 증빙사진 + 결과보고서 + 결재 + 교육자료 API (NAS 전용)
  *
- * 포함 라우트 (7개):
+ * 포함 라우트 (10개):
  *   GET    /api/education/sessions/:id/photos
  *   POST   /api/education/sessions/:id/photos
  *   DELETE /api/education/photos/:photoId
@@ -9,6 +9,9 @@
  *   PUT    /api/education/sessions/:id/report
  *   GET    /api/education/sessions/:id/approval-status  [FEAT-060]
  *   POST   /api/education/sessions/:id/approval-sign    [FEAT-060]
+ *   GET    /api/education/sessions/:id/materials        [FEAT-EDU-MAT]
+ *   POST   /api/education/sessions/:id/materials        [FEAT-EDU-MAT]
+ *   DELETE /api/education/materials/:materialId         [FEAT-EDU-MAT]
  *
  * 의존:
  *   - getRawDb(), getUser(), getUploadRootNow() from ../nas-db
@@ -29,6 +32,28 @@ import { sendFcmToUsers } from './push-helper'
  * (RULE-002: educationRoutes 마운트 앞에 위치해야 함)
  */
 export function registerEducationExtraRoutes(serverApp: any) {
+
+  // ─── edu_materials 테이블 자동 생성 [FEAT-EDU-MAT] ───────────────────────
+  try {
+    const rawDb = getRawDb()
+    rawDb.prepare(`
+      CREATE TABLE IF NOT EXISTS edu_materials (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id  INTEGER NOT NULL,
+        file_name   TEXT    NOT NULL,
+        orig_name   TEXT    NOT NULL,
+        file_path   TEXT    NOT NULL,
+        file_size   INTEGER DEFAULT 0,
+        mime_type   TEXT,
+        description TEXT,
+        uploaded_by INTEGER,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES safety_education_sessions(id) ON DELETE CASCADE
+      )
+    `).run()
+  } catch (e: any) {
+    console.warn('[edu_materials] 테이블 생성 실패(무시):', e?.message)
+  }
 
   // ─── GET /api/education/sessions/:id/photos ───────────────────────────────
   serverApp.get('/api/education/sessions/:id/photos', async (c: any) => {
@@ -339,5 +364,85 @@ export function registerEducationExtraRoutes(serverApp: any) {
       console.error('[POST /education/sessions/:id/approval-sign] 에러:', e?.message)
       return c.json({ error: e?.message || '결재 서명 처리 실패' }, 500)
     }
+  })
+
+  // ─── GET /api/education/sessions/:id/materials [FEAT-EDU-MAT] ────────────
+  serverApp.get('/api/education/sessions/:id/materials', async (c: any) => {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    const rawDb = getRawDb()
+    const id    = Number(c.req.param('id'))
+    const rows  = rawDb.prepare(
+      `SELECT em.*, u.name as uploader_name
+       FROM edu_materials em LEFT JOIN users u ON u.id = em.uploaded_by
+       WHERE em.session_id = ? ORDER BY em.created_at`
+    ).all(id)
+    return c.json(rows)
+  })
+
+  // ─── POST /api/education/sessions/:id/materials [FEAT-EDU-MAT] ───────────
+  // 허용 확장자: pdf, ppt, pptx, doc, docx, hwp, hwpx, xls, xlsx, txt, zip
+  serverApp.post('/api/education/sessions/:id/materials', async (c: any) => {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    if (user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+    const rawDb     = getRawDb()
+    const sessionId = Number(c.req.param('id'))
+    const session   = rawDb.prepare('SELECT id FROM safety_education_sessions WHERE id=?').get(sessionId)
+    if (!session) return c.json({ error: '교육 세션을 찾을 수 없습니다.' }, 404)
+
+    let formData: FormData
+    try { formData = await c.req.formData() } catch (_) { return c.json({ error: '파일 파싱 실패' }, 400) }
+    const file        = formData.get('material') as File | null
+    const description = (formData.get('description') as string || '').trim()
+    if (!file || !file.size) return c.json({ error: '파일이 없습니다.' }, 400)
+
+    // 확장자 검증
+    const allowedExts = ['pdf','ppt','pptx','doc','docx','hwp','hwpx','xls','xlsx','txt','zip','png','jpg','jpeg']
+    const origName = file.name || 'unknown'
+    const ext      = origName.split('.').pop()?.toLowerCase() || ''
+    if (!allowedExts.includes(ext))
+      return c.json({ error: `허용되지 않는 파일 형식입니다. (${ext})` }, 400)
+
+    // 파일 크기 제한 50MB
+    if (file.size > 50 * 1024 * 1024)
+      return c.json({ error: '파일 크기는 50MB 이하여야 합니다.' }, 400)
+
+    const fname = `edu_mat_${sessionId}_${Date.now()}.${ext}`
+    const dir   = join(getUploadRootNow(), 'edu_materials')
+    mkdirSync(dir, { recursive: true })
+    const fpath = join(dir, fname)
+    const buf   = Buffer.from(await file.arrayBuffer())
+    writeFileSync(fpath, buf)
+
+    const rel    = `/uploads/edu_materials/${fname}`
+    const result = rawDb.prepare(
+      `INSERT INTO edu_materials (session_id, file_name, orig_name, file_path, file_size, mime_type, description, uploaded_by)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).run(sessionId, fname, origName, rel, file.size, file.type || null, description || null, user.id)
+
+    return c.json({
+      id: result.lastInsertRowid,
+      file_name: fname, orig_name: origName,
+      file_path: rel, file_size: file.size,
+      description
+    })
+  })
+
+  // ─── DELETE /api/education/materials/:materialId [FEAT-EDU-MAT] ──────────
+  serverApp.delete('/api/education/materials/:materialId', async (c: any) => {
+    const user = getUser(c)
+    if (!user) return c.json({ error: '인증 필요' }, 401)
+    if (user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+    const rawDb      = getRawDb()
+    const materialId = Number(c.req.param('materialId'))
+    const mat        = rawDb.prepare('SELECT * FROM edu_materials WHERE id=?').get(materialId) as any
+    if (!mat) return c.json({ error: '자료를 찾을 수 없습니다.' }, 404)
+    try {
+      const absPath = join(getUploadRootNow(), 'edu_materials', mat.file_name)
+      if (existsSync(absPath)) unlinkSync(absPath)
+    } catch (_) {}
+    rawDb.prepare('DELETE FROM edu_materials WHERE id=?').run(materialId)
+    return c.json({ success: true })
   })
 }

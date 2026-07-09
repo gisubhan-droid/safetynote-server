@@ -27649,6 +27649,32 @@ async function showEduSessionModal(sessionId, eduType) {
             placeholder="추가 사항">${session?.notes||''}</textarea>
         </div>
 
+        <!-- ★ 교육 자료 첨부 [FEAT-EDU-MAT] -->
+        <div>
+          <div class="flex items-center gap-2 mb-2">
+            <i class="fas fa-paperclip text-xs" style="color:${meta.color}"></i>
+            <label class="text-xs font-bold text-gray-600">교육 자료 첨부</label>
+            <span class="text-xs text-gray-400">(PDF, PPT, HWP, Word 등 · 최대 50MB)</span>
+          </div>
+          <!-- 기존 자료 목록 (수정 모달일 때만 표시) -->
+          <div id="esf-materials-list" class="mb-2 space-y-1">
+            ${sessionId ? '<div class="text-xs text-gray-400 py-1 text-center"><i class="fas fa-spinner fa-spin mr-1"></i>자료 목록 로딩 중...</div>' : ''}
+          </div>
+          <!-- 신규 파일 선택 -->
+          <div id="esf-mat-dropzone"
+            class="border-2 border-dashed border-gray-200 rounded-xl px-4 py-3 text-center cursor-pointer hover:border-purple-300 hover:bg-purple-50 transition-all"
+            onclick="document.getElementById('esf-mat-input').click()">
+            <i class="fas fa-file-upload text-gray-300 text-xl mb-1 block"></i>
+            <p class="text-xs text-gray-400">클릭하여 파일 선택 (여러 파일 동시 가능)</p>
+            <input id="esf-mat-input" type="file"
+              accept=".pdf,.ppt,.pptx,.doc,.docx,.hwp,.hwpx,.xls,.xlsx,.txt,.zip,.png,.jpg,.jpeg"
+              multiple class="hidden"
+              onchange="_onEsfMatSelect(event,'${meta.color}')">
+          </div>
+          <!-- 선택된 신규 파일 미리보기 -->
+          <div id="esf-mat-preview" class="mt-2 space-y-1"></div>
+        </div>
+
         <!-- 교육 내용 (법령 기본값 자동입력, 수정 가능) -->
         <div>
           <div class="flex items-center justify-between mb-1">
@@ -27752,7 +27778,104 @@ async function showEduSessionModal(sessionId, eduType) {
         _resetEduContent(eduType);
       }
     }
+    // ★ 수정 모달일 때: 기존 교육자료 목록 로드 [FEAT-EDU-MAT]
+    if (sessionId) {
+      _loadEsfMaterials(sessionId);
+    }
+    // 드래그앤드롭 연결
+    const dz = document.getElementById('esf-mat-dropzone');
+    if (dz) {
+      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('border-purple-400','bg-purple-50'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('border-purple-400','bg-purple-50'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault(); dz.classList.remove('border-purple-400','bg-purple-50');
+        const fakeEvt = { target: { files: e.dataTransfer.files } };
+        _onEsfMatSelect(fakeEvt, meta.color);
+      });
+    }
   }, 10);
+}
+
+// ── 교육 등록 모달 내 기존 자료 목록 로드 [FEAT-EDU-MAT] ─────────────────────
+async function _loadEsfMaterials(sessionId) {
+  const container = document.getElementById('esf-materials-list');
+  if (!container) return;
+  try {
+    const res = await API.get(`/education/sessions/${sessionId}/materials`);
+    const mats = res.data || [];
+    if (!mats.length) { container.innerHTML = ''; return; }
+    container.innerHTML = mats.map(m => `
+      <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200" id="esf-mat-row-${m.id}">
+        <i class="${_matFileIcon(m.orig_name)} text-sm text-gray-400 w-4"></i>
+        <span class="flex-1 text-xs text-gray-700 truncate" title="${m.orig_name}">${m.orig_name}</span>
+        <span class="text-xs text-gray-400 whitespace-nowrap">${_formatFileSize(m.file_size)}</span>
+        <button onclick="_deleteEduMaterial(${m.id},${sessionId})" title="삭제"
+          class="text-red-400 hover:text-red-600 text-xs px-1"><i class="fas fa-times"></i></button>
+      </div>`).join('');
+  } catch(e) {
+    container.innerHTML = '';
+  }
+}
+
+// ── 신규 파일 선택 미리보기 [FEAT-EDU-MAT] ───────────────────────────────────
+function _onEsfMatSelect(event, color) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  const preview = document.getElementById('esf-mat-preview');
+  if (!preview) return;
+  // 기존 목록에 추가 (중복 파일명 제외)
+  const existing = Array.from(preview.querySelectorAll('[data-fname]')).map(el => el.dataset.fname);
+  files.forEach(f => {
+    if (existing.includes(f.name)) return;
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg border border-blue-200';
+    row.dataset.fname = f.name;
+    row.innerHTML = `
+      <i class="${_matFileIcon(f.name)} text-sm text-blue-400 w-4"></i>
+      <span class="flex-1 text-xs text-blue-700 truncate" title="${f.name}">${f.name}</span>
+      <span class="text-xs text-blue-400 whitespace-nowrap">${_formatFileSize(f.size)}</span>
+      <span class="text-xs text-green-600 font-bold">신규</span>
+      <button onclick="this.closest('[data-fname]').remove()" class="text-red-400 hover:text-red-600 text-xs px-1"><i class="fas fa-times"></i></button>`;
+    // 파일 객체 보관
+    row._file = f;
+    preview.appendChild(row);
+  });
+  // input 초기화 (같은 파일 재선택 가능)
+  event.target.value = '';
+}
+
+// ── 교육자료 파일 아이콘 헬퍼 ────────────────────────────────────────────────
+function _matFileIcon(name) {
+  const ext = (name||'').split('.').pop()?.toLowerCase();
+  if (['pdf'].includes(ext))            return 'fas fa-file-pdf';
+  if (['ppt','pptx'].includes(ext))     return 'fas fa-file-powerpoint';
+  if (['doc','docx'].includes(ext))     return 'fas fa-file-word';
+  if (['xls','xlsx'].includes(ext))     return 'fas fa-file-excel';
+  if (['hwp','hwpx'].includes(ext))     return 'fas fa-file-alt';
+  if (['zip'].includes(ext))            return 'fas fa-file-archive';
+  if (['png','jpg','jpeg'].includes(ext)) return 'fas fa-file-image';
+  return 'fas fa-file';
+}
+
+// ── 파일 크기 포맷 ────────────────────────────────────────────────────────────
+function _formatFileSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024)       return bytes + 'B';
+  if (bytes < 1024*1024)  return (bytes/1024).toFixed(1) + 'KB';
+  return (bytes/(1024*1024)).toFixed(1) + 'MB';
+}
+
+// ── 교육자료 삭제 (등록 모달 내) ─────────────────────────────────────────────
+async function _deleteEduMaterial(materialId, sessionId) {
+  if (!confirm('이 교육 자료를 삭제하시겠습니까?')) return;
+  try {
+    await API.delete(`/education/materials/${materialId}`);
+    const row = document.getElementById(`esf-mat-row-${materialId}`);
+    if (row) row.remove();
+    toast('자료가 삭제되었습니다.', 'success');
+  } catch(e) {
+    toast('삭제 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
 }
 
 // ── 교육 체크박스 헬퍼 ──────────────────────────────────────────────────
@@ -28003,14 +28126,41 @@ async function submitEduSession(eduType, sessionId) {
   };
 
   try {
+    let savedId = sessionId;
     if (sessionId) {
       await API.put(`/education/sessions/${sessionId}`, body);
     } else {
       const res = await API.post('/education/sessions', body);
+      savedId = res.data.id || res.data.session_id || null;
       if (res.data.legal_warning) {
         toast('⚠️ ' + res.data.legal_warning, 'warning');
       }
     }
+
+    // ★ 신규 첨부 자료 업로드 [FEAT-EDU-MAT]
+    if (savedId) {
+      const preview = document.getElementById('esf-mat-preview');
+      const newRows = preview ? Array.from(preview.querySelectorAll('[data-fname]')) : [];
+      if (newRows.length > 0) {
+        const token = localStorage.getItem('token');
+        let uploadOk = 0, uploadFail = 0;
+        for (const row of newRows) {
+          const file = row._file;
+          if (!file) continue;
+          const fd = new FormData();
+          fd.append('material', file);
+          try {
+            const result = await _uploadWithProgress(
+              `/api/education/sessions/${savedId}/materials`, fd, { token }
+            );
+            if (result.ok) uploadOk++;
+            else { uploadFail++; toast(`${file.name} 업로드 실패`, 'error'); }
+          } catch(e) { uploadFail++; toast(`${file.name} 업로드 오류: ${e.message}`, 'error'); }
+        }
+        if (uploadOk > 0) toast(`교육 자료 ${uploadOk}개 업로드 완료`, 'success');
+      }
+    }
+
     document.querySelector('.modal-overlay')?.remove();
     toast(sessionId ? '교육이 수정되었습니다.' : '교육이 등록되었습니다.', 'success');
     await loadEduSessions(eduType);
@@ -28255,17 +28405,19 @@ async function _eduAttendeeUnsign(attendeeId, sessionId, eduType) {
 
 async function showEduDetailModal(sessionId, eduType) {
   const meta = EDU_TYPE_META[eduType];
-  let session, attendees = [], photos = [], eduApproval = { approval_safety: null, approval_general: null };
+  let session, attendees = [], photos = [], eduApproval = { approval_safety: null, approval_general: null }, materials = [];
   try {
-    const [sRes, pRes, aRes] = await Promise.all([
+    const [sRes, pRes, aRes, mRes] = await Promise.all([
       API.get(`/education/sessions/${sessionId}`),
       API.get(`/education/sessions/${sessionId}/photos`).catch(() => ({ data: [] })),
       API.get(`/education/sessions/${sessionId}/approval-status`).catch(() => ({ data: { approval_safety: null, approval_general: null } })),
+      API.get(`/education/sessions/${sessionId}/materials`).catch(() => ({ data: [] })),
     ]);
     session      = sRes.data.session;
     attendees    = sRes.data.attendees || [];
     photos       = pRes.data || [];
     eduApproval  = aRes.data || { approval_safety: null, approval_general: null };
+    materials    = mRes.data || [];
   } catch(e) { toast('불러오기 실패', 'error'); return; }
 
   const qLabel  = session.quarter ? `${session.quarter}분기 ` : '';
@@ -28409,6 +28561,44 @@ async function showEduDetailModal(sessionId, eduType) {
           </div>`).join('')}
           ${photos.length > 8 ? `<div class="aspect-square rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-sm font-bold cursor-pointer" onclick="showEduPhotoModal(${sessionId},'${eduType}')">+${photos.length-8}</div>` : ''}
         </div>
+      </div>` : ''}
+
+      <!-- ★ 교육 자료 섹션 [FEAT-EDU-MAT] -->
+      ${(materials.length > 0 || canEdit) ? `
+      <div class="mb-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-sm font-bold text-gray-700"><i class="fas fa-paperclip mr-1 text-gray-400"></i>교육 자료</span>
+          ${materials.length > 0 ? `<span class="text-xs text-gray-400">${materials.length}개</span>` : ''}
+          ${canEdit ? `
+          <button onclick="_showEduMatUploadInDetail(${sessionId},'${eduType}')"
+            class="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold border"
+            style="border-color:${meta.color};color:${meta.color}">
+            <i class="fas fa-plus"></i> 자료 추가
+          </button>` : ''}
+        </div>
+        ${materials.length === 0 ? `
+        <p class="text-xs text-gray-400 text-center py-3 bg-gray-50 rounded-xl">등록된 교육 자료가 없습니다.</p>` : `
+        <div class="space-y-1.5" id="edu-detail-mat-list-${sessionId}">
+          ${materials.map(m => `
+          <div class="flex items-center gap-2 px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-100 hover:bg-gray-100 transition-colors" id="edu-detail-mat-${m.id}">
+            <i class="${_matFileIcon(m.orig_name)} text-base w-5 text-gray-400"></i>
+            <div class="flex-1 min-w-0">
+              <p class="text-xs font-medium text-gray-800 truncate" title="${m.orig_name}">${m.orig_name}</p>
+              ${m.description ? `<p class="text-xs text-gray-400 truncate">${m.description}</p>` : ''}
+            </div>
+            <span class="text-xs text-gray-400 whitespace-nowrap">${_formatFileSize(m.file_size)}</span>
+            <a href="${m.file_path}" download="${m.orig_name}" target="_blank"
+              class="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-white whitespace-nowrap"
+              style="background:${meta.color}">
+              <i class="fas fa-download"></i> 다운
+            </a>
+            ${canEdit ? `
+            <button onclick="_deleteEduMatInDetail(${m.id},${sessionId},'${eduType}')" title="삭제"
+              class="w-6 h-6 rounded-full flex items-center justify-center bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600">
+              <i class="fas fa-times text-xs"></i>
+            </button>` : ''}
+          </div>`).join('')}
+        </div>`}
       </div>` : ''}
 
       <!-- ── 결재란 서명 [FEAT-060/061] 3단계: 안전관리자→현장대리인→대표이사 ── -->
@@ -29120,6 +29310,121 @@ async function printEduSign(sessionId) {
 </body>
 </html>`;
   _openPrintOverlay(_eduSignHtml);
+}
+
+// ─── 교육자료 상세 모달 내 업로드 팝업 [FEAT-EDU-MAT] ───────────────────────
+async function _showEduMatUploadInDetail(sessionId, eduType) {
+  const meta = EDU_TYPE_META[eduType] || { label: eduType, color: '#685182', bg: '#EDE9F7' };
+  const popup = document.createElement('div');
+  popup.className = 'modal-overlay';
+  popup.style.zIndex = '10010';
+  popup.innerHTML = `
+  <div class="modal-content" style="max-width:460px;padding:0">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100" style="border-radius:20px 20px 0 0">
+      <span class="text-sm font-bold text-gray-800"><i class="fas fa-paperclip mr-2" style="color:${meta.color}"></i>교육 자료 추가</span>
+      <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="px-5 py-4 space-y-3">
+      <div id="edu-mat-up-dz"
+        class="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center cursor-pointer hover:border-purple-300 hover:bg-purple-50 transition-all"
+        onclick="document.getElementById('edu-mat-up-input').click()">
+        <i class="fas fa-file-upload text-2xl text-gray-300 mb-2 block"></i>
+        <p class="text-sm text-gray-400">클릭 또는 파일 드래그</p>
+        <p class="text-xs text-gray-300 mt-1">PDF, PPT, HWP, Word, Excel, ZIP 등 · 최대 50MB</p>
+        <input id="edu-mat-up-input" type="file"
+          accept=".pdf,.ppt,.pptx,.doc,.docx,.hwp,.hwpx,.xls,.xlsx,.txt,.zip,.png,.jpg,.jpeg"
+          multiple class="hidden"
+          onchange="_onEduMatUpInputChange(event,'${meta.color}')">
+      </div>
+      <div id="edu-mat-up-preview" class="space-y-1"></div>
+      <div>
+        <input type="text" id="edu-mat-up-desc" placeholder="자료 설명 (선택 입력)" maxlength="100"
+          class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-400">
+      </div>
+    </div>
+    <div class="flex gap-2 px-5 py-4 border-t border-gray-100" style="border-radius:0 0 20px 20px">
+      <button onclick="this.closest('.modal-overlay').remove()"
+        class="flex-1 py-2 rounded-xl border border-gray-200 text-gray-500 text-sm font-bold">취소</button>
+      <button onclick="_uploadEduMatInDetail(${sessionId},'${eduType}',this.closest('.modal-overlay'))"
+        class="flex-1 py-2 rounded-xl text-white text-sm font-bold" style="background:${meta.color}">
+        <i class="fas fa-upload mr-1"></i>업로드
+      </button>
+    </div>
+  </div>`;
+
+  document.body.appendChild(popup);
+  setTimeout(() => popup.classList.add('open'), 10);
+
+  // 드래그앤드롭
+  const dz = popup.querySelector('#edu-mat-up-dz');
+  if (dz) {
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('border-purple-400','bg-purple-50'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('border-purple-400','bg-purple-50'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('border-purple-400','bg-purple-50');
+      const fakeEvt = { target: { files: e.dataTransfer.files } };
+      _onEduMatUpInputChange(fakeEvt, meta.color);
+    });
+  }
+}
+
+function _onEduMatUpInputChange(event, color) {
+  const files = Array.from(event.target.files || []);
+  const preview = document.getElementById('edu-mat-up-preview');
+  if (!preview) return;
+  files.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg border border-blue-100';
+    row.dataset.fname = f.name;
+    row._file = f;
+    row.innerHTML = `
+      <i class="${_matFileIcon(f.name)} text-sm text-blue-400 w-4"></i>
+      <span class="flex-1 text-xs text-blue-700 truncate">${f.name}</span>
+      <span class="text-xs text-blue-400">${_formatFileSize(f.size)}</span>
+      <button onclick="this.closest('[data-fname]').remove()" class="text-red-400 hover:text-red-600 text-xs px-1"><i class="fas fa-times"></i></button>`;
+    preview.appendChild(row);
+  });
+  if (event.target) event.target.value = '';
+}
+
+async function _uploadEduMatInDetail(sessionId, eduType, popupEl) {
+  const preview = document.getElementById('edu-mat-up-preview');
+  const rows = preview ? Array.from(preview.querySelectorAll('[data-fname]')) : [];
+  if (!rows.length) { toast('업로드할 파일을 선택하세요.', 'error'); return; }
+  const desc  = (document.getElementById('edu-mat-up-desc')?.value || '').trim();
+  const token = localStorage.getItem('token');
+  let ok = 0, fail = 0;
+  for (const row of rows) {
+    const file = row._file;
+    if (!file) continue;
+    const fd = new FormData();
+    fd.append('material', file);
+    fd.append('description', desc);
+    try {
+      const res = await _uploadWithProgress(`/api/education/sessions/${sessionId}/materials`, fd, { token });
+      if (res.ok) ok++;
+      else { fail++; toast(`${file.name} 업로드 실패`, 'error'); }
+    } catch(e) { fail++; toast(`${file.name}: ${e.message}`, 'error'); }
+  }
+  if (popupEl) popupEl.remove();
+  if (ok > 0) {
+    toast(`${ok}개 자료 업로드 완료`, 'success');
+    // 상세 모달 닫고 재열기 (자료 목록 새로고침)
+    document.querySelector('.modal-overlay')?.remove();
+    setTimeout(() => showEduDetailModal(sessionId, eduType), 100);
+  }
+}
+
+async function _deleteEduMatInDetail(materialId, sessionId, eduType) {
+  if (!confirm('이 교육 자료를 삭제하시겠습니까?')) return;
+  try {
+    await API.delete(`/education/materials/${materialId}`);
+    const row = document.getElementById(`edu-detail-mat-${materialId}`);
+    if (row) row.remove();
+    toast('자료가 삭제되었습니다.', 'success');
+  } catch(e) {
+    toast('삭제 실패: ' + (e.response?.data?.error || e.message), 'error');
+  }
 }
 
 // ─── 증빙사진 모달 ────────────────────────────────────────────────────────────

@@ -11120,6 +11120,39 @@ async function _tbmPrint(tbmId) {
       } catch(_) {}
     }
 
+    // ── 사진 base64 사전 로드 (인쇄 다이얼로그 네트워크 요청 제거) ────────────
+    // 모든 사진 ID 수집
+    const _allPhotoItems = [];
+    const _photoToken = localStorage.getItem('token') || '';
+    (tbmChecklistSections || []).forEach(sec => {
+      let ps = [];
+      try { ps = typeof sec.photos === 'string' ? JSON.parse(sec.photos) : (sec.photos || []); } catch(_) {}
+      ps.filter(p => p.file_path).forEach(p => _allPhotoItems.push(p.id));
+    });
+    // 병렬 fetch → arrayBuffer → base64 변환
+    async function _fetchPhotoBase64(photoId) {
+      try {
+        const r = await fetch('/api/tbm-photos/' + photoId + '/img?token=' + encodeURIComponent(_photoToken));
+        if (!r.ok) return null;
+        const buf = await r.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = '';
+        // 청크 단위로 btoa 처리 (대용량 이미지 스택 오버플로 방지)
+        const CHUNK = 8192;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+        }
+        const mime = r.headers.get('Content-Type') || 'image/jpeg';
+        return 'data:' + mime + ';base64,' + btoa(binary);
+      } catch(_) { return null; }
+    }
+    // photoMap: { [photoId]: 'data:image/jpeg;base64,...' }
+    const _photoMap = {};
+    if (_allPhotoItems.length > 0) {
+      const _b64Results = await Promise.all(_allPhotoItems.map(id => _fetchPhotoBase64(id)));
+      _allPhotoItems.forEach((id, idx) => { if (_b64Results[idx]) _photoMap[id] = _b64Results[idx]; });
+    }
+
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
     const printDt = new Date().toLocaleString('ko-KR');
 
@@ -11303,7 +11336,7 @@ async function _tbmPrint(tbmId) {
     @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
     @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-semibold.woff2') format('woff2'); font-weight:600; font-display:swap; }
     @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-bold.woff2') format('woff2'); font-weight:700; font-display:swap; }
-    body { font-family:'LG Smart KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif; font-size:10pt; color:#000; margin:0; padding:0; }
+    body { font-family:'LG Smart KR','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif; font-size:10pt; color:#000; margin:0; padding:0; }
 
     /* ── 툴바 (화면 전용) ── */
     .print-toolbar {
@@ -11572,8 +11605,6 @@ async function _tbmPrint(tbmId) {
           return { ...sec, parsedPhotos: ps.filter(p => p.file_path) };
         }).filter(sec => sec.parsedPhotos.length > 0);
         if (!secsWithPhotos.length) return '';
-        const token = localStorage.getItem('token') || '';
-
         let photoContent = '<div class="section-hdr" style="margin-top:8px">⑥ TBM 안전조치 사진</div>';
         secsWithPhotos.forEach(sec => {
           photoContent += '<div style="margin-bottom:8px">';
@@ -11586,9 +11617,11 @@ async function _tbmPrint(tbmId) {
           sec.parsedPhotos.forEach(p => {
             photoContent += '<div style="border:1px solid #BFDBFE;border-radius:4px;overflow:hidden;background:white">';
             photoContent += '<div style="width:100%;aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">';
-            // lazy loading: 뷰포트 진입 시 로드 (미리보기 속도 개선)
-            photoContent += '<img src="/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(token) + '"'
-                         + ' loading="lazy"'
+            // base64 사전 로드된 경우 data URL 사용, 없으면 원본 URL fallback
+            const imgSrc = _photoMap[p.id]
+              ? _photoMap[p.id]
+              : '/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(_photoToken);
+            photoContent += '<img src="' + imgSrc + '"'
                          + ' style="width:100%;height:100%;object-fit:cover;display:block">';
             photoContent += '</div>';
             if (p.label) {
@@ -11680,9 +11713,9 @@ async function _tbmPrint(tbmId) {
   // 초기 실행 (서명 이미지 등 즉시 로드 항목 반영)
   _autoScale();
 
-  // 사진 lazy load 완료 후 재실행 (사진 높이 반영)
+  // 사진 로드 완료 후 재실행 (base64 embed 혹은 fallback URL 이미지 높이 반영)
   (function _watchPhotoLoad() {
-    const imgs = document.querySelectorAll('#inner2 img[loading="lazy"]');
+    const imgs = document.querySelectorAll('#inner2 img');
     if (!imgs.length) return;
     let loaded = 0;
     imgs.forEach(img => {

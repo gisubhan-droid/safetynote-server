@@ -21,8 +21,20 @@
 #   - 포트 3445 (두 번째 인자로 변경 가능)
 # =============================================================================
 
-INSTALL_DIR="${1:-/volume1/safetynote}"
-PORT="${2:-3445}"
+# ─── 인자 파싱 (--foreground 옵션 지원) ─────────────────────────────────────
+# PM2 상시 등록 시: --foreground 옵션으로 호출 → 서버 프로세스가 종료될 때까지 대기
+# 수동 실행 시    : 옵션 없이 호출 → 기존과 동일하게 백그라운드로 시작 후 종료
+FOREGROUND=false
+ARGS=()
+for _arg in "$@"; do
+  case "$_arg" in
+    --foreground) FOREGROUND=true ;;
+    *) ARGS+=("$_arg") ;;
+  esac
+done
+
+INSTALL_DIR="${ARGS[0]:-/volume1/safetynote}"
+PORT="${ARGS[1]:-3445}"
 
 # ─── 경로 설정 ────────────────────────────────────────────────────────────────
 NODE_PATH_V18="/volume1/@appstore/Node.js_v18/usr/local/bin"
@@ -503,6 +515,12 @@ PYEOF
     echo "  👉  http://${NAS_IP}:${PORT}"
     echo "  📋  로그: $LOG_FILE"
     echo "================================================================"
+    # PM2 포그라운드 모드: 자식 프로세스가 살아있는 동안 대기
+    if [ "$FOREGROUND" = "true" ]; then
+      log "[PM2 foreground] python3 PID=$PYTHON_PID 대기 중..."
+      wait "$PYTHON_PID" 2>/dev/null
+      log "[PM2 foreground] python3 종료 감지 — 스크립트 종료"
+    fi
     return 0
   else
     log "⚠️ Python3 서버 응답 없음 (HTTP=$HTTP_CODE) — Node.js 시도"
@@ -934,6 +952,12 @@ JSEOF2
     echo "  👉  http://${NAS_IP}:${PORT}"
     echo "  📋  로그: $LOG_FILE"
     echo "================================================================"
+    # PM2 포그라운드 모드: 자식 프로세스가 살아있는 동안 대기
+    if [ "$FOREGROUND" = "true" ]; then
+      log "[PM2 foreground] node PID=$NODE_PID 대기 중..."
+      wait "$NODE_PID" 2>/dev/null
+      log "[PM2 foreground] node 종료 감지 — 스크립트 종료"
+    fi
   else
     log "❌ Node.js 서버 응답 없음 (HTTP=$HTTP_CODE)"
     echo "================================================================"
@@ -949,7 +973,7 @@ JSEOF2
 # ─── 메인 ────────────────────────────────────────────────────────────────────
 main() {
   log "━━━ 비상 복구 서버 (Standalone v2) 시작 요청 ━━━"
-  log "INSTALL_DIR=$INSTALL_DIR, PORT=$PORT"
+  log "INSTALL_DIR=$INSTALL_DIR, PORT=$PORT, FOREGROUND=$FOREGROUND"
 
   cleanup_previous
 

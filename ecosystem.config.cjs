@@ -42,6 +42,29 @@ module.exports = {
       autorestart: true,
       error_file: '/var/log/safetynote-error-0.log',
       out_file: '/var/log/safetynote-out-0.log'
+    },
+
+    // ─── 비상 복구 서버 (포트 3445) — 항상 상시 동작 ────────────────────────
+    // - 메인 서버(3443) 상태와 무관하게 항상 접속 가능
+    // - 접속: http://NAS_IP:3445
+    // - 비밀번호: .env 파일의 RECOVERY_PASSWORD (기본: recovery1234)
+    // - PM2가 crash 시 자동 재시작 (autorestart: true)
+    {
+      name: 'safetynote-recovery',
+      script: '/volume1/safetynote/scripts/safe-recovery-standalone.sh',
+      args: '/volume1/safetynote 3445 --foreground',
+      interpreter: '/bin/bash',
+      cwd: '/volume1/safetynote',
+      watch: false,
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      // crash 후 3초 대기 후 재시작
+      restart_delay: 3000,
+      // 연속 crash 10회까지 재시작 시도 (0 = 무제한)
+      max_restarts: 0,
+      error_file: '/var/log/safetynote-recovery-error.log',
+      out_file: '/var/log/safetynote-recovery-out.log'
     }
   ]
 }

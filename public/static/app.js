@@ -10487,34 +10487,68 @@ async function _eduApprovalSignInApp(sessionId, approvalRole, eduType) {
 // ── 출력 미리보기 공통 오버레이 헬퍼 (BUG-094: Android WebView window.close() 차단 대응) ─────
 // window.open() + window.close() 대신 현재 페이지 위에 전체화면 오버레이 iframe을 띄웁니다.
 // HTML 내부의 닫기 버튼은 window.parent.postMessage('closePrintOverlay','*') 를 호출합니다.
-// 인쇄 버튼은 iframe 내부에서 window.print() 를 직접 호출합니다. (274a16a 원본 복원)
+//
+// ★ 인쇄 방식: Blob URL → iframe.src (sandbox 없음)
+//   - srcdoc + sandbox 방식: Chrome에서 window.print() 호출 시 부모 창을 인쇄하는 버그 존재
+//   - Blob URL + src 방식: iframe이 독립 origin으로 처리되어 window.print()가 iframe 자체를 인쇄
+//   - sandbox 속성 제거: allow-modals 없이도 print 다이얼로그 열림 (blob: URL은 별도 origin)
 function _openPrintOverlay(htmlContent) {
   // 기존 오버레이 제거
   const existing = document.getElementById('__print-overlay__');
   if (existing) existing.remove();
 
+  // 기존 blob URL 정리
+  if (window.__printBlobUrl__) {
+    URL.revokeObjectURL(window.__printBlobUrl__);
+    window.__printBlobUrl__ = null;
+  }
+
   const overlay = document.createElement('div');
   overlay.id = '__print-overlay__';
   overlay.style.cssText = [
     'position:fixed', 'inset:0', 'z-index:99999',
-    'background:#000', 'display:flex', 'flex-direction:column',
+    'background:#1f2937', 'display:flex', 'flex-direction:column',
   ].join(';');
 
+  // ── 로딩 스피너 ──
+  const spinner = document.createElement('div');
+  spinner.style.cssText = [
+    'position:absolute','inset:0','z-index:1',
+    'display:flex','flex-direction:column','align-items:center','justify-content:center',
+    'background:#1f2937','color:#fff','gap:14px'
+  ].join(';');
+  spinner.innerHTML = '<div style="width:40px;height:40px;border:4px solid #374151;border-top-color:#D70072;border-radius:50%;animation:ps 0.8s linear infinite"></div>' +
+    '<div style="font-size:13px;color:#9ca3af">불러오는 중...</div>' +
+    '<style>@keyframes ps{to{transform:rotate(360deg)}}</style>';
+  overlay.appendChild(spinner);
+
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'flex:1;width:100%;border:none;';
-  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-modals allow-popups');
+  // sandbox 속성 없음 — blob: URL iframe은 별도 origin이므로 window.print()가 자신을 인쇄
+  iframe.style.cssText = 'flex:1;width:100%;border:none;opacity:0;transition:opacity 0.2s';
+
+  iframe.addEventListener('load', function() {
+    spinner.style.display = 'none';
+    iframe.style.opacity = '1';
+  });
 
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
 
-  // iframe srcdoc 방식 (Android WebView 호환)
-  // 인쇄 버튼은 HTML 내부에서 window.print() 직접 호출 → iframe 자체를 인쇄
-  iframe.srcdoc = htmlContent;
+  // ★ Blob URL 방식으로 src 설정 (srcdoc 대신)
+  // blob: URL은 별도 origin → window.print() = iframe 자신을 인쇄 (부모창 인쇄 버그 없음)
+  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+  const blobUrl = URL.createObjectURL(blob);
+  window.__printBlobUrl__ = blobUrl;
+  iframe.src = blobUrl;
 
   // ── 메시지 수신: 닫기 ──
   function _onCloseMsg(e) {
     if (e.data === 'closePrintOverlay') {
       overlay.remove();
+      if (window.__printBlobUrl__) {
+        URL.revokeObjectURL(window.__printBlobUrl__);
+        window.__printBlobUrl__ = null;
+      }
       window.removeEventListener('message', _onCloseMsg);
     }
   }

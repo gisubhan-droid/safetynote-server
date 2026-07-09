@@ -10541,15 +10541,25 @@ function _openPrintOverlay(htmlContent) {
   window.__printBlobUrl__ = blobUrl;
   iframe.src = blobUrl;
 
-  // ── 메시지 수신: 닫기 ──
+  // ── 메시지 수신: 닫기 / TBM 결재 서명 후 재출력 ──
   function _onCloseMsg(e) {
-    if (e.data === 'closePrintOverlay') {
+    const msg = e.data;
+    if (msg === 'closePrintOverlay') {
       overlay.remove();
       if (window.__printBlobUrl__) {
         URL.revokeObjectURL(window.__printBlobUrl__);
         window.__printBlobUrl__ = null;
       }
       window.removeEventListener('message', _onCloseMsg);
+    } else if (msg && msg.type === 'reloadTbmPrint' && msg.tbmId) {
+      // blob URL은 reload() 불가 → 오버레이 닫고 _tbmPrint() 재호출
+      overlay.remove();
+      if (window.__printBlobUrl__) {
+        URL.revokeObjectURL(window.__printBlobUrl__);
+        window.__printBlobUrl__ = null;
+      }
+      window.removeEventListener('message', _onCloseMsg);
+      setTimeout(() => _tbmPrint(msg.tbmId), 150);
     }
   }
   window.addEventListener('message', _onCloseMsg);
@@ -11788,8 +11798,8 @@ async function _tbmPrint(tbmId) {
         const json = await res.json();
         if (!res.ok) { alert(json.error || '서명 처리 실패'); return; }
         modal.classList.remove('open');
-        // 창 새로고침 (서명 반영)
-        window.location.reload();
+        // blob URL iframe은 window.location.reload() 불가 → 부모에 재출력 요청
+        window.parent.postMessage({ type: 'reloadTbmPrint', tbmId: TBM_ID }, '*');
       } catch(e) {
         alert('서명 처리 중 오류가 발생했습니다.');
       }

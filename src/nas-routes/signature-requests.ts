@@ -151,10 +151,79 @@ app.patch('/:id/sign', async (c) => {
   try {
     if (req.ref_type === 'tbm') {
       const signMethod = signData ? 'pad' : 'account'
-      rawDb.prepare(`
-        INSERT OR REPLACE INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
-        VALUES (?, ?, ?, ?, 'attendee', CURRENT_TIMESTAMP, ?, ?)
-      `).run(req.ref_id, user.id, user.name, user.position || '', signMethod, signData)
+      // ref_sub_type에 따라 role 결정:
+      //   approval_safety  → 결재란(안전관리자)
+      //   approval_general → 결재란(총괄책임/현장대리인)
+      //   그 외(attendee)  → 참석자란
+      const tbmRole = (req.ref_sub_type === 'approval_safety' || req.ref_sub_type === 'approval_general')
+        ? req.ref_sub_type
+        : 'attendee'
+
+      if (tbmRole === 'approval_safety' || tbmRole === 'approval_general') {
+        // 결재란 서명: approval-sign 엔드포인트와 동일하게 처리
+        // 서명 순서 잠금 확인
+        const existingApproval = rawDb.prepare(`
+          SELECT role FROM tbm_signatures WHERE tbm_id = ? AND role IN ('approval_general','approval_safety')
+        `).all(req.ref_id) as any[]
+        const signedRoles = new Set(existingApproval.map((s: any) => s.role))
+
+        if (tbmRole === 'approval_general' && !signedRoles.has('approval_safety')) {
+          return c.json({ error: '안전관리자 서명 후 총괄책임 서명이 가능합니다.' }, 409)
+        }
+        if (signedRoles.has(tbmRole)) {
+          // 이미 서명됨 — 중복 방지, 성공으로 처리
+          console.warn(`[sig-req/sign] 이미 결재 서명됨: tbm=${req.ref_id} role=${tbmRole}`)
+        } else {
+          rawDb.prepare(`
+            INSERT INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+          `).run(req.ref_id, user.id, user.name, user.position || '', tbmRole, signMethod, signData)
+
+          // 다음 단계 알림 연쇄 (approval_safety 서명 완료 → 현장대리인 알림)
+          if (tbmRole === 'approval_safety') {
+            const tbmRow = rawDb.prepare(
+              `SELECT tr.*, t.title as task_title FROM tbm_records tr LEFT JOIN tasks t ON t.id = tr.task_id WHERE tr.id = ?`
+            ).get(req.ref_id) as any
+            const tbmTitle = tbmRow ? `TBM: ${tbmRow.task_title || tbmRow.id}` : `TBM #${req.ref_id}`
+            const generalUsers = rawDb.prepare(
+              `SELECT id, name FROM users WHERE position = '현장대리인' AND is_active = 1`
+            ).all() as any[]
+            for (const gu of generalUsers) {
+              const already = rawDb.prepare(
+                `SELECT id FROM signature_requests WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type='approval_general' AND target_user_id=? AND status='pending'`
+              ).get(req.ref_id, gu.id)
+              if (!already) {
+                const info = rawDb.prepare(`
+                  INSERT INTO signature_requests (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id)
+                  VALUES ('tbm', ?, 'approval_general', ?, ?, ?, ?)
+                `).run(req.ref_id, `[결재요청] ${tbmTitle}`, `안전관리자(${user.name}) 서명 완료. 총괄책임 결재를 요청합니다.`, user.id, gu.id)
+                sendToUser(gu.id, {
+                  type: 'sign_request', id: info.lastInsertRowid,
+                  title: `[결재요청] ${tbmTitle}`,
+                  requester: user.name, ref_type: 'tbm', ref_sub_type: 'approval_general',
+                  message: `[TBM 결재] 안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`,
+                  ts: Date.now()
+                })
+                sendFcmToUsers([gu.id], {
+                  title: `[결재요청] ${tbmTitle}`,
+                  body: `안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`,
+                  data: { type: 'sign_request', ref_type: 'tbm', ref_id: String(req.ref_id) }
+                }).catch(() => {})
+                rawDb.prepare(`
+                  INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+                  VALUES (?, 'sign_request', ?, ?, ?, 'tbm', 0)
+                `).run(gu.id, `[결재요청] ${tbmTitle}`, `안전관리자 서명 완료. 총괄책임 결재를 요청합니다.`, req.ref_id)
+              }
+            }
+          }
+        }
+      } else {
+        // 일반 참석자 서명
+        rawDb.prepare(`
+          INSERT OR REPLACE INTO tbm_signatures (tbm_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+          VALUES (?, ?, ?, ?, 'attendee', CURRENT_TIMESTAMP, ?, ?)
+        `).run(req.ref_id, user.id, user.name, user.position || '', signMethod, signData)
+      }
     } else if (req.ref_type === 'risk_assessment') {
       const signMethod = signData ? 'pad' : 'account'
       rawDb.prepare(`

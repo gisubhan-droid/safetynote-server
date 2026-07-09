@@ -11278,116 +11278,119 @@ async function _tbmPrint(tbmId) {
   <meta charset="UTF-8">
   <title>TBM 회의록 - ${(tbm.task_title||'').replace(/</g,'&lt;')}</title>
   <style>
-    /* ── 공통 ── */
     *, *::before, *::after { box-sizing: border-box; }
     @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
     @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-semibold.woff2') format('woff2'); font-weight:600; font-display:swap; }
     @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-bold.woff2') format('woff2'); font-weight:700; font-display:swap; }
     body { font-family:'LG Smart KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif; font-size:10pt; color:#000; margin:0; padding:0; }
 
-    /* ── 인쇄 전용 법령 머리글 (매 페이지 자동 반복) ── */
-    .law-print-header {
+    /* ── 툴바 (화면 전용) ── */
+    .print-toolbar {
       display: none;
     }
-    @media print {
-      .law-print-header {
-        display: flex;
-        position: fixed;
-        top: 0; left: 0; right: 0;
-        font-size: 7pt; color: #888; font-weight: bold;
-        padding: 2px 6px 3px;
-        border-bottom: 0.5pt solid #ddd;
-        background: #fff;
-        z-index: 9999;
-        justify-content: space-between; align-items: center;
-      }
-      .a4-page { padding-top: 6mm; }
-      .no-print { display: none !important; }
-      .print-toolbar { display: none !important; }
-    }
-
-    /* ── 화면 미리보기 ── */
     @media screen {
-      body { background: #e5e7eb; padding: 0; }
-      .a4-page {
-        background: #fff;
-        width: 210mm;
-        min-height: 297mm;
-        margin: 0 auto;
-        padding: 14mm 13mm 16mm 15mm;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.18);
-        /* 화면에서도 두 페이지 내용이 자연스럽게 이어지도록 */
-        overflow: visible;
-      }
+      body { background:#e5e7eb; padding:0; padding-top:52px; }
       .print-toolbar {
-        position: fixed; top: 0; left: 0; right: 0; z-index: 999;
-        background: #1f2937; color: #fff;
-        display: flex; align-items: center;
-        padding: 10px 20px; gap: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        display: flex;
+        position:fixed; top:0; left:0; right:0; z-index:999;
+        background:#1f2937; color:#fff;
+        align-items:center; padding:8px 16px; gap:10px;
+        box-shadow:0 2px 8px rgba(0,0,0,0.3);
       }
-      .print-toolbar .toolbar-title { font-size: 13px; font-weight: bold; flex: 1; }
-      .print-toolbar button {
-        padding: 7px 20px; border-radius: 8px; border: none;
-        font-size: 13px; font-weight: bold; cursor: pointer;
-      }
-      .btn-print { background: #D70072; color: #fff; }
-      .btn-close  { background: #374151; color: #ccc; }
-      body { padding-top: 56px; }
+      .print-toolbar .toolbar-title { font-size:12px; font-weight:bold; flex:1; }
+      .btn-print { background:#D70072; color:#fff; padding:6px 18px; border-radius:7px; border:none; font-size:12px; font-weight:bold; cursor:pointer; }
+      .btn-close  { background:#374151; color:#ccc;  padding:6px 14px; border-radius:7px; border:none; font-size:12px; cursor:pointer; }
+    }
+    @media print {
+      .print-toolbar { display:none !important; }
+      .no-print { display:none !important; }
+      .print-only { display:table-cell !important; }
+      #approval-sign-modal { display:none !important; }
+      img { page-break-inside:avoid; break-inside:avoid; }
+      tr  { page-break-inside:avoid; break-inside:avoid; }
     }
 
-    /* ── 공통 레이아웃 ── */
+    /* ── A4 페이지 시트 ── */
+    /* 각 .page-sheet 는 정확히 A4 한 장 */
+    /* 내용(div.page-inner)를 JS로 scale 조정해 항상 1장에 맞춤 */
+    .page-sheet {
+      position: relative;
+      background: #fff;
+      /* A4: 210 × 297 mm */
+      width:  210mm;
+      height: 297mm;
+      overflow: hidden;
+    }
+    @media screen {
+      .page-sheet {
+        margin: 0 auto 24px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+      }
+    }
+    @media print {
+      .page-sheet {
+        page-break-after: always;
+        break-after: page;
+      }
+      .page-sheet:last-child {
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+    }
+    /* 실제 내용 컨테이너 — JS가 transform-origin:top left 기준으로 scale */
+    .page-inner {
+      position: absolute;
+      top: 0; left: 0;
+      width: 210mm;        /* 항상 A4 폭 고정 */
+      transform-origin: top left;
+      padding: 13mm 13mm 14mm 15mm;
+    }
+
+    /* ── 화면 미리보기 페이지 구분 레이블 ── */
+    @media screen {
+      .page-label {
+        text-align:center; font-size:9px; color:#aaa;
+        letter-spacing:1px; padding:6px 0 4px;
+      }
+    }
+    @media print { .page-label { display:none; } }
+
+    /* ── 공통 요소 ── */
+    .law-header {
+      display:flex; justify-content:space-between;
+      font-size:7pt; color:#888; font-weight:bold;
+      margin-bottom:5px; padding-bottom:3px;
+      border-bottom:0.5pt solid #ddd;
+    }
     .doc-title {
-      text-align: center; font-size: 16pt; font-weight: 800;
-      letter-spacing: 3px; margin: 4px 0 2px; border-bottom: 2.5pt double #333;
-      padding-bottom: 6px;
+      text-align:center; font-size:15pt; font-weight:800;
+      letter-spacing:3px; margin:3px 0 2px;
+      border-bottom:2.5pt double #333; padding-bottom:5px;
     }
-    .doc-subtitle {
-      text-align: center; font-size: 9pt; color: #555; margin: 0 0 10px;
+    .doc-subtitle { text-align:center; font-size:8.5pt; color:#555; margin:0 0 8px; }
+    .law-notice {
+      background:#EFF6FF; border:1pt solid #BFDBFE;
+      padding:4px 8px; font-size:7.5pt; color:#1D4ED8;
+      margin-bottom:7px; border-radius:2px; line-height:1.4;
     }
-    .law-header-screen {
-      display: flex; justify-content: space-between;
-      font-size: 7.5pt; color: #888; font-weight: bold;
-      margin-bottom: 6px; padding-bottom: 3px;
-      border-bottom: 0.5pt solid #ddd;
-    }
-    @media print { .law-header-screen { display: none; } }
-
-    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 9pt; table-layout: fixed; }
-    /* BUG-090: 6열 구조 — th(레이블) 좁게, td(값) 자동 배분 */
-    .info-table th { border: 1pt solid #888; padding: 4px 6px; background: #f0eeef; font-weight: 700; white-space: nowrap; width: 62px; text-align: center; }
-    .info-table td { border: 1pt solid #888; padding: 4px 6px; }
-
+    .info-table { width:100%; border-collapse:collapse; margin-bottom:7px; font-size:8.5pt; table-layout:fixed; }
+    .info-table th { border:1pt solid #888; padding:3px 5px; background:#f0eeef; font-weight:700; white-space:nowrap; width:58px; text-align:center; }
+    .info-table td { border:1pt solid #888; padding:3px 5px; }
     .section-hdr {
-      font-size: 9.5pt; font-weight: 800; margin: 8px 0 4px;
-      border-left: 3pt solid #685182; padding-left: 7px; color: #4E3A63;
-      letter-spacing: 0.3px;
+      font-size:9pt; font-weight:800; margin:6px 0 3px;
+      border-left:3pt solid #685182; padding-left:6px; color:#4E3A63; letter-spacing:0.3px;
     }
     .content-box {
-      border: 1pt solid #aaa; padding: 7px 10px; min-height: 56px;
-      font-size: 9pt; border-radius: 2px; white-space: pre-wrap; line-height: 1.6;
+      border:1pt solid #aaa; padding:5px 9px;
+      font-size:8.5pt; border-radius:2px; white-space:pre-wrap; line-height:1.5;
     }
     .attendee-box {
-      border: 1pt solid #aaa; padding: 6px 10px; min-height: 28px;
-      font-size: 9pt; margin-bottom: 8px; border-radius: 2px;
-    }
-    .sig-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-top: 4px; }
-    .sig-table th { border: 1pt solid #888; padding: 4px 6px; background: #f0eeef; text-align: center; }
-    .sig-table td { border: 1pt solid #888; padding: 4px 5px; vertical-align: middle; }
-
-    .law-notice {
-      background: #EFF6FF; border: 1pt solid #BFDBFE;
-      padding: 5px 9px; font-size: 8pt; color: #1D4ED8;
-      margin-bottom: 8px; border-radius: 2px; line-height: 1.5;
+      border:1pt solid #aaa; padding:5px 9px;
+      font-size:8.5pt; margin-bottom:6px; border-radius:2px;
     }
     .foot-note {
-      font-size: 7.5pt; color: #777; text-align: right;
-      margin-top: 8px; border-top: 0.5pt solid #ddd; padding-top: 4px;
-    }
-    /* BUG-091: 사진 인쇄/미리보기 시 페이지 경계에서 잘리지 않도록 */
-    @media print {
-      img { page-break-inside: avoid; break-inside: avoid; }
-      tr  { page-break-inside: avoid; break-inside: avoid; }
+      font-size:7pt; color:#777; text-align:right;
+      margin-top:6px; border-top:0.5pt solid #ddd; padding-top:3px;
     }
     /* 결재 서명 패드 모달 */
     #approval-sign-modal {
@@ -11404,212 +11407,183 @@ async function _tbmPrint(tbmId) {
       touch-action:none; display:block; width:100%; height:160px;
     }
     .print-only { display:none; }
-    @media print {
-      .no-print { display:none !important; }
-      .print-only { display:table-cell !important; }
-      #approval-sign-modal { display:none !important; }
-    }
-
-    /* ── 2페이지 구분선 (화면 미리보기) ── */
-    .page2 {
-      page-break-before: always;
-      break-before: page;
-    }
-    @media screen {
-      .page2 {
-        border-top: 3px dashed #c0c0c0;
-        margin-top: 24px;
-        padding-top: 20px;
-        position: relative;
-      }
-      .page2::before {
-        content: '── 2페이지 시작 ──';
-        position: absolute;
-        top: -13px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #fff;
-        padding: 0 10px;
-        font-size: 8pt;
-        color: #aaa;
-        white-space: nowrap;
-      }
-    }
   </style>
 </head>
 <body>
 
-  <!-- 인쇄 전용 법령 머리글 -->
-  <div class="law-print-header">
-    <span>산업안전보건법 제29조 / 시행규칙 제26조 · 별표 5 — TBM(Tool Box Meeting) 회의록</span>
-    <span>출력일: ${today}</span>
-  </div>
-
   <!-- 화면 미리보기 툴바 -->
   <div class="print-toolbar no-print">
     <span class="toolbar-title">
-      <span style="font-size:11px;opacity:0.7;margin-right:8px">📋 TBM 회의록 미리보기</span>
+      <span style="font-size:10px;opacity:0.7;margin-right:6px">📋 TBM 회의록 미리보기</span>
       ${(tbm.task_title || '').replace(/</g,'&lt;')}
     </span>
     <button class="btn-print" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>
     <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
 
-  <div class="a4-page">
+  <!-- ══════════════════════════════════════════════════
+       PAGE 1 : 본문 (기본정보 ~ 위험요인)
+       ══════════════════════════════════════════════════ -->
+  <div class="page-label">─── 1페이지 ───</div>
+  <div class="page-sheet" id="sheet1">
+    <div class="page-inner" id="inner1">
 
-    <!-- 화면 전용 법령 머리글 -->
-    <div class="law-header-screen">
-      <span>산업안전보건법 제29조 / 시행규칙 제26조 · 별표 5 — TBM(Tool Box Meeting) 회의록</span>
-      <span>출력일: ${today}</span>
-    </div>
+      <div class="law-header">
+        <span>산업안전보건법 제29조 / 시행규칙 제26조 · 별표 5 — TBM(Tool Box Meeting) 회의록</span>
+        <span>출력일: ${today}</span>
+      </div>
 
-    <!-- 결재란 -->
-    ${approvalHtml}
+      <!-- 결재란 -->
+      ${approvalHtml}
 
-    <!-- 제목 -->
-    <div class="doc-title">TBM 회의록</div>
-    <div class="doc-subtitle">Tool Box Meeting — 산업안전보건법 제29조 작업 전 안전보건교육 실시 기록</div>
+      <div class="doc-title">TBM 회의록</div>
+      <div class="doc-subtitle">Tool Box Meeting — 산업안전보건법 제29조 작업 전 안전보건교육 실시 기록</div>
 
-    <!-- 법령 근거 -->
-    <div class="law-notice">
-      ※ 본 기록은 산업안전보건법 제29조(근로자에 대한 안전보건교육) 및 시행규칙 제26조·별표 5에 의거
-         작업 전 안전교육 실시 기록으로 보관합니다. (산업안전보건법 시행규칙 제167조 — 3년 보관 의무)
-    </div>
+      <div class="law-notice">
+        ※ 본 기록은 산업안전보건법 제29조(근로자에 대한 안전보건교육) 및 시행규칙 제26조·별표 5에 의거
+           작업 전 안전교육 실시 기록으로 보관합니다. (산업안전보건법 시행규칙 제167조 — 3년 보관 의무)
+      </div>
 
-    ${warnBanner}
+      ${warnBanner}
 
-    <!-- 기본 정보 — BUG-090/091 헤더 재배치 -->
-    <!-- 행1: 작업명 | 담당자                                              -->
-    <!-- 행2: 실시일시 | TBM진행자 | 작업번호(WKS-######-#####-####)       -->
-    <!-- 행3: 실시장소 | 날씨/기온 | 참석인원                               -->
-    <table class="info-table">
-      <tr>
-        <th>작업명</th>
-        <td colspan="3">${(tbm.task_title || '-').replace(/</g,'&lt;')}</td>
-        <th>담당자</th>
-        <td>${(tbm.contractor_name || '-').replace(/</g,'&lt;')}</td>
-      </tr>
-      <tr>
-        <th>실시일시</th>
-        <td>${formatDateTime(tbm.tbm_date)}</td>
-        <th>TBM진행자</th>
-        <td>${(tbm.conductor_name || '-').replace(/</g,'&lt;')}</td>
-        <th>작업번호</th>
-        <td>${(() => {
-          // BUG-091: 서브작업번호(WKS-######-#####-####) 우선 표시
-          const sub = (tbm.sub_task_number || '').toString().trim();
-          const main = (tbm.task_number || '').toString().trim();
-          if (sub) return 'WKS-' + main.replace(/^WKS-/i,'') + '-' + sub;
-          if (main) return main.startsWith('WKS') ? main : 'WKS-' + main;
-          return 'WKS-';
-        })()}</td>
-      </tr>
-      <tr>
-        <th>실시장소</th>
-        <td>${(tbm.location || '-').replace(/</g,'&lt;')}</td>
-        <th>날씨/기온</th>
-        <td>${(tbm.weather || '-').replace(/</g,'&lt;')} / ${tbm.temperature || '-'}°C</td>
-        <th>참석인원</th>
-        <td>${tbm.workers_count || allAttendees.length || 0}명</td>
-      </tr>
-    </table>
-
-    <!-- 참석자 명단 -->
-    <div class="section-hdr">① 참석자 명단</div>
-    <div class="attendee-box">
-      ${attendeeTagsHtml || '<span style="color:#aaa;font-size:8.5pt">미입력</span>'}
-    </div>
-
-    <!-- 작업내용 및 안전교육 사항 -->
-    <div class="section-hdr">② 작업내용 및 안전교육 사항 <span style="font-size:8pt;font-weight:400;color:#999">(산업안전보건법 시행규칙 별표 5 교육내용)</span></div>
-    <div class="content-box" style="min-height:72px">${(tbm.safety_topics || '미입력').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
-
-    <!-- 위험요인 및 주의사항 -->
-    <div class="section-hdr">③ 위험요인 및 주의사항</div>
-    <div class="content-box" style="min-height:56px">${(tbm.precautions || '미입력').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
-
-    ${tbm.special_notes ? `
-    <!-- 특이사항 -->
-    <div class="section-hdr">④ 특이사항 / 현장 전달사항</div>
-    <div class="content-box" style="min-height:36px">${(tbm.special_notes).replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>` : ''}
-
-    <!-- ⑤ 서명란 (2페이지 시작 — BUG-057: 2열 배치) -->
-    <div class="section-hdr page2" style="margin-top:8px">⑤ 서명란 <span style="font-size:8pt;font-weight:400;color:#999">(실시자 및 전체 참석 근로자 서명)</span></div>
-    <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
-      <thead>
-        <tr style="background:#f0eeef">
-          <th style="border:1pt solid #888;width:44px;padding:3px 2px;text-align:center">구분</th>
-          <th style="border:1pt solid #888;width:60px;padding:3px 4px;text-align:center">성명</th>
-          <th style="border:1pt solid #888;width:52px;padding:3px 2px;text-align:center">직책</th>
-          <th style="border:1pt solid #888;width:60px;padding:3px 2px;text-align:center">서명일시</th>
-          <th style="border:1pt solid #888;padding:3px 2px;text-align:center">서명</th>
-          <th style="border:none;width:6px;background:#f5f5f5"></th>
-          <th style="border:1pt solid #888;width:44px;padding:3px 2px;text-align:center">구분</th>
-          <th style="border:1pt solid #888;width:60px;padding:3px 4px;text-align:center">성명</th>
-          <th style="border:1pt solid #888;width:52px;padding:3px 2px;text-align:center">직책</th>
-          <th style="border:1pt solid #888;width:60px;padding:3px 2px;text-align:center">서명일시</th>
-          <th style="border:1pt solid #888;padding:3px 2px;text-align:center">서명</th>
+      <table class="info-table">
+        <tr>
+          <th>작업명</th>
+          <td colspan="3">${(tbm.task_title || '-').replace(/</g,'&lt;')}</td>
+          <th>담당자</th>
+          <td>${(tbm.contractor_name || '-').replace(/</g,'&lt;')}</td>
         </tr>
-      </thead>
-      <tbody>
-        ${sigRowsHtml}
-      </tbody>
-    </table>
+        <tr>
+          <th>실시일시</th>
+          <td>${formatDateTime(tbm.tbm_date)}</td>
+          <th>TBM진행자</th>
+          <td>${(tbm.conductor_name || '-').replace(/</g,'&lt;')}</td>
+          <th>작업번호</th>
+          <td>${(() => {
+            const sub = (tbm.sub_task_number || '').toString().trim();
+            const main = (tbm.task_number || '').toString().trim();
+            if (sub) return 'WKS-' + main.replace(/^WKS-/i,'') + '-' + sub;
+            if (main) return main.startsWith('WKS') ? main : 'WKS-' + main;
+            return 'WKS-';
+          })()}</td>
+        </tr>
+        <tr>
+          <th>실시장소</th>
+          <td>${(tbm.location || '-').replace(/</g,'&lt;')}</td>
+          <th>날씨/기온</th>
+          <td>${(tbm.weather || '-').replace(/</g,'&lt;')} / ${tbm.temperature || '-'}°C</td>
+          <th>참석인원</th>
+          <td>${tbm.workers_count || allAttendees.length || 0}명</td>
+        </tr>
+      </table>
 
-    <!-- 서명란 하단 안내 -->
-    <div style="font-size:7.5pt;color:#888;margin-top:4px;line-height:1.5">
-      ※ 교육 실시자는 반드시 서명란에 서명하여야 하며, 참석 근로자 전원이 서명함으로써 본 교육 참여를 확인합니다.
+      <div class="section-hdr">① 참석자 명단</div>
+      <div class="attendee-box">
+        ${attendeeTagsHtml || '<span style="color:#aaa;font-size:8pt">미입력</span>'}
+      </div>
+
+      <div class="section-hdr">② 작업내용 및 안전교육 사항 <span style="font-size:7.5pt;font-weight:400;color:#999">(산업안전보건법 시행규칙 별표 5 교육내용)</span></div>
+      <div class="content-box">${(tbm.safety_topics || '미입력').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+
+      <div class="section-hdr">③ 위험요인 및 주의사항</div>
+      <div class="content-box">${(tbm.precautions || '미입력').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+
+      ${tbm.special_notes ? `
+      <div class="section-hdr">④ 특이사항 / 현장 전달사항</div>
+      <div class="content-box">${(tbm.special_notes).replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>` : ''}
+
+      <div class="foot-note">출력일시: ${printDt} &nbsp;·&nbsp; TBM ID: ${tbmId} &nbsp;·&nbsp; 산업안전보건법 시행규칙 제167조에 따라 3년간 보관</div>
     </div>
+  </div>
 
-    <!-- ⑥ TBM 안전조치 사진 (BUG-057: TBM 상세 화면과 동일한 4:3 파란 카드 스타일) -->
-    ${(() => {
-      const secs = (tbmChecklistSections || []);
-      // 섹션별로 묶어서 처리 (섹션 헤더 + 사진들)
-      const secsWithPhotos = secs.map(sec => {
-        let ps = []; try { ps = typeof sec.photos==='string' ? JSON.parse(sec.photos) : (sec.photos||[]); } catch(_){}
-        return { ...sec, parsedPhotos: ps.filter(p => p.file_path) };
-      }).filter(sec => sec.parsedPhotos.length > 0);
-      if (!secsWithPhotos.length) return '';
-      const token = localStorage.getItem('token') || '';
+  <!-- ══════════════════════════════════════════════════
+       PAGE 2 : 서명란
+       ══════════════════════════════════════════════════ -->
+  <div class="page-label">─── 2페이지 (서명란) ───</div>
+  <div class="page-sheet" id="sheet2">
+    <div class="page-inner" id="inner2">
 
-      let html = '<div class="section-hdr page2" style="margin-top:8px">⑥ TBM 안전조치 사진</div>';
+      <div class="law-header">
+        <span>산업안전보건법 제29조 / 시행규칙 제26조 · 별표 5 — TBM(Tool Box Meeting) 회의록</span>
+        <span>출력일: ${today}</span>
+      </div>
 
-      secsWithPhotos.forEach(sec => {
-        // 섹션 헤더 (파란 배경)
-        html += '<div style="background:#1D4ED8;color:white;padding:5px 10px;border-radius:6px 6px 0 0;font-size:8.5pt;font-weight:700;margin-top:10px;display:flex;align-items:center;gap:5px">'
-              + '<span style="font-size:9pt">&#9632;</span> ' + (sec.section_name||'').replace(/</g,'&lt;')
-              + '<span style="margin-left:auto;font-size:7.5pt;opacity:0.85;font-weight:400">' + sec.parsedPhotos.length + '장</span>'
-              + '</div>';
+      <div class="section-hdr" style="margin-top:0">⑤ 서명란 <span style="font-size:7.5pt;font-weight:400;color:#999">(실시자 및 전체 참석 근로자 서명)</span></div>
+      <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
+        <thead>
+          <tr style="background:#f0eeef">
+            <th style="border:1pt solid #888;width:44px;padding:3px 2px;text-align:center">구분</th>
+            <th style="border:1pt solid #888;width:60px;padding:3px 4px;text-align:center">성명</th>
+            <th style="border:1pt solid #888;width:52px;padding:3px 2px;text-align:center">직책</th>
+            <th style="border:1pt solid #888;width:60px;padding:3px 2px;text-align:center">서명일시</th>
+            <th style="border:1pt solid #888;padding:3px 2px;text-align:center">서명</th>
+            <th style="border:none;width:6px;background:#f5f5f5"></th>
+            <th style="border:1pt solid #888;width:44px;padding:3px 2px;text-align:center">구분</th>
+            <th style="border:1pt solid #888;width:60px;padding:3px 4px;text-align:center">성명</th>
+            <th style="border:1pt solid #888;width:52px;padding:3px 2px;text-align:center">직책</th>
+            <th style="border:1pt solid #888;width:60px;padding:3px 2px;text-align:center">서명일시</th>
+            <th style="border:1pt solid #888;padding:3px 2px;text-align:center">서명</th>
+          </tr>
+        </thead>
+        <tbody>${sigRowsHtml}</tbody>
+      </table>
 
-        // 사진 그리드 컨테이너 (파란 카드 배경)
-        html += '<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-top:none;border-radius:0 0 6px 6px;padding:8px">';
-        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+      <div style="font-size:7pt;color:#888;margin-top:4px;line-height:1.4">
+        ※ 교육 실시자는 반드시 서명란에 서명하여야 하며, 참석 근로자 전원이 서명함으로써 본 교육 참여를 확인합니다.
+      </div>
 
-        sec.parsedPhotos.forEach(p => {
-          html += '<div style="border:1px solid #BFDBFE;border-radius:6px;overflow:hidden;background:white;page-break-inside:avoid;break-inside:avoid">';
-          html += '<div style="width:100%;aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">';
-          html += '<img src="/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(token) + '" '
-                + 'style="width:100%;height:100%;object-fit:cover;display:block">';
-          html += '</div>';
-          html += '<div style="padding:3px 6px;font-size:7.5pt;color:#1E40AF;background:#EFF6FF;border-top:1px solid #BFDBFE;line-height:1.4">'
-                + (p.label||'').replace(/</g,'&lt;')
-                + '</div>';
-          html += '</div>';
-        });
+      <div class="foot-note">출력일시: ${printDt} &nbsp;·&nbsp; TBM ID: ${tbmId} &nbsp;·&nbsp; 산업안전보건법 시행규칙 제167조에 따라 3년간 보관</div>
+    </div>
+  </div>
 
-        html += '</div></div>'; // grid + 컨테이너 닫기
+  <!-- ══════════════════════════════════════════════════
+       PAGE 3 : 사진 (사진 있을 때만)
+       ══════════════════════════════════════════════════ -->
+  ${(() => {
+    const secs = (tbmChecklistSections || []);
+    const secsWithPhotos = secs.map(sec => {
+      let ps = []; try { ps = typeof sec.photos==='string' ? JSON.parse(sec.photos) : (sec.photos||[]); } catch(_){}
+      return { ...sec, parsedPhotos: ps.filter(p => p.file_path) };
+    }).filter(sec => sec.parsedPhotos.length > 0);
+    if (!secsWithPhotos.length) return '';
+    const token = localStorage.getItem('token') || '';
+
+    let photoContent = '';
+    secsWithPhotos.forEach(sec => {
+      photoContent += '<div style="margin-bottom:10px">';
+      photoContent += '<div style="background:#1D4ED8;color:white;padding:4px 10px;border-radius:5px 5px 0 0;font-size:8pt;font-weight:700;display:flex;align-items:center;gap:5px">'
+                   + '<span>&#9632;</span> ' + (sec.section_name||'').replace(/</g,'&lt;')
+                   + '<span style="margin-left:auto;font-size:7pt;opacity:0.85;font-weight:400">' + sec.parsedPhotos.length + '장</span>'
+                   + '</div>';
+      photoContent += '<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-top:none;border-radius:0 0 5px 5px;padding:6px">';
+      photoContent += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+      sec.parsedPhotos.forEach(p => {
+        photoContent += '<div style="border:1px solid #BFDBFE;border-radius:5px;overflow:hidden;background:white">';
+        photoContent += '<div style="width:100%;aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">';
+        photoContent += '<img src="/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(token) + '" style="width:100%;height:100%;object-fit:cover;display:block">';
+        photoContent += '</div>';
+        if (p.label) {
+          photoContent += '<div style="padding:2px 6px;font-size:7pt;color:#1E40AF;background:#EFF6FF;border-top:1px solid #BFDBFE">' + (p.label||'').replace(/</g,'&lt;') + '</div>';
+        }
+        photoContent += '</div>';
       });
+      photoContent += '</div></div></div>';
+    });
 
-      return html;
-    })()}
-
-    <!-- 푸터 -->
-    <div class="foot-note">
-      출력일시: ${printDt} &nbsp;·&nbsp; TBM ID: ${tbmId} &nbsp;·&nbsp;
-      산업안전보건법 시행규칙 제167조에 따라 3년간 보관
+    return \`
+  <div class="page-label">─── 3페이지 (안전조치 사진) ───</div>
+  <div class="page-sheet" id="sheet3">
+    <div class="page-inner" id="inner3">
+      <div class="law-header">
+        <span>산업안전보건법 제29조 / 시행규칙 제26조 · 별표 5 — TBM(Tool Box Meeting) 회의록</span>
+        <span>출력일: ${today}</span>
+      </div>
+      <div class="section-hdr" style="margin-top:0">⑥ TBM 안전조치 사진</div>
+      \${photoContent}
+      <div class="foot-note">출력일시: ${printDt} &nbsp;·&nbsp; TBM ID: ${tbmId} &nbsp;·&nbsp; 산업안전보건법 시행규칙 제167조에 따라 3년간 보관</div>
     </div>
-
-  </div><!-- /.a4-page -->
+  </div>\`;
+  })()}
 
   <!-- 결재 서명 패드 모달 -->
   <div id="approval-sign-modal">
@@ -11635,6 +11609,29 @@ async function _tbmPrint(tbmId) {
   </div>
 
   <script>
+  // ── 각 페이지 자동 축소: 내용이 A4 높이를 초과하면 scale down ──────────────
+  // A4 인쇄 가용 높이 = 297mm - 상하 패딩(13+14mm) = 270mm → px 환산
+  // 1mm ≈ 3.7795px (96dpi 기준)
+  (function _autoScale() {
+    const MM_TO_PX = 3.7795;
+    const A4_H_MM  = 297;
+    const PAD_TOP_MM  = 13;
+    const PAD_BOT_MM  = 14;
+    const AVAIL_H_PX  = (A4_H_MM - PAD_TOP_MM - PAD_BOT_MM) * MM_TO_PX; // ~1020px
+
+    ['inner1','inner2','inner3'].forEach(id => {
+      const inner = document.getElementById(id);
+      if (!inner) return;
+      // 현재 자연 높이 측정 (scale 초기화 후)
+      inner.style.transform = '';
+      const naturalH = inner.scrollHeight;
+      if (naturalH <= AVAIL_H_PX) return; // 이미 충분히 작으면 스킵
+      const scale = AVAIL_H_PX / naturalH;
+      inner.style.transform = \`scale(\${scale})\`;
+      // sheet 높이는 고정(297mm)이므로 inner가 scale down되면 빈공간 발생 — 무시
+    });
+  })();
+
   // ── 결재 서명 패드 로직 ────────────────────────────────────────────────────
   (function() {
     const TOKEN   = '${localStorage.getItem('token') || ''}';

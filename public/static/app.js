@@ -3182,6 +3182,7 @@ function formatSubTaskNo(val) {
 
 // 공사현황 필터 상태
 let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_keyword:'' };
+let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 적용 플래그
 
 // 공사현황 담당자 autocomplete 헬퍼
 function _conShowManagerAC(val, names) {
@@ -3244,6 +3245,18 @@ async function renderConstructionsPage(container) {
     const uRes = await API.get('/users');
     _conUserList = (uRes.data || []).filter(u => u.role !== 'worker');
   } catch(e) { _conUserList = []; }
+
+  // 최초 1회만: 안전관리자·공무·현장대리인이면 본인 이름 기본 설정
+  // CEO·LGU+·시스템관리자는 빈값 유지 / 초기화 버튼 클릭 후에는 재적용 안 함
+  if (!_conManagerDefaultApplied && _conFilters.manager_keyword === '' && currentUser && currentUser.name) {
+    const _myUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+    if (['safety', 'engineer', 'site_rep'].includes(_myUiRole)) {
+      _conFilters.manager_keyword = currentUser.name;
+    }
+    _conManagerDefaultApplied = true;
+  } else if (!_conManagerDefaultApplied) {
+    _conManagerDefaultApplied = true; // 기본값 없는 역할도 플래그 소모
+  }
 
   // 상태 탭 메타
   const STATUS_TABS = [
@@ -4385,6 +4398,7 @@ function onDashRangeApply() {
 
 // ======= 작업 관리 (관리감독자) =======
 let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, con_manager_keyword: '' };
+let _taskManagerDefaultApplied = false; // 작업관리 담당자 기본값 1회 적용 플래그
 
 // 작업관리 공사담당자 autocomplete 헬퍼
 function _taskShowManagerAC(val, names) {
@@ -4500,6 +4514,18 @@ async function renderTasksPage(container) {
       _taskUserList = (_tuRes.data || []).filter(u => u.role !== 'worker');
     } catch(e) { _taskUserList = []; }
     const _taskUserNames = _taskUserList.map(u => u.name);
+
+    // 최초 1회만: 안전관리자·공무·현장대리인이면 본인 이름 기본 설정
+    // CEO·LGU+·시스템관리자는 빈값 유지 / 초기화 버튼 클릭 후에는 재적용 안 함
+    if (!_taskManagerDefaultApplied && taskFilters.con_manager_keyword === '' && currentUser && currentUser.name) {
+      const _myUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+      if (['safety', 'engineer', 'site_rep'].includes(_myUiRole)) {
+        taskFilters.con_manager_keyword = currentUser.name;
+      }
+      _taskManagerDefaultApplied = true;
+    } else if (!_taskManagerDefaultApplied) {
+      _taskManagerDefaultApplied = true;
+    }
 
     // tasks 1회 호출로 완료 (백엔드에서 assigned_workers + work_types + team_name 배치 포함)
     // catsRes: 미사용이므로 제거 / teams API: task.team_name 직접 사용으로 제거

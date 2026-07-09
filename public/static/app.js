@@ -4508,7 +4508,7 @@ async function renderTasksPage(container) {
                        color:#685182;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer">
                 <i class="fas fa-edit"></i>
               </button>
-              <button onclick="deleteTask(${t.id})"
+              <button onclick="deleteTask(${t.id}, '${t.status}')"
                 style="width:26px;height:26px;border-radius:7px;border:1px solid #FDE8F3;background:white;
                        color:#D70072;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer">
                 <i class="fas fa-trash"></i>
@@ -5853,7 +5853,7 @@ async function _doReassignWorkers(taskId, btnEl) {
 }
 
 // ── [FEAT-053] 작업 삭제 — 시스템관리자 전용, completed 상태만 허용 ──────────
-async function deleteTask(id) {
+async function deleteTask(id, knownStatus) {
   // [FEAT-053] 클라이언트 권한 사전 체크
   const _myUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
   if (_myUiRole !== 'sysadmin') {
@@ -5861,15 +5861,18 @@ async function deleteTask(id) {
     return;
   }
 
-  // 작업 상태 클라이언트 사전 체크 (취소/완료만 허용)
-  try {
-    const taskRes = await API.get(`/tasks/${id}`);
-    const taskStatus = taskRes.data?.task?.status || taskRes.data?.status;
-    if (taskStatus && taskStatus !== 'completed' && taskStatus !== 'cancelled') {
-      toast('완료 또는 취소된 작업만 삭제할 수 있습니다.', 'error', 4000);
-      return;
-    }
-  } catch(_) {}
+  // ★ 작업 상태 사전 체크 — 호출부에서 전달된 status 우선, 없으면 GET으로 확인
+  let taskStatus = knownStatus || null;
+  if (!taskStatus) {
+    try {
+      const taskRes = await API.get(`/tasks/${id}`);
+      taskStatus = taskRes.data?.task?.status || taskRes.data?.status || null;
+    } catch(_) {}
+  }
+  if (taskStatus && taskStatus !== 'completed' && taskStatus !== 'cancelled') {
+    toast('완료 또는 취소된 작업만 삭제할 수 있습니다.', 'error', 4000);
+    return;
+  }
 
   const confirmed = await showDeleteConfirm(
     '작업을 삭제하시겠습니까?',
@@ -5883,10 +5886,10 @@ async function deleteTask(id) {
     const pc = document.getElementById('page-content');
     if (pc) renderTasksPage(pc);
   } catch(e) {
-    const status = e.response?.status;
-    const msg    = e.response?.data?.error || '삭제 실패';
-    // 409: 서버가 여전히 구버전이라도 올바른 메시지로 표시
-    if (status === 409) {
+    const httpStatus = e.response?.status;
+    const msg        = e.response?.data?.error || '삭제 실패';
+    // ★ 409: 구버전 서버 응답이라도 올바른 안내 메시지로 표시
+    if (httpStatus === 409) {
       toast('완료 또는 취소된 작업만 삭제할 수 있습니다.', 'error', 4000);
     } else {
       toast(msg, 'error', 4000);
@@ -6559,7 +6562,7 @@ async function showTaskDetail(id, openTbmTab) {
           <!-- [FEAT-053] 삭제 버튼: sysadmin 전용, completed 상태만 표시 -->
           ${_taskCanDelete ? `
           <div class="mb-2">
-            <button onclick="deleteTask(${task.id})"
+            <button onclick="deleteTask(${task.id}, '${task.status}')"
               class="btn font-bold"
               style="background:white;color:#e53e3e;border:1.5px solid #e53e3e;font-size:0.8rem;padding:5px 14px">
               <i class="fas fa-trash-alt mr-1"></i> 작업 삭제

@@ -10499,7 +10499,8 @@ function _openPrintOverlay(htmlContent) {
 
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'flex:1;width:100%;border:none;opacity:0;transition:opacity 0.2s';
-  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-modals allow-popups');
+  // sandbox 속성 제거: sandbox가 있으면 contentWindow.print()가 안전 정책으로 차단됨
+  // blob: URL + 동일 origin이므로 sandbox 불필요
 
   // iframe 로드 완료 시 스피너 숨기고 iframe 표시
   iframe.addEventListener('load', () => {
@@ -28732,16 +28733,17 @@ async function printEduLog(sessionId) {
     }
     /* ── 화면 미리보기 전용 ── */
     @media screen {
-      body { background: #e5e7eb; padding: 20px; }
+      body { background: #e5e7eb; padding: 0; padding-top: 56px; overflow-x: hidden; }
       .a4-page {
-        background: #fff; width: 210mm; min-height: 297mm;
-        margin: 0 auto; padding: 14mm 12mm 16mm 15mm;
+        background: #fff; width: 210mm;
+        margin: 20px auto; padding: 14mm 12mm 16mm 15mm;
         box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+        /* transform-origin: top center — JS로 설정 */
       }
       .print-toolbar {
         position: fixed; top: 0; left: 0; right: 0; z-index: 999;
         background: #1f2937; color: #fff;
-        display: flex; align-items: center; justify-between;
+        display: flex; align-items: center; justify-content: space-between;
         padding: 10px 20px; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
       }
       .print-toolbar .toolbar-title { font-size: 14px; font-weight: bold; flex: 1; }
@@ -28751,7 +28753,6 @@ async function printEduLog(sessionId) {
       }
       .btn-print  { background: #D70072; color: #fff; }
       .btn-close  { background: #374151; color: #ccc; }
-      body { padding-top: 56px; }
     }
   </style>
 </head>
@@ -28769,11 +28770,11 @@ async function printEduLog(sessionId) {
       <span style="font-size:12px;opacity:0.7;margin-right:8px">📋 안전보건교육 실시일지 미리보기</span>
       ${session.edu_subject}
     </span>
-    <button class="btn-print" onclick="window.print()">🖨️ 인쇄</button>
+    <button class="btn-print" onclick="window.parent.postMessage('doPrint','*')">🖨️ 인쇄</button>
     <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
 
-  <div class="a4-page">
+  <div class="a4-page" id="a4Page">
 
     <!-- ── 화면 미리보기용 법령 표기 (인쇄 시 숨김 — 인쇄는 position:fixed 머리글 사용) ── -->
     <div class="law-header-screen">
@@ -28898,6 +28899,46 @@ async function printEduLog(sessionId) {
     </div>
 
   </div><!-- /.a4-page -->
+
+  <script>
+  // ── A4 1장 동적 축소 (화면 미리보기 + 인쇄 모두 적용) ──────────────────────
+  (function _autoScaleEdu() {
+    const page = document.getElementById('a4Page');
+    if (!page) return;
+
+    // A4 가용 높이: 297mm - 상마진 14mm - 하마진 16mm = 267mm → px (96dpi 기준)
+    // 1mm = 3.7795px → 267mm × 3.7795 = 1009px
+    const A4_AVAIL_H = 267 * 3.7795;
+
+    function doScale() {
+      // scale 초기화 후 자연 높이 측정
+      page.style.transform = '';
+      page.style.transformOrigin = '';
+      const naturalH = page.scrollHeight;
+
+      if (naturalH > A4_AVAIL_H) {
+        const s = A4_AVAIL_H / naturalH;
+        page.style.transform = 'scale(' + s + ')';
+        page.style.transformOrigin = 'top center';
+        // 축소 후 실제 점유 높이 보정 (레이아웃 붕괴 방지)
+        page.parentElement && (page.parentElement.style.minHeight = (naturalH * s) + 'px');
+      } else {
+        page.parentElement && (page.parentElement.style.minHeight = '');
+      }
+    }
+
+    // 이미지 포함 → 모두 로드 완료 후 실행
+    const imgs = page.querySelectorAll('img');
+    if (!imgs.length) { doScale(); return; }
+    let done = 0;
+    const check = () => { done++; if (done >= imgs.length) doScale(); };
+    imgs.forEach(img => {
+      if (img.complete) check();
+      else { img.addEventListener('load', check); img.addEventListener('error', check); }
+    });
+  })();
+  </script>
+
 </body>
 </html>`;
   }
@@ -29017,7 +29058,7 @@ async function printEduSign(sessionId) {
       <span style="font-size:12px;opacity:0.7;margin-right:8px">✍️ 안전보건교육 서명지 미리보기</span>
       ${session.edu_subject}
     </span>
-    <button class="btn-print" onclick="window.print()">🖨️ 인쇄</button>
+    <button class="btn-print" onclick="window.parent.postMessage('doPrint','*')">🖨️ 인쇄</button>
     <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
 

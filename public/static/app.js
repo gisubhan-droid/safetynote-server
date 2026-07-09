@@ -11383,6 +11383,12 @@ async function _tbmPrint(tbmId) {
       #approval-sign-modal { display:none !important; }
       img { page-break-inside:avoid; break-inside:avoid; }
       tr  { page-break-inside:avoid; break-inside:avoid; }
+      /* ★ 인쇄 시 page-sheet-wrap의 JS transform 무효화 — 인쇄 레이아웃 보정 */
+      .page-sheet-wrap {
+        transform: none !important;
+        width: 210mm !important;
+        margin: 0 auto !important;
+      }
     }
 
     /* ── A4 페이지 시트 ── */
@@ -11494,7 +11500,8 @@ async function _tbmPrint(tbmId) {
     <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
   <!-- 페이지 래퍼: JS가 화면 크기에 맞게 scale 적용 -->
-  <div class="page-sheet-wrap no-print" id="pageWrap">
+  <!-- ★ no-print 제거: blob URL 인쇄 시 page-sheet-wrap이 숨겨져 빈 페이지가 되는 버그 수정 -->
+  <div class="page-sheet-wrap" id="pageWrap">
 
   <!-- ══════════════════════════════════════════════════
        PAGE 1 : 본문 (기본정보 ~ 위험요인)

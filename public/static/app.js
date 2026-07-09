@@ -11570,19 +11570,20 @@ async function _tbmPrint(tbmId) {
       photoContent += '</div></div></div>';
     });
 
-    return \`
-  <div class="page-label">─── 3페이지 (안전조치 사진) ───</div>
-  <div class="page-sheet" id="sheet3">
-    <div class="page-inner" id="inner3">
-      <div class="law-header">
-        <span>산업안전보건법 제29조 / 시행규칙 제26조 · 별표 5 — TBM(Tool Box Meeting) 회의록</span>
-        <span>출력일: ${today}</span>
-      </div>
-      <div class="section-hdr" style="margin-top:0">⑥ TBM 안전조치 사진</div>
-      \${photoContent}
-      <div class="foot-note">출력일시: ${printDt} &nbsp;·&nbsp; TBM ID: ${tbmId} &nbsp;·&nbsp; 산업안전보건법 시행규칙 제167조에 따라 3년간 보관</div>
-    </div>
-  </div>\`;
+    return (
+      '<div class="page-label">─── 3페이지 (안전조치 사진) ───</div>' +
+      '<div class="page-sheet" id="sheet3">' +
+        '<div class="page-inner" id="inner3">' +
+          '<div class="law-header">' +
+            '<span>산업안전보건법 제29조 / 시행규칙 제26조 · 별표 5 — TBM(Tool Box Meeting) 회의록</span>' +
+            '<span>출력일: ${today}</span>' +
+          '</div>' +
+          '<div class="section-hdr" style="margin-top:0">⑥ TBM 안전조치 사진</div>' +
+          photoContent +
+          '<div class="foot-note">출력일시: ${printDt} &nbsp;·&nbsp; TBM ID: ${tbmId} &nbsp;·&nbsp; 산업안전보건법 시행규칙 제167조에 따라 3년간 보관</div>' +
+        '</div>' +
+      '</div>'
+    );
   })()}
 
   <!-- 결재 서명 패드 모달 -->

@@ -584,7 +584,7 @@ function _makeVersionTag(_commitHash: string, updatedAt: string | null): string 
   // 1) git rev-list --count HEAD 로 현재 총 커밋 수 조회
   let totalCommits = _VERSION_BASE_COMMIT
   try {
-    const out = execSync('git rev-list --count HEAD', { encoding: 'utf8', timeout: 5000 }).trim()
+    const out = execSync('git rev-list --count HEAD', { encoding: 'utf8', timeout: 5000, cwd: process.cwd() }).trim()
     totalCommits = parseInt(out, 10) || _VERSION_BASE_COMMIT
   } catch (_) { /* git 조회 실패 시 base 값 유지 */ }
 

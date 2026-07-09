@@ -1231,14 +1231,31 @@ function downloadCSV(filename, headers, rows) {
   URL.revokeObjectURL(url);
 }
 
+// ── KST(Asia/Seoul) 기준 날짜·시간 포맷 전역 헬퍼 ──────────────────────────
+const _KST = { timeZone: 'Asia/Seoul' };
+
 function formatDate(d) {
   if (!d) return '-';
-  return new Date(d).toLocaleDateString('ko-KR', { year:'2-digit', month:'2-digit', day:'2-digit' });
+  return new Date(d).toLocaleDateString('ko-KR', { year:'2-digit', month:'2-digit', day:'2-digit', ..._KST });
 }
 
 function formatDateTime(d) {
   if (!d) return '-';
-  return new Date(d).toLocaleString('ko-KR', { year:'2-digit', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  return new Date(d).toLocaleString('ko-KR', { year:'2-digit', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', ..._KST });
+}
+
+// KST 기준 오늘 날짜 문자열 (YYYY-MM-DD)
+function kstDateStr(date) {
+  const d = date || new Date();
+  return d.toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', ..._KST })
+    .replace(/\. /g, '-').replace('.', '').trim();
+}
+
+// KST 기준 현재 datetime-local 입력값 (YYYY-MM-DDTHH:MM)
+function kstDateTimeLocal(date) {
+  const d = date || new Date();
+  const [datePart, timePart] = d.toLocaleString('sv-SE', _KST).split(' ');
+  return datePart + 'T' + timePart.slice(0, 5);
 }
 
 function calcRiskLevel(freq, sev) {
@@ -3188,7 +3205,7 @@ function exportConstructionsExcel(list) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `공사현황_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `공사현황_${kstDateStr()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -4704,7 +4721,7 @@ function downloadTaskListCSV() {
     stMap[t.status]||t.status||'',
     t.location||''
   ]);
-  downloadCSV(`작업목록_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
+  downloadCSV(`작업목록_${kstDateStr()}.csv`, headers, rows);
 }
 
 // 작업 분류 배지 (4종)
@@ -8118,7 +8135,7 @@ async function showRiskAssessmentForm(taskId) {
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <div class="form-group">
           <label class="form-label">평가일시</label>
-          <input id="raDate" class="form-control" type="datetime-local" value="${new Date().toISOString().slice(0,16)}">
+          <input id="raDate" class="form-control" type="datetime-local" value="${kstDateTimeLocal()}">
         </div>
         <div class="form-group" style="grid-column:span 2">
           <label class="form-label" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
@@ -10512,63 +10529,69 @@ function _openPrintOverlay(htmlContent) {
   // ── 미리보기: srcdoc 방식 ──
   iframe.srcdoc = htmlContent;
 
-  // ── 인쇄 전용 숨김 div (부모 창 @media print에 삽입 후 인쇄) ──
-  // window.open 팝업 차단 우회: 부모 창 DOM에 인쇄 콘텐츠를 삽입하고
-  // @media print { body > * { display:none } #__print-content__ { display:block } }
-  // 방식으로 부모 창에서 직접 인쇄 → 팝업 불필요, 부모 창 URL 표시 없음
-  let _printStyleEl = null;
-  let _printDivEl   = null;
+  // ── 인쇄 전용 오프스크린 iframe ──
+  // Chrome의 srcdoc iframe contentWindow.print() 버그 우회:
+  //   srcdoc iframe → Chrome이 부모 창을 인쇄하는 경우 있음
+  // 해결: 화면 밖(left:-9999px)에 별도 iframe을 만들고
+  //   srcdoc 로드 완료 → contentWindow.print() 호출
+  //   → 이 iframe은 부모와 독립된 문서 → 자기 자신만 인쇄
+  //   → 팝업 불필요, window.open 불필요
+  let _printIframe = null;
 
-  function _doHiddenPrint() {
-    // 인쇄용 HTML: script 제거, 모달 제거
+  function _doOffscreenPrint() {
+    // 기존 인쇄 iframe 제거
+    document.getElementById('__print-iframe__')?.remove();
+
+    // 인쇄용 HTML: JS 제거 (결재 서명 모달 스크립트 오류 방지)
     let printHtml = htmlContent;
     printHtml = printHtml.replace(/<script[\s\S]*?<\/script>/gi, '');
-    printHtml = printHtml.replace(/<div[^>]+id=["']approval-sign-modal["'][\s\S]*?<\/div>\s*<\/div>\s*<\/div>/gi, '');
 
-    // 기존 잔여물 제거
-    document.getElementById('__print-content__')?.remove();
-    document.getElementById('__print-style__')?.remove();
+    // 오프스크린 iframe 생성 (화면 밖에 배치 → display:none은 안 됨)
+    // display:none이면 Chrome이 인쇄 내용을 렌더링하지 않을 수 있음
+    _printIframe = document.createElement('iframe');
+    _printIframe.id = '__print-iframe__';
+    _printIframe.style.cssText = [
+      'position:fixed',
+      'left:-9999px',
+      'top:0',
+      'width:210mm',    // A4 폭으로 렌더링
+      'height:297mm',
+      'border:none',
+      'visibility:hidden'  // 화면에 보이지 않지만 렌더링은 됨
+    ].join(';');
 
-    // 인쇄 콘텐츠 div (화면에선 숨김, 인쇄 시 표시)
-    _printDivEl = document.createElement('div');
-    _printDivEl.id = '__print-content__';
-    _printDivEl.style.cssText = 'display:none';
-    _printDivEl.innerHTML = printHtml;
-    document.body.appendChild(_printDivEl);
+    document.body.appendChild(_printIframe);
 
-    // @media print 스타일: body의 다른 요소 숨기고 인쇄 div만 표시
-    _printStyleEl = document.createElement('style');
-    _printStyleEl.id = '__print-style__';
-    _printStyleEl.textContent = `
-      @media print {
-        body > *:not(#__print-content__) { display:none !important; }
-        #__print-content__ { display:block !important; }
-        #__print-content__ .print-toolbar { display:none !important; }
-        #__print-content__ .no-print { display:none !important; }
-      }`;
-    document.head.appendChild(_printStyleEl);
+    // srcdoc 로드 완료 → print()
+    _printIframe.addEventListener('load', function() {
+      try {
+        const cw = _printIframe.contentWindow;
+        if (!cw) return;
+        // visibility 잠깐 복원 후 인쇄 (일부 브라우저 요구사항)
+        _printIframe.style.visibility = 'visible';
+        cw.focus();
+        cw.print();
+        _printIframe.style.visibility = 'hidden';
+      } catch(err) {
+        console.warn('[print] offscreen iframe print 실패:', err);
+      }
+      // 인쇄 후 제거 (afterprint 이벤트가 iframe에서 발화 안 될 수 있으므로 타이머 병행)
+      setTimeout(function() {
+        document.getElementById('__print-iframe__')?.remove();
+      }, 3000);
+    });
 
-    // 인쇄 실행
-    window.focus();
-    window.print();
-
-    // 인쇄 후 정리
-    window.addEventListener('afterprint', function _cleanup() {
-      _printDivEl?.remove();
-      _printStyleEl?.remove();
-      window.removeEventListener('afterprint', _cleanup);
-    }, { once: true });
+    _printIframe.srcdoc = printHtml;
   }
 
   // ── 메시지 수신: 닫기 / 인쇄 ──
   function _onOverlayMsg(e) {
     if (e.data === 'closePrintOverlay') {
       overlay.remove();
-      document.getElementById('__print-content__')?.remove();
-      document.getElementById('__print-style__')?.remove();
+      document.getElementById('__print-iframe__')?.remove();
       window.removeEventListener('message', _onOverlayMsg);
     } else if (e.data === 'doPrint') {
-      _doHiddenPrint();
+      _doOffscreenPrint();
     }
   }
   window.addEventListener('message', _onOverlayMsg);
@@ -11176,8 +11199,8 @@ async function _tbmPrint(tbmId) {
     const _origin = window.location.origin;
     const _photoToken = localStorage.getItem('token') || '';
 
-    const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
-    const printDt = new Date().toLocaleString('ko-KR');
+    const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', ..._KST });
+    const printDt = new Date().toLocaleString('ko-KR', _KST);
 
     // ── 서명자: 실시자 먼저, 이후 참석자 순 ─────────────────────────────────
     const conductorSigs = signatures.filter(s => s.role === 'conductor');
@@ -14154,7 +14177,7 @@ async function resolveHazard(id) {
       <div class="rounded-lg px-3 py-2 text-xs flex items-center gap-2" style="background:#F5F0F8;color:#685182">
         <i class="fas fa-user-check"></i>
         <span>처리자: <strong>${currentUser.name}</strong> (${currentUser.role === 'admin' ? '관리자' : '현장감독'})</span>
-        <span class="ml-auto">${new Date().toLocaleDateString('ko-KR')}</span>
+        <span class="ml-auto">${new Date().toLocaleDateString('ko-KR', _KST)}</span>
       </div>
     </div>
     <div class="modal-footer">
@@ -19913,7 +19936,7 @@ function _renderRiskWorkflow(modal, r, allUsers) {
 
           <!-- 대책회의 일자/장소 + 수립 시작 버튼 -->
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <input type="date" id="rdMeetingDate" class="form-control" style="font-size:12px;width:145px" value="${new Date().toISOString().slice(0,10)}" placeholder="대책회의 일자">
+            <input type="date" id="rdMeetingDate" class="form-control" style="font-size:12px;width:145px" value="${kstDateStr()}" placeholder="대책회의 일자">
             <input id="rdMeetingPlace" class="form-control" style="font-size:12px;flex:1" placeholder="대책회의 장소">
             <button onclick="_startRiskReview(${r.id})"
               style="padding:7px 16px;background:#D70072;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">
@@ -20530,7 +20553,7 @@ async function _raPrint(riskId) {
     </table>
 
     <div style="text-align:right; font-size:8pt; color:#666; margin-top:4px">
-      출력일시: ${new Date().toLocaleString('ko-KR')} · 위험성평가 ID: ${riskId}
+      출력일시: ${new Date().toLocaleString('ko-KR', _KST)} · 위험성평가 ID: ${riskId}
     </div>
 
     <div style="text-align:center;margin:14px 0">
@@ -20911,7 +20934,7 @@ async function showRiskRegisterModal(mode) {
         </div>
         <div>
           <label class="form-label">평가일 <span class="text-red-500">*</span></label>
-          <input type="date" id="rrDate" class="form-control" value="${new Date().toISOString().slice(0,10)}">
+          <input type="date" id="rrDate" class="form-control" value="${kstDateStr()}">
         </div>
         <div>
           <label class="form-label">실시 장소</label>
@@ -23410,7 +23433,7 @@ function downloadUsersCSV() {
     u.name||'', u.username||'', u.phone||'', getRoleDisplay(u.role, u.position, u.sub_role).label||'',
     u.department||'', u.position||'', u.company||'',
   ]);
-  downloadCSV(`사용자현황_${new Date().toISOString().slice(0,10)}.csv`, headers, rows);
+  downloadCSV(`사용자현황_${kstDateStr()}.csv`, headers, rows);
 }
 
 // QR 체크박스 전체 선택/해제 (테이블 내)
@@ -27471,7 +27494,7 @@ async function showEduSessionModal(sessionId, eduType) {
     } catch(e) { toast('데이터 로드 실패', 'error'); return; }
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = kstDateStr();
   const year  = new Date().getFullYear();
 
   // 사용자 목록 로드
@@ -28488,7 +28511,7 @@ async function printEduLog(sessionId) {
 
   const meta     = EDU_TYPE_META[session.edu_type] || { label: session.edu_type };
   const qLabel   = session.quarter ? `${session.quarter}분기 ` : '';
-  const today    = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric' });
+  const today    = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', ..._KST });
   const attended = attendees.filter(a => a.attended);
   const absent   = attendees.filter(a => !a.attended);
 
@@ -28936,7 +28959,7 @@ async function printEduSign(sessionId) {
 
   const meta   = EDU_TYPE_META[session.edu_type] || { label: session.edu_type, color: '#685182' };
   const qLabel = session.quarter ? `${session.quarter}분기 ` : '';
-  const today  = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' }).replace(/\. /g,'-').replace('.','');
+  const today  = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', ..._KST }).replace(/\. /g,'-').replace('.','');
 
   // ── 미리보기 오버레이 열기 (BUG-094: Android WebView 호환) ─────────────────
   const _eduSignHtml = `<!DOCTYPE html>
@@ -29855,7 +29878,7 @@ async function renderFieldReportPage(container) {
   // container.innerHTML = ... 하기 전에 현재 필터/탭 상태를 변수에 저장
   const nowYear   = new Date().getFullYear();
   const frMode    = document.getElementById('fr-period-mode')?.value    || 'month';
-  const frMVal    = document.getElementById('fr-period-month')?.value   || new Date().toISOString().slice(0,7);
+  const frMVal    = document.getElementById('fr-period-month')?.value   || new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);
   const frWVal    = document.getElementById('fr-period-week')?.value    || '';
   const frQVal    = document.getElementById('fr-period-quarter')?.value || '';
   const frYVal    = document.getElementById('fr-period-year')?.value    || String(nowYear);
@@ -30524,7 +30547,7 @@ function _frResetColWidths(tableKey) {
 function downloadFieldReportCSV() {
   // 현재 활성 탭 확인
   const activeTab = document.getElementById('fr-active-tab')?.value || 'cable';
-  const today = new Date().toISOString().slice(0,10);
+  const today = kstDateStr();
 
   if (activeTab === 'cable') {
     // ── 외선 탭 CSV ──
@@ -31337,7 +31360,7 @@ function downloadWorkReportListCSV() {
       t.contractor_name || '-'
     ];
   });
-  const today = new Date().toISOString().slice(0,10);
+  const today = kstDateStr();
   downloadCSV(`외선일보_목록_${today}.csv`, headers, rows);
 }
 
@@ -33045,7 +33068,7 @@ async function renderVolumeStatsPage(container) {
           <select id="vs-splice-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none hidden">
             ${[1,2,3,4].map(q=>`<option value="${q}">Q${q}</option>`).join('')}
           </select>
-          <input type="month" id="vs-splice-period-month" value="${new Date().toISOString().slice(0,7)}"
+          <input type="month" id="vs-splice-period-month" value="${new Date().toLocaleDateString('sv-SE', _KST).slice(0,7)}"
             class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none hidden">
           <input type="week" id="vs-splice-period-week"
             class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
@@ -33341,7 +33364,7 @@ async function _vsLoadSpliceStats() {
       const wv = document.getElementById('vs-splice-period-week')?.value || '';
       if (wv) { const wr = _vsWeekRange(wv); from = wr.from; to = wr.to; }
     } else if (mode === 'month') {
-      const mv = document.getElementById('vs-splice-period-month')?.value || new Date().toISOString().slice(0,7);
+      const mv = document.getElementById('vs-splice-period-month')?.value || new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);
       from = mv + '-01';
       const d = new Date(mv + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
       to = d.toISOString().slice(0,10);
@@ -33761,7 +33784,7 @@ function downloadVolumeStatsCSV() {
   ];
   dataRows.push(totals);
 
-  const today = new Date().toISOString().slice(0,10);
+  const today = kstDateStr();
   downloadCSV(`물량통계_외선부분_${today}.csv`, headers, dataRows);
 }
 
@@ -33857,7 +33880,7 @@ function printVolumeStats() {
     ${!isWorker?`<td style="${tfStyle}">${totalAmt>0?totalAmt.toLocaleString():''}</td>`:''}
   </tr>`;
 
-  const printDate = new Date().toLocaleDateString('ko-KR');
+  const printDate = new Date().toLocaleDateString('ko-KR', _KST);
 
   const html = `<!DOCTYPE html>
 <html lang="ko"><head><meta charset="UTF-8">
@@ -34251,7 +34274,7 @@ function downloadCableDetailCSV() {
     (cb.usage_m||0).toFixed(1),
     cb.special_note||''
   ]);
-  const today = new Date().toISOString().slice(0,10);
+  const today = kstDateStr();
   downloadCSV(`광케이블현황_${today}.csv`, headers, rows);
 }
 

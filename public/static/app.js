@@ -5862,7 +5862,7 @@ async function deleteTask(id) {
   }
   const confirmed = await showDeleteConfirm(
     '작업을 삭제하시겠습니까?',
-    '모든 연관 데이터(TBM·체크리스트·일지·사진 등)가 함께 삭제됩니다.<br><strong style="color:#e53e3e">삭제하면 복구할 수 없습니다.</strong>'
+    '모든 연관 데이터(TBM·체크리스트·일지·사진 등)가 함께 삭제됩니다.<br><strong style="color:#e53e3e">삭제하면 복구할 수 없습니다.</strong><br><span style="font-size:12px;color:#888">(완료 및 취소 작업 삭제 가능)</span>'
   );
   if (!confirmed) return;
   try {
@@ -6189,9 +6189,9 @@ async function showTaskDetail(id, openTbmTab) {
     const inspections = inspRes.data || [];
     const stops = stopsRes.data || [];
     const isWorker = currentUser.role === 'worker';
-    // [FEAT-053] 삭제 버튼 표시 조건: sysadmin이고 completed 상태
+    // [FEAT-053] 삭제 버튼 표시 조건: sysadmin이고 completed 또는 cancelled 상태
     const _taskIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
-    const _taskCanDelete  = _taskIsSysAdmin && task.status === 'completed';
+    const _taskCanDelete  = _taskIsSysAdmin && (task.status === 'completed' || task.status === 'cancelled');
 
     modal.querySelector('.modal').innerHTML = `
     <div class="modal-header">
@@ -6546,9 +6546,9 @@ async function showTaskDetail(id, openTbmTab) {
               style="background:white;color:#e53e3e;border:1.5px solid #e53e3e;font-size:0.8rem;padding:5px 14px">
               <i class="fas fa-trash-alt mr-1"></i> 작업 삭제
             </button>
-          </div>` : (_taskIsSysAdmin && task.status !== 'completed' ? `
+          </div>` : (_taskIsSysAdmin && task.status !== 'completed' && task.status !== 'cancelled' ? `
           <div class="mb-2">
-            <span class="text-xs text-gray-400" style="line-height:2.2"><i class="fas fa-lock mr-1"></i>완료된 작업만 삭제 가능</span>
+            <span class="text-xs text-gray-400" style="line-height:2.2"><i class="fas fa-lock mr-1"></i>완료 또는 취소된 작업만 삭제 가능</span>
           </div>` : '')}
           <!-- 워크플로우 액션 버튼 -->
           <div class="flex flex-wrap gap-2">

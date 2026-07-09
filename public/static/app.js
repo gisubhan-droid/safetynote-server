@@ -10510,8 +10510,13 @@ function _openPrintOverlay(htmlContent) {
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
 
-  // iframe srcdoc 방식 (Android WebView 호환)
-  iframe.srcdoc = htmlContent;
+  // Blob URL 방식 — base64 이미지 포함 시 srcdoc 크기 제한 우회
+  // srcdoc는 수 MB 이상의 HTML을 처리 못해 빈 페이지가 됨
+  const _htmlBlob = new Blob([htmlContent], { type: 'text/html; charset=utf-8' });
+  const _blobUrl  = URL.createObjectURL(_htmlBlob);
+  iframe.src = _blobUrl;
+  // 로드 완료 후 Blob URL 해제 (메모리 정리)
+  iframe.addEventListener('load', () => { URL.revokeObjectURL(_blobUrl); }, { once: true });
 
   // 닫기 메시지 수신
   function _onCloseMsg(e) {

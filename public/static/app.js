@@ -10487,6 +10487,7 @@ async function _eduApprovalSignInApp(sessionId, approvalRole, eduType) {
 // ── 출력 미리보기 공통 오버레이 헬퍼 (BUG-094: Android WebView window.close() 차단 대응) ─────
 // window.open() + window.close() 대신 현재 페이지 위에 전체화면 오버레이 iframe을 띄웁니다.
 // HTML 내부의 닫기 버튼은 window.parent.postMessage('closePrintOverlay','*') 를 호출합니다.
+// 인쇄 버튼은 iframe 내부에서 window.print() 를 직접 호출합니다. (274a16a 원본 복원)
 function _openPrintOverlay(htmlContent) {
   // 기존 오버레이 제거
   const existing = document.getElementById('__print-overlay__');
@@ -10496,105 +10497,28 @@ function _openPrintOverlay(htmlContent) {
   overlay.id = '__print-overlay__';
   overlay.style.cssText = [
     'position:fixed', 'inset:0', 'z-index:99999',
-    'background:#1f2937', 'display:flex', 'flex-direction:column',
+    'background:#000', 'display:flex', 'flex-direction:column',
   ].join(';');
-
-  // ── 로딩 스피너 (iframe 렌더링 전 표시) ──
-  const spinner = document.createElement('div');
-  spinner.id = '__print-spinner__';
-  spinner.style.cssText = [
-    'position:absolute','inset:0','z-index:1',
-    'display:flex','flex-direction:column','align-items:center','justify-content:center',
-    'background:#1f2937','color:#fff','gap:14px'
-  ].join(';');
-  spinner.innerHTML = `
-    <div style="width:44px;height:44px;border:4px solid #374151;border-top-color:#D70072;
-      border-radius:50%;animation:tbm-spin 0.8s linear infinite"></div>
-    <div style="font-size:13px;color:#9ca3af">불러오는 중...</div>
-    <style>@keyframes tbm-spin{to{transform:rotate(360deg)}}</style>`;
-  overlay.appendChild(spinner);
 
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'flex:1;width:100%;border:none;opacity:0;transition:opacity 0.2s';
-
-  // iframe 로드 완료 시 스피너 숨기고 iframe 표시
-  iframe.addEventListener('load', () => {
-    spinner.style.display = 'none';
-    iframe.style.opacity = '1';
-  });
+  iframe.style.cssText = 'flex:1;width:100%;border:none;';
+  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-modals allow-popups');
 
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
 
-  // ── 미리보기: srcdoc 방식 ──
+  // iframe srcdoc 방식 (Android WebView 호환)
+  // 인쇄 버튼은 HTML 내부에서 window.print() 직접 호출 → iframe 자체를 인쇄
   iframe.srcdoc = htmlContent;
 
-  // ── 인쇄 전용 오프스크린 iframe ──
-  // Chrome의 srcdoc iframe contentWindow.print() 버그 우회:
-  //   srcdoc iframe → Chrome이 부모 창을 인쇄하는 경우 있음
-  // 해결: 화면 밖(left:-9999px)에 별도 iframe을 만들고
-  //   srcdoc 로드 완료 → contentWindow.print() 호출
-  //   → 이 iframe은 부모와 독립된 문서 → 자기 자신만 인쇄
-  //   → 팝업 불필요, window.open 불필요
-  let _printIframe = null;
-
-  function _doOffscreenPrint() {
-    // 기존 인쇄 iframe 제거
-    document.getElementById('__print-iframe__')?.remove();
-
-    // 인쇄용 HTML: JS 제거 (결재 서명 모달 스크립트 오류 방지)
-    let printHtml = htmlContent;
-    printHtml = printHtml.replace(/<script[\s\S]*?<\/script>/gi, '');
-
-    // 오프스크린 iframe 생성 (화면 밖에 배치 → display:none은 안 됨)
-    // display:none이면 Chrome이 인쇄 내용을 렌더링하지 않을 수 있음
-    _printIframe = document.createElement('iframe');
-    _printIframe.id = '__print-iframe__';
-    _printIframe.style.cssText = [
-      'position:fixed',
-      'left:-9999px',
-      'top:0',
-      'width:210mm',    // A4 폭으로 렌더링
-      'height:297mm',
-      'border:none',
-      'visibility:hidden'  // 화면에 보이지 않지만 렌더링은 됨
-    ].join(';');
-
-    document.body.appendChild(_printIframe);
-
-    // srcdoc 로드 완료 → print()
-    _printIframe.addEventListener('load', function() {
-      try {
-        const cw = _printIframe.contentWindow;
-        if (!cw) return;
-        // visibility 잠깐 복원 후 인쇄 (일부 브라우저 요구사항)
-        _printIframe.style.visibility = 'visible';
-        cw.focus();
-        cw.print();
-        _printIframe.style.visibility = 'hidden';
-      } catch(err) {
-        console.warn('[print] offscreen iframe print 실패:', err);
-      }
-      // 인쇄 후 제거 (afterprint 이벤트가 iframe에서 발화 안 될 수 있으므로 타이머 병행)
-      setTimeout(function() {
-        document.getElementById('__print-iframe__')?.remove();
-      }, 3000);
-    });
-
-    _printIframe.srcdoc = printHtml;
-  }
-
-  // ── 메시지 수신: 닫기 / 인쇄 ──
-  function _onOverlayMsg(e) {
+  // ── 메시지 수신: 닫기 ──
+  function _onCloseMsg(e) {
     if (e.data === 'closePrintOverlay') {
       overlay.remove();
-      document.getElementById('__print-iframe__')?.remove();
-      window.removeEventListener('message', _onOverlayMsg);
-    } else if (e.data === 'doPrint') {
-      _doOffscreenPrint();
+      window.removeEventListener('message', _onCloseMsg);
     }
   }
-  window.addEventListener('message', _onOverlayMsg);
+  window.addEventListener('message', _onCloseMsg);
 }
 
 // ── TBM 서명 / 인쇄 전역 함수 ────────────────────────────────────────────────
@@ -11522,7 +11446,7 @@ async function _tbmPrint(tbmId) {
       <span style="font-size:10px;opacity:0.7;margin-right:6px">📋 TBM 회의록 미리보기</span>
       ${(tbm.task_title || '').replace(/</g,'&lt;')}
     </span>
-    <button class="btn-print" onclick="window.parent.postMessage('doPrint','*')">🖨️ 인쇄 / PDF 저장</button>
+    <button class="btn-print" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>
     <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
   <!-- 페이지 래퍼: JS가 화면 크기에 맞게 scale 적용 -->
@@ -17468,9 +17392,20 @@ async function _rbLoadHistory() {
         ? '<span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700">현재</span>'
         : '';
       const btnDisabled = isCurrent ? 'opacity-40 cursor-not-allowed' : 'hover:bg-orange-600 hover:text-white cursor-pointer';
+      // 커밋 날짜 KST 변환
+      const rawDate = c.date || '';
+      let kstDate = rawDate;
+      try {
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) {
+          kstDate = d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul',
+            year:'numeric', month:'2-digit', day:'2-digit',
+            hour:'2-digit', minute:'2-digit', hour12: false });
+        }
+      } catch(_) {}
       return `<tr class="${rowCls} border-b border-gray-50 last:border-0 transition-colors">
         <td class="px-3 py-2 font-mono text-gray-700 select-all">${c.hash}${badge}</td>
-        <td class="px-3 py-2 text-gray-500 whitespace-nowrap">${c.date}</td>
+        <td class="px-3 py-2 text-gray-500 whitespace-nowrap">${kstDate}</td>
         <td class="px-3 py-2 text-gray-700 max-w-xs truncate" title="${c.message.replace(/"/g,'&quot;')}">${c.message}</td>
         <td class="px-3 py-2 text-right">
           <button onclick="_rbSelectCommit('${c.hash}', \`${c.message.replace(/`/g,"'")}\`)"
@@ -28754,7 +28689,7 @@ async function printEduLog(sessionId) {
       <span style="font-size:12px;opacity:0.7;margin-right:8px">📋 안전보건교육 실시일지 미리보기</span>
       ${session.edu_subject}
     </span>
-    <button class="btn-print" onclick="window.parent.postMessage('doPrint','*')">🖨️ 인쇄</button>
+    <button class="btn-print" onclick="window.print()">🖨️ 인쇄</button>
     <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
 
@@ -29059,7 +28994,7 @@ async function printEduSign(sessionId) {
       <span style="font-size:12px;opacity:0.7;margin-right:8px">✍️ 안전보건교육 서명지 미리보기</span>
       ${session.edu_subject}
     </span>
-    <button class="btn-print" onclick="window.parent.postMessage('doPrint','*')">🖨️ 인쇄</button>
+    <button class="btn-print" onclick="window.print()">🖨️ 인쇄</button>
     <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
 

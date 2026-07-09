@@ -3442,11 +3442,11 @@ app.delete('/api/tasks/:id', async (c) => {
   const id = Number(c.req.param('id'))
   if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
 
-  // [FEAT-053] 완료(completed) 상태 확인
+  // [FEAT-053] 완료(completed) 또는 취소(cancelled) 상태 확인
   const taskRow: any = rawDb.prepare(`SELECT id, status, title FROM tasks WHERE id = ?`).get(id)
   if (!taskRow) return c.json({ error: '작업을 찾을 수 없습니다.' }, 404)
-  if (taskRow.status !== 'completed') {
-    return c.json({ error: `완료된 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
+  if (taskRow.status !== 'completed' && taskRow.status !== 'cancelled') {
+    return c.json({ error: `완료 또는 취소된 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
   }
 
   try {

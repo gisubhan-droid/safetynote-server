@@ -10479,12 +10479,33 @@ function _openPrintOverlay(htmlContent) {
   overlay.id = '__print-overlay__';
   overlay.style.cssText = [
     'position:fixed', 'inset:0', 'z-index:99999',
-    'background:#000', 'display:flex', 'flex-direction:column',
+    'background:#1f2937', 'display:flex', 'flex-direction:column',
   ].join(';');
 
+  // ── 로딩 스피너 (iframe 렌더링 전 표시) ──
+  const spinner = document.createElement('div');
+  spinner.id = '__print-spinner__';
+  spinner.style.cssText = [
+    'position:absolute','inset:0','z-index:1',
+    'display:flex','flex-direction:column','align-items:center','justify-content:center',
+    'background:#1f2937','color:#fff','gap:14px'
+  ].join(';');
+  spinner.innerHTML = `
+    <div style="width:44px;height:44px;border:4px solid #374151;border-top-color:#D70072;
+      border-radius:50%;animation:tbm-spin 0.8s linear infinite"></div>
+    <div style="font-size:13px;color:#9ca3af">TBM 회의록 불러오는 중...</div>
+    <style>@keyframes tbm-spin{to{transform:rotate(360deg)}}</style>`;
+  overlay.appendChild(spinner);
+
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'flex:1;width:100%;border:none;';
+  iframe.style.cssText = 'flex:1;width:100%;border:none;opacity:0;transition:opacity 0.2s';
   iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-modals allow-popups');
+
+  // iframe 로드 완료 시 스피너 숨기고 iframe 표시
+  iframe.addEventListener('load', () => {
+    spinner.style.display = 'none';
+    iframe.style.opacity = '1';
+  });
 
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
@@ -11497,9 +11518,9 @@ async function _tbmPrint(tbmId) {
   </div>
 
   <!-- ══════════════════════════════════════════════════
-       PAGE 2 : 서명란
+       PAGE 2 : 서명란 + 사진 (한 페이지, _autoScale로 자동 축소)
        ══════════════════════════════════════════════════ -->
-  <div class="page-label">─── 2페이지 (서명란) ───</div>
+  <div class="page-label">─── 2페이지 (서명란 + 사진) ───</div>
   <div class="page-sheet" id="sheet2">
     <div class="page-inner" id="inner2">
 
@@ -11532,59 +11553,45 @@ async function _tbmPrint(tbmId) {
         ※ 교육 실시자는 반드시 서명란에 서명하여야 하며, 참석 근로자 전원이 서명함으로써 본 교육 참여를 확인합니다.
       </div>
 
+      ${(() => {
+        const secs = (tbmChecklistSections || []);
+        const secsWithPhotos = secs.map(sec => {
+          let ps = []; try { ps = typeof sec.photos==='string' ? JSON.parse(sec.photos) : (sec.photos||[]); } catch(_){}
+          return { ...sec, parsedPhotos: ps.filter(p => p.file_path) };
+        }).filter(sec => sec.parsedPhotos.length > 0);
+        if (!secsWithPhotos.length) return '';
+        const token = localStorage.getItem('token') || '';
+
+        let photoContent = '<div class="section-hdr" style="margin-top:8px">⑥ TBM 안전조치 사진</div>';
+        secsWithPhotos.forEach(sec => {
+          photoContent += '<div style="margin-bottom:8px">';
+          photoContent += '<div style="background:#1D4ED8;color:white;padding:3px 10px;border-radius:5px 5px 0 0;font-size:8pt;font-weight:700;display:flex;align-items:center;gap:5px">'
+                       + '<span>&#9632;</span> ' + (sec.section_name||'').replace(/</g,'&lt;')
+                       + '<span style="margin-left:auto;font-size:7pt;opacity:0.85;font-weight:400">' + sec.parsedPhotos.length + '장</span>'
+                       + '</div>';
+          photoContent += '<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-top:none;border-radius:0 0 5px 5px;padding:5px">';
+          photoContent += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px">';
+          sec.parsedPhotos.forEach(p => {
+            photoContent += '<div style="border:1px solid #BFDBFE;border-radius:4px;overflow:hidden;background:white">';
+            photoContent += '<div style="width:100%;aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">';
+            // lazy loading: 뷰포트 진입 시 로드 (미리보기 속도 개선)
+            photoContent += '<img src="/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(token) + '"'
+                         + ' loading="lazy"'
+                         + ' style="width:100%;height:100%;object-fit:cover;display:block">';
+            photoContent += '</div>';
+            if (p.label) {
+              photoContent += '<div style="padding:2px 5px;font-size:6.5pt;color:#1E40AF;background:#EFF6FF;border-top:1px solid #BFDBFE">' + (p.label||'').replace(/</g,'&lt;') + '</div>';
+            }
+            photoContent += '</div>';
+          });
+          photoContent += '</div></div></div>';
+        });
+        return photoContent;
+      })()}
+
       <div class="foot-note">출력일시: ${printDt} &nbsp;·&nbsp; TBM ID: ${tbmId} &nbsp;·&nbsp; 산업안전보건법 시행규칙 제167조에 따라 3년간 보관</div>
     </div>
   </div>
-
-  <!-- ══════════════════════════════════════════════════
-       PAGE 3 : 사진 (사진 있을 때만)
-       ══════════════════════════════════════════════════ -->
-  ${(() => {
-    const secs = (tbmChecklistSections || []);
-    const secsWithPhotos = secs.map(sec => {
-      let ps = []; try { ps = typeof sec.photos==='string' ? JSON.parse(sec.photos) : (sec.photos||[]); } catch(_){}
-      return { ...sec, parsedPhotos: ps.filter(p => p.file_path) };
-    }).filter(sec => sec.parsedPhotos.length > 0);
-    if (!secsWithPhotos.length) return '';
-    const token = localStorage.getItem('token') || '';
-
-    let photoContent = '';
-    secsWithPhotos.forEach(sec => {
-      photoContent += '<div style="margin-bottom:10px">';
-      photoContent += '<div style="background:#1D4ED8;color:white;padding:4px 10px;border-radius:5px 5px 0 0;font-size:8pt;font-weight:700;display:flex;align-items:center;gap:5px">'
-                   + '<span>&#9632;</span> ' + (sec.section_name||'').replace(/</g,'&lt;')
-                   + '<span style="margin-left:auto;font-size:7pt;opacity:0.85;font-weight:400">' + sec.parsedPhotos.length + '장</span>'
-                   + '</div>';
-      photoContent += '<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-top:none;border-radius:0 0 5px 5px;padding:6px">';
-      photoContent += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
-      sec.parsedPhotos.forEach(p => {
-        photoContent += '<div style="border:1px solid #BFDBFE;border-radius:5px;overflow:hidden;background:white">';
-        photoContent += '<div style="width:100%;aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">';
-        photoContent += '<img src="/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(token) + '" style="width:100%;height:100%;object-fit:cover;display:block">';
-        photoContent += '</div>';
-        if (p.label) {
-          photoContent += '<div style="padding:2px 6px;font-size:7pt;color:#1E40AF;background:#EFF6FF;border-top:1px solid #BFDBFE">' + (p.label||'').replace(/</g,'&lt;') + '</div>';
-        }
-        photoContent += '</div>';
-      });
-      photoContent += '</div></div></div>';
-    });
-
-    return (
-      '<div class="page-label">─── 3페이지 (안전조치 사진) ───</div>' +
-      '<div class="page-sheet" id="sheet3">' +
-        '<div class="page-inner" id="inner3">' +
-          '<div class="law-header">' +
-            '<span>산업안전보건법 제29조 / 시행규칙 제26조 · 별표 5 — TBM(Tool Box Meeting) 회의록</span>' +
-            '<span>출력일: ${today}</span>' +
-          '</div>' +
-          '<div class="section-hdr" style="margin-top:0">⑥ TBM 안전조치 사진</div>' +
-          photoContent +
-          '<div class="foot-note">출력일시: ${printDt} &nbsp;·&nbsp; TBM ID: ${tbmId} &nbsp;·&nbsp; 산업안전보건법 시행규칙 제167조에 따라 3년간 보관</div>' +
-        '</div>' +
-      '</div>'
-    );
-  })()}
 
   <!-- 결재 서명 패드 모달 -->
   <div id="approval-sign-modal">
@@ -11613,23 +11620,41 @@ async function _tbmPrint(tbmId) {
   // ── 각 페이지 자동 축소: 내용이 A4 높이를 초과하면 scale down ──────────────
   // A4 인쇄 가용 높이 = 297mm - 상하 패딩(13+14mm) = 270mm → px 환산
   // 1mm ≈ 3.7795px (96dpi 기준)
-  (function _autoScale() {
+  // ── 사진 lazy load 완료 후 _autoScale 재실행 (사진 높이 반영) ────────────
+  function _autoScale() {
     const MM_TO_PX = 3.7795;
     const A4_H_MM  = 297;
     const PAD_TOP_MM  = 13;
     const PAD_BOT_MM  = 14;
     const AVAIL_H_PX  = (A4_H_MM - PAD_TOP_MM - PAD_BOT_MM) * MM_TO_PX; // ~1020px
 
-    ['inner1','inner2','inner3'].forEach(id => {
+    ['inner1','inner2'].forEach(id => {
       const inner = document.getElementById(id);
       if (!inner) return;
-      // 현재 자연 높이 측정 (scale 초기화 후)
       inner.style.transform = '';
       const naturalH = inner.scrollHeight;
-      if (naturalH <= AVAIL_H_PX) return; // 이미 충분히 작으면 스킵
+      if (naturalH <= AVAIL_H_PX) return;
       const scale = AVAIL_H_PX / naturalH;
       inner.style.transform = \`scale(\${scale})\`;
-      // sheet 높이는 고정(297mm)이므로 inner가 scale down되면 빈공간 발생 — 무시
+    });
+  }
+
+  // 초기 실행 (서명 이미지 등 즉시 로드 항목 반영)
+  _autoScale();
+
+  // 사진 lazy load 완료 후 재실행 (사진 높이 반영)
+  (function _watchPhotoLoad() {
+    const imgs = document.querySelectorAll('#inner2 img[loading="lazy"]');
+    if (!imgs.length) return;
+    let loaded = 0;
+    imgs.forEach(img => {
+      if (img.complete) {
+        loaded++;
+        if (loaded === imgs.length) _autoScale();
+      } else {
+        img.addEventListener('load',  () => { loaded++; if (loaded === imgs.length) _autoScale(); });
+        img.addEventListener('error', () => { loaded++; if (loaded === imgs.length) _autoScale(); });
+      }
     });
   })();
 

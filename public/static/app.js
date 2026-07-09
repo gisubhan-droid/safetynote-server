@@ -10526,10 +10526,21 @@ function _openPrintOverlay(htmlContent) {
       // Chrome에서 srcdoc iframe의 contentWindow.print()가 부모 창을 인쇄하는
       // 버그를 우회: 새 창(about:blank)에 htmlContent를 직접 write 후 print()
       // htmlContent의 모든 리소스(폰트·사진)가 절대 URL이므로 about:blank에서도 정상 로드
+
+      // ── 인쇄 전용 HTML 생성: 결재 서명 패드 스크립트 블록 제거 ──
+      // TBM HTML 내부의 결재 서명 모달·스크립트가 새 창에서 실행되면
+      // DOM 탐색 실패(getElementById null)로 JS 오류 → load 이벤트 지연/미발화
+      // → print() 미호출 문제 방지를 위해 인쇄 창에는 스크립트 없이 순수 HTML만 전달
+      let printHtml = htmlContent;
+      // <script>...</script> 블록 전체 제거 (인쇄에 불필요한 JS 로직)
+      printHtml = printHtml.replace(/<script[\s\S]*?<\/script>/gi, '');
+      // 결재 서명 모달 DOM 제거 (인쇄 시 display:none이지만 완전 제거)
+      printHtml = printHtml.replace(/<div[^>]+id=["']approval-sign-modal["'][\s\S]*?<\/div>\s*<\/div>\s*<\/div>/gi, '');
+
       const pw = window.open('', '_blank', 'width=900,height=1200,left=100,top=100');
       if (pw) {
         pw.document.open();
-        pw.document.write(htmlContent);
+        pw.document.write(printHtml);
         pw.document.close();
         // 리소스(이미지·폰트) 로드 완료 후 인쇄
         pw.addEventListener('load', function() {

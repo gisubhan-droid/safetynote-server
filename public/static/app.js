@@ -10493,14 +10493,12 @@ function _openPrintOverlay(htmlContent) {
   spinner.innerHTML = `
     <div style="width:44px;height:44px;border:4px solid #374151;border-top-color:#D70072;
       border-radius:50%;animation:tbm-spin 0.8s linear infinite"></div>
-    <div style="font-size:13px;color:#9ca3af">TBM 회의록 불러오는 중...</div>
+    <div style="font-size:13px;color:#9ca3af">불러오는 중...</div>
     <style>@keyframes tbm-spin{to{transform:rotate(360deg)}}</style>`;
   overlay.appendChild(spinner);
 
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'flex:1;width:100%;border:none;opacity:0;transition:opacity 0.2s';
-  // sandbox 속성 제거: sandbox가 있으면 contentWindow.print()가 안전 정책으로 차단됨
-  // blob: URL + 동일 origin이므로 sandbox 불필요
 
   // iframe 로드 완료 시 스피너 숨기고 iframe 표시
   iframe.addEventListener('load', () => {
@@ -10512,51 +10510,65 @@ function _openPrintOverlay(htmlContent) {
   document.body.appendChild(overlay);
 
   // ── 미리보기: srcdoc 방식 ──
-  // 모든 리소스 URL이 절대 URL(http://NAS:PORT/...)이므로 srcdoc에서도 정상 로드됨
-  // blob: URL 방식은 iframe origin=null → 서버 요청 차단 문제 발생
   iframe.srcdoc = htmlContent;
+
+  // ── 인쇄 전용 숨김 div (부모 창 @media print에 삽입 후 인쇄) ──
+  // window.open 팝업 차단 우회: 부모 창 DOM에 인쇄 콘텐츠를 삽입하고
+  // @media print { body > * { display:none } #__print-content__ { display:block } }
+  // 방식으로 부모 창에서 직접 인쇄 → 팝업 불필요, 부모 창 URL 표시 없음
+  let _printStyleEl = null;
+  let _printDivEl   = null;
+
+  function _doHiddenPrint() {
+    // 인쇄용 HTML: script 제거, 모달 제거
+    let printHtml = htmlContent;
+    printHtml = printHtml.replace(/<script[\s\S]*?<\/script>/gi, '');
+    printHtml = printHtml.replace(/<div[^>]+id=["']approval-sign-modal["'][\s\S]*?<\/div>\s*<\/div>\s*<\/div>/gi, '');
+
+    // 기존 잔여물 제거
+    document.getElementById('__print-content__')?.remove();
+    document.getElementById('__print-style__')?.remove();
+
+    // 인쇄 콘텐츠 div (화면에선 숨김, 인쇄 시 표시)
+    _printDivEl = document.createElement('div');
+    _printDivEl.id = '__print-content__';
+    _printDivEl.style.cssText = 'display:none';
+    _printDivEl.innerHTML = printHtml;
+    document.body.appendChild(_printDivEl);
+
+    // @media print 스타일: body의 다른 요소 숨기고 인쇄 div만 표시
+    _printStyleEl = document.createElement('style');
+    _printStyleEl.id = '__print-style__';
+    _printStyleEl.textContent = `
+      @media print {
+        body > *:not(#__print-content__) { display:none !important; }
+        #__print-content__ { display:block !important; }
+        #__print-content__ .print-toolbar { display:none !important; }
+        #__print-content__ .no-print { display:none !important; }
+      }`;
+    document.head.appendChild(_printStyleEl);
+
+    // 인쇄 실행
+    window.focus();
+    window.print();
+
+    // 인쇄 후 정리
+    window.addEventListener('afterprint', function _cleanup() {
+      _printDivEl?.remove();
+      _printStyleEl?.remove();
+      window.removeEventListener('afterprint', _cleanup);
+    }, { once: true });
+  }
 
   // ── 메시지 수신: 닫기 / 인쇄 ──
   function _onOverlayMsg(e) {
     if (e.data === 'closePrintOverlay') {
       overlay.remove();
+      document.getElementById('__print-content__')?.remove();
+      document.getElementById('__print-style__')?.remove();
       window.removeEventListener('message', _onOverlayMsg);
     } else if (e.data === 'doPrint') {
-      // ── window.open() + document.write() 방식 ──
-      // Chrome에서 srcdoc iframe의 contentWindow.print()가 부모 창을 인쇄하는
-      // 버그를 우회: 새 창(about:blank)에 htmlContent를 직접 write 후 print()
-      // htmlContent의 모든 리소스(폰트·사진)가 절대 URL이므로 about:blank에서도 정상 로드
-
-      // ── 인쇄 전용 HTML 생성: 결재 서명 패드 스크립트 블록 제거 ──
-      // TBM HTML 내부의 결재 서명 모달·스크립트가 새 창에서 실행되면
-      // DOM 탐색 실패(getElementById null)로 JS 오류 → load 이벤트 지연/미발화
-      // → print() 미호출 문제 방지를 위해 인쇄 창에는 스크립트 없이 순수 HTML만 전달
-      let printHtml = htmlContent;
-      // <script>...</script> 블록 전체 제거 (인쇄에 불필요한 JS 로직)
-      printHtml = printHtml.replace(/<script[\s\S]*?<\/script>/gi, '');
-      // 결재 서명 모달 DOM 제거 (인쇄 시 display:none이지만 완전 제거)
-      printHtml = printHtml.replace(/<div[^>]+id=["']approval-sign-modal["'][\s\S]*?<\/div>\s*<\/div>\s*<\/div>/gi, '');
-
-      const pw = window.open('', '_blank', 'width=900,height=1200,left=100,top=100');
-      if (pw) {
-        pw.document.open();
-        pw.document.write(printHtml);
-        pw.document.close();
-        // 리소스(이미지·폰트) 로드 완료 후 인쇄
-        pw.addEventListener('load', function() {
-          pw.focus();
-          pw.print();
-          pw.addEventListener('afterprint', function() { pw.close(); });
-        });
-      } else {
-        // 팝업 차단된 경우 fallback: srcdoc contentWindow.print()
-        try {
-          const cw = iframe.contentWindow;
-          if (cw) { cw.focus(); cw.print(); }
-        } catch(err) {
-          console.warn('[print] fallback print 실패:', err);
-        }
-      }
+      _doHiddenPrint();
     }
   }
   window.addEventListener('message', _onOverlayMsg);

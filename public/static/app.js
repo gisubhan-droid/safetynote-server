@@ -10510,22 +10510,35 @@ function _openPrintOverlay(htmlContent) {
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
 
-  // Blob URL 방식 — base64 이미지 포함 시 srcdoc 크기 제한 우회
-  // srcdoc는 수 MB 이상의 HTML을 처리 못해 빈 페이지가 됨
-  const _htmlBlob = new Blob([htmlContent], { type: 'text/html; charset=utf-8' });
-  const _blobUrl  = URL.createObjectURL(_htmlBlob);
-  iframe.src = _blobUrl;
-  // 로드 완료 후 Blob URL 해제 (메모리 정리)
-  iframe.addEventListener('load', () => { URL.revokeObjectURL(_blobUrl); }, { once: true });
+  // ── 미리보기: Blob URL → iframe (srcdoc 크기 제한 우회) ──
+  const _previewBlob = new Blob([htmlContent], { type: 'text/html; charset=utf-8' });
+  const _previewUrl  = URL.createObjectURL(_previewBlob);
+  iframe.src = _previewUrl;
+  // 미리보기 로드 후 Blob URL 해제 (메모리 정리)
+  iframe.addEventListener('load', () => { URL.revokeObjectURL(_previewUrl); }, { once: true });
 
-  // 닫기 메시지 수신
-  function _onCloseMsg(e) {
+  // ── 메시지 수신: 닫기 / 인쇄 ──
+  function _onOverlayMsg(e) {
     if (e.data === 'closePrintOverlay') {
       overlay.remove();
-      window.removeEventListener('message', _onCloseMsg);
+      window.removeEventListener('message', _onOverlayMsg);
+    } else if (e.data === 'doPrint') {
+      // 인쇄: 새 창에 document.write() — Blob URL 재생성 없이 직접 문서 작성
+      // Chrome 인쇄 다이얼로그는 blob: URL을 cross-context로 읽지 못해 빈 페이지가 됨
+      const _printWin = window.open('', '_blank', 'width=900,height=700');
+      if (_printWin) {
+        _printWin.document.open();
+        _printWin.document.write(htmlContent);
+        _printWin.document.close();
+        // 폰트·이미지 로드 완료 후 인쇄 다이얼로그 열기
+        _printWin.addEventListener('load', () => {
+          _printWin.focus();
+          _printWin.print();
+        });
+      }
     }
   }
-  window.addEventListener('message', _onCloseMsg);
+  window.addEventListener('message', _onOverlayMsg);
 }
 
 // ── TBM 서명 / 인쇄 전역 함수 ────────────────────────────────────────────────
@@ -11481,7 +11494,7 @@ async function _tbmPrint(tbmId) {
       <span style="font-size:10px;opacity:0.7;margin-right:6px">📋 TBM 회의록 미리보기</span>
       ${(tbm.task_title || '').replace(/</g,'&lt;')}
     </span>
-    <button class="btn-print" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>
+    <button class="btn-print" onclick="window.parent.postMessage('doPrint','*')">🖨️ 인쇄 / PDF 저장</button>
     <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
   <!-- 페이지 래퍼: JS가 화면 크기에 맞게 scale 적용 -->

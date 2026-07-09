@@ -10522,13 +10522,29 @@ function _openPrintOverlay(htmlContent) {
       overlay.remove();
       window.removeEventListener('message', _onOverlayMsg);
     } else if (e.data === 'doPrint') {
-      // srcdoc iframe → contentWindow.print() 정상 동작
-      // (srcdoc는 부모와 동일 origin으로 취급됨)
-      try {
-        const cw = iframe.contentWindow;
-        if (cw) { cw.focus(); cw.print(); }
-      } catch(err) {
-        console.warn('[print] contentWindow.print 실패:', err);
+      // ── window.open() + document.write() 방식 ──
+      // Chrome에서 srcdoc iframe의 contentWindow.print()가 부모 창을 인쇄하는
+      // 버그를 우회: 새 창(about:blank)에 htmlContent를 직접 write 후 print()
+      // htmlContent의 모든 리소스(폰트·사진)가 절대 URL이므로 about:blank에서도 정상 로드
+      const pw = window.open('', '_blank', 'width=900,height=1200,left=100,top=100');
+      if (pw) {
+        pw.document.open();
+        pw.document.write(htmlContent);
+        pw.document.close();
+        // 리소스(이미지·폰트) 로드 완료 후 인쇄
+        pw.addEventListener('load', function() {
+          pw.focus();
+          pw.print();
+          pw.addEventListener('afterprint', function() { pw.close(); });
+        });
+      } else {
+        // 팝업 차단된 경우 fallback: srcdoc contentWindow.print()
+        try {
+          const cw = iframe.contentWindow;
+          if (cw) { cw.focus(); cw.print(); }
+        } catch(err) {
+          console.warn('[print] fallback print 실패:', err);
+        }
       }
     }
   }

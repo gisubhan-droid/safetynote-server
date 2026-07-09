@@ -25,7 +25,7 @@
  */
 
 import { Hono } from 'hono'
-import { spawn } from 'node:child_process'
+import { spawn, execSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -572,23 +572,41 @@ app.post('/reset', async (c) => {
 })
 
 // ─── 버전 태그 생성 헬퍼 (V{major}.{minor}_{YYMMDD}{HHMM}) ──────────────────
-// 예: V2.9d_260702173  →  V2.9d_2607021703  (시분 4자리, 서울 KST 기준)
-// major: 고정 2, minor: 커밋 해시 앞 2자리(16진수→10진수) % 100 zero-pad
-// 시분: HHMM 4자리 (KST = UTC+9)
-function _makeVersionTag(commitHash: string, updatedAt: string | null): string {
-  // KST(UTC+9) 기준 시각 계산
-  const base  = updatedAt ? new Date(updatedAt) : new Date()
-  const kst   = new Date(base.getTime() + 9 * 60 * 60 * 1000)
-  const yy    = String(kst.getUTCFullYear()).slice(2)
-  const mm    = String(kst.getUTCMonth() + 1).padStart(2, '0')
-  const dd    = String(kst.getUTCDate()).padStart(2, '0')
-  const hh    = String(kst.getUTCHours()).padStart(2, '0')
-  const mn    = String(kst.getUTCMinutes()).padStart(2, '0')
-  // minor: 커밋 해시 앞 2글자를 16→10진수 변환 후 % 100
-  const minor = commitHash
-    ? String(parseInt(commitHash.slice(0, 2), 16) % 100).padStart(2, '0')
-    : '00'
-  return `V2.${minor}_${yy}${mm}${dd}${hh}${mn}`
+// 버전 규칙:
+//   - BASE_COMMIT(573) 이후 커밋 1개 = minor +1
+//   - minor 00~99 → major 2, minor 99 초과 시 major 올라감
+//   - 예: 커밋 575 → V2.02, 커밋 672 → V2.99, 커밋 673 → V3.00
+//   - 형식: V{major}.{minor(2자리)}_{YYMMDD}{HHMM(KST)}
+const _VERSION_BASE_COMMIT = 573  // 이 커밋 수 = V2.00
+const _VERSION_BASE_MAJOR  = 2    // 시작 major
+
+function _makeVersionTag(_commitHash: string, updatedAt: string | null): string {
+  // 1) git rev-list --count HEAD 로 현재 총 커밋 수 조회
+  let totalCommits = _VERSION_BASE_COMMIT
+  try {
+    const out = execSync('git rev-list --count HEAD', { encoding: 'utf8', timeout: 5000 }).trim()
+    totalCommits = parseInt(out, 10) || _VERSION_BASE_COMMIT
+  } catch (_) { /* git 조회 실패 시 base 값 유지 */ }
+
+  // 2) V{major}.{minor} 계산
+  const offset = Math.max(0, totalCommits - _VERSION_BASE_COMMIT)  // 0 이상
+  const majorInc = Math.floor(offset / 100)
+  const minor    = offset % 100
+  const major    = _VERSION_BASE_MAJOR + majorInc
+
+  const majorStr = String(major)
+  const minorStr = String(minor).padStart(2, '0')
+
+  // 3) KST(UTC+9) 기준 날짜·시각
+  const base = updatedAt ? new Date(updatedAt) : new Date()
+  const kst  = new Date(base.getTime() + 9 * 60 * 60 * 1000)
+  const yy   = String(kst.getUTCFullYear()).slice(2)
+  const mm   = String(kst.getUTCMonth() + 1).padStart(2, '0')
+  const dd   = String(kst.getUTCDate()).padStart(2, '0')
+  const hh   = String(kst.getUTCHours()).padStart(2, '0')
+  const mn   = String(kst.getUTCMinutes()).padStart(2, '0')
+
+  return `V${majorStr}.${minorStr}_${yy}${mm}${dd}${hh}${mn}`
 }
 
 // ─── 업데이트 상태 싱글턴 ────────────────────────────────────────────────────

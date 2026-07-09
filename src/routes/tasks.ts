@@ -49,7 +49,7 @@ app.get('/', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const { status, date, start_date, end_date, worker_id, supervisor_id, risk_level, search_type, keyword,
-          page: pageStr, limit: limitStr } = c.req.query()
+          con_manager_keyword, page: pageStr, limit: limitStr } = c.req.query()
   // 페이지네이션 파라미터 (기본: limit=0 → 전체, limit>0 → 페이징)
   const limitNum = Math.min(500, Math.max(0, parseInt(limitStr || '0') || 0))
   const pageNum  = Math.max(1, parseInt(pageStr  || '1') || 1)
@@ -65,7 +65,8 @@ app.get('/', async (c) => {
     LEFT JOIN work_types wt ON t.work_type_id = wt.id
     LEFT JOIN users u ON t.supervisor_id = u.id
     LEFT JOIN users cb ON t.created_by = cb.id
-    LEFT JOIN constructions con ON con.id = t.construction_id`
+    LEFT JOIN constructions con ON con.id = t.construction_id
+    LEFT JOIN users con_mgr ON con_mgr.id = con.manager_id`
   const params: any[] = []
   const wheres: string[] = []
 
@@ -82,6 +83,7 @@ app.get('/', async (c) => {
       LEFT JOIN users u ON t.supervisor_id = u.id
       LEFT JOIN users cb ON t.created_by = cb.id
       LEFT JOIN constructions con ON con.id = t.construction_id
+      LEFT JOIN users con_mgr ON con_mgr.id = con.manager_id
       INNER JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?`
     params.push(user.id)
   }
@@ -112,6 +114,12 @@ app.get('/', async (c) => {
     params.push(worker_id)
   }
   if (supervisor_id) { wheres.push('t.supervisor_id = ?'); params.push(supervisor_id) }
+  // 공사담당자 이름 LIKE 검색: 연결된 공사의 담당자(users.name FK 또는 manager_name 직접입력)
+  if (con_manager_keyword) {
+    const mk = `%${con_manager_keyword}%`
+    wheres.push('(con_mgr.name LIKE ? OR con.manager_name LIKE ?)')
+    params.push(mk, mk)
+  }
   if (risk_level) { wheres.push('t.risk_level = ?'); params.push(risk_level) }
   // 키워드 검색 (search_type: request_no | task_number | title)
   if (keyword && keyword.trim()) {

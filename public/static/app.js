@@ -3181,7 +3181,34 @@ function formatSubTaskNo(val) {
 }
 
 // 공사현황 필터 상태
-let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_id:'' };
+let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_keyword:'' };
+
+// 공사현황 담당자 autocomplete 헬퍼
+function _conShowManagerAC(val, names) {
+  const ac = document.getElementById('conManagerAC');
+  if (!ac) return;
+  const q = val.trim();
+  if (!q) { ac.style.display='none'; return; }
+  const matches = names.filter(n => n.includes(q)).slice(0, 8);
+  if (!matches.length) { ac.style.display='none'; return; }
+  ac.innerHTML = matches.map(n =>
+    `<div onclick="_conSelectManager('${n.replace(/'/g,"\\'")}')"
+      style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #F3F0FA"
+      onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">${n}</div>`
+  ).join('');
+  ac.style.display = 'block';
+}
+function _conHideManagerAC() {
+  const ac = document.getElementById('conManagerAC');
+  if (ac) ac.style.display = 'none';
+}
+function _conSelectManager(name) {
+  _conFilters.manager_keyword = name;
+  const inp = document.getElementById('conManagerInput');
+  if (inp) inp.value = name;
+  _conHideManagerAC();
+  renderConstructionsPage(document.getElementById('page-content'));
+}
 
 // 공사현황 엑셀 다운로드
 function exportConstructionsExcel(list) {
@@ -3211,17 +3238,12 @@ function exportConstructionsExcel(list) {
 }
 
 async function renderConstructionsPage(container) {
-  // 담당자 드롭다운용 사용자 목록 (전체 활성 사용자)
+  // 담당자 autocomplete용 사용자 목록 (근로자 제외)
   let _conUserList = [];
   try {
     const uRes = await API.get('/users');
-    _conUserList = uRes.data || [];
+    _conUserList = (uRes.data || []).filter(u => u.role !== 'worker');
   } catch(e) { _conUserList = []; }
-
-  // 드롭다운 표시용: 접속 사용자가 목록에 있으면 pre-select 표시 (단, 필터 세팅은 사용자가 명시적으로 변경한 경우만)
-  const _conMyIdStr = currentUser && currentUser.id ? String(currentUser.id) : '';
-  // 접속 사용자가 목록에 있는지 확인 (없으면 pre-select 안 함)
-  const _conHasMyId = !!(_conMyIdStr && _conUserList.find(u => String(u.id) === _conMyIdStr));
 
   // 상태 탭 메타
   const STATUS_TABS = [
@@ -3256,17 +3278,18 @@ async function renderConstructionsPage(container) {
     </div>
     <!-- 서브 툴바: 담당자·연도·월·검색·버튼 -->
     <div class="flex flex-wrap items-center gap-2 mb-3">
-      <!-- 담당자 필터 -->
-      <select id="conManagerFilter" class="form-control" style="width:110px;padding:6px 10px"
-        onchange="_conFilters.manager_id=this.value; _conFilters.page=1; renderConstructionsPage(document.getElementById('page-content'))">
-        <option value="" ${!_conFilters.manager_id?'selected':''}>전체담당자</option>
-        ${_conUserList.map(u => {
-          const isSelected = _conFilters.manager_id
-            ? String(_conFilters.manager_id)===String(u.id)
-            : (_conHasMyId && String(_conMyIdStr)===String(u.id));
-          return `<option value="${u.id}" ${isSelected?'selected':''}>${u.name}</option>`;
-        }).join('')}
-      </select>
+      <!-- 담당자 검색 입력 (autocomplete) -->
+      <div style="position:relative;width:130px">
+        <input id="conManagerInput" class="form-control" placeholder="공사담당자"
+          value="${_conFilters.manager_keyword}" autocomplete="off"
+          style="padding-right:24px"
+          oninput="_conShowManagerAC(this.value, ${JSON.stringify(_conUserList.map(u=>u.name))})"
+          onkeydown="if(event.key==='Enter'){_conFilters.manager_keyword=this.value;_conFilters.page=1;_conHideManagerAC();renderConstructionsPage(document.getElementById('page-content'))}"
+          onblur="setTimeout(_conHideManagerAC,200)">
+        ${_conFilters.manager_keyword ? `<span onclick="_conFilters.manager_keyword='';document.getElementById('conManagerInput').value='';renderConstructionsPage(document.getElementById('page-content'))"
+          style="position:absolute;right:6px;top:50%;transform:translateY(-50%);cursor:pointer;color:#AAA;font-size:12px">✕</span>` : ''}
+        <div id="conManagerAC" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #DDD;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:999;max-height:180px;overflow-y:auto"></div>
+      </div>
       <!-- 연도 -->
       <select id="conYearFilter" class="form-control" style="width:90px;padding:6px 10px"
         onchange="_conFilters.year=parseInt(this.value); renderConstructionsPage(document.getElementById('page-content'))">
@@ -3303,10 +3326,10 @@ async function renderConstructionsPage(container) {
 
   try {
     const params = { year: _conFilters.year };
-    if (_conFilters.month)      params.month      = _conFilters.month;
-    if (_conFilters.status)     params.status     = _conFilters.status;
-    if (_conFilters.keyword)    params.keyword    = _conFilters.keyword;
-    if (_conFilters.manager_id) params.manager_id = _conFilters.manager_id;
+    if (_conFilters.month)            params.month            = _conFilters.month;
+    if (_conFilters.status)           params.status           = _conFilters.status;
+    if (_conFilters.keyword)          params.keyword          = _conFilters.keyword;
+    if (_conFilters.manager_keyword)  params.manager_keyword  = _conFilters.manager_keyword;
 
     const res = await API.get('/constructions', { params });
     var rawList = res.data || [];
@@ -4361,7 +4384,35 @@ function onDashRangeApply() {
 }
 
 // ======= 작업 관리 (관리감독자) =======
-let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, supervisor_id: '' };
+let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, con_manager_keyword: '' };
+
+// 작업관리 공사담당자 autocomplete 헬퍼
+function _taskShowManagerAC(val, names) {
+  const ac = document.getElementById('taskManagerAC');
+  if (!ac) return;
+  const q = val.trim();
+  if (!q) { ac.style.display='none'; return; }
+  const matches = names.filter(n => n.includes(q)).slice(0, 8);
+  if (!matches.length) { ac.style.display='none'; return; }
+  ac.innerHTML = matches.map(n =>
+    `<div onclick="_taskSelectManager('${n.replace(/'/g,"\\'")}')"
+      style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #F3F0FA"
+      onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">${n}</div>`
+  ).join('');
+  ac.style.display = 'block';
+}
+function _taskHideManagerAC() {
+  const ac = document.getElementById('taskManagerAC');
+  if (ac) ac.style.display = 'none';
+}
+function _taskSelectManager(name) {
+  taskFilters.con_manager_keyword = name;
+  const inp = document.getElementById('taskManagerInput');
+  if (inp) inp.value = name;
+  _taskHideManagerAC();
+  taskFilters.page = 1;
+  renderTasksPage(document.getElementById('page-content'));
+}
 
 // 공사현황 stat-card 클릭: 필터 설정 후 작업 목록으로 이동
 // 대시보드의 현재 기간 설정을 함께 전달하여 표시 건수와 목록 건수를 일치시킴
@@ -4387,7 +4438,7 @@ function navigateToTasksWithFilter(filterType) {
   taskFilters.end_date   = end   || '';
 
   taskFilters.keyword = '';
-  taskFilters.supervisor_id = '';
+  taskFilters.con_manager_keyword = '';
   taskFilters.page = 1;
   navigateTo('tasks');
 }
@@ -4442,16 +4493,13 @@ const TASK_PAGE_LIMIT = 50;    // 페이지당 건수
 
 async function renderTasksPage(container) {
   try {
-    // 담당자 드롭다운용 사용자 목록 (전체 활성 사용자)
+    // 담당자 autocomplete용 사용자 목록 (근로자 제외)
     let _taskUserList = [];
     try {
       const _tuRes = await API.get('/users');
-      _taskUserList = _tuRes.data || [];
+      _taskUserList = (_tuRes.data || []).filter(u => u.role !== 'worker');
     } catch(e) { _taskUserList = []; }
-
-    // 드롭다운 표시용: 접속 사용자가 목록에 있으면 pre-select 표시 (단, 필터 세팅은 사용자가 명시적으로 변경한 경우만)
-    const _taskMyIdStr = currentUser && currentUser.id ? String(currentUser.id) : '';
-    const _taskHasMyId = !!(_taskMyIdStr && _taskUserList.find(u => String(u.id) === _taskMyIdStr));
+    const _taskUserNames = _taskUserList.map(u => u.name);
 
     // tasks 1회 호출로 완료 (백엔드에서 assigned_workers + work_types + team_name 배치 포함)
     // catsRes: 미사용이므로 제거 / teams API: task.team_name 직접 사용으로 제거
@@ -4461,7 +4509,7 @@ async function renderTasksPage(container) {
       ...(taskFilters.keyword                            ? { keyword:     taskFilters.keyword, search_type: taskFilters.search_type } : {}),
       ...(taskFilters.date                               ? { date:        taskFilters.date                                      } : {}),
       ...(taskFilters.start_date && taskFilters.end_date ? { start_date:  taskFilters.start_date, end_date: taskFilters.end_date } : {}),
-      ...(taskFilters.supervisor_id                      ? { supervisor_id: taskFilters.supervisor_id                           } : {}),
+      ...(taskFilters.con_manager_keyword                ? { con_manager_keyword: taskFilters.con_manager_keyword             } : {}),
       limit: TASK_PAGE_LIMIT,
       page:  taskFilters.page || 1,
     } });
@@ -4660,17 +4708,18 @@ async function renderTasksPage(container) {
         <button onclick="showCreateTaskModal()" class="btn btn-primary">
           <i class="fas fa-plus"></i> 작업 생성
         </button>` : ''}
-        <!-- 담당자 필터 -->
-        <select id="taskSupervisorFilter" class="form-control" style="width:110px"
-          onchange="taskFilters.supervisor_id=this.value; taskFilters.page=1; renderTasksPage(document.getElementById('page-content'))">
-          <option value="" ${!taskFilters.supervisor_id?'selected':''}>전체담당자</option>
-          ${_taskUserList.map(u => {
-            const isSelected = taskFilters.supervisor_id
-              ? String(taskFilters.supervisor_id)===String(u.id)
-              : (_taskHasMyId && String(_taskMyIdStr)===String(u.id));
-            return `<option value="${u.id}" ${isSelected?'selected':''}>${u.name}</option>`;
-          }).join('')}
-        </select>
+        <!-- 담당자 검색 입력 (autocomplete) -->
+        <div style="position:relative;width:130px">
+          <input id="taskManagerInput" class="form-control" placeholder="공사담당자"
+            value="${taskFilters.con_manager_keyword}" autocomplete="off"
+            style="padding-right:24px"
+            oninput="_taskShowManagerAC(this.value, ${JSON.stringify(_taskUserNames)})"
+            onkeydown="if(event.key==='Enter'){taskFilters.con_manager_keyword=this.value;taskFilters.page=1;_taskHideManagerAC();renderTasksPage(document.getElementById('page-content'))}"
+            onblur="setTimeout(_taskHideManagerAC,200)">
+          ${taskFilters.con_manager_keyword ? `<span onclick="taskFilters.con_manager_keyword='';document.getElementById('taskManagerInput').value='';renderTasksPage(document.getElementById('page-content'))"
+            style="position:absolute;right:6px;top:50%;transform:translateY(-50%);cursor:pointer;color:#AAA;font-size:12px">✕</span>` : ''}
+          <div id="taskManagerAC" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #DDD;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:999;max-height:180px;overflow-y:auto"></div>
+        </div>
         <select id="statusFilter" class="form-control" style="width:auto" onchange="onStatusFilterChange(this.value)">
           <option value="">전체 진행단계</option>
           <option value="unassigned"  ${taskFilters.status==='unassigned' ?'selected':''}>미배정</option>
@@ -4690,8 +4739,8 @@ async function renderTasksPage(container) {
         <input type="date" id="dateFilter" class="form-control" style="width:auto"
           value="${taskFilters.date||''}"
           onchange="onDateFilterChange(this.value)">
-        ${(taskFilters.status || taskFilters.risk_level || taskFilters.date || taskFilters.supervisor_id) ? `
-        <button onclick="taskFilters.status=''; taskFilters.risk_level=''; taskFilters.date=''; taskFilters.start_date=''; taskFilters.end_date=''; taskFilters.supervisor_id=''; taskFilters.page=1; renderTasksPage(document.getElementById('page-content'))"
+        ${(taskFilters.status || taskFilters.risk_level || taskFilters.date || taskFilters.con_manager_keyword) ? `
+        <button onclick="taskFilters.status=''; taskFilters.risk_level=''; taskFilters.date=''; taskFilters.start_date=''; taskFilters.end_date=''; taskFilters.con_manager_keyword=''; taskFilters.page=1; const _tmi=document.getElementById('taskManagerInput'); if(_tmi)_tmi.value=''; renderTasksPage(document.getElementById('page-content'))"
           class="btn btn-outline text-xs" style="flex-shrink:0;color:#C6C6C6;border-color:#C6C6C6;padding:0 10px">
           <i class="fas fa-times mr-1"></i>필터 초기화
         </button>` : ''}

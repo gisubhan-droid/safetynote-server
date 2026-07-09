@@ -11383,11 +11383,23 @@ async function _tbmPrint(tbmId) {
       #approval-sign-modal { display:none !important; }
       img { page-break-inside:avoid; break-inside:avoid; }
       tr  { page-break-inside:avoid; break-inside:avoid; }
-      /* ★ 인쇄 시 page-sheet-wrap의 JS transform 무효화 — 인쇄 레이아웃 보정 */
+      /* ★ 인쇄 시 page-sheet-wrap JS transform 무효화 */
       .page-sheet-wrap {
         transform: none !important;
         width: 210mm !important;
         margin: 0 auto !important;
+      }
+      /* ★ 인쇄 시 page-sheet: 고정 height/overflow 해제 → 내용이 인쇄에 반영되도록 */
+      .page-sheet {
+        height: auto !important;
+        overflow: visible !important;
+        position: static !important;
+      }
+      /* ★ 인쇄 시 page-inner: absolute 해제 → 일반 흐름으로 복원 */
+      .page-inner {
+        position: static !important;
+        transform: none !important;
+        width: 100% !important;
       }
     }
 

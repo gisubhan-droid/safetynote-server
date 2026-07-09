@@ -3211,17 +3211,17 @@ function exportConstructionsExcel(list) {
 }
 
 async function renderConstructionsPage(container) {
-  // 최초 진입 시 접속 사용자를 담당자 기본값으로 설정
-  if (_conFilters.manager_id === '' && currentUser && currentUser.id) {
-    _conFilters.manager_id = String(currentUser.id);
-  }
-
-  // 담당자 드롭다운용 사용자 목록 (supervisor 이상)
+  // 담당자 드롭다운용 사용자 목록 (전체 활성 사용자)
   let _conUserList = [];
   try {
     const uRes = await API.get('/users');
-    _conUserList = (uRes.data || []).filter(u => ['admin','supervisor'].includes(u.role) || u.role);
+    _conUserList = uRes.data || [];
   } catch(e) { _conUserList = []; }
+
+  // 드롭다운 표시용: 접속 사용자가 목록에 있으면 pre-select 표시 (단, 필터 세팅은 사용자가 명시적으로 변경한 경우만)
+  const _conMyIdStr = currentUser && currentUser.id ? String(currentUser.id) : '';
+  // 접속 사용자가 목록에 있는지 확인 (없으면 pre-select 안 함)
+  const _conHasMyId = !!(_conMyIdStr && _conUserList.find(u => String(u.id) === _conMyIdStr));
 
   // 상태 탭 메타
   const STATUS_TABS = [
@@ -3259,8 +3259,13 @@ async function renderConstructionsPage(container) {
       <!-- 담당자 필터 -->
       <select id="conManagerFilter" class="form-control" style="width:110px;padding:6px 10px"
         onchange="_conFilters.manager_id=this.value; _conFilters.page=1; renderConstructionsPage(document.getElementById('page-content'))">
-        <option value="">전체담당자</option>
-        ${_conUserList.map(u => `<option value="${u.id}" ${String(_conFilters.manager_id)===String(u.id)?'selected':''}>${u.name}</option>`).join('')}
+        <option value="" ${!_conFilters.manager_id?'selected':''}>전체담당자</option>
+        ${_conUserList.map(u => {
+          const isSelected = _conFilters.manager_id
+            ? String(_conFilters.manager_id)===String(u.id)
+            : (_conHasMyId && String(_conMyIdStr)===String(u.id));
+          return `<option value="${u.id}" ${isSelected?'selected':''}>${u.name}</option>`;
+        }).join('')}
       </select>
       <!-- 연도 -->
       <select id="conYearFilter" class="form-control" style="width:90px;padding:6px 10px"
@@ -4437,18 +4442,16 @@ const TASK_PAGE_LIMIT = 50;    // 페이지당 건수
 
 async function renderTasksPage(container) {
   try {
-    // 최초 진입 시 접속 사용자를 담당자 기본값으로 설정
-    if (taskFilters.supervisor_id === '' && currentUser && currentUser.id
-        && (currentUser.role === 'admin' || currentUser.role === 'supervisor')) {
-      taskFilters.supervisor_id = String(currentUser.id);
-    }
-
-    // 담당자 드롭다운용 사용자 목록
+    // 담당자 드롭다운용 사용자 목록 (전체 활성 사용자)
     let _taskUserList = [];
     try {
       const _tuRes = await API.get('/users');
-      _taskUserList = (_tuRes.data || []).filter(u => ['admin','supervisor'].includes(u.role));
+      _taskUserList = _tuRes.data || [];
     } catch(e) { _taskUserList = []; }
+
+    // 드롭다운 표시용: 접속 사용자가 목록에 있으면 pre-select 표시 (단, 필터 세팅은 사용자가 명시적으로 변경한 경우만)
+    const _taskMyIdStr = currentUser && currentUser.id ? String(currentUser.id) : '';
+    const _taskHasMyId = !!(_taskMyIdStr && _taskUserList.find(u => String(u.id) === _taskMyIdStr));
 
     // tasks 1회 호출로 완료 (백엔드에서 assigned_workers + work_types + team_name 배치 포함)
     // catsRes: 미사용이므로 제거 / teams API: task.team_name 직접 사용으로 제거
@@ -4660,8 +4663,13 @@ async function renderTasksPage(container) {
         <!-- 담당자 필터 -->
         <select id="taskSupervisorFilter" class="form-control" style="width:110px"
           onchange="taskFilters.supervisor_id=this.value; taskFilters.page=1; renderTasksPage(document.getElementById('page-content'))">
-          <option value="">전체담당자</option>
-          ${_taskUserList.map(u => `<option value="${u.id}" ${String(taskFilters.supervisor_id)===String(u.id)?'selected':''}>${u.name}</option>`).join('')}
+          <option value="" ${!taskFilters.supervisor_id?'selected':''}>전체담당자</option>
+          ${_taskUserList.map(u => {
+            const isSelected = taskFilters.supervisor_id
+              ? String(taskFilters.supervisor_id)===String(u.id)
+              : (_taskHasMyId && String(_taskMyIdStr)===String(u.id));
+            return `<option value="${u.id}" ${isSelected?'selected':''}>${u.name}</option>`;
+          }).join('')}
         </select>
         <select id="statusFilter" class="form-control" style="width:auto" onchange="onStatusFilterChange(this.value)">
           <option value="">전체 진행단계</option>

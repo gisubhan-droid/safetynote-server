@@ -10511,39 +10511,24 @@ function _openPrintOverlay(htmlContent) {
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
 
-  // ── 미리보기: Blob URL → iframe ──
-  // srcdoc는 수 MB(base64 이미지 포함) 시 빈 페이지 → Blob URL 사용
-  // revoke하지 않고 유지: 인쇄 시 iframe.contentWindow.print() 호출에 필요
-  let _activeBlobUrl = null;
-  function _loadPreview() {
-    if (_activeBlobUrl) URL.revokeObjectURL(_activeBlobUrl);
-    const blob = new Blob([htmlContent], { type: 'text/html; charset=utf-8' });
-    _activeBlobUrl = URL.createObjectURL(blob);
-    iframe.src = _activeBlobUrl;
-  }
-  _loadPreview();
+  // ── 미리보기: srcdoc 방식 ──
+  // 모든 리소스 URL이 절대 URL(http://NAS:PORT/...)이므로 srcdoc에서도 정상 로드됨
+  // blob: URL 방식은 iframe origin=null → 서버 요청 차단 문제 발생
+  iframe.srcdoc = htmlContent;
 
   // ── 메시지 수신: 닫기 / 인쇄 ──
   function _onOverlayMsg(e) {
     if (e.data === 'closePrintOverlay') {
-      if (_activeBlobUrl) URL.revokeObjectURL(_activeBlobUrl);
       overlay.remove();
       window.removeEventListener('message', _onOverlayMsg);
     } else if (e.data === 'doPrint') {
-      // iframe.contentWindow.print() 방식:
-      // - blob: URL은 생성한 탭(부모)의 렌더러에서만 유효
-      // - iframe은 부모와 같은 렌더러 프로세스 공유 → blob: URL 접근 가능
-      // - 새 창(window.open)은 별도 프로세스 → blob: URL 접근 불가 (빈 페이지)
-      // - document.write 새 창은 origin=about:blank → 상대 URL(/uploads,/static) 해석 불가
+      // srcdoc iframe → contentWindow.print() 정상 동작
+      // (srcdoc는 부모와 동일 origin으로 취급됨)
       try {
         const cw = iframe.contentWindow;
         if (cw) { cw.focus(); cw.print(); }
-      } catch(_) {
-        // sandbox 제한 등 실패 시 fallback: 새 Blob URL 탭 열기
-        const fb = new Blob([htmlContent], { type: 'text/html; charset=utf-8' });
-        const fbUrl = URL.createObjectURL(fb);
-        const w = window.open(fbUrl, '_blank');
-        if (w) setTimeout(() => { w.print(); URL.revokeObjectURL(fbUrl); }, 800);
+      } catch(err) {
+        console.warn('[print] contentWindow.print 실패:', err);
       }
     }
   }
@@ -11147,7 +11132,9 @@ async function _tbmPrint(tbmId) {
       } catch(_) {}
     }
 
-    // 사진 토큰 (iframe blob URL 내에서 /api 직접 요청 — 동일 origin 접근 가능)
+    // blob: URL origin에서 상대경로(/api/...)는 서버에 도달하지 않음
+    // → window.location.origin을 prefix로 붙여 절대 URL로 만들어야 함
+    const _origin = window.location.origin;
     const _photoToken = localStorage.getItem('token') || '';
 
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -11330,9 +11317,9 @@ async function _tbmPrint(tbmId) {
   <title>TBM 회의록 - ${(tbm.task_title||'').replace(/</g,'&lt;')}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
-    @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
-    @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-semibold.woff2') format('woff2'); font-weight:600; font-display:swap; }
-    @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-bold.woff2') format('woff2'); font-weight:700; font-display:swap; }
+    @font-face { font-family:'LG Smart KR'; src:url('${_origin}/static/fonts/LGSmartKR-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'LG Smart KR'; src:url('${_origin}/static/fonts/LGSmartKR-semibold.woff2') format('woff2'); font-weight:600; font-display:swap; }
+    @font-face { font-family:'LG Smart KR'; src:url('${_origin}/static/fonts/LGSmartKR-bold.woff2') format('woff2'); font-weight:700; font-display:swap; }
     body { font-family:'LG Smart KR','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif; font-size:10pt; color:#000; margin:0; padding:0; }
 
     /* ── 툴바 (화면 전용) ── */
@@ -11614,7 +11601,7 @@ async function _tbmPrint(tbmId) {
           sec.parsedPhotos.forEach(p => {
             photoContent += '<div style="border:1px solid #BFDBFE;border-radius:4px;overflow:hidden;background:white">';
             photoContent += '<div style="width:100%;aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">';
-            photoContent += '<img src="/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(_photoToken) + '"'
+            photoContent += '<img src="' + _origin + '/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(_photoToken) + '"'
                          + ' style="width:100%;height:100%;object-fit:cover;display:block">';
             photoContent += '</div>';
             if (p.label) {
@@ -28457,6 +28444,9 @@ async function printEduLog(sessionId) {
     printApproval  = aRes.data || { approval_safety: null, approval_general: null, approval_ceo: null };
   } catch(e) { toast('데이터 불러오기 실패', 'error'); return; }
 
+  // blob: URL iframe에서 상대경로는 서버에 도달 안 함 → 절대 URL 필요
+  const _eduOrigin = window.location.origin;
+
   const meta     = EDU_TYPE_META[session.edu_type] || { label: session.edu_type };
   const qLabel   = session.quarter ? `${session.quarter}분기 ` : '';
   const today    = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric' });
@@ -28508,7 +28498,7 @@ async function printEduLog(sessionId) {
           return `<td class="photo-cell">
             ${p
               ? `<div class="photo-box">
-                   <img src="${p.file_path}" class="photo-img"
+                   <img src="${_eduOrigin}${p.file_path}" class="photo-img"
                      onerror="this.style.display='none';this.nextSibling.style.display='flex'">
                    <div class="photo-placeholder" style="display:none"><i>⚠ 이미지 로드 실패</i></div>
                    ${p.caption ? `<div class="photo-caption">${p.caption}</div>` : ''}
@@ -28531,9 +28521,9 @@ async function printEduLog(sessionId) {
   <title>안전보건교육 실시일지 — ${session.edu_subject}</title>
   <style>
     @page { size: A4 portrait; margin: 14mm 12mm 16mm 15mm; }
-    @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
-    @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-semibold.woff2') format('woff2'); font-weight:600; font-display:swap; }
-    @font-face { font-family:'LG Smart KR'; src:url('/static/fonts/LGSmartKR-bold.woff2') format('woff2'); font-weight:700; font-display:swap; }
+    @font-face { font-family:'LG Smart KR'; src:url('${_eduOrigin}/static/fonts/LGSmartKR-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'LG Smart KR'; src:url('${_eduOrigin}/static/fonts/LGSmartKR-semibold.woff2') format('woff2'); font-weight:600; font-display:swap; }
+    @font-face { font-family:'LG Smart KR'; src:url('${_eduOrigin}/static/fonts/LGSmartKR-bold.woff2') format('woff2'); font-weight:700; font-display:swap; }
     * { box-sizing: border-box; margin: 0; padding: 0;
         font-family: 'LG Smart KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
     body { font-size: 9pt; color: #111; background: #fff; }

@@ -11,11 +11,12 @@ app.get('/', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   try {
-    const { status, start_date, end_date, year, month, keyword } = c.req.query()
+    const { status, start_date, end_date, year, month, keyword, manager_id } = c.req.query()
     const params: any[] = []
     const wheres: string[] = []
 
     if (status) { wheres.push('c.status = ?'); params.push(status) }
+    if (manager_id) { wheres.push('c.manager_id = ?'); params.push(manager_id) }
 
     // 기간 필터: 월 기준 or 범위
     if (year && month) {

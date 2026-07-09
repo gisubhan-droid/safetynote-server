@@ -10510,31 +10510,39 @@ function _openPrintOverlay(htmlContent) {
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
 
-  // ── 미리보기: Blob URL → iframe (srcdoc 크기 제한 우회) ──
-  const _previewBlob = new Blob([htmlContent], { type: 'text/html; charset=utf-8' });
-  const _previewUrl  = URL.createObjectURL(_previewBlob);
-  iframe.src = _previewUrl;
-  // 미리보기 로드 후 Blob URL 해제 (메모리 정리)
-  iframe.addEventListener('load', () => { URL.revokeObjectURL(_previewUrl); }, { once: true });
+  // ── 미리보기: Blob URL → iframe ──
+  // srcdoc는 수 MB(base64 이미지 포함) 시 빈 페이지 → Blob URL 사용
+  // revoke하지 않고 유지: 인쇄 시 iframe.contentWindow.print() 호출에 필요
+  let _activeBlobUrl = null;
+  function _loadPreview() {
+    if (_activeBlobUrl) URL.revokeObjectURL(_activeBlobUrl);
+    const blob = new Blob([htmlContent], { type: 'text/html; charset=utf-8' });
+    _activeBlobUrl = URL.createObjectURL(blob);
+    iframe.src = _activeBlobUrl;
+  }
+  _loadPreview();
 
   // ── 메시지 수신: 닫기 / 인쇄 ──
   function _onOverlayMsg(e) {
     if (e.data === 'closePrintOverlay') {
+      if (_activeBlobUrl) URL.revokeObjectURL(_activeBlobUrl);
       overlay.remove();
       window.removeEventListener('message', _onOverlayMsg);
     } else if (e.data === 'doPrint') {
-      // 인쇄: 새 창에 document.write() — Blob URL 재생성 없이 직접 문서 작성
-      // Chrome 인쇄 다이얼로그는 blob: URL을 cross-context로 읽지 못해 빈 페이지가 됨
-      const _printWin = window.open('', '_blank', 'width=900,height=700');
-      if (_printWin) {
-        _printWin.document.open();
-        _printWin.document.write(htmlContent);
-        _printWin.document.close();
-        // 폰트·이미지 로드 완료 후 인쇄 다이얼로그 열기
-        _printWin.addEventListener('load', () => {
-          _printWin.focus();
-          _printWin.print();
-        });
+      // iframe.contentWindow.print() 방식:
+      // - blob: URL은 생성한 탭(부모)의 렌더러에서만 유효
+      // - iframe은 부모와 같은 렌더러 프로세스 공유 → blob: URL 접근 가능
+      // - 새 창(window.open)은 별도 프로세스 → blob: URL 접근 불가 (빈 페이지)
+      // - document.write 새 창은 origin=about:blank → 상대 URL(/uploads,/static) 해석 불가
+      try {
+        const cw = iframe.contentWindow;
+        if (cw) { cw.focus(); cw.print(); }
+      } catch(_) {
+        // sandbox 제한 등 실패 시 fallback: 새 Blob URL 탭 열기
+        const fb = new Blob([htmlContent], { type: 'text/html; charset=utf-8' });
+        const fbUrl = URL.createObjectURL(fb);
+        const w = window.open(fbUrl, '_blank');
+        if (w) setTimeout(() => { w.print(); URL.revokeObjectURL(fbUrl); }, 800);
       }
     }
   }
@@ -28515,6 +28523,28 @@ async function printEduLog(sessionId) {
   };
   const legalHr = legalHrMap[session.edu_type] || '-';
 
+  // ── 교육 사진 base64 사전 변환 (인쇄 시 상대URL 해석 불가 방지) ──────────
+  const _eduPhotoMap = {};
+  if (photos.length > 0) {
+    const _eduToken = localStorage.getItem('token') || '';
+    await Promise.all(photos.map(async p => {
+      if (!p.file_path) return;
+      try {
+        // /uploads/edu_photos/... 경로로 fetch (인증 불필요, 토큰 포함 for safety)
+        const r = await fetch(p.file_path + (p.file_path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(_eduToken));
+        if (!r.ok) return;
+        const buf = await r.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = '';
+        const CHUNK = 8192;
+        for (let i = 0; i < bytes.length; i += CHUNK)
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+        const mime = r.headers.get('Content-Type') || 'image/jpeg';
+        _eduPhotoMap[p.id] = 'data:' + mime + ';base64,' + btoa(binary);
+      } catch(_) {}
+    }));
+  }
+
   // ── 사진 행 단위로 2열씩 분할 ──────────────────────────────────────────
   // 최소 4장 슬롯 보장, 이후 추가 사진은 2열씩 행 추가
   const COLS = 2;
@@ -28530,10 +28560,12 @@ async function printEduLog(sessionId) {
       <tr>
         ${row.map((p, ci) => {
           const idx = ri * COLS + ci;
+          // base64 변환된 경우 data URL, 아니면 원본 상대경로
+          const imgSrc = p ? (_eduPhotoMap[p.id] || p.file_path) : '';
           return `<td class="photo-cell">
             ${p
               ? `<div class="photo-box">
-                   <img src="${p.file_path}" class="photo-img"
+                   <img src="${imgSrc}" class="photo-img"
                      onerror="this.style.display='none';this.nextSibling.style.display='flex'">
                    <div class="photo-placeholder" style="display:none"><i>⚠ 이미지 로드 실패</i></div>
                    ${p.caption ? `<div class="photo-caption">${p.caption}</div>` : ''}

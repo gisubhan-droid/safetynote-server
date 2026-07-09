@@ -6053,9 +6053,9 @@ function showConfirmDialog(title, message = '', confirmLabel = '확인', cancelL
         </div>
         <!-- 버튼 영역 -->
         <div style="display:flex;gap:10px;padding:0 20px 20px">
-          <button id="cdCancel"
+          ${cancelLabel ? `<button id="cdCancel"
             style="flex:1;padding:12px 0;font-size:14px;font-weight:600;color:#6B7280;background:#F3F4F6;border:none;border-radius:10px;cursor:pointer;transition:background .15s"
-            onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">${cancelLabel}</button>
+            onmouseover="this.style.background='#E5E7EB'" onmouseout="this.style.background='#F3F4F6'">${cancelLabel}</button>` : ''}
           <button id="cdOk"
             style="flex:1;padding:12px 0;font-size:14px;font-weight:700;color:${t.okText};background:${t.okBg};border:none;border-radius:10px;cursor:pointer;transition:background .15s"
             onmouseover="this.style.background='${t.okHover}'" onmouseout="this.style.background='${t.okBg}'">${confirmLabel}</button>
@@ -6063,7 +6063,8 @@ function showConfirmDialog(title, message = '', confirmLabel = '확인', cancelL
       </div>`;
     document.body.appendChild(overlay);
     overlay.querySelector('#cdOk').onclick     = () => { overlay.remove(); resolve(true); };
-    overlay.querySelector('#cdCancel').onclick  = () => { overlay.remove(); resolve(false); };
+    const cancelBtn = overlay.querySelector('#cdCancel');
+    if (cancelBtn) cancelBtn.onclick = () => { overlay.remove(); resolve(false); };
     // modal-sm — 소형 확인팝업: overlay 클릭 닫힘 허용 (addOverlayClickClose 사용)
     addOverlayClickClose(overlay, () => { overlay.remove(); resolve(false); });
   });
@@ -31227,7 +31228,7 @@ async function renderWorkReportForm(container, taskId) {
     const BYPASS_OPTS   = ['','해당없음','우회필요','우회중'].map(v=>`<option value="${v}">${v||'우회여부'}</option>`).join('');
     const LOCATION_OPTS = ['','지하','지상','기타'].map(v=>`<option value="${v}">${v||'위치'}</option>`).join('');
     // 작업 케이블정보 전용 옵션
-    const SPEC_OPTS     = ['','1C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
+    const SPEC_OPTS     = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
     const KIND_OPTS     = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
     const PROC_OPTS     = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
     const YEAR_OPTS     = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
@@ -31303,8 +31304,8 @@ async function renderWorkReportForm(container, taskId) {
     <tr class="hover:bg-gray-50">
       <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
       <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.lot_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS.replace(`value="${cbSpec}"`,`value="${cbSpec}" selected`)}</select></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.maker||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec" onchange="_syncMakerOpts(this)">${SPEC_OPTS.replace(`value="${cbSpec}"`,`value="${cbSpec}" selected`)}</select></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker">${_getMakerOpts(cbSpec, cb.maker||'')}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS.replace(`value="${cb.mfg_year||''}"`,`value="${cb.mfg_year||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS.replace(`value="${cb.cable_kind||''}"`,`value="${cb.cable_kind||''}" selected`)}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-asset"><option value="">자산구분</option><option value="N-1" ${(cb.asset_type||'')==='N-1'?'selected':''}>N-1</option><option value="N-2" ${(cb.asset_type||'')==='N-2'?'selected':''}>N-2</option></select></td>
@@ -31525,7 +31526,7 @@ function _wrAddCableSet() {
   div.className = 'wr-cable-set space-y-3';
   div.dataset.set = n;
   const DIV_OPTS    = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
-  const SPEC_OPTS   = ['','1C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
+  const SPEC_OPTS   = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
   const KIND_OPTS2  = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
   const PROC_OPTS   = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
   const YEAR_OPTS   = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
@@ -31551,8 +31552,8 @@ function _wrAddCableSet() {
     cableRows3 += `<tr class="hover:bg-gray-50">
       <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${r+1}</td>
       <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec" onchange="_syncMakerOpts(this)">${SPEC_OPTS}</select></td>
+      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker">${_getMakerOpts('','')}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS2}</select></td>
       <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-asset"><option value="">자산구분</option><option value="N-1">N-1</option><option value="N-2">N-2</option></select></td>
@@ -31654,12 +31655,35 @@ function _wrRenumberSets() {
   });
 }
 
+// ── 규격별 제조사 옵션 헬퍼 ─────────────────────────────────────────────────
+// 1C: 드랍, 반조립, 완조립 / 나머지: 대한, 가온, LS, ES
+function _getMakerOpts(spec, selected) {
+  const is1C = spec === '1C';
+  const opts = is1C
+    ? ['', '드랍', '반조립', '완조립']
+    : ['', '대한', '가온', 'LS', 'ES'];
+  return opts.map(v => {
+    const label = v || '제조사';
+    const sel = (v && v === selected) ? ' selected' : '';
+    return `<option value="${v}"${sel}>${label}</option>`;
+  }).join('');
+}
+// 규격 변경 시 같은 행의 제조사 select 옵션 교체
+function _syncMakerOpts(specSel) {
+  const tr = specSel.closest('tr');
+  if (!tr) return;
+  const makerSel = tr.querySelector('.wrc-maker');
+  if (!makerSel) return;
+  const currentMaker = makerSel.value;
+  makerSel.innerHTML = _getMakerOpts(specSel.value, currentMaker);
+}
+
 // 특정 tbody에 작업 케이블정보 행 추가
 function _wrAddCableRow(tbodyId) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
   const i = tbody.rows.length;
-  const SPEC_OPTS3  = ['','1C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
+  const SPEC_OPTS3  = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
   const KIND_OPTS3  = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
   const PROC_OPTS3  = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
   const YEAR_OPTS   = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
@@ -31668,8 +31692,8 @@ function _wrAddCableRow(tbodyId) {
   tr.innerHTML = `
     <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
     <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec">${SPEC_OPTS3}</select></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker" placeholder="제조사"></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec" onchange="_syncMakerOpts(this)">${SPEC_OPTS3}</select></td>
+    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker">${_getMakerOpts('','')}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS3}</select></td>
     <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-asset"><option value="">자산구분</option><option value="N-1">N-1</option><option value="N-2">N-2</option></select></td>
@@ -31800,7 +31824,60 @@ function _collectWrData(taskId) {
   return { task_id: taskId, detail_type, confirms, cable_sets, cables };
 }
 
+// ── 외선일보 저장 전 필수 필드 유효성 검사 ──────────────────────────────────
+// 케이블 세트에서 실제 데이터가 입력된 행(LOT NO 또는 기타 필드 중 하나라도 있는 행)만 검사
+function _validateWorkReport() {
+  const REQUIRED_FIELDS = [
+    { cls: 'wrc-lot-no',   label: 'LOT NO',   isInput: true  },
+    { cls: 'wrc-spec',     label: '규격(C)',   isInput: false },
+    { cls: 'wrc-maker',    label: '제조사',    isInput: false },
+    { cls: 'wrc-mfg-year', label: '제작년도', isInput: false },
+    { cls: 'wrc-kind',     label: '케이블종류', isInput: false },
+    { cls: 'wrc-asset',    label: '자산구분', isInput: false },
+    { cls: 'wrc-proc',     label: '공정구분', isInput: false },
+  ];
+
+  const errors = [];
+  const sets = document.querySelectorAll('#wr-cable-sets .wr-cable-set');
+
+  sets.forEach((setEl, si) => {
+    const setNo = si + 1;
+    const sid = `cs${parseInt(setEl.dataset.set || setNo)}`;
+    const tbody = document.getElementById(`${sid}-cable-tbody`);
+    if (!tbody) return;
+
+    tbody.querySelectorAll('tr').forEach((tr, ri) => {
+      // 행에 값이 하나라도 있는지 확인 (완전히 빈 행은 건너뜀)
+      const hasAnyValue = REQUIRED_FIELDS.some(f => {
+        const el = tr.querySelector(`.${f.cls}`);
+        return el && el.value && el.value.trim() !== '';
+      });
+      if (!hasAnyValue) return; // 빈 행 스킵
+
+      // 값이 있는 행에서 미입력 필드 검사
+      REQUIRED_FIELDS.forEach(f => {
+        const el = tr.querySelector(`.${f.cls}`);
+        if (!el || !el.value || el.value.trim() === '') {
+          errors.push(`케이블 세트${setNo} ${ri+1}행: [${f.label}] 미입력`);
+        }
+      });
+    });
+  });
+
+  if (errors.length > 0) {
+    // 첫 번째 오류만 간결하게 표시
+    const firstErr = errors[0];
+    // "케이블 세트1 2행: [규격(C)] 미입력" → "[규격(C)] 부분 미입력 하였습니다."
+    const fieldMatch = firstErr.match(/\[(.+?)\]/);
+    const fieldName = fieldMatch ? fieldMatch[1] : '필수 항목';
+    showConfirmDialog(`[${fieldName}] 부분 미입력 하였습니다.`, '', '확인', '', 'warning');
+    return false;
+  }
+  return true;
+}
+
 async function saveWorkReport(taskId) {
+  if (!_validateWorkReport()) return;
   try {
     const data = _collectWrData(taskId);
     // [BUG-020] 진단 로그 — NAS PM2 로그 + 브라우저 콘솔 동시 확인용
@@ -31837,6 +31914,7 @@ async function saveWorkReport(taskId) {
 }
 
 async function submitWorkReport(taskId) {
+  if (!_validateWorkReport()) return;
   try {
     const data = _collectWrData(taskId);
     console.log('[WR-SUBMIT] 수집 데이터:', {

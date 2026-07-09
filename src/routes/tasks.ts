@@ -49,7 +49,10 @@ app.get('/', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const { status, date, start_date, end_date, worker_id, supervisor_id, risk_level, search_type, keyword,
-          con_manager_keyword, page: pageStr, limit: limitStr } = c.req.query()
+          page: pageStr, limit: limitStr } = c.req.query()
+  // 다중 공사담당자: con_manager_names[] 배열 파라미터
+  const rawConMgrNames = c.req.queries('con_manager_names') || []
+  const conManagerNames = rawConMgrNames.flatMap((n: string) => n.split(',').map((s: string) => s.trim())).filter(Boolean)
   // 페이지네이션 파라미터 (기본: limit=0 → 전체, limit>0 → 페이징)
   const limitNum = Math.min(500, Math.max(0, parseInt(limitStr || '0') || 0))
   const pageNum  = Math.max(1, parseInt(pageStr  || '1') || 1)
@@ -114,11 +117,11 @@ app.get('/', async (c) => {
     params.push(worker_id)
   }
   if (supervisor_id) { wheres.push('t.supervisor_id = ?'); params.push(supervisor_id) }
-  // 공사담당자 이름 LIKE 검색: 연결된 공사의 담당자(users.name FK 또는 manager_name 직접입력)
-  if (con_manager_keyword) {
-    const mk = `%${con_manager_keyword}%`
-    wheres.push('(con_mgr.name LIKE ? OR con.manager_name LIKE ?)')
-    params.push(mk, mk)
+  // 공사담당자 다중 이름 OR LIKE: 연결된 공사의 담당자(users.name FK 또는 manager_name 직접입력)
+  if (conManagerNames.length) {
+    const orClauses = conManagerNames.map(() => '(con_mgr.name LIKE ? OR con.manager_name LIKE ?)').join(' OR ')
+    wheres.push(`(${orClauses})`)
+    conManagerNames.forEach((n: string) => { const mk = `%${n}%`; params.push(mk, mk) })
   }
   if (risk_level) { wheres.push('t.risk_level = ?'); params.push(risk_level) }
   // 키워드 검색 (search_type: request_no | task_number | title)

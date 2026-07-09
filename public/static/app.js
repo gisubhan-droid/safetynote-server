@@ -3181,33 +3181,40 @@ function formatSubTaskNo(val) {
 }
 
 // 공사현황 필터 상태
-let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_keyword:'' };
+let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_names:[] };
 let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 적용 플래그
 
-// 공사현황 담당자 autocomplete 헬퍼
-function _conShowManagerAC(val, names) {
-  const ac = document.getElementById('conManagerAC');
-  if (!ac) return;
-  const q = val.trim();
-  if (!q) { ac.style.display='none'; return; }
-  const matches = names.filter(n => n.includes(q)).slice(0, 8);
-  if (!matches.length) { ac.style.display='none'; return; }
-  ac.innerHTML = matches.map(n =>
-    `<div onclick="_conSelectManager('${n.replace(/'/g,"\\'")}')"
-      style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #F3F0FA"
-      onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">${n}</div>`
-  ).join('');
-  ac.style.display = 'block';
+// ── 공사현황 담당자 다중선택 팝업 헬퍼 ──────────────────────────────────────
+function _conOpenManagerPicker() {
+  const pop = document.getElementById('conManagerPicker');
+  if (!pop) return;
+  pop.style.display = pop.style.display === 'block' ? 'none' : 'block';
 }
-function _conHideManagerAC() {
-  const ac = document.getElementById('conManagerAC');
-  if (ac) ac.style.display = 'none';
+function _conCloseManagerPicker() {
+  const pop = document.getElementById('conManagerPicker');
+  if (pop) pop.style.display = 'none';
 }
-function _conSelectManager(name) {
-  _conFilters.manager_keyword = name;
-  const inp = document.getElementById('conManagerInput');
-  if (inp) inp.value = name;
-  _conHideManagerAC();
+function _conToggleManager(name) {
+  const idx = _conFilters.manager_names.indexOf(name);
+  if (idx === -1) _conFilters.manager_names.push(name);
+  else _conFilters.manager_names.splice(idx, 1);
+  // 버튼 레이블 실시간 업데이트
+  const btn = document.getElementById('conManagerBtn');
+  if (btn) btn.textContent = _conFilters.manager_names.length
+    ? _conFilters.manager_names.join(', ')
+    : '공사담당자';
+  // 체크박스 상태 동기화
+  const cb = document.getElementById('conMgrCb_' + name.replace(/\s/g,'_'));
+  if (cb) cb.checked = _conFilters.manager_names.includes(name);
+}
+function _conApplyManagerFilter() {
+  _conCloseManagerPicker();
+  _conFilters.page = 1;
+  renderConstructionsPage(document.getElementById('page-content'));
+}
+function _conClearManagerFilter() {
+  _conFilters.manager_names = [];
+  _conCloseManagerPicker();
   renderConstructionsPage(document.getElementById('page-content'));
 }
 
@@ -3239,23 +3246,26 @@ function exportConstructionsExcel(list) {
 }
 
 async function renderConstructionsPage(container) {
-  // 담당자 autocomplete용 사용자 목록 (근로자 제외)
+  // 담당자 선택 팝업용: 공무·현장대리인·안전관리자 역할 사용자만
   let _conUserList = [];
   try {
     const uRes = await API.get('/users');
-    _conUserList = (uRes.data || []).filter(u => u.role !== 'worker');
+    const allUsers = uRes.data || [];
+    _conUserList = allUsers.filter(u => {
+      const uiR = dbRoleToUi(u.role, u.position, u.sub_role);
+      return ['safety','engineer','site_rep'].includes(uiR);
+    });
   } catch(e) { _conUserList = []; }
 
-  // 최초 1회만: 안전관리자·공무·현장대리인이면 본인 이름 기본 설정
-  // CEO·LGU+·시스템관리자는 빈값 유지 / 초기화 버튼 클릭 후에는 재적용 안 함
-  if (!_conManagerDefaultApplied && _conFilters.manager_keyword === '' && currentUser && currentUser.name) {
+  // 최초 1회만: 안전관리자·공무·현장대리인이면 본인 이름 기본 선택
+  if (!_conManagerDefaultApplied && _conFilters.manager_names.length === 0 && currentUser && currentUser.name) {
     const _myUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
     if (['safety', 'engineer', 'site_rep'].includes(_myUiRole)) {
-      _conFilters.manager_keyword = currentUser.name;
+      _conFilters.manager_names = [currentUser.name];
     }
     _conManagerDefaultApplied = true;
   } else if (!_conManagerDefaultApplied) {
-    _conManagerDefaultApplied = true; // 기본값 없는 역할도 플래그 소모
+    _conManagerDefaultApplied = true;
   }
 
   // 상태 탭 메타
@@ -3291,17 +3301,33 @@ async function renderConstructionsPage(container) {
     </div>
     <!-- 서브 툴바: 담당자·연도·월·검색·버튼 -->
     <div class="flex flex-wrap items-center gap-2 mb-3">
-      <!-- 담당자 검색 입력 (autocomplete) -->
-      <div style="position:relative;width:130px">
-        <input id="conManagerInput" class="form-control" placeholder="공사담당자"
-          value="${_conFilters.manager_keyword}" autocomplete="off"
-          style="padding-right:24px"
-          oninput="_conShowManagerAC(this.value, ${JSON.stringify(_conUserList.map(u=>u.name))})"
-          onkeydown="if(event.key==='Enter'){_conFilters.manager_keyword=this.value;_conFilters.page=1;_conHideManagerAC();renderConstructionsPage(document.getElementById('page-content'))}"
-          onblur="setTimeout(_conHideManagerAC,200)">
-        ${_conFilters.manager_keyword ? `<span onclick="_conFilters.manager_keyword='';document.getElementById('conManagerInput').value='';renderConstructionsPage(document.getElementById('page-content'))"
-          style="position:absolute;right:6px;top:50%;transform:translateY(-50%);cursor:pointer;color:#AAA;font-size:12px">✕</span>` : ''}
-        <div id="conManagerAC" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #DDD;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:999;max-height:180px;overflow-y:auto"></div>
+      <!-- 담당자 다중선택 버튼+팝업 -->
+      <div style="position:relative">
+        <button id="conManagerBtn" onclick="_conOpenManagerPicker()"
+          class="form-control" style="min-width:120px;max-width:200px;text-align:left;padding:6px 28px 6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;background:#fff;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:${_conFilters.manager_names.length?'#1F1F2E':'#9CA3AF'}">
+          ${_conFilters.manager_names.length ? _conFilters.manager_names.join(', ') : '공사담당자'}
+        </button>
+        ${_conFilters.manager_names.length ? `<span onclick="event.stopPropagation();_conClearManagerFilter()"
+          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#AAA;font-size:12px;z-index:1">✕</span>` : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
+        <!-- 체크박스 팝업 -->
+        <div id="conManagerPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:180px;background:#fff;border:1px solid #DDD;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.13);z-index:1000;padding:8px 0">
+          <div style="padding:6px 12px 4px;font-size:11px;font-weight:700;color:#9CA3AF;letter-spacing:.05em;border-bottom:1px solid #F3F0FA;margin-bottom:4px">공사담당자 선택</div>
+          ${_conUserList.map(u => {
+            const checked = _conFilters.manager_names.includes(u.name);
+            const cbId = 'conMgrCb_' + u.name.replace(/\s/g,'_');
+            return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:#374151"
+              onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
+              <input type="checkbox" id="${cbId}" ${checked?'checked':''} onchange="_conToggleManager('${u.name.replace(/'/g,"\\'")}')">
+              ${u.name}
+            </label>`;
+          }).join('')}
+          <div style="display:flex;gap:6px;padding:8px 12px 4px;border-top:1px solid #F3F0FA;margin-top:4px">
+            <button onclick="_conApplyManagerFilter()"
+              style="flex:1;padding:6px;border-radius:7px;background:#D70072;color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">적용</button>
+            <button onclick="_conClearManagerFilter()"
+              style="flex:1;padding:6px;border-radius:7px;background:#F3F4F6;color:#6B7280;border:none;font-size:12px;cursor:pointer">전체</button>
+          </div>
+        </div>
       </div>
       <!-- 연도 -->
       <select id="conYearFilter" class="form-control" style="width:90px;padding:6px 10px"
@@ -4397,33 +4423,49 @@ function onDashRangeApply() {
 }
 
 // ======= 작업 관리 (관리감독자) =======
-let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, con_manager_keyword: '' };
+let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, con_manager_names: [] };
 let _taskManagerDefaultApplied = false; // 작업관리 담당자 기본값 1회 적용 플래그
+let _taskUserList = []; // 작업관리 담당자 선택용 사용자 목록 (전역 캐시)
 
-// 작업관리 공사담당자 autocomplete 헬퍼
-function _taskShowManagerAC(val, names) {
-  const ac = document.getElementById('taskManagerAC');
-  if (!ac) return;
-  const q = val.trim();
-  if (!q) { ac.style.display='none'; return; }
-  const matches = names.filter(n => n.includes(q)).slice(0, 8);
-  if (!matches.length) { ac.style.display='none'; return; }
-  ac.innerHTML = matches.map(n =>
-    `<div onclick="_taskSelectManager('${n.replace(/'/g,"\\'")}')"
-      style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #F3F0FA"
-      onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">${n}</div>`
-  ).join('');
-  ac.style.display = 'block';
+// 작업관리 공사담당자 다중선택 팝업 헬퍼
+function _taskOpenManagerPicker() {
+  const picker = document.getElementById('taskManagerPicker');
+  if (!picker) return;
+  // 체크박스 현재 선택 상태 동기화
+  _taskUserList.forEach(u => {
+    const cb = document.getElementById('taskMgrCb_' + u.name.replace(/\s/g,'_'));
+    if (cb) cb.checked = taskFilters.con_manager_names.includes(u.name);
+  });
+  picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
 }
-function _taskHideManagerAC() {
-  const ac = document.getElementById('taskManagerAC');
-  if (ac) ac.style.display = 'none';
+function _taskCloseManagerPicker() {
+  const picker = document.getElementById('taskManagerPicker');
+  if (picker) picker.style.display = 'none';
 }
-function _taskSelectManager(name) {
-  taskFilters.con_manager_keyword = name;
-  const inp = document.getElementById('taskManagerInput');
-  if (inp) inp.value = name;
-  _taskHideManagerAC();
+function _taskToggleManager(name) {
+  const idx = taskFilters.con_manager_names.indexOf(name);
+  if (idx === -1) taskFilters.con_manager_names.push(name);
+  else taskFilters.con_manager_names.splice(idx, 1);
+  // 버튼 레이블 업데이트
+  const btn = document.getElementById('taskManagerBtn');
+  if (btn) {
+    btn.textContent = taskFilters.con_manager_names.length
+      ? taskFilters.con_manager_names.join(', ')
+      : '공사담당자';
+    const icon = btn.querySelector ? btn.querySelector('i') : null;
+  }
+  // 체크박스 상태 동기화
+  const cb = document.getElementById('taskMgrCb_' + name.replace(/\s/g,'_'));
+  if (cb) cb.checked = taskFilters.con_manager_names.includes(name);
+}
+function _taskApplyManagerFilter() {
+  _taskCloseManagerPicker();
+  taskFilters.page = 1;
+  renderTasksPage(document.getElementById('page-content'));
+}
+function _taskClearManagerFilter() {
+  taskFilters.con_manager_names = [];
+  _taskCloseManagerPicker();
   taskFilters.page = 1;
   renderTasksPage(document.getElementById('page-content'));
 }
@@ -4452,7 +4494,7 @@ function navigateToTasksWithFilter(filterType) {
   taskFilters.end_date   = end   || '';
 
   taskFilters.keyword = '';
-  taskFilters.con_manager_keyword = '';
+  taskFilters.con_manager_names = [];
   taskFilters.page = 1;
   navigateTo('tasks');
 }
@@ -4507,20 +4549,21 @@ const TASK_PAGE_LIMIT = 50;    // 페이지당 건수
 
 async function renderTasksPage(container) {
   try {
-    // 담당자 autocomplete용 사용자 목록 (근로자 제외)
-    let _taskUserList = [];
+    // 담당자 체크박스 팝업용 사용자 목록 (공무·현장대리인·안전관리자만)
     try {
       const _tuRes = await API.get('/users');
-      _taskUserList = (_tuRes.data || []).filter(u => u.role !== 'worker');
+      _taskUserList = (_tuRes.data || []).filter(u => {
+        const uiRole = dbRoleToUi(u.role, u.position, u.sub_role);
+        return ['safety', 'engineer', 'site_rep'].includes(uiRole);
+      });
     } catch(e) { _taskUserList = []; }
-    const _taskUserNames = _taskUserList.map(u => u.name);
 
     // 최초 1회만: 안전관리자·공무·현장대리인이면 본인 이름 기본 설정
     // CEO·LGU+·시스템관리자는 빈값 유지 / 초기화 버튼 클릭 후에는 재적용 안 함
-    if (!_taskManagerDefaultApplied && taskFilters.con_manager_keyword === '' && currentUser && currentUser.name) {
+    if (!_taskManagerDefaultApplied && taskFilters.con_manager_names.length === 0 && currentUser && currentUser.name) {
       const _myUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
       if (['safety', 'engineer', 'site_rep'].includes(_myUiRole)) {
-        taskFilters.con_manager_keyword = currentUser.name;
+        taskFilters.con_manager_names = [currentUser.name];
       }
       _taskManagerDefaultApplied = true;
     } else if (!_taskManagerDefaultApplied) {
@@ -4535,7 +4578,7 @@ async function renderTasksPage(container) {
       ...(taskFilters.keyword                            ? { keyword:     taskFilters.keyword, search_type: taskFilters.search_type } : {}),
       ...(taskFilters.date                               ? { date:        taskFilters.date                                      } : {}),
       ...(taskFilters.start_date && taskFilters.end_date ? { start_date:  taskFilters.start_date, end_date: taskFilters.end_date } : {}),
-      ...(taskFilters.con_manager_keyword                ? { con_manager_keyword: taskFilters.con_manager_keyword             } : {}),
+      ...(taskFilters.con_manager_names.length           ? { con_manager_names: taskFilters.con_manager_names                  } : {}),
       limit: TASK_PAGE_LIMIT,
       page:  taskFilters.page || 1,
     } });
@@ -4734,17 +4777,33 @@ async function renderTasksPage(container) {
         <button onclick="showCreateTaskModal()" class="btn btn-primary">
           <i class="fas fa-plus"></i> 작업 생성
         </button>` : ''}
-        <!-- 담당자 검색 입력 (autocomplete) -->
-        <div style="position:relative;width:130px">
-          <input id="taskManagerInput" class="form-control" placeholder="공사담당자"
-            value="${taskFilters.con_manager_keyword}" autocomplete="off"
-            style="padding-right:24px"
-            oninput="_taskShowManagerAC(this.value, ${JSON.stringify(_taskUserNames)})"
-            onkeydown="if(event.key==='Enter'){taskFilters.con_manager_keyword=this.value;taskFilters.page=1;_taskHideManagerAC();renderTasksPage(document.getElementById('page-content'))}"
-            onblur="setTimeout(_taskHideManagerAC,200)">
-          ${taskFilters.con_manager_keyword ? `<span onclick="taskFilters.con_manager_keyword='';document.getElementById('taskManagerInput').value='';renderTasksPage(document.getElementById('page-content'))"
-            style="position:absolute;right:6px;top:50%;transform:translateY(-50%);cursor:pointer;color:#AAA;font-size:12px">✕</span>` : ''}
-          <div id="taskManagerAC" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #DDD;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:999;max-height:180px;overflow-y:auto"></div>
+        <!-- 담당자 다중선택 버튼+팝업 -->
+        <div style="position:relative">
+          <button id="taskManagerBtn" onclick="_taskOpenManagerPicker()"
+            class="form-control" style="min-width:120px;max-width:200px;text-align:left;display:flex;align-items:center;gap:6px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+            <i class="fas fa-user-tie" style="color:#888;font-size:11px;flex-shrink:0"></i>
+            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${taskFilters.con_manager_names.length ? taskFilters.con_manager_names.join(', ') : '공사담당자'}</span>
+            ${taskFilters.con_manager_names.length
+              ? `<span onclick="event.stopPropagation();_taskClearManagerFilter()" style="color:#AAA;font-size:11px;cursor:pointer;flex-shrink:0">✕</span>`
+              : `<i class="fas fa-chevron-down" style="color:#AAA;font-size:10px;flex-shrink:0"></i>`}
+          </button>
+          <div id="taskManagerPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:180px;background:#fff;border:1px solid #DDD;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:1000;padding:8px 0">
+            <div style="padding:8px 14px 6px;font-size:11px;font-weight:600;color:#888;border-bottom:1px solid #F0EAF8;margin-bottom:4px">공사담당자 선택</div>
+            <div style="max-height:200px;overflow-y:auto;padding:4px 0">
+              ${_taskUserList.length ? _taskUserList.map(u => {
+                const checked = taskFilters.con_manager_names.includes(u.name);
+                const safeId = 'taskMgrCb_' + u.name.replace(/\s/g,'_');
+                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;transition:background .1s" onmouseover="this.style.background='#F8F5FC'" onmouseout="this.style.background=''">
+                  <input type="checkbox" id="${safeId}" ${checked?'checked':''} onchange="_taskToggleManager('${u.name.replace(/'/g,"\\'")}')">
+                  <span>${u.name}</span>
+                </label>`;
+              }).join('') : '<div style="padding:10px 14px;font-size:13px;color:#AAA">담당자 없음</div>'}
+            </div>
+            <div style="padding:6px 10px 6px;border-top:1px solid #F0EAF8;margin-top:4px;display:flex;gap:6px">
+              <button onclick="_taskApplyManagerFilter()" style="flex:1;padding:6px 0;background:#685182;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer">적용</button>
+              <button onclick="_taskClearManagerFilter()" style="flex:1;padding:6px 0;background:#F5F0F8;color:#685182;border:1px solid #EDE7F6;border-radius:7px;font-size:12px;cursor:pointer">전체</button>
+            </div>
+          </div>
         </div>
         <select id="statusFilter" class="form-control" style="width:auto" onchange="onStatusFilterChange(this.value)">
           <option value="">전체 진행단계</option>
@@ -4765,8 +4824,8 @@ async function renderTasksPage(container) {
         <input type="date" id="dateFilter" class="form-control" style="width:auto"
           value="${taskFilters.date||''}"
           onchange="onDateFilterChange(this.value)">
-        ${(taskFilters.status || taskFilters.risk_level || taskFilters.date || taskFilters.con_manager_keyword) ? `
-        <button onclick="taskFilters.status=''; taskFilters.risk_level=''; taskFilters.date=''; taskFilters.start_date=''; taskFilters.end_date=''; taskFilters.con_manager_keyword=''; taskFilters.page=1; const _tmi=document.getElementById('taskManagerInput'); if(_tmi)_tmi.value=''; renderTasksPage(document.getElementById('page-content'))"
+        ${(taskFilters.status || taskFilters.risk_level || taskFilters.date || taskFilters.con_manager_names.length) ? `
+        <button onclick="taskFilters.status=''; taskFilters.risk_level=''; taskFilters.date=''; taskFilters.start_date=''; taskFilters.end_date=''; taskFilters.con_manager_names=[]; taskFilters.page=1; renderTasksPage(document.getElementById('page-content'))"
           class="btn btn-outline text-xs" style="flex-shrink:0;color:#C6C6C6;border-color:#C6C6C6;padding:0 10px">
           <i class="fas fa-times mr-1"></i>필터 초기화
         </button>` : ''}

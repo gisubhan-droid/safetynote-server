@@ -11,16 +11,21 @@ app.get('/', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   try {
-    const { status, start_date, end_date, year, month, keyword, manager_keyword } = c.req.query()
+    const { status, start_date, end_date, year, month, keyword } = c.req.query()
+    // 다중 담당자: manager_names[] 배열 파라미터 (쉼표 구분 또는 반복 키)
+    const rawManagerNames = c.req.queries('manager_names') || []
+    // 쉼표로 join된 단일 값도 지원 (프론트 전송 방식 호환)
+    const managerNames = rawManagerNames.flatMap((n: string) => n.split(',').map((s: string) => s.trim())).filter(Boolean)
+
     const params: any[] = []
     const wheres: string[] = []
 
     if (status) { wheres.push('c.status = ?'); params.push(status) }
-    // 공사담당자 이름 LIKE 검색: users.name(FK) 또는 manager_name(직접입력) 모두 포함
-    if (manager_keyword) {
-      const mk = `%${manager_keyword}%`
-      wheres.push('(u.name LIKE ? OR c.manager_name LIKE ?)')
-      params.push(mk, mk)
+    // 공사담당자 다중 이름 OR LIKE: users.name(FK) 또는 manager_name(직접입력) 모두 포함
+    if (managerNames.length) {
+      const orClauses = managerNames.map(() => '(u.name LIKE ? OR c.manager_name LIKE ?)').join(' OR ')
+      wheres.push(`(${orClauses})`)
+      managerNames.forEach((n: string) => { const mk = `%${n}%`; params.push(mk, mk) })
     }
 
     // 기간 필터: 월 기준 or 범위

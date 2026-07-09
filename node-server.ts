@@ -3865,7 +3865,7 @@ app.get('/api/tbm/:id', async (c) => {
   try {
     const tbm: any = rawDb.prepare(`
       SELECT tr.*, t.title as task_title, t.location, t.task_number, t.sub_task_number,
-             t.contractor_name, t.status as task_status,
+             t.work_number, t.contractor_name, t.status as task_status,
              u.name as conductor_name, u.position as conductor_position
       FROM tbm_records tr
       LEFT JOIN tasks t ON t.id = tr.task_id

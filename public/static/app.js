@@ -11310,7 +11310,7 @@ async function _tbmPrint(tbmId) {
       display: none;
     }
     @media screen {
-      body { background:#e5e7eb; padding:0; padding-top:52px; }
+      body { background:#e5e7eb; padding:0; padding-top:52px; overflow-x:hidden; }
       .print-toolbar {
         display: flex;
         position:fixed; top:0; left:0; right:0; z-index:999;
@@ -11321,6 +11321,13 @@ async function _tbmPrint(tbmId) {
       .print-toolbar .toolbar-title { font-size:12px; font-weight:bold; flex:1; }
       .btn-print { background:#D70072; color:#fff; padding:6px 18px; border-radius:7px; border:none; font-size:12px; font-weight:bold; cursor:pointer; }
       .btn-close  { background:#374151; color:#ccc;  padding:6px 14px; border-radius:7px; border:none; font-size:12px; cursor:pointer; }
+      /* 화면에 꽉 차게: .page-sheet-wrap이 JS로 scale 적용 */
+      .page-sheet-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transform-origin: top center;
+      }
     }
     @media print {
       .print-toolbar { display:none !important; }
@@ -11332,15 +11339,13 @@ async function _tbmPrint(tbmId) {
     }
 
     /* ── A4 페이지 시트 ── */
-    /* 각 .page-sheet 는 정확히 A4 한 장 */
-    /* 내용(div.page-inner)를 JS로 scale 조정해 항상 1장에 맞춤 */
     .page-sheet {
       position: relative;
       background: #fff;
-      /* A4: 210 × 297 mm */
       width:  210mm;
       height: 297mm;
       overflow: hidden;
+      flex-shrink: 0;
     }
     @media screen {
       .page-sheet {
@@ -11441,6 +11446,8 @@ async function _tbmPrint(tbmId) {
     <button class="btn-print" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>
     <button class="btn-close" onclick="window.parent.postMessage('closePrintOverlay','*')">✕ 닫기</button>
   </div>
+  <!-- 페이지 래퍼: JS가 화면 크기에 맞게 scale 적용 -->
+  <div class="page-sheet-wrap no-print" id="pageWrap">
 
   <!-- ══════════════════════════════════════════════════
        PAGE 1 : 본문 (기본정보 ~ 위험요인)
@@ -11476,16 +11483,21 @@ async function _tbmPrint(tbmId) {
         </tr>
         <tr>
           <th>실시일시</th>
-          <td>${formatDateTime(tbm.tbm_date)}</td>
+          <td>${_toKSTDateTime(tbm.tbm_date)}</td>
           <th>TBM진행자</th>
           <td>${(tbm.conductor_name || '-').replace(/</g,'&lt;')}</td>
           <th>작업번호</th>
           <td>${(() => {
-            const sub = (tbm.sub_task_number || '').toString().trim();
-            const main = (tbm.task_number || '').toString().trim();
-            if (sub) return 'WKS-' + main.replace(/^WKS-/i,'') + '-' + sub;
-            if (main) return main.startsWith('WKS') ? main : 'WKS-' + main;
-            return 'WKS-';
+            // 요청번호의 작업번호(work_number) + 작업등록의 서브작업번호(sub_task_number)
+            const workNum = (tbm.work_number || '').toString().trim();
+            const subNum  = (tbm.sub_task_number || '').toString().trim();
+            if (workNum && subNum) return workNum + '-' + subNum;
+            if (workNum) return workNum;
+            // work_number 없을 때 fallback: task_number 기반
+            const taskNum = (tbm.task_number || '').toString().trim();
+            if (taskNum && subNum) return taskNum + '-' + subNum;
+            if (taskNum) return taskNum;
+            return '-';
           })()}</td>
         </tr>
         <tr>
@@ -11593,6 +11605,8 @@ async function _tbmPrint(tbmId) {
     </div>
   </div>
 
+  </div><!-- /page-sheet-wrap -->
+
   <!-- 결재 서명 패드 모달 -->
   <div id="approval-sign-modal">
     <div id="approval-sign-box">
@@ -11620,6 +11634,30 @@ async function _tbmPrint(tbmId) {
   // ── 각 페이지 자동 축소: 내용이 A4 높이를 초과하면 scale down ──────────────
   // A4 인쇄 가용 높이 = 297mm - 상하 패딩(13+14mm) = 270mm → px 환산
   // 1mm ≈ 3.7795px (96dpi 기준)
+  // ── 화면 크기에 맞게 page-sheet-wrap 확대/축소 (미리보기 최대 크기) ────────
+  function _fitToScreen() {
+    const wrap = document.getElementById('pageWrap');
+    if (!wrap) return;
+    const TOOLBAR_H = 52;
+    const PADDING   = 16;
+    const availW = window.innerWidth  - PADDING * 2;
+    const availH = window.innerHeight - TOOLBAR_H - PADDING;
+    // 210mm = 793.7px (96dpi 기준)
+    const sheetW = 210 * 3.7795;
+    const scaleW = availW / sheetW;
+    // 세로는 넘쳐도 스크롤 허용 — 가로 기준으로만 맞춤
+    const scale  = Math.min(scaleW, 1.5); // 최대 1.5배까지만 확대
+    wrap.style.transform = \`scale(\${scale})\`;
+    wrap.style.transformOrigin = 'top center';
+    // wrap이 scale 후 차지하는 실제 높이 보정
+    const sheets = wrap.querySelectorAll('.page-sheet');
+    let totalH = 0;
+    sheets.forEach(s => { totalH += s.offsetHeight + 24; });
+    wrap.style.marginBottom = (totalH * scale - totalH) + 'px';
+  }
+  _fitToScreen();
+  window.addEventListener('resize', _fitToScreen);
+
   // ── 사진 lazy load 완료 후 _autoScale 재실행 (사진 높이 반영) ────────────
   function _autoScale() {
     const MM_TO_PX = 3.7795;

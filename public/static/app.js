@@ -5860,6 +5860,17 @@ async function deleteTask(id) {
     toast('시스템 관리자만 삭제할 수 있습니다.', 'error', 4000);
     return;
   }
+
+  // 작업 상태 클라이언트 사전 체크 (취소/완료만 허용)
+  try {
+    const taskRes = await API.get(`/tasks/${id}`);
+    const taskStatus = taskRes.data?.task?.status || taskRes.data?.status;
+    if (taskStatus && taskStatus !== 'completed' && taskStatus !== 'cancelled') {
+      toast('완료 또는 취소된 작업만 삭제할 수 있습니다.', 'error', 4000);
+      return;
+    }
+  } catch(_) {}
+
   const confirmed = await showDeleteConfirm(
     '작업을 삭제하시겠습니까?',
     '모든 연관 데이터(TBM·체크리스트·일지·사진 등)가 함께 삭제됩니다.<br><strong style="color:#e53e3e">삭제하면 복구할 수 없습니다.</strong><br><span style="font-size:12px;color:#888">(완료 및 취소 작업 삭제 가능)</span>'
@@ -5872,7 +5883,14 @@ async function deleteTask(id) {
     const pc = document.getElementById('page-content');
     if (pc) renderTasksPage(pc);
   } catch(e) {
-    toast(e.response?.data?.error || '삭제 실패', 'error', 4000);
+    const status = e.response?.status;
+    const msg    = e.response?.data?.error || '삭제 실패';
+    // 409: 서버가 여전히 구버전이라도 올바른 메시지로 표시
+    if (status === 409) {
+      toast('완료 또는 취소된 작업만 삭제할 수 있습니다.', 'error', 4000);
+    } else {
+      toast(msg, 'error', 4000);
+    }
   }
 }
 

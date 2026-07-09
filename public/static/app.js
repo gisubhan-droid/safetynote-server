@@ -11147,38 +11147,8 @@ async function _tbmPrint(tbmId) {
       } catch(_) {}
     }
 
-    // ── 사진 base64 사전 로드 (인쇄 다이얼로그 네트워크 요청 제거) ────────────
-    // 모든 사진 ID 수집
-    const _allPhotoItems = [];
+    // 사진 토큰 (iframe blob URL 내에서 /api 직접 요청 — 동일 origin 접근 가능)
     const _photoToken = localStorage.getItem('token') || '';
-    (tbmChecklistSections || []).forEach(sec => {
-      let ps = [];
-      try { ps = typeof sec.photos === 'string' ? JSON.parse(sec.photos) : (sec.photos || []); } catch(_) {}
-      ps.filter(p => p.file_path).forEach(p => _allPhotoItems.push(p.id));
-    });
-    // 병렬 fetch → arrayBuffer → base64 변환
-    async function _fetchPhotoBase64(photoId) {
-      try {
-        const r = await fetch('/api/tbm-photos/' + photoId + '/img?token=' + encodeURIComponent(_photoToken));
-        if (!r.ok) return null;
-        const buf = await r.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let binary = '';
-        // 청크 단위로 btoa 처리 (대용량 이미지 스택 오버플로 방지)
-        const CHUNK = 8192;
-        for (let i = 0; i < bytes.length; i += CHUNK) {
-          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-        }
-        const mime = r.headers.get('Content-Type') || 'image/jpeg';
-        return 'data:' + mime + ';base64,' + btoa(binary);
-      } catch(_) { return null; }
-    }
-    // photoMap: { [photoId]: 'data:image/jpeg;base64,...' }
-    const _photoMap = {};
-    if (_allPhotoItems.length > 0) {
-      const _b64Results = await Promise.all(_allPhotoItems.map(id => _fetchPhotoBase64(id)));
-      _allPhotoItems.forEach((id, idx) => { if (_b64Results[idx]) _photoMap[id] = _b64Results[idx]; });
-    }
 
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
     const printDt = new Date().toLocaleString('ko-KR');
@@ -11644,11 +11614,7 @@ async function _tbmPrint(tbmId) {
           sec.parsedPhotos.forEach(p => {
             photoContent += '<div style="border:1px solid #BFDBFE;border-radius:4px;overflow:hidden;background:white">';
             photoContent += '<div style="width:100%;aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">';
-            // base64 사전 로드된 경우 data URL 사용, 없으면 원본 URL fallback
-            const imgSrc = _photoMap[p.id]
-              ? _photoMap[p.id]
-              : '/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(_photoToken);
-            photoContent += '<img src="' + imgSrc + '"'
+            photoContent += '<img src="/api/tbm-photos/' + p.id + '/img?token=' + encodeURIComponent(_photoToken) + '"'
                          + ' style="width:100%;height:100%;object-fit:cover;display:block">';
             photoContent += '</div>';
             if (p.label) {
@@ -28524,28 +28490,6 @@ async function printEduLog(sessionId) {
   };
   const legalHr = legalHrMap[session.edu_type] || '-';
 
-  // ── 교육 사진 base64 사전 변환 (인쇄 시 상대URL 해석 불가 방지) ──────────
-  const _eduPhotoMap = {};
-  if (photos.length > 0) {
-    const _eduToken = localStorage.getItem('token') || '';
-    await Promise.all(photos.map(async p => {
-      if (!p.file_path) return;
-      try {
-        // /uploads/edu_photos/... 경로로 fetch (인증 불필요, 토큰 포함 for safety)
-        const r = await fetch(p.file_path + (p.file_path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(_eduToken));
-        if (!r.ok) return;
-        const buf = await r.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let binary = '';
-        const CHUNK = 8192;
-        for (let i = 0; i < bytes.length; i += CHUNK)
-          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-        const mime = r.headers.get('Content-Type') || 'image/jpeg';
-        _eduPhotoMap[p.id] = 'data:' + mime + ';base64,' + btoa(binary);
-      } catch(_) {}
-    }));
-  }
-
   // ── 사진 행 단위로 2열씩 분할 ──────────────────────────────────────────
   // 최소 4장 슬롯 보장, 이후 추가 사진은 2열씩 행 추가
   const COLS = 2;
@@ -28561,12 +28505,10 @@ async function printEduLog(sessionId) {
       <tr>
         ${row.map((p, ci) => {
           const idx = ri * COLS + ci;
-          // base64 변환된 경우 data URL, 아니면 원본 상대경로
-          const imgSrc = p ? (_eduPhotoMap[p.id] || p.file_path) : '';
           return `<td class="photo-cell">
             ${p
               ? `<div class="photo-box">
-                   <img src="${imgSrc}" class="photo-img"
+                   <img src="${p.file_path}" class="photo-img"
                      onerror="this.style.display='none';this.nextSibling.style.display='flex'">
                    <div class="photo-placeholder" style="display:none"><i>⚠ 이미지 로드 실패</i></div>
                    ${p.caption ? `<div class="photo-caption">${p.caption}</div>` : ''}
@@ -28715,21 +28657,11 @@ async function printEduLog(sessionId) {
 
     /* ── 인쇄 전용 ── */
     @media print {
+      html, body { margin: 0; padding: 0; background: #fff; }
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .no-print { display: none !important; }
-      /* 법령 표기: 매 페이지 상단 고정 (HWP 머리글 동일 효과) */
-      .law-print-header {
-        position: fixed;
-        top: 0; left: 0; right: 0;
-        font-size: 7pt; color: #aaa; font-weight: bold;
-        padding: 2px 6px 3px;
-        border-bottom: 0.5pt solid #ddd;
-        letter-spacing: 0.2px;
-        background: #fff;
-        z-index: 9999;
-        display: flex; justify-content: space-between; align-items: center;
-      }
-      .a4-page { padding-top: 6mm; }
+      .law-print-header { display: none; }  /* 머리글 제거 — zoom 적용 시 공간 차지 방지 */
+      .a4-page { margin: 0; box-shadow: none; width: 100%; }
     }
     /* ── 화면 미리보기 전용 ── */
     @media screen {
@@ -28901,40 +28833,57 @@ async function printEduLog(sessionId) {
   </div><!-- /.a4-page -->
 
   <script>
-  // ── A4 1장 동적 축소 (화면 미리보기 + 인쇄 모두 적용) ──────────────────────
+  // ── A4 1장 동적 맞춤 (화면: transform scale / 인쇄: zoom) ───────────────────
   (function _autoScaleEdu() {
     const page = document.getElementById('a4Page');
     if (!page) return;
 
-    // A4 가용 높이: 297mm - 상마진 14mm - 하마진 16mm = 267mm → px (96dpi 기준)
-    // 1mm = 3.7795px → 267mm × 3.7795 = 1009px
-    const A4_AVAIL_H = 267 * 3.7795;
+    // A4 내용 가용 높이: 297mm - 상마진14mm - 하마진16mm = 267mm
+    // 브라우저 화면 px: 1mm = 96/25.4 ≈ 3.7795px → 267 × 3.7795 ≈ 1009px
+    // 인쇄 px (Chrome 96dpi 기준): 동일하게 3.7795 사용
+    const MARGIN_MM  = 14 + 16;          // 상+하 마진 합계
+    const A4_H_MM    = 297 - MARGIN_MM;  // = 267mm
+    const MM_TO_PX   = 96 / 25.4;        // 3.7795
+    const A4_AVAIL_PX = A4_H_MM * MM_TO_PX; // ≈ 1009px
 
-    function doScale() {
-      // scale 초기화 후 자연 높이 측정
+    // 인쇄 zoom 스타일 엘리먼트 (미리 삽입)
+    const styleEl = document.createElement('style');
+    styleEl.id = '__edu-print-zoom__';
+    document.head.appendChild(styleEl);
+
+    function doFit() {
+      // zoom/transform 초기화 후 자연 높이 측정
+      page.style.zoom = '';
       page.style.transform = '';
       page.style.transformOrigin = '';
+      styleEl.textContent = '';
+
       const naturalH = page.scrollHeight;
 
-      if (naturalH > A4_AVAIL_H) {
-        const s = A4_AVAIL_H / naturalH;
-        page.style.transform = 'scale(' + s + ')';
-        page.style.transformOrigin = 'top center';
-        // 축소 후 실제 점유 높이 보정 (레이아웃 붕괴 방지)
-        page.parentElement && (page.parentElement.style.minHeight = (naturalH * s) + 'px');
-      } else {
-        page.parentElement && (page.parentElement.style.minHeight = '');
-      }
+      if (naturalH <= A4_AVAIL_PX) return; // 1장 내 — 처리 불필요
+
+      const ratio = A4_AVAIL_PX / naturalH; // 예: 1009/1300 ≈ 0.776
+
+      // ① 화면 미리보기: transform scale (레이아웃 공간 보정 포함)
+      page.style.transform = 'scale(' + ratio + ')';
+      page.style.transformOrigin = 'top center';
+      // 줄어든 만큼 body 여백 보정 (스케일 후 공백 제거)
+      page.style.marginBottom = '-' + (naturalH * (1 - ratio)) + 'px';
+
+      // ② 인쇄: @media print에서 zoom 적용
+      // zoom은 인쇄 엔진이 실제 레이아웃 크기를 줄여 @page 내에 맞춤
+      styleEl.textContent =
+        '@media print { #a4Page { zoom: ' + ratio + '; transform: none !important; margin-bottom: 0 !important; } }';
     }
 
-    // 이미지 포함 → 모두 로드 완료 후 실행
+    // 이미지 로드 완료 후 실행
     const imgs = page.querySelectorAll('img');
-    if (!imgs.length) { doScale(); return; }
+    if (!imgs.length) { doFit(); return; }
     let done = 0;
-    const check = () => { done++; if (done >= imgs.length) doScale(); };
+    const onDone = () => { if (++done >= imgs.length) doFit(); };
     imgs.forEach(img => {
-      if (img.complete) check();
-      else { img.addEventListener('load', check); img.addEventListener('error', check); }
+      if (img.complete) onDone();
+      else { img.addEventListener('load', onDone); img.addEventListener('error', onDone); }
     });
   })();
   </script>

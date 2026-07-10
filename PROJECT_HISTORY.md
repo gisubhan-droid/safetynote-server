@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-06 (세션 117 — FEAT-060: 교육일지 결재란 서명 기능 구현)
-> **GitHub 최신: `82f9095`** — feat(FEAT-060): 교육일지 결재란 서명 기능 구현
-> **NAS 배포 필요: `82f9095`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-10 (세션 119 — 비상복구 서버 PM2 hang 해결: bash 래퍼 → Python3 독립 서버)
+> **GitHub 최신: `f65686a`** — fix: [비상복구서버] bash 래퍼 제거 → Python3 독립 서버 직접 실행
+> **NAS 배포 필요: `f65686a`** — git pull 후 아래 NAS 등록 명령 실행 (pm2 restart 불필요, 신규 등록)
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -21,6 +21,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| 비상복구서버-v3 | 119 | 2026-07-10 | ✅ 수정 | **비상복구 서버 PM2 미동작 — bash 래퍼 방식 NAS hang 문제** — `ecosystem.config.cjs`에서 `safe-recovery-standalone.sh`(bash 래퍼)를 실행하면 NAS Synology PM2에서 응답 없이 hang. 근본 원인: ①bash 래퍼 방식이 NAS PM2와 호환 불가 ②`cleanup_previous()` 함수가 PM2 재시작 시마다 기존 python3 프로세스 kill → 재시작 루프. **해결**: `scripts/recovery-server.py` 독립 Python3 서버 파일 신규 작성. PM2가 python3를 직접 실행(bash 래퍼 없음). `SO_REUSEADDR`로 포트 즉시 재사용, `signal.SIGTERM`으로 graceful stop, `.env` 자동 로드, NAS Node.js v18/v20 경로 자동 탐색. `ecosystem.config.cjs` 비상복구 항목: `script=safe-recovery-standalone.sh` → `recovery-server.py`, `interpreter=/bin/bash` → `/usr/bin/python3`, `args` 단순화 | `f65686a` |
 
 | FEAT-059 | 115 | 2026-07-06 | ✅ 구현 | **LinkMak Co., Ltd. 크레딧 표시** — ①아이콘 레일 최하단에 `.rail-credit` 블록 추가: "LinkMak" / "Co.,Ltd" 2줄, opacity 0.4 → hover 0.85 전환, clamp 폰트 6~8px ②메인 콘텐츠 우하단 `#app-credit-bar` 고정 바 추가(height:22px): "Powered by" + "LinkMak Co., Ltd." (브랜드 컬러), 모바일(≤768px)에서 탭바 겹침 방지로 숨김 ③데스크톱 main-content padding-bottom:22px 추가 (크레딧바 가림 방지) | `3de212d` |
 | FEAT-058 | 115 | 2026-07-06 | ✅ 구현 | **사이드바 아이콘 화면 크기 비례 동적 조절** — 기존 고정 px 값을 CSS `clamp()` + `vw` 단위로 전환하여 모바일(1배)→데스크톱(1.5배) 선형 보간. `#icon-rail` 너비 `56px→clamp(52px,5.5vw,72px)`, `.rail-group-btn` `44×44px→clamp(40px,3.8vw,60px)`, 아이콘 `16px→clamp(16px,1.7vw,24px)`, 레이블 `8px→clamp(7px,0.72vw,10px)`, 브랜드 로고 `28px→clamp(24px,2.6vw,38px)`. footer 버튼 동일 패턴 적용. `#flyout-panel left`, `.main-content margin-left`, `.top-header left` 도 모두 clamp 동기화. 모바일(@media≤768px) 오버라이드는 52px 고정 유지 (clamp 최솟값 보장) | `3de212d` |
@@ -5735,6 +5736,77 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 - [x] PROJECT_HISTORY.md 기록
 
 ---
+
+---
+
+## 세션 119 (2026-07-10) — 비상복구 서버 PM2 hang 해결: bash 래퍼 → Python3 독립 서버
+
+### 작업 요약
+- 세션 118에서 `scripts/recovery-server.py` 파일 생성 완료 후 이어서 진행
+- `ecosystem.config.cjs` 비상복구 서버 항목을 python3 직접 실행 방식으로 최종 수정
+- git commit(`f65686a`) + GitHub push 완료
+
+### 문제 원인 분석
+
+#### 근본 원인 1: NAS PM2 + bash 래퍼 호환성 문제
+- `pm2 start ecosystem.config.cjs` 실행 시 NAS Synology에서 응답 없이 hang
+- bash 래퍼(`safe-recovery-standalone.sh`)를 `interpreter: /bin/bash`로 실행하는 방식 자체가 NAS PM2와 호환 불가
+
+#### 근본 원인 2: `cleanup_previous()` 재시작 루프
+- bash 래퍼 내부 `cleanup_previous()` 함수: 기존 프로세스 kill + 포트 정리
+- PM2 autorestart 시마다 기존 python3 프로세스를 kill → 서버가 계속 종료/재시작 반복
+
+#### 근본 원인 3: `exit 0` 정상 종료 인식
+- bash 래퍼의 `main()` 함수: `start_python3_server && exit 0`
+- PM2가 `exit 0`을 정상 종료로 인식 → 즉시 재시작 → 무한 루프
+
+### 해결 방법
+
+#### `scripts/recovery-server.py` 신규 생성
+- PM2가 python3를 **직접** 실행 (bash 래퍼 완전 제거)
+- `socketserver.TCPServer.allow_reuse_address = True` → 재시작 시 포트 즉시 재사용
+- `signal.signal(signal.SIGTERM, _sigterm)` → PM2 graceful stop 대응
+- `.env` 파일 자동 로드 (`RECOVERY_PASSWORD`, `PORT`, `APP_NAME`)
+- NAS Node.js 경로 자동 탐색 (`v18`/`v20` 모두 지원)
+- PM2가 python3 프로세스를 직접 감시 → crash 시 자동 재시작 정상 동작
+
+#### `ecosystem.config.cjs` 수정 (safetynote-recovery 항목)
+| 항목 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| `script` | `scripts/safe-recovery-standalone.sh` | `scripts/recovery-server.py` |
+| `interpreter` | `/bin/bash` | `/usr/bin/python3` |
+| `args` | `/volume1/safetynote 3445 --foreground` | `/volume1/safetynote 3445` |
+
+### NAS 배포 방법
+```bash
+# 1. 코드 업데이트
+cd /volume1/safetynote && git pull origin main
+
+# 2. 기존 비상복구 서버 중지 (실행 중인 경우)
+pm2 stop safetynote-recovery 2>/dev/null || true
+pm2 delete safetynote-recovery 2>/dev/null || true
+
+# 3. python3 경로 확인
+which python3   # → /usr/bin/python3 또는 다른 경로 확인
+
+# 4. PM2 커맨드라인 직접 등록 (ecosystem.config.cjs 방식 사용 금지 — NAS hang 발생)
+pm2 start /volume1/safetynote/scripts/recovery-server.py \
+  --name safetynote-recovery \
+  --interpreter /usr/bin/python3 \
+  -- /volume1/safetynote 3445
+
+# 5. 저장 및 확인
+pm2 save
+pm2 list
+pm2 logs safetynote-recovery --nostream --lines 20
+```
+
+> ⚠️ `pm2 start ecosystem.config.cjs`는 NAS에서 hang 가능 — **커맨드라인 직접 등록** 방식 사용 필수
+
+### 커밋 이력
+| 커밋 | 내용 |
+|------|------|
+| `f65686a` | fix: [비상복구서버] bash 래퍼 제거 → Python3 독립 서버 직접 실행 (NAS PM2 hang 해결) |
 
 ---
 

@@ -4959,7 +4959,7 @@ async function renderTasksPage(container) {
     })();
 
     container.innerHTML = `
-    <div class="max-w-7xl mx-auto">
+    <div class="page-container">
       <!-- 활성 필터 배너 -->
       ${filterBannerHtml}
 

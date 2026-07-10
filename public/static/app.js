@@ -363,7 +363,22 @@ function collectPermissions(prefix='perm') {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API = axios.create({ baseURL: '/api' });
+const API = axios.create({
+  baseURL: '/api',
+  // 배열 파라미터를 key=A&key=B (반복키) 형태로 직렬화
+  // Hono의 c.req.queries('key') 는 브라켓 없는 반복키를 기대함
+  paramsSerializer: params => {
+    const parts = [];
+    Object.entries(params).forEach(([key, val]) => {
+      if (Array.isArray(val)) {
+        val.forEach(v => { if (v !== null && v !== undefined && v !== '') parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(v)); });
+      } else if (val !== null && val !== undefined && val !== '') {
+        parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(val));
+      }
+    });
+    return parts.join('&');
+  }
+});
 API.interceptors.request.use(cfg => {
   const token = localStorage.getItem('token');
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
@@ -3184,11 +3199,37 @@ function formatSubTaskNo(val) {
 let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_names:[] };
 let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 적용 플래그
 
+// ── 담당자 팝업 외부클릭 닫기 (공사현황·작업관리 공용) ─────────────────────
+(function _initManagerPickerOutsideClick() {
+  document.addEventListener('click', function(e) {
+    // 공사현황 팝업
+    const conPicker = document.getElementById('conManagerPicker');
+    const conBtn    = document.getElementById('conManagerBtn');
+    if (conPicker && conPicker.style.display !== 'none') {
+      if (!conPicker.contains(e.target) && e.target !== conBtn && !conBtn?.contains(e.target)) {
+        conPicker.style.display = 'none';
+      }
+    }
+    // 작업관리 팝업
+    const taskPicker = document.getElementById('taskManagerPicker');
+    const taskBtn    = document.getElementById('taskManagerBtn');
+    if (taskPicker && taskPicker.style.display !== 'none') {
+      if (!taskPicker.contains(e.target) && e.target !== taskBtn && !taskBtn?.contains(e.target)) {
+        taskPicker.style.display = 'none';
+      }
+    }
+  });
+})();
+
 // ── 공사현황 담당자 다중선택 팝업 헬퍼 ──────────────────────────────────────
 function _conOpenManagerPicker() {
   const pop = document.getElementById('conManagerPicker');
   if (!pop) return;
-  pop.style.display = pop.style.display === 'block' ? 'none' : 'block';
+  const isOpen = pop.style.display === 'block';
+  // 작업관리 팝업 닫기 (동시에 하나만)
+  const tPop = document.getElementById('taskManagerPicker');
+  if (tPop) tPop.style.display = 'none';
+  pop.style.display = isOpen ? 'none' : 'block';
 }
 function _conCloseManagerPicker() {
   const pop = document.getElementById('conManagerPicker');
@@ -3200,20 +3241,28 @@ function _conToggleManager(name) {
   else _conFilters.manager_names.splice(idx, 1);
   // 버튼 레이블 실시간 업데이트
   const btn = document.getElementById('conManagerBtn');
-  if (btn) btn.textContent = _conFilters.manager_names.length
-    ? _conFilters.manager_names.join(', ')
-    : '공사담당자';
+  if (btn) {
+    const span = btn.querySelector('span:last-of-type') || btn;
+    btn.querySelector && (btn.querySelector('span') || {}).textContent;
+    // 버튼 전체 텍스트 갱신은 렌더링 시 처리되므로 체크박스만 동기화
+  }
   // 체크박스 상태 동기화
   const cb = document.getElementById('conMgrCb_' + name.replace(/\s/g,'_'));
   if (cb) cb.checked = _conFilters.manager_names.includes(name);
+  // 팝업 상단 선택 카운트 업데이트
+  const countEl = document.getElementById('conMgrPickerCount');
+  if (countEl) countEl.textContent = _conFilters.manager_names.length ? `${_conFilters.manager_names.length}명 선택` : '';
 }
 function _conApplyManagerFilter() {
   _conCloseManagerPicker();
-  _conFilters.page = 1;
   renderConstructionsPage(document.getElementById('page-content'));
 }
 function _conClearManagerFilter() {
   _conFilters.manager_names = [];
+  // 팝업 내 체크박스 전체 해제
+  document.querySelectorAll('[id^="conMgrCb_"]').forEach(cb => cb.checked = false);
+  const countEl = document.getElementById('conMgrPickerCount');
+  if (countEl) countEl.textContent = '';
   _conCloseManagerPicker();
   renderConstructionsPage(document.getElementById('page-content'));
 }
@@ -3304,28 +3353,41 @@ async function renderConstructionsPage(container) {
       <!-- 담당자 다중선택 버튼+팝업 -->
       <div style="position:relative">
         <button id="conManagerBtn" onclick="_conOpenManagerPicker()"
-          class="form-control" style="min-width:120px;max-width:200px;text-align:left;padding:6px 28px 6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;background:#fff;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:${_conFilters.manager_names.length?'#1F1F2E':'#9CA3AF'}">
-          ${_conFilters.manager_names.length ? _conFilters.manager_names.join(', ') : '공사담당자'}
+          class="form-control" style="min-width:120px;max-width:220px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${_conFilters.manager_names.length?'#D70072':'#D1D5DB'};border-radius:8px;font-size:13px;color:${_conFilters.manager_names.length?'#D70072':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden;max-width:220px">
+          <i class="fas fa-user-tie" style="font-size:11px;flex-shrink:0"></i>
+          <span style="overflow:hidden;text-overflow:ellipsis;flex:1">
+            ${_conFilters.manager_names.length ? _conFilters.manager_names.join(', ') : '공사담당자'}
+          </span>
+          ${_conFilters.manager_names.length ? `<span style="background:#D70072;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${_conFilters.manager_names.length}</span>` : ''}
         </button>
-        ${_conFilters.manager_names.length ? `<span onclick="event.stopPropagation();_conClearManagerFilter()"
-          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#AAA;font-size:12px;z-index:1">✕</span>` : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
+        ${_conFilters.manager_names.length
+          ? `<span onclick="event.stopPropagation();_conClearManagerFilter()" title="선택 초기화"
+              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#D70072;font-size:13px;z-index:1;font-weight:700">✕</span>`
+          : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
         <!-- 체크박스 팝업 -->
-        <div id="conManagerPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:180px;background:#fff;border:1px solid #DDD;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.13);z-index:1000;padding:8px 0">
-          <div style="padding:6px 12px 4px;font-size:11px;font-weight:700;color:#9CA3AF;letter-spacing:.05em;border-bottom:1px solid #F3F0FA;margin-bottom:4px">공사담당자 선택</div>
-          ${_conUserList.map(u => {
-            const checked = _conFilters.manager_names.includes(u.name);
-            const cbId = 'conMgrCb_' + u.name.replace(/\s/g,'_');
-            return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:#374151"
-              onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
-              <input type="checkbox" id="${cbId}" ${checked?'checked':''} onchange="_conToggleManager('${u.name.replace(/'/g,"\\'")}')">
-              ${u.name}
-            </label>`;
-          }).join('')}
-          <div style="display:flex;gap:6px;padding:8px 12px 4px;border-top:1px solid #F3F0FA;margin-top:4px">
+        <div id="conManagerPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:190px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F3F0FA;background:#FAFAFE">
+            <span style="font-size:11px;font-weight:700;color:#685182">공사담당자 선택</span>
+            <span id="conMgrPickerCount" style="font-size:11px;color:#D70072;font-weight:600">${_conFilters.manager_names.length ? _conFilters.manager_names.length+'명 선택' : ''}</span>
+          </div>
+          <div style="max-height:220px;overflow-y:auto;padding:4px 0">
+            ${_conUserList.length ? _conUserList.map(u => {
+              const checked = _conFilters.manager_names.includes(u.name);
+              const cbId = 'conMgrCb_' + u.name.replace(/\s/g,'_');
+              return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:#374151;transition:background .1s"
+                onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
+                <input type="checkbox" id="${cbId}" ${checked?'checked':''} onchange="_conToggleManager('${u.name.replace(/'/g,"\\'")}')">
+                <span>${u.name}</span>
+              </label>`;
+            }).join('') : '<div style="padding:12px 14px;font-size:13px;color:#AAA;text-align:center">담당자 없음</div>'}
+          </div>
+          <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #F3F0FA;background:#FAFAFE">
             <button onclick="_conApplyManagerFilter()"
-              style="flex:1;padding:6px;border-radius:7px;background:#D70072;color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">적용</button>
+              style="flex:1;padding:7px 0;border-radius:8px;background:#D70072;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer">
+              <i class="fas fa-check mr-1"></i>적용</button>
             <button onclick="_conClearManagerFilter()"
-              style="flex:1;padding:6px;border-radius:7px;background:#F3F4F6;color:#6B7280;border:none;font-size:12px;cursor:pointer">전체</button>
+              style="flex:1;padding:7px 0;border-radius:8px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;font-size:12px;cursor:pointer">
+              전체 초기화</button>
           </div>
         </div>
       </div>
@@ -3365,10 +3427,12 @@ async function renderConstructionsPage(container) {
 
   try {
     const params = { year: _conFilters.year };
-    if (_conFilters.month)            params.month            = _conFilters.month;
-    if (_conFilters.status)           params.status           = _conFilters.status;
-    if (_conFilters.keyword)          params.keyword          = _conFilters.keyword;
-    if (_conFilters.manager_keyword)  params.manager_keyword  = _conFilters.manager_keyword;
+    if (_conFilters.month)                      params.month         = _conFilters.month;
+    if (_conFilters.status)                     params.status        = _conFilters.status;
+    if (_conFilters.keyword)                    params.keyword       = _conFilters.keyword;
+    if (_conFilters.manager_names && _conFilters.manager_names.length) {
+      params.manager_names = _conFilters.manager_names; // 배열 → paramsSerializer가 반복키로 직렬화
+    }
 
     const res = await API.get('/constructions', { params });
     var rawList = res.data || [];
@@ -4431,12 +4495,20 @@ let _taskUserList = []; // 작업관리 담당자 선택용 사용자 목록 (�
 function _taskOpenManagerPicker() {
   const picker = document.getElementById('taskManagerPicker');
   if (!picker) return;
-  // 체크박스 현재 선택 상태 동기화
+  const isOpen = picker.style.display !== 'none';
+  // 공사현황 팝업 닫기 (동시에 하나만)
+  const cPop = document.getElementById('conManagerPicker');
+  if (cPop) cPop.style.display = 'none';
+  if (isOpen) { picker.style.display = 'none'; return; }
+  // 열릴 때 체크박스 현재 선택 상태 동기화
   _taskUserList.forEach(u => {
     const cb = document.getElementById('taskMgrCb_' + u.name.replace(/\s/g,'_'));
     if (cb) cb.checked = taskFilters.con_manager_names.includes(u.name);
   });
-  picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
+  // 카운트 업데이트
+  const countEl = document.getElementById('taskMgrPickerCount');
+  if (countEl) countEl.textContent = taskFilters.con_manager_names.length ? taskFilters.con_manager_names.length+'명 선택' : '';
+  picker.style.display = 'block';
 }
 function _taskCloseManagerPicker() {
   const picker = document.getElementById('taskManagerPicker');
@@ -4446,17 +4518,12 @@ function _taskToggleManager(name) {
   const idx = taskFilters.con_manager_names.indexOf(name);
   if (idx === -1) taskFilters.con_manager_names.push(name);
   else taskFilters.con_manager_names.splice(idx, 1);
-  // 버튼 레이블 업데이트
-  const btn = document.getElementById('taskManagerBtn');
-  if (btn) {
-    btn.textContent = taskFilters.con_manager_names.length
-      ? taskFilters.con_manager_names.join(', ')
-      : '공사담당자';
-    const icon = btn.querySelector ? btn.querySelector('i') : null;
-  }
   // 체크박스 상태 동기화
   const cb = document.getElementById('taskMgrCb_' + name.replace(/\s/g,'_'));
   if (cb) cb.checked = taskFilters.con_manager_names.includes(name);
+  // 카운트 업데이트
+  const countEl = document.getElementById('taskMgrPickerCount');
+  if (countEl) countEl.textContent = taskFilters.con_manager_names.length ? taskFilters.con_manager_names.length+'명 선택' : '';
 }
 function _taskApplyManagerFilter() {
   _taskCloseManagerPicker();
@@ -4465,6 +4532,9 @@ function _taskApplyManagerFilter() {
 }
 function _taskClearManagerFilter() {
   taskFilters.con_manager_names = [];
+  document.querySelectorAll('[id^="taskMgrCb_"]').forEach(cb => cb.checked = false);
+  const countEl = document.getElementById('taskMgrPickerCount');
+  if (countEl) countEl.textContent = '';
   _taskCloseManagerPicker();
   taskFilters.page = 1;
   renderTasksPage(document.getElementById('page-content'));
@@ -4780,28 +4850,37 @@ async function renderTasksPage(container) {
         <!-- 담당자 다중선택 버튼+팝업 -->
         <div style="position:relative">
           <button id="taskManagerBtn" onclick="_taskOpenManagerPicker()"
-            class="form-control" style="min-width:120px;max-width:200px;text-align:left;display:flex;align-items:center;gap:6px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
-            <i class="fas fa-user-tie" style="color:#888;font-size:11px;flex-shrink:0"></i>
-            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${taskFilters.con_manager_names.length ? taskFilters.con_manager_names.join(', ') : '공사담당자'}</span>
-            ${taskFilters.con_manager_names.length
-              ? `<span onclick="event.stopPropagation();_taskClearManagerFilter()" style="color:#AAA;font-size:11px;cursor:pointer;flex-shrink:0">✕</span>`
-              : `<i class="fas fa-chevron-down" style="color:#AAA;font-size:10px;flex-shrink:0"></i>`}
+            class="form-control" style="min-width:120px;max-width:220px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.con_manager_names.length?'#685182':'#D1D5DB'};border-radius:8px;font-size:13px;color:${taskFilters.con_manager_names.length?'#685182':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden;max-width:220px">
+            <i class="fas fa-user-tie" style="font-size:11px;flex-shrink:0"></i>
+            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">
+              ${taskFilters.con_manager_names.length ? taskFilters.con_manager_names.join(', ') : '공사담당자'}
+            </span>
+            ${taskFilters.con_manager_names.length ? `<span style="background:#685182;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${taskFilters.con_manager_names.length}</span>` : ''}
           </button>
-          <div id="taskManagerPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:180px;background:#fff;border:1px solid #DDD;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:1000;padding:8px 0">
-            <div style="padding:8px 14px 6px;font-size:11px;font-weight:600;color:#888;border-bottom:1px solid #F0EAF8;margin-bottom:4px">공사담당자 선택</div>
-            <div style="max-height:200px;overflow-y:auto;padding:4px 0">
+          ${taskFilters.con_manager_names.length
+            ? `<span onclick="event.stopPropagation();_taskClearManagerFilter()" title="선택 초기화"
+                style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#685182;font-size:13px;z-index:1;font-weight:700">✕</span>`
+            : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
+          <div id="taskManagerPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:190px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F0EAF8;background:#FAFAFE">
+              <span style="font-size:11px;font-weight:700;color:#685182">공사담당자 선택</span>
+              <span id="taskMgrPickerCount" style="font-size:11px;color:#685182;font-weight:600">${taskFilters.con_manager_names.length ? taskFilters.con_manager_names.length+'명 선택' : ''}</span>
+            </div>
+            <div style="max-height:220px;overflow-y:auto;padding:4px 0">
               ${_taskUserList.length ? _taskUserList.map(u => {
                 const checked = taskFilters.con_manager_names.includes(u.name);
                 const safeId = 'taskMgrCb_' + u.name.replace(/\s/g,'_');
-                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;transition:background .1s" onmouseover="this.style.background='#F8F5FC'" onmouseout="this.style.background=''">
+                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:#374151;transition:background .1s" onmouseover="this.style.background='#F8F5FC'" onmouseout="this.style.background=''">
                   <input type="checkbox" id="${safeId}" ${checked?'checked':''} onchange="_taskToggleManager('${u.name.replace(/'/g,"\\'")}')">
                   <span>${u.name}</span>
                 </label>`;
-              }).join('') : '<div style="padding:10px 14px;font-size:13px;color:#AAA">담당자 없음</div>'}
+              }).join('') : '<div style="padding:12px 14px;font-size:13px;color:#AAA;text-align:center">담당자 없음</div>'}
             </div>
-            <div style="padding:6px 10px 6px;border-top:1px solid #F0EAF8;margin-top:4px;display:flex;gap:6px">
-              <button onclick="_taskApplyManagerFilter()" style="flex:1;padding:6px 0;background:#685182;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer">적용</button>
-              <button onclick="_taskClearManagerFilter()" style="flex:1;padding:6px 0;background:#F5F0F8;color:#685182;border:1px solid #EDE7F6;border-radius:7px;font-size:12px;cursor:pointer">전체</button>
+            <div style="padding:8px 10px;border-top:1px solid #F0EAF8;background:#FAFAFE;display:flex;gap:6px">
+              <button onclick="_taskApplyManagerFilter()" style="flex:1;padding:7px 0;background:#685182;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+                <i class="fas fa-check mr-1"></i>적용</button>
+              <button onclick="_taskClearManagerFilter()" style="flex:1;padding:7px 0;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;cursor:pointer">
+                전체 초기화</button>
             </div>
           </div>
         </div>

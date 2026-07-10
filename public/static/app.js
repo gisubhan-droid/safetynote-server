@@ -36203,7 +36203,13 @@ async function loadSiteMapMarkers(map) {
     // ── ① 위험성체크 탭 ─────────────────────────────────────────
     if (filter === 'risk') {
       const res = await API.get(`/risk${dateParams()}`);
-      const list = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.risks || []);
+      const _rawRiskList = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.risks || []);
+      // [BUG-079 준용] LGU+ 클라이언트 이중 방어: is_auto_request_no=0 건만 표시 (서버 필터 보조)
+      var _smMyUiRoleR = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+      var _smIsLguR = (_smMyUiRoleR === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
+      const list = _smIsLguR
+        ? _rawRiskList.filter(function(r) { return r.is_auto_request_no === 0; })
+        : _rawRiskList;
       for (const ra of list) {
         // tasks JOIN으로 받은 GPS 사용 (risk_assessments 테이블엔 GPS 없음)
         if (!ra.gps_lat || !ra.gps_lon) continue;
@@ -36245,7 +36251,13 @@ async function loadSiteMapMarkers(map) {
     // 작업 개시(working) 이후 건은 진행 탭으로 이동됨
     if (filter === 'tbm') {
       const res = await API.get(`/tbm${dateParams()}`);
-      const list = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.tbms || []);
+      const _rawTbmList = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.tbms || []);
+      // [BUG-079 준용] LGU+ 클라이언트 이중 방어: is_auto_request_no=0 건만 표시 (서버 필터 보조)
+      var _smMyUiRoleT = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+      var _smIsLguT = (_smMyUiRoleT === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
+      const list = _smIsLguT
+        ? _rawTbmList.filter(function(t) { return t.is_auto_request_no === 0; })
+        : _rawTbmList;
       for (const tbm of list) {
         // task_status가 tbm_done 인 것만 (working·완료 상태는 각 탭에서 표시)
         if (tbm.task_status && tbm.task_status !== 'tbm_done') continue;

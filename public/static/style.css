@@ -1400,7 +1400,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   position: sticky;
   /* top 값은 JS(requestAnimationFrame)에서 동적으로 계산하여 주입 */
   top: 160px;             /* 초기 fallback: top-header(56px) + 툴바 예상값 */
-  z-index: 20;
+  z-index: 15;            /* task-toolbar-sticky(30)보다 낮고 flyout-panel(41)보다 낮게 */
   background: #FAFAFE;
   overflow-x: hidden;     /* 바디 스크롤과 JS로 동기화, 스크롤바 숨김 */
   border-bottom: 2px solid #EDE7F6;
@@ -1463,12 +1463,14 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 /* ─── 작업관리 툴바 Sticky 고정 ────────────────────────────────────────
    top-header(56px) 바로 아래 고정
    배경·그림자로 스크롤 시 콘텐츠와 분리
-   z-index: top-header(100) 보다 낮되 테이블 thead(10)보다 높게
+   z-index: flyout-panel(fixed,z-index:41) 보다 낮게 설정
+   → sticky z-index가 fixed flyout-panel보다 높으면 사이드 메뉴가 툴바 뒤에 숨음
+   → 30으로 낮춰서 flyout이 툴바 위에 정상 표시되도록 함
 ──────────────────────────────────────────────────────────────────── */
 .task-toolbar-sticky {
   position: sticky;
   top: 56px;             /* top-header 높이 */
-  z-index: 50;
+  z-index: 30;
   background: #fff;
   padding: 10px 0 6px;
   margin-bottom: 8px;

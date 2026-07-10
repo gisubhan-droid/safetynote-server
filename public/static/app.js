@@ -12793,7 +12793,7 @@ async function renderInspectionsPage(container) {
   try {
     // ── 전역 필터 상태 초기화 ──────────────────────────────────
     const _today = getKSTDate(); // KST 기준 오늘 날짜
-    // 첫 진입 기본값: 당일 점검(KST), 작업탭 = 현장진행중
+    // 첫 진입 기본값: 당일 점검(KST), 작업탭 = 진행(현장위치지도 기준 일원화)
     if (window._insDateFrom     === undefined) window._insDateFrom     = _today;
     if (window._insDateTo       === undefined) window._insDateTo       = _today;
     if (window._insStatusFilter === undefined) window._insStatusFilter = '';   // 점검 처리상태 (open/in_progress/closed/'' 전체)
@@ -13002,7 +13002,7 @@ async function renderInspectionsPage(container) {
               <div style="padding:48px;text-align:center;color:#C6C6C6">
                 <i class="fas fa-hard-hat" style="font-size:2.5rem;margin-bottom:12px;display:block;opacity:.2"></i>
                 <div style="font-size:13px;font-weight:600;color:#9CA3AF;margin-bottom:4px">해당하는 작업이 없습니다</div>
-                <div style="font-size:11px;color:#C6C6C6">${_tab==='active'?'현장 진행중(TBM완료·작업중) 작업이 없습니다':''}</div>
+                <div style="font-size:11px;color:#C6C6C6">${_tab==='working'?'작업개시(진행중) 작업이 없습니다':_tab==='tbm'?'TBM완료 대기 작업이 없습니다':_tab==='risk'?'위험성체크 완료 작업이 없습니다':_tab==='done'?'완료된 작업이 없습니다':''}</div>
               </div>`;
 
             return filtered.map(t => {

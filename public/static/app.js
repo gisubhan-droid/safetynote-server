@@ -36217,10 +36217,13 @@ async function loadSiteMapMarkers(map) {
     //   - GPS: tasks.gps_lat 우선 → 없으면 /risk/checklist-gps 배치 조회로 checklist GPS fallback
     if (filter === 'risk') {
       // ① /tasks?status=in_progress 로 체크리스트 완료 단계 작업 목록 조회
+      // [BUG-084] limit 파라미터 제거: limit=0(전체)으로 호출해야 {tasks:[...]} 단순 형식으로 응답
+      //   limit=500 → {tasks:[...], total:N, page:1, limit:500} 형식 — data?.tasks 로 처리하지만
+      //   서버 status 필터가 LGU+ 서버 필터와 AND 조건으로 결합되어 실제 작업이 있어도 0건 반환 가능
+      //   → 안전하게 status만 지정, limit은 서버 기본값(전체) 사용
       const rp = new URLSearchParams();
       rp.set('status', 'in_progress');
       if (userId) rp.set('user_id', userId);
-      rp.set('limit', '500');
       const riskTaskRes = await API.get(`/tasks?${rp.toString()}`);
       const _rawRiskTasks = riskTaskRes.data?.tasks || riskTaskRes.data || [];
 
@@ -36302,8 +36305,13 @@ async function loadSiteMapMarkers(map) {
     // ── ② TBM 탭 ─────────────────────────────────────────────────
     // task_status = 'tbm_done' (TBM 완료, 작업 개시 전) 인 것만 표시
     // 작업 개시(working) 이후 건은 진행 탭으로 이동됨
+    // [BUG-084] 날짜 파라미터 제거: tbm_done 건은 날짜 무관 전체 조회 후 클라이언트 필터
+    //   dateParams() 사용 시 기본 30일 범위 밖 TBM 레코드 필터아웃 → 0건
     if (filter === 'tbm') {
-      const res = await API.get(`/tbm${dateParams()}`);
+      const _tbmP = new URLSearchParams();
+      if (userId) _tbmP.set('user_id', userId);
+      _tbmP.set('limit', '500');
+      const res = await API.get(`/tbm?${_tbmP.toString()}`);
       const _rawTbmList = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.tbms || []);
       // [BUG-079 준용] LGU+ 클라이언트 이중 방어: is_auto_request_no=0 건만 표시 (서버 필터 보조)
       var _smMyUiRoleT = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
@@ -36461,11 +36469,12 @@ async function loadSiteMapMarkers(map) {
     //   - task_status='work_completed' 또는 'completed' 인 건만 완료 탭에 표시
     // GPS 우선순위: tbm_records.gps → work_logs.gps → 좌표 없음(목록만)
     if (filter === 'completed') {
-      // ① TBM API로 전체 TBM 목록 확보 (날짜 파라미터 포함: 완료건은 날짜 범위로 필터)
+      // ① TBM API로 전체 TBM 목록 확보
+      // [BUG-084] 날짜 파라미터 제거: 완료건도 날짜 무관 전체 조회 후 클라이언트 필터
+      //   dateParams() 사용 시 기본 30일 범위 밖 완료 TBM 레코드 필터아웃 → 0건
+      //   날짜 필터는 UI 날짜 범위 선택기로 별도 제공 예정
       const tcp = new URLSearchParams();
-      if (dateFrom) tcp.set('date_from', dateFrom);
-      if (dateTo)   tcp.set('date_to',   dateTo);
-      if (userId)   tcp.set('user_id',   userId);
+      if (userId) tcp.set('user_id', userId);
       tcp.set('limit', '500');
       const tbmDoneRes = await API.get(`/tbm?${tcp.toString()}`);
       const _rawTbmDoneList = Array.isArray(tbmDoneRes.data) ? tbmDoneRes.data

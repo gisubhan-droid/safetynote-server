@@ -49,11 +49,25 @@ module.exports = {
     // - 접속: http://NAS_IP:3445
     // - 비밀번호: .env 파일의 RECOVERY_PASSWORD (기본: recovery1234)
     // - PM2가 crash 시 자동 재시작 (autorestart: true)
+    //
+    // ✅ NAS 등록 명령 (커맨드라인 직접):
+    //   pm2 start /volume1/safetynote/scripts/recovery-server.py \
+    //     --name safetynote-recovery \
+    //     --interpreter /usr/bin/python3 \
+    //     -- /volume1/safetynote 3445
+    //   pm2 save
+    //
+    // ⚠️ python3 경로가 다른 경우:
+    //   which python3  → 경로 확인 후 --interpreter 값 변경
+    //
+    // ⚠️ 이 파일(ecosystem.config.cjs)로 pm2 start 시 NAS에서 hang이 발생할 수 있음.
+    //    반드시 위의 커맨드라인 직접 등록 방법을 사용할 것.
     {
       name: 'safetynote-recovery',
-      script: '/volume1/safetynote/scripts/safe-recovery-standalone.sh',
-      args: '/volume1/safetynote 3445 --foreground',
-      interpreter: '/bin/bash',
+      // ✅ 변경: bash 래퍼 → Python3 독립 서버 직접 실행 (NAS hang 문제 해결)
+      script: '/volume1/safetynote/scripts/recovery-server.py',
+      args: '/volume1/safetynote 3445',
+      interpreter: '/usr/bin/python3',
       cwd: '/volume1/safetynote',
       watch: false,
       instances: 1,
@@ -61,7 +75,7 @@ module.exports = {
       autorestart: true,
       // crash 후 3초 대기 후 재시작
       restart_delay: 3000,
-      // 연속 crash 10회까지 재시작 시도 (0 = 무제한)
+      // 연속 crash 무제한 재시작 (0 = 무제한)
       max_restarts: 0,
       error_file: '/var/log/safetynote-recovery-error.log',
       out_file: '/var/log/safetynote-recovery-out.log'

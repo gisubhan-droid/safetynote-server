@@ -5741,6 +5741,84 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 
 ---
 
+## 세션 121 (2026-07-10) — FEAT: 서브작업번호 자동 카운트 + 중복 방지 기능 추가
+
+### 작업 요약
+- 작업 등록 모달의 서브작업번호 입력 필드에 두 가지 기능 추가
+  1. **자동 카운트**: 공사 연동 시 해당 공사 기등록 작업 건수 기반 다음 번호 자동 입력 (0001부터 4자리 순차)
+  2. **중복 방지**: 직접 입력 시 동일 공사 내 기등록 번호와 중복이면 입력 차단
+
+### 백엔드 변경 (`src/routes/tasks.ts`)
+
+#### `GET /api/tasks` — `construction_id` 필터 파라미터 추가
+- **기존**: `construction_id` 쿼리 파라미터 미지원 (WHERE 필터 없음)
+- **수정**: `construction_id` 파라미터를 받아 `t.construction_id = ?` 조건 추가
+- **용도**: 해당 공사의 기등록 작업 목록 조회 → 서브작업번호 자동 카운트/중복 체크에 사용
+
+### 프론트엔드 변경 (`public/static/app.js`)
+
+#### `_autoFillSubTaskNo(constructionId, forceOverwrite)` 함수 신규 추가 (~line 3210)
+- `GET /api/tasks?construction_id=X` 호출
+- 기등록 `sub_task_number` 중 최댓값 + 1 계산 (없으면 1)
+- `String(n).padStart(4, '0')` 형식으로 `mSubTaskNo` 자동 입력
+- `forceOverwrite=false`(기본): 필드가 비어있을 때만 자동 입력
+- 자동입력 시 연두색 배경 1초 시각 피드백
+
+#### `autoLinkConstruction()` — 공사 연동 완료 직후 자동 카운트 호출
+- `toast('공사 연동 완료')` 이후 `_autoFillSubTaskNo(con.id, false)` 호출
+- 사용자가 요청번호 입력 → 공사 연동 → 서브작업번호 자동 입력 흐름 완성
+
+#### `showCreateTaskModal()` — 모달 오픈 시 초기화 이벤트 바인딩
+- `window.__editingTaskId = editId` 전역 저장 (중복 최종 검증에서 수정 모드 자기 자신 제외용)
+- 모달 DOM append 후 `mSubTaskNo` 이벤트 바인딩 블록 추가:
+  - **① 신규 등록 + 공사 연동 상태**: 모달 오픈 시 `_autoFillSubTaskNo` 즉시 호출
+  - **② blur 이벤트**: 직접 입력 후 포커스 아웃 시 서버에서 중복 체크
+    - 중복 시 빨간 테두리(`borderColor: #EF4444`) + toast 경고 + 필드 포커스
+    - 수정 모드: `t.id !== editId` 조건으로 자기 자신 제외
+  - **③ input 이벤트**: 재입력 중 오류 테두리 자동 초기화
+
+#### `createTask()` — 저장 직전 중복 최종 검증 추가
+- 서브작업번호 필수 체크 이후 서버 재확인 블록 삽입
+- `GET /api/tasks?construction_id=X` 재호출 → 중복 감지 시 저장 차단
+- 네트워크 오류 시 차단하지 않음 (사용자 경험 보호)
+
+### 동작 흐름
+
+#### 자동 카운트 흐름
+1. 작업 등록 모달 열기
+2. 공사요청번호 입력 → `autoLinkConstruction()` 호출
+3. 공사 연동 성공 → `_autoFillSubTaskNo(con.id)` 호출
+4. 해당 공사 기등록 작업의 최대 서브작업번호 + 1 계산
+5. `mSubTaskNo` 필드에 `0001`, `0002`... 자동 입력 (연두색 배경 피드백)
+6. 사용자가 직접 수정 가능
+
+#### 중복 방지 흐름
+1. `mSubTaskNo` 직접 입력 후 포커스 아웃 (blur)
+2. 해당 공사 기등록 작업 목록 조회
+3. 동일 `sub_task_number` 존재 시: 빨간 테두리 + toast("이미 사용 중") + 포커스 이동
+4. 등록 버튼 클릭 → 저장 직전 서버 재확인 → 중복이면 최종 차단
+
+### 커밋 로그
+| 파일 | 커밋 | 내용 |
+|------|------|------|
+| `public/static/app.js`, `src/routes/tasks.ts` | `5ed1f03` | feat: 서브작업번호 자동 카운트 + 중복 방지 기능 추가 |
+
+### 파일 수정 내역
+| 파일 | 변경 내용 |
+|------|----------|
+| `src/routes/tasks.ts` | `GET /` — `construction_id` 쿼리 파라미터 필터 지원 추가 |
+| `public/static/app.js` | `_autoFillSubTaskNo()` 신규 함수, `autoLinkConstruction()` 연결, `showCreateTaskModal()` 이벤트 바인딩, `createTask()` 중복 최종 검증 |
+| `dist/_worker.js` | 빌드 결과물 (276.27 kB) |
+
+### NAS 배포 안내
+```bash
+git pull origin main
+npm run build
+pm2 restart safetynote
+```
+
+---
+
 ## 세션 120 (2026-07-10) — BUG-093: 작업 등록 성공 후 '생성 실패' 오표시 버그 수정
 
 ### 작업 요약

@@ -49,6 +49,7 @@ app.get('/', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const { status, date, start_date, end_date, worker_id, supervisor_id, risk_level, search_type, keyword,
+          construction_id: constructionIdStr,
           page: pageStr, limit: limitStr } = c.req.query()
   // 다중 공사담당자: con_manager_names[] 배열 파라미터
   const rawConMgrNames = c.req.queries('con_manager_names') || []
@@ -126,6 +127,11 @@ app.get('/', async (c) => {
     conManagerNames.forEach((n: string) => { const mk = `%${n}%`; params.push(mk, mk) })
   }
   if (risk_level) { wheres.push('t.risk_level = ?'); params.push(risk_level) }
+  // [FEAT-NEW] construction_id 필터: 해당 공사의 작업만 조회 (서브작업번호 자동카운트/중복방지용)
+  if (constructionIdStr) {
+    const constructionIdNum = parseInt(constructionIdStr, 10)
+    if (!isNaN(constructionIdNum)) { wheres.push('t.construction_id = ?'); params.push(constructionIdNum) }
+  }
   // 키워드 검색 (search_type: request_no | task_number | title)
   // [FEAT-061] task_number = 내부 시스템번호(TASK-timestamp) → 사용자 정의 작업번호로 변경
   //   사용자 정의 작업번호: con.work_number(WKS-######-#####) + t.sub_task_number(####) 조합

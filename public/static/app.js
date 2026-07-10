@@ -3202,6 +3202,30 @@ function formatSubTaskNo(val) {
   return val.replace(/\D/g,'').slice(0,4);
 }
 
+// [FEAT-NEW] 서브작업번호 자동 카운트: 해당 공사 기등록 작업 중 최대값+1을 0001 형식으로 자동 입력
+// - constructionId: 공사 ID
+// - forceOverwrite: true면 기존 입력값도 덮어씀 (false면 비어있을 때만 입력)
+async function _autoFillSubTaskNo(constructionId, forceOverwrite = false) {
+  if (!constructionId) return;
+  const el = document.getElementById('mSubTaskNo');
+  if (!el) return;
+  if (!forceOverwrite && el.value.trim()) return; // 이미 값 있으면 자동입력 생략
+  try {
+    const res = await API.get('/tasks', { params: { construction_id: constructionId, limit: 999 } });
+    const tasks = res.data.tasks || res.data || [];
+    const maxNum = tasks.reduce((max, t) => {
+      const n = parseInt(t.sub_task_number || '0', 10);
+      return isNaN(n) ? max : Math.max(max, n);
+    }, 0);
+    const nextNum = String(maxNum + 1).padStart(4, '0');
+    el.value = nextNum;
+    // 자동입력 표시 (연두색 배경 잠깐)
+    el.style.transition = 'background 0.3s';
+    el.style.background = '#F0FDF4';
+    setTimeout(() => { el.style.background = ''; }, 1000);
+  } catch(_) { /* 자동입력 실패 시 조용히 무시 */ }
+}
+
 // 공사현황 필터 상태
 let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_names:[] };
 let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 적용 플래그
@@ -4151,6 +4175,9 @@ async function autoLinkConstruction() {
       }
 
       toast(`공사 "${con.title}" 연동 완료`, 'success');
+
+      // [FEAT-NEW] 서브작업번호 자동 카운트: 공사 연동 시 해당 공사 기등록 작업 건수 기반으로 다음 번호 자동 입력
+      _autoFillSubTaskNo(con.id, false);
     }
   } catch(e) {
     // 연동 실패 시 공사종류 select 다시 표시 (직접 선택 가능)
@@ -5377,6 +5404,9 @@ function _syncContractorInput(selectVal) {
 }
 
 async function showCreateTaskModal(editId = null, presetConstruction = null) {
+  // [FEAT-NEW] 중복 최종 검증을 위해 현재 editId를 전역에 저장
+  window.__editingTaskId = editId || null;
+
   // 작업 생성은 관리자·감독자만 가능
   if (!editId && currentUser.role !== 'admin' && currentUser.role !== 'supervisor') {
     toast('작업 생성은 관리자 또는 감독자만 가능합니다.', 'error');
@@ -5679,6 +5709,46 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
     }
   }
 
+  // [FEAT-NEW] mSubTaskNo: 모달 오픈 시 자동 카운트 + blur 시 중복 방지
+  const subTaskNoEl = document.getElementById('mSubTaskNo');
+  if (subTaskNoEl) {
+    // ① 신규 등록 모드: 공사가 이미 연동된 경우 자동 카운트 (presetConstruction으로 진입 시)
+    if (!editId) {
+      const presetConId = document.getElementById('mConId')?.value;
+      if (presetConId) {
+        _autoFillSubTaskNo(parseInt(presetConId, 10), false);
+      }
+    }
+
+    // ② blur 이벤트: 직접 입력 시 해당 공사의 기존 서브작업번호와 중복 여부 체크
+    subTaskNoEl.addEventListener('blur', async () => {
+      const val = subTaskNoEl.value.trim();
+      const conId = document.getElementById('mConId')?.value;
+      if (!val || !conId) return; // 값 또는 공사 미설정 시 체크 생략
+      try {
+        const res = await API.get('/tasks', { params: { construction_id: conId, limit: 999 } });
+        const tasks = res.data.tasks || res.data || [];
+        // 수정 모드: 자기 자신(editId)은 중복에서 제외
+        const dup = tasks.find(t => t.sub_task_number === val && String(t.id) !== String(editId));
+        if (dup) {
+          subTaskNoEl.style.borderColor = '#EF4444';
+          subTaskNoEl.style.outline = '2px solid #FCA5A5';
+          toast(`서브작업번호 ${val}은(는) 이미 사용 중입니다. 다른 번호를 입력하세요.`, 'error');
+          subTaskNoEl.focus();
+        } else {
+          subTaskNoEl.style.borderColor = '';
+          subTaskNoEl.style.outline = '';
+        }
+      } catch(_) { /* 네트워크 오류 시 중복 체크 생략 */ }
+    });
+
+    // ③ 입력 시 오류 테두리 초기화 (재입력 중에는 빨간 테두리 제거)
+    subTaskNoEl.addEventListener('input', () => {
+      subTaskNoEl.style.borderColor = '';
+      subTaskNoEl.style.outline = '';
+    });
+  }
+
   // 신규 생성 시 요청번호 필드 포커스
   if (!editId) {
     setTimeout(() => {
@@ -5833,6 +5903,24 @@ async function createTask() {
     toast('서브작업번호를 입력하세요.', 'error');
     document.getElementById('mSubTaskNo')?.focus();
     return;
+  }
+
+  // [FEAT-NEW] 서브작업번호 중복 최종 검증 (저장 직전 서버 확인)
+  if (data.construction_id && data.sub_task_number) {
+    try {
+      const dupCheckRes = await API.get('/tasks', { params: { construction_id: data.construction_id, limit: 999 } });
+      const existingTasks = dupCheckRes.data.tasks || dupCheckRes.data || [];
+      // 신규: editId 없으므로 전체와 비교 / 수정: 자기 자신 제외
+      const isDup = existingTasks.some(t =>
+        t.sub_task_number === data.sub_task_number && String(t.id) !== String(window.__editingTaskId)
+      );
+      if (isDup) {
+        const subEl = document.getElementById('mSubTaskNo');
+        if (subEl) { subEl.style.borderColor = '#EF4444'; subEl.style.outline = '2px solid #FCA5A5'; subEl.focus(); }
+        toast(`서브작업번호 ${data.sub_task_number}은(는) 이미 사용 중입니다. 다른 번호를 입력하세요.`, 'error');
+        return;
+      }
+    } catch(_) { /* 중복 확인 실패 시 저장 진행 (네트워크 오류 허용) */ }
   }
 
   // _forceCreate 플래그: showCreateTaskFromConstruction에서 completed 공사 confirm 후 설정

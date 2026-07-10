@@ -3060,6 +3060,12 @@ function openFlyout(groupId) {
   const overlay = document.getElementById('flyout-overlay');
   if (!panel) return;
 
+  // 이미 같은 그룹이 열려 있으면 → 토글(닫기)
+  if (panel.classList.contains('open') && window._activeGroupId === groupId) {
+    closeFlyout();
+    return;
+  }
+
   // 모든 패널 숨기기
   panel.querySelectorAll('.flyout-group-panel').forEach(p => {
     p.style.display = 'none';
@@ -4904,6 +4910,7 @@ async function renderTasksPage(container) {
 
     // 정렬 트리거 등록 (PC 테이블 + 모바일 카드 양쪽 업데이트)
     window._sortTrigger = (tableId, col) => {
+      // tableId는 'taskListTableHead' (헤더 테이블) → 화살표 업데이트 대상
       sortTable(tableId, col, _taskListData, (sorted) => {
         _taskListData = sorted;
         // PC 테이블 tbody 업데이트 (정렬 시 현재 페이지 offset 유지)
@@ -5084,25 +5091,41 @@ async function renderTasksPage(container) {
       </div><!-- /.task-toolbar-sticky -->
 
       <!-- ── PC 테이블 뷰 (768px 초과) ─────────────────────────────── -->
-      <div id="taskTableView" style="display:none;overflow-x:auto;border-radius:12px;border:1px solid #EDE7F6;background:white">
-        <table id="taskListTable" style="width:100%;border-collapse:collapse">
-          <thead style="position:sticky;top:0;z-index:10;background:#FAFAFE">
-            <tr style="border-bottom:2px solid #EDE7F6">
-              <th style="padding:9px 10px;font-size:11px;font-weight:700;color:#685182;text-align:center;width:36px">#</th>
-              ${sortTh('공사요청번호','request_no','taskListTable')}
-              ${sortTh('작업번호','sub_task_number','taskListTable')}
-              ${sortTh('작업종류','construction_type','taskListTable')}
-              ${sortTh('작업분류','work_class','taskListTable')}
-              ${sortTh('작업(예정)일','planned_date','taskListTable')}
-              ${sortTh('공사담당자','con_manager_display_name','taskListTable')}
-              ${sortTh('작업명','title','taskListTable')}
-              <th style="padding:9px 10px;font-size:11px;font-weight:700;color:#685182;text-align:right;white-space:nowrap">상태/관리</th>
-            </tr>
-          </thead>
-          <tbody id="taskTableBody">
-            ${renderTableView(_taskListData, ((taskFilters.page||1)-1)*(taskFilters.limit||20))}
-          </tbody>
-        </table>
+      <!--
+        [구조 설명] overflow-x:auto 안에서는 thead position:sticky가 뷰포트 기준으로
+        동작하지 않음(컨테이너 기준으로만 동작). 따라서:
+        ① taskTableView: 외곽 border/radius만 담당, overflow는 설정하지 않음
+        ② taskTableScroll: overflow-x:auto로 가로 스크롤 전담
+        ③ thead: taskTableScroll 밖(taskTableView 안)에서 CSS sticky로 처리
+        → thead가 뷰포트 기준 sticky 동작, 가로 스크롤은 tbody만 적용
+      -->
+      <div id="taskTableView" class="task-table-wrapper" style="display:none">
+        <!-- 헤더: overflow 없는 컨테이너 안에서 CSS sticky 동작 -->
+        <div class="task-thead-sticky" id="taskTheadWrap">
+          <table id="taskListTableHead" class="task-col-table" style="border-collapse:collapse">
+            <thead>
+              <tr style="border-bottom:2px solid #EDE7F6">
+                <th class="task-th" style="width:36px;text-align:center">#</th>
+                ${sortTh('공사요청번호','request_no','taskListTableHead')}
+                ${sortTh('작업번호','sub_task_number','taskListTableHead')}
+                ${sortTh('작업종류','construction_type','taskListTableHead')}
+                ${sortTh('작업분류','work_class','taskListTableHead')}
+                ${sortTh('작업(예정)일','planned_date','taskListTableHead')}
+                ${sortTh('공사담당자','con_manager_display_name','taskListTableHead')}
+                ${sortTh('작업명','title','taskListTableHead')}
+                <th class="task-th" style="text-align:right;white-space:nowrap">상태/관리</th>
+              </tr>
+            </thead>
+          </table>
+        </div>
+        <!-- 바디: overflow-x:auto로 가로 스크롤 전담 -->
+        <div class="task-tbody-scroll" id="taskBodyScroll">
+          <table id="taskListTable" class="task-col-table" style="border-collapse:collapse">
+            <tbody id="taskTableBody">
+              ${renderTableView(_taskListData, ((taskFilters.page||1)-1)*(taskFilters.limit||20))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- ── 모바일 카드 그리드 (768px 이하: 1열) ──────────────────── -->
@@ -5124,7 +5147,7 @@ async function renderTasksPage(container) {
         for (let _pi = _pStart; _pi <= _pEnd; _pi++) _pageNums.push(_pi);
         const _btnBase = 'task-page-btn';
         return `
-        <div class="task-pager" role="navigation" aria-label="페이지 이동">
+        <div class="task-pager" role="navigation" aria-label="페이지 이동" id="taskPagerBar">
           <!-- 이전 -->
           <button class="${_btnBase}${_curPage <= 1 ? ' disabled' : ''}"
             onclick="if(${_curPage}>1){taskFilters.page=${_curPage}-1;renderTasksPage(document.getElementById('page-content'));}"
@@ -5158,6 +5181,29 @@ async function renderTasksPage(container) {
         </div>`;
       })()}
     </div>`;
+
+    // ── 렌더링 후처리: tbody 가로스크롤 동기화 + thead sticky top 계산 ──────
+    requestAnimationFrame(() => {
+      // 1) 헤더 테이블과 바디 스크롤 컨테이너 가로 동기화
+      const bodyScroll = document.getElementById('taskBodyScroll');
+      const theadWrap  = document.getElementById('taskTheadWrap');
+      if (bodyScroll && theadWrap) {
+        bodyScroll.addEventListener('scroll', () => {
+          theadWrap.scrollLeft = bodyScroll.scrollLeft;
+        }, { passive: true });
+      }
+
+      // 2) thead sticky top = top-header(56px) + task-toolbar 실제 높이
+      const toolbar = document.querySelector('.task-toolbar-sticky');
+      const theadEl = document.querySelector('.task-thead-sticky');
+      if (toolbar && theadEl) {
+        const toolbarH = toolbar.getBoundingClientRect().height;
+        // top-header는 항상 56px (CSS에 고정)
+        const topHeaderH = 56;
+        theadEl.style.top = (topHeaderH + toolbarH) + 'px';
+      }
+    });
+
   } catch(e) {
     container.innerHTML = `<p class="text-red-500 p-4">로드 실패: ${e.message}</p>`;
   }

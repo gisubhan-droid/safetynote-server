@@ -1380,12 +1380,60 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   #taskCardGrid {
     display: none !important;
   }
-  /* sticky thead: 상단 헤더(top-header) 높이 56px + 툴바 영역 보정 */
-  #taskListTable thead {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
+}
+
+/* ─── 작업관리 테이블 분리 구조 (thead sticky + 가로스크롤 분리) ───────────
+   overflow-x:auto 컨테이너 안에서 thead position:sticky는 뷰포트 기준이 아닌
+   스크롤 컨테이너 기준으로만 동작함 → 툴바와 겹침 발생.
+   해결: thead 전용 wrapper(task-thead-sticky)를 분리하여 뷰포트 기준 sticky 처리,
+         tbody는 task-tbody-scroll에서 overflow-x:auto로만 가로 스크롤 담당.
+─────────────────────────────────────────────────────────────────────────── */
+.task-table-wrapper {
+  border-radius: 12px;
+  border: 1px solid #EDE7F6;
+  background: white;
+  overflow: hidden;       /* 래퍼 border-radius 적용 */
+}
+
+/* 헤더 sticky 영역: overflow 없음 → 뷰포트 기준 sticky 정상 동작 */
+.task-thead-sticky {
+  position: sticky;
+  /* top 값은 JS(requestAnimationFrame)에서 동적으로 계산하여 주입 */
+  top: 160px;             /* 초기 fallback: top-header(56px) + 툴바 예상값 */
+  z-index: 20;
+  background: #FAFAFE;
+  overflow-x: hidden;     /* 바디 스크롤과 JS로 동기화, 스크롤바 숨김 */
+  border-bottom: 2px solid #EDE7F6;
+}
+
+/* 바디 스크롤 영역: 가로 스크롤만 전담 */
+.task-tbody-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+/* 헤더·바디 테이블 너비 동기 (동일 class로 width 통일) */
+.task-col-table {
+  width: 100%;
+  min-width: 860px;       /* 9컬럼 최소 너비 */
+  table-layout: auto;
+}
+
+/* 헤더 th 공통 스타일 */
+.task-th {
+  padding: 9px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #685182;
+  white-space: nowrap;
+  text-align: left;
+  background: #FAFAFE;
+}
+
+@media (max-width: 768px) {
+  /* 모바일에서 분리 헤더 숨김 (카드 뷰 사용) */
+  .task-thead-sticky { display: none !important; }
+  .task-tbody-scroll  { overflow-x: auto; }
 }
 
 /* 모바일 (768px 이하): 카드 1열 표시, 테이블 숨김 */

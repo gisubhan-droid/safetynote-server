@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-10 (세션 119 — 비상복구 서버 PM2 hang 해결: bash 래퍼 → Python3 독립 서버)
-> **GitHub 최신: `f65686a`** — fix: [비상복구서버] bash 래퍼 제거 → Python3 독립 서버 직접 실행
-> **NAS 배포 필요: `f65686a`** — git pull 후 아래 NAS 등록 명령 실행 (pm2 restart 불필요, 신규 등록)
+> 최종 업데이트: 2026-07-10 (세션 120 — BUG-093: 작업 등록 성공 후 '생성 실패' 오표시 버그 수정)
+> **GitHub 최신: `4498c03`** — fix: [BUG-093] 작업 등록 성공 후 '생성 실패' 오표시 버그 수정
+> **NAS 배포 필요: `4498c03`** — git pull 후 pm2 restart safetynote
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -21,6 +21,8 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-093 | 120 | 2026-07-10 | ✅ 수정 | **작업 등록 성공 후 '생성 실패' 오표시** — 작업 저장 API는 정상 성공하나 동시에 분홍색 '생성 실패' toast가 함께 표시됨. 근본 원인: `_doCreate()` 내부 구조 문제 ①`uploadTaskAttachments()` 실패 시 예외가 외부 `catch`로 전파 → `toast('생성 실패', 'error')` 오출력(작업은 이미 저장됨) ②`renderTasksPage(document.getElementById('page-content'))` 호출 시 모달 제거 후 `page-content`가 null이면 `TypeError` → 외부 catch → '생성 실패'. **해결**: ①`uploadTaskAttachments` 별도 `try/catch`로 격리(내부에서 이미 toast 처리) ②`toast('작업이 등록됨')` 이후 페이지 이동 코드를 별도 `try/catch`로 격리하여 외부 catch로 전파 차단 ③`renderTasksPage` 호출 전 `page-content` null 체크 추가 | `4498c03` |
+
 | 비상복구서버-v3 | 119 | 2026-07-10 | ✅ 수정 | **비상복구 서버 PM2 미동작 — bash 래퍼 방식 NAS hang 문제** — `ecosystem.config.cjs`에서 `safe-recovery-standalone.sh`(bash 래퍼)를 실행하면 NAS Synology PM2에서 응답 없이 hang. 근본 원인: ①bash 래퍼 방식이 NAS PM2와 호환 불가 ②`cleanup_previous()` 함수가 PM2 재시작 시마다 기존 python3 프로세스 kill → 재시작 루프. **해결**: `scripts/recovery-server.py` 독립 Python3 서버 파일 신규 작성. PM2가 python3를 직접 실행(bash 래퍼 없음). `SO_REUSEADDR`로 포트 즉시 재사용, `signal.SIGTERM`으로 graceful stop, `.env` 자동 로드, NAS Node.js v18/v20 경로 자동 탐색. `ecosystem.config.cjs` 비상복구 항목: `script=safe-recovery-standalone.sh` → `recovery-server.py`, `interpreter=/bin/bash` → `/usr/bin/python3`, `args` 단순화 | `f65686a` |
 
 | FEAT-059 | 115 | 2026-07-06 | ✅ 구현 | **LinkMak Co., Ltd. 크레딧 표시** — ①아이콘 레일 최하단에 `.rail-credit` 블록 추가: "LinkMak" / "Co.,Ltd" 2줄, opacity 0.4 → hover 0.85 전환, clamp 폰트 6~8px ②메인 콘텐츠 우하단 `#app-credit-bar` 고정 바 추가(height:22px): "Powered by" + "LinkMak Co., Ltd." (브랜드 컬러), 모바일(≤768px)에서 탭바 겹침 방지로 숨김 ③데스크톱 main-content padding-bottom:22px 추가 (크레딧바 가림 방지) | `3de212d` |
@@ -5736,6 +5738,67 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 - [x] PROJECT_HISTORY.md 기록
 
 ---
+
+---
+
+## 세션 120 (2026-07-10) — BUG-093: 작업 등록 성공 후 '생성 실패' 오표시 버그 수정
+
+### 작업 요약
+- 작업 저장은 정상이지만 "생성 실패" 에러 toast가 함께 표시되는 버그 분석 및 수정
+
+### 버그 원인 분석
+
+#### 증상
+- 공사 상세 또는 공사현황 페이지에서 작업 등록 → 저장 성공
+- 동시에 보라색 "작업이 등록됨" + 분홍색 "생성 실패" toast 2개 동시 표시
+
+#### 원인 구조 분석 (`_doCreate` 함수)
+```
+try {
+  await _doCreate(data);   ← 내부에서 예외 throw → 여기서 잡힘
+} catch(e) {
+  toast(errMsg || '생성 실패', 'error');  ← ⚠️ 오표시
+}
+```
+
+**경로 1 — 첨부파일 업로드 실패**:
+```
+_doCreate:
+  API.post('/tasks')  ← ✅ 성공 (작업 저장 완료)
+  await uploadTaskAttachments()  ← ❌ 실패 → reject(new Error)
+    ↑ 예외가 _doCreate 밖 catch로 전파
+  → toast('생성 실패', 'error') 오출력
+```
+
+**경로 2 — page-content null 참조**:
+```
+_doCreate:
+  API.post('/tasks')  ← ✅ 성공
+  toast('작업이 등록되었습니다.')  ← ✅ 성공 toast 출력
+  document.querySelector('.modal-overlay')?.remove()  ← 모달 제거
+  renderTasksPage(document.getElementById('page-content'))
+    ↑ 모달 제거로 page-content가 null → TypeError
+    → 외부 catch → toast('생성 실패', 'error') 오출력
+```
+
+### 수정 내용 (`public/static/app.js` `_doCreate` 함수)
+
+1. **`uploadTaskAttachments` 격리**:
+   - 별도 `try/catch`로 감싸 예외가 외부로 전파되지 않도록 차단
+   - 업로드 실패 메시지는 `uploadTaskAttachments` 내부에서 이미 처리됨
+
+2. **페이지 이동 코드 격리**:
+   - `toast('작업이 등록됨')` 이후 코드를 별도 `try/catch`로 분리
+   - 페이지 이동 중 오류가 "생성 실패"로 표시되지 않도록 차단
+
+3. **null 방어 처리**:
+   - `renderTasksPage(document.getElementById('page-content'))` →
+   - `const pageEl = document.getElementById('page-content'); if (pageEl) renderTasksPage(pageEl);`
+
+### 커밋 이력
+| 커밋 | 내용 |
+|------|------|
+| `4498c03` | fix: [BUG-093] 작업 등록 성공 후 '생성 실패' 오표시 버그 수정 |
 
 ---
 

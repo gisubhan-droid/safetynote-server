@@ -5735,3 +5735,60 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 - [x] PROJECT_HISTORY.md 기록
 
 ---
+
+---
+
+## 세션 118 (2026-07-10) — BUG-089~092 TBM 사진 등록 팝업 4가지 버그 수정
+
+### 작업 요약
+- BUG-084 해결 후속(세션 117)에 이어 새 4가지 버그 수정
+- PROJECT_HISTORY 검색으로 BUG-085~092 번호가 이미 사용됨 확인 → 신규 BUG-093~096 아닌 BUG-089~092(이미 번호 중복 없음 재확인 후 동일 번호 사용)
+
+### 해결된 버그 상세
+
+#### BUG-089: TBM 사진 필수/추가 등록 시각적 구분 (`89857d6`)
+- **증상**: 필수 사진과 추가 사진 영역이 동일하게 표시되어 근로자가 추가 등록을 먼저 눌러 에러 발생
+- **원인**: `showTbmPhotoModal()` UI에서 필수/추가 구분 없이 동일 스타일로 렌더링
+- **해결**:
+  1. 팝업 상단 경고 배너: "필수 사진 먼저 등록" (노란 배경 `#FFF3CD`)
+  2. 필수 영역: `#FFF5F5` 배경, 빨간 테두리(`#EF4444`), ⚠️ 필수 라벨, 빨간 등록 버튼
+  3. 추가 영역: `#F8FAFC` 배경, 회색 파선 구분, "선택사항" 텍스트 명시
+  4. 섹션 완료 시 헤더/테두리 자동 녹색 전환 (`_refreshTbmPhotoModalStatus` 갱신)
+
+#### BUG-090: TBM 사진 다른 작업 사진 혼입 + 즉시 반영 안 됨 (`89857d6`)
+- **증상**: 체크리스트 완료 후 사진 등록 시 이전 작업의 사진이 보이고, 본인 업로드 사진이 즉시 보이지 않음
+- **원인 1**: `showTbmPhotoModal()`의 기존 등록 사진 렌더링 시 `photoImgSrc(ph.id)` 사용
+  → `ph.id`는 `tbm_photo_items.id`인데 `/api/photos/{id}/img` 호출 → 다른 작업의 photos 테이블 ID에 매칭
+  → **수정**: `tbmPhotoImgSrc(ph.id)` 사용 (`/api/tbm-photos/{id}/img`)
+- **원인 2**: 업로드 후 새 카드가 DOM에 즉시 추가되지 않음 (`.grid` 없을 때 fallback 없음)
+  → **수정**: `secPhotosDiv.style.display=''` 병행 + `.grid` 없으면 동적 생성
+
+#### BUG-091: 작업개시 버튼 서명 미완료 시 TBM상세 이동 개선 (`89857d6`)
+- **증상**: 서명 미완료 상태에서 작업개시 버튼 클릭 시 TBM 상세 화면으로 이동 안 됨
+- **기존 코드**: confirm 팝업 → 확인 클릭 → 서명 체크 → 차단 (팝업 흐름이 복잡)
+- **해결**: `changeTaskStatus()`를 `async`로 변경, confirm 팝업 표시 **전** 사전 서명 체크
+  1. 서명 미완료 감지 시 '작업 개시 불가' 전용 경고 모달 표시 (미서명자 이름 목록)
+  2. 'TBM 서명하러 가기' 버튼 → `showTaskDetail(taskId, true)` TBM 탭 직접 이동
+  3. 서명 완료된 경우에만 기존 confirm 팝업 표시
+
+#### BUG-092: TBM 사진 삭제 팝업 z-index 최상단 미표시 (`89857d6`)
+- **증상**: TBM 사진 삭제 시 확인 팝업이 사진 등록 모달 뒤에 표시됨
+- **원인**: `deleteTbmSectionPhoto()` 팝업 `z-index: 10000` < TBM 사진 모달 `z-index: 10020`
+- **해결**: `z-index: 10000 → 10030`으로 상향
+
+### 커밋 로그
+| 파일 | 커밋 | 내용 |
+|------|------|------|
+| `public/static/app.js` | `89857d6` | fix: [BUG-089~092] TBM 안전조치 사진 등록 팝업 4가지 버그 수정 |
+
+### 파일 수정 내역
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | `showTbmPhotoModal` UI 재설계, `_refreshTbmPhotoModalStatus` 색상 동기화, `uploadTbmPhoto/Extra` 즉시 반영, `changeTaskStatus` async + 사전 서명 체크, `deleteTbmSectionPhoto` z-index |
+| `dist/_worker.js` | 빌드 결과물 (276.18 kB) |
+
+### NAS 배포 안내
+```bash
+git pull origin main
+# (pm2 restart 불필요 — public/static/app.js만 변경, 서버코드 무변경)
+```

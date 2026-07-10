@@ -35949,8 +35949,8 @@ async function renderSiteMapPage(container) {
   // ── 전역 필터 초기화 (첫 진입: 오늘(KST), 탭: 위험성체크) ──
   const _today = getKSTDate(); // KST 기준 오늘
   if (window._smTab      === undefined) window._smTab      = 'risk';
-  // [BUG-079 fix] 기본 날짜 범위: 오늘 하루 → 7일(과거 TBM/위험성 데이터 표시를 위해)
-  if (window._smDateFrom === undefined) { const d = getKSTNow(); d.setUTCDate(d.getUTCDate()-7); window._smDateFrom = d.toISOString().split('T')[0]; }
+  // 기본 날짜 범위: 30일 (위험성체크/TBM 과거 데이터 표시를 위해)
+  if (window._smDateFrom === undefined) { const d = getKSTNow(); d.setUTCDate(d.getUTCDate()-30); window._smDateFrom = d.toISOString().split('T')[0]; }
   if (window._smDateTo   === undefined) window._smDateTo   = _today;  // 기본: 오늘
   if (window._smUserId   === undefined) window._smUserId   = '';   // 전체 사용자
   if (window._smUserList === undefined) window._smUserList = [];   // 사용자 목록 캐시
@@ -36270,9 +36270,10 @@ async function loadSiteMapMarkers(map) {
         ? _rawTbmList.filter(function(t) { return t.is_auto_request_no === 0; })
         : _rawTbmList;
       for (const tbm of list) {
-        // TBM 탭 조건: task_status='tbm_done' (TBM완료~작업개시전) 만 표시
-        // working/completed 진행 건은 각각 진행·완료 탭에서 표시
-        if (tbm.task_status !== 'tbm_done') continue;
+        // TBM 탭 조건: tbm_done(TBM완료~개시전) 또는 working(작업개시~완료전) 만 표시
+        // work_completed/completed(작업완료) 건은 완료 탭에서 표시
+        const ts = tbm.task_status;
+        if (ts === 'work_completed' || ts === 'completed') continue;
         if (!tbm.gps_lat || !tbm.gps_lon) continue;
         const lat = parseFloat(tbm.gps_lat);
         const lon = parseFloat(tbm.gps_lon);
@@ -36285,7 +36286,7 @@ async function loadSiteMapMarkers(map) {
         const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, '🦺 TBM') }).addTo(map);
         marker.bindPopup(`
           <div style="min-width:200px;font-size:13px;">
-            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🦺 TBM 완료 (작업개시 대기)</div>
+            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🦺 TBM ${tbm.task_status==='working'?'(작업진행중)':'(작업개시 대기)'}</div>
             <div style="font-weight:600">${name}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-user mr-1"></i>${tbm.conductor_name || '-'}
@@ -36309,11 +36310,11 @@ async function loadSiteMapMarkers(map) {
     // 이유: TBM 없이 작업개시된 경우 /api/tbm에 데이터 자체가 없어 마커 미표시
     // GPS 우선순위: tbm_records.gps → work_logs.gps → 좌표 없음(목록만)
     if (filter === 'working') {
-      // ① tasks API로 working 상태 작업 목록 확보 (날짜 파라미터 변환)
+      // ① tasks API로 working 상태 작업 목록 확보
+      // 날짜 파라미터 미전송: tasks.ts는 planned_date 기준 필터이므로
+      // 작업개시(working) 상태는 날짜 무관하게 전체 조회 (GPS 있는 건만 지도 표시)
       const tp = new URLSearchParams();
-      if (dateFrom) tp.set('start_date', dateFrom);
-      if (dateTo)   tp.set('end_date',   dateTo);
-      if (userId)   tp.set('worker_id',  userId);
+      if (userId) tp.set('worker_id', userId);
       tp.set('limit', '500');
       const taskRes = await API.get(`/tasks?status=working&${tp.toString()}`);
       const _rawTaskListW = Array.isArray(taskRes.data) ? taskRes.data
@@ -36429,11 +36430,11 @@ async function loadSiteMapMarkers(map) {
     // GPS 우선순위: tbm_records.gps → work_logs.gps → 좌표 없음(목록만)
     if (filter === 'completed') {
       // ① tasks API로 완료 작업 목록 확보
+      // 날짜 파라미터 미전송: tasks.ts는 planned_date 기준 필터이므로
+      // 완료(work_completed/completed) 상태는 날짜 무관하게 전체 조회
       const tp = new URLSearchParams();
       tp.set('status', 'work_completed,completed');
-      if (dateFrom) tp.set('start_date', dateFrom);
-      if (dateTo)   tp.set('end_date',   dateTo);
-      if (userId)   tp.set('worker_id',  userId);
+      if (userId) tp.set('worker_id', userId);
       tp.set('limit', '500');
       const taskRes = await API.get(`/tasks?${tp.toString()}`);
       const _rawTaskListC = Array.isArray(taskRes.data) ? taskRes.data

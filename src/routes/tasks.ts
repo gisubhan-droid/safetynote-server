@@ -62,7 +62,8 @@ app.get('/', async (c) => {
     t.construction_type, t.request_no, t.contractor_name,
     t.construction_id, t.sub_task_number,
     con.title as construction_title, con.request_no as con_request_no,
-    COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
+    COALESCE(con.is_auto_request_no, -1) as is_auto_request_no,
+    COALESCE(con_mgr.name, con.manager_name, '') AS con_manager_display_name
     FROM tasks t
     LEFT JOIN work_categories wc ON t.category_id = wc.id
     LEFT JOIN work_types wt ON t.work_type_id = wt.id
@@ -79,7 +80,8 @@ app.get('/', async (c) => {
       t.construction_type, t.request_no, t.contractor_name,
       t.construction_id, t.sub_task_number,
       con.title as construction_title, con.request_no as con_request_no,
-      COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
+      COALESCE(con.is_auto_request_no, -1) as is_auto_request_no,
+      COALESCE(con_mgr.name, con.manager_name, '') AS con_manager_display_name
       FROM tasks t
       LEFT JOIN work_categories wc ON t.category_id = wc.id
       LEFT JOIN work_types wt ON t.work_type_id = wt.id

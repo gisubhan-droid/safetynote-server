@@ -4807,13 +4807,96 @@ async function renderTasksPage(container) {
       }).join('');
     };
 
-    // PC용 테이블 렌더러 (호환 유지)
-    const renderRows = (data) => renderCards(data);
+    // ── PC 테이블 렌더러 ──────────────────────────────────────────────────────
+    const statusLabelMap = {
+      unassigned: '미배정', assigned: '작업자배정', in_progress: '체크리스트완료',
+      tbm_done: 'TBM완료', working: '작업진행중', work_completed: '작업완료(일지대기)', completed: '일지작성완료'
+    };
+    const statusColorMap = {
+      unassigned: '#9CA3AF', assigned: '#6B7280', in_progress: '#9B59B6',
+      tbm_done: '#8B6BA8', working: '#D70072', work_completed: '#685182', completed: '#22c55e'
+    };
+    const rlLabelMap2 = { high: '고위험', medium: '중위험', normal: '일반' };
+    const rlColorMap2 = { high: '#D70072', medium: '#9B59B6', normal: '#685182' };
+    const wcShortMap2 = { cable_install:'광케이블시설', cable_splice:'광케이블접속', equipment_other:'장비·기타', conduit:'관로시설' };
+    const canEdit = currentUser.role === 'admin' || currentUser.role === 'supervisor';
 
-    // 정렬 트리거 등록
+    const renderTableView = (data) => {
+      if (!data.length) return `
+        <tr><td colspan="9" style="text-align:center;padding:48px 0;color:#9CA3AF">
+          <i class="fas fa-clipboard-list" style="font-size:2rem;opacity:.2;display:block;margin-bottom:8px"></i>
+          등록된 작업이 없습니다.
+        </td></tr>`;
+
+      return data.map((t, idx) => {
+        const rl = t.risk_level || 'normal';
+        const st = t.status || 'unassigned';
+        const stColor = statusColorMap[st] || '#9CA3AF';
+        const rlColor = rlColorMap2[rl] || '#685182';
+        // 사용자 정의 작업번호 조합
+        const wn = t.work_number || '';
+        const sn = t.sub_task_number || '';
+        const taskNumDisplay = wn && sn ? `${wn}-${sn}` : wn || sn || '-';
+        // 작업(예정)일
+        const dateDisplay = t.planned_date || t.work_date || '-';
+        // 공사담당자
+        const managerDisplay = t.con_manager_display_name || '-';
+        // 작업종류 (공사종류)
+        const workTypeDisplay = t.construction_type || '-';
+        // 작업분류
+        const workClassDisplay = wcShortMap2[t.work_class] || t.work_class || '-';
+
+        return `<tr onclick="showTaskDetail(${t.id})"
+          style="cursor:pointer;border-bottom:1px solid #F3F0F8;transition:background .1s"
+          onmouseover="this.style.background='#FAF8FC'" onmouseout="this.style.background=''">
+          <td style="padding:8px 10px;font-size:12px;color:#9CA3AF;text-align:center;white-space:nowrap">${idx+1}</td>
+          <td style="padding:8px 10px;font-size:12px;color:#6B7280;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis"
+              title="${t.request_no||''}">${t.request_no || '-'}</td>
+          <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:#685182;font-weight:600;white-space:nowrap">
+            ${taskNumDisplay}</td>
+          <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis"
+              title="${workTypeDisplay}">${workTypeDisplay}</td>
+          <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap">${workClassDisplay}</td>
+          <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap">${dateDisplay}</td>
+          <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis"
+              title="${managerDisplay}">${managerDisplay}</td>
+          <td style="padding:8px 10px;font-size:13px;color:#1A1A2E;font-weight:600;min-width:160px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+              title="${t.title||''}">${t.title || '-'}</td>
+          <td style="padding:8px 10px;white-space:nowrap;text-align:right" onclick="event.stopPropagation()">
+            <span style="display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;
+                         background:${rl==='high'?'#FDE8F3':rl==='medium'?'#EDE7F6':'#F5F0F8'};
+                         color:${rlColor};margin-right:4px">${rlLabelMap2[rl]||rl}</span>
+            <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;
+                         background:#F9FAFB;color:${stColor};border:1px solid #E5E7EB">${statusLabelMap[st]||st}</span>
+            ${canEdit ? `
+            <span style="display:inline-flex;gap:3px;margin-left:4px;vertical-align:middle">
+              <button onclick="showEditTaskModal(${t.id})"
+                style="width:24px;height:24px;border-radius:6px;border:1px solid #E5E7EB;background:white;
+                       color:#685182;font-size:11px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button onclick="deleteTask(${t.id}, '${t.status}')"
+                style="width:24px;height:24px;border-radius:6px;border:1px solid #FDE8F3;background:white;
+                       color:#D70072;font-size:11px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer">
+                <i class="fas fa-trash"></i>
+              </button>
+            </span>` : ''}
+          </td>
+        </tr>`;
+      }).join('');
+    };
+
+    // renderRows → 테이블 렌더러 alias (정렬 콜백용)
+    const renderRows = renderTableView;
+
+    // 정렬 트리거 등록 (PC 테이블 + 모바일 카드 양쪽 업데이트)
     window._sortTrigger = (tableId, col) => {
       sortTable(tableId, col, _taskListData, (sorted) => {
         _taskListData = sorted;
+        // PC 테이블 tbody 업데이트
+        const tbody = document.getElementById('taskTableBody');
+        if (tbody) tbody.innerHTML = renderTableView(sorted);
+        // 모바일 카드 그리드 업데이트
         const grid = document.getElementById('taskCardGrid');
         if (grid) grid.innerHTML = renderCards(sorted);
       });
@@ -4971,13 +5054,35 @@ async function renderTasksPage(container) {
         &nbsp;(메인작업번호-서브번호) · 일부 번호 또는 서브번호만 입력해도 조회됩니다
       </div>
 
-      <!-- 카드 그리드 (모바일 2열) -->
+      <!-- ── PC 테이블 뷰 (768px 초과) ─────────────────────────────── -->
+      <div id="taskTableView" style="display:none;overflow-x:auto;border-radius:12px;border:1px solid #EDE7F6;background:white">
+        <table id="taskListTable" style="width:100%;border-collapse:collapse">
+          <thead style="position:sticky;top:0;z-index:10;background:#FAFAFE">
+            <tr style="border-bottom:2px solid #EDE7F6">
+              <th style="padding:9px 10px;font-size:11px;font-weight:700;color:#685182;text-align:center;width:36px">#</th>
+              ${sortTh('공사요청번호','request_no','taskListTable')}
+              ${sortTh('작업번호','sub_task_number','taskListTable')}
+              ${sortTh('작업종류','construction_type','taskListTable')}
+              ${sortTh('작업분류','work_class','taskListTable')}
+              ${sortTh('작업(예정)일','planned_date','taskListTable')}
+              ${sortTh('공사담당자','con_manager_display_name','taskListTable')}
+              ${sortTh('작업명','title','taskListTable')}
+              <th style="padding:9px 10px;font-size:11px;font-weight:700;color:#685182;text-align:right;white-space:nowrap">상태/관리</th>
+            </tr>
+          </thead>
+          <tbody id="taskTableBody">
+            ${renderTableView(_taskListData)}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ── 모바일 카드 그리드 (768px 이하: 1열) ──────────────────── -->
       <div id="taskCardGrid"
-           style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:4px 0">
+           style="display:grid;grid-template-columns:1fr;gap:10px;padding:4px 0">
         ${renderCards(_taskListData)}
       </div>
 
-      <!-- 더 보기 버튼 -->
+      <!-- 더 보기 버튼 (PC/모바일 공용) -->
       ${_taskListData.length < (_taskListTotal || _taskListData.length) ? `
       <div class="flex justify-center mt-4">
         <button id="taskLoadMoreBtn" onclick="

@@ -1370,3 +1370,31 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
     min-height: 350px;
   }
 }
+
+/* ─── 작업관리 PC/모바일 이원화 레이아웃 ──────────────────────────────── */
+/* PC (769px 이상): 테이블 표시, 카드 숨김 */
+@media (min-width: 769px) {
+  #taskTableView {
+    display: block !important;
+  }
+  #taskCardGrid {
+    display: none !important;
+  }
+  /* sticky thead: 상단 헤더(top-header) 높이 56px + 툴바 영역 보정 */
+  #taskListTable thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+}
+
+/* 모바일 (768px 이하): 카드 1열 표시, 테이블 숨김 */
+@media (max-width: 768px) {
+  #taskTableView {
+    display: none !important;
+  }
+  #taskCardGrid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+}

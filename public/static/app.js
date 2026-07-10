@@ -4487,7 +4487,7 @@ function onDashRangeApply() {
 }
 
 // ======= 작업 관리 (관리감독자) =======
-let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, con_manager_names: [] };
+let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [] };
 let _taskManagerDefaultApplied = false; // 작업관리 담당자 기본값 1회 적용 플래그
 let _taskUserList = []; // 작업관리 담당자 선택용 사용자 목록 (전역 캐시)
 
@@ -4632,7 +4632,7 @@ function _getDashPeriodRange() {
 // 작업관리 현재 데이터 캐시 (정렬/엑셀용)
 let _taskListData = [];
 let _taskListTotal = 0;        // 전체 건수 (페이지네이션용)
-const TASK_PAGE_LIMIT = 50;    // 페이지당 건수
+let _taskTotalPages = 1;       // 전체 페이지 수
 
 async function renderTasksPage(container) {
   try {
@@ -4659,6 +4659,7 @@ async function renderTasksPage(container) {
 
     // tasks 1회 호출로 완료 (백엔드에서 assigned_workers + work_types + team_name 배치 포함)
     // catsRes: 미사용이므로 제거 / teams API: task.team_name 직접 사용으로 제거
+    const _curLimit = taskFilters.limit || 20;
     const tasksRes = await API.get('/tasks', { params: {
       ...(taskFilters.status                             ? { status:      taskFilters.status                                    } : {}),
       ...(taskFilters.risk_level                         ? { risk_level:  taskFilters.risk_level                                } : {}),
@@ -4666,7 +4667,7 @@ async function renderTasksPage(container) {
       ...(taskFilters.date                               ? { date:        taskFilters.date                                      } : {}),
       ...(taskFilters.start_date && taskFilters.end_date ? { start_date:  taskFilters.start_date, end_date: taskFilters.end_date } : {}),
       ...(taskFilters.con_manager_names.length           ? { con_manager_names: taskFilters.con_manager_names                  } : {}),
-      limit: TASK_PAGE_LIMIT,
+      limit: _curLimit,
       page:  taskFilters.page || 1,
     } });
     var _rawNewTasks = tasksRes.data.tasks || tasksRes.data || [];
@@ -4681,14 +4682,12 @@ async function renderTasksPage(container) {
     _taskListTotal = _taskIsLguPlus
       ? newTasks.length
       : (tasksRes.data.total ?? newTasks.length);
+    // 전체 페이지 수 계산
+    _taskTotalPages = _taskListTotal > 0 ? Math.ceil(_taskListTotal / _curLimit) : 1;
     // ──────────────────────────────────────────────────────────────────────────
 
-    // 1페이지면 초기화, 추가 페이지면 누적
-    if ((taskFilters.page || 1) === 1) {
-      _taskListData = newTasks;
-    } else {
-      _taskListData = [..._taskListData, ...newTasks];
-    }
+    // 페이지 단위 교체 (누적 아님) — 정렬/엑셀은 현재 페이지 데이터 기준
+    _taskListData = newTasks;
 
     // 팀 정보: tasks 응답의 team_name 필드 직접 사용 (teams API 별도 호출 불필요)
     function getTaskTeam(t) {
@@ -4907,9 +4906,9 @@ async function renderTasksPage(container) {
     window._sortTrigger = (tableId, col) => {
       sortTable(tableId, col, _taskListData, (sorted) => {
         _taskListData = sorted;
-        // PC 테이블 tbody 업데이트 (정렬 시 전체 재렌더링, offset=0)
+        // PC 테이블 tbody 업데이트 (정렬 시 현재 페이지 offset 유지)
         const tbody = document.getElementById('taskTableBody');
-        if (tbody) tbody.innerHTML = renderTableView(sorted, 0);
+        if (tbody) tbody.innerHTML = renderTableView(sorted, ((taskFilters.page||1)-1)*(taskFilters.limit||20));
         // 모바일 카드 그리드 업데이트
         const grid = document.getElementById('taskCardGrid');
         if (grid) grid.innerHTML = renderCards(sorted);
@@ -5033,7 +5032,18 @@ async function renderTasksPage(container) {
           class="btn btn-outline text-xs" style="flex-shrink:0;color:#C6C6C6;border-color:#C6C6C6;padding:0 10px">
           <i class="fas fa-times mr-1"></i>필터 초기화
         </button>` : ''}
-        <button onclick="downloadTaskListCSV()" class="btn btn-outline ml-auto" style="color:#685182;border-color:#685182">
+        <!-- 페이지당 건수 선택 -->
+        <div class="flex items-center gap-1 ml-auto" style="flex-shrink:0">
+          <label style="font-size:12px;color:#9CA3AF;white-space:nowrap">페이지당</label>
+          <select id="taskLimitSelect" class="form-control" style="width:68px;font-size:12px;padding:4px 6px"
+            onchange="taskFilters.limit=parseInt(this.value);taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))">
+            <option value="10"  ${(taskFilters.limit||20)===10 ?'selected':''}>10건</option>
+            <option value="20"  ${(taskFilters.limit||20)===20 ?'selected':''}>20건</option>
+            <option value="30"  ${(taskFilters.limit||20)===30 ?'selected':''}>30건</option>
+            <option value="50"  ${(taskFilters.limit||20)===50 ?'selected':''}>50건</option>
+          </select>
+        </div>
+        <button onclick="downloadTaskListCSV()" class="btn btn-outline" style="color:#685182;border-color:#685182;flex-shrink:0">
           <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
         </button>
       </div>
@@ -5063,7 +5073,7 @@ async function renderTasksPage(container) {
           class="btn btn-outline text-xs" style="flex-shrink:0;padding:0 10px">
           <i class="fas fa-times mr-1"></i>검색 초기화
         </button>` : ''}
-        <span class="text-xs text-gray-400 ml-auto">총 ${_taskListTotal || _taskListData.length}건 중 ${_taskListData.length}건 표시</span>
+        <span class="text-xs text-gray-400 ml-auto">총 <strong style="color:#685182">${_taskListTotal}</strong>건 / ${taskFilters.page||1}페이지</span>
       </div>
       <div id="taskSearchHint" class="mb-3" style="font-size:11px;color:#9CA3AF;padding-left:2px;display:${taskFilters.search_type==='task_number'?'block':'none'}">
         <i class="fas fa-info-circle mr-1" style="color:#C4B5D5"></i>
@@ -5090,7 +5100,7 @@ async function renderTasksPage(container) {
             </tr>
           </thead>
           <tbody id="taskTableBody">
-            ${renderTableView(_taskListData, 0)}
+            ${renderTableView(_taskListData, ((taskFilters.page||1)-1)*(taskFilters.limit||20))}
           </tbody>
         </table>
       </div>
@@ -5101,22 +5111,52 @@ async function renderTasksPage(container) {
         ${renderCards(_taskListData)}
       </div>
 
-      <!-- 더 보기 버튼 (PC/모바일 공용) -->
-      ${_taskListData.length < (_taskListTotal || _taskListData.length) ? `
-      <div class="flex justify-center mt-4">
-        <button id="taskLoadMoreBtn" onclick="
-          taskFilters.page = (taskFilters.page || 1) + 1;
-          const btn = document.getElementById('taskLoadMoreBtn');
-          if (btn) { btn.disabled = true; btn.innerHTML = '<i class=\"fas fa-spinner fa-spin mr-1\"></i>불러오는 중...'; }
-          renderTasksPage(document.getElementById('page-content'));
-        " class="btn btn-outline text-sm px-6 py-2" style="border-radius:20px">
-          <i class="fas fa-chevron-down mr-1"></i>
-          더 보기 (${_taskListTotal - _taskListData.length}건 남음)
-        </button>
-      </div>` : (_taskListTotal > TASK_PAGE_LIMIT ? `
-      <div class="text-center mt-3 text-xs text-gray-400">
-        <i class="fas fa-check-circle mr-1"></i>전체 ${_taskListTotal}건 모두 표시됨
-      </div>` : '')}
+      <!-- ── 페이지 네비게이터 ──────────────────────────────────────── -->
+      ${(() => {
+        const _curPage = taskFilters.page || 1;
+        const _totPages = _taskTotalPages || 1;
+        if (_totPages <= 1) return '';
+        // 표시할 페이지 번호 범위 계산 (현재 페이지 중심 ±2, 최대 5개)
+        let _pStart = Math.max(1, _curPage - 2);
+        let _pEnd   = Math.min(_totPages, _pStart + 4);
+        if (_pEnd - _pStart < 4) _pStart = Math.max(1, _pEnd - 4);
+        const _pageNums = [];
+        for (let _pi = _pStart; _pi <= _pEnd; _pi++) _pageNums.push(_pi);
+        const _btnBase = 'task-page-btn';
+        return `
+        <div class="task-pager" role="navigation" aria-label="페이지 이동">
+          <!-- 이전 -->
+          <button class="${_btnBase}${_curPage <= 1 ? ' disabled' : ''}"
+            onclick="if(${_curPage}>1){taskFilters.page=${_curPage}-1;renderTasksPage(document.getElementById('page-content'));}"
+            ${_curPage <= 1 ? 'disabled' : ''} aria-label="이전 페이지">
+            <i class="fas fa-chevron-left" style="font-size:11px"></i>
+          </button>
+          <!-- 첫 페이지 + ... -->
+          ${_pStart > 1 ? `
+            <button class="${_btnBase}" onclick="taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))">1</button>
+            ${_pStart > 2 ? '<span class="task-pager-ellipsis">…</span>' : ''}
+          ` : ''}
+          <!-- 번호들 -->
+          ${_pageNums.map(_pn => `
+            <button class="${_btnBase}${_pn === _curPage ? ' active' : ''}"
+              onclick="taskFilters.page=${_pn};renderTasksPage(document.getElementById('page-content'))"
+              ${_pn === _curPage ? 'aria-current="page"' : ''}>${_pn}</button>
+          `).join('')}
+          <!-- ... + 마지막 페이지 -->
+          ${_pEnd < _totPages ? `
+            ${_pEnd < _totPages - 1 ? '<span class="task-pager-ellipsis">…</span>' : ''}
+            <button class="${_btnBase}" onclick="taskFilters.page=${_totPages};renderTasksPage(document.getElementById('page-content'))">${_totPages}</button>
+          ` : ''}
+          <!-- 다음 -->
+          <button class="${_btnBase}${_curPage >= _totPages ? ' disabled' : ''}"
+            onclick="if(${_curPage}<${_totPages}){taskFilters.page=${_curPage}+1;renderTasksPage(document.getElementById('page-content'));}"
+            ${_curPage >= _totPages ? 'disabled' : ''} aria-label="다음 페이지">
+            <i class="fas fa-chevron-right" style="font-size:11px"></i>
+          </button>
+          <!-- 요약 텍스트 -->
+          <span class="task-pager-info">${_curPage} / ${_totPages} 페이지 &nbsp;(총 ${_taskListTotal}건)</span>
+        </div>`;
+      })()}
     </div>`;
   } catch(e) {
     container.innerHTML = `<p class="text-red-500 p-4">로드 실패: ${e.message}</p>`;

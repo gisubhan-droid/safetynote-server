@@ -1434,3 +1434,63 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
     padding: 8px 0 4px;
   }
 }
+
+/* ─── 작업관리 페이지 네비게이터 ──────────────────────────────────────── */
+.task-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 14px 0 4px;
+  flex-wrap: wrap;
+}
+.task-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid #E5DAF5;
+  border-radius: 8px;
+  background: #fff;
+  color: #685182;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  line-height: 1;
+}
+.task-page-btn:hover:not(.disabled):not(.active) {
+  background: #F5F0FB;
+  border-color: #C4B5D5;
+}
+.task-page-btn.active {
+  background: #685182;
+  color: #fff;
+  border-color: #685182;
+  font-weight: 700;
+  cursor: default;
+}
+.task-page-btn.disabled,
+.task-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.task-pager-ellipsis {
+  font-size: 13px;
+  color: #9CA3AF;
+  padding: 0 2px;
+  line-height: 34px;
+}
+.task-pager-info {
+  font-size: 11px;
+  color: #9CA3AF;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+@media (max-width: 768px) {
+  .task-page-btn { min-width: 30px; height: 30px; font-size: 12px; }
+  .task-pager-info { display: none; }
+}

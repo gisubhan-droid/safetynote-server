@@ -35948,7 +35948,8 @@ async function renderSiteMapPage(container) {
   // ── 전역 필터 초기화 (첫 진입: 오늘(KST), 탭: 위험성체크) ──
   const _today = getKSTDate(); // KST 기준 오늘
   if (window._smTab      === undefined) window._smTab      = 'risk';
-  if (window._smDateFrom === undefined) window._smDateFrom = _today;  // 기본: 오늘
+  // [BUG-079 fix] 기본 날짜 범위: 오늘 하루 → 7일(과거 TBM/위험성 데이터 표시를 위해)
+  if (window._smDateFrom === undefined) { const d = getKSTNow(); d.setUTCDate(d.getUTCDate()-7); window._smDateFrom = d.toISOString().split('T')[0]; }
   if (window._smDateTo   === undefined) window._smDateTo   = _today;  // 기본: 오늘
   if (window._smUserId   === undefined) window._smUserId   = '';   // 전체 사용자
   if (window._smUserList === undefined) window._smUserList = [];   // 사용자 목록 캐시
@@ -35964,7 +35965,7 @@ async function renderSiteMapPage(container) {
   // ── 탭 정의 ──
   const TAB_DEFS = [
     { key:'risk',       label:'⚠️ 위험성체크', color:'#F59E0B', desc:'위험성평가 작성 위치' },
-    { key:'tbm',        label:'🦺 TBM',       color:'#685182', desc:'TBM 완료 후 작업 개시 대기 중인 현장 위치' },
+    { key:'tbm',        label:'🦺 TBM',       color:'#685182', desc:'TBM을 실시한 현장 위치 (작업 진행 여부 무관)' },
     { key:'working',    label:'🟢 진행',       color:'#10B981', desc:'작업 개시(진행중) 현장 위치' },
     { key:'completed',  label:'✅ 완료',       color:'#6B7280', desc:'작업 완료된 현장 위치' },
   ];
@@ -36259,8 +36260,8 @@ async function loadSiteMapMarkers(map) {
         ? _rawTbmList.filter(function(t) { return t.is_auto_request_no === 0; })
         : _rawTbmList;
       for (const tbm of list) {
-        // task_status가 tbm_done 인 것만 (working·완료 상태는 각 탭에서 표시)
-        if (tbm.task_status && tbm.task_status !== 'tbm_done') continue;
+        // [BUG-079 fix] TBM GPS 위치는 작업이 이후 단계(working/completed)로 진행되어도 표시
+        // (TBM 탭 = "TBM을 실시한 현장 위치" 기록, 단 GPS 없는 건은 skip)
         if (!tbm.gps_lat || !tbm.gps_lon) continue;
         const lat = parseFloat(tbm.gps_lat);
         const lon = parseFloat(tbm.gps_lon);
@@ -36273,7 +36274,7 @@ async function loadSiteMapMarkers(map) {
         const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, '🦺 TBM') }).addTo(map);
         marker.bindPopup(`
           <div style="min-width:200px;font-size:13px;">
-            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🦺 TBM 완료 (개시 대기)</div>
+            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🦺 TBM 실시 현장</div>
             <div style="font-weight:600">${name}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-user mr-1"></i>${tbm.conductor_name || '-'}

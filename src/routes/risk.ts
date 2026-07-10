@@ -102,6 +102,48 @@ app.get('/', async (c) => {
   }
 })
 
+// ── 체크리스트 GPS 배치 조회 (/risk/checklist-gps?task_ids=1,2,3) ──────────
+// 현장위치지도 위험성체크 탭: task_ids 배열로 checklist_assessments GPS 한번에 조회
+// tasks.gps_lat 없는 건의 fallback GPS 용도
+app.get('/checklist-gps', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
+    const taskIdsRaw = c.req.query('task_ids') || ''
+    if (!taskIdsRaw) return c.json([])
+    const taskIds = taskIdsRaw.split(',').map((s: string) => Number(s.trim())).filter((n: number) => n > 0)
+    if (taskIds.length === 0) return c.json([])
+    const placeholders = taskIds.map(() => '?').join(',')
+    let rows: any[] = []
+    try {
+      // 각 task_id의 최신 checklist_assessments GPS (status 무관)
+      const q = `SELECT ca.task_id,
+        ca.gps_lat, ca.gps_lon, ca.gps_address,
+        ca.status as checklist_status, ca.created_at
+        FROM checklist_assessments ca
+        WHERE ca.task_id IN (${placeholders})
+          AND ca.gps_lat IS NOT NULL AND ca.gps_lon IS NOT NULL
+        ORDER BY ca.task_id, ca.id DESC`
+      const result = await c.env.DB.prepare(q).bind(...taskIds).all<any>()
+      const allRows: any[] = result.results || []
+      // task_id별 최신 1건만 (ORDER BY id DESC 후 dedupe)
+      const seen = new Set<number>()
+      rows = allRows.filter((r: any) => {
+        if (seen.has(r.task_id)) return false
+        seen.add(r.task_id)
+        return true
+      })
+    } catch (_) {
+      // checklist_assessments 테이블 없는 구버전 DB — 빈 배열 반환
+      rows = []
+    }
+    return c.json(rows)
+  } catch (e: any) {
+    console.error('[risk GET /checklist-gps]', e.message)
+    return c.json([])
+  }
+})
+
 // 위험성 평가 생성
 app.post('/', async (c) => {
   const user = getUser(c)

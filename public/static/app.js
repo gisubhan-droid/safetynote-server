@@ -36211,32 +36211,66 @@ async function loadSiteMapMarkers(map) {
   try {
 
     // ── ① 위험성체크 탭 ─────────────────────────────────────────
+    // [BUG-083 수정] 현장점검 화면과 동일한 소스(/tasks?status=in_progress) 사용
+    //   - 기존: /risk API → risk_assessments.status='completed' 기준 → 현장점검과 다름
+    //   - 변경: /tasks API → task.status='in_progress' (체크리스트 완료 단계) 기준
+    //   - GPS: tasks.gps_lat 우선 → 없으면 /risk/checklist-gps 배치 조회로 checklist GPS fallback
     if (filter === 'risk') {
-      const res = await API.get(`/risk${dateParams()}`);
-      const _rawRiskList = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.risks || []);
+      // ① /tasks?status=in_progress 로 체크리스트 완료 단계 작업 목록 조회
+      const rp = new URLSearchParams();
+      rp.set('status', 'in_progress');
+      if (userId) rp.set('user_id', userId);
+      rp.set('limit', '500');
+      const riskTaskRes = await API.get(`/tasks?${rp.toString()}`);
+      const _rawRiskTasks = riskTaskRes.data?.tasks || riskTaskRes.data || [];
+
       // [BUG-079 준용] LGU+ 클라이언트 이중 방어: is_auto_request_no=0 건만 표시 (서버 필터 보조)
       var _smMyUiRoleR = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
       var _smIsLguR = (_smMyUiRoleR === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
-      const list = _smIsLguR
-        ? _rawRiskList.filter(function(r) { return r.is_auto_request_no === 0; })
-        : _rawRiskList;
-      for (const ra of list) {
-        // tasks JOIN으로 받은 GPS 사용 (risk_assessments 테이블엔 GPS 없음)
-        // GPS 없으면 work_order_address → confirmed_address → task_location 주소 fallback (지도 마커는 skip, 목록엔 표시)
-        const hasGps = ra.gps_lat && ra.gps_lon;
-        const lat = hasGps ? parseFloat(ra.gps_lat) : NaN;
-        const lon = hasGps ? parseFloat(ra.gps_lon) : NaN;
-        const gpsValid = !isNaN(lat) && !isNaN(lon);
+      const riskTaskList = _smIsLguR
+        ? _rawRiskTasks.filter(function(t) { return t.is_auto_request_no === 0; })
+        : _rawRiskTasks;
 
-        const displayDate = _toKSTDateTime(ra.created_at || '');
-        const name = ra.task_title || ra.work_type_name || '위험성평가';
-        // GPS 주소 우선, 없으면 작업지시 주소(work_order_address) → 확정주소 → 작업위치 순 fallback
-        const addr = ra.gps_address || ra.work_order_address || ra.confirmed_address || ra.task_location || (gpsValid ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : '주소 미기록');
+      // ② tasks.gps_lat 없는 건들에 대해 checklist_assessments GPS 배치 조회
+      const noTaskGpsIds = riskTaskList
+        .filter(function(t) { return !t.gps_lat || !t.gps_lon; })
+        .map(function(t) { return t.id; });
+      const ckGpsMap = {};  // task_id → { gps_lat, gps_lon, gps_address }
+      if (noTaskGpsIds.length > 0) {
+        try {
+          const ckRes = await API.get(`/risk/checklist-gps?task_ids=${noTaskGpsIds.join(',')}`);
+          const ckRows = Array.isArray(ckRes.data) ? ckRes.data : [];
+          ckRows.forEach(function(r) {
+            if (r.task_id && r.gps_lat && r.gps_lon) {
+              ckGpsMap[r.task_id] = { gps_lat: r.gps_lat, gps_lon: r.gps_lon, gps_address: r.gps_address || '' };
+            }
+          });
+        } catch(_) {}
+      }
+
+      // ③ 마커 생성
+      for (const t of riskTaskList) {
+        // GPS 우선순위: tasks.gps_lat → checklist_assessments.gps_lat → 주소만(마커 미표시)
+        const ckGps = ckGpsMap[t.id];
+        const rawLat = t.gps_lat || (ckGps && ckGps.gps_lat);
+        const rawLon = t.gps_lon || (ckGps && ckGps.gps_lon);
+        const hasGps = rawLat && rawLon;
+        const lat = hasGps ? parseFloat(rawLat) : NaN;
+        const lon = hasGps ? parseFloat(rawLon) : NaN;
+        const gpsValid = !isNaN(lat) && !isNaN(lon);
+        const gpsFromCk = !t.gps_lat && ckGps;  // checklist GPS 사용 여부
+
+        const displayDate = _toKSTDateTime(t.planned_date || t.created_at || '');
+        const name = t.title || '위험성체크';
+        const supervisor = t.supervisor_name || '';
+        // GPS 주소 우선, 없으면 작업지시 주소(work_order_address) → gps_address → 확정주소 fallback
+        const gpsAddr = (gpsFromCk && ckGps.gps_address) ? ckGps.gps_address : (t.gps_address || '');
+        const addr = gpsAddr || t.work_order_address || t.confirmed_address || t.location || (gpsValid ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : '주소 미기록');
 
         // GPS 없는 건은 목록에만 추가 (지도 마커는 GPS 보유 건만)
         if (!gpsValid) {
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: ra.assessor_name || '', address: addr, lat: null, lon: null, noGps: true });
+            author: supervisor, address: addr, lat: null, lon: null, noGps: true });
           continue;
         }
 
@@ -36246,10 +36280,7 @@ async function loadSiteMapMarkers(map) {
             <div style="font-weight:700;color:${meta.color};margin-bottom:4px">⚠️ 위험성체크</div>
             <div style="font-weight:600">${name}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-user mr-1"></i>${ra.assessor_name || '-'}
-            </div>
-            <div style="color:#6B7280;font-size:11px;margin-top:2px">
-              <i class="fas fa-tag mr-1"></i>${ra.assessment_type || '-'}
+              <i class="fas fa-user mr-1"></i>${supervisor || '-'}
             </div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
@@ -36257,11 +36288,14 @@ async function loadSiteMapMarkers(map) {
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-map-marker-alt mr-1"></i>${addr}
             </div>
+            ${gpsFromCk ? `<div style="color:#F59E0B;font-size:10px;margin-top:3px">
+              <i class="fas fa-info-circle mr-1"></i>체크리스트 완료 시 GPS 기록
+            </div>` : ''}
           </div>`);
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: ra.assessor_name || '', address: addr, lat, lon });
+          author: supervisor, address: addr, lat, lon });
       }
     }
 

@@ -1382,28 +1382,45 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   }
 }
 
-/* ─── 작업관리 테이블 분리 구조 (thead sticky + 가로스크롤 분리) ───────────
-   overflow-x:auto 컨테이너 안에서 thead position:sticky는 뷰포트 기준이 아닌
-   스크롤 컨테이너 기준으로만 동작함 → 툴바와 겹침 발생.
-   해결: thead 전용 wrapper(task-thead-sticky)를 분리하여 뷰포트 기준 sticky 처리,
-         tbody는 task-tbody-scroll에서 overflow-x:auto로만 가로 스크롤 담당.
+/* ─── 작업관리 테이블 분리 구조 (BUG-095 수정) ─────────────────────────────
+   [BUG-095 근본 원인]
+   CSS 명세: overflow:hidden/auto/scroll 이 설정된 조상 요소는
+   position:sticky 의 스크롤 컨테이너가 되어 자식 sticky를 무력화함.
+   기존 .task-table-wrapper { overflow:hidden } 안에 .task-thead-sticky { sticky }를
+   배치했기 때문에 thead가 컨테이너 최상단에만 붙어 있다가 데이터 행 사이에 나타남.
+
+   [BUG-095 해결 구조]
+   task-table-outer-wrap : overflow 없음(visible) — sticky 부모 역할 담당
+     ├─ task-thead-sticky  : position:sticky — overflow 없는 조상 덕분에 뷰포트 기준 동작
+     └─ task-table-wrapper : border 하단 radius 담당 (overflow:hidden 제거)
+          └─ task-tbody-scroll : overflow-x:auto — 가로 스크롤 전담
 ─────────────────────────────────────────────────────────────────────────── */
-.task-table-wrapper {
+
+/* 최외곽 래퍼: border/radius + sticky 허용 (overflow 설정 없음) */
+.task-table-outer-wrap {
   border-radius: 12px;
   border: 1px solid #EDE7F6;
   background: white;
-  overflow: hidden;       /* 래퍼 border-radius 적용 */
+  /* overflow는 기본값(visible) 유지 — sticky 자식이 정상 동작하도록 */
 }
 
-/* 헤더 sticky 영역: overflow 없음 → 뷰포트 기준 sticky 정상 동작 */
+/* 바디 래퍼: 하단 border-radius 클리핑 전담 */
+.task-table-wrapper {
+  overflow: hidden;           /* 바디 테이블 하단 radius 클리핑 */
+  border-radius: 0 0 12px 12px;
+  /* border/background는 outer-wrap에서 처리 */
+}
+
+/* 헤더 sticky 영역: overflow 없는 조상(task-table-outer-wrap) 덕분에 뷰포트 기준 sticky 동작 */
 .task-thead-sticky {
   position: sticky;
   /* top 값은 JS(requestAnimationFrame)에서 동적으로 계산하여 주입 */
-  top: 160px;             /* 초기 fallback: top-header(56px) + 툴바 예상값 */
-  z-index: 15;            /* task-toolbar-sticky(30)보다 낮고 flyout-panel(41)보다 낮게 */
+  top: 160px;                 /* 초기 fallback: top-header(56px) + 툴바 예상값 */
+  z-index: 15;                /* task-toolbar-sticky(30)보다 낮고 flyout-panel(41)보다 낮게 */
   background: #FAFAFE;
-  overflow-x: hidden;     /* 바디 스크롤과 JS로 동기화, 스크롤바 숨김 */
+  overflow-x: hidden;         /* 바디 스크롤과 JS로 동기화, 스크롤바 숨김 */
   border-bottom: 2px solid #EDE7F6;
+  border-radius: 12px 12px 0 0;  /* outer-wrap 상단 radius와 맞춤 */
 }
 
 /* 바디 스크롤 영역: 가로 스크롤만 전담 */
@@ -1415,7 +1432,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 /* 헤더·바디 테이블 너비 동기 (동일 class로 width 통일) */
 .task-col-table {
   width: 100%;
-  min-width: 860px;       /* 9컬럼 최소 너비 */
+  min-width: 860px;           /* 9컬럼 최소 너비 */
   table-layout: auto;
 }
 
@@ -1430,17 +1447,19 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   background: #FAFAFE;
 }
 
-@media (max-width: 768px) {
-  /* 모바일에서 분리 헤더 숨김 (카드 뷰 사용) */
-  .task-thead-sticky { display: none !important; }
-  .task-tbody-scroll  { overflow-x: auto; }
+/* PC (769px 이상): 테이블 표시, 카드 숨김 */
+@media (min-width: 769px) {
+  #taskTableView { display: block !important; }
+  #taskCardGrid  { display: none !important; }
 }
 
-/* 모바일 (768px 이하): 카드 1열 표시, 테이블 숨김 */
+/* 모바일 (768px 이하): 카드 1열 표시, 테이블/분리헤더 숨김 */
 @media (max-width: 768px) {
   #taskTableView {
     display: none !important;
   }
+  .task-thead-sticky { display: none !important; }
+  .task-tbody-scroll  { overflow-x: auto; }
   #taskCardGrid {
     display: grid !important;
     grid-template-columns: 1fr !important;

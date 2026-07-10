@@ -5092,15 +5092,20 @@ async function renderTasksPage(container) {
 
       <!-- ── PC 테이블 뷰 (768px 초과) ─────────────────────────────── -->
       <!--
-        [구조 설명] overflow-x:auto 안에서는 thead position:sticky가 뷰포트 기준으로
-        동작하지 않음(컨테이너 기준으로만 동작). 따라서:
-        ① taskTableView: 외곽 border/radius만 담당, overflow는 설정하지 않음
-        ② taskTableScroll: overflow-x:auto로 가로 스크롤 전담
-        ③ thead: taskTableScroll 밖(taskTableView 안)에서 CSS sticky로 처리
-        → thead가 뷰포트 기준 sticky 동작, 가로 스크롤은 tbody만 적용
+        [구조 설명 — BUG-095 수정]
+        overflow:hidden/auto 가 설정된 조상 요소는 sticky의 스크롤 컨테이너가 되어
+        자식의 position:sticky를 무력화함 (CSS 명세).
+        따라서 thead sticky 경로에 overflow:hidden 부모가 없어야 함.
+
+        ① task-table-outer-wrap : border/radius 담당, overflow:visible(기본값) 유지
+            → sticky 부모 역할 가능 (overflow 차단 없음)
+        ② task-thead-sticky     : position:sticky, overflow-x:hidden(스크롤바 숨김)
+            → 뷰포트(또는 scroll-port) 기준으로 정상 sticky 동작
+        ③ task-table-wrapper    : overflow 설정 없음(기존 overflow:hidden 제거)
+        ④ task-tbody-scroll     : overflow-x:auto 가로 스크롤 전담
       -->
-      <div id="taskTableView" class="task-table-wrapper" style="display:none">
-        <!-- 헤더: overflow 없는 컨테이너 안에서 CSS sticky 동작 -->
+      <div id="taskTableView" class="task-table-outer-wrap" style="display:none">
+        <!-- 헤더: overflow 없는 조상 안에서 CSS sticky 정상 동작 -->
         <div class="task-thead-sticky" id="taskTheadWrap">
           <table id="taskListTableHead" class="task-col-table" style="border-collapse:collapse">
             <thead>
@@ -5118,13 +5123,16 @@ async function renderTasksPage(container) {
             </thead>
           </table>
         </div>
-        <!-- 바디: overflow-x:auto로 가로 스크롤 전담 -->
-        <div class="task-tbody-scroll" id="taskBodyScroll">
-          <table id="taskListTable" class="task-col-table" style="border-collapse:collapse">
-            <tbody id="taskTableBody">
-              ${renderTableView(_taskListData, ((taskFilters.page||1)-1)*(taskFilters.limit||20))}
-            </tbody>
-          </table>
+        <!-- 바디 래퍼: 테두리 하단 radius 담당 -->
+        <div class="task-table-wrapper">
+          <!-- 바디: overflow-x:auto로 가로 스크롤 전담 -->
+          <div class="task-tbody-scroll" id="taskBodyScroll">
+            <table id="taskListTable" class="task-col-table" style="border-collapse:collapse">
+              <tbody id="taskTableBody">
+                ${renderTableView(_taskListData, ((taskFilters.page||1)-1)*(taskFilters.limit||20))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

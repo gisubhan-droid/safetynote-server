@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>작업관리 PC/모바일 이원화 레이아웃 미리보기</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { background: #F5F3F8; font-family: 'Pretendard', 'Noto Sans KR', sans-serif; margin: 0; padding: 0; }
+
+  /* 레이아웃 시뮬레이션 */
+  .sim-wrap { display: flex; gap: 24px; padding: 24px; max-width: 1600px; margin: 0 auto; }
+  .sim-pc { flex: 1; }
+  .sim-mobile { width: 375px; flex-shrink: 0; }
+
+  .sim-label { font-size: 11px; font-weight: 800; color: #685182; letter-spacing: .08em;
+               text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .sim-frame { background: white; border-radius: 16px; overflow: hidden;
+               box-shadow: 0 4px 24px rgba(103,81,130,.13); border: 1.5px solid #EDE7F6; }
+
+  /* PC 헤더 */
+  .pc-topbar { background: #1A1A2E; height: 46px; display: flex; align-items: center;
+               padding: 0 16px; gap: 8px; }
+  .pc-topbar .logo { color: #D70072; font-size: 13px; font-weight: 800; letter-spacing: .03em; }
+  .pc-topbar .page-title { color: #fff; font-size: 12px; font-weight: 600; margin-left: 8px; opacity: .85; }
+  .pc-topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .pc-topbar .avatar { width: 26px; height: 26px; border-radius: 50%; background: #685182;
+                       display: flex; align-items: center; justify-content: center; }
+
+  /* 사이드 레일 */
+  .pc-body { display: flex; }
+  .rail { width: 58px; background: #1A1A2E; display: flex; flex-direction: column;
+          align-items: center; padding: 10px 0; gap: 4px; min-height: 580px; }
+  .rail-btn { width: 44px; height: 44px; border-radius: 10px; display: flex; flex-direction: column;
+              align-items: center; justify-content: center; gap: 2px; cursor: pointer; transition: background .15s; }
+  .rail-btn:hover, .rail-btn.active { background: rgba(215,0,114,.18); }
+  .rail-btn i { font-size: 14px; color: rgba(255,255,255,.55); }
+  .rail-btn.active i { color: #D70072; }
+  .rail-btn span { font-size: 7px; color: rgba(255,255,255,.45); font-weight: 600; }
+  .rail-btn.active span { color: #E8A0C0; }
+
+  /* 페이지 컨텐츠 */
+  .pc-content { flex: 1; padding: 14px; background: #F5F3F8; overflow: hidden; }
+
+  /* 툴바 */
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .btn { padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+         border: none; display: inline-flex; align-items: center; gap: 4px; }
+  .btn-primary { background: #D70072; color: white; }
+  .btn-outline { background: white; color: #685182; border: 1px solid #685182; }
+  .btn-filter { background: white; color: #685182; border: 1px solid #E5E7EB; font-size: 11px; }
+  .badge { background: #685182; color: white; border-radius: 9px; padding: 0 5px;
+           font-size: 9px; font-weight: 700; }
+  select.fc { padding: 5px 8px; border: 1px solid #E5E7EB; border-radius: 8px;
+              font-size: 12px; color: #374151; background: white; }
+
+  /* PC 테이블 */
+  .task-table-wrap { background: white; border-radius: 12px; border: 1px solid #EDE7F6; overflow: hidden; }
+  .task-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .task-table thead { position: sticky; top: 0; z-index: 10; background: #FAFAFE; }
+  .task-table thead th { padding: 9px 10px; font-size: 10px; font-weight: 700; color: #685182;
+                         border-bottom: 2px solid #EDE7F6; white-space: nowrap; text-align: left; cursor: pointer; }
+  .task-table thead th:first-child { text-align: center; width: 36px; }
+  .task-table thead th:last-child { text-align: right; }
+  .task-table tbody tr { border-bottom: 1px solid #F3F0F8; cursor: pointer; transition: background .1s; }
+  .task-table tbody tr:hover { background: #FAF8FC; }
+  .task-table tbody td { padding: 8px 10px; color: #374151; vertical-align: middle; }
+  .task-table tbody td:first-child { text-align: center; color: #9CA3AF; font-size: 11px; }
+  .sort-arrow { color: #C6C6C6; font-size: 9px; margin-left: 2px; }
+
+  /* 배지 */
+  .badge-rl { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 6px;
+              border-radius: 20px; }
+  .badge-rl.high { background: #FDE8F3; color: #D70072; }
+  .badge-rl.medium { background: #EDE7F6; color: #9B59B6; }
+  .badge-rl.normal { background: #F5F0F8; color: #685182; }
+  .badge-st { display: inline-block; font-size: 9px; font-weight: 600; padding: 2px 6px;
+              border-radius: 20px; background: #F9FAFB; border: 1px solid #E5E7EB; }
+  .task-num { font-family: monospace; font-size: 10px; color: #685182; font-weight: 600; }
+  .task-title { font-size: 12px; color: #1A1A2E; font-weight: 600; }
+
+  /* 더보기 */
+  .load-more { text-align: center; padding: 12px 0; }
+  .btn-loadmore { padding: 7px 24px; border-radius: 20px; background: white; border: 1px solid #D1D5DB;
+                  color: #6B7280; font-size: 12px; cursor: pointer; }
+
+  /* 모바일 프레임 */
+  .mobile-frame { border-radius: 16px; overflow: hidden; border: 1.5px solid #EDE7F6;
+                  box-shadow: 0 4px 24px rgba(103,81,130,.13); background: #F5F3F8; }
+  .mobile-topbar { background: #1A1A2E; height: 40px; display: flex; align-items: center;
+                   padding: 0 12px; }
+  .mobile-topbar .logo { color: #D70072; font-size: 12px; font-weight: 800; }
+  .mobile-topbar .page { color: #fff; font-size: 11px; opacity: .8; margin-left: 8px; }
+  .mobile-content { padding: 10px; }
+  .mobile-toolbar { display: flex; gap: 5px; margin-bottom: 8px; flex-wrap: wrap; }
+  .mobile-toolbar .btn { font-size: 10px; padding: 5px 8px; }
+
+  /* 모바일 카드 (1열) */
+  .card-grid-1col { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .task-card { background: white; border-radius: 12px; padding: 11px; border: 1.5px solid #F0EBF5;
+               cursor: pointer; position: relative; }
+  .task-card:hover { box-shadow: 0 4px 16px rgba(103,81,130,.12); border-color: #C6B8D8; }
+  .card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; }
+  .card-title { font-size: 12px; font-weight: 700; color: #1A1A2E; line-height: 1.35;
+                display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card-meta { font-size: 10px; color: #9CA3AF; margin-bottom: 5px; }
+  .card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 7px; }
+  .tag { font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 20px; }
+  .tag-type { background: #FDE8F3; color: #D70072; }
+  .tag-class { background: #F3F4F6; color: #374151; }
+  .stage-bar { display: flex; gap: 2px; margin-bottom: 3px; }
+  .stage-seg { flex: 1; height: 3px; border-radius: 2px; }
+  .stage-label { font-size: 9px; font-weight: 700; text-align: center; }
+
+  /* 반응형 힌트 텍스트 */
+  .hint-box { background: #685182; color: white; border-radius: 8px; padding: 8px 12px;
+              font-size: 11px; font-weight: 600; text-align: center; margin-bottom: 12px; }
+
+  /* 검증 표 */
+  .check-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .check-table th { background: #F5F0F8; color: #685182; padding: 6px 10px; text-align: left; }
+  .check-table td { padding: 6px 10px; border-bottom: 1px solid #F3F0F8; }
+  .ok { color: #22c55e; font-weight: 700; }
+  .warn { color: #f59e0b; font-weight: 700; }
+  .fixed { color: #685182; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- 헤더 -->
+<div style="background:#1A1A2E;padding:16px 24px;display:flex;align-items:center;gap:12px">
+  <span style="color:#D70072;font-size:16px;font-weight:800">SafetyNOTE</span>
+  <span style="color:rgba(255,255,255,.5);font-size:12px">|</span>
+  <span style="color:rgba(255,255,255,.8);font-size:13px;font-weight:600">작업관리 PC/모바일 이원화 레이아웃 미리보기</span>
+  <span style="margin-left:auto;background:#685182;color:white;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">FEAT-061</span>
+</div>
+
+<div class="sim-wrap">
+
+  <!-- ── PC 뷰 ── -->
+  <div class="sim-pc">
+    <div class="sim-label"><i class="fas fa-desktop"></i> PC 뷰 (769px 이상) — 테이블 리스트</div>
+    <div class="sim-frame">
+      <!-- 상단 바 -->
+      <div class="pc-topbar">
+        <span class="logo"><i class="fas fa-shield-alt mr-1"></i>SafetyNOTE</span>
+        <span class="pc-page-title" style="color:rgba(255,255,255,.7);font-size:11px;margin-left:8px">작업관리</span>
+        <div class="right">
+          <div class="avatar"><i class="fas fa-user" style="font-size:10px;color:#C6B8D8"></i></div>
+        </div>
+      </div>
+
+      <div class="pc-body">
+        <!-- 사이드 레일 -->
+        <div class="rail">
+          <div class="rail-btn"><i class="fas fa-home"></i><span>홈</span></div>
+          <div class="rail-btn active"><i class="fas fa-tasks"></i><span>작업</span></div>
+          <div class="rail-btn"><i class="fas fa-building"></i><span>공사</span></div>
+          <div class="rail-btn"><i class="fas fa-map-marker-alt"></i><span>지도</span></div>
+          <div class="rail-btn"><i class="fas fa-search"></i><span>점검</span></div>
+          <div style="margin-top:auto"></div>
+          <div class="rail-btn"><i class="fas fa-cog"></i><span>설정</span></div>
+        </div>
+
+        <!-- 메인 콘텐츠 -->
+        <div class="pc-content">
+          <!-- 툴바 1행 -->
+          <div class="toolbar">
+            <button class="btn btn-primary"><i class="fas fa-plus"></i> 작업 생성</button>
+            <button class="btn btn-filter" style="border-color:#685182;color:#685182">
+              <i class="fas fa-user-tie" style="font-size:10px"></i>
+              공사담당자 <span class="badge ml-1">2</span>
+            </button>
+            <select class="fc"><option>전체 진행단계</option><option selected>작업진행중</option></select>
+            <select class="fc"><option selected>전체 위험도</option><option>고위험</option></select>
+            <input type="date" value="2026-07-10" style="padding:5px 8px;border:1px solid #E5E7EB;border-radius:8px;font-size:12px">
+            <button class="btn" style="margin-left:auto;border:1px solid #685182;color:#685182;background:white;font-size:11px">
+              <i class="fas fa-file-excel"></i> 엑셀
+            </button>
+          </div>
+          <!-- 툴바 2행 -->
+          <div class="toolbar" style="margin-bottom:6px">
+            <select class="fc" style="width:90px"><option>공사명</option><option>요청번호</option><option selected>작업번호</option></select>
+            <div style="display:flex;flex:1;max-width:360px">
+              <input type="text" value="WKS-2026" style="flex:1;padding:5px 10px;border:1px solid #E5E7EB;border-radius:8px 0 0 8px;border-right:none;font-size:12px">
+              <button class="btn btn-primary" style="border-radius:0 8px 8px 0;padding:0 12px"><i class="fas fa-search"></i></button>
+            </div>
+            <span style="font-size:11px;color:#9CA3AF;margin-left:auto">총 128건 중 50건 표시</span>
+          </div>
+
+          <!-- PC 테이블 -->
+          <div class="task-table-wrap">
+            <table class="task-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>공사요청번호 <span class="sort-arrow">↕</span></th>
+                  <th>작업번호 <span class="sort-arrow">▲</span></th>
+                  <th>작업종류 <span class="sort-arrow">↕</span></th>
+                  <th>작업분류 <span class="sort-arrow">↕</span></th>
+                  <th>작업(예정)일 <span class="sort-arrow">↕</span></th>
+                  <th>공사담당자 <span class="sort-arrow">↕</span></th>
+                  <th>작업명 <span class="sort-arrow">↕</span></th>
+                  <th style="text-align:right">상태/관리</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr onmouseover="this.style.background='#FAF8FC'" onmouseout="this.style.background=''">
+                  <td>1</td>
+                  <td style="color:#6B7280">REQ-2026-0741</td>
+                  <td><span class="task-num">WKS-260701-00001-0021</span></td>
+                  <td>광가설</td>
+                  <td>광케이블시설</td>
+                  <td>2026-07-10</td>
+                  <td>김안전</td>
+                  <td><span class="task-title">서울 강남구 삼성동 광케이블 신설 작업</span></td>
+                  <td style="text-align:right">
+                    <span class="badge-rl high">고위험</span>
+                    <span class="badge-st" style="color:#D70072">작업진행중</span>
+                    <span style="display:inline-flex;gap:3px;margin-left:4px;vertical-align:middle">
+                      <button style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;color:#685182;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"><i class="fas fa-edit"></i></button>
+                    </span>
+                  </td>
+                </tr>
+                <tr onmouseover="this.style.background='#FAF8FC'" onmouseout="this.style.background=''" style="background:#FAF8FC">
+                  <td>2</td>
+                  <td style="color:#6B7280">REQ-2026-0738</td>
+                  <td><span class="task-num">WKS-260630-00015-0009</span></td>
+                  <td>중계기증설</td>
+                  <td>장비·기타</td>
+                  <td>2026-07-09</td>
+                  <td>박현장</td>
+                  <td><span class="task-title">부산 해운대구 중계기 증설 및 케이블 접속</span></td>
+                  <td style="text-align:right">
+                    <span class="badge-rl medium">중위험</span>
+                    <span class="badge-st" style="color:#8B6BA8">TBM완료</span>
+                    <span style="display:inline-flex;gap:3px;margin-left:4px;vertical-align:middle">
+                      <button style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;color:#685182;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"><i class="fas fa-edit"></i></button>
+                    </span>
+                  </td>
+                </tr>
+                <tr onmouseover="this.style.background='#FAF8FC'" onmouseout="this.style.background=''">
+                  <td>3</td>
+                  <td style="color:#6B7280">REQ-2026-0721</td>
+                  <td><span class="task-num">WKS-260620-00008-0003</span></td>
+                  <td>광접속</td>
+                  <td>광케이블접속</td>
+                  <td>2026-07-08</td>
+                  <td>이안전</td>
+                  <td><span class="task-title">인천 남동구 광케이블 접속 및 시험 측정</span></td>
+                  <td style="text-align:right">
+                    <span class="badge-rl normal">일반</span>
+                    <span class="badge-st" style="color:#22c55e">일지작성완료</span>
+                    <!-- sysadmin 전용 삭제 버튼 (일반 관리자는 보이지 않음) -->
+                  </td>
+                </tr>
+                <tr onmouseover="this.style.background='#FAF8FC'" onmouseout="this.style.background=''">
+                  <td>4</td>
+                  <td style="color:#6B7280">REQ-2026-0715</td>
+                  <td><span class="task-num">WKS-260615-00022-0011</span></td>
+                  <td>관로시설</td>
+                  <td>관로시설</td>
+                  <td>2026-07-12</td>
+                  <td>최담당</td>
+                  <td><span class="task-title">대전 유성구 관로 시설 및 광케이블 포설</span></td>
+                  <td style="text-align:right">
+                    <span class="badge-rl high">고위험</span>
+                    <span class="badge-st" style="color:#9CA3AF">미배정</span>
+                    <span style="display:inline-flex;gap:3px;margin-left:4px;vertical-align:middle">
+                      <button style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;color:#685182;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"><i class="fas fa-edit"></i></button>
+                    </span>
+                  </td>
+                </tr>
+                <tr onmouseover="this.style.background='#FAF8FC'" onmouseout="this.style.background=''">
+                  <td>5</td>
+                  <td style="color:#6B7280">REQ-2026-0709</td>
+                  <td><span class="task-num">WKS-260610-00031-0007</span></td>
+                  <td>광가설</td>
+                  <td>광케이블시설</td>
+                  <td>2026-07-11</td>
+                  <td>김안전</td>
+                  <td><span class="task-title">광주 광산구 아파트 단지 광케이블 신설</span></td>
+                  <td style="text-align:right">
+                    <span class="badge-rl medium">중위험</span>
+                    <span class="badge-st" style="color:#9B59B6">체크리스트완료</span>
+                    <span style="display:inline-flex;gap:3px;margin-left:4px;vertical-align:middle">
+                      <button style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;color:#685182;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"><i class="fas fa-edit"></i></button>
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 더보기 -->
+          <div class="load-more">
+            <button class="btn-loadmore"><i class="fas fa-chevron-down" style="margin-right:4px"></i>더 보기 (78건 남음)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 기능 설명 -->
+    <div style="margin-top:12px;background:white;border-radius:12px;padding:14px;border:1px solid #EDE7F6">
+      <div style="font-size:12px;font-weight:700;color:#685182;margin-bottom:8px"><i class="fas fa-table mr-1"></i> PC 테이블 기능</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#374151">
+        <div>✅ 컬럼 헤더 클릭 → 오름/내림차순 정렬 (↕ / ▲ / ▼)</div>
+        <div>✅ 행 클릭 → 작업 상세 모달 열기</div>
+        <div>✅ 위험도·진행단계 배지 인라인 표시</div>
+        <div>✅ 수정 버튼 (admin/supervisor만 표시)</div>
+        <div>✅ 삭제 버튼 (sysadmin + 완료/취소 상태만)</div>
+        <div>✅ 더보기 → 누적 번호 연속 (51번부터)</div>
+        <div>✅ sticky 헤더 — 스크롤 시 고정</div>
+        <div>✅ title 속성 특수문자 XSS 방어</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 모바일 뷰 ── -->
+  <div class="sim-mobile">
+    <div class="sim-label"><i class="fas fa-mobile-alt"></i> 모바일 뷰 (768px 이하) — 1열 카드</div>
+    <div class="mobile-frame">
+      <div class="mobile-topbar">
+        <span class="logo"><i class="fas fa-shield-alt mr-1"></i>SafetyNOTE</span>
+        <span class="page" style="color:rgba(255,255,255,.7)">작업관리</span>
+      </div>
+      <div class="mobile-content">
+        <!-- 툴바 -->
+        <div class="mobile-toolbar">
+          <button class="btn btn-primary" style="font-size:10px;padding:4px 8px"><i class="fas fa-plus"></i> 작업생성</button>
+          <button class="btn btn-filter" style="border-color:#685182;color:#685182;font-size:10px">
+            <i class="fas fa-user-tie" style="font-size:9px"></i> 공사담당자 <span style="background:#685182;color:white;border-radius:9px;padding:0 4px;font-size:8px">2</span>
+          </button>
+          <select class="fc" style="font-size:10px;padding:4px 6px"><option>전체단계</option></select>
+        </div>
+        <div style="margin-bottom:6px;display:flex;gap:4px">
+          <select class="fc" style="font-size:10px;padding:4px;width:70px"><option>작업번호</option></select>
+          <input type="text" placeholder="WKS-번호 입력" style="flex:1;padding:4px 8px;border:1px solid #E5E7EB;border-radius:8px 0 0 8px;border-right:none;font-size:10px">
+          <button class="btn btn-primary" style="border-radius:0 8px 8px 0;padding:0 8px;font-size:10px"><i class="fas fa-search"></i></button>
+        </div>
+        <div style="font-size:10px;color:#9CA3AF;margin-bottom:6px;text-align:right">총 128건 중 50건</div>
+
+        <!-- 카드 1열 -->
+        <div class="card-grid-1col">
+          <!-- 카드 1 -->
+          <div class="task-card">
+            <div class="card-top">
+              <span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:20px;background:#FDE8F3;color:#D70072">
+                <i class="fas fa-exclamation-triangle" style="font-size:7px;margin-right:1px"></i>고위험
+              </span>
+              <div style="display:flex;gap:3px">
+                <button style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;color:#685182;font-size:9px;display:flex;align-items:center;justify-content:center"><i class="fas fa-edit"></i></button>
+              </div>
+            </div>
+            <div class="card-title">서울 강남구 삼성동 광케이블 신설 작업</div>
+            <div class="card-meta" style="margin-top:4px">
+              <span><i class="fas fa-hashtag" style="font-size:8px;margin-right:1px"></i>REQ-2026-0741</span>
+              <span style="font-family:monospace;color:#685182;font-weight:600;margin-left:6px">WKS-260701-00001-0021</span>
+            </div>
+            <div class="card-tags">
+              <span class="tag tag-type">광가설</span>
+              <span class="tag tag-class">광케이블시설</span>
+              <span style="font-size:9px;color:#6B7280"><i class="fas fa-users" style="font-size:8px"></i> 1팀</span>
+            </div>
+            <div style="font-size:9px;color:#9CA3AF;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              <i class="fas fa-map-marker-alt" style="margin-right:2px;color:#C6B8D8"></i>서울 강남구 삼성동
+            </div>
+            <div class="stage-bar">
+              <div class="stage-seg" style="background:#D70072"></div>
+              <div class="stage-seg" style="background:#D70072"></div>
+              <div class="stage-seg" style="background:#D70072"></div>
+              <div class="stage-seg" style="background:#D70072"></div>
+              <div class="stage-seg" style="background:#D70072"></div>
+              <div class="stage-seg" style="background:#E5E7EB"></div>
+              <div class="stage-seg" style="background:#E5E7EB"></div>
+            </div>
+            <div class="stage-label" style="color:#D70072">작업진행중</div>
+          </div>
+
+          <!-- 카드 2 -->
+          <div class="task-card">
+            <div class="card-top">
+              <span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:20px;background:#EDE7F6;color:#9B59B6">중위험</span>
+              <div style="display:flex;gap:3px">
+                <button style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;color:#685182;font-size:9px;display:flex;align-items:center;justify-content:center"><i class="fas fa-edit"></i></button>
+              </div>
+            </div>
+            <div class="card-title">부산 해운대구 중계기 증설 및 케이블 접속</div>
+            <div class="card-meta" style="margin-top:4px">
+              <span><i class="fas fa-hashtag" style="font-size:8px;margin-right:1px"></i>REQ-2026-0738</span>
+              <span style="font-family:monospace;color:#685182;font-weight:600;margin-left:6px">WKS-260630-00015-0009</span>
+            </div>
+            <div class="card-tags">
+              <span class="tag tag-type">중계기증설</span>
+              <span class="tag tag-class">장비·기타</span>
+            </div>
+            <div style="font-size:9px;color:#9CA3AF;margin-bottom:6px">
+              <i class="fas fa-map-marker-alt" style="margin-right:2px;color:#C6B8D8"></i>부산 해운대구
+            </div>
+            <div class="stage-bar">
+              <div class="stage-seg" style="background:#D70072"></div>
+              <div class="stage-seg" style="background:#D70072"></div>
+              <div class="stage-seg" style="background:#D70072"></div>
+              <div class="stage-seg" style="background:#8B6BA8"></div>
+              <div class="stage-seg" style="background:#E5E7EB"></div>
+              <div class="stage-seg" style="background:#E5E7EB"></div>
+              <div class="stage-seg" style="background:#E5E7EB"></div>
+            </div>
+            <div class="stage-label" style="color:#8B6BA8">TBM완료</div>
+          </div>
+
+          <!-- 카드 3 -->
+          <div class="task-card">
+            <div class="card-top">
+              <span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:20px;background:#F5F0F8;color:#685182">일반</span>
+            </div>
+            <div class="card-title">인천 남동구 광케이블 접속 및 시험 측정</div>
+            <div class="card-meta" style="margin-top:4px">
+              <span><i class="fas fa-hashtag" style="font-size:8px;margin-right:1px"></i>REQ-2026-0721</span>
+              <span style="font-family:monospace;color:#685182;font-weight:600;margin-left:6px">WKS-260620-00008-0003</span>
+            </div>
+            <div class="card-tags">
+              <span class="tag tag-type">광접속</span>
+              <span class="tag tag-class">광케이블접속</span>
+            </div>
+            <div style="font-size:9px;color:#9CA3AF;margin-bottom:6px">
+              <i class="fas fa-map-marker-alt" style="margin-right:2px;color:#C6B8D8"></i>인천 남동구
+            </div>
+            <div class="stage-bar">
+              <div class="stage-seg" style="background:#685182"></div>
+              <div class="stage-seg" style="background:#685182"></div>
+              <div class="stage-seg" style="background:#685182"></div>
+              <div class="stage-seg" style="background:#685182"></div>
+              <div class="stage-seg" style="background:#685182"></div>
+              <div class="stage-seg" style="background:#685182"></div>
+              <div class="stage-seg" style="background:#685182"></div>
+            </div>
+            <div class="stage-label" style="color:#685182">일지작성완료</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 모바일 하단 탭바 -->
+      <div style="background:#1A1A2E;display:flex;border-top:1px solid rgba(255,255,255,.1);padding:4px 0">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:4px 0;font-size:8px;color:rgba(255,255,255,.45)"><i class="fas fa-home" style="font-size:13px"></i><span>홈</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:4px 0;font-size:8px;color:#D70072"><i class="fas fa-tasks" style="font-size:13px"></i><span style="font-weight:700">작업</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:4px 0;font-size:8px;color:rgba(255,255,255,.45)"><i class="fas fa-building" style="font-size:13px"></i><span>공사</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:4px 0;font-size:8px;color:rgba(255,255,255,.45)"><i class="fas fa-search" style="font-size:13px"></i><span>점검</span></div>
+      </div>
+    </div>
+
+    <!-- 모바일 기능 설명 -->
+    <div style="margin-top:12px;background:white;border-radius:12px;padding:12px;border:1px solid #EDE7F6;font-size:11px">
+      <div style="font-weight:700;color:#685182;margin-bottom:6px"><i class="fas fa-mobile-alt mr-1"></i> 모바일 카드 기능</div>
+      <div style="color:#374151;line-height:1.8">
+        ✅ 1열 카드 배치 (기존 2열 → 1열)<br>
+        ✅ 작업번호: WKS-번호-서브번호 조합<br>
+        ✅ 진행단계 컬러 바 + 텍스트<br>
+        ✅ 위험도 배지 (고/중/일반 색상)<br>
+        ✅ 카드 클릭 → 상세 모달
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 검증 결과 표 -->
+<div style="max-width:1600px;margin:0 auto;padding:0 24px 24px">
+  <div style="background:white;border-radius:12px;padding:16px;border:1px solid #EDE7F6">
+    <div style="font-size:13px;font-weight:800;color:#1A1A2E;margin-bottom:12px">
+      <i class="fas fa-clipboard-check mr-2" style="color:#685182"></i>검증 결과 요약
+    </div>
+    <table class="check-table">
+      <thead>
+        <tr>
+          <th>#</th><th>위험도</th><th>문제</th><th>수정 여부</th><th>비고</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>①</td>
+          <td><span style="color:#D70072;font-weight:700">🔴 HIGH</span></td>
+          <td>삭제 버튼 권한 오류 — <code>admin||supervisor</code> 기준으로 삭제버튼 표시 (FEAT-053: sysadmin+completed만 허용)</td>
+          <td><span class="fixed">✅ 수정완료</span></td>
+          <td>수정버튼: admin/supervisor / 삭제버튼: sysadmin+completed/cancelled</td>
+        </tr>
+        <tr>
+          <td>②</td>
+          <td><span style="color:#f59e0b;font-weight:700">🟡 MED</span></td>
+          <td>더보기 누적 시 # 번호 1부터 재시작 (51번째가 다시 1로)</td>
+          <td><span class="fixed">✅ 수정완료</span></td>
+          <td>renderTableView(data, offset) — 정렬 시 offset=0</td>
+        </tr>
+        <tr>
+          <td>③</td>
+          <td><span style="color:#f59e0b;font-weight:700">🟡 MED</span></td>
+          <td>title="" 속성에 t.title 직접 삽입 — 따옴표 포함 데이터 시 HTML 탈출</td>
+          <td><span class="fixed">✅ 수정완료</span></td>
+          <td>_tblEsc() 헬퍼: &amp;&quot;&lt;&gt; 이스케이핑 적용</td>
+        </tr>
+        <tr>
+          <td>④</td>
+          <td><span style="color:#6B7280;font-weight:700">🔵 INFO</span></td>
+          <td>_sortTrigger가 다른 페이지(팀관리 등)에서도 window에 등록됨 — 페이지 이동 시 덮어씀</td>
+          <td><span class="ok">✅ 정상</span></td>
+          <td>기존 구조와 동일 패턴, 페이지 전환 시 renderTasksPage 재실행으로 재등록됨</td>
+        </tr>
+        <tr>
+          <td>⑤</td>
+          <td><span style="color:#6B7280;font-weight:700">🔵 INFO</span></td>
+          <td>con_manager_display_name null 정렬 — sortTable 내 <code>?? ''</code> 처리 확인</td>
+          <td><span class="ok">✅ 정상</span></td>
+          <td>L1212: <code>let av = a[col] ?? ''</code> — null/undefined → 빈문자열로 안전 처리</td>
+        </tr>
+        <tr>
+          <td>⑥</td>
+          <td><span style="color:#6B7280;font-weight:700">🔵 INFO</span></td>
+          <td>RULE-010: style.css 미디어쿼리가 .main-content에 영향 주지 않음 확인</td>
+          <td><span class="ok">✅ 정상</span></td>
+          <td>#taskTableView, #taskCardGrid ID 셀렉터만 사용 — Option C 레이아웃 영향 없음</td>
+        </tr>
+        <tr>
+          <td>⑦</td>
+          <td><span style="color:#6B7280;font-weight:700">🔵 INFO</span></td>
+          <td>BUG-040 (is_auto_request_no LGU+ 필터) 영향</td>
+          <td><span class="ok">✅ 정상</span></td>
+          <td>tasks.ts 데이터 레이어 — LGU+ WHERE 조건은 쿼리에서 처리, 프론트 변경 무관</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 커밋 정보 -->
+  <div style="margin-top:12px;background:#1A1A2E;border-radius:12px;padding:14px;display:flex;gap:20px;align-items:center">
+    <div style="color:rgba(255,255,255,.5);font-size:11px">최신 커밋</div>
+    <div>
+      <div style="color:#D70072;font-family:monospace;font-size:12px;font-weight:700">1f7825e</div>
+      <div style="color:rgba(255,255,255,.75);font-size:11px">fix: [FEAT-061] PC 테이블 렌더러 3개 버그 수정</div>
+    </div>
+    <div style="margin-left:auto;text-align:right">
+      <div style="color:#22c55e;font-size:11px;font-weight:700">✅ GitHub 푸시 완료</div>
+      <div style="color:rgba(255,255,255,.4);font-size:10px">2f80be4 → 76eccad → 1f7825e</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

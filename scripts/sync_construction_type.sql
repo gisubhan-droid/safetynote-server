@@ -4,7 +4,7 @@
 --       → 연결된 constructions.work_class 영문키를 한글명으로 변환하여 반영
 --
 -- 실행 방법 (NAS):
---   sqlite3 /path/to/safety.db < sync_construction_type.sql
+--   sqlite3 /volume1/safetynote/safety.db < sync_construction_type.sql
 --
 -- ※ 주의: 실행 전 반드시 STEP 1(사전 조회)로 영향 건수를 확인하세요.
 -- ※ 주의: BUG-040 — is_auto_request_no(LGU+ 자동생성) 컬럼은 건드리지 않습니다.

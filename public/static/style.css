@@ -1398,3 +1398,39 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ─── 작업관리 전체 레이아웃 루트 ─────────────────────────────────────── */
+/* max-width 없이 전체 너비 사용, 좌우 패딩만 유지 */
+.task-list-root {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 16px 16px;
+}
+@media (max-width: 768px) {
+  .task-list-root {
+    padding: 0 8px 12px;
+  }
+}
+
+/* ─── 작업관리 툴바 Sticky 고정 ────────────────────────────────────────
+   top-header(56px) 바로 아래 고정
+   배경·그림자로 스크롤 시 콘텐츠와 분리
+   z-index: top-header(100) 보다 낮되 테이블 thead(10)보다 높게
+──────────────────────────────────────────────────────────────────── */
+.task-toolbar-sticky {
+  position: sticky;
+  top: 56px;             /* top-header 높이 */
+  z-index: 50;
+  background: #fff;
+  padding: 10px 0 6px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #EDE7F6;
+  box-shadow: 0 2px 8px rgba(104, 81, 130, 0.07);
+}
+/* 모바일: top-header가 없는 경우 top:0 */
+@media (max-width: 768px) {
+  .task-toolbar-sticky {
+    top: 0;
+    padding: 8px 0 4px;
+  }
+}

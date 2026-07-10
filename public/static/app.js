@@ -4959,9 +4959,12 @@ async function renderTasksPage(container) {
     })();
 
     container.innerHTML = `
-    <div class="page-container">
+    <div class="task-list-root">
       <!-- 활성 필터 배너 -->
       ${filterBannerHtml}
+
+      <!-- ── sticky 툴바 래퍼 (스크롤 시 상단 고정) ── -->
+      <div class="task-toolbar-sticky">
 
       <!-- 툴바 1행: 작업생성 + 담당자 + 진행단계 필터 + 날짜 + 엑셀 -->
       <div class="flex flex-wrap gap-2 mb-2 items-center">
@@ -5067,6 +5070,8 @@ async function renderTasksPage(container) {
         작업번호 형식: <span style="font-family:monospace;color:#685182;font-weight:600">WKS-######-#####-####</span>
         &nbsp;(메인작업번호-서브번호) · 일부 번호 또는 서브번호만 입력해도 조회됩니다
       </div>
+
+      </div><!-- /.task-toolbar-sticky -->
 
       <!-- ── PC 테이블 뷰 (768px 초과) ─────────────────────────────── -->
       <div id="taskTableView" style="display:none;overflow-x:auto;border-radius:12px;border:1px solid #EDE7F6;background:white">

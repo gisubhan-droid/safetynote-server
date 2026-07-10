@@ -2966,13 +2966,14 @@ function navigateTo(page) {
 
   const content = document.getElementById('page-content');
 
-  // site-map 이탈 시: page-content flex 스타일 리셋 + ResizeObserver 해제
+  // site-map 이탈 시: page-content 스타일 리셋 + ResizeObserver 해제
   if (page !== 'site-map') {
     content.style.display = '';
     content.style.flexDirection = '';
     content.style.flex = '';
     content.style.height = '';
     content.style.boxSizing = '';
+    content.style.overflowY = '';
     if (window._siteMapResizeObserver) {
       window._siteMapResizeObserver.disconnect();
       window._siteMapResizeObserver = null;
@@ -35965,7 +35966,7 @@ async function renderSiteMapPage(container) {
   // ── 탭 정의 ──
   const TAB_DEFS = [
     { key:'risk',       label:'⚠️ 위험성체크', color:'#F59E0B', desc:'위험성평가 작성 위치' },
-    { key:'tbm',        label:'🦺 TBM',       color:'#685182', desc:'TBM을 실시한 현장 위치 (작업 진행 여부 무관)' },
+    { key:'tbm',        label:'🦺 TBM',       color:'#685182', desc:'TBM 완료 후 작업 개시 대기 중인 현장 위치' },
     { key:'working',    label:'🟢 진행',       color:'#10B981', desc:'작업 개시(진행중) 현장 위치' },
     { key:'completed',  label:'✅ 완료',       color:'#6B7280', desc:'작업 완료된 현장 위치' },
   ];
@@ -35984,16 +35985,16 @@ async function renderSiteMapPage(container) {
   const userLabel = selUser ? selUser.name : '전체 사용자';
 
   container.innerHTML = `
-    <div id="siteMapRoot" style="display:flex;flex-direction:column;height:100%">
+    <div id="siteMapRoot" style="display:flex;flex-direction:column;height:100%;overflow:hidden">
 
       <!-- 헤더 -->
-      <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center justify-between mb-3" style="flex-shrink:0">
         <h2 class="text-xl font-black text-gray-900" style="border-left:4px solid #685182;padding-left:10px">현장위치 지도</h2>
         <p class="text-xs text-gray-400">${dateRangeLabel}</p>
       </div>
 
       <!-- ① 구분 탭 (현장점검과 동일 라운드 버튼) -->
-      <div class="flex gap-1 mb-3 flex-wrap">
+      <div class="flex gap-1 mb-3 flex-wrap" style="flex-shrink:0">
         ${TAB_DEFS.map(tab => {
           const isActive = _tab === tab.key;
           return `<button
@@ -36048,8 +36049,8 @@ async function renderSiteMapPage(container) {
         </div>
       </div>
 
-      <!-- ③ 지도 (flex-grow: 남은 공간 모두 차지) -->
-      <div id="leafletMap" style="width:100%;flex:1;min-height:300px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;"></div>
+      <!-- ③ 지도 (화면 70% 높이 고정) -->
+      <div id="leafletMap" style="width:100%;height:70vh;min-height:300px;max-height:600px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;flex-shrink:0;"></div>
 
       <!-- ④ 범례 -->
       <div class="flex gap-4 mt-3 text-sm flex-wrap" id="siteMapLegend" style="flex-shrink:0">
@@ -36063,18 +36064,18 @@ async function renderSiteMapPage(container) {
         </span>` : ''}
       </div>
 
-      <!-- ⑤ 위치 목록 -->
-      <div id="siteMapList" class="mt-4 space-y-2" style="flex-shrink:0"></div>
+      <!-- ⑤ 위치 목록 (스크롤 가능 영역) -->
+      <div id="siteMapList" class="mt-3 space-y-2" style="overflow-y:auto;max-height:40vh;padding-bottom:16px;flex-shrink:0"></div>
     </div>
   `;
 
-  // page-content가 남은 화면을 모두 채우도록 flex 설정
+  // page-content: 현장위치 지도는 지도 70vh + 리스트 스크롤 구조 → overflow-y:auto
   const pageContent = document.getElementById('page-content');
   if (pageContent) {
-    pageContent.style.display = 'flex';
-    pageContent.style.flexDirection = 'column';
-    pageContent.style.flex = '1';
-    pageContent.style.height = '100%';
+    pageContent.style.display = 'block';
+    pageContent.style.overflowY = 'auto';
+    pageContent.style.flex = '';
+    pageContent.style.height = 'auto';
     pageContent.style.boxSizing = 'border-box';
   }
 
@@ -36173,7 +36174,7 @@ async function loadSiteMapMarkers(map) {
   // 탭별 색상/아이콘 정의
   const TAB_META = {
     risk:      { color: '#F59E0B', faIcon: 'fa-exclamation-triangle', label: '⚠️ 위험성체크', emptyMsg: '위험성평가 작성 시 GPS 버튼을 눌러 위치를 기록해 주세요.' },
-    tbm:       { color: '#685182', faIcon: 'fa-hard-hat',             label: '🦺 TBM (개시 대기)',    emptyMsg: 'TBM 완료 후 작업 개시 대기 중인 작업이 없거나 GPS 기록이 없습니다.' },
+    tbm:       { color: '#685182', faIcon: 'fa-hard-hat',             label: '🦺 TBM',               emptyMsg: 'TBM 완료(작업개시 대기) 상태의 GPS 기록이 없습니다.' },
     working:   { color: '#10B981', faIcon: 'fa-play-circle',          label: '🟢 진행중',             emptyMsg: '작업 개시 시 GPS를 허용하면 위치가 기록됩니다. 현재 진행중 GPS 기록이 없습니다.' },
     completed: { color: '#6B7280', faIcon: 'fa-check-circle',         label: '✅ 완료',               emptyMsg: '완료된 작업의 GPS 기록이 없습니다.' },
   };
@@ -36213,14 +36214,23 @@ async function loadSiteMapMarkers(map) {
         : _rawRiskList;
       for (const ra of list) {
         // tasks JOIN으로 받은 GPS 사용 (risk_assessments 테이블엔 GPS 없음)
-        if (!ra.gps_lat || !ra.gps_lon) continue;
-        const lat = parseFloat(ra.gps_lat);
-        const lon = parseFloat(ra.gps_lon);
-        if (isNaN(lat) || isNaN(lon)) continue;
+        // GPS 없으면 work_order_address → confirmed_address → task_location 주소 fallback (지도 마커는 skip, 목록엔 표시)
+        const hasGps = ra.gps_lat && ra.gps_lon;
+        const lat = hasGps ? parseFloat(ra.gps_lat) : NaN;
+        const lon = hasGps ? parseFloat(ra.gps_lon) : NaN;
+        const gpsValid = !isNaN(lat) && !isNaN(lon);
 
         const displayDate = _toKSTDateTime(ra.created_at || '');
         const name = ra.task_title || ra.work_type_name || '위험성평가';
-        const addr = ra.gps_address || ra.confirmed_address || ra.task_location || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+        // GPS 주소 우선, 없으면 작업지시 주소(work_order_address) → 확정주소 → 작업위치 순 fallback
+        const addr = ra.gps_address || ra.work_order_address || ra.confirmed_address || ra.task_location || (gpsValid ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : '주소 미기록');
+
+        // GPS 없는 건은 목록에만 추가 (지도 마커는 GPS 보유 건만)
+        if (!gpsValid) {
+          listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
+            author: ra.assessor_name || '', address: addr, lat: null, lon: null, noGps: true });
+          continue;
+        }
 
         const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, '⚠️ 위험성') }).addTo(map);
         marker.bindPopup(`
@@ -36260,8 +36270,9 @@ async function loadSiteMapMarkers(map) {
         ? _rawTbmList.filter(function(t) { return t.is_auto_request_no === 0; })
         : _rawTbmList;
       for (const tbm of list) {
-        // [BUG-079 fix] TBM GPS 위치는 작업이 이후 단계(working/completed)로 진행되어도 표시
-        // (TBM 탭 = "TBM을 실시한 현장 위치" 기록, 단 GPS 없는 건은 skip)
+        // TBM 탭 조건: task_status='tbm_done' (TBM완료~작업개시전) 만 표시
+        // working/completed 진행 건은 각각 진행·완료 탭에서 표시
+        if (tbm.task_status !== 'tbm_done') continue;
         if (!tbm.gps_lat || !tbm.gps_lon) continue;
         const lat = parseFloat(tbm.gps_lat);
         const lon = parseFloat(tbm.gps_lon);
@@ -36274,7 +36285,7 @@ async function loadSiteMapMarkers(map) {
         const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, '🦺 TBM') }).addTo(map);
         marker.bindPopup(`
           <div style="min-width:200px;font-size:13px;">
-            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🦺 TBM 실시 현장</div>
+            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🦺 TBM 완료 (작업개시 대기)</div>
             <div style="font-weight:600">${name}</div>
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-user mr-1"></i>${tbm.conductor_name || '-'}
@@ -36561,21 +36572,23 @@ async function loadSiteMapMarkers(map) {
             <div class="text-xs text-gray-400">${dateRangeLabel}</div>
           </div>
           ${listItems.map(item => `
-            <div class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
-              <!-- 아이콘 (클릭 → 지도 이동) -->
-              <div style="width:36px;height:36px;background:${item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer"
-                onclick="_moveSiteMapTo(${item.lat}, ${item.lon})" title="지도에서 위치 보기">
-                <i class="fas ${item.icon} text-white text-xs"></i>
+            <div class="flex items-center gap-3 p-3 bg-white rounded-xl border ${item.noGps ? 'border-dashed border-gray-200 opacity-75' : 'border-gray-100 hover:bg-gray-50'} transition-colors">
+              <!-- 아이콘 (GPS 있으면 클릭 → 지도 이동, 없으면 비활성) -->
+              <div style="width:36px;height:36px;background:${item.noGps ? '#D1D5DB' : item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;${item.noGps ? 'cursor:default' : 'cursor:pointer'}"
+                ${item.noGps ? '' : `onclick="_moveSiteMapTo(${item.lat}, ${item.lon})" title="지도에서 위치 보기"`}>
+                <i class="fas ${item.noGps ? 'fa-map-marker' : item.icon} text-white text-xs"></i>
               </div>
-              <!-- 내용 (클릭 → 지도 이동) -->
-              <div class="flex-1 min-w-0 cursor-pointer" onclick="_moveSiteMapTo(${item.lat}, ${item.lon})">
+              <!-- 내용 -->
+              <div class="flex-1 min-w-0 ${item.noGps ? '' : 'cursor-pointer'}"
+                ${item.noGps ? '' : `onclick="_moveSiteMapTo(${item.lat}, ${item.lon})"`}>
                 <div class="font-semibold text-gray-800 text-sm truncate">${item.name}</div>
-                ${item.author ? `<div class="text-xs font-medium truncate" style="color:${item.color}">
+                ${item.author ? `<div class="text-xs font-medium truncate" style="color:${item.noGps ? '#9CA3AF' : item.color}">
                   <i class="fas fa-user mr-1"></i>${item.author}
                 </div>` : ''}
                 <div class="text-xs text-gray-400 truncate mt-0.5">
                   <i class="fas fa-calendar-alt mr-1"></i>${item.date || '-'}
-                  &nbsp;·&nbsp;<i class="fas fa-map-marker-alt mr-1"></i>${item.address}
+                  &nbsp;·&nbsp;<i class="fas ${item.noGps ? 'fa-map-marker' : 'fa-map-marker-alt'} mr-1"></i>${item.address}
+                  ${item.noGps ? '<span class="ml-1 text-gray-300">(GPS미기록)</span>' : ''}
                 </div>
               </div>
               <!-- 작업 상세 이동 버튼 (taskId 있을 때만) -->

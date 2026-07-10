@@ -154,8 +154,9 @@ app.post('/', async (c) => {
   if (work_number && !/^WKS-\d{6}-\d{5}$/.test(work_number)) {
     return c.json({ error: '작업번호 형식: WKS-######-#####' }, 400)
   }
-  // 공사종류 유효값 검증
-  const VALID_WORK_CLASS = ['relocation', 'subscription', 'conduit', 'environment', 'other']
+  // 공사종류 유효값 검증 — CON_TYPE_DEF key 목록과 동기화 필요
+  // app.js CON_TYPE_DEF 에 항목 추가 시 이 배열도 함께 추가할 것
+  const VALID_WORK_CLASS = ['relocation', 'subscription', 'conduit', 'environment', 'separate', 'other']
   if (work_class && !VALID_WORK_CLASS.includes(work_class)) {
     return c.json({ error: '공사종류 값이 올바르지 않습니다' }, 400)
   }
@@ -209,7 +210,7 @@ app.put('/:id', async (c) => {
     return c.json({ error: '작업번호 형식: WKS-######-#####' }, 400)
   }
   // 공사종류 유효값 검증
-  const VALID_WORK_CLASS_PUT = ['relocation', 'subscription', 'conduit', 'environment', 'other']
+  const VALID_WORK_CLASS_PUT = ['relocation', 'subscription', 'conduit', 'environment', 'separate', 'other']
   if (work_class && !VALID_WORK_CLASS_PUT.includes(work_class)) {
     return c.json({ error: '공사종류 값이 올바르지 않습니다' }, 400)
   }

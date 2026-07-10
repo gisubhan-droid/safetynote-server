@@ -3895,11 +3895,7 @@ async function showCreateConstructionModal(editId = null) {
               </label>
               <select id="cWorkClass" class="form-control">
                 <option value="">-- 선택 --</option>
-                <option value="relocation"   ${(con.work_class||'')==='relocation'   ?'selected':''}>지장이설</option>
-                <option value="subscription" ${(con.work_class||'')==='subscription' ?'selected':''}>청약개통</option>
-                <option value="conduit"      ${(con.work_class||'')==='conduit'      ?'selected':''}>관로</option>
-                <option value="environment"  ${(con.work_class||'')==='environment'  ?'selected':''}>환경공사</option>
-                <option value="other"        ${(con.work_class||'')==='other'        ?'selected':''}>기타</option>
+                ${conTypeSelectOptions(con.work_class||'')}
               </select>
             </div>
 
@@ -3973,14 +3969,129 @@ async function showCreateConstructionModal(editId = null) {
   document.body.appendChild(overlay);
 }
 
-// work_class 영문키 → 한글 매핑
-const WC_LABEL = {
-  relocation:   '지장이설',
-  subscription: '청약개통',
-  conduit:      '관로',
-  environment:  '환경공사',
-  other:        '기타',
-};
+// ═══════════════════════════════════════════════════════════════════════════
+// CON_TYPE_DEF — 공사종류 단일 진실 공급원 (Single Source of Truth)
+//
+// ▸ 이 배열 하나만 수정하면 아래 모든 곳이 자동으로 반영됩니다:
+//     • 공사등록 폼  (cWorkClass select)
+//     • 작업등록 폼  (mConstructionType select)
+//     • 공사목록 배지, 작업목록 배지
+//     • 통계 화면 도넛차트 / 건수·완료율 카드
+//     • 외선·접속 일보 구분 뱃지
+//     • 백엔드 validation 배열 (constructions.ts VALID_CON_TYPE 참조)
+//
+// ▸ 필드 설명:
+//     key      : DB 저장값(work_class 컬럼 영문키 / construction_type 컬럼 한글값)
+//     label    : 화면 표시 한글명
+//     icon     : FontAwesome 클래스
+//     color    : 뱃지/차트 주색
+//     badgeBg  : 뱃지 배경색
+//     badgeTxt : 뱃지 글자색
+//     barColor : 통계 바 색상
+//     dotColor : 범례 dot 색
+//     border   : 통계 카드 테두리색
+//     badgeClass: 외선·접속 일보 뱃지 Tailwind 클래스
+// ═══════════════════════════════════════════════════════════════════════════
+const CON_TYPE_DEF = [
+  {
+    key: 'relocation',  label: '지장이설',
+    icon: 'fas fa-hard-hat',
+    color:    '#D70072', badgeBg: '#FDE8F3', badgeTxt: '#D70072',
+    barColor: '#D70072', dotColor: '#D70072', border: '#FF349E',
+    badgeClass: 'bg-orange-100 text-orange-700',
+  },
+  {
+    key: 'subscription', label: '청약개통',
+    icon: 'fas fa-plug-circle-check',
+    color:    '#FF349E', badgeBg: '#FDE8F3', badgeTxt: '#A8005A',
+    barColor: '#FF349E', dotColor: '#FF349E', border: '#FF349E',
+    badgeClass: 'bg-green-100 text-green-700',
+  },
+  {
+    key: 'conduit',     label: '관로공사',
+    icon: 'fas fa-circle-nodes',
+    color:    '#685182', badgeBg: '#EDE7F6', badgeTxt: '#4E3A63',
+    barColor: '#685182', dotColor: '#685182', border: '#8E72A8',
+    badgeClass: 'bg-blue-100 text-blue-700',
+  },
+  {
+    key: 'environment', label: '환경공사',
+    icon: 'fas fa-leaf',
+    color:    '#C6C6C6', badgeBg: '#F5F0F8', badgeTxt: '#685182',
+    barColor: '#C6C6C6', dotColor: '#C6C6C6', border: '#C6C6C6',
+    badgeClass: 'bg-purple-100 text-purple-700',
+  },
+  {
+    key: 'separate',    label: '별도사업',
+    icon: 'fas fa-building',
+    color:    '#0EA5E9', badgeBg: '#E0F2FE', badgeTxt: '#0369A1',
+    barColor: '#0EA5E9', dotColor: '#0EA5E9', border: '#38BDF8',
+    badgeClass: 'bg-sky-100 text-sky-700',
+  },
+  {
+    key: 'other',       label: '기타',
+    icon: 'fas fa-ellipsis-h',
+    color:    '#9CA3AF', badgeBg: '#F3F4F6', badgeTxt: '#374151',
+    barColor: '#9CA3AF', dotColor: '#9CA3AF', border: '#D1D5DB',
+    badgeClass: 'bg-gray-100 text-gray-600',
+  },
+];
+
+// ── CON_TYPE_DEF 파생 헬퍼 (한 번만 계산, 이후 O(1) 조회) ──────────────
+/** 영문키 → 항목 객체 */
+const _CON_BY_KEY   = Object.fromEntries(CON_TYPE_DEF.map(d => [d.key,   d]));
+/** 한글명 → 항목 객체 (construction_type 컬럼값으로 역조회) */
+const _CON_BY_LABEL = Object.fromEntries(CON_TYPE_DEF.map(d => [d.label, d]));
+
+/**
+ * 영문키(work_class) → 한글명 변환
+ * 예: conKeyToLabel('conduit') → '관로공사'
+ */
+function conKeyToLabel(key) {
+  return (_CON_BY_KEY[key] || {}).label || key || '-';
+}
+
+/**
+ * 한글명(construction_type) → 항목 객체 변환
+ * 예: conLabelToDef('관로공사') → { key:'conduit', label:'관로공사', ... }
+ * ※ 구데이터 호환: '관로' → conduit 항목 반환
+ */
+function conLabelToDef(label) {
+  if (!label) return null;
+  // 정확히 매칭되면 반환
+  if (_CON_BY_LABEL[label]) return _CON_BY_LABEL[label];
+  // 구데이터 호환 매핑 ('관로' → conduit)
+  const legacyMap = { '관로': 'conduit' };
+  if (legacyMap[label]) return _CON_BY_KEY[legacyMap[label]] || null;
+  return null;
+}
+
+/**
+ * cWorkClass select 옵션 HTML 생성 (공사등록 폼 — value=영문키)
+ * @param {string} selectedKey 현재 선택된 영문키
+ */
+function conTypeSelectOptions(selectedKey) {
+  return CON_TYPE_DEF.map(d =>
+    `<option value="${d.key}" ${d.key === selectedKey ? 'selected' : ''}>${d.label}</option>`
+  ).join('');
+}
+
+/**
+ * mConstructionType select 옵션 HTML 생성 (작업등록 폼 — value=한글명)
+ * 구데이터 '관로' 도 '관로공사'로 선택되도록 처리
+ * @param {string} selectedLabel 현재 선택된 한글명(construction_type 값)
+ */
+function conTypeTaskSelectOptions(selectedLabel) {
+  // 구데이터 호환: '관로' → '관로공사' 로 정규화
+  const legacyNorm = { '관로': '관로공사' };
+  const normed = legacyNorm[selectedLabel] || selectedLabel || '';
+  return CON_TYPE_DEF.map(d =>
+    `<option value="${d.label}" ${d.label === normed ? 'selected' : ''}>${d.label}</option>`
+  ).join('');
+}
+
+// ── 기존 WC_LABEL 유지 (CON_TYPE_DEF 기반으로 자동 생성 — 삭제 불가) ────
+const WC_LABEL = Object.fromEntries(CON_TYPE_DEF.map(d => [d.key, d.label]));
 
 // 공사요청번호 입력 → 공사정보 자동 연동
 async function autoLinkConstruction() {
@@ -5304,9 +5415,10 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
 
   const wc = task.work_class || 'cable_install';
   // 공사종류(ct): 기존 task값 → presetConstruction.work_class 변환 → 빈값 순으로 결정
-  const _WC_LABEL_STATIC = { relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사', other:'기타' };
+  // 공사종류(ct): task 직접값 → presetConstruction.work_class(영문키→한글) → 빈값 순
+  // conKeyToLabel()은 CON_TYPE_DEF 기반 → 항목 추가 시 자동 반영
   const ct = task.construction_type
-    || (presetConstruction?.work_class ? (_WC_LABEL_STATIC[presetConstruction.work_class] || '') : '')
+    || (presetConstruction?.work_class ? conKeyToLabel(presetConstruction.work_class) : '')
     || '';
   // presetConstruction 이 있으면 공사종류 select 를 읽기전용으로 처리
   const ctLinked = !!(presetConstruction?.work_class || task.construction_id);
@@ -5387,10 +5499,7 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
               style="${ctLinked ? 'display:none' : (ct ? 'display:none' : '')}"
               data-linked="${ctLinked ? '1' : ''}">
               <option value="" ${!ct?'selected':''}>-- 선택 --</option>
-              <option value="지장이설" ${ct==='지장이설'?'selected':''}>지장이설</option>
-              <option value="청약개통" ${ct==='청약개통'?'selected':''}>청약개통</option>
-              <option value="관로" ${ct==='관로'?'selected':''}>관로</option>
-              <option value="환경공사" ${ct==='환경공사'?'selected':''}>환경공사</option>
+              ${conTypeTaskSelectOptions(ct)}
             </select>
           </div>
           <!-- 공사담당자 -->
@@ -14882,55 +14991,45 @@ async function renderStatsPage(container) {
                     <div class="text-xs mt-0.5" style="color:#C6C6C6">전체</div>
                   </div>
                 </div>
-                <!-- 컬러 범례 -->
+                <!-- 컬러 범례 — CON_TYPE_DEF 기반 자동생성 -->
                 <div class="flex flex-wrap justify-center gap-x-3 gap-y-1.5">
-                  ${[
-                    { label:'지장이설', color:'#D70072' },
-                    { label:'청약개통', color:'#FF349E' },
-                    { label:'관로',     color:'#685182' },
-                    { label:'환경공사', color:'#C6C6C6' },
-                  ].map(l => `
+                  ${CON_TYPE_DEF.map(d => `
                     <div class="flex items-center gap-1.5">
-                      <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${l.color}"></span>
-                      <span class="text-xs" style="color:#4E3A63">${l.label}</span>
+                      <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${d.color}"></span>
+                      <span class="text-xs" style="color:#4E3A63">${d.label}</span>
                     </div>`).join('')}
                 </div>
               </div>
               <!-- 공사종류별 건수·완료율 카드 -->
               <div class="flex-1 w-full grid grid-cols-2 gap-3">
                 ${(() => {
-                  const ctDef = [
-                    { key:'지장이설', icon:'fas fa-hard-hat',         bg:'#FDE8F3', border:'#FF349E', txt:'#D70072', dot:'#D70072', bar:'#D70072' },
-                    { key:'청약개통', icon:'fas fa-plug-circle-check', bg:'#FDE8F3', border:'#FF349E', txt:'#A8005A', dot:'#FF349E', bar:'#FF349E' },
-                    { key:'관로',     icon:'fas fa-circle-nodes',      bg:'#EDE7F6', border:'#8E72A8', txt:'#4E3A63', dot:'#685182', bar:'#685182' },
-                    { key:'환경공사', icon:'fas fa-leaf',               bg:'#F5F0F8', border:'#C6C6C6', txt:'#685182', dot:'#C6C6C6', bar:'#C6C6C6' },
-                  ];
+                  // CON_TYPE_DEF 기반 — 항목 추가 시 카드 자동 반영
                   const ctStats     = monthly.ctStats     || [];
                   const ctCompleted = monthly.ctCompletedStats || [];
                   const total = ctStats.reduce((s,r)=>s+(r.count||0),0)||1;
-                  return ctDef.map(d => {
-                    const st  = ctStats.find(r=>r.construction_type===d.key);
-                    const co  = ctCompleted.find(r=>r.construction_type===d.key);
+                  return CON_TYPE_DEF.map(d => {
+                    const st  = ctStats.find(r=>r.construction_type===d.label);
+                    const co  = ctCompleted.find(r=>r.construction_type===d.label);
                     const cnt = st?.count || 0;
                     const completedCnt = co?.completed_count || 0;
                     const pct     = Math.round(cnt/total*100);
                     const donePct = cnt > 0 ? Math.round(completedCnt/cnt*100) : 0;
-                    return `<div class="rounded-xl p-3 flex flex-col gap-1.5" style="background:${d.bg};border:1.5px solid ${d.border}">
+                    return `<div class="rounded-xl p-3 flex flex-col gap-1.5" style="background:${d.badgeBg};border:1.5px solid ${d.border}">
                       <div class="flex items-center gap-2">
-                        <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${d.dot}"></span>
-                        <span class="text-xs font-semibold truncate" style="color:${d.txt}">${d.key}</span>
+                        <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${d.dotColor}"></span>
+                        <span class="text-xs font-semibold truncate" style="color:${d.badgeTxt}">${d.label}</span>
                       </div>
                       <div class="flex items-end justify-between">
                         <div class="flex items-end gap-1">
-                          <span class="text-2xl font-bold" style="color:${d.dot}">${completedCnt}</span>
+                          <span class="text-2xl font-bold" style="color:${d.dotColor}">${completedCnt}</span>
                           <span class="text-xs mb-0.5" style="color:#C6C6C6">/ ${cnt}건</span>
                         </div>
                         <span class="text-xs" style="color:#C6C6C6">${pct}%</span>
                       </div>
                       <div class="w-full rounded-full h-2" style="background:#fff">
-                        <div class="h-2 rounded-full transition-all" style="width:${donePct}%;background:${d.bar}"></div>
+                        <div class="h-2 rounded-full transition-all" style="width:${donePct}%;background:${d.barColor}"></div>
                       </div>
-                      <div class="text-xs" style="color:${d.txt}">완료율 ${donePct}%</div>
+                      <div class="text-xs" style="color:${d.badgeTxt}">완료율 ${donePct}%</div>
                     </div>`;
                   }).join('');
                 })()}
@@ -15072,10 +15171,10 @@ async function renderStatsPage(container) {
       </div>
     </div>`;
 
-    // 차트 그리기 — 공사종류(construction_type) 기반 도넛차트
+    // 차트 그리기 — 공사종류(construction_type) 기반 도넛차트 — CON_TYPE_DEF 기반 자동 생성
     setTimeout(async () => {
-      const ctOrder  = ['지장이설','청약개통','관로','환경공사'];
-      const ctColors = { '지장이설':'#D70072', '청약개통':'#FF349E', '관로':'#685182', '환경공사':'#C6C6C6' };
+      const ctOrder  = CON_TYPE_DEF.map(d => d.label);
+      const ctColors = Object.fromEntries(CON_TYPE_DEF.map(d => [d.label, d.color]));
       const ctStats  = monthly.ctStats || [];
 
       // ── 도넛 차트 (공사종류별 전체 건수) ────────────────────────────
@@ -15083,13 +15182,14 @@ async function renderStatsPage(container) {
       if (donutCtx) {
         const donutData = ctOrder.map(ct => { const s = ctStats.find(r=>r.construction_type===ct); return s?s.count:0; });
         const hasData = donutData.some(v => v > 0);
+        const emptyColors = CON_TYPE_DEF.map(() => '#D8D0DC');
         new Chart(donutCtx, {
           type: 'doughnut',
           data: {
             labels: ctOrder,
             datasets: [{
-              data: hasData ? donutData : [1,1,1,1],
-              backgroundColor: hasData ? ctOrder.map(ct => ctColors[ct]) : ['#D8D0DC','#D8D0DC','#D8D0DC','#D8D0DC'],
+              data: hasData ? donutData : CON_TYPE_DEF.map(() => 1),
+              backgroundColor: hasData ? ctOrder.map(ct => ctColors[ct]) : emptyColors,
               borderColor: '#ffffff',
               borderWidth: 3,
               hoverOffset: 10
@@ -15182,22 +15282,20 @@ async function renderStatsPage(container) {
 // construction_type 4종 기준 (작업 등록폼 공사종류와 동일)
 function renderByCategoryTable(rows, year, month) {
   // 공사종류 4종 고정 정의 (작업 등록폼 순서와 동일)
-  const WC_DEF = [
-    { key: '지장이설', label: '지장이설', icon: 'fas fa-hard-hat',         bar: '#D70072', badge_bg: '#FDE8F3', badge_color: '#D70072' },
-    { key: '청약개통', label: '청약개통', icon: 'fas fa-plug-circle-check', bar: '#FF349E', badge_bg: '#FDE8F3', badge_color: '#A8005A' },
-    { key: '관로',     label: '관로',     icon: 'fas fa-circle-nodes',  bar: '#685182', badge_bg: '#EDE7F6', badge_color: '#4E3A63' },
-    { key: '환경공사', label: '환경공사', icon: 'fas fa-leaf',              bar: '#C6C6C6', badge_bg: '#F5F0F8', badge_color: '#685182' },
-  ];
-
-  // rows를 key → 데이터 맵으로 변환 (API 반환값)
+  // CON_TYPE_DEF 기반 — 항목 추가 시 이 테이블도 자동 반영
+  // rows API: category_code = construction_type(한글명)
   const rowMap = {};
   (rows || []).forEach(r => { rowMap[r.category_code] = r; });
 
-  // 4종 모두 표시 (API 반환값이 없으면 0건으로)
-  const mergedRows = WC_DEF.map(wc => ({
-    ...wc,
-    completed_count: rowMap[wc.key]?.completed_count || 0,
-    total_count:     rowMap[wc.key]?.total_count     || 0,
+  const mergedRows = CON_TYPE_DEF.map(d => ({
+    key:       d.label,          // construction_type 컬럼은 한글명으로 저장
+    label:     d.label,
+    icon:      d.icon,
+    bar:       d.barColor,
+    badge_bg:  d.badgeBg,
+    badge_color: d.badgeTxt,
+    completed_count: rowMap[d.label]?.completed_count || 0,
+    total_count:     rowMap[d.label]?.total_count     || 0,
   }));
 
   const totalCompleted = mergedRows.reduce((s,r) => s + r.completed_count, 0);
@@ -30867,10 +30965,9 @@ async function renderFieldReportPage(container) {
       cableTotalAmt += rowAmt;
     });
 
-    // 구분 뱃지 색상
-    const cableWcLabel = wc => ({ relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' }[wc] || wc || '-');
-    const wcBadgeClass = wc => ({ relocation:'bg-orange-100 text-orange-700', subscription:'bg-green-100 text-green-700',
-         conduit:'bg-blue-100 text-blue-700', environment:'bg-purple-100 text-purple-700' }[wc] || 'bg-gray-100 text-gray-600');
+    // 구분 뱃지 색상 — CON_TYPE_DEF 기반 자동 생성
+    const cableWcLabel = wc => conKeyToLabel(wc);
+    const wcBadgeClass = wc => (_CON_BY_KEY[wc]?.badgeClass) || 'bg-gray-100 text-gray-600';
 
     const cableColWidthsChk = JSON.parse(localStorage.getItem('fr_cable_col_widths') || '{}');
     const cableHasHidden = cableHidden.length > 0;
@@ -31167,8 +31264,8 @@ async function _frLoadSpliceStats() {
 
     const isWorker = currentUser && currentUser.role === 'worker';
 
-    // 공사종류(work_class) 코드 → 한글
-    const spliceWcLabel = wc => ({ relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' }[wc] || wc || '-');
+    // 공사종류(work_class) 코드 → 한글 — CON_TYPE_DEF 기반 자동 생성
+    const spliceWcLabel = wc => conKeyToLabel(wc);
 
     // localStorage에서 숨김 컬럼 상태 불러오기
     const spliceHiddenCols = JSON.parse(localStorage.getItem('fr_splice_hidden_cols') || '[]');
@@ -31240,9 +31337,7 @@ async function _frLoadSpliceStats() {
                 <td class="border border-gray-100 px-2 py-1.5 text-center" data-col-idx="3"
                   style="${spliceHiddenCols.includes(3)?'display:none':''}">
                   <span class="inline-block px-1.5 py-0.5 rounded text-xs font-semibold
-                    ${{ relocation:'bg-orange-100 text-orange-700', subscription:'bg-green-100 text-green-700',
-                         conduit:'bg-blue-100 text-blue-700', environment:'bg-purple-100 text-purple-700'
-                       }[row.construction_work_class] || 'bg-gray-100 text-gray-600'}">
+                    ${(_CON_BY_KEY[row.construction_work_class]?.badgeClass) || 'bg-gray-100 text-gray-600'}">
                     ${spliceWcLabel(row.construction_work_class)}
                   </span>
                 </td>
@@ -31455,7 +31550,7 @@ function downloadFieldReportCSV() {
       alert('다운로드할 데이터가 없습니다. 먼저 [조회] 버튼을 눌러주세요.'); return;
     }
     const isWorkerCsv = currentUser && currentUser.role === 'worker';
-    const wcLabel = wc => ({ relocation:'지장이설', subscription:'청약개통', conduit:'관로', environment:'환경공사' }[wc] || wc || '-');
+    const wcLabel = wc => conKeyToLabel(wc);  // CON_TYPE_DEF 기반
     const labelToKeyCsv = label => (label||'').replace(/ /g,'').replace(/\//g,'');
     const spliceMap = {};
     _frSpliceCacheItems.forEach(it => {

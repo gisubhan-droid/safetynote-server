@@ -6813,7 +6813,7 @@ async function showTaskDetail(id, openTbmTab) {
     const [taskRes, photosRes, riskRes, tbmRes, logsRes, checklistRes, inspRes, stopsRes] = await Promise.all([
       API.get(`/tasks/${id}`),
       API.get('/photos', { params: { task_id: id } }),
-      API.get('/risk', { params: { task_id: id } }),
+      API.get('/risk', { params: { task_id: id, status: 'all' } }),  // 작업상세: 전체 상태 조회
       API.get('/tbm', { params: { task_id: id } }),
       API.get('/worklogs', { params: { task_id: id } }),
       API.get(`/checklist/task/${id}`).catch(() => ({ data: { assessment: null, responses: [], tbm_sections: [] } })),
@@ -12797,7 +12797,7 @@ async function renderInspectionsPage(container) {
     if (window._insDateFrom     === undefined) window._insDateFrom     = _today;
     if (window._insDateTo       === undefined) window._insDateTo       = _today;
     if (window._insStatusFilter === undefined) window._insStatusFilter = '';   // 점검 처리상태 (open/in_progress/closed/'' 전체)
-    if (window._insTaskTab      === undefined) window._insTaskTab      = 'active'; // 작업상태 탭
+    if (window._insTaskTab      === undefined) window._insTaskTab      = 'working'; // 기본: 진행(현장위치지도 기준)
 
     const _df  = window._insDateFrom;
     const _dt  = window._insDateTo;
@@ -12805,13 +12805,16 @@ async function renderInspectionsPage(container) {
     const _tab = window._insTaskTab;
 
     // ── 작업상태 탭 정의 ──────────────────────────────────────
-    // active  : TBM완료 + 작업중 (현장 진행중) ← 기본
-    // progress: 배정완료 ~ 작업완료 전 (작업진행 전체)
-    // done    : 작업완료 + 일지완료 (종료된 작업)
-    // all     : 취소 제외 전체
-    const ACTIVE_STATUSES    = ['tbm_done', 'working'];
-    const PROGRESS_STATUSES  = ['assigned', 'in_progress', 'tbm_done', 'working', 'work_completed'];
-    const DONE_STATUSES      = ['work_completed', 'completed'];
+    // [현장위치지도 탭과 조회 조건 일원화]
+    // risk     : 위험성체크 완료 (in_progress = 체크리스트완료)
+    // tbm      : TBM 완료 ~ 작업개시 전 (tbm_done)
+    // working  : 작업개시 ~ 작업완료 전 (working, paused)
+    // completed: 작업완료 + 일지완료 (work_completed, completed)
+    // all      : 취소 제외 전체
+    const RISK_STATUSES      = ['in_progress'];          // 위험성(체크리스트)평가 완료 단계
+    const TBM_STATUSES       = ['tbm_done'];             // TBM완료 ~ 작업개시 전
+    const WORKING_STATUSES   = ['working', 'paused'];    // 작업개시 ~ 작업완료 전
+    const DONE_STATUSES      = ['work_completed', 'completed']; // 작업완료 + 일지완료
 
     // ── API 쿼리 파라미터 ─────────────────────────────────────
     const insParams = new URLSearchParams();
@@ -12835,10 +12838,11 @@ async function renderInspectionsPage(container) {
       ? _rawAllTasks.filter(function(t) { return t.is_auto_request_no === 0; })
       : _rawAllTasks;
 
-    // ── 작업상태 탭 기준 필터링 ───────────────────────────────
+    // ── 작업상태 탭 기준 필터링 (현장위치지도 탭과 동일 기준) ──
     const filterByTab = (t) => {
-      if (_tab === 'active')   return ACTIVE_STATUSES.includes(t.status);
-      if (_tab === 'progress') return PROGRESS_STATUSES.includes(t.status);
+      if (_tab === 'risk')     return RISK_STATUSES.includes(t.status);
+      if (_tab === 'tbm')      return TBM_STATUSES.includes(t.status);
+      if (_tab === 'working')  return WORKING_STATUSES.includes(t.status);
       if (_tab === 'done')     return DONE_STATUSES.includes(t.status);
       return t.status !== 'cancelled'; // all
     };
@@ -12896,11 +12900,13 @@ async function renderInspectionsPage(container) {
       ? _df
       : (_df || _dt) ? `${_df || '처음'} ~ ${_dt || '오늘'}` : '전체 기간';
 
+    // [현장위치지도 탭과 일원화] 탭 기준을 현장위치지도 4탭과 동일하게 맞춤
     const TAB_DEFS = [
-      { key:'active',   label:'🟢 현장진행중', desc:'TBM완료·작업중',       statuses: ACTIVE_STATUSES },
-      { key:'progress', label:'📋 작업진행',   desc:'배정완료~작업완료',     statuses: PROGRESS_STATUSES },
-      { key:'done',     label:'✅ 완료',        desc:'작업완료·일지완료',     statuses: DONE_STATUSES },
-      { key:'all',      label:'전체',          desc:'취소 제외 전체',        statuses: null },
+      { key:'risk',    label:'⚠️ 위험성체크', desc:'위험성(체크리스트)평가 완료 단계',  statuses: RISK_STATUSES },
+      { key:'tbm',     label:'🦺 TBM',        desc:'TBM완료 ~ 작업개시 전',             statuses: TBM_STATUSES },
+      { key:'working', label:'🟢 진행',        desc:'작업개시 ~ 작업완료 전',            statuses: WORKING_STATUSES },
+      { key:'done',    label:'✅ 완료',         desc:'작업완료·일지완료',                 statuses: DONE_STATUSES },
+      { key:'all',     label:'전체',           desc:'취소 제외 전체',                    statuses: null },
     ];
 
     container.innerHTML = `
@@ -19002,10 +19008,10 @@ async function renderRiskPage(container, mode) {
     // 수시: adhoc + task(작업별) 타입 모두 표시
     let historyPromise;
     if (mode === 'periodic') {
-      historyPromise = API.get('/risk', { params: { assessment_type: 'periodic' } }).catch(() => ({ data: [] }));
+      historyPromise = API.get('/risk', { params: { assessment_type: 'periodic', status: 'all' } }).catch(() => ({ data: [] }));
     } else {
       // 수시 페이지: adhoc + 기존 작업별(task) 위험성평가 모두 조회
-      historyPromise = API.get('/risk').catch(() => ({ data: [] }));
+      historyPromise = API.get('/risk', { params: { status: 'all' } }).catch(() => ({ data: [] }));
     }
     const historyRes = await historyPromise;
 
@@ -35963,12 +35969,13 @@ async function renderSiteMapPage(container) {
   const dateRangeLabel = (_df === _dt && _df)
     ? _df : (_df || _dt) ? `${_df||'처음'} ~ ${_dt||'오늘'}` : '전체 기간';
 
-  // ── 탭 정의 ──
+  // ── 탭 정의 (현장점검 탭과 동일 조회 조건 기준) ──
   const TAB_DEFS = [
-    { key:'risk',       label:'⚠️ 위험성체크', color:'#F59E0B', desc:'위험성평가 작성 위치' },
-    { key:'tbm',        label:'🦺 TBM',       color:'#685182', desc:'TBM 완료 후 작업 개시 대기 중인 현장 위치' },
-    { key:'working',    label:'🟢 진행',       color:'#10B981', desc:'작업 개시(진행중) 현장 위치' },
-    { key:'completed',  label:'✅ 완료',       color:'#6B7280', desc:'작업 완료된 현장 위치' },
+    { key:'risk',       label:'⚠️ 위험성체크', color:'#F59E0B', desc:'위험성(체크리스트)평가 완료 현장 위치' },
+    { key:'tbm',        label:'🦺 TBM',        color:'#685182', desc:'TBM 완료 후 작업 개시 대기 중인 현장 위치' },
+    { key:'working',    label:'🟢 진행',        color:'#10B981', desc:'작업 개시(진행중) 현장 위치' },
+    { key:'completed',  label:'✅ 완료',        color:'#6B7280', desc:'작업 완료된 현장 위치' },
+    { key:'inspection', label:'🔍 현장점검',    color:'#2563EB', desc:'현장점검 등록 위치' },
   ];
 
   // ── 사용자 목록 로드 (캐시) ──
@@ -36173,10 +36180,11 @@ async function loadSiteMapMarkers(map) {
 
   // 탭별 색상/아이콘 정의
   const TAB_META = {
-    risk:      { color: '#F59E0B', faIcon: 'fa-exclamation-triangle', label: '⚠️ 위험성체크', emptyMsg: '위험성평가 작성 시 GPS 버튼을 눌러 위치를 기록해 주세요.' },
-    tbm:       { color: '#685182', faIcon: 'fa-hard-hat',             label: '🦺 TBM',               emptyMsg: 'TBM 완료(작업개시 대기) 상태의 GPS 기록이 없습니다.' },
-    working:   { color: '#10B981', faIcon: 'fa-play-circle',          label: '🟢 진행중',             emptyMsg: '작업 개시 시 GPS를 허용하면 위치가 기록됩니다. 현재 진행중 GPS 기록이 없습니다.' },
-    completed: { color: '#6B7280', faIcon: 'fa-check-circle',         label: '✅ 완료',               emptyMsg: '완료된 작업의 GPS 기록이 없습니다.' },
+    risk:       { color: '#F59E0B', faIcon: 'fa-exclamation-triangle', label: '⚠️ 위험성체크', emptyMsg: '위험성평가 완료 건의 GPS 기록이 없습니다.' },
+    tbm:        { color: '#685182', faIcon: 'fa-hard-hat',             label: '🦺 TBM',        emptyMsg: 'TBM 완료(작업개시 대기) 상태의 GPS 기록이 없습니다.' },
+    working:    { color: '#10B981', faIcon: 'fa-play-circle',          label: '🟢 진행중',     emptyMsg: '작업 개시 시 GPS를 허용하면 위치가 기록됩니다. 현재 진행중 GPS 기록이 없습니다.' },
+    completed:  { color: '#6B7280', faIcon: 'fa-check-circle',         label: '✅ 완료',        emptyMsg: '완료된 작업의 GPS 기록이 없습니다.' },
+    inspection: { color: '#2563EB', faIcon: 'fa-clipboard-check',      label: '🔍 현장점검',   emptyMsg: '현장점검 등록 시 GPS 위치가 기록됩니다. 현재 점검 GPS 기록이 없습니다.' },
   };
   const meta = TAB_META[filter] || TAB_META.risk;
 
@@ -36514,6 +36522,78 @@ async function loadSiteMapMarkers(map) {
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
             author: conductor, address: addr, lat, lon });
         }
+      }
+    }
+
+    // ── ⑤ 현장점검 탭 (/inspections API 기반) ───────────────
+    // 현장점검 화면과 동일한 데이터 소스 — 날짜 범위 필터 적용
+    // GPS 우선순위: tasks.gps_lat → tasks.work_order_address (fallback 주소)
+    if (filter === 'inspection') {
+      const ip = new URLSearchParams();
+      if (dateFrom) ip.set('date_from', dateFrom);
+      if (dateTo)   ip.set('date_to',   dateTo);
+      if (userId)   ip.set('user_id',   userId);
+      ip.set('limit', '500');
+      const insRes = await API.get(`/inspections?${ip.toString()}`);
+      const _rawInsList = Array.isArray(insRes.data) ? insRes.data : (insRes.data?.items || []);
+
+      // [BUG-079 준용] LGU+ 클라이언트 이중 방어: is_auto_request_no=0 건만 표시
+      var _smMyUiRoleI = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+      var _smIsLguI = (_smMyUiRoleI === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
+      const insList = _smIsLguI
+        ? _rawInsList.filter(function(i) { return i.is_auto_request_no === 0; })
+        : _rawInsList;
+
+      // 점검 유형 레이블
+      const INS_TYPE_LBL = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' };
+      const HAZARD_LBL   = { critical:'긴급', high:'높음', medium:'보통', low:'낮음' };
+
+      for (const ins of insList) {
+        // GPS: tasks.gps_lat/lon 기준 (inspections.ts SELECT에서 t.gps_lat/lon 반환)
+        const hasGps = ins.gps_lat && ins.gps_lon;
+        const lat = hasGps ? parseFloat(ins.gps_lat) : NaN;
+        const lon = hasGps ? parseFloat(ins.gps_lon) : NaN;
+        const gpsValid = !isNaN(lat) && !isNaN(lon);
+
+        const displayDate = _toKSTDateTime(ins.inspection_date_only || ins.created_at || '');
+        const name = ins.task_title || ins.location || '현장점검';
+        const insTypeLabel = INS_TYPE_LBL[ins.inspection_type] || ins.inspection_type || '점검';
+        const hazardLabel  = HAZARD_LBL[ins.hazard_level] || ins.hazard_level || '';
+        // GPS 없으면 작업지시 주소 → 확정주소 fallback
+        const addr = ins.gps_address || ins.task_work_order_address || ins.task_confirmed_address || ins.location || (gpsValid ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : '주소 미기록');
+
+        if (!gpsValid) {
+          // GPS 없는 건: 목록에만 추가
+          listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
+            author: ins.inspector_name || '', address: addr, lat: null, lon: null, noGps: true });
+          continue;
+        }
+
+        const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, `🔍 ${insTypeLabel}`) }).addTo(map);
+        marker.bindPopup(`
+          <div style="min-width:200px;font-size:13px;">
+            <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🔍 현장점검</div>
+            <div style="font-weight:600">${name}</div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-tag mr-1"></i>${insTypeLabel}${hazardLabel ? ' · ' + hazardLabel : ''}
+            </div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-user mr-1"></i>${ins.inspector_name || '-'}
+            </div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
+            </div>
+            <div style="color:#6B7280;font-size:11px;margin-top:2px">
+              <i class="fas fa-map-marker-alt mr-1"></i>${addr}
+            </div>
+            ${ins.findings ? `<div style="color:#374151;font-size:11px;margin-top:4px;border-top:1px solid #E5E7EB;padding-top:4px">
+              <i class="fas fa-clipboard mr-1"></i>${ins.findings.substring(0,60)}${ins.findings.length>60?'...':''}
+            </div>` : ''}
+          </div>`);
+
+        latLngs.push([lat, lon]);
+        listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
+          author: ins.inspector_name || '', address: addr, lat, lon });
       }
     }
 

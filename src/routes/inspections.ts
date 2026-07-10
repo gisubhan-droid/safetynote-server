@@ -94,7 +94,8 @@ app.get('/', async (c) => {
                 t.gps_lat, t.gps_lon, t.gps_address,
                 t.confirmed_address as task_confirmed_address,
                 t.confirmed_address_source as task_confirmed_address_source,
-                t.work_order_address as task_work_order_address
+                t.work_order_address as task_work_order_address,
+                COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
              FROM site_inspections si
              LEFT JOIN users u ON u.id = si.inspector_id
              LEFT JOIN tasks t ON t.id = si.task_id
@@ -108,7 +109,8 @@ app.get('/', async (c) => {
                 NULL as gps_lat, NULL as gps_lon, NULL as gps_address,
                 t.confirmed_address as task_confirmed_address,
                 t.confirmed_address_source as task_confirmed_address_source,
-                t.work_order_address as task_work_order_address
+                t.work_order_address as task_work_order_address,
+                COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
              FROM site_inspections si
              LEFT JOIN users u ON u.id = si.inspector_id
              LEFT JOIN tasks t ON t.id = si.task_id

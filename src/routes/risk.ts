@@ -10,7 +10,7 @@ app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   try {
-  const { task_id, assessment_type, date_from, date_to, user_id } = c.req.query()
+  const { task_id, assessment_type, date_from, date_to, user_id, status: raStatus } = c.req.query()
   const params: any[] = []
   const conditions: string[] = []
   if (task_id)        { conditions.push('ra.task_id = ?');         params.push(task_id) }
@@ -18,6 +18,16 @@ app.get('/', async (c) => {
   if (user_id)        { conditions.push('ra.assessor_id = ?');     params.push(user_id) }
   if (date_from)      { conditions.push("date(ra.created_at) >= ?"); params.push(date_from) }
   if (date_to)        { conditions.push("date(ra.created_at) <= ?"); params.push(date_to) }
+  // [BUG-082] 현장위치 지도 위험성체크 탭: 완료된 평가만 표시 (status='completed')
+  // status 파라미터 없으면 기본 'completed' 적용 (지도 탭 전용)
+  // status='all' 파라미터를 보내면 전체 조회 (현장점검 화면 등에서 사용)
+  if (raStatus === 'all') {
+    // 전체 조회 — 필터 없음
+  } else if (raStatus) {
+    conditions.push('ra.status = ?'); params.push(raStatus)
+  } else {
+    conditions.push("ra.status = 'completed'")  // 기본: 완료된 평가만
+  }
   // [BUG-039] LGU+ 역할: is_auto_request_no=0 (요청번호 자동부여 미체크) 건만 조회 허용
   // [FEAT-048] role='lgu_plus' 단일 역할 + 구버전 호환 (role='lgu', sub_role='lgu_plus')
   const isLgu = user.role === 'lgu_plus' || user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'

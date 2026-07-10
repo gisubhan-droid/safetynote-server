@@ -5844,6 +5844,7 @@ async function createTask() {
     const taskId = res.data.id;
 
     // 첨부파일 업로드 (있는 경우) — 진행률 표시
+    // BUG-093: 첨부파일 업로드 실패 시 "생성 실패" 오표시 방지 → 별도 try/catch로 격리
     const attachInput = document.getElementById('mAttachInput');
     if (attachInput && attachInput.files && attachInput.files.length > 0 && taskId) {
       const progWrap = document.getElementById('attachProgressWrap');
@@ -5851,23 +5852,31 @@ async function createTask() {
       const progLbl  = document.getElementById('attachProgressLabel');
       const progPct  = document.getElementById('attachProgressPct');
       if (progWrap) progWrap.classList.remove('hidden');
-      await uploadTaskAttachments(taskId, attachInput.files, (pct, uploadedMB, totalMB) => {
-        if (progBar) progBar.style.width = pct + '%';
-        if (progLbl) progLbl.textContent = `업로드 중... ${uploadedMB}MB / ${totalMB}MB`;
-        if (progPct) progPct.textContent = pct + '%';
-      });
+      try {
+        await uploadTaskAttachments(taskId, attachInput.files, (pct, uploadedMB, totalMB) => {
+          if (progBar) progBar.style.width = pct + '%';
+          if (progLbl) progLbl.textContent = `업로드 중... ${uploadedMB}MB / ${totalMB}MB`;
+          if (progPct) progPct.textContent = pct + '%';
+        });
+      } catch(_) { /* 첨부파일 업로드 실패는 uploadTaskAttachments 내부에서 이미 toast 처리 */ }
       if (progWrap) progWrap.classList.add('hidden');
     }
 
+    // ── 여기서부터는 작업 생성 성공 확정 — 페이지 이동 중 오류가 "생성 실패"로 오표시되지 않도록 격리 ──
     toast('작업이 등록되었습니다.');
     document.querySelector('.modal-overlay')?.remove();
-    // [TASK-002] 공사 상세에서 작업 생성한 경우 → 공사 상세로 복귀
-    // 일반 작업관리에서 생성한 경우 → 작업관리 목록으로 이동
-    if (data.construction_id && presetConstruction?._fromConId) {
-      showConstructionDetail(presetConstruction._fromConId);
-    } else {
-      renderTasksPage(document.getElementById('page-content'));
-    }
+
+    // BUG-093: 페이지 이동 오류가 외부 catch('생성 실패')로 전파되지 않도록 try/catch 분리
+    try {
+      // [TASK-002] 공사 상세에서 작업 생성한 경우 → 공사 상세로 복귀
+      // 일반 작업관리에서 생성한 경우 → 작업관리 목록으로 이동
+      if (data.construction_id && presetConstruction?._fromConId) {
+        showConstructionDetail(presetConstruction._fromConId);
+      } else {
+        const pageEl = document.getElementById('page-content');
+        if (pageEl) renderTasksPage(pageEl);
+      }
+    } catch(_) { /* 페이지 이동 오류 무시 — 작업은 정상 등록됨 */ }
   }
 
   try {

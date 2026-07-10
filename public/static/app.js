@@ -4569,6 +4569,23 @@ function navigateToTasksWithFilter(filterType) {
   navigateTo('tasks');
 }
 
+// 작업번호 검색 선택 시 placeholder + 안내문구 실시간 갱신
+function _updateTaskSearchPlaceholder() {
+  const inp  = document.getElementById('keywordInput');
+  const type = taskFilters.search_type;
+  if (inp) {
+    inp.placeholder = type === 'task_number' ? 'WKS-번호 또는 서브번호 입력'
+                    : type === 'request_no'  ? '공사요청번호 입력'
+                    : '공사명 입력';
+    inp.focus();
+  }
+  // 안내문구 표시/숨김 (하단 hint div)
+  const hint = document.getElementById('taskSearchHint');
+  if (hint) {
+    hint.style.display = type === 'task_number' ? 'block' : 'none';
+  }
+}
+
 // 작업관리 진행단계 필터 select 변경 핸들러 (위험도와 독립 동작)
 function onStatusFilterChange(val) {
   taskFilters.status     = val;
@@ -4746,10 +4763,18 @@ async function renderTasksPage(container) {
             ${t.title}
           </div>
 
-          <!-- 요청번호 · 작업번호 -->
+          <!-- 요청번호 · 작업번호 (사용자 정의: work_number + sub_task_number) -->
           <div style="font-size:10px;color:#9CA3AF;margin-bottom:6px;display:flex;gap:6px;flex-wrap:wrap">
             ${t.request_no ? `<span><i class="fas fa-hashtag" style="margin-right:2px"></i>${t.request_no}</span>` : ''}
-            ${t.task_number ? `<span style="font-family:monospace">${t.task_number}</span>` : ''}
+            ${(() => {
+              // 사용자 정의 작업번호: work_number(공사)-sub_task_number(작업) 조합
+              const wn = t.work_number || '';
+              const sn = t.sub_task_number || '';
+              if (wn && sn) return `<span style="font-family:monospace;color:#685182;font-weight:600">${wn}-${sn}</span>`;
+              if (wn)       return `<span style="font-family:monospace;color:#685182">${wn}</span>`;
+              if (sn)       return `<span style="font-family:monospace;color:#685182">${sn}</span>`;
+              return '';
+            })()}
           </div>
 
           <!-- 태그 행 (공사종류 + 작업팀) -->
@@ -4914,17 +4939,17 @@ async function renderTasksPage(container) {
       </div>
 
       <!-- 툴바 2행: 키워드 검색 -->
-      <div class="flex gap-2 mb-4 items-center">
+      <div class="flex gap-2 mb-1 items-center">
         <select id="searchTypeSelect" class="form-control" style="width:120px;flex-shrink:0"
-          onchange="taskFilters.search_type=this.value">
+          onchange="taskFilters.search_type=this.value; _updateTaskSearchPlaceholder()">
           <option value="title"       ${taskFilters.search_type==='title'      ?'selected':''}>공사명</option>
           <option value="request_no"  ${taskFilters.search_type==='request_no' ?'selected':''}>요청번호</option>
           <option value="task_number" ${taskFilters.search_type==='task_number'?'selected':''}>작업번호</option>
         </select>
-        <div class="flex flex-1 gap-0" style="max-width:400px">
+        <div class="flex flex-1 gap-0" style="max-width:420px">
           <input type="text" id="keywordInput"
             class="form-control" style="border-radius:8px 0 0 8px;border-right:none"
-            placeholder="검색어를 입력하세요"
+            placeholder="${taskFilters.search_type==='task_number' ? 'WKS-번호 또는 서브번호 입력' : taskFilters.search_type==='request_no' ? '공사요청번호 입력' : '공사명 입력'}"
             value="${taskFilters.keyword||''}"
             onkeydown="if(event.key==='Enter'){ taskFilters.keyword=this.value; renderTasksPage(document.getElementById('page-content')); }"
           >
@@ -4939,6 +4964,11 @@ async function renderTasksPage(container) {
           <i class="fas fa-times mr-1"></i>검색 초기화
         </button>` : ''}
         <span class="text-xs text-gray-400 ml-auto">총 ${_taskListTotal || _taskListData.length}건 중 ${_taskListData.length}건 표시</span>
+      </div>
+      <div id="taskSearchHint" class="mb-3" style="font-size:11px;color:#9CA3AF;padding-left:2px;display:${taskFilters.search_type==='task_number'?'block':'none'}">
+        <i class="fas fa-info-circle mr-1" style="color:#C4B5D5"></i>
+        작업번호 형식: <span style="font-family:monospace;color:#685182;font-weight:600">WKS-######-#####-####</span>
+        &nbsp;(메인작업번호-서브번호) · 일부 번호 또는 서브번호만 입력해도 조회됩니다
       </div>
 
       <!-- 카드 그리드 (모바일 2열) -->

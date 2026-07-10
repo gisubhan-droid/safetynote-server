@@ -125,11 +125,35 @@ app.get('/', async (c) => {
   }
   if (risk_level) { wheres.push('t.risk_level = ?'); params.push(risk_level) }
   // 키워드 검색 (search_type: request_no | task_number | title)
+  // [FEAT-061] task_number = 내부 시스템번호(TASK-timestamp) → 사용자 정의 작업번호로 변경
+  //   사용자 정의 작업번호: con.work_number(WKS-######-#####) + t.sub_task_number(####) 조합
+  //   - work_number만 입력 시: con.work_number LIKE 또는 t.work_number LIKE
+  //   - sub_task_number만 입력 시: t.sub_task_number LIKE
+  //   - 조합(WKS-xxx-yyy-zzzz) 입력 시: CONCAT 방식 OR 분리 검색
   if (keyword && keyword.trim()) {
-    const kw = `%${keyword.trim()}%`
-    if (search_type === 'request_no')   { wheres.push('t.request_no LIKE ?');   params.push(kw) }
-    else if (search_type === 'task_number') { wheres.push('t.task_number LIKE ?'); params.push(kw) }
-    else                                { wheres.push('t.title LIKE ?');         params.push(kw) }
+    const raw = keyword.trim()
+    const kw  = `%${raw}%`
+    if (search_type === 'request_no') {
+      wheres.push('t.request_no LIKE ?')
+      params.push(kw)
+    } else if (search_type === 'task_number') {
+      // 사용자 정의 작업번호 = work_number + '-' + sub_task_number 조합
+      // 숫자만 입력, WKS- 포함 부분, sub_task_number 단독 입력 모두 지원
+      // con.work_number(공사의 작업번호) 또는 t.work_number(tasks에 복사된 값) 또는 sub_task_number LIKE
+      wheres.push(`(
+        con.work_number LIKE ?
+        OR t.work_number LIKE ?
+        OR t.sub_task_number LIKE ?
+        OR (con.work_number IS NOT NULL AND t.sub_task_number IS NOT NULL
+            AND (con.work_number || '-' || t.sub_task_number) LIKE ?)
+        OR (t.work_number != '' AND t.sub_task_number != ''
+            AND (t.work_number || '-' || t.sub_task_number) LIKE ?)
+      )`)
+      params.push(kw, kw, kw, kw, kw)
+    } else {
+      wheres.push('t.title LIKE ?')
+      params.push(kw)
+    }
   }
 
   if (wheres.length) query += ' WHERE ' + wheres.join(' AND ')

@@ -33,7 +33,8 @@ app.get('/', async (c) => {
     // BUG-091: sub_task_number 추가
     const q = `SELECT tbm.*, t.title as task_title, t.task_number, t.sub_task_number, t.contractor_name,
                      t.status as task_status,
-                     u.name as conductor_name, u.position as conductor_position
+                     u.name as conductor_name, u.position as conductor_position,
+                     COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
       FROM tbm_records tbm
       LEFT JOIN tasks t ON t.id = tbm.task_id
       LEFT JOIN users u ON u.id = tbm.conductor_id
@@ -45,7 +46,8 @@ app.get('/', async (c) => {
     const q = `SELECT tbm.*, t.title as task_title, t.task_number, t.sub_task_number,
                      '' as contractor_name,
                      t.status as task_status,
-                     u.name as conductor_name, u.position as conductor_position
+                     u.name as conductor_name, u.position as conductor_position,
+                     COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
       FROM tbm_records tbm
       LEFT JOIN tasks t ON t.id = tbm.task_id
       LEFT JOIN users u ON u.id = tbm.conductor_id

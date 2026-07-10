@@ -38,7 +38,8 @@ app.get('/', async (c) => {
       COALESCE(ca.gps_lon, t.gps_lon) as gps_lon,
       COALESCE(ca.gps_address, t.gps_address) as gps_address,
       t.confirmed_address, t.work_order_address, t.location as task_location,
-      u.name as assessor_name, wt.name as work_type_name
+      u.name as assessor_name, wt.name as work_type_name,
+      COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
       FROM risk_assessments ra
       LEFT JOIN tasks t ON t.id = ra.task_id
       LEFT JOIN work_types wt ON wt.id = t.work_type_id
@@ -59,7 +60,8 @@ app.get('/', async (c) => {
       const q = `SELECT ra.*, t.title as task_title, t.status as task_status,
         t.gps_lat, t.gps_lon, t.gps_address,
         t.confirmed_address, t.work_order_address, t.location as task_location,
-        u.name as assessor_name, wt.name as work_type_name
+        u.name as assessor_name, wt.name as work_type_name,
+        COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
         FROM risk_assessments ra
         LEFT JOIN tasks t ON t.id = ra.task_id
         LEFT JOIN work_types wt ON wt.id = t.work_type_id
@@ -72,7 +74,8 @@ app.get('/', async (c) => {
       const q = `SELECT ra.*, t.title as task_title, t.status as task_status,
         NULL as gps_lat, NULL as gps_lon, NULL as gps_address,
         t.confirmed_address, t.work_order_address, t.location as task_location,
-        u.name as assessor_name, wt.name as work_type_name
+        u.name as assessor_name, wt.name as work_type_name,
+        COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
         FROM risk_assessments ra
         LEFT JOIN tasks t ON t.id = ra.task_id
         LEFT JOIN work_types wt ON wt.id = t.work_type_id

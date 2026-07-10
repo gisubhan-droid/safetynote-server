@@ -4819,14 +4819,22 @@ async function renderTasksPage(container) {
     const rlLabelMap2 = { high: '고위험', medium: '중위험', normal: '일반' };
     const rlColorMap2 = { high: '#D70072', medium: '#9B59B6', normal: '#685182' };
     const wcShortMap2 = { cable_install:'광케이블시설', cable_splice:'광케이블접속', equipment_other:'장비·기타', conduit:'관로시설' };
-    const canEdit = currentUser.role === 'admin' || currentUser.role === 'supervisor';
+    // [FEAT-053] 삭제 버튼: sysadmin 전용 (deleteTask 함수 내부에서도 재검증)
+    // 수정 버튼: admin 또는 supervisor만 표시
+    const _tblCanModify  = currentUser.role === 'admin' || currentUser.role === 'supervisor';
+    const _tblIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
+    // 안전하게 HTML 속성에 삽입할 escaping 헬퍼 (따옴표·꺽쇠 방어)
+    const _tblEsc = (s) => String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    const renderTableView = (data) => {
+    const renderTableView = (data, startOffset) => {
       if (!data.length) return `
         <tr><td colspan="9" style="text-align:center;padding:48px 0;color:#9CA3AF">
           <i class="fas fa-clipboard-list" style="font-size:2rem;opacity:.2;display:block;margin-bottom:8px"></i>
           등록된 작업이 없습니다.
         </td></tr>`;
+
+      // 더보기 누적 시 번호 연속성 유지: startOffset = 이전 페이지 마지막 인덱스
+      const offset = (typeof startOffset === 'number') ? startOffset : 0;
 
       return data.map((t, idx) => {
         const rl = t.risk_level || 'normal';
@@ -4839,47 +4847,53 @@ async function renderTasksPage(container) {
         const taskNumDisplay = wn && sn ? `${wn}-${sn}` : wn || sn || '-';
         // 작업(예정)일
         const dateDisplay = t.planned_date || t.work_date || '-';
-        // 공사담당자
+        // 공사담당자 (XSS 방어: title 속성에 escaping 적용)
         const managerDisplay = t.con_manager_display_name || '-';
         // 작업종류 (공사종류)
         const workTypeDisplay = t.construction_type || '-';
         // 작업분류
         const workClassDisplay = wcShortMap2[t.work_class] || t.work_class || '-';
+        // [FEAT-053] 삭제: sysadmin + completed/cancelled 상태만
+        const canDeleteRow = _tblIsSysAdmin && (st === 'completed' || st === 'cancelled');
 
         return `<tr onclick="showTaskDetail(${t.id})"
           style="cursor:pointer;border-bottom:1px solid #F3F0F8;transition:background .1s"
           onmouseover="this.style.background='#FAF8FC'" onmouseout="this.style.background=''">
-          <td style="padding:8px 10px;font-size:12px;color:#9CA3AF;text-align:center;white-space:nowrap">${idx+1}</td>
+          <td style="padding:8px 10px;font-size:12px;color:#9CA3AF;text-align:center;white-space:nowrap">${offset+idx+1}</td>
           <td style="padding:8px 10px;font-size:12px;color:#6B7280;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis"
-              title="${t.request_no||''}">${t.request_no || '-'}</td>
+              title="${_tblEsc(t.request_no)}">${t.request_no || '-'}</td>
           <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:#685182;font-weight:600;white-space:nowrap">
             ${taskNumDisplay}</td>
           <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis"
-              title="${workTypeDisplay}">${workTypeDisplay}</td>
+              title="${_tblEsc(workTypeDisplay)}">${workTypeDisplay}</td>
           <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap">${workClassDisplay}</td>
           <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap">${dateDisplay}</td>
           <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis"
-              title="${managerDisplay}">${managerDisplay}</td>
+              title="${_tblEsc(managerDisplay)}">${managerDisplay}</td>
           <td style="padding:8px 10px;font-size:13px;color:#1A1A2E;font-weight:600;min-width:160px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-              title="${t.title||''}">${t.title || '-'}</td>
+              title="${_tblEsc(t.title)}">${t.title || '-'}</td>
           <td style="padding:8px 10px;white-space:nowrap;text-align:right" onclick="event.stopPropagation()">
             <span style="display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;
                          background:${rl==='high'?'#FDE8F3':rl==='medium'?'#EDE7F6':'#F5F0F8'};
                          color:${rlColor};margin-right:4px">${rlLabelMap2[rl]||rl}</span>
             <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;
                          background:#F9FAFB;color:${stColor};border:1px solid #E5E7EB">${statusLabelMap[st]||st}</span>
-            ${canEdit ? `
+            ${(_tblCanModify || canDeleteRow) ? `
             <span style="display:inline-flex;gap:3px;margin-left:4px;vertical-align:middle">
+              ${_tblCanModify ? `
               <button onclick="showEditTaskModal(${t.id})"
                 style="width:24px;height:24px;border-radius:6px;border:1px solid #E5E7EB;background:white;
-                       color:#685182;font-size:11px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer">
+                       color:#685182;font-size:11px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
+                title="수정">
                 <i class="fas fa-edit"></i>
-              </button>
-              <button onclick="deleteTask(${t.id}, '${t.status}')"
+              </button>` : ''}
+              ${canDeleteRow ? `
+              <button onclick="deleteTask(${t.id}, '${st}')"
                 style="width:24px;height:24px;border-radius:6px;border:1px solid #FDE8F3;background:white;
-                       color:#D70072;font-size:11px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer">
+                       color:#D70072;font-size:11px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
+                title="삭제(시스템관리자 전용)">
                 <i class="fas fa-trash"></i>
-              </button>
+              </button>` : ''}
             </span>` : ''}
           </td>
         </tr>`;
@@ -4893,9 +4907,9 @@ async function renderTasksPage(container) {
     window._sortTrigger = (tableId, col) => {
       sortTable(tableId, col, _taskListData, (sorted) => {
         _taskListData = sorted;
-        // PC 테이블 tbody 업데이트
+        // PC 테이블 tbody 업데이트 (정렬 시 전체 재렌더링, offset=0)
         const tbody = document.getElementById('taskTableBody');
-        if (tbody) tbody.innerHTML = renderTableView(sorted);
+        if (tbody) tbody.innerHTML = renderTableView(sorted, 0);
         // 모바일 카드 그리드 업데이트
         const grid = document.getElementById('taskCardGrid');
         if (grid) grid.innerHTML = renderCards(sorted);
@@ -5071,7 +5085,7 @@ async function renderTasksPage(container) {
             </tr>
           </thead>
           <tbody id="taskTableBody">
-            ${renderTableView(_taskListData)}
+            ${renderTableView(_taskListData, 0)}
           </tbody>
         </table>
       </div>

@@ -23088,7 +23088,7 @@ async function uploadTbmPhotoExtra(input, assId, sectionId, sectionName, taskId)
       newCard.id = `tbmph-${newPhotoItemId}`;
       newCard.style.border = '1.5px solid #10B981';
       newCard.innerHTML = '<div style="aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">'
-        + '<img src="' + photoImgSrc(uploadedPhotoId) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=\'0.3\'">'
+        + '<img src="' + tbmPhotoImgSrc(newPhotoItemId) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=\'0.3\'">'
         + '</div>'
         + '<div style="padding:4px 8px;background:#F0FDF4;border-top:1px solid #BBF7D0;display:flex;align-items:center;gap:4px">'
         + '<i class="fas fa-plus-circle" style="color:#10B981;font-size:10px;flex-shrink:0"></i>'
@@ -23161,7 +23161,7 @@ async function uploadTbmPhoto(input, assId, sectionId, photoItemId, label, taskI
       newCard.id = `tbmph-${newPhotoItemId}`;
       newCard.style.border = '1.5px solid #10B981';
       newCard.innerHTML = '<div style="aspect-ratio:4/3;overflow:hidden;background:#f0f0f0">'
-        + '<img src="' + photoImgSrc(uploadedPhotoId) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=\'0.3\'">'
+        + '<img src="' + tbmPhotoImgSrc(newPhotoItemId) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=\'0.3\'">'
         + '</div>'
         + '<div style="padding:4px 8px;background:#F0FDF4;border-top:1px solid #BBF7D0;display:flex;align-items:center;gap:4px">'
         + '<i class="fas fa-check-circle" style="color:#10B981;font-size:10px;flex-shrink:0"></i>'

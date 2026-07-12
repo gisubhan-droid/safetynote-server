@@ -25481,17 +25481,21 @@ async function renderUsersPage(container) {
     };
 
     // ── 사용자 검색 함수 (클로저로 users, userTeamMap 접근) ──
+    // _activeRoleFilter: null=전체, 'worker'|'safety'|'engineer'|'site_rep'=역할필터
+    window._activeRoleFilter = null;
+
     window.filterUserList = function(keyword) {
-      const q = keyword.trim().toLowerCase();
+      const q           = (keyword || '').trim().toLowerCase();
+      const roleFilter  = window._activeRoleFilter;
       const clearBtn    = document.getElementById('userSearchClear');
       const countEl     = document.getElementById('userSearchCount');
       const noResultEl  = document.getElementById('userSearchNoResult');
 
-      // X버튼 토글
-      if (clearBtn) clearBtn.classList.toggle('hidden', !q);
+      // X버튼 토글 (검색어 or 역할필터 활성 시 표시)
+      if (clearBtn) clearBtn.classList.toggle('hidden', !q && !roleFilter);
 
-      if (!q) {
-        // 검색어 없으면 모든 행 표시
+      // 필터 없으면 전체 표시
+      if (!q && !roleFilter) {
         document.querySelectorAll('#userAllTable tbody tr, #userNoTeamTable tbody tr, [id^="userTeamTable-"] tbody tr').forEach(tr => {
           tr.style.display = '';
         });
@@ -25500,32 +25504,84 @@ async function renderUsersPage(container) {
         return;
       }
 
-      // 전체 사용자 데이터 기준 필터
+      // 검색어 + 역할필터 동시 적용
       const matched = users.filter(u => {
-        const team = userTeamMap[u.id];
-        const searchStr = [
-          u.name, u.username, u.phone||'', u.department||'', u.position||'',
-          team?.team_name||'', getRoleDisplay(u.role, u.position, u.sub_role).label
-        ].join(' ').toLowerCase();
-        return searchStr.includes(q);
+        // 역할 필터 체크
+        if (roleFilter && dbRoleToUi(u.role, u.position, u.sub_role) !== roleFilter) return false;
+        // 검색어 필터 체크
+        if (q) {
+          const team = userTeamMap[u.id];
+          const searchStr = [
+            u.name, u.username, u.phone||'', u.department||'', u.position||'',
+            team?.team_name||'', getRoleDisplay(u.role, u.position, u.sub_role).label
+          ].join(' ').toLowerCase();
+          if (!searchStr.includes(q)) return false;
+        }
+        return true;
       });
       const matchedIds = new Set(matched.map(u => u.id));
 
-      // 각 테이블의 tbody tr에 data-userid가 없으므로 행 순서와 users 배열 순서로 매핑
-      // renderUserRow 출력의 input[value] 로 id 판별
       document.querySelectorAll('#userAllTable tbody tr, #userNoTeamTable tbody tr, [id^="userTeamTable-"] tbody tr').forEach(tr => {
         const cb = tr.querySelector('input[type="checkbox"]');
         const uid = cb ? Number(cb.value) : -1;
         tr.style.display = (uid > 0 && matchedIds.has(uid)) ? '' : 'none';
       });
 
-      if (countEl)    countEl.textContent = `${matched.length}명`;
+      if (countEl) {
+        const roleLabel = roleFilter ? UI_ROLE_DISPLAY[roleFilter]?.label : '';
+        countEl.textContent = roleFilter && !q
+          ? `${roleLabel} ${matched.length}명`
+          : `${matched.length}명`;
+      }
       if (noResultEl) noResultEl.classList.toggle('hidden', matched.length > 0);
     };
 
+    // 역할 카드 클릭 필터
+    window.filterUserByRole = function(uiRole) {
+      const isSame = window._activeRoleFilter === uiRole;
+      // 같은 카드 재클릭 → 해제 (토글)
+      window._activeRoleFilter = isSame ? null : uiRole;
+
+      // 카드 활성 스타일 토글
+      document.querySelectorAll('.role-filter-card').forEach(card => {
+        const isActive = !isSame && card.dataset.role === uiRole;
+        card.classList.toggle('role-filter-active', isActive);
+        card.style.boxShadow = isActive ? '0 0 0 2.5px currentColor, 0 4px 16px rgba(0,0,0,0.13)' : '';
+        card.style.transform = isActive ? 'translateY(-2px)' : '';
+        if (isActive) {
+          card.style.outline = '2.5px solid';
+          card.style.outlineOffset = '1px';
+        } else {
+          card.style.outline = '';
+          card.style.outlineOffset = '';
+          card.style.boxShadow = '';
+          card.style.transform = '';
+        }
+      });
+
+      // 전체 탭으로 자동 전환 (역할필터는 전체 탭 기준)
+      if (window._activeRoleFilter) {
+        const allTabEl = document.querySelector('#userTeamTabBar .tab-item');
+        if (allTabEl) switchUserTab('all', allTabEl);
+      }
+
+      // 현재 검색어 유지하며 필터 적용
+      const input = document.getElementById('userSearchInput');
+      window.filterUserList(input ? input.value : '');
+    };
+
     window.clearUserSearch = function() {
+      // 검색어 + 역할필터 모두 초기화
       const input = document.getElementById('userSearchInput');
       if (input) { input.value = ''; input.focus(); }
+      window._activeRoleFilter = null;
+      document.querySelectorAll('.role-filter-card').forEach(card => {
+        card.classList.remove('role-filter-active');
+        card.style.outline = '';
+        card.style.outlineOffset = '';
+        card.style.boxShadow = '';
+        card.style.transform = '';
+      });
       window.filterUserList('');
     };
 

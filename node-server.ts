@@ -2778,8 +2778,9 @@ function getUploadRoot(): string {
   return override || UPLOAD_ROOT
 }
 
-// ─── 새 폴더 구조 (v2) ────────────────────────────────────────────────────────
-// {uploadRoot}/{공사요청번호}_{공사명}/{서브번호}_{작업일}_{작업종류}/{단계폴더}/
+// ─── 새 폴더 구조 (v3 FEAT-042) ──────────────────────────────────────────────
+// {uploadRoot}/{년도}/{월}/{공사요청번호}_{공사명}/{서브번호}_{작업일}_{작업종류}/{단계폴더}/
+// 공사 미연결(미분류): {uploadRoot}/미분류/{taskFolder}/{단계폴더}/
 // photo 단계: {단계폴더}/{photo_type 하위폴더}/
 const STAGE_DIRS: Record<string, string> = {
   order:      '01_작업지시서',
@@ -2832,6 +2833,7 @@ function getUploadDir(
     work_date?: string | null;   planned_date?: string | null
     construction_type?: string | null
     con_request_no?: string | null; con_title?: string | null
+    con_created_at?: string | null  // [FEAT-042] 공사 등록일 → 년도/월 폴더
     team_name?: string | null  // [FEAT-050] 작업팀명 추가
   } | string,
   stage: string = 'photo',
@@ -2853,9 +2855,22 @@ function getUploadDir(
     return dir
   }
 
-  const conFolder = (task.con_request_no && task.con_title)
+  const hasConInfo = !!(task.con_request_no && task.con_title)
+  const conFolder = hasConInfo
     ? safeFsName(`${task.con_request_no}_${task.con_title}`)
     : '미분류'
+
+  // [FEAT-042] 년도/월 폴더: 공사 등록일(con_created_at) 기준
+  // 공사 연결 시만 년도/월 적용, 미분류는 기존 구조 유지
+  let yearFolder  = ''
+  let monthFolder = ''
+  if (hasConInfo && task.con_created_at) {
+    const dt = new Date(task.con_created_at)
+    if (!isNaN(dt.getTime())) {
+      yearFolder  = String(dt.getFullYear())
+      monthFolder = String(dt.getMonth() + 1).padStart(2, '0')
+    }
+  }
 
   const taskNum  = safeFsName(task.sub_task_number || task.task_number || 'UNKNOWN')
   const workDate = fmtDateStr(task.work_date || task.planned_date)
@@ -2865,10 +2880,16 @@ function getUploadDir(
   const taskFolder  = `${taskNum}_${workDate}_${workType}${teamSuffix}`
   const stageDir    = STAGE_DIRS[stage] || STAGE_DIRS.other
 
+  // [FEAT-042] 년도/월 있으면: {root}/{년도}/{월}/{conFolder}/{taskFolder}/{stageDir}
+  // 없으면(미분류 또는 con_created_at 없음): {root}/{conFolder}/{taskFolder}/{stageDir}
+  const basePath = (yearFolder && monthFolder)
+    ? join(root, yearFolder, monthFolder, conFolder)
+    : join(root, conFolder)
+
   // photo 단계 + photoType → 하위 폴더 추가
   // before → 01_작업 전 / progress → 02_작업 중 / after → 03_작업 후
   // caption 입력 시 → photo_type 폴더 아래 설명명 폴더 추가 생성
-  let dir = join(root, conFolder, taskFolder, stageDir)
+  let dir = join(basePath, taskFolder, stageDir)
   if (stage === 'photo' && photoType && PHOTO_TYPE_DIRS[photoType]) {
     dir = join(dir, PHOTO_TYPE_DIRS[photoType])
     const captionFolder = captionToFolderName(caption)
@@ -2935,6 +2956,7 @@ async function generateTbmApprovalPdf(tbmId: number): Promise<void> {
              t.construction_type  AS construction_type,
              c.request_no         AS con_request_no,
              c.title              AS con_title,
+             c.created_at         AS con_created_at,
              u.name               AS conductor_name,
              u.position           AS conductor_position,
              tm.name              AS team_name
@@ -2965,6 +2987,7 @@ async function generateTbmApprovalPdf(tbmId: number): Promise<void> {
       work_date: tbm.work_date, planned_date: tbm.planned_date,
       construction_type: tbm.construction_type,
       con_request_no: tbm.con_request_no, con_title: tbm.con_title,
+      con_created_at: tbm.con_created_at || null,  // [FEAT-042] 년도/월 폴더용
       team_name: tbm.team_name || null,  // [FEAT-050] 팀명 포함
     }
     const saveDir  = getUploadDir(taskObj, 'tbm')
@@ -3999,7 +4022,8 @@ app.post('/api/inspection-photos', async (c) => {
       task = rawDb.prepare(
         `SELECT t.task_number, t.sub_task_number, t.work_date, t.planned_date,
                 t.construction_type, t.construction_id,
-                c.request_no AS con_request_no, c.title AS con_title
+                c.request_no AS con_request_no, c.title AS con_title,
+                c.created_at AS con_created_at
          FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
          WHERE t.id = ?`
       ).get(Number(ins.task_id)) as any
@@ -4168,7 +4192,8 @@ app.post('/api/inspections', async (c) => {
         ? rawDb.prepare(
             `SELECT t.task_number, t.sub_task_number, t.work_date, t.planned_date,
                     t.construction_type, t.construction_id,
-                    c.request_no AS con_request_no, c.title AS con_title
+                    c.request_no AS con_request_no, c.title AS con_title,
+                    c.created_at AS con_created_at
              FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
              WHERE t.id = ?`
           ).get(task_id)
@@ -4931,6 +4956,7 @@ app.post('/api/photos', async (c) => {
         `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
                 t.construction_type, t.construction_id,
                 c.request_no AS con_request_no, c.title AS con_title,
+                c.created_at AS con_created_at,
                 tm.name AS team_name
          FROM tasks t
          LEFT JOIN constructions c ON c.id = t.construction_id
@@ -5072,6 +5098,7 @@ app.post('/api/photos/upload', async (c) => {
         `SELECT t.id, t.task_number, t.sub_task_number, t.planned_date, t.work_date,
                 t.construction_type, t.construction_id,
                 c.request_no AS con_request_no, c.title AS con_title,
+                c.created_at AS con_created_at,
                 tm.name AS team_name
          FROM tasks t
          LEFT JOIN constructions c  ON c.id  = t.construction_id

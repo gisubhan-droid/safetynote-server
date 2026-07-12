@@ -4006,7 +4006,7 @@ async function renderConstructionsPage(container) {
     // ── 행 렌더 함수 (정렬 재렌더 공용) ────────────────────────────────────
     const _conBuildRow = (con, idx) => {
       const borderColor = con.status==='settled'?'#4338CA':con.status==='settlement_requested'?'#D97706':con.status==='completed'?'#059669':con.status==='in_progress'?'#D70072':'#9E9BC8';
-      const createdFmt  = con.created_at  ? con.created_at.slice(0,10)  : '-';
+      const createdFmt  = con.notification_date ? con.notification_date.slice(0,10) : (con.created_at ? con.created_at.slice(0,10) : '-');
       const completeFmt = con.completion_date ? con.completion_date.slice(0,10) : '-';
       const rowBg = idx % 2 === 0 ? '#fff' : '#FAFAFE';
       const addrText = con.work_order_address
@@ -4242,10 +4242,10 @@ async function renderConstructionsPage(container) {
                   style="cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('work_order_address')">
                 작업지시주소<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
-              <th class="con-th con-th-resize" data-col="4" data-sortcol="created_at"
+              <th class="con-th con-th-resize" data-col="4" data-sortcol="notification_date"
                   style="text-align:center;cursor:pointer;user-select:none"
-                  onclick="if(window._conSortTrigger)window._conSortTrigger('created_at')">
-                등록일<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('notification_date')">
+                시공통보일<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
               <th class="con-th con-th-resize" data-col="5" data-sortcol="completion_date"
                   style="text-align:center;cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('completion_date')">
@@ -4318,7 +4318,7 @@ async function renderConstructionsPage(container) {
         };
         const _rawType2 = con.construction_type || con.work_class || '';
         const typeText2 = _rawType2 ? (_conTypeKeyMap2[_rawType2] || _rawType2) : '';
-        const createdFmt = con.created_at ? con.created_at.slice(0,10) : '-';
+        const createdFmt = con.notification_date ? con.notification_date.slice(0,10) : (con.created_at ? con.created_at.slice(0,10) : '-');
         const completeFmt = con.completion_date ? con.completion_date.slice(0,10) : '-';
         const managerText = con.manager_display_name || con.manager_name || '-';
         const supervisorText = con.supervisor_name || '';
@@ -4355,7 +4355,7 @@ async function renderConstructionsPage(container) {
           </div>` : ''}
           <!-- 5행: 날짜 + 담당자 -->
           <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:#6B7280">
-            <span><i class="fas fa-calendar-alt" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>등록 ${createdFmt}</span>
+            <span><i class="fas fa-calendar-alt" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>시공통보 ${createdFmt}</span>
             ${completeFmt !== '-' ? `<span><i class="fas fa-flag-checkered" style="margin-right:3px;color:#D70072;font-size:9px"></i>완료예정 <strong style="color:#D70072">${completeFmt}</strong></span>` : ''}
             ${managerText !== '-' ? `<span><i class="fas fa-user-tie" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>${managerText}</span>` : ''}
             ${supervisorText ? `<span><i class="fas fa-hard-hat" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>${supervisorText}</span>` : ''}
@@ -4721,10 +4721,10 @@ async function showCreateConstructionModal(editId = null) {
       </button>
     </div>
     <div class="modal-body" style="max-height:72vh;overflow-y:auto">
-      <div class="grid md:grid-cols-2 gap-4">
+      <div class="grid md:grid-cols-2 gap-2">
 
         <!-- ① 공사요청번호 -->
-        <div class="form-group">
+        <div class="form-group" style="margin-bottom:4px">
           <label class="form-label" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span>
               <i class="fas fa-hashtag mr-1" style="color:#685182"></i>
@@ -4743,7 +4743,7 @@ async function showCreateConstructionModal(editId = null) {
         </div>
 
         <!-- ② 작업번호 -->
-        <div class="form-group">
+        <div class="form-group" style="margin-bottom:4px">
           <label class="form-label">
             <i class="fas fa-tag mr-1" style="color:#D70072"></i>
             작업번호
@@ -4755,7 +4755,7 @@ async function showCreateConstructionModal(editId = null) {
         </div>
 
         <!-- ③④⑤ 공사종류 | 공사담당자 | 공사감독자 (3열 한 줄) -->
-        <div class="form-group md:col-span-2">
+        <div class="form-group md:col-span-2" style="margin-bottom:4px">
           <div class="grid grid-cols-3 gap-3">
 
             <!-- 공사종류 -->
@@ -4801,7 +4801,7 @@ async function showCreateConstructionModal(editId = null) {
         </div>
 
         <!-- ⑥ 공사명 -->
-        <div class="form-group md:col-span-2">
+        <div class="form-group md:col-span-2" style="margin-bottom:4px">
           <label class="form-label">
             <i class="fas fa-building mr-1" style="color:#685182"></i>
             공사명 <span class="text-red-500">*</span>
@@ -4810,7 +4810,7 @@ async function showCreateConstructionModal(editId = null) {
         </div>
 
         <!-- ⑦ 작업지시주소 -->
-        <div class="form-group md:col-span-2">
+        <div class="form-group md:col-span-2" style="margin-bottom:4px">
           <label class="form-label">
             <i class="fas fa-map-marker-alt mr-1" style="color:#D70072"></i>
             작업지시주소
@@ -4818,9 +4818,10 @@ async function showCreateConstructionModal(editId = null) {
           <input id="cAddress" class="form-control" placeholder="작업지시 주소를 입력하세요" value="${con.work_order_address||''}">
         </div>
 
-        <!-- ⑧ 완료예정일 -->
-        <div class="form-group md:col-span-2">
+        <!-- ⑧ 완료예정일 + 시공통보일 (2개 한줄) -->
+        <div class="form-group md:col-span-2" style="margin-bottom:4px">
           <div class="grid grid-cols-2 gap-3">
+            <!-- 완료예정일 (left) -->
             <div>
               <label class="form-label">
                 <i class="fas fa-calendar-check mr-1" style="color:#D70072"></i>
@@ -4830,11 +4831,21 @@ async function showCreateConstructionModal(editId = null) {
                 value="${con.completion_date || (() => { const d=new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })()}">
               <div class="text-xs text-gray-400 mt-1">공사 완료 예정일을 선택하세요</div>
             </div>
+            <!-- 시공통보일 (right) -->
+            <div>
+              <label class="form-label">
+                <i class="fas fa-calendar-day mr-1" style="color:#685182"></i>
+                시공통보일
+              </label>
+              <input id="cNotificationDate" type="date" class="form-control"
+                value="${con.notification_date || con.created_at?.slice(0,10) || new Date().toISOString().slice(0,10)}">
+              <div class="text-xs text-gray-400 mt-1">시공 통보일 (기본값: 등록일)</div>
+            </div>
           </div>
         </div>
 
         <!-- ⑨ 작업설명 -->
-        <div class="form-group md:col-span-2">
+        <div class="form-group md:col-span-2" style="margin-bottom:4px">
           <label class="form-label">
             <i class="fas fa-align-left mr-1" style="color:#685182"></i>
             작업설명
@@ -5066,7 +5077,8 @@ async function saveConstruction(editId) {
     : '';
   const supName        = (document.getElementById('cSupervisor')?.value || '').trim();
   const desc           = (document.getElementById('cDesc')?.value || '').trim();
-  const completionDate = (document.getElementById('cCompletionDate')?.value || '').trim() || null;
+  const completionDate     = (document.getElementById('cCompletionDate')?.value || '').trim() || null;
+  const notificationDate   = (document.getElementById('cNotificationDate')?.value || '').trim() || null;
 
   // 자동부여 모드는 YYMMDDhhmm## = 12자리 숫자이므로 기존 검증 그대로 통과
   if (!editId && !reqNo) { toast('공사요청번호를 입력하세요', 'error'); return; }
@@ -5079,7 +5091,7 @@ async function saveConstruction(editId) {
 
   const body = { work_number: workNum, work_class: workClass, title, work_order_address: address,
     manager_id: mgId, manager_name: mgName, supervisor_name: supName, description: desc,
-    completion_date: completionDate };
+    completion_date: completionDate, notification_date: notificationDate };
   if (!editId) {
     body.request_no = reqNo;
     body.is_auto_request_no = isAutoReqNo ? 1 : 0;  // [v0.143 LGU+] 자동부여 여부 저장

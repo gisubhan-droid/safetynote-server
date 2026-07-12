@@ -6152,3 +6152,84 @@ git pull origin main
 git pull origin main
 # (pm2 restart 불필요 — public/static/app.js, style.css만 변경, 서버코드 무변경)
 ```
+
+---
+
+## 세션 125 (2026-07-12) — 공사현황 완료예정일 + 엑셀스타일 테이블 + 컬럼 리사이즈
+
+### 작업 요약
+3가지 요청 사항 구현:
+1. 공사 등록 모달에 완료예정일 필드 추가 + DB 컬럼 추가 + 기존 데이터 일괄 업데이트
+2. 공사현황 테이블 컬럼 개편 (등록일·완료예정일 추가)
+3. 공사현황·작업관리 테이블 엑셀 워크시트 스타일 + 컬럼 드래그 리사이즈
+
+### 요청1: 완료예정일 DB/백엔드/모달 추가
+
+#### DB 마이그레이션 (`migrations/0056_constructions_completion_date.sql`)
+```sql
+ALTER TABLE constructions ADD COLUMN completion_date DATE DEFAULT NULL;
+UPDATE constructions SET completion_date = date(created_at, '+7 days') WHERE completion_date IS NULL;
+```
+- 기존 데이터 전체: `created_at + 7일` 로 일괄 업데이트 (최초 1회, NULL 방지)
+- 로컬 D1 적용 완료
+
+#### 백엔드 (`src/routes/constructions.ts`)
+- POST: `completion_date` 파라미터 수신 → INSERT 반영 (없으면 +7일 기본값)
+- PUT: `completion_date` 파라미터 수신 → UPDATE 반영
+
+#### 프론트엔드 (`public/static/app.js`)
+- `showCreateConstructionModal()`: `<!-- ⑧ 완료예정일 -->` 입력 필드 삽입 (id=`cCompletionDate`, 기본값 today+7 또는 기존 `con.completion_date`)
+- `saveConstruction()`: `completionDate` 변수 읽어 `completion_date: completionDate` 를 API body에 포함
+
+### 요청2: 공사현황 테이블 컬럼 개편
+
+| 이전 | 변경 후 |
+|------|---------|
+| 공사요청번호 \| 공사명 \| 공사담당자 \| 공사감독자 \| 진행상태 | 공사요청번호 \| 공사명 \| 등록일 \| 완료예정일 \| 공사담당자 \| 공사감독자 \| 진행상태 |
+
+- CSS `display:grid` → `<table> + table-layout:fixed + <colgroup>` 구조로 전환
+- `con-col-table` 클래스 (헤더/바디 양쪽 동일 colgroup 적용)
+- `con-thead-sticky` (position:sticky, top:56px) + `con-tbody-scroll` (overflow-x:auto) 구조
+
+### 요청3: 엑셀 워크시트 스타일 + 컬럼 리사이즈
+
+#### style.css 추가 내용
+- `.col-resizer`: 공통 드래그 핸들 (position:absolute, right:0, width:5px, cursor:col-resize), hover 시 분홍색 하이라이트
+- `.con-col-table`, `.con-th`, `.con-th-resize`, `.con-td`, `.con-tr`: 공사현황 테이블 전용 엑셀 스타일
+- `.task-th-resize`: 작업관리 헤더 th 리사이즈 클래스 추가
+- 교대 행 배경색 (짝수행 `#FAFAFE`), hover 하이라이트 (`#FDF7FB`)
+- 헤더 sticky, 가로 스크롤바 커스텀
+
+#### app.js 추가 내용
+- `_initConColResize()`: 공사현황 컬럼 드래그 리사이즈 + 헤더/바디 가로 스크롤 동기화
+- `_initTaskColResize()`: 작업관리 컬럼 드래그 리사이즈 + 헤더/바디 가로 스크롤 동기화
+  - `mousedown` → `mousemove` → `mouseup` drag 이벤트 + headCols/bodyCols 양쪽 동기 적용
+  - 더블클릭 시 컬럼 너비 CSS 리셋 (자동 너비 복원)
+  - 최소 너비 50px(공사현황) / 40px(작업관리) 제한
+- 작업관리 헤더 th: `sortTh()` → 인라인 th 문자열로 교체 (`.task-th-resize` 클래스 + `.col-resizer` 스팬 포함)
+- `renderTasksPage()` 후처리 `requestAnimationFrame`에서 `_initTaskColResize()` 호출 (기존 scroll 동기화 코드를 함수 내부로 통합)
+
+### 커밋 로그
+| 파일 | 커밋 | 내용 |
+|------|------|------|
+| `migrations/0056_constructions_completion_date.sql` | `d557682` | feat: 공사현황 완료예정일 추가 + 테이블 엑셀스타일 + 컬럼 리사이즈 |
+| `src/routes/constructions.ts` | `d557682` | 동일 커밋 |
+| `public/static/app.js` | `d557682` | 동일 커밋 |
+| `public/static/style.css` | `d557682` | 동일 커밋 |
+
+### 파일 수정 내역
+| 파일 | 상태 | 변경 내용 |
+|------|------|----------|
+| `migrations/0056_constructions_completion_date.sql` | created | completion_date DATE 컬럼 + 기존 데이터 created_at+7일 일괄 업데이트 |
+| `src/routes/constructions.ts` | modified | POST/PUT completion_date 파라미터 수신 + DB 쿼리 반영 |
+| `public/static/app.js` | modified | saveConstruction completion_date 전송 + renderConstructionsPage table 전환 + 컬럼 추가 + 리사이즈 JS 2개 함수 + 작업관리 헤더 th 개편 |
+| `public/static/style.css` | modified | .col-resizer 공통 핸들 + con-col-table 엑셀스타일 전체 + task-th-resize + hover/zebra 스타일 |
+| `dist/_worker.js` | built | 빌드 결과물 (276.43 kB) |
+
+### NAS 배포 안내
+```bash
+git pull origin main
+npx wrangler d1 execute safety-management-production --file=migrations/0056_constructions_completion_date.sql
+# pm2 restart 불필요 (서버코드 변경 없음 — constructions.ts만 변경된 경우 재시작 필요)
+pm2 restart safetynote   # constructions.ts 변경으로 Workers 재빌드 필요 시
+```

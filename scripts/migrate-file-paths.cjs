@@ -230,19 +230,45 @@ async function main() {
   const db = new Database(dbPath, { readonly: DRY_RUN })
   const uploadRoot = findUploadRoot(db)
   console.log(`[루트] ${uploadRoot}`)
+
+  // ── DB 테이블 목록 출력 (디버그) ────────────────────────────────────────
+  const allTables = db.prepare(
+    `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`
+  ).all().map(r => r.name)
+  console.log(`\n[DB 테이블 목록 - ${allTables.length}개]`)
+  console.log('  ' + allTables.join(', '))
+  console.log()
+
+  // ── 대상 테이블 존재 여부 사전 확인 ─────────────────────────────────────
+  const HAS = name => allTables.includes(name)
+  if (!HAS('task_photos'))       console.warn('  [!] task_photos 테이블 없음 — 건너뜀')
+  if (!HAS('inspection_photos')) console.warn('  [!] inspection_photos 테이블 없음 — 건너뜀')
+  if (!HAS('task_attachments'))  console.warn('  [!] task_attachments 테이블 없음 — 건너뜀')
   console.log()
 
   // ── 1. task_photos 마이그레이션 ─────────────────────────────────────────
-  console.log('[ 1/4 ] task_photos 처리 중...')
-  migrateTaskPhotos(db, uploadRoot)
+  if (HAS('task_photos')) {
+    console.log('[ 1/4 ] task_photos 처리 중...')
+    migrateTaskPhotos(db, uploadRoot)
+  } else {
+    console.log('[ 1/4 ] task_photos — 테이블 없음, 건너뜀')
+  }
 
   // ── 2. inspection_photos 마이그레이션 ───────────────────────────────────
-  console.log('[ 2/4 ] inspection_photos 처리 중...')
-  migrateInspectionPhotos(db, uploadRoot)
+  if (HAS('inspection_photos')) {
+    console.log('[ 2/4 ] inspection_photos 처리 중...')
+    migrateInspectionPhotos(db, uploadRoot)
+  } else {
+    console.log('[ 2/4 ] inspection_photos — 테이블 없음, 건너뜀')
+  }
 
   // ── 3. task_attachments 마이그레이션 ────────────────────────────────────
-  console.log('[ 3/4 ] task_attachments 처리 중...')
-  migrateTaskAttachments(db, uploadRoot)
+  if (HAS('task_attachments')) {
+    console.log('[ 3/4 ] task_attachments 처리 중...')
+    migrateTaskAttachments(db, uploadRoot)
+  } else {
+    console.log('[ 3/4 ] task_attachments — 테이블 없음, 건너뜀')
+  }
 
   // ── 4. TBM PDF 파일시스템 탐색 이동 ────────────────────────────────────
   console.log('[ 4/4 ] TBM PDF 처리 중...')

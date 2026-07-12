@@ -3795,7 +3795,80 @@ async function renderConstructionsPage(container) {
         </div>
       </div>
     </div>
-    <div style="padding:8px 20px;font-size:11px;color:#AAA;text-align:right">총 ${list.length}건</div>`;
+    <div style="padding:8px 20px;font-size:11px;color:#AAA;text-align:right">총 ${list.length}건</div>
+
+    <!-- ── 모바일 카드 그리드 (768px 이하) ── -->
+    <div id="conCardGrid" style="display:none">
+      ${list.map(con => {
+        // 상태 색상
+        const _conCardStatusColor = {
+          registered:'#685182', in_progress:'#D70072', completed:'#059669',
+          settlement_requested:'#D97706', settled:'#4338CA'
+        };
+        const _conCardStatusBg = {
+          registered:'#F5F3FA', in_progress:'#FDE8F3', completed:'#D1FAE5',
+          settlement_requested:'#FEF3C7', settled:'#EEF2FF'
+        };
+        const _conCardStatusLabel = {
+          registered:'등록', in_progress:'진행중', completed:'완료',
+          settlement_requested:'정산요청', settled:'정산완료'
+        };
+        const sc = _conCardStatusColor[con.status] || '#685182';
+        const sb = _conCardStatusBg[con.status] || '#F5F3FA';
+        const sl = _conCardStatusLabel[con.status] || con.status;
+        const borderColor = con.status==='settled'?'#4338CA':con.status==='settlement_requested'?'#D97706':con.status==='completed'?'#059669':con.status==='in_progress'?'#D70072':'#9E9BC8';
+        const _conTypeKeyMap2 = {
+          relocation:'지장이설', subscription:'청약개통', conduit:'관로공사',
+          environment:'환경공사', separate:'별도사업', other:'기타',
+          cable_install:'광케이블시설', cable_splice:'광케이블접속', equipment_other:'장비·기타'
+        };
+        const _rawType2 = con.construction_type || con.work_class || '';
+        const typeText2 = _rawType2 ? (_conTypeKeyMap2[_rawType2] || _rawType2) : '';
+        const createdFmt = con.created_at ? con.created_at.slice(0,10) : '-';
+        const completeFmt = con.completion_date ? con.completion_date.slice(0,10) : '-';
+        const managerText = con.manager_display_name || con.manager_name || '-';
+        const supervisorText = con.supervisor_name || '';
+        const addrText = con.work_order_address || '';
+        return `
+        <div onclick="showConstructionDetail(${con.id})"
+             style="background:white;border-radius:14px;padding:12px 14px;
+                    border:1.5px solid #F0EBF5;border-left:4px solid ${borderColor};
+                    cursor:pointer;transition:box-shadow .15s,border-color .15s"
+             onmouseover="this.style.boxShadow='0 4px 16px rgba(103,81,130,.12)'"
+             onmouseout="this.style.boxShadow=''">
+          <!-- 1행: 요청번호 + 상태 배지 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:6px">
+            <span style="font-size:11px;font-family:monospace;color:#685182;font-weight:600;flex-shrink:0">${con.request_no}</span>
+            <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;
+                         background:${sb};color:${sc};white-space:nowrap;flex-shrink:0">${sl}</span>
+          </div>
+          <!-- 2행: 공사명 -->
+          <div style="font-size:13px;font-weight:700;color:#1A1A2E;line-height:1.35;margin-bottom:6px;
+                      display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
+            ${con.title}
+          </div>
+          <!-- 3행: 공사종류 배지 -->
+          ${typeText2 ? `
+          <div style="margin-bottom:6px">
+            <span style="font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;
+                         background:#FDE8F3;color:#D70072">${typeText2}</span>
+          </div>` : ''}
+          <!-- 4행: 주소 -->
+          ${addrText ? `
+          <div style="font-size:10px;color:#9CA3AF;margin-bottom:6px;
+                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            <i class="fas fa-map-marker-alt" style="margin-right:3px;color:#D70072;font-size:9px"></i>${addrText}
+          </div>` : ''}
+          <!-- 5행: 날짜 + 담당자 -->
+          <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:#6B7280">
+            <span><i class="fas fa-calendar-alt" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>등록 ${createdFmt}</span>
+            ${completeFmt !== '-' ? `<span><i class="fas fa-flag-checkered" style="margin-right:3px;color:#D70072;font-size:9px"></i>완료예정 <strong style="color:#D70072">${completeFmt}</strong></span>` : ''}
+            ${managerText !== '-' ? `<span><i class="fas fa-user-tie" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>${managerText}</span>` : ''}
+            ${supervisorText ? `<span><i class="fas fa-hard-hat" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>${supervisorText}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
 
 
     // ── 컬럼 리사이즈 초기화 ──

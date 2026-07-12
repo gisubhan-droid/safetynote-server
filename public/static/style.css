@@ -1447,7 +1447,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 .task-col-table col.c-mgr   { width: 80px; }
 .task-col-table col.c-title { width: auto; }   /* 남은 공간 */
 .task-col-table col.c-risk     { width: 68px; }    /* 위험도 배지 전용 */
-.task-col-table col.c-progress { width: 110px; }   /* 진행단계 라벨 + 버튼 (세로 분리) */
+.task-col-table col.c-progress { width: 148px; }   /* 진행단계 라벨 한 줄 표시 ("작업완료(일지대기)" 기준) */
 
 /* 헤더 th 공통 스타일 */
 .task-th {
@@ -1794,6 +1794,29 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 }
 #conListTable tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* ─── 공사현황 PC/모바일 이원화 레이아웃 ──────────────────────────────────── */
+/* PC (769px 이상): 테이블 표시, 카드 숨김 */
+@media (min-width: 769px) {
+  .con-table-outer-wrap {
+    display: block !important;
+  }
+  #conCardGrid {
+    display: none !important;
+  }
+}
+/* 모바일 (768px 이하): 카드 표시, 테이블 숨김 */
+@media (max-width: 768px) {
+  .con-table-outer-wrap {
+    display: none !important;
+  }
+  #conCardGrid {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 4px 0;
+  }
 }
 
 /* 작업관리 th에도 position:relative 추가 (리사이즈 핸들 위치 기준) */

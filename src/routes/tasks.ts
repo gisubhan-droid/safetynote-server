@@ -1152,22 +1152,33 @@ app.patch('/:id/work-class', async (c) => {
   return c.json({ success: true })
 })
 
-// 작업 삭제 — [FEAT-053] 시스템관리자(admin+position='시스템관리자') 전용, 완료(completed) 상태만 허용
+// 작업 삭제 — [FEAT-053] 시스템관리자 전용, 완료(completed/cancelled) 상태만 허용
+// [FEAT-060] 등록자(created_by)는 unassigned/assigned 상태(위험성평가 전 단계)에서 추가 허용
 app.delete('/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  // [FEAT-053] 시스템관리자만 삭제 가능
-  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
-  if (!isSysAdmin) return c.json({ error: '시스템 관리자만 삭제할 수 있습니다.' }, 403)
-
   const id = c.req.param('id')
 
-  // [FEAT-053] 완료(completed) 또는 취소(cancelled) 상태인 작업만 삭제 허용
-  const taskRow = await c.env.DB.prepare(`SELECT id, status, title FROM tasks WHERE id = ?`).bind(id).first<any>()
+  const taskRow = await c.env.DB.prepare(`SELECT id, status, title, created_by FROM tasks WHERE id = ?`).bind(id).first<any>()
   if (!taskRow) return c.json({ error: '작업을 찾을 수 없습니다.' }, 404)
-  if (taskRow.status !== 'completed' && taskRow.status !== 'cancelled') {
-    return c.json({ error: `완료 또는 취소된 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
+
+  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
+  const isCreator  = user.id === taskRow.created_by
+
+  // [FEAT-053] 시스템관리자: 완료(completed) 또는 취소(cancelled) 상태만 허용
+  if (isSysAdmin) {
+    if (taskRow.status !== 'completed' && taskRow.status !== 'cancelled') {
+      return c.json({ error: `완료 또는 취소된 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
+    }
+  } else if (isCreator) {
+    // [FEAT-060] 등록자: 위험성평가 전 단계(unassigned/assigned)만 허용
+    const PRE_CHECKLIST = ['unassigned', 'assigned']
+    if (!PRE_CHECKLIST.includes(taskRow.status)) {
+      return c.json({ error: `위험성(체크리스트)평가 이전 단계(작업지시·작업등록)의 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
+    }
+  } else {
+    return c.json({ error: '삭제 권한이 없습니다. 등록자 또는 시스템 관리자만 삭제할 수 있습니다.' }, 403)
   }
 
   // 테이블이 없을 수 있으므로 각 DELETE를 개별 try/catch로 처리

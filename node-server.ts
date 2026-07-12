@@ -3478,22 +3478,33 @@ app.patch('/api/tasks/:id/status', async (c) => {
 // ─── [BUG-087] NAS 전용: DELETE /api/tasks/:id — rawDb로 완전한 연쇄 삭제 ────
 // tasks.ts(Cloudflare D1)의 safeDelete 체인이 NAS SQLite FK 환경에서 실패하는 문제 해결
 // rawDb를 직접 사용하여 FK pragma 비활성화 후 순차 삭제
+// [FEAT-060] 등록자: unassigned/assigned 상태(위험성평가 전 단계)에서 추가 허용
 app.delete('/api/tasks/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  // [FEAT-053] 시스템관리자만 삭제 가능
-  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
-  if (!isSysAdmin) return c.json({ error: '시스템 관리자만 삭제할 수 있습니다.' }, 403)
-
   const id = Number(c.req.param('id'))
   if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
 
-  // [FEAT-053] 완료(completed) 또는 취소(cancelled) 상태 확인
-  const taskRow: any = rawDb.prepare(`SELECT id, status, title FROM tasks WHERE id = ?`).get(id)
+  const taskRow: any = rawDb.prepare(`SELECT id, status, title, created_by FROM tasks WHERE id = ?`).get(id)
   if (!taskRow) return c.json({ error: '작업을 찾을 수 없습니다.' }, 404)
-  if (taskRow.status !== 'completed' && taskRow.status !== 'cancelled') {
-    return c.json({ error: `완료 또는 취소된 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
+
+  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
+  const isCreator  = user.id === taskRow.created_by
+
+  // [FEAT-053] 시스템관리자: 완료(completed) 또는 취소(cancelled) 상태만 허용
+  if (isSysAdmin) {
+    if (taskRow.status !== 'completed' && taskRow.status !== 'cancelled') {
+      return c.json({ error: `완료 또는 취소된 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
+    }
+  } else if (isCreator) {
+    // [FEAT-060] 등록자: 위험성평가 전 단계(unassigned/assigned)만 허용
+    const PRE_CHECKLIST = ['unassigned', 'assigned']
+    if (!PRE_CHECKLIST.includes(taskRow.status)) {
+      return c.json({ error: `위험성(체크리스트)평가 이전 단계(작업지시·작업등록)의 작업만 삭제할 수 있습니다. 현재 상태: ${taskRow.status}` }, 409)
+    }
+  } else {
+    return c.json({ error: '삭제 권한이 없습니다. 등록자 또는 시스템 관리자만 삭제할 수 있습니다.' }, 403)
   }
 
   try {
@@ -4638,38 +4649,52 @@ app.get('/api/constructions/request-no-seq', async (c) => {
   return c.json({ next_no: nextNo, seq: nextSeq, prefix })
 })
 
-// ─── NAS 전용: 공사 삭제 (FEAT-053 업데이트) ────────────────────────────────
-// [TASK-001 → FEAT-053] RULE-002 준수 — app.route('/api/constructions') 마운트 앞에 등록
-// 시스템관리자 전용, 완료(completed/settled) 상태만 허용
+// ─── NAS 전용: 공사 삭제 (FEAT-060 업데이트) ────────────────────────────────
+// [TASK-001 → FEAT-053 → FEAT-060] RULE-002 준수 — app.route('/api/constructions') 마운트 앞에 등록
+// [FEAT-053] 시스템관리자: 완료(completed/settled) 상태만 허용
+// [FEAT-060] 등록자: registered 상태 + 연결 작업 0건일 때 추가 허용
 app.delete('/api/constructions/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  // [FEAT-053] 시스템관리자만 삭제 가능
-  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
-  if (!isSysAdmin) return c.json({ error: '시스템 관리자만 삭제할 수 있습니다.' }, 403)
-
   const id = parseInt(c.req.param('id'))
   if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
 
-  const con = rawDb.prepare(`SELECT id, title, status FROM constructions WHERE id = ?`).get(id) as any
+  const con = rawDb.prepare(`SELECT id, title, status, created_by FROM constructions WHERE id = ?`).get(id) as any
   if (!con) return c.json({ error: '공사 없음' }, 404)
 
-  // [FEAT-053] 완료(completed) 또는 정산완료(settled) 상태만 삭제 허용
-  if (con.status !== 'completed' && con.status !== 'settled') {
-    return c.json({ error: `완료되거나 정산완료된 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}` }, 409)
-  }
+  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
+  const isCreator  = user.id === con.created_by
 
-  // 진행 중인 작업 잔존 여부 확인
-  const linked = rawDb.prepare(
-    `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ? AND status NOT IN ('completed','cancelled')`
-  ).get(id) as any
-  if ((linked?.cnt ?? 0) > 0) {
-    return c.json({ error: `진행 중인 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 완료하거나 취소해 주세요.` }, 409)
+  if (isSysAdmin) {
+    // [FEAT-053] 시스템관리자: 완료(completed) 또는 정산완료(settled) 상태만 허용
+    if (con.status !== 'completed' && con.status !== 'settled') {
+      return c.json({ error: `완료되거나 정산완료된 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}` }, 409)
+    }
+    // 진행 중인 작업 잔존 여부 확인
+    const linked = rawDb.prepare(
+      `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ? AND status NOT IN ('completed','cancelled')`
+    ).get(id) as any
+    if ((linked?.cnt ?? 0) > 0) {
+      return c.json({ error: `진행 중인 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 완료하거나 취소해 주세요.` }, 409)
+    }
+  } else if (isCreator && con.status === 'registered') {
+    // [FEAT-060] 등록자: registered 상태이고 연결 작업이 하나도 없을 때만 허용
+    const taskCount = rawDb.prepare(
+      `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ?`
+    ).get(id) as any
+    if ((taskCount?.cnt ?? 0) > 0) {
+      return c.json({ error: `연결된 작업이 ${taskCount.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 삭제해 주세요.` }, 409)
+    }
+  } else {
+    if (!isSysAdmin && !isCreator) {
+      return c.json({ error: '삭제 권한이 없습니다. 등록자 또는 시스템 관리자만 삭제할 수 있습니다.' }, 403)
+    }
+    return c.json({ error: `등록 상태의 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}` }, 409)
   }
 
   rawDb.prepare(`DELETE FROM constructions WHERE id = ?`).run(id)
-  console.log(`[FEAT-053] 공사 삭제 완료: id=${id} title="${con.title}" by ${user.name}`)
+  console.log(`[FEAT-060] 공사 삭제 완료: id=${id} title="${con.title}" by ${user.name}(${isSysAdmin?'sysadmin':'creator'})`)
   return c.json({ success: true, message: `"${con.title}" 공사가 삭제되었습니다.` })
 })
 

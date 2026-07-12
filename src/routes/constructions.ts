@@ -416,37 +416,56 @@ app.post('/:id/settle-complete', async (c) => {
 })
 
 // ─── [TASK-001] 공사 삭제 ────────────────────────────────────────────────────
-// 연결된 tasks 존재 시 409 차단
-// [FEAT-053] 공사 삭제 — 시스템관리자 전용, 완료(completed/settled) 상태만 허용
+// [FEAT-053] 시스템관리자 전용, 완료(completed/settled) 상태만 허용
+// [FEAT-060] 등록자(created_by)는 registered 상태 + 연결 작업 0건일 때 추가 허용
 app.delete('/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-
-  // [FEAT-053] 시스템관리자만 삭제 가능
-  const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
-  if (!isSysAdmin) return c.json({ error: '시스템 관리자만 삭제할 수 있습니다.' }, 403)
 
   const id = parseInt(c.req.param('id'))
   if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
 
   try {
-    const con = await c.env.DB.prepare(`SELECT id, title, status FROM constructions WHERE id = ?`).bind(id).first<any>()
+    const con = await c.env.DB.prepare(`SELECT id, title, status, created_by FROM constructions WHERE id = ?`).bind(id).first<any>()
     if (!con) return c.json({ error: '공사 없음' }, 404)
 
-    // [FEAT-053] 완료(completed) 또는 정산완료(settled) 상태만 삭제 허용
-    if (con.status !== 'completed' && con.status !== 'settled') {
-      return c.json({
-        error: `완료되거나 정산완료된 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}`
-      }, 409)
-    }
+    const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
+    const isCreator  = user.id === con.created_by
 
-    // 연결 작업 존재 여부 확인 — 모든 작업이 completed/cancelled 인 경우만 허용
-    const linked = await c.env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ? AND status NOT IN ('completed','cancelled')`
-    ).bind(id).first<any>()
-    if ((linked?.cnt ?? 0) > 0) {
+    // [FEAT-053] 시스템관리자: 완료(completed) 또는 정산완료(settled) 상태만 허용
+    if (isSysAdmin) {
+      if (con.status !== 'completed' && con.status !== 'settled') {
+        return c.json({
+          error: `완료되거나 정산완료된 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}`
+        }, 409)
+      }
+      // 진행 중인 작업 잔존 여부 확인
+      const linked = await c.env.DB.prepare(
+        `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ? AND status NOT IN ('completed','cancelled')`
+      ).bind(id).first<any>()
+      if ((linked?.cnt ?? 0) > 0) {
+        return c.json({
+          error: `진행 중인 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 완료하거나 취소해 주세요.`
+        }, 409)
+      }
+    } else if (isCreator && con.status === 'registered') {
+      // [FEAT-060] 등록자: registered 상태이고 연결 작업이 하나도 없을 때만 허용
+      const taskCount = await c.env.DB.prepare(
+        `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ?`
+      ).bind(id).first<any>()
+      if ((taskCount?.cnt ?? 0) > 0) {
+        return c.json({
+          error: `연결된 작업이 ${taskCount.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 삭제해 주세요.`
+        }, 409)
+      }
+    } else {
+      // 권한 없음
+      if (!isSysAdmin && !isCreator) {
+        return c.json({ error: '삭제 권한이 없습니다. 등록자 또는 시스템 관리자만 삭제할 수 있습니다.' }, 403)
+      }
+      // 등록자이지만 registered 상태가 아님
       return c.json({
-        error: `진행 중인 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 완료하거나 취소해 주세요.`
+        error: `등록 상태의 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}`
       }, 409)
     }
 

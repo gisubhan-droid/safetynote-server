@@ -4477,8 +4477,12 @@ async function showConstructionDetail(conId) {
     const allCompleted = activeTasks.length > 0 && activeTasks.every(t => t.status === 'completed');
 
     // [FEAT-053] 삭제 버튼 표시 조건: sysadmin이고 공사가 완료/정산완료 상태
+    // [FEAT-060] 등록자(isCreator)이고 registered 상태이며 연결 작업이 없을 때 추가 허용
     const _conIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
-    const _conCanDelete = _conIsSysAdmin && (con.status === 'completed' || con.status === 'settled');
+    const _conIsCreator  = currentUser.id === con.created_by;
+    const _conSysAdminCanDelete = _conIsSysAdmin && (con.status === 'completed' || con.status === 'settled');
+    const _conCreatorCanDelete  = _conIsCreator  && con.status === 'registered' && (con.task_total == null ? (con.tasks||[]).length === 0 : Number(con.task_total) === 0);
+    const _conCanDelete = _conSysAdminCanDelete || _conCreatorCanDelete;
 
     const stageLabel = { registered:'등록', in_progress:'진행중', completed:'완료', settlement_requested:'정산요청', settled:'정산완료' };
 
@@ -4619,9 +4623,9 @@ async function showConstructionDetail(conId) {
         }
       </div>
     </div>
-    <!-- 하단 버튼 -->
+      <!-- 하단 버튼 -->
     <div class="modal-footer flex justify-between">
-      <!-- 좌: 삭제 버튼 (sysadmin + 완료/정산완료 상태만 표시) [FEAT-053] -->
+      <!-- 좌: 삭제 버튼 (sysadmin+완료/정산완료 or 등록자+registered+작업없음) [FEAT-053/FEAT-060] -->
       <div>
         ${_conCanDelete
           ? `<button onclick="deleteConstruction(${conId})"
@@ -4631,7 +4635,12 @@ async function showConstructionDetail(conId) {
             </button>`
           : (_conIsSysAdmin
               ? `<span class="text-xs text-gray-400" style="line-height:2.2"><i class="fas fa-lock mr-1"></i>완료/정산완료 상태만 삭제 가능</span>`
-              : '')
+              : (_conIsCreator && con.status === 'registered'
+                  ? `<span class="text-xs text-gray-400" style="line-height:2.2"><i class="fas fa-lock mr-1"></i>연결된 작업이 있어 삭제 불가</span>`
+                  : (_conIsCreator
+                      ? `<span class="text-xs text-gray-400" style="line-height:2.2"><i class="fas fa-lock mr-1"></i>등록 상태에서만 삭제 가능</span>`
+                      : ''))
+            )
         }
       </div>
       <!-- 우: 수정 + 상태 버튼 -->
@@ -5217,14 +5226,12 @@ async function showEditConstructionModal(conId) {
   await showCreateConstructionModal(conId);
 }
 
-// ─── [FEAT-053] 공사 삭제 — 시스템관리자 전용, 완료/정산완료 상태만 허용 ─────
+// ─── [FEAT-053/FEAT-060] 공사 삭제 — sysadmin(완료/정산완료) 또는 등록자(registered+작업없음) ─
 async function deleteConstruction(conId) {
-  // [FEAT-053] 클라이언트 권한 사전 체크
+  // [FEAT-060] 클라이언트 권한 사전 체크 — sysadmin 또는 등록자(registered 상태) 허용
   const _myUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-  if (_myUiRole !== 'sysadmin') {
-    toast('시스템 관리자만 삭제할 수 있습니다.', 'error', 4000);
-    return;
-  }
+  // 권한 체크는 서버에서 최종 결정 — 클라이언트는 버튼 표시 기준으로만 차단
+  // (버튼 자체가 _conCanDelete 조건으로 제어되므로 여기선 최소 체크만)
   const ok = await showConfirmDialog(
     '공사 삭제',
     '이 공사와 모든 연관 데이터를 삭제합니다.<br><strong style="color:#e53e3e">삭제하면 복구할 수 없습니다.</strong><br>정말 삭제하시겠습니까?',
@@ -6040,6 +6047,8 @@ async function renderTasksPage(container) {
         </div>`;
 
       const canEdit = currentUser.role === 'admin' || currentUser.role === 'supervisor';
+      // [FEAT-060] 카드뷰 삭제 버튼: sysadmin(완료/취소) 또는 등록자(unassigned/assigned)에게 표시
+      const _cardIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
 
       return data.map(t => {
         const rl = t.risk_level || 'normal';
@@ -6083,12 +6092,20 @@ async function renderTasksPage(container) {
                        color:#685182;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer">
                 <i class="fas fa-edit"></i>
               </button>
+              ${(_cardIsSysAdmin && (t.status==='completed'||t.status==='cancelled')) || (currentUser.id===t.created_by && (t.status==='unassigned'||t.status==='assigned')) ? `
+              <button onclick="deleteTask(${t.id}, '${t.status}')"
+                style="width:26px;height:26px;border-radius:7px;border:1px solid #FDE8F3;background:white;
+                       color:#D70072;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer">
+                <i class="fas fa-trash"></i>
+              </button>` : ''}
+            </div>` : ((_cardIsSysAdmin && (t.status==='completed'||t.status==='cancelled')) || (currentUser.id===t.created_by && (t.status==='unassigned'||t.status==='assigned')) ? `
+            <div style="display:flex;gap:4px;flex-shrink:0" onclick="event.stopPropagation()">
               <button onclick="deleteTask(${t.id}, '${t.status}')"
                 style="width:26px;height:26px;border-radius:7px;border:1px solid #FDE8F3;background:white;
                        color:#D70072;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer">
                 <i class="fas fa-trash"></i>
               </button>
-            </div>` : ''}
+            </div>` : '')}
           </div>
 
           <!-- 공사명 -->
@@ -6187,8 +6204,11 @@ async function renderTasksPage(container) {
         const workTypeDisplay = t.construction_type || '-';
         // 작업분류
         const workClassDisplay = wcShortMap2[t.work_class] || t.work_class || '-';
-        // [FEAT-053] 삭제: sysadmin + completed/cancelled 상태만
-        const canDeleteRow = _tblIsSysAdmin && (st === 'completed' || st === 'cancelled');
+        // [FEAT-053] 삭제: sysadmin + completed/cancelled 상태
+        // [FEAT-060] 등록자 + unassigned/assigned 상태 추가 허용
+        const _tblIsCreatorRow = currentUser.id === t.created_by;
+        const canDeleteRow = (_tblIsSysAdmin && (st === 'completed' || st === 'cancelled'))
+                          || (_tblIsCreatorRow && (st === 'unassigned' || st === 'assigned'));
 
         return `<tr onclick="showTaskDetail(${t.id})"
           style="cursor:pointer;transition:background .1s"
@@ -6230,7 +6250,7 @@ async function renderTasksPage(container) {
                 <button onclick="deleteTask(${t.id}, '${st}')"
                   style="width:22px;height:22px;border-radius:6px;border:1px solid #FDE8F3;background:white;
                          color:#D70072;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
-                  title="삭제(시스템관리자 전용)">
+                  title="삭제">
                   <i class="fas fa-trash"></i>
                 </button>
               </span>` : ''}
@@ -7969,31 +7989,41 @@ async function _doReassignWorkers(taskId, btnEl) {
   }
 }
 
-// ── [FEAT-053] 작업 삭제 — 시스템관리자 전용, completed 상태만 허용 ──────────
+// ── [FEAT-053/FEAT-060] 작업 삭제 — sysadmin(completed/cancelled) 또는 등록자(unassigned/assigned) ──
 async function deleteTask(id, knownStatus) {
-  // [FEAT-053] 클라이언트 권한 사전 체크
   const _myUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
-  if (_myUiRole !== 'sysadmin') {
-    toast('시스템 관리자만 삭제할 수 있습니다.', 'error', 4000);
-    return;
-  }
+  const _isSysAdmin = _myUiRole === 'sysadmin';
 
   // ★ 작업 상태 사전 체크 — 호출부에서 전달된 status 우선, 없으면 GET으로 확인
   let taskStatus = knownStatus || null;
+  let taskCreatedBy = null;
   if (!taskStatus) {
     try {
       const taskRes = await API.get(`/tasks/${id}`);
-      taskStatus = taskRes.data?.task?.status || taskRes.data?.status || null;
+      const td = taskRes.data?.task || taskRes.data;
+      taskStatus   = td?.status || null;
+      taskCreatedBy = td?.created_by || null;
     } catch(_) {}
   }
-  if (taskStatus && taskStatus !== 'completed' && taskStatus !== 'cancelled') {
-    toast('완료 또는 취소된 작업만 삭제할 수 있습니다.', 'error', 4000);
-    return;
+
+  // 클라이언트 권한 사전 체크
+  const _PRE_CHECKLIST = ['unassigned', 'assigned'];
+  if (_isSysAdmin) {
+    if (taskStatus && taskStatus !== 'completed' && taskStatus !== 'cancelled') {
+      toast('완료 또는 취소된 작업만 삭제할 수 있습니다.', 'error', 4000);
+      return;
+    }
+  } else {
+    // 등록자 여부: knownStatus가 있으면 버튼 표시 기준(PRE_CHECKLIST)으로만 체크
+    if (taskStatus && !_PRE_CHECKLIST.includes(taskStatus)) {
+      toast('위험성(체크리스트)평가 이전 단계(작업지시·작업등록)의 작업만 삭제할 수 있습니다.', 'error', 4000);
+      return;
+    }
   }
 
   const confirmed = await showDeleteConfirm(
     '작업을 삭제하시겠습니까?',
-    '모든 연관 데이터(TBM·체크리스트·일지·사진 등)가 함께 삭제됩니다.<br><strong style="color:#e53e3e">삭제하면 복구할 수 없습니다.</strong><br><span style="font-size:12px;color:#888">(완료 및 취소 작업 삭제 가능)</span>'
+    '모든 연관 데이터(TBM·체크리스트·일지·사진 등)가 함께 삭제됩니다.<br><strong style="color:#e53e3e">삭제하면 복구할 수 없습니다.</strong>'
   );
   if (!confirmed) return;
   try {
@@ -8005,9 +8035,10 @@ async function deleteTask(id, knownStatus) {
   } catch(e) {
     const httpStatus = e.response?.status;
     const msg        = e.response?.data?.error || '삭제 실패';
-    // ★ 409: 구버전 서버 응답이라도 올바른 안내 메시지로 표시
     if (httpStatus === 409) {
-      toast('완료 또는 취소된 작업만 삭제할 수 있습니다.', 'error', 4000);
+      toast(msg, 'error', 4000);
+    } else if (httpStatus === 403) {
+      toast(msg, 'error', 4000);
     } else {
       toast(msg, 'error', 4000);
     }
@@ -8328,8 +8359,13 @@ async function showTaskDetail(id, openTbmTab) {
     const stops = stopsRes.data || [];
     const isWorker = currentUser.role === 'worker';
     // [FEAT-053] 삭제 버튼 표시 조건: sysadmin이고 completed 또는 cancelled 상태
+    // [FEAT-060] 등록자(isCreator)이고 unassigned/assigned 상태(위험성평가 전)일 때 추가 허용
     const _taskIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
-    const _taskCanDelete  = _taskIsSysAdmin && (task.status === 'completed' || task.status === 'cancelled');
+    const _taskIsCreator  = currentUser.id === task.created_by;
+    const _PRE_CHECKLIST  = ['unassigned', 'assigned'];
+    const _taskSysAdminCanDelete = _taskIsSysAdmin && (task.status === 'completed' || task.status === 'cancelled');
+    const _taskCreatorCanDelete  = _taskIsCreator  && _PRE_CHECKLIST.includes(task.status);
+    const _taskCanDelete  = _taskSysAdminCanDelete || _taskCreatorCanDelete;
 
     modal.querySelector('.modal').innerHTML = `
     <div class="modal-header">
@@ -8676,7 +8712,7 @@ async function showTaskDetail(id, openTbmTab) {
 
         <!-- 작업 진행 버튼 -->
         <div class="mt-4">
-          <!-- [FEAT-053] 삭제 버튼: sysadmin 전용, completed 상태만 표시 -->
+          <!-- [FEAT-053/FEAT-060] 삭제 버튼: sysadmin(완료/취소) 또는 등록자(unassigned/assigned) -->
           ${_taskCanDelete ? `
           <div class="mb-2">
             <button onclick="deleteTask(${task.id}, '${task.status}')"
@@ -8687,7 +8723,10 @@ async function showTaskDetail(id, openTbmTab) {
           </div>` : (_taskIsSysAdmin && task.status !== 'completed' && task.status !== 'cancelled' ? `
           <div class="mb-2">
             <span class="text-xs text-gray-400" style="line-height:2.2"><i class="fas fa-lock mr-1"></i>완료 또는 취소된 작업만 삭제 가능</span>
-          </div>` : '')}
+          </div>` : (_taskIsCreator && !_PRE_CHECKLIST.includes(task.status) ? `
+          <div class="mb-2">
+            <span class="text-xs text-gray-400" style="line-height:2.2"><i class="fas fa-lock mr-1"></i>위험성평가 이전 단계(작업지시·작업등록)만 삭제 가능</span>
+          </div>` : ''))}
           <!-- 워크플로우 액션 버튼 -->
           <div class="flex flex-wrap gap-2">
             ${getTaskActionButtons(task, isWorker)}

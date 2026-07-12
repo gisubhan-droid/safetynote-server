@@ -6015,22 +6015,25 @@ async function renderTasksPage(container) {
           ${[...Array(12)].map((_,i) => `<option value="${i+1}" ${taskFilters.month===i+1?'selected':''}>${i+1}월</option>`).join('')}
         </select>
 
-        <!-- ⑥ 검색타입 + 키워드 + 검색버튼 (1줄 통합) -->
-        <select id="searchTypeSelect" class="form-control" style="width:90px;flex-shrink:0;font-size:12px;padding:6px 8px"
-          onchange="taskFilters.search_type=this.value; _updateTaskSearchPlaceholder()">
-          <option value="title"       ${taskFilters.search_type==='title'      ?'selected':''}>공사명</option>
-          <option value="request_no"  ${taskFilters.search_type==='request_no' ?'selected':''}>요청번호</option>
-          <option value="task_number" ${taskFilters.search_type==='task_number'?'selected':''}>작업번호</option>
-        </select>
-        <div class="flex" style="min-width:130px;flex:1;max-width:340px">
-          <input type="text" id="keywordInput"
-            class="form-control" style="border-radius:8px 0 0 8px;border-right:none;font-size:12px"
-            placeholder="${taskFilters.search_type==='task_number' ? 'WKS-번호 입력' : taskFilters.search_type==='request_no' ? '요청번호 입력' : '공사명 입력'}"
-            value="${taskFilters.keyword||''}"
-            onkeydown="if(event.key==='Enter'){ taskFilters.keyword=this.value; taskFilters.page=1; renderTasksPage(document.getElementById('page-content')); }"
-          >
+        <!-- ⑥ 검색타입 + 키워드 + 검색버튼 — 남은 공간 꽉 채움 -->
+        <div class="flex items-center" style="flex:1;min-width:160px;gap:0">
+          <select id="searchTypeSelect" class="form-control" style="width:86px;flex-shrink:0;font-size:12px;padding:6px 6px;border-radius:8px 0 0 8px;border-right:none"
+            onchange="taskFilters.search_type=this.value; _updateTaskSearchPlaceholder()">
+            <option value="title"       ${taskFilters.search_type==='title'      ?'selected':''}>공사명</option>
+            <option value="request_no"  ${taskFilters.search_type==='request_no' ?'selected':''}>요청번호</option>
+            <option value="task_number" ${taskFilters.search_type==='task_number'?'selected':''}>작업번호</option>
+          </select>
+          <div class="relative" style="flex:1">
+            <input type="text" id="keywordInput"
+              class="form-control" style="border-radius:0;border-right:none;font-size:12px;padding-left:32px;width:100%"
+              placeholder="${taskFilters.search_type==='task_number' ? 'WKS-번호 입력' : taskFilters.search_type==='request_no' ? '요청번호 입력' : '공사명 입력'}"
+              value="${taskFilters.keyword||''}"
+              onkeydown="if(event.key==='Enter'){ taskFilters.keyword=this.value; taskFilters.page=1; renderTasksPage(document.getElementById('page-content')); }"
+            >
+            <i class="fas fa-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:12px;pointer-events:none"></i>
+          </div>
           <button onclick="taskFilters.keyword=document.getElementById('keywordInput').value;taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))"
-            class="btn btn-primary" style="border-radius:0 8px 8px 0;padding:0 12px;flex-shrink:0;font-size:12px">
+            class="btn btn-secondary" style="border-radius:0 8px 8px 0;padding:0 12px;flex-shrink:0;font-size:12px">
             <i class="fas fa-search"></i>
           </button>
         </div>

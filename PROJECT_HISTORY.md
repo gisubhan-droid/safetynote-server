@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-12 (세션 127 — BUG-098: 역할 카드 필터 후 QR 전체선택 시 숨겨진 사용자까지 선택되는 버그 수정)
-> **GitHub 최신: `e4fe63d`** — fix(BUG-098): QR 전체선택 — 필터 숨겨진 행 제외
-> **이전 커밋: `0337ee3`** — feat(FEAT-062): 근로자 QR 프로필 통합 UI 개편
-> **NAS 배포 완료: `bc5eb1f`** — 방식1(업데이트 버튼) 적용 완료 (세션126 배포 대기)
+> 최종 업데이트: 2026-07-12 (세션 128 — BUG-098: QR 전체선택 필터 버그 완전 수정 / QR 인쇄 카드 하단 Powered by LinkMak Co., Ltd. 추가)
+> **GitHub 최신: `5a64403`** — feat: QR 인쇄 카드 하단 'Powered by LinkMak Co., Ltd.' 추가
+> **이전 커밋: `e4fe63d`** — fix(BUG-098): QR 전체선택 — 필터 숨겨진 행 제외
+> **NAS 배포 완료: `5a64403`** — 방식1(업데이트 버튼) 적용 완료 (세션128)
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -6358,3 +6358,102 @@ cd /volume1/safetynote
 sudo git fetch origin && sudo git reset --hard origin/main
 /usr/local/bin/pm2 restart safetynote
 ```
+
+---
+
+## 세션 127 (2026-07-12) — BUG-098: QR 전체선택 필터 버그 수정 (2차 재검증 포함)
+
+### 작업 배경
+BUG-098 1차 수정(`toggleAllQrChecks` + `updateQrBulkCount`)은 이전 세션에서 완료됐으나,
+2차 재검증에서 `printQrBulk()`와 `filterUserList()` 에 추가 수정이 필요함을 발견.
+
+---
+
+### BUG-098 수정 전체 요약
+
+**버그 증상**: 역할 카드(근로자/안전관리자 등) 클릭 필터 후 QR 전체선택 체크 시 → 숨겨진 사용자까지 전부 체크됨
+
+**수정 파일**: `public/static/app.js`
+
+| # | 함수 | 수정 내용 |
+|---|------|-----------|
+| ① | `toggleAllQrChecks` | `tbody tr` 순회 시 `tr.style.display === 'none'` 행 건너뜀 |
+| ② | `updateQrBulkCount` | `.user-qr-check:checked` 순회 시 `tr.style.display !== 'none'` 행만 카운트 |
+| ③ | `printQrBulk` (**2차 신규**) | `.user-qr-check:checked` 수집 후 `.filter(cb => tr.style.display !== 'none')` 추가 → 이미 체크 상태에서 필터 걸면 숨겨진 행도 인쇄되던 문제 해결 |
+| ④ | `filterUserList` (**2차 신규**) | 행 숨길 때 `.user-qr-check` 자동 해제 + 마스터 체크박스 `indeterminate` 재동기화 + `updateQrBulkCount()` 재갱신 → 필터 적용 전 체크된 상태에서도 오작동 없도록 UX 완성 |
+
+**커밋**: `e4fe63d`
+
+### 빌드/배포 상태
+- `npm run build` ✅ (`dist/_worker.js 277.78 kB`)
+- `dist/static/app.js` 동기화 ✅
+- GitHub push ✅ (`c8f6206 → e4fe63d`)
+- NAS 배포: 방식1(업데이트 버튼) 적용 완료 ✅
+
+---
+
+## 세션 128 (2026-07-12) — QR 인쇄 카드 하단 크레딧 추가
+
+### 작업 내용
+
+**요청**: QR 인쇄 카드 하단 "Safety NOTE" 텍스트 아래 "Powered by LinkMak Co., Ltd." 추가
+
+**수정 파일**: `public/static/app.js` — `printQrBulk()` 함수 내 인쇄 HTML
+
+#### 변경 전
+```html
+<div class="brand">Safety NOTE</div>
+```
+```css
+.brand { font-size: 5.5px; color: #C6C6C6; padding: 1px; ... }
+```
+
+#### 변경 후
+```html
+<div class="brand">
+  <div class="brand-line1">Safety NOTE</div>
+  <div class="brand-line2">Powered by LinkMak Co., Ltd.</div>
+</div>
+```
+```css
+.brand      { padding: 2px 2px 2.5px; border-top: 1px solid #D8D0DC; line-height: 1.3; }
+.brand-line1 { font-size: 6px; font-weight: 700; color: #685182; }   /* 보라, bold */
+.brand-line2 { font-size: 5px; color: #C6C6C6; }                      /* 연회색 */
+```
+
+#### 카드 레이아웃 (최종)
+```
+┌─────────────────────────────┐
+│ ⛑ Safety NOTE          🦺 │  ← 헤더 (보라 그라디언트)
+│                             │
+│          [QR코드]           │
+│                             │
+│           이  름            │  ← bold, 11px
+│       👥팀 · 직책           │  ← sub, 7.7px
+├─────────────────────────────┤
+│         Safety NOTE         │  ← 보라 #685182, 6px, bold
+│  Powered by LinkMak Co., Ltd│  ← 연회색 #C6C6C6, 5px
+└─────────────────────────────┘
+```
+
+**커밋**: `5a64403`
+
+### 빌드/배포 상태
+- `npm run build` ✅ (`dist/_worker.js 277.78 kB`)
+- `dist/static/app.js` 동기화 ✅
+- GitHub push ✅ (`e4fe63d → 5a64403`)
+- NAS 배포: 방식1(업데이트 버튼) 적용 완료 ✅
+
+---
+
+## 금일(2026-07-12) 전체 작업 요약
+
+| 세션 | 구분 | 내용 | 커밋 | 상태 |
+|------|------|------|------|------|
+| 126 | FEAT-062 | 근로자 QR 프로필 통합 UI 개편 (헤더 안전점수, 현장배정작업 accordion, 우수/불량 accordion) | `0337ee3` | ✅ 배포 |
+| 126 | FEAT | QR 프로필 하단 LinkMak 크레딧 바 추가 | `c8f6206` | ✅ 배포 |
+| 126 | BUG-097 | 현장점검 저장 500 에러 — inspection_type CHECK constraint 수정 + patchSchema v0.159 | `405412f` | ✅ 배포 |
+| 126 | BUG-096 | 역할 카드 onclick/data-role/class 누락 수정 | `bc5eb1f` | ✅ 배포 |
+| 127 | BUG-098 | QR 전체선택 — 필터 숨겨진 행 제외 (4개 함수 완전 수정) | `e4fe63d` | ✅ 배포 |
+| 128 | UI | QR 인쇄 카드 하단 'Powered by LinkMak Co., Ltd.' 추가 | `5a64403` | ✅ 배포 |
+

@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-12 (세션 126 — FEAT-062: QR 프로필 통합 UI 개편 — 프로필+안전점수 통합, 현장배정작업 accordion, 우수/불량 기록 accordion, 헤더 안전점수 / BUG-097: 현장점검 저장 500 에러 수정)
-> **GitHub 최신: (세션126 commit)** — feat(FEAT-062): 근로자 QR 프로필 통합 UI 개편
+> **GitHub 최신: `0337ee3`** — feat(FEAT-062): 근로자 QR 프로필 통합 UI 개편
 > **NAS 배포 완료: `bc5eb1f`** — 방식1(업데이트 버튼) 적용 완료 (세션126 배포 대기)
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
@@ -93,7 +93,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
-| FEAT-062 | 126 | 2026-07-12 | ✅ 구현 | **근로자 QR 프로필 UI 통합 개편** — ①프로필 화면 + 점검이력 팝업을 하나의 통합 화면으로 병합 ②현장배정작업 섹션: 항목 있으면 클릭 시 확장되는 accordion 형태, 없으면 "배정된 작업 없음" 표시 ③"근로자 점검 이력" → "근로자 안전 점수" 이름 변경 ④우수기록/불량기록 각각 클릭 시 확장 accordion ⑤최상단 근로자 이름/헤더에 안전점수 배지 표시 (점수 없으면 미표시) ⑥`src/routes/users.ts` qr-profile API: `current_task(단일)` → `assigned_tasks(복수)` 로 확장, `current_task` 하위호환 유지 | (세션126 commit) |
+| FEAT-062 | 126 | 2026-07-12 | ✅ 구현 | **근로자 QR 프로필 UI 통합 개편** — ①프로필 화면 + 점검이력 팝업을 하나의 통합 화면으로 병합 ②현장배정작업 섹션: 항목 있으면 클릭 시 확장되는 accordion 형태, 없으면 "배정된 작업 없음" 표시 ③"근로자 점검 이력" → "근로자 안전 점수" 이름 변경 ④우수기록/불량기록 각각 클릭 시 확장 accordion ⑤최상단 근로자 이름/헤더에 안전점수 배지 표시 (점수 없으면 미표시) ⑥`src/routes/users.ts` qr-profile API: `current_task(단일)` → `assigned_tasks(복수)` 로 확장, `current_task` 하위호환 유지 | `0337ee3` |
 | FEAT-061 | 125 | 2026-07-12 | ✅ 구현 | **공사현황 메뉴 이름변경 + 작업통계 하위 이동** — ①`volume` 그룹 label `현장공량` → `공사현황` 변경 ②`edu` 그룹 stats 서브메뉴에서 `stats-task` 제거 ③`volume` 그룹 items 맨 앞에 `stats-task`(작업통계) 추가. **배포방식 기록 추가**: `BUGFIX_LOG.md` 맨 앞에 배포방식 최우선 섹션 추가 — 방식1(업데이트 버튼=표준), 방식2(NAS 직접=긴급우회) 명확히 문서화 | `685dd29` / `a3a01c2` |
 
 | FEAT-057 | 112 | 2026-07-06 | ✅ 구현 | **사진 첨부 FCM 알림** — `node-server.ts POST /api/photos` 완료 시 supervisor/safety 역할에게 FCM 발송. multipart(파일 업로드)·json(base64 하위호환) 양쪽 경로 모두 적용. `sendFcmToRoles(['supervisor','safety'], { title:'[사진 첨부] 작업 {번호}', body:'{업로더}님이 {유형} 사진 N장을 첨부했습니다.' })`. photoTypeLabel 매핑(착공 전/진행 중/완료/TBM/점검) 포함. | `1a13c16` |

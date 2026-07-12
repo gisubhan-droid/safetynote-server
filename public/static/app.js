@@ -7316,52 +7316,69 @@ async function showTaskDetail(id, openTbmTab) {
           <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3" id="task-detail-tbm-photos-${checklistData.assessment?.id||''}">
             <div class="flex items-center justify-between mb-2">
               <div class="font-semibold text-blue-800 text-sm"><i class="fas fa-camera mr-2"></i>TBM 안전조치 사진 항목</div>
-              <button onclick="_openTbmPhotoModalFromDetail(${checklistData.assessment?.id||'null'}, ${task.id})"
-                class="text-xs px-2 py-1 rounded-lg font-semibold flex items-center gap-1"
-                style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE">
-                <i class="fas fa-edit" style="font-size:10px"></i>&nbsp;사진 관리
-              </button>
             </div>
-            ${(checklistData.tbm_sections||[]).map(sec => {
+            ${(checklistData.tbm_sections||[]).map((sec, secIdx) => {
               let photos;
               try { photos = typeof sec.photos === 'string' ? JSON.parse(sec.photos) : (sec.photos||[]); } catch(e) { photos = []; }
               const regPhotos = photos.filter(p => p.file_path);
               const unregPhotos = photos.filter(p => !p.file_path);
-              return `<div class="mb-2 p-2 bg-white rounded-lg border border-blue-100">
-                <div class="flex items-center justify-between mb-1">
-                  <div class="text-xs font-medium text-blue-700"><i class="fas fa-shield-alt mr-1"></i>${sec.section_name}</div>
-                  <label class="text-xs px-2 py-0.5 rounded cursor-pointer flex items-center gap-1"
+              const allPhotos = photos; // 전체 (등록+미등록)
+              const assId = checklistData.assessment?.id || 'null';
+              return `<div class="mb-2 bg-white rounded-lg border border-blue-100 overflow-hidden">
+                <!-- 섹션 헤더 -->
+                <div class="flex items-center justify-between px-2.5 py-1.5" style="background:#EFF6FF;border-bottom:1px solid #BFDBFE">
+                  <div class="flex items-center gap-1.5">
+                    <span class="inline-flex items-center justify-center rounded-full text-white font-bold"
+                      style="width:16px;height:16px;font-size:9px;background:#EF4444;flex-shrink:0">${secIdx+1}</span>
+                    <span class="text-xs font-semibold text-blue-800">${sec.section_name}</span>
+                    <span class="text-xs text-blue-500">(${regPhotos.length}/${allPhotos.length || regPhotos.length}장)</span>
+                  </div>
+                  <label class="text-xs px-2 py-0.5 rounded-md cursor-pointer flex items-center gap-1 font-medium"
                     style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0">
                     <i class="fas fa-plus" style="font-size:9px"></i>추가
                     <input type="file" accept="image/*" class="hidden"
-                      onchange="_uploadTbmPhotoFromDetail(this,${checklistData.assessment?.id||'null'},${sec.id},'${(sec.section_name||'').replace(/'/g,"\\'")}',${task.id})">
+                      onchange="_uploadTbmPhotoFromDetail(this,${assId},${sec.id},'${(sec.section_name||'').replace(/'/g,"\\'")}',${task.id})">
                   </label>
                 </div>
-                ${regPhotos.length > 0 ? `<div class="grid grid-cols-3 gap-1.5 mb-1">
-                  ${regPhotos.map(p => `<div class="relative group rounded overflow-hidden" style="aspect-ratio:1;background:#f0f0f0">
-                    <img src="${tbmPhotoImgSrc(p.id)}" class="w-full h-full object-cover cursor-pointer"
-                      onclick="showTbmPhotoPreview('${tbmPhotoImgSrc(p.id)}','${(p.label||'').replace(/'/g,"\\'")}');"
-                      onerror="this.style.opacity='0.3'">
-                    <button onclick="_deleteTbmPhotoFromDetail(${p.id},${checklistData.assessment?.id||'null'},'${(p.label||'').replace(/'/g,"\\'")}',${task.id})"
-                      class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity rounded-full"
-                      style="background:rgba(239,68,68,0.85);color:white;border:none;cursor:pointer;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:9px"
-                      title="삭제"><i class="fas fa-times"></i></button>
-                    <div class="absolute bottom-0 left-0 right-0 text-center"
-                      style="background:rgba(0,0,0,0.45);color:white;font-size:9px;padding:2px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.label}</div>
+                <!-- 사진 항목 리스트 -->
+                <div class="divide-y divide-gray-50">
+                  ${regPhotos.map(p => `<div class="flex items-center gap-2 px-2.5 py-1.5 group hover:bg-blue-50 transition-colors">
+                    <!-- 썸네일 -->
+                    <div class="flex-shrink-0 rounded overflow-hidden cursor-pointer"
+                      style="width:40px;height:40px;background:#f0f0f0"
+                      onclick="showTbmPhotoPreview('${tbmPhotoImgSrc(p.id)}','${(p.label||'').replace(/'/g,"\\'")}')">
+                      <img src="${tbmPhotoImgSrc(p.id)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity='0.3'">
+                    </div>
+                    <!-- 라벨 -->
+                    <span class="flex-1 text-xs text-gray-700 truncate">${p.label}</span>
+                    <!-- 등록됨 체크 -->
+                    <i class="fas fa-check-circle flex-shrink-0" style="color:#22C55E;font-size:13px"></i>
+                    <!-- 삭제 버튼 -->
+                    <button onclick="_deleteTbmPhotoFromDetail(${p.id},${assId},'${(p.label||'').replace(/'/g,"\\'")}',${task.id})"
+                      class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity rounded-full flex items-center justify-center"
+                      style="width:20px;height:20px;background:#FEE2E2;color:#DC2626;border:none;cursor:pointer"
+                      title="삭제"><i class="fas fa-times" style="font-size:9px"></i></button>
                   </div>`).join('')}
-                </div>` : ''}
-                ${unregPhotos.length > 0 ? `<div class="flex flex-wrap gap-1 mt-1">
-                  ${unregPhotos.map(p => `<div class="flex items-center gap-1 rounded px-1.5 py-0.5" style="background:#FFF5F5;border:1px dashed #FECACA">
-                    <i class="fas fa-camera" style="font-size:9px;color:#EF4444"></i>
-                    <span style="font-size:10px;color:#DC2626">${p.label}</span>
-                    <label class="cursor-pointer" style="font-size:9px;color:#2563EB;text-decoration:underline">
+                  ${unregPhotos.map(p => `<div class="flex items-center gap-2 px-2.5 py-1.5">
+                    <!-- 빈 썸네일 슬롯 -->
+                    <label class="flex-shrink-0 rounded overflow-hidden cursor-pointer flex items-center justify-center"
+                      style="width:40px;height:40px;background:#FFF5F5;border:1.5px dashed #FECACA">
+                      <i class="fas fa-camera" style="color:#EF4444;font-size:13px"></i>
+                      <input type="file" accept="image/*" class="hidden"
+                        onchange="_uploadTbmPhotoSlotFromDetail(this,${assId},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\\'")}',${task.id})">
+                    </label>
+                    <!-- 라벨 -->
+                    <span class="flex-1 text-xs truncate" style="color:#DC2626">${p.label}</span>
+                    <!-- 등록 버튼 -->
+                    <label class="flex-shrink-0 text-xs px-2 py-0.5 rounded-md cursor-pointer font-medium"
+                      style="background:#FFF5F5;color:#DC2626;border:1px solid #FECACA">
                       등록
                       <input type="file" accept="image/*" class="hidden"
-                        onchange="_uploadTbmPhotoSlotFromDetail(this,${checklistData.assessment?.id||'null'},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\\'")}',${task.id})">
+                        onchange="_uploadTbmPhotoSlotFromDetail(this,${assId},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\\'")}',${task.id})">
                     </label>
                   </div>`).join('')}
-                </div>` : ''}
-                ${regPhotos.length === 0 && unregPhotos.length === 0 ? `<div class="text-xs text-gray-400 py-1">등록된 사진이 없습니다.</div>` : ''}
+                  ${regPhotos.length === 0 && unregPhotos.length === 0 ? `<div class="text-xs text-gray-400 px-2.5 py-2">등록된 사진이 없습니다.</div>` : ''}
+                </div>
               </div>`;
             }).join('')}
           </div>` : ''}
@@ -23490,61 +23507,69 @@ async function _refreshTaskDetailTbmSection(taskId) {
     if (!container) return;
     // 최신 tbm_sections 데이터로 섹션 내용만 재구성
     const sections = checklistData.tbm_sections || [];
-    const innerHtml = sections.map(sec => {
+    const innerHtml = sections.map((sec, secIdx) => {
       let photos = [];
       try { photos = typeof sec.photos === 'string' ? JSON.parse(sec.photos) : (sec.photos||[]); } catch(e) {}
       const regPhotos = photos.filter(p => p.file_path);
       const unregPhotos = photos.filter(p => !p.file_path);
-      return `<div class="mb-2 p-2 bg-white rounded-lg border border-blue-100">
-        <div class="flex items-center justify-between mb-1">
-          <div class="text-xs font-medium text-blue-700"><i class="fas fa-shield-alt mr-1"></i>${sec.section_name}</div>
-          <label class="text-xs px-2 py-0.5 rounded cursor-pointer flex items-center gap-1"
+      const allPhotos = photos;
+      return `<div class="mb-2 bg-white rounded-lg border border-blue-100 overflow-hidden">
+        <!-- 섹션 헤더 -->
+        <div class="flex items-center justify-between px-2.5 py-1.5" style="background:#EFF6FF;border-bottom:1px solid #BFDBFE">
+          <div class="flex items-center gap-1.5">
+            <span class="inline-flex items-center justify-center rounded-full text-white font-bold"
+              style="width:16px;height:16px;font-size:9px;background:#EF4444;flex-shrink:0">${secIdx+1}</span>
+            <span class="text-xs font-semibold text-blue-800">${sec.section_name}</span>
+            <span class="text-xs text-blue-500">(${regPhotos.length}/${allPhotos.length || regPhotos.length}장)</span>
+          </div>
+          <label class="text-xs px-2 py-0.5 rounded-md cursor-pointer flex items-center gap-1 font-medium"
             style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0">
             <i class="fas fa-plus" style="font-size:9px"></i>추가
             <input type="file" accept="image/*" class="hidden"
-              onchange="_uploadTbmPhotoFromDetail(this,${assId},${sec.id},'${(sec.section_name||'').replace(/'/g, "\'")}',${taskId})">
+              onchange="_uploadTbmPhotoFromDetail(this,${assId},${sec.id},'${(sec.section_name||'').replace(/'/g, "\\'")}',${taskId})">
           </label>
         </div>
-        ${regPhotos.length > 0 ? `<div class="grid grid-cols-3 gap-1.5 mb-1">
-          ${regPhotos.map(p => `<div class="relative group rounded overflow-hidden" style="aspect-ratio:1;background:#f0f0f0">
-            <img src="${tbmPhotoImgSrc(p.id)}" class="w-full h-full object-cover cursor-pointer"
-              onclick="showTbmPhotoPreview('${tbmPhotoImgSrc(p.id)}','${(p.label||'').replace(/'/g,"\'")}');"
-              onerror="this.style.opacity='0.3'">
-            <button onclick="_deleteTbmPhotoFromDetail(${p.id},${assId},'${(p.label||'').replace(/'/g,"\'")}',${taskId})"
-              class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity rounded-full"
-              style="background:rgba(239,68,68,0.85);color:white;border:none;cursor:pointer;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:9px"
-              title="삭제"><i class="fas fa-times"></i></button>
-            <div class="absolute bottom-0 left-0 right-0 text-center"
-              style="background:rgba(0,0,0,0.45);color:white;font-size:9px;padding:2px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.label}</div>
+        <!-- 사진 항목 리스트 -->
+        <div class="divide-y divide-gray-50">
+          ${regPhotos.map(p => `<div class="flex items-center gap-2 px-2.5 py-1.5 group hover:bg-blue-50 transition-colors">
+            <div class="flex-shrink-0 rounded overflow-hidden cursor-pointer"
+              style="width:40px;height:40px;background:#f0f0f0"
+              onclick="showTbmPhotoPreview('${tbmPhotoImgSrc(p.id)}','${(p.label||'').replace(/'/g,"\\'")}')">
+              <img src="${tbmPhotoImgSrc(p.id)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity='0.3'">
+            </div>
+            <span class="flex-1 text-xs text-gray-700 truncate">${p.label}</span>
+            <i class="fas fa-check-circle flex-shrink-0" style="color:#22C55E;font-size:13px"></i>
+            <button onclick="_deleteTbmPhotoFromDetail(${p.id},${assId},'${(p.label||'').replace(/'/g,"\\'")}',${taskId})"
+              class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity rounded-full flex items-center justify-center"
+              style="width:20px;height:20px;background:#FEE2E2;color:#DC2626;border:none;cursor:pointer"
+              title="삭제"><i class="fas fa-times" style="font-size:9px"></i></button>
           </div>`).join('')}
-        </div>` : ''}
-        ${unregPhotos.length > 0 ? `<div class="flex flex-wrap gap-1 mt-1">
-          ${unregPhotos.map(p => `<div class="flex items-center gap-1 rounded px-1.5 py-0.5" style="background:#FFF5F5;border:1px dashed #FECACA">
-            <i class="fas fa-camera" style="font-size:9px;color:#EF4444"></i>
-            <span style="font-size:10px;color:#DC2626">${p.label}</span>
-            <label class="cursor-pointer" style="font-size:9px;color:#2563EB;text-decoration:underline">
+          ${unregPhotos.map(p => `<div class="flex items-center gap-2 px-2.5 py-1.5">
+            <label class="flex-shrink-0 rounded overflow-hidden cursor-pointer flex items-center justify-center"
+              style="width:40px;height:40px;background:#FFF5F5;border:1.5px dashed #FECACA">
+              <i class="fas fa-camera" style="color:#EF4444;font-size:13px"></i>
+              <input type="file" accept="image/*" class="hidden"
+                onchange="_uploadTbmPhotoSlotFromDetail(this,${assId},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\\'")}',${taskId})">
+            </label>
+            <span class="flex-1 text-xs truncate" style="color:#DC2626">${p.label}</span>
+            <label class="flex-shrink-0 text-xs px-2 py-0.5 rounded-md cursor-pointer font-medium"
+              style="background:#FFF5F5;color:#DC2626;border:1px solid #FECACA">
               등록<input type="file" accept="image/*" class="hidden"
-                onchange="_uploadTbmPhotoSlotFromDetail(this,${assId},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\'")}',${taskId})">
+                onchange="_uploadTbmPhotoSlotFromDetail(this,${assId},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\\'")}',${taskId})">
             </label>
           </div>`).join('')}
-        </div>` : ''}
-        ${regPhotos.length === 0 && unregPhotos.length === 0 ? '<div class="text-xs text-gray-400 py-1">등록된 사진이 없습니다.</div>' : ''}
+          ${regPhotos.length === 0 && unregPhotos.length === 0 ? '<div class="text-xs text-gray-400 px-2.5 py-2">등록된 사진이 없습니다.</div>' : ''}
+        </div>
       </div>`;
     }).join('');
-    // 헤더(사진 관리 버튼) 다음 부분만 교체
+    // 헤더(제목 행) 다음 부분만 교체
     const header = container.querySelector('.flex.items-center.justify-between');
     if (header) {
-      // 헤더 이후 자식들만 제거 후 재삽입
       while (container.lastChild !== header) container.removeChild(container.lastChild);
       container.insertAdjacentHTML('beforeend', innerHtml);
     } else {
       container.innerHTML = `<div class="flex items-center justify-between mb-2">
         <div class="font-semibold text-blue-800 text-sm"><i class="fas fa-camera mr-2"></i>TBM 안전조치 사진 항목</div>
-        <button onclick="_openTbmPhotoModalFromDetail(${assId},${taskId})"
-          class="text-xs px-2 py-1 rounded-lg font-semibold flex items-center gap-1"
-          style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE">
-          <i class="fas fa-edit" style="font-size:10px"></i>&nbsp;사진 관리
-        </button>
       </div>${innerHtml}`;
     }
   } catch(e) {

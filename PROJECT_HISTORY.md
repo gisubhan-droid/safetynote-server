@@ -6233,3 +6233,56 @@ npx wrangler d1 execute safety-management-production --file=migrations/0056_cons
 # pm2 restart 불필요 (서버코드 변경 없음 — constructions.ts만 변경된 경우 재시작 필요)
 pm2 restart safetynote   # constructions.ts 변경으로 Workers 재빌드 필요 시
 ```
+
+---
+
+## 세션 126 — 2차 작업 (2026-07-12)
+
+### 작업 요약
+작업관리 테이블 UI 3가지 개선 (화면 잘림, 구분선, 컬럼 분리)
+
+### 완료된 작업
+
+#### 1. 화면 양끝 잘림 개선
+- `task-list-root` 좌우 padding `16px → 20px` 확대
+- 태블릿(1024px 이하) 반응형 분기 추가: `12px`
+- 모바일(768px 이하) 유지: `8px`
+
+#### 2. 컬럼 구분선 명확화 (col-resizer 상시 표시)
+- `.col-resizer` 기본 배경 `transparent → rgba(200,185,220,0.55)` (연한 보라, 상시 표시)
+- hover/resizing 시 `rgba(215,0,114,0.6)` 핑크로 강조
+- `.task-th` 헤더 `border-right: 1px solid #DDD5EA` 세로 구분선 추가
+- `.task-th:last-child` border-right 제거
+- `.task-col-table td` 바디 `border-right: 1px solid #F0EBF5` 세로 구분선 추가
+- `.task-col-table td:last-child` border-right 제거
+
+#### 3. "상태/관리" → "위험도" + "진행사항" 컬럼 분리
+**colgroup 변경:**
+- 기존: `<col class="c-state">` (1개, 170px)
+- 변경: `<col class="c-risk">` (68px) + `<col class="c-progress">` (130px)
+
+**헤더 th 변경:**
+- 기존: `<th class="task-th">상태/관리</th>` (1개)
+- 변경: `<th>위험도</th>` + `<th>진행사항</th>` (2개, 리사이즈 없음)
+
+**renderTableView tbody td 분리:**
+- 기존: 위험도배지 + 진행단계라벨 + 수정/삭제버튼을 단일 td에 렌더
+- 변경:
+  - 위험도 td: 위험도 배지만 (`고위험`/`중위험`/`일반`)
+  - 진행사항 td: 진행단계 라벨 + 수정/삭제 버튼
+
+**기타:**
+- `colspan 9 → 10` (데이터 없음 안내 행)
+- `min-width 900 → 960px` (10컬럼 대응)
+
+### 커밋 로그
+| 파일 | 커밋 | 내용 |
+|------|------|------|
+| `public/static/app.js` | `fdbbdf3` | feat: 작업관리 UI 개선 - 컬럼분리·구분선·화면잘림 수정 |
+| `public/static/style.css` | `fdbbdf3` | 동일 커밋 |
+
+### 빌드/배포 상태
+- `node --check` ✅
+- `npm run build` ✅ (276.43 kB)
+- GitHub push ✅ (`afe8d7f → fdbbdf3`)
+- NAS 배포: `서버 업데이트` UI에서 `fdbbdf3` 적용 필요

@@ -3918,13 +3918,14 @@ async function renderConstructionsPage(container) {
         class="btn btn-secondary"><i class="fas fa-search"></i></button>
 
       <!-- ⑥ 페이지당 건수 -->
-      <select id="conLimitSelect" class="form-control" style="width:64px"
+      <select id="conLimitSelect" class="form-control" style="width:72px"
         title="페이지당 건수"
         onchange="_conFilters.limit=parseInt(this.value);_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))">
-        <option value="10"  ${(_conFilters.limit||20)===10 ?'selected':''}>10건</option>
+        <option value="15"  ${(_conFilters.limit||20)===15 ?'selected':''}>15건</option>
         <option value="20"  ${(_conFilters.limit||20)===20 ?'selected':''}>20건</option>
-        <option value="30"  ${(_conFilters.limit||20)===30 ?'selected':''}>30건</option>
-        <option value="50"  ${(_conFilters.limit||20)===50 ?'selected':''}>50건</option>
+        <option value="25"  ${(_conFilters.limit||20)===25 ?'selected':''}>25건</option>
+        <option value="35"  ${(_conFilters.limit||20)===35 ?'selected':''}>35건</option>
+        <option value="100" ${(_conFilters.limit||20)===100?'selected':''}>100건</option>
       </select>
 
       <!-- ⑦ 엑셀 다운로드 -->
@@ -6135,6 +6136,45 @@ async function renderTasksPage(container) {
     // 정렬 트리거 등록 (PC 테이블 + 모바일 카드 양쪽 업데이트)
     window._sortTrigger = (tableId, col) => {
       // tableId는 'taskListTableHead' (헤더 테이블) → 화살표 업데이트 대상
+
+      // risk_level / status 는 커스텀 순서값으로 정렬 (문자열 알파벳 순 아님)
+      const _RISK_ORDER  = { normal: 1, medium: 2, high: 3 };
+      const _STATUS_ORDER = {
+        unassigned: 1, assigned: 2, in_progress: 3,
+        tbm_done: 4, working: 5, work_completed: 6, completed: 7
+      };
+
+      if (col === 'risk_level' || col === 'status') {
+        // 정렬 상태 토글
+        if (!_sortState[tableId]) _sortState[tableId] = { col: null, dir: 'asc' };
+        const st = _sortState[tableId];
+        if (st.col === col) { st.dir = st.dir === 'asc' ? 'desc' : 'asc'; }
+        else { st.col = col; st.dir = 'asc'; }
+
+        const orderMap = col === 'risk_level' ? _RISK_ORDER : _STATUS_ORDER;
+        const sorted = [..._taskListData].sort((a, b) => {
+          const av = orderMap[a[col]] ?? 0;
+          const bv = orderMap[b[col]] ?? 0;
+          return st.dir === 'asc' ? av - bv : bv - av;
+        });
+        _taskListData = sorted;
+
+        // 화살표 업데이트
+        document.querySelectorAll(`#${tableId} th[data-col]`).forEach(th => {
+          const arrow = th.querySelector('.sort-arrow');
+          if (arrow) arrow.textContent = th.dataset.col === col ? (st.dir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+        });
+
+        // PC 테이블 tbody 업데이트
+        const tbody = document.getElementById('taskTableBody');
+        if (tbody) tbody.innerHTML = renderTableView(sorted, ((taskFilters.page||1)-1)*(taskFilters.limit||20));
+        // 모바일 카드 그리드 업데이트
+        const grid = document.getElementById('taskCardGrid');
+        if (grid) grid.innerHTML = renderCards(sorted);
+        return;
+      }
+
+      // 일반 컬럼: 기존 sortTable 사용
       sortTable(tableId, col, _taskListData, (sorted) => {
         _taskListData = sorted;
         // PC 테이블 tbody 업데이트 (정렬 시 현재 페이지 offset 유지)
@@ -6441,13 +6481,14 @@ async function renderTasksPage(container) {
         <span style="font-size:12px;color:#9CA3AF;white-space:nowrap;flex-shrink:0">총 <strong style="color:#685182">${_taskListTotal}</strong>건</span>
 
         <!-- ⑦ 페이지당 건수 -->
-        <select id="taskLimitSelect" class="form-control" style="width:64px;font-size:12px;padding:6px 6px"
+        <select id="taskLimitSelect" class="form-control" style="width:72px;font-size:12px;padding:6px 6px"
           title="페이지당 건수"
           onchange="taskFilters.limit=parseInt(this.value);taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))">
-          <option value="10"  ${(taskFilters.limit||20)===10 ?'selected':''}>10건</option>
+          <option value="15"  ${(taskFilters.limit||20)===15 ?'selected':''}>15건</option>
           <option value="20"  ${(taskFilters.limit||20)===20 ?'selected':''}>20건</option>
-          <option value="30"  ${(taskFilters.limit||20)===30 ?'selected':''}>30건</option>
-          <option value="50"  ${(taskFilters.limit||20)===50 ?'selected':''}>50건</option>
+          <option value="25"  ${(taskFilters.limit||20)===25 ?'selected':''}>25건</option>
+          <option value="35"  ${(taskFilters.limit||20)===35 ?'selected':''}>35건</option>
+          <option value="100" ${(taskFilters.limit||20)===100?'selected':''}>100건</option>
         </select>
 
         <!-- ⑧ 엑셀 다운로드 -->
@@ -6504,8 +6545,8 @@ async function renderTasksPage(container) {
                 <th class="task-th task-th-resize" data-col="5" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','planned_date')">작업(예정)일<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
                 <th class="task-th task-th-resize" data-col="6" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','con_manager_display_name')">공사담당자<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
                 <th class="task-th task-th-resize" data-col="7" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','title')">작업명<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
-                <th class="task-th" style="text-align:center;font-size:11px">위험도</th>
-                <th class="task-th" style="text-align:center;font-size:11px">진행사항</th>
+                <th class="task-th task-th-resize" data-col="risk_level" style="text-align:center;font-size:11px;cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','risk_level')">위험도<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span></th>
+                <th class="task-th task-th-resize" data-col="status" style="text-align:center;font-size:11px;cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','status')">진행사항<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span></th>
               </tr>
             </thead>
           </table>

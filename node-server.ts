@@ -2602,6 +2602,53 @@ function patchSchema() {
   `)
   rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_edu_appr_session ON safety_education_approvals(session_id)`)
   console.log('[patchSchema v0.157] ✅ safety_education_approvals 테이블 준비 완료')
+
+  // ── [v0.158 BUG-071] constructions 신규 컬럼 자동 추가 ───────────────────────
+  // 마이그레이션 0056: completion_date  (공사완료예정일)
+  // 마이그레이션 0057: notification_date  (시공통보일)
+  // 마이그레이션 0058: notification_amount (시공통보 금액)
+  // NAS 운영 DB에 wrangler 마이그레이션이 적용되지 않은 경우 서버 시작 시 자동 추가
+  ;(function patchConstructionsColumns() {
+    const colPatches: { col: string; ddl: string; label: string }[] = [
+      {
+        col:   'completion_date',
+        ddl:   `ALTER TABLE constructions ADD COLUMN completion_date DATE DEFAULT NULL`,
+        label: 'constructions.completion_date',
+      },
+      {
+        col:   'notification_date',
+        ddl:   `ALTER TABLE constructions ADD COLUMN notification_date DATE DEFAULT NULL`,
+        label: 'constructions.notification_date',
+      },
+      {
+        col:   'notification_amount',
+        ddl:   `ALTER TABLE constructions ADD COLUMN notification_amount INTEGER DEFAULT NULL`,
+        label: 'constructions.notification_amount',
+      },
+    ]
+
+    for (const { col, ddl, label } of colPatches) {
+      try {
+        // 컬럼 존재 여부를 PRAGMA로 확인 후 없으면 ALTER
+        const cols = rawDb.prepare(`PRAGMA table_info(constructions)`).all() as { name: string }[]
+        const exists = cols.some((r) => r.name === col)
+        if (!exists) {
+          rawDb.exec(ddl)
+          // notification_date 는 기존 데이터를 created_at 기반으로 초기화
+          if (col === 'notification_date') {
+            rawDb.exec(`UPDATE constructions SET notification_date = date(created_at) WHERE notification_date IS NULL`)
+          }
+          console.log(`[patchSchema v0.158] ✅ ${label} 컬럼 추가 완료`)
+        } else {
+          console.log(`[patchSchema v0.158] ${label} 컬럼 이미 존재 — 생략`)
+        }
+      } catch (e: any) {
+        if (!e.message?.includes('duplicate column')) {
+          console.warn(`[patchSchema v0.158] ${label} 패치 실패 (무시):`, e.message)
+        }
+      }
+    }
+  })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
 patchSchema()

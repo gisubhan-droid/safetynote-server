@@ -2143,7 +2143,6 @@ function renderApp() {
       id: 'edu', icon: 'fas fa-clipboard-check', label: '안전관리', color: '#a78bfa',
       items: [
         { id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
-          { id:'stats-task',          icon:'fas fa-tasks',          label:'작업통계' },
           { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
           { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
           { id:'work-stops',          icon:'fas fa-hand-paper',     label:'작업중지현황' },
@@ -2160,8 +2159,9 @@ function renderApp() {
       ]
     },
     {
-      id: 'volume', icon: 'fas fa-chart-line', label: '현장공량', color: '#34d399',
+      id: 'volume', icon: 'fas fa-chart-line', label: '공사현황', color: '#34d399',
       items: [
+        { id:'stats-task',    icon:'fas fa-tasks',          label:'작업통계' },
         { id:'volume-stats',  icon:'fas fa-chart-bar',      label:'물량통계' },
         { id:'report-write',  icon:'fas fa-pen-to-square',  label:'작업일보 작성' },
         { id:'field-report',  icon:'fas fa-list-alt',       label:'공량내역' },

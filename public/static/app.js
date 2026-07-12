@@ -3227,18 +3227,26 @@ async function _autoFillSubTaskNo(constructionId, forceOverwrite = false) {
 }
 
 // 공사현황 필터 상태
-let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_names:[], page:1, limit:20 };
+let _conFilters = { status:'', statusList:[], year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_names:[], page:1, limit:20 };
 let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 적용 플래그
 
 // ── 담당자 팝업 외부클릭 닫기 (공사현황·작업관리 공용) ─────────────────────
 (function _initManagerPickerOutsideClick() {
   document.addEventListener('click', function(e) {
-    // 공사현황 팝업
+    // 공사현황 담당자 팝업
     const conPicker = document.getElementById('conManagerPicker');
     const conBtn    = document.getElementById('conManagerBtn');
     if (conPicker && conPicker.style.display !== 'none') {
       if (!conPicker.contains(e.target) && e.target !== conBtn && !conBtn?.contains(e.target)) {
         conPicker.style.display = 'none';
+      }
+    }
+    // 공사현황 진행상태 팝업
+    const conStPicker = document.getElementById('conStatusPicker');
+    const conStBtn    = document.getElementById('conStatusBtn');
+    if (conStPicker && conStPicker.style.display !== 'none') {
+      if (!conStPicker.contains(e.target) && e.target !== conStBtn && !conStBtn?.contains(e.target)) {
+        conStPicker.style.display = 'none';
       }
     }
     // 작업관리 팝업
@@ -3298,7 +3306,53 @@ function _conClearManagerFilter() {
   renderConstructionsPage(document.getElementById('page-content'));
 }
 
-// ── 공사현황 테이블 컬럼 리사이즈 초기화 ────────────────────────────────────
+// ── 공사현황 진행상태 다중선택 드롭다운 헬퍼 ─────────────────────────────────
+// _conFilters.statusList: [] = 전체, ['registered','in_progress',...] = 선택항목
+// _conFilters.status는 단일값(서버 param용) → statusList로 대체, status는 '' 고정
+
+function _conOpenStatusPicker() {
+  const pop = document.getElementById('conStatusPicker');
+  if (!pop) return;
+  const isOpen = pop.style.display === 'block';
+  // 다른 팝업 닫기
+  const mp = document.getElementById('conManagerPicker');
+  if (mp) mp.style.display = 'none';
+  const tp = document.getElementById('taskManagerPicker');
+  if (tp) tp.style.display = 'none';
+  pop.style.display = isOpen ? 'none' : 'block';
+}
+function _conCloseStatusPicker() {
+  const pop = document.getElementById('conStatusPicker');
+  if (pop) pop.style.display = 'none';
+}
+function _conToggleStatus(val) {
+  if (!_conFilters.statusList) _conFilters.statusList = [];
+  const idx = _conFilters.statusList.indexOf(val);
+  if (idx === -1) _conFilters.statusList.push(val);
+  else _conFilters.statusList.splice(idx, 1);
+  // 체크박스 동기화
+  const cb = document.getElementById('conStCb_' + val);
+  if (cb) cb.checked = _conFilters.statusList.includes(val);
+  // 팝업 카운트 업데이트
+  const countEl = document.getElementById('conStPickerCount');
+  if (countEl) countEl.textContent = _conFilters.statusList.length ? `${_conFilters.statusList.length}개 선택` : '';
+}
+function _conApplyStatusFilter() {
+  _conFilters.page = 1;
+  _conCloseStatusPicker();
+  renderConstructionsPage(document.getElementById('page-content'));
+}
+function _conClearStatusFilter() {
+  _conFilters.statusList = [];
+  document.querySelectorAll('[id^="conStCb_"]').forEach(cb => cb.checked = false);
+  const countEl = document.getElementById('conStPickerCount');
+  if (countEl) countEl.textContent = '';
+  _conFilters.page = 1;
+  _conCloseStatusPicker();
+  renderConstructionsPage(document.getElementById('page-content'));
+}
+
+
 function _initConColResize() {
   const headTable = document.getElementById('conListTableHead');
   const bodyTable = document.getElementById('conListTable');
@@ -3515,7 +3569,7 @@ async function renderConstructionsPage(container) {
     _conManagerDefaultApplied = true;
   }
 
-  // 상태 탭 메타
+  // ── 진행상태 드롭다운용 메타 (STATUS_TABS와 동일 구조, 전체 항목 제외)
   const STATUS_TABS = [
     { value:'',                    label:'전체',    icon:'fas fa-list' },
     { value:'registered',          label:'등록',    icon:'fas fa-file-alt' },
@@ -3533,30 +3587,71 @@ async function renderConstructionsPage(container) {
     settled:               { act:'#4338CA', bg:'#EEF2FF', txt:'#4338CA' },
   };
 
+  // 진행상태 버튼 레이블 계산
+  const _stList = _conFilters.statusList || [];
+  const _stLabel = _stList.length === 0
+    ? '진행상태'
+    : _stList.length === 1
+      ? (STATUS_TABS.find(t => t.value === _stList[0])?.label || _stList[0])
+      : `${_stList.length}개 선택`;
+  const _stActive = _stList.length > 0;
+
   container.innerHTML = `
   <div class="con-list-root">
 
     <!-- ── sticky 툴바 래퍼 ─────────────────────────────────────────── -->
     <div class="con-toolbar-sticky">
 
-    <!-- 상태 필터 탭 -->
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-      ${STATUS_TABS.map(tab => {
-        const active = _conFilters.status === tab.value;
-        const c = TAB_COLORS[tab.value];
-        return `<button onclick="_conFilters.status='${tab.value}';_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))"
-          style="display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;border:2px solid ${active?c.act:'#DDD'};background:${active?c.bg:'#fff'};color:${active?c.act:'#666'};font-size:12px;font-weight:${active?700:500};cursor:pointer;transition:all 0.15s">
-          <i class="${tab.icon}" style="font-size:11px"></i>${tab.label}
-        </button>`;
-      }).join('')}
-    </div>
-
-    <!-- 서브 툴바: 담당자·연도·월·검색·페이지당·버튼 -->
+    <!-- 1줄 통합 서브 툴바: 진행상태·담당자·연도·월·검색·페이지당·버튼 -->
     <div class="flex flex-wrap items-center gap-2">
-      <!-- 담당자 다중선택 버튼+팝업 -->
+
+      <!-- ① 진행상태 다중선택 드롭다운 (담당자와 동일 패턴) -->
+      <div style="position:relative">
+        <button id="conStatusBtn" onclick="_conOpenStatusPicker()"
+          class="form-control" style="min-width:120px;max-width:200px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${_stActive?'#D70072':'#D1D5DB'};border-radius:8px;font-size:13px;color:${_stActive?'#D70072':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
+          <i class="fas fa-traffic-light" style="font-size:11px;flex-shrink:0"></i>
+          <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${_stLabel}</span>
+          ${_stActive ? `<span style="background:#D70072;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${_stList.length}</span>` : ''}
+        </button>
+        ${_stActive
+          ? `<span onclick="event.stopPropagation();_conClearStatusFilter()" title="선택 초기화"
+              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#D70072;font-size:13px;z-index:1;font-weight:700">✕</span>`
+          : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
+        <!-- 진행상태 체크박스 팝업 -->
+        <div id="conStatusPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:170px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F3F0FA;background:#FAFAFE">
+            <span style="font-size:11px;font-weight:700;color:#685182">진행상태 선택</span>
+            <span id="conStPickerCount" style="font-size:11px;color:#D70072;font-weight:600">${_stList.length ? _stList.length+'개 선택' : ''}</span>
+          </div>
+          <div style="max-height:220px;overflow-y:auto;padding:4px 0">
+            ${STATUS_TABS.filter(t => t.value !== '').map(t => {
+              const checked = _stList.includes(t.value);
+              const c = TAB_COLORS[t.value];
+              return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:#374151;transition:background .1s"
+                onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
+                <input type="checkbox" id="conStCb_${t.value}" ${checked?'checked':''} onchange="_conToggleStatus('${t.value}')">
+                <span style="display:inline-flex;align-items:center;gap:5px">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.act};flex-shrink:0"></span>
+                  ${t.label}
+                </span>
+              </label>`;
+            }).join('')}
+          </div>
+          <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #F3F0FA;background:#FAFAFE">
+            <button onclick="_conApplyStatusFilter()"
+              style="flex:1;padding:7px 0;border-radius:8px;background:#D70072;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer">
+              <i class="fas fa-check mr-1"></i>적용</button>
+            <button onclick="_conClearStatusFilter()"
+              style="flex:1;padding:7px 0;border-radius:8px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;font-size:12px;cursor:pointer">
+              전체 초기화</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ② 담당자 다중선택 버튼+팝업 -->
       <div style="position:relative">
         <button id="conManagerBtn" onclick="_conOpenManagerPicker()"
-          class="form-control" style="min-width:120px;max-width:220px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${_conFilters.manager_names.length?'#D70072':'#D1D5DB'};border-radius:8px;font-size:13px;color:${_conFilters.manager_names.length?'#D70072':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden;max-width:220px">
+          class="form-control" style="min-width:120px;max-width:200px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${_conFilters.manager_names.length?'#D70072':'#D1D5DB'};border-radius:8px;font-size:13px;color:${_conFilters.manager_names.length?'#D70072':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden;max-width:200px">
           <i class="fas fa-user-tie" style="font-size:11px;flex-shrink:0"></i>
           <span style="overflow:hidden;text-overflow:ellipsis;flex:1">
             ${_conFilters.manager_names.length ? _conFilters.manager_names.join(', ') : '공사담당자'}
@@ -3594,19 +3689,22 @@ async function renderConstructionsPage(container) {
           </div>
         </div>
       </div>
-      <!-- 연도 -->
+
+      <!-- ③ 연도 -->
       <select id="conYearFilter" class="form-control" style="width:90px;padding:6px 10px"
         onchange="_conFilters.year=parseInt(this.value);_conFilters.page=1; renderConstructionsPage(document.getElementById('page-content'))">
         ${[2023,2024,2025,2026].map(y => `<option value="${y}" ${_conFilters.year===y?'selected':''}>${y}년</option>`).join('')}
       </select>
-      <!-- 월 -->
+
+      <!-- ④ 월 -->
       <select id="conMonthFilter" class="form-control" style="width:80px;padding:6px 10px"
         onchange="_conFilters.month=this.value===''?null:parseInt(this.value);_conFilters.page=1; renderConstructionsPage(document.getElementById('page-content'))">
         <option value="" ${!_conFilters.month?'selected':''}>전체월</option>
         ${[...Array(12)].map((_,i) => `<option value="${i+1}" ${_conFilters.month===i+1?'selected':''}>${i+1}월</option>`).join('')}
       </select>
-      <!-- 키워드 검색 -->
-      <div class="flex-1" style="min-width:160px">
+
+      <!-- ⑤ 키워드 검색 -->
+      <div class="flex-1" style="min-width:140px">
         <div class="relative">
           <input id="conKeyword" class="form-control" placeholder="공사명 / 요청번호 검색"
             value="${_conFilters.keyword}" style="padding-left:32px"
@@ -3616,22 +3714,24 @@ async function renderConstructionsPage(container) {
       </div>
       <button onclick="_conFilters.keyword=document.getElementById('conKeyword').value;_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))"
         class="btn btn-secondary"><i class="fas fa-search"></i></button>
-      <!-- 페이지당 건수 -->
-      <div class="flex items-center gap-1" style="flex-shrink:0">
-        <label style="font-size:11px;color:#9CA3AF;white-space:nowrap">페이지당</label>
-        <select id="conLimitSelect" class="form-control" style="width:64px"
-          onchange="_conFilters.limit=parseInt(this.value);_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))">
-          <option value="10"  ${(_conFilters.limit||20)===10 ?'selected':''}>10건</option>
-          <option value="20"  ${(_conFilters.limit||20)===20 ?'selected':''}>20건</option>
-          <option value="30"  ${(_conFilters.limit||20)===30 ?'selected':''}>30건</option>
-          <option value="50"  ${(_conFilters.limit||20)===50 ?'selected':''}>50건</option>
-        </select>
-      </div>
-      <!-- 엑셀 다운로드 -->
+
+      <!-- ⑥ 페이지당 건수 -->
+      <select id="conLimitSelect" class="form-control" style="width:64px"
+        title="페이지당 건수"
+        onchange="_conFilters.limit=parseInt(this.value);_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))">
+        <option value="10"  ${(_conFilters.limit||20)===10 ?'selected':''}>10건</option>
+        <option value="20"  ${(_conFilters.limit||20)===20 ?'selected':''}>20건</option>
+        <option value="30"  ${(_conFilters.limit||20)===30 ?'selected':''}>30건</option>
+        <option value="50"  ${(_conFilters.limit||20)===50 ?'selected':''}>50건</option>
+      </select>
+
+      <!-- ⑦ 엑셀 다운로드 -->
       <button id="conExcelBtn" onclick="exportConstructionsExcel(window._conListCache||[])"
         class="btn btn-secondary" style="color:#059669;border-color:#059669">
         <i class="fas fa-file-excel"></i> 엑셀
       </button>
+
+      <!-- ⑧ 공사 등록 -->
       <button onclick="showCreateConstructionModal()" class="btn btn-primary">
         <i class="fas fa-plus"></i> 공사 등록
       </button>
@@ -3645,7 +3745,11 @@ async function renderConstructionsPage(container) {
   try {
     const params = { year: _conFilters.year };
     if (_conFilters.month)                      params.month         = _conFilters.month;
-    if (_conFilters.status)                     params.status        = _conFilters.status;
+    // statusList가 1개일 때만 서버 param으로 전송 (서버는 단일 status만 지원)
+    // 다중 선택 시에는 서버에서 전체 조회 후 클라이언트에서 필터링
+    if (_conFilters.statusList && _conFilters.statusList.length === 1) {
+      params.status = _conFilters.statusList[0];
+    }
     if (_conFilters.keyword)                    params.keyword       = _conFilters.keyword;
     if (_conFilters.manager_names && _conFilters.manager_names.length) {
       params.manager_names = _conFilters.manager_names; // 배열 → paramsSerializer가 반복키로 직렬화
@@ -3661,6 +3765,12 @@ async function renderConstructionsPage(container) {
     var list = isLguPlusUser
       ? rawList.filter(function(con) { return con.is_auto_request_no === 0; })
       : rawList;
+
+    // ── 진행상태 다중선택 클라이언트 필터 (statusList가 2개 이상일 때) ──────
+    if (_conFilters.statusList && _conFilters.statusList.length > 1) {
+      list = list.filter(function(con) { return _conFilters.statusList.includes(con.status); });
+    }
+
     window._conListCache = list;   // 엑셀 다운로드용 캐시
 
     // ── 행 렌더 함수 (정렬 재렌더 공용) ────────────────────────────────────

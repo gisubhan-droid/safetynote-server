@@ -5485,31 +5485,62 @@ app.get('/qr/:userId', async (c) => {
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: linear-gradient(135deg, #F2F0EB 0%, #FDE8F3 100%); min-height: 100vh; font-family: 'LG Smart KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
     .profile-wrap { max-width: 440px; margin: 0 auto; padding: 20px 14px 48px; }
-    .lgu-header { background: linear-gradient(135deg, #E6007E 0%, #6B5B9A 100%); border-radius: 22px 22px 0 0; padding: 28px 24px 22px; text-align: center; color: white; }
-    .lgu-avatar { width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 900; color: white; margin: 0 auto 12px; border: 3px solid rgba(255,255,255,0.45); }
+    /* ─── 헤더 ─── */
+    .lgu-header { background: linear-gradient(135deg, #E6007E 0%, #6B5B9A 100%); border-radius: 22px 22px 0 0; padding: 28px 24px 20px; text-align: center; color: white; }
+    .lgu-avatar { width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 900; color: white; margin: 0 auto 10px; border: 3px solid rgba(255,255,255,0.45); }
     .lgu-name { font-size: 23px; font-weight: 900; letter-spacing: -0.5px; }
     .lgu-sub { font-size: 13px; opacity: 0.82; margin-top: 3px; }
-    .lgu-badges { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+    .lgu-badges { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
     .lgu-badge { display: inline-block; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.38); border-radius: 20px; padding: 3px 13px; font-size: 12px; font-weight: 700; }
     .blood-badge { background: rgba(255,80,80,0.3); border-color: rgba(255,120,120,0.5); }
+    /* 헤더 내 안전점수 배지 */
+    .header-score-wrap { margin-top: 12px; display: flex; justify-content: center; }
+    .header-score-badge { display: inline-flex; align-items: center; gap: 7px; background: rgba(255,255,255,0.18); border: 1.5px solid rgba(255,255,255,0.38); border-radius: 30px; padding: 6px 18px 6px 12px; }
+    .header-score-num { font-size: 20px; font-weight: 900; line-height: 1; }
+    .header-score-label { font-size: 11px; font-weight: 700; opacity: 0.88; }
+    /* ─── 카드 공통 ─── */
     .info-card { background: white; box-shadow: 0 8px 32px rgba(230,0,126,0.10); overflow: hidden; }
-    .info-card:last-of-type { border-radius: 0 0 22px 22px; }
     .section-title { display: flex; align-items: center; gap: 7px; padding: 12px 18px 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px; border-bottom: 1px solid #F5F0EB; }
     .info-row { display: flex; align-items: flex-start; padding: 11px 18px; border-bottom: 1px solid #F5F0EB; gap: 12px; }
     .info-row:last-child { border-bottom: none; }
     .info-icon { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; margin-top: 1px; }
     .info-label { font-size: 10px; font-weight: 700; color: #9CA3AF; line-height: 1; text-transform: uppercase; letter-spacing: 0.3px; }
     .info-value { font-size: 14px; font-weight: 600; color: #1A1A1A; line-height: 1.4; margin-top: 3px; }
+    /* ─── 교육 카드 ─── */
     .edu-card { background: white; border-top: 1px solid #F5F0EB; }
     .edu-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 18px; border-bottom: 1px solid #F9F6F2; }
     .edu-row:last-child { border-bottom: none; }
     .edu-name { font-size: 12px; color: #4B5563; font-weight: 500; }
     .edu-date { font-size: 12px; font-weight: 700; color: #1A1A1A; }
-    .edu-none { font-size: 11px; color: #D1D5DB; }
-    .task-card { margin: 0 18px 14px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid #E6007E; background: #FEF0F8; }
     .status-badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
     .footer-note { text-align: center; font-size: 11px; color: #9CA3AF; margin-top: 20px; line-height: 1.6; }
-    /* 동의 화면 스타일 */
+    /* ─── Accordion 공통 ─── */
+    .acc-header { display: flex; align-items: center; justify-content: space-between; padding: 13px 18px; cursor: pointer; user-select: none; transition: background 0.15s; }
+    .acc-header:active { background: #F9F6F2; }
+    .acc-arrow { font-size: 11px; color: #9CA3AF; transition: transform 0.25s; flex-shrink: 0; }
+    .acc-body { display: none; overflow: hidden; }
+    .acc-body.open { display: block; }
+    .acc-arrow.open { transform: rotate(180deg); }
+    /* 현장배정작업 accordion */
+    .task-acc-header { background: #FEF0F8; border-bottom: 1px solid #FAD4EA; }
+    .task-acc-body { background: white; }
+    .task-acc-item { padding: 12px 18px; border-bottom: 1px solid #F5F0EB; }
+    .task-acc-item:last-child { border-bottom: none; }
+    /* 안전점수 섹션 */
+    .score-section { background: white; border-top: 1px solid #F5F0EB; }
+    .score-badges { display: flex; gap: 8px; padding: 14px 18px 10px; }
+    .score-badge { flex: 1; border-radius: 14px; padding: 12px 6px; text-align: center; }
+    .score-badge .num { font-size: 22px; font-weight: 900; line-height: 1; }
+    .score-badge .lbl { font-size: 10px; font-weight: 700; color: #6B7280; margin-top: 4px; }
+    .score-hint { font-size: 10px; color: #9CA3AF; text-align: right; padding: 0 18px 10px; }
+    /* 우수/불량 accordion */
+    .result-acc { border-top: 1px solid #F5F0EB; }
+    .result-acc-header { padding: 12px 18px; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between; transition: background 0.15s; }
+    .result-acc-header:active { background: #F9F6F2; }
+    .result-acc-body { display: none; }
+    .result-acc-body.open { display: block; }
+    .rec-card { margin: 0 14px 10px; padding: 10px 12px; border-radius: 10px; font-size: 12px; }
+    /* ─── 동의 화면 스타일 ─── */
     #qrConsentScreen { display: none; }
     #qrProfileScreen { display: none; }
     .consent-card { background: white; border-radius: 22px; box-shadow: 0 8px 32px rgba(0,0,0,0.10); overflow: hidden; }
@@ -5757,10 +5788,24 @@ app.get('/qr/:userId', async (c) => {
         work_completed: { label: '작업완료(일지대기)', bg: '#FEF3C7', color: '#92400E' },
         completed:      { label: '일지작성완료',       bg: '#DCFCE7', color: '#166534' },
       };
-      const st = u.current_task
-        ? (statusMap[u.current_task.status] || { label: u.current_task.status, bg: '#F0EFEB', color: '#6B7280' })
-        : null;
 
+      // ─── 안전점수 계산 ───────────────────────────────────────────────
+      const poorCnt  = u.insp_summary?.poor  || 0;
+      const excelCnt = u.insp_summary?.excel || 0;
+      const safetyScore = excelCnt * 5 + poorCnt * (-10);
+      const scoreColor = safetyScore > 0 ? '#685182' : '#D70072';
+      const scoreBg    = safetyScore > 0 ? '#F5F0F8'  : '#FDE8F3';
+      const scoreStr   = (safetyScore > 0 ? '+' : '') + safetyScore;
+
+      // ─── 배정 작업 목록 (복수 지원) ──────────────────────────────────
+      const assignedTasks = u.assigned_tasks || (u.current_task ? [u.current_task] : []);
+
+      // ─── 점검이력 분류 ────────────────────────────────────────────────
+      const inspHistory = u.insp_history || [];
+      const poorRecs  = inspHistory.filter(r => r.result_type === '불량');
+      const excelRecs = inspHistory.filter(r => r.result_type === '우수');
+
+      // ─── 헤더 생성 ────────────────────────────────────────────────────
       card.innerHTML = \`
         <div class="lgu-header">
           <div class="lgu-avatar">\${u.name.charAt(0)}</div>
@@ -5770,8 +5815,22 @@ app.get('/qr/:userId', async (c) => {
             <span class="lgu-badge">\${u.role_label}</span>
             \${u.blood_type ? \`<span class="lgu-badge blood-badge"><i class="fas fa-tint"></i> \${u.blood_type}</span>\` : ''}
           </div>
+          <!-- 헤더 안전점수 -->
+          \${(poorCnt + excelCnt) > 0 ? \`
+          <div class="header-score-wrap">
+            <div class="header-score-badge">
+              <i class="fas fa-shield-alt" style="font-size:15px;opacity:0.9"></i>
+              <div>
+                <div class="header-score-num">\${scoreStr}점</div>
+                <div class="header-score-label">안전점수</div>
+              </div>
+              \${poorCnt > 0 ? \`<span style="font-size:10px;opacity:0.8">불량\${poorCnt}</span>\` : ''}
+              \${excelCnt > 0 ? \`<span style="font-size:10px;opacity:0.8">우수\${excelCnt}</span>\` : ''}
+            </div>
+          </div>\` : ''}
         </div>
 
+        <!-- ① 인적사항 -->
         <div class="info-card">
           <div class="section-title" style="color:#E6007E"><i class="fas fa-id-card"></i> 인적사항</div>
           \${infoRow('#FDE8F3','#E6007E','fa-building','소속 부서', u.department)}
@@ -5785,62 +5844,144 @@ app.get('/qr/:userId', async (c) => {
           </div>
         </div>
 
-        \${u.current_task ? \`
+        <!-- ② 현장배정작업 (accordion) -->
         <div class="info-card" style="border-top:1px solid #F5F0EB">
-          <div class="section-title" style="color:#E6007E"><i class="fas fa-hard-hat"></i> 현재 배정 작업</div>
-          <div class="task-card">
-            <div style="font-size:14px;font-weight:700;color:#1A1A1A;margin-bottom:7px">\${u.current_task.title}</div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span class="status-badge" style="background:\${st.bg};color:\${st.color}">\${st.label}</span>
-              \${u.current_task.work_order_address ? \`<span style="font-size:11px;color:#6B7280"><i class="fas fa-map-marker-alt"></i> \${u.current_task.work_order_address}</span>\` : ''}
+          \${assignedTasks.length > 0 ? \`
+          <!-- 배정 작업 있음 → accordion -->
+          <div class="acc-header task-acc-header" id="taskAccHeader" onclick="toggleAcc('taskAccHeader','taskAccBody')">
+            <div style="display:flex;align-items:center;gap:7px">
+              <i class="fas fa-hard-hat" style="color:#E6007E;font-size:13px"></i>
+              <span style="font-size:11px;font-weight:800;color:#E6007E">현장배정작업</span>
+              <span style="font-size:10px;background:#E6007E;color:white;border-radius:20px;padding:1px 7px;font-weight:700">\${assignedTasks.length}건</span>
+            </div>
+            <i class="fas fa-chevron-down acc-arrow" id="taskAccArrow"></i>
+          </div>
+          <div class="acc-body task-acc-body" id="taskAccBody">
+            \${assignedTasks.map(t => {
+              const st = statusMap[t.status] || { label: t.status, bg: '#F0EFEB', color: '#6B7280' };
+              return \`<div class="task-acc-item">
+                <div style="font-size:13px;font-weight:700;color:#1A1A1A;margin-bottom:6px">\${t.title}\${t.task_number ? \` <span style="font-size:10px;color:#9CA3AF;font-weight:500">[WKS-\${t.task_number}]</span>\` : ''}</div>
+                <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                  <span class="status-badge" style="background:\${st.bg};color:\${st.color}">\${st.label}</span>
+                  \${t.work_order_address ? \`<span style="font-size:11px;color:#6B7280"><i class="fas fa-map-marker-alt"></i> \${t.work_order_address}</span>\` : ''}
+                </div>
+              </div>\`;
+            }).join('')}
+          </div>\` : \`
+          <!-- 배정 작업 없음 -->
+          <div style="padding:13px 18px;font-size:12px;color:#9CA3AF;display:flex;align-items:center;gap:7px">
+            <i class="fas fa-hard-hat" style="font-size:13px;color:#D1D5DB"></i>
+            <span style="font-weight:600">현장배정작업</span>
+            <span style="margin-left:4px;color:#D1D5DB">현재 배정된 작업 없음</span>
+          </div>\`}
+        </div>
+
+        <!-- ③ 근로자 안전 점수 섹션 -->
+        <div class="score-section">
+          <div class="section-title" style="color:#685182"><i class="fas fa-shield-halved"></i> 근로자 안전 점수</div>
+
+          <!-- 요약 배지 4개 -->
+          <div class="score-badges">
+            <div class="score-badge" style="background:#FDE8F3;border:1px solid #D7007233">
+              <div class="num" style="color:#D70072">\${poorCnt}</div>
+              <div class="lbl"><i class="fas fa-exclamation-triangle mr-1" style="color:#D70072"></i>불량</div>
+            </div>
+            <div class="score-badge" style="background:#F5F0F8;border:1px solid #68518233">
+              <div class="num" style="color:#685182">\${excelCnt}</div>
+              <div class="lbl"><i class="fas fa-star mr-1" style="color:#685182"></i>우수</div>
+            </div>
+            <div class="score-badge" style="background:#F5F0F8;border:1px solid #D8D0DC">
+              <div class="num" style="color:#374151">\${poorCnt + excelCnt}</div>
+              <div class="lbl"><i class="fas fa-list mr-1"></i>전체</div>
+            </div>
+            <div class="score-badge" style="background:\${scoreBg};border:1px solid \${scoreColor}33">
+              <div class="num" style="color:\${scoreColor}">\${scoreStr}</div>
+              <div class="lbl"><i class="fas fa-shield-alt mr-1" style="color:\${scoreColor}"></i>안전점수</div>
             </div>
           </div>
-        </div>\` : \`
-        <div class="info-card" style="border-top:1px solid #F5F0EB">
-          <div style="padding:14px 18px;font-size:13px;color:#9CA3AF;text-align:center">
-            <i class="fas fa-check-circle" style="color:#6B5B9A"></i> 현재 배정된 작업 없음
+          <div class="score-hint">우수×+5점 · 불량×-10점</div>
+
+          <!-- 우수 기록 accordion -->
+          <div class="result-acc">
+            <div class="result-acc-header" onclick="toggleAcc('excelAccHeader','excelAccBody')" id="excelAccHeader"
+                 style="background:\${excelRecs.length > 0 ? '#F5F0F8' : '#FAFAFA'}">
+              <div style="display:flex;align-items:center;gap:7px">
+                <i class="fas fa-star" style="color:#685182;font-size:12px"></i>
+                <span style="font-size:12px;font-weight:800;color:#685182">우수 기록</span>
+                <span style="font-size:10px;background:\${excelRecs.length > 0 ? '#685182' : '#D1D5DB'};color:white;border-radius:20px;padding:1px 7px;font-weight:700">\${excelRecs.length}건</span>
+              </div>
+              \${excelRecs.length > 0 ? \`<i class="fas fa-chevron-down acc-arrow" id="excelAccArrow"></i>\` : '<span style="font-size:11px;color:#D1D5DB">기록 없음</span>'}
+            </div>
+            \${excelRecs.length > 0 ? \`
+            <div class="result-acc-body" id="excelAccBody">
+              <div style="padding:10px 14px 14px">
+                \${excelRecs.map(r => \`
+                <div class="rec-card" style="background:#F5F0F8;border:1px solid #68518233;margin-bottom:8px">
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px;flex-wrap:wrap">
+                    <span style="font-size:11px;font-weight:800;background:#685182;color:white;border-radius:20px;padding:2px 8px"><i class="fas fa-star mr-1"></i>우수</span>
+                    <span style="font-size:11px;color:#6B7280"><i class="fas fa-calendar-alt mr-1 opacity-40"></i>\${r.inspection_date_only || '-'}</span>
+                    \${r.task_title ? \`<span style="font-size:11px;color:#3B82F6;font-weight:600"><i class="fas fa-hammer mr-1"></i>\${r.task_number ? '[WKS-'+r.task_number+'] ':''}\${r.task_title}</span>\` : ''}
+                  </div>
+                  <div style="font-size:11px;color:#6B7280;margin-bottom:3px"><i class="fas fa-map-marker-alt mr-1 opacity-40"></i>\${r.location || '-'}</div>
+                  \${r.findings ? \`<div style="font-size:11px;color:#374151;margin-top:4px">\${r.findings}</div>\` : ''}
+                  <div style="font-size:10px;color:#9CA3AF;margin-top:4px">점검자: \${r.inspector_name || '-'}</div>
+                </div>\`).join('')}
+              </div>
+            </div>\` : ''}
           </div>
-        </div>\`}
 
+          <!-- 불량 기록 accordion -->
+          <div class="result-acc" style="border-bottom:none">
+            <div class="result-acc-header" onclick="toggleAcc('poorAccHeader','poorAccBody')" id="poorAccHeader"
+                 style="background:\${poorRecs.length > 0 ? '#FDE8F3' : '#FAFAFA'}">
+              <div style="display:flex;align-items:center;gap:7px">
+                <i class="fas fa-exclamation-triangle" style="color:#D70072;font-size:12px"></i>
+                <span style="font-size:12px;font-weight:800;color:#D70072">불량 기록</span>
+                <span style="font-size:10px;background:\${poorRecs.length > 0 ? '#D70072' : '#D1D5DB'};color:white;border-radius:20px;padding:1px 7px;font-weight:700">\${poorRecs.length}건</span>
+              </div>
+              \${poorRecs.length > 0 ? \`<i class="fas fa-chevron-down acc-arrow" id="poorAccArrow"></i>\` : '<span style="font-size:11px;color:#D1D5DB">기록 없음</span>'}
+            </div>
+            \${poorRecs.length > 0 ? \`
+            <div class="result-acc-body" id="poorAccBody">
+              <div style="padding:10px 14px 14px">
+                \${poorRecs.map(r => \`
+                <div class="rec-card" style="background:#FDE8F3;border:1px solid #D7007233;margin-bottom:8px">
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px;flex-wrap:wrap">
+                    <span style="font-size:11px;font-weight:800;background:#D70072;color:white;border-radius:20px;padding:2px 8px"><i class="fas fa-exclamation-triangle mr-1"></i>불량</span>
+                    <span style="font-size:11px;color:#6B7280"><i class="fas fa-calendar-alt mr-1 opacity-40"></i>\${r.inspection_date_only || '-'}</span>
+                    \${r.task_title ? \`<span style="font-size:11px;color:#3B82F6;font-weight:600"><i class="fas fa-hammer mr-1"></i>\${r.task_number ? '[WKS-'+r.task_number+'] ':''}\${r.task_title}</span>\` : ''}
+                  </div>
+                  <div style="font-size:11px;color:#6B7280;margin-bottom:3px"><i class="fas fa-map-marker-alt mr-1 opacity-40"></i>\${r.location || '-'}</div>
+                  \${r.findings ? \`<div style="font-size:11px;color:#374151;margin-top:4px">\${r.findings}</div>\` : ''}
+                  <div style="font-size:10px;color:#9CA3AF;margin-top:4px">점검자: \${r.inspector_name || '-'}</div>
+                </div>\`).join('')}
+              </div>
+            </div>\` : ''}
+          </div>
+        </div>
+
+        <!-- ④ 안전교육 이수 현황 -->
         \${(() => {
-          // ── 교육 이수 이력 조합 ──────────────────────────────────────────
           let eduRows = '';
-
-          // 1. 채용시교육
           eduRows += eduRow('채용시교육', u.edu_hire_date);
-
-          // 2. 정기안전교육
           eduRows += eduRow('정기안전교육', u.edu_periodic_date);
-
-          // 3. 특별안전교육 — edu_special_records(JSON) 우선, 없으면 레거시 컬럼
           let specialRecords = {};
           try { specialRecords = JSON.parse(u.edu_special_records || '{}'); } catch(_) {}
           const specialEntries = Object.entries(specialRecords).filter(([,v]) => v);
           if (specialEntries.length > 0) {
-            // edu_special_records 동적 항목
             specialEntries.forEach(([type, date]) => {
               eduRows += eduRow('특별안전교육 — ' + type, date);
             });
           } else {
-            // 레거시 고정 컬럼 fallback
             eduRows += eduRow('특별안전교육 — 전기작업', u.edu_special_electric);
             eduRows += eduRow('특별안전교육 — 밀폐공간작업', u.edu_special_confined);
             eduRows += eduRow('특별안전교육 — 하역작업', u.edu_special_loading);
           }
-
-          // 4. 작업내용 변경시 교육
           eduRows += eduRow('작업내용변경 교육', u.edu_job_change_date);
-
-          // 5. 관리감독자 교육
           eduRows += eduRow('관리감독자 교육', u.edu_supervisor_date);
-
-          // 6. 대전안전체험교육
           eduRows += eduRow('대전안전체험교육', u.edu_experience_date);
-
-          // 이수 이력이 하나도 없으면 섹션 자체 표시하지 않음
           if (!eduRows.trim()) return '';
-
-          return \`<div class="edu-card">
+          return \`<div class="edu-card" style="border-radius:0 0 22px 22px;overflow:hidden">
             <div class="section-title" style="color:#B45309"><i class="fas fa-graduation-cap"></i> 안전교육 이수 현황</div>
             \${eduRows}
           </div>\`;
@@ -5854,8 +5995,12 @@ app.get('/qr/:userId', async (c) => {
           </p>
         </div>
       \`;
-      const cards = card.querySelectorAll('.info-card, .edu-card');
-      if (cards.length) cards[cards.length-1].style.borderRadius = '0 0 22px 22px';
+      // 마지막 카드 하단 모서리 처리
+      const scoreSection = card.querySelector('.score-section');
+      if (scoreSection && !card.querySelector('.edu-card')) {
+        scoreSection.style.borderRadius = '0 0 22px 22px';
+        scoreSection.style.overflow = 'hidden';
+      }
 
     } catch(e) {
       card.innerHTML = \`<div style="background:white;border-radius:22px;padding:40px 24px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.08)">
@@ -5865,6 +6010,16 @@ app.get('/qr/:userId', async (c) => {
       </div>\`;
     }
   }
+
+  // accordion 토글 함수
+  window.toggleAcc = function(headerId, bodyId) {
+    const body  = document.getElementById(bodyId);
+    const arrow = document.getElementById(headerId + 'Arrow') || document.querySelector('#' + headerId + ' .acc-arrow');
+    if (!body) return;
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    if (arrow) arrow.classList.toggle('open', !isOpen);
+  };
 
   // 페이지 로드 시 초기화
   init();

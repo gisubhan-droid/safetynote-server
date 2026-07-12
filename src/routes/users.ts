@@ -228,14 +228,17 @@ app.get('/qr-profile/:userId', async (c) => {
 
     if (!u) return c.json({ error: '사용자를 찾을 수 없습니다.' }, 404)
 
-    // 현재 배정된 작업
-    const currentTask = await c.env.DB.prepare(
-      `SELECT t.id, t.title, t.status, t.work_order_address, t.planned_date
+    // 현재 배정된 작업 (복수, 진행 중인 모든 작업)
+    const assignedTasksRes = await c.env.DB.prepare(
+      `SELECT t.id, t.title, t.status, t.work_order_address, t.planned_date, t.task_number
        FROM task_assignments ta
        JOIN tasks t ON t.id = ta.task_id
        WHERE ta.worker_id = ? AND t.status NOT IN ('completed','cancelled')
-       ORDER BY t.created_at DESC LIMIT 1`
-    ).bind(userId).first<any>()
+       ORDER BY t.created_at DESC LIMIT 10`
+    ).bind(userId).all<any>()
+    const assignedTasks = assignedTasksRes?.results || []
+    // 하위 호환: current_task 는 첫 번째 항목
+    const currentTask = assignedTasks.length > 0 ? assignedTasks[0] : null
 
     // 완료된 작업 수
     const completedCount = await c.env.DB.prepare(
@@ -295,6 +298,7 @@ app.get('/qr-profile/:userId', async (c) => {
       edu_special_records: u.edu_special_records || '{}',
       joined: u.created_at ? u.created_at.slice(0, 10) : '',
       current_task: currentTask || null,
+      assigned_tasks: assignedTasks,
       completed_tasks: completedCount?.cnt || 0,
       insp_history: inspHistory?.results || [],
       insp_summary: {

@@ -3227,7 +3227,7 @@ async function _autoFillSubTaskNo(constructionId, forceOverwrite = false) {
 }
 
 // 공사현황 필터 상태
-let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_names:[] };
+let _conFilters = { status:'', year: new Date().getFullYear(), month: new Date().getMonth()+1, keyword:'', manager_names:[], page:1, limit:20 };
 let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 적용 플래그
 
 // ── 담당자 팝업 외부클릭 닫기 (공사현황·작업관리 공용) ─────────────────────
@@ -3534,20 +3534,25 @@ async function renderConstructionsPage(container) {
   };
 
   container.innerHTML = `
-  <div style="padding:16px">
+  <div class="con-list-root">
+
+    <!-- ── sticky 툴바 래퍼 ─────────────────────────────────────────── -->
+    <div class="con-toolbar-sticky">
+
     <!-- 상태 필터 탭 -->
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       ${STATUS_TABS.map(tab => {
         const active = _conFilters.status === tab.value;
         const c = TAB_COLORS[tab.value];
-        return `<button onclick="_conFilters.status='${tab.value}';renderConstructionsPage(document.getElementById('page-content'))"
-          style="display:flex;align-items:center;gap:6px;padding:7px 16px;border-radius:999px;border:2px solid ${active?c.act:'#DDD'};background:${active?c.bg:'#fff'};color:${active?c.act:'#666'};font-size:13px;font-weight:${active?700:500};cursor:pointer;transition:all 0.15s">
-          <i class="${tab.icon}" style="font-size:12px"></i>${tab.label}
+        return `<button onclick="_conFilters.status='${tab.value}';_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))"
+          style="display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;border:2px solid ${active?c.act:'#DDD'};background:${active?c.bg:'#fff'};color:${active?c.act:'#666'};font-size:12px;font-weight:${active?700:500};cursor:pointer;transition:all 0.15s">
+          <i class="${tab.icon}" style="font-size:11px"></i>${tab.label}
         </button>`;
       }).join('')}
     </div>
-    <!-- 서브 툴바: 담당자·연도·월·검색·버튼 -->
-    <div class="flex flex-wrap items-center gap-2 mb-3">
+
+    <!-- 서브 툴바: 담당자·연도·월·검색·페이지당·버튼 -->
+    <div class="flex flex-wrap items-center gap-2">
       <!-- 담당자 다중선택 버튼+팝업 -->
       <div style="position:relative">
         <button id="conManagerBtn" onclick="_conOpenManagerPicker()"
@@ -3591,12 +3596,12 @@ async function renderConstructionsPage(container) {
       </div>
       <!-- 연도 -->
       <select id="conYearFilter" class="form-control" style="width:90px;padding:6px 10px"
-        onchange="_conFilters.year=parseInt(this.value); renderConstructionsPage(document.getElementById('page-content'))">
+        onchange="_conFilters.year=parseInt(this.value);_conFilters.page=1; renderConstructionsPage(document.getElementById('page-content'))">
         ${[2023,2024,2025,2026].map(y => `<option value="${y}" ${_conFilters.year===y?'selected':''}>${y}년</option>`).join('')}
       </select>
       <!-- 월 -->
       <select id="conMonthFilter" class="form-control" style="width:80px;padding:6px 10px"
-        onchange="_conFilters.month=this.value===''?null:parseInt(this.value); renderConstructionsPage(document.getElementById('page-content'))">
+        onchange="_conFilters.month=this.value===''?null:parseInt(this.value);_conFilters.page=1; renderConstructionsPage(document.getElementById('page-content'))">
         <option value="" ${!_conFilters.month?'selected':''}>전체월</option>
         ${[...Array(12)].map((_,i) => `<option value="${i+1}" ${_conFilters.month===i+1?'selected':''}>${i+1}월</option>`).join('')}
       </select>
@@ -3605,13 +3610,24 @@ async function renderConstructionsPage(container) {
         <div class="relative">
           <input id="conKeyword" class="form-control" placeholder="공사명 / 요청번호 검색"
             value="${_conFilters.keyword}" style="padding-left:32px"
-            onkeydown="if(event.key==='Enter'){_conFilters.keyword=this.value;renderConstructionsPage(document.getElementById('page-content'))}">
+            onkeydown="if(event.key==='Enter'){_conFilters.keyword=this.value;_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))}">
           <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" style="font-size:13px;left:10px;top:50%;transform:translateY(-50%);position:absolute"></i>
         </div>
       </div>
-      <button onclick="_conFilters.keyword=document.getElementById('conKeyword').value;renderConstructionsPage(document.getElementById('page-content'))"
+      <button onclick="_conFilters.keyword=document.getElementById('conKeyword').value;_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))"
         class="btn btn-secondary"><i class="fas fa-search"></i></button>
-      <!-- 엑셀 다운로드 (리스트 로드 후 활성화) -->
+      <!-- 페이지당 건수 -->
+      <div class="flex items-center gap-1" style="flex-shrink:0">
+        <label style="font-size:11px;color:#9CA3AF;white-space:nowrap">페이지당</label>
+        <select id="conLimitSelect" class="form-control" style="width:64px"
+          onchange="_conFilters.limit=parseInt(this.value);_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))">
+          <option value="10"  ${(_conFilters.limit||20)===10 ?'selected':''}>10건</option>
+          <option value="20"  ${(_conFilters.limit||20)===20 ?'selected':''}>20건</option>
+          <option value="30"  ${(_conFilters.limit||20)===30 ?'selected':''}>30건</option>
+          <option value="50"  ${(_conFilters.limit||20)===50 ?'selected':''}>50건</option>
+        </select>
+      </div>
+      <!-- 엑셀 다운로드 -->
       <button id="conExcelBtn" onclick="exportConstructionsExcel(window._conListCache||[])"
         class="btn btn-secondary" style="color:#059669;border-color:#059669">
         <i class="fas fa-file-excel"></i> 엑셀
@@ -3620,6 +3636,9 @@ async function renderConstructionsPage(container) {
         <i class="fas fa-plus"></i> 공사 등록
       </button>
     </div>
+
+    </div><!-- /.con-toolbar-sticky -->
+
     <div id="con-list-area"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-2xl" style="color:#D70072"></i></div></div>
   </div>`;
 
@@ -3683,6 +3702,125 @@ async function renderConstructionsPage(container) {
       </tr>`;
     };
 
+    // ── 공사현황 페이지네이터 렌더 헬퍼 ────────────────────────────────────
+    const _conBuildPager = (total, page, limit) => {
+      const totalPages = Math.ceil(total / limit) || 1;
+      if (totalPages <= 1) return '';
+      const maxBtns = 7;
+      let pages = [];
+      if (totalPages <= maxBtns) {
+        for (let i = 1; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages = [1];
+        let lo = Math.max(2, page - 2), hi = Math.min(totalPages - 1, page + 2);
+        if (page <= 4) hi = Math.min(5, totalPages - 1);
+        if (page >= totalPages - 3) lo = Math.max(totalPages - 4, 2);
+        if (lo > 2) pages.push('…');
+        for (let i = lo; i <= hi; i++) pages.push(i);
+        if (hi < totalPages - 1) pages.push('…');
+        pages.push(totalPages);
+      }
+      const btnClass = (p) => `con-page-btn${p === page ? ' active' : ''}${p === '…' ? ' con-pager-ellipsis' : ''}`;
+      const clickPrev = page > 1 ? `_conFilters.page=${page-1};_conGoPage()` : '';
+      const clickNext = page < totalPages ? `_conFilters.page=${page+1};_conGoPage()` : '';
+      return `
+      <div class="con-pager">
+        <button class="con-page-btn${page<=1?' disabled':''}" onclick="${clickPrev}" ${page<=1?'disabled':''}>‹</button>
+        ${pages.map(p => p === '…'
+          ? `<span class="con-pager-ellipsis">…</span>`
+          : `<button class="${btnClass(p)}" onclick="_conFilters.page=${p};_conGoPage()">${p}</button>`
+        ).join('')}
+        <button class="con-page-btn${page>=totalPages?' disabled':''}" onclick="${clickNext}" ${page>=totalPages?'disabled':''}>›</button>
+        <span class="con-pager-info">${page} / ${totalPages} 페이지</span>
+      </div>`;
+    };
+
+    // ── 페이지 이동 핸들러 (정렬 캐시 우선) ─────────────────────────────────
+    window._conGoPage = () => {
+      const src = window._conSortedCache || window._conListCache || [];
+      const pg   = _conFilters.page  || 1;
+      const lim  = _conFilters.limit || 20;
+      const total = src.length;
+      const totalPages = Math.ceil(total / lim) || 1;
+      if (pg > totalPages) _conFilters.page = totalPages;
+      const safePg = _conFilters.page || 1;
+      const paged = src.slice((safePg - 1) * lim, safePg * lim);
+
+      // 테이블 tbody 교체
+      const tbody = document.querySelector('#conListTable tbody');
+      if (tbody) tbody.innerHTML = paged.map((con, idx) => _conBuildRow(con, idx)).join('');
+
+      // 카드 그리드 교체
+      const cardGrid = document.getElementById('conCardGrid');
+      if (cardGrid) {
+        cardGrid.innerHTML = paged.map(con => {
+          const _conCardStatusColor = {
+            registered:'#685182', in_progress:'#D70072', completed:'#059669',
+            settlement_requested:'#D97706', settled:'#4338CA'
+          };
+          const _conCardStatusBg = {
+            registered:'#F5F3FA', in_progress:'#FDE8F3', completed:'#D1FAE5',
+            settlement_requested:'#FEF3C7', settled:'#EEF2FF'
+          };
+          const _conCardStatusLabel = {
+            registered:'등록', in_progress:'진행중', completed:'완료',
+            settlement_requested:'정산요청', settled:'정산완료'
+          };
+          const sc = _conCardStatusColor[con.status] || '#685182';
+          const sb = _conCardStatusBg[con.status] || '#F5F3FA';
+          const sl = _conCardStatusLabel[con.status] || con.status;
+          const borderColor = con.status==='settled'?'#4338CA':con.status==='settlement_requested'?'#D97706':con.status==='completed'?'#059669':con.status==='in_progress'?'#D70072':'#9E9BC8';
+          const _conTypeKeyMap3 = {
+            relocation:'지장이설', subscription:'청약개통', conduit:'관로공사',
+            environment:'환경공사', separate:'별도사업', other:'기타',
+            cable_install:'광케이블시설', cable_splice:'광케이블접속', equipment_other:'장비·기타'
+          };
+          const _rawType3 = con.construction_type || con.work_class || '';
+          const typeText3 = _rawType3 ? (_conTypeKeyMap3[_rawType3] || _rawType3) : '';
+          const createdFmt3 = con.created_at ? con.created_at.slice(0,10) : '-';
+          const completeFmt3 = con.completion_date ? con.completion_date.slice(0,10) : '-';
+          const managerText3 = con.manager_display_name || con.manager_name || '-';
+          const supervisorText3 = con.supervisor_name || '';
+          const addrText3 = con.work_order_address || '';
+          return `
+          <div onclick="showConstructionDetail(${con.id})"
+               style="background:white;border-radius:14px;padding:12px 14px;
+                      border:1.5px solid #F0EBF5;border-left:4px solid ${borderColor};
+                      cursor:pointer;transition:box-shadow .15s,border-color .15s"
+               onmouseover="this.style.boxShadow='0 4px 16px rgba(103,81,130,.12)'"
+               onmouseout="this.style.boxShadow=''">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:6px">
+              <span style="font-size:11px;font-family:monospace;color:#685182;font-weight:600;flex-shrink:0">${con.request_no}</span>
+              <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;
+                           background:${sb};color:${sc};white-space:nowrap;flex-shrink:0">${sl}</span>
+            </div>
+            <div style="font-size:13px;font-weight:700;color:#1A1A2E;line-height:1.35;margin-bottom:6px;
+                        display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
+              ${con.title}
+            </div>
+            ${typeText3 ? `<div style="margin-bottom:6px"><span style="font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;background:#FDE8F3;color:#D70072">${typeText3}</span></div>` : ''}
+            ${addrText3 ? `<div style="font-size:10px;color:#9CA3AF;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><i class="fas fa-map-marker-alt" style="margin-right:3px;color:#D70072;font-size:9px"></i>${addrText3}</div>` : ''}
+            <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:#6B7280">
+              <span><i class="fas fa-calendar-alt" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>등록 ${createdFmt3}</span>
+              ${completeFmt3 !== '-' ? `<span><i class="fas fa-flag-checkered" style="margin-right:3px;color:#D70072;font-size:9px"></i>완료예정 <strong style="color:#D70072">${completeFmt3}</strong></span>` : ''}
+              ${managerText3 !== '-' ? `<span><i class="fas fa-user-tie" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>${managerText3}</span>` : ''}
+              ${supervisorText3 ? `<span><i class="fas fa-hard-hat" style="margin-right:3px;color:#C4B5D5;font-size:9px"></i>${supervisorText3}</span>` : ''}
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      // 총건수 + 페이지네이터 교체
+      const summaryEl = document.getElementById('conListSummary');
+      if (summaryEl) {
+        summaryEl.innerHTML = `
+          <span>총 <strong style="color:#685182">${total}</strong>건</span>
+          <span>${safePg} / ${totalPages} 페이지</span>`;
+      }
+      const pagerEl = document.getElementById('conListPager');
+      if (pagerEl) pagerEl.innerHTML = _conBuildPager(total, safePg, lim);
+    };
+
     // ── 공사현황 정렬 헬퍼 ──────────────────────────────────────────────────
     const _conRenderRows = (data) => {
       const tbody = document.querySelector('#conListTable tbody');
@@ -3705,7 +3843,10 @@ async function renderConstructionsPage(container) {
         return _conSortState.dir === 'asc'
           ? av.localeCompare(bv, 'ko') : bv.localeCompare(av, 'ko');
       });
-      _conRenderRows(sorted);
+      // ── 페이지네이션 적용 ─────────────────────────────────────────────────
+      window._conSortedCache = sorted;  // 정렬된 전체 목록 저장
+      _conFilters.page = 1;             // 정렬 시 1페이지로 리셋
+      window._conGoPage();              // paged 재렌더 (테이블 + 카드 + 페이저)
       // 화살표 업데이트
       document.querySelectorAll('#conListTableHead th[data-sortcol]').forEach(th => {
         const arrow = th.querySelector('.con-sort-arrow');
@@ -3723,7 +3864,14 @@ async function renderConstructionsPage(container) {
       return;
     }
 
-    const statusLabel = { registered:'등록', in_progress:'진행중', completed:'완료', settlement_requested:'정산요청', settled:'정산완료' };
+    // ── 페이지네이션 계산 ─────────────────────────────────────────────────────
+    // 필터가 바뀌면 _conSortedCache 초기화 (정렬 상태 리셋)
+    window._conSortedCache = null;
+    const _conTotal      = list.length;
+    const _conLim        = _conFilters.limit || 20;
+    const _conPg         = _conFilters.page  || 1;
+    const _conTotalPages = Math.ceil(_conTotal / _conLim) || 1;
+    const pagedList      = list.slice((_conPg - 1) * _conLim, _conPg * _conLim);
 
     area.innerHTML = `
     <div class="con-table-outer-wrap">
@@ -3789,18 +3937,24 @@ async function renderConstructionsPage(container) {
               <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
             </colgroup>
             <tbody>
-              ${list.map((con, idx) => _conBuildRow(con, idx)).join('')}
+              ${pagedList.map((con, idx) => _conBuildRow(con, idx)).join('')}
             </tbody>
           </table>
         </div>
       </div>
     </div>
-    <div style="padding:8px 20px;font-size:11px;color:#AAA;text-align:right">총 ${list.length}건</div>
+
+    <!-- ── 총건수 요약 ── -->
+    <div id="conListSummary"
+         style="display:flex;align-items:center;justify-content:space-between;
+                padding:6px 16px 4px;font-size:11px;color:#9CA3AF">
+      <span>총 <strong style="color:#685182">${_conTotal}</strong>건</span>
+      <span>${_conPg} / ${_conTotalPages} 페이지</span>
+    </div>
 
     <!-- ── 모바일 카드 그리드 (768px 이하) ── -->
     <div id="conCardGrid" style="display:none">
-      ${list.map(con => {
-        // 상태 색상
+      ${pagedList.map(con => {
         const _conCardStatusColor = {
           registered:'#685182', in_progress:'#D70072', completed:'#059669',
           settlement_requested:'#D97706', settled:'#4338CA'
@@ -3868,7 +4022,10 @@ async function renderConstructionsPage(container) {
           </div>
         </div>`;
       }).join('')}
-    </div>`;
+    </div>
+
+    <!-- ── 페이지네이터 ── -->
+    <div id="conListPager">${_conBuildPager(_conTotal, _conPg, _conLim)}</div>`;
 
 
     // ── 컬럼 리사이즈 초기화 ──

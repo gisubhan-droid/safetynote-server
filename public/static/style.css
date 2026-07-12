@@ -1834,3 +1834,111 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 #taskListTable tbody tr:hover td {
   background: #FDF7FB !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   공사현황 페이지 래퍼 + Sticky 툴바 + 페이지네이터
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 공사현황 페이지 루트 래퍼 */
+.con-list-root {
+  padding: 16px;
+}
+
+/* 공사현황 sticky 툴바 — 작업관리 .task-toolbar-sticky 동일 패턴 */
+.con-toolbar-sticky {
+  position: sticky;
+  top: 56px;
+  z-index: 30;
+  background: #fff;
+  padding: 8px 0 6px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #EDE9F5;
+  box-shadow: 0 2px 8px rgba(104, 81, 130, 0.07);
+}
+
+/* 모바일: top-header 없는 경우 top:0 */
+@media (max-width: 768px) {
+  .con-list-root { padding: 10px 8px; }
+  .con-toolbar-sticky { top: 0; padding: 6px 0 4px; }
+}
+
+/* 공사현황 툴바 내 컨트롤 크기 통일 */
+.con-toolbar-sticky .btn,
+.con-toolbar-sticky .form-control,
+.con-toolbar-sticky select.form-control,
+.con-toolbar-sticky input.form-control {
+  height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12px;
+  border-radius: 8px;
+  line-height: 32px;
+  box-sizing: border-box;
+}
+.con-toolbar-sticky .btn {
+  padding-left: 12px;
+  padding-right: 12px;
+  gap: 4px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ─── 공사현황 페이지네이터 ────────────────────────────────────────────── */
+.con-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 0 6px;
+  flex-wrap: wrap;
+}
+.con-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid #E5DAF5;
+  border-radius: 8px;
+  background: #fff;
+  color: #685182;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  line-height: 1;
+}
+.con-page-btn:hover:not(.disabled):not(.active) {
+  background: #F5F0FB;
+  border-color: #C4B5D5;
+}
+.con-page-btn.active {
+  background: linear-gradient(135deg, #D70072, #685182);
+  color: #fff;
+  border-color: transparent;
+  font-weight: 700;
+  cursor: default;
+}
+.con-page-btn.disabled,
+.con-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.con-pager-ellipsis {
+  font-size: 13px;
+  color: #9CA3AF;
+  padding: 0 4px;
+  line-height: 34px;
+}
+.con-pager-info {
+  font-size: 11px;
+  color: #9CA3AF;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+@media (max-width: 768px) {
+  .con-page-btn { min-width: 30px; height: 30px; font-size: 12px; }
+  .con-pager-info { display: none; }
+}

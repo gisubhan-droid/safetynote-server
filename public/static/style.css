@@ -1721,22 +1721,24 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   background: #D1C4E9; border-radius: 3px;
 }
 
-/* 공사현황 테이블 기본 */
+/* 공사현황 min-width 9컬럼에 맞게 확장 */
 .con-col-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 1020px;
   table-layout: fixed;
   border-collapse: collapse;
 }
 
 /* 컬럼별 너비 (colgroup col) */
-.con-col-table col.cc-req    { width: 140px; }
-.con-col-table col.cc-title  { width: auto;  }   /* 남은 공간 */
-.con-col-table col.cc-cdate  { width: 100px; }
-.con-col-table col.cc-pdate  { width: 100px; }
-.con-col-table col.cc-mgr   { width: 90px;  }
-.con-col-table col.cc-sup   { width: 90px;  }
-.con-col-table col.cc-status { width: 90px;  }
+.con-col-table col.cc-req    { width: 130px; }
+.con-col-table col.cc-type   { width: 90px;  }   /* 공사종류 (신규) */
+.con-col-table col.cc-title  { width: auto;  }   /* 공사명 — 남은 공간 */
+.con-col-table col.cc-addr   { width: 160px; }   /* 작업지시주소 (신규, 분리) */
+.con-col-table col.cc-cdate  { width: 92px; }
+.con-col-table col.cc-pdate  { width: 92px; }
+.con-col-table col.cc-mgr   { width: 80px;  }
+.con-col-table col.cc-sup   { width: 80px;  }
+.con-col-table col.cc-status { width: 80px;  }
 
 /* 헤더 th 공통 */
 .con-th {
@@ -1751,6 +1753,11 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   text-align: left;
   background: #F5F3FA;
   overflow: visible;       /* 리사이즈 핸들이 th 바깥으로 나올 수 있게 */
+  /* 세로 구분선 */
+  border-right: 1px solid #DDD5EA;
+}
+.con-th:last-child {
+  border-right: none;
 }
 .con-th-resize {
   padding-right: 12px;     /* 리사이즈 핸들 공간 확보 */
@@ -1765,6 +1772,11 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   text-overflow: ellipsis;
   white-space: nowrap;
   border-bottom: 1px solid #F3F0FA;
+  /* 세로 구분선 */
+  border-right: 1px solid #F0EBF5;
+}
+.con-td:last-child {
+  border-right: none;
 }
 
 /* 행 hover */

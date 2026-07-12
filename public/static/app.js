@@ -3489,6 +3489,9 @@ function exportConstructionsExcel(list) {
   URL.revokeObjectURL(url);
 }
 
+// ─── 공사현황 정렬 상태 ──────────────────────────────────────────────────────
+const _conSortState = { col: null, dir: 'asc' };
+
 async function renderConstructionsPage(container) {
   // 담당자 선택 팝업용: 공무·현장대리인·안전관리자 역할 사용자만
   let _conUserList = [];
@@ -3640,6 +3643,67 @@ async function renderConstructionsPage(container) {
       ? rawList.filter(function(con) { return con.is_auto_request_no === 0; })
       : rawList;
     window._conListCache = list;   // 엑셀 다운로드용 캐시
+
+    // ── 행 렌더 함수 (정렬 재렌더 공용) ────────────────────────────────────
+    const _conBuildRow = (con, idx) => {
+      const borderColor = con.status==='settled'?'#4338CA':con.status==='settlement_requested'?'#D97706':con.status==='completed'?'#059669':con.status==='in_progress'?'#D70072':'#9E9BC8';
+      const createdFmt  = con.created_at  ? con.created_at.slice(0,10)  : '-';
+      const completeFmt = con.completion_date ? con.completion_date.slice(0,10) : '-';
+      const rowBg = idx % 2 === 0 ? '#fff' : '#FAFAFE';
+      const addrText = con.work_order_address
+        ? `<span title="${con.work_order_address.replace(/"/g,'&quot;')}">${con.work_order_address}</span>`
+        : '<span style="color:#CCC">-</span>';
+      const typeText = con.construction_type || con.work_class || '<span style="color:#CCC">-</span>';
+      return `<tr class="con-tr" style="border-left:3px solid ${borderColor};background:${rowBg}"
+        onclick="showConstructionDetail(${con.id})" title="클릭하여 상세 보기">
+        <td class="con-td" style="font-size:12px;font-family:monospace;color:#685182;font-weight:600">${con.request_no}</td>
+        <td class="con-td" style="font-size:12px;color:#374151">${typeText}</td>
+        <td class="con-td">
+          <div style="font-weight:700;font-size:13px;color:#1F1F2E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${con.title}</div>
+        </td>
+        <td class="con-td" style="font-size:11px;color:#6B7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <i class="fas fa-map-marker-alt" style="color:#D70072;margin-right:3px;font-size:10px"></i>${addrText}
+        </td>
+        <td class="con-td" style="text-align:center;font-size:12px;color:#6B7280">${createdFmt}</td>
+        <td class="con-td" style="text-align:center;font-size:12px;color:#D70072;font-weight:600">${completeFmt}</td>
+        <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.manager_display_name || con.manager_name || '<span style="color:#CCC">-</span>'}</td>
+        <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.supervisor_name || '<span style="color:#CCC">-</span>'}</td>
+        <td class="con-td" style="text-align:center">${constructionStatusChip(con.status)}</td>
+      </tr>`;
+    };
+
+    // ── 공사현황 정렬 헬퍼 ──────────────────────────────────────────────────
+    const _conRenderRows = (data) => {
+      const tbody = document.querySelector('#conListTable tbody');
+      if (!tbody) return;
+      tbody.innerHTML = data.map((con, idx) => _conBuildRow(con, idx)).join('');
+    };
+
+    window._conSortTrigger = (col) => {
+      if (_conSortState.col === col) {
+        _conSortState.dir = _conSortState.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        _conSortState.col = col;
+        _conSortState.dir = 'asc';
+      }
+      const sorted = [...(window._conListCache||[])].sort((a, b) => {
+        let av = a[col] ?? '', bv = b[col] ?? '';
+        if (typeof av === 'number' && typeof bv === 'number')
+          return _conSortState.dir === 'asc' ? av - bv : bv - av;
+        av = String(av).toLowerCase(); bv = String(bv).toLowerCase();
+        return _conSortState.dir === 'asc'
+          ? av.localeCompare(bv, 'ko') : bv.localeCompare(av, 'ko');
+      });
+      _conRenderRows(sorted);
+      // 화살표 업데이트
+      document.querySelectorAll('#conListTableHead th[data-sortcol]').forEach(th => {
+        const arrow = th.querySelector('.con-sort-arrow');
+        if (!arrow) return;
+        arrow.textContent = th.dataset.sortcol === col
+          ? (_conSortState.dir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+      });
+    };
+
     const area = document.getElementById('con-list-area');
     if (!area) return;
 
@@ -3656,19 +3720,49 @@ async function renderConstructionsPage(container) {
       <div class="con-thead-sticky" id="conTheadWrap">
         <table id="conListTableHead" class="con-col-table">
           <colgroup>
-            <col class="cc-req"><col class="cc-title">
+            <col class="cc-req"><col class="cc-type"><col class="cc-title">
+            <col class="cc-addr">
             <col class="cc-cdate"><col class="cc-pdate">
             <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
           </colgroup>
           <thead>
             <tr>
-              <th class="con-th con-th-resize" data-col="0">공사요청번호<span class="col-resizer"></span></th>
-              <th class="con-th con-th-resize" data-col="1">공사명<span class="col-resizer"></span></th>
-              <th class="con-th con-th-resize" style="text-align:center" data-col="2">등록일<span class="col-resizer"></span></th>
-              <th class="con-th con-th-resize" style="text-align:center" data-col="3">완료예정일<span class="col-resizer"></span></th>
-              <th class="con-th con-th-resize" style="text-align:center" data-col="4">공사담당자<span class="col-resizer"></span></th>
-              <th class="con-th con-th-resize" style="text-align:center" data-col="5">공사감독자<span class="col-resizer"></span></th>
-              <th class="con-th" style="text-align:center" data-col="6">진행상태</th>
+              <th class="con-th con-th-resize" data-col="0" data-sortcol="request_no"
+                  style="cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('request_no')">
+                공사요청번호<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="1" data-sortcol="construction_type"
+                  style="cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('construction_type')">
+                공사종류<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="2" data-sortcol="title"
+                  style="cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('title')">
+                공사명<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="3" data-sortcol="work_order_address"
+                  style="cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('work_order_address')">
+                작업지시주소<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="4" data-sortcol="created_at"
+                  style="text-align:center;cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('created_at')">
+                등록일<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="5" data-sortcol="completion_date"
+                  style="text-align:center;cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('completion_date')">
+                완료예정일<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="6" data-sortcol="manager_display_name"
+                  style="text-align:center;cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('manager_display_name')">
+                공사담당자<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="7" data-sortcol="supervisor_name"
+                  style="text-align:center;cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('supervisor_name')">
+                공사감독자<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th" data-col="8" data-sortcol="status"
+                  style="text-align:center;cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('status')">
+                진행상태<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span></th>
             </tr>
           </thead>
         </table>
@@ -3678,36 +3772,20 @@ async function renderConstructionsPage(container) {
         <div class="con-tbody-scroll" id="conBodyScroll">
           <table id="conListTable" class="con-col-table">
             <colgroup>
-              <col class="cc-req"><col class="cc-title">
+              <col class="cc-req"><col class="cc-type"><col class="cc-title">
+              <col class="cc-addr">
               <col class="cc-cdate"><col class="cc-pdate">
               <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
             </colgroup>
             <tbody>
-              ${list.map((con, idx) => {
-                const borderColor = con.status==='settled'?'#4338CA':con.status==='settlement_requested'?'#D97706':con.status==='completed'?'#059669':con.status==='in_progress'?'#D70072':'#9E9BC8';
-                const createdFmt  = con.created_at  ? con.created_at.slice(0,10)  : '-';
-                const completeFmt = con.completion_date ? con.completion_date.slice(0,10) : '-';
-                const rowBg = idx % 2 === 0 ? '#fff' : '#FAFAFE';
-                return `<tr class="con-tr" style="border-left:3px solid ${borderColor};background:${rowBg}"
-                  onclick="showConstructionDetail(${con.id})" title="클릭하여 상세 보기">
-                  <td class="con-td" style="font-size:12px;font-family:monospace;color:#685182;font-weight:600">${con.request_no}</td>
-                  <td class="con-td">
-                    <div style="font-weight:700;font-size:13px;color:#1F1F2E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${con.title}</div>
-                    ${con.work_order_address ? '<div style="font-size:11px;color:#A0A0B0;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><i class=\"fas fa-map-marker-alt\" style=\"color:#D70072;margin-right:3px;font-size:10px\"></i>' + con.work_order_address + '</div>' : ''}
-                  </td>
-                  <td class="con-td" style="text-align:center;font-size:12px;color:#6B7280">${createdFmt}</td>
-                  <td class="con-td" style="text-align:center;font-size:12px;color:#D70072;font-weight:600">${completeFmt}</td>
-                  <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.manager_display_name || con.manager_name || '<span style="color:#CCC">-</span>'}</td>
-                  <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.supervisor_name || '<span style="color:#CCC">-</span>'}</td>
-                  <td class="con-td" style="text-align:center">${constructionStatusChip(con.status)}</td>
-                </tr>`;
-              }).join('')}
+              ${list.map((con, idx) => _conBuildRow(con, idx)).join('')}
             </tbody>
           </table>
         </div>
       </div>
     </div>
-    <div style="padding:8px 16px;font-size:11px;color:#AAA;text-align:right">총 ${list.length}건</div>`;
+    <div style="padding:8px 20px;font-size:11px;color:#AAA;text-align:right">총 ${list.length}건</div>`;
+
 
     // ── 컬럼 리사이즈 초기화 ──
     _initConColResize();

@@ -3257,6 +3257,22 @@ let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 
         taskPicker.style.display = 'none';
       }
     }
+    // 작업관리 진행단계 팝업
+    const taskStPicker = document.getElementById('taskStatusPicker');
+    const taskStBtn    = document.getElementById('taskStatusBtn');
+    if (taskStPicker && taskStPicker.style.display !== 'none') {
+      if (!taskStPicker.contains(e.target) && e.target !== taskStBtn && !taskStBtn?.contains(e.target)) {
+        taskStPicker.style.display = 'none';
+      }
+    }
+    // 작업관리 위험도 팝업
+    const taskRkPicker = document.getElementById('taskRiskPicker');
+    const taskRkBtn    = document.getElementById('taskRiskBtn');
+    if (taskRkPicker && taskRkPicker.style.display !== 'none') {
+      if (!taskRkPicker.contains(e.target) && e.target !== taskRkBtn && !taskRkBtn?.contains(e.target)) {
+        taskRkPicker.style.display = 'none';
+      }
+    }
   });
 })();
 
@@ -5265,7 +5281,7 @@ function onDashRangeApply() {
 }
 
 // ======= 작업 관리 (관리감독자) =======
-let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [] };
+let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [], year: new Date().getFullYear(), month: new Date().getMonth()+1, statusList: [], riskList: [] };
 let _taskManagerDefaultApplied = false; // 작업관리 담당자 기본값 1회 적용 플래그
 let _taskUserList = []; // 작업관리 담당자 선택용 사용자 목록 (전역 캐시)
 
@@ -5318,7 +5334,97 @@ function _taskClearManagerFilter() {
   renderTasksPage(document.getElementById('page-content'));
 }
 
-// 공사현황 stat-card 클릭: 필터 설정 후 작업 목록으로 이동
+// ── 작업관리 진행단계 드롭다운 다중선택 헬퍼 ─────────────────────────────────
+function _taskOpenStatusPicker() {
+  const pop = document.getElementById('taskStatusPicker');
+  if (!pop) return;
+  const isOpen = pop.style.display === 'block';
+  // 다른 팝업 닫기
+  ['taskManagerPicker','taskRiskPicker','conManagerPicker','conStatusPicker'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  pop.style.display = isOpen ? 'none' : 'block';
+}
+function _taskCloseStatusPicker() {
+  const pop = document.getElementById('taskStatusPicker');
+  if (pop) pop.style.display = 'none';
+}
+function _taskToggleStatus(val) {
+  if (!taskFilters.statusList) taskFilters.statusList = [];
+  const idx = taskFilters.statusList.indexOf(val);
+  if (idx === -1) taskFilters.statusList.push(val);
+  else taskFilters.statusList.splice(idx, 1);
+  const cb = document.getElementById('taskStCb_' + val);
+  if (cb) cb.checked = taskFilters.statusList.includes(val);
+  const countEl = document.getElementById('taskStPickerCount');
+  if (countEl) countEl.textContent = taskFilters.statusList.length ? `${taskFilters.statusList.length}개 선택` : '';
+}
+function _taskApplyStatusFilter() {
+  // statusList → status (서버 전송용: 쉼표 구분 또는 단일값)
+  taskFilters.status = taskFilters.statusList && taskFilters.statusList.length
+    ? taskFilters.statusList.join(',') : '';
+  taskFilters.start_date = '';
+  taskFilters.end_date = '';
+  taskFilters.page = 1;
+  _taskCloseStatusPicker();
+  renderTasksPage(document.getElementById('page-content'));
+}
+function _taskClearStatusFilter() {
+  taskFilters.statusList = [];
+  taskFilters.status = '';
+  document.querySelectorAll('[id^="taskStCb_"]').forEach(cb => cb.checked = false);
+  const countEl = document.getElementById('taskStPickerCount');
+  if (countEl) countEl.textContent = '';
+  taskFilters.page = 1;
+  _taskCloseStatusPicker();
+  renderTasksPage(document.getElementById('page-content'));
+}
+
+// ── 작업관리 위험도 드롭다운 다중선택 헬퍼 ───────────────────────────────────
+function _taskOpenRiskPicker() {
+  const pop = document.getElementById('taskRiskPicker');
+  if (!pop) return;
+  const isOpen = pop.style.display === 'block';
+  ['taskManagerPicker','taskStatusPicker','conManagerPicker','conStatusPicker'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  pop.style.display = isOpen ? 'none' : 'block';
+}
+function _taskCloseRiskPicker() {
+  const pop = document.getElementById('taskRiskPicker');
+  if (pop) pop.style.display = 'none';
+}
+function _taskToggleRisk(val) {
+  if (!taskFilters.riskList) taskFilters.riskList = [];
+  const idx = taskFilters.riskList.indexOf(val);
+  if (idx === -1) taskFilters.riskList.push(val);
+  else taskFilters.riskList.splice(idx, 1);
+  const cb = document.getElementById('taskRkCb_' + val);
+  if (cb) cb.checked = taskFilters.riskList.includes(val);
+  const countEl = document.getElementById('taskRkPickerCount');
+  if (countEl) countEl.textContent = taskFilters.riskList.length ? `${taskFilters.riskList.length}개 선택` : '';
+}
+function _taskApplyRiskFilter() {
+  taskFilters.risk_level = taskFilters.riskList && taskFilters.riskList.length === 1
+    ? taskFilters.riskList[0] : (taskFilters.riskList.length > 1 ? taskFilters.riskList.join(',') : '');
+  taskFilters.page = 1;
+  _taskCloseRiskPicker();
+  renderTasksPage(document.getElementById('page-content'));
+}
+function _taskClearRiskFilter() {
+  taskFilters.riskList = [];
+  taskFilters.risk_level = '';
+  document.querySelectorAll('[id^="taskRkCb_"]').forEach(cb => cb.checked = false);
+  const countEl = document.getElementById('taskRkPickerCount');
+  if (countEl) countEl.textContent = '';
+  taskFilters.page = 1;
+  _taskCloseRiskPicker();
+  renderTasksPage(document.getElementById('page-content'));
+}
+
+// 필터 설정 후 작업 목록으로 이동
 // 대시보드의 현재 기간 설정을 함께 전달하여 표시 건수와 목록 건수를 일치시킴
 function navigateToTasksWithFilter(filterType) {
   if (filterType === 'active') {
@@ -5438,13 +5544,30 @@ async function renderTasksPage(container) {
     // tasks 1회 호출로 완료 (백엔드에서 assigned_workers + work_types + team_name 배치 포함)
     // catsRes: 미사용이므로 제거 / teams API: task.team_name 직접 사용으로 제거
     const _curLimit = taskFilters.limit || 20;
+
+    // year/month → start_date/end_date 범위 자동계산
+    // navigateToTasksWithFilter 에서 직접 start_date/end_date를 설정한 경우 그것을 우선 사용
+    let _finalStart = taskFilters.start_date || '';
+    let _finalEnd   = taskFilters.end_date   || '';
+    if (!_finalStart && !_finalEnd) {
+      const _taskYear  = taskFilters.year  || new Date().getFullYear();
+      const _taskMonth = taskFilters.month || null;
+      if (_taskMonth) {
+        const _lastDay = new Date(_taskYear, _taskMonth, 0).getDate();
+        _finalStart = `${_taskYear}-${String(_taskMonth).padStart(2,'0')}-01`;
+        _finalEnd   = `${_taskYear}-${String(_taskMonth).padStart(2,'0')}-${String(_lastDay).padStart(2,'0')}`;
+      } else {
+        _finalStart = `${_taskYear}-01-01`;
+        _finalEnd   = `${_taskYear}-12-31`;
+      }
+    }
+
     const tasksRes = await API.get('/tasks', { params: {
-      ...(taskFilters.status                             ? { status:      taskFilters.status                                    } : {}),
-      ...(taskFilters.risk_level                         ? { risk_level:  taskFilters.risk_level                                } : {}),
-      ...(taskFilters.keyword                            ? { keyword:     taskFilters.keyword, search_type: taskFilters.search_type } : {}),
-      ...(taskFilters.date                               ? { date:        taskFilters.date                                      } : {}),
-      ...(taskFilters.start_date && taskFilters.end_date ? { start_date:  taskFilters.start_date, end_date: taskFilters.end_date } : {}),
-      ...(taskFilters.con_manager_names.length           ? { con_manager_names: taskFilters.con_manager_names                  } : {}),
+      ...(taskFilters.status                 ? { status:      taskFilters.status                                    } : {}),
+      ...(taskFilters.risk_level             ? { risk_level:  taskFilters.risk_level                                } : {}),
+      ...(taskFilters.keyword                ? { keyword:     taskFilters.keyword, search_type: taskFilters.search_type } : {}),
+      ...(_finalStart && _finalEnd           ? { start_date:  _finalStart, end_date: _finalEnd                     } : {}),
+      ...(taskFilters.con_manager_names.length ? { con_manager_names: taskFilters.con_manager_names               } : {}),
       limit: _curLimit,
       page:  taskFilters.page || 1,
     } });
@@ -5750,16 +5873,101 @@ async function renderTasksPage(container) {
       <!-- ── sticky 툴바 래퍼 (스크롤 시 상단 고정) ── -->
       <div class="task-toolbar-sticky">
 
-      <!-- 툴바 1행: 작업생성 + 담당자 + 진행단계 필터 + 날짜 + 페이지당 + 엑셀 -->
-      <div class="flex flex-wrap gap-2 mb-2 items-center">
-        ${(currentUser.role === 'admin' || currentUser.role === 'supervisor') ? `
-        <button onclick="showCreateTaskModal()" class="btn btn-primary">
-          <i class="fas fa-plus"></i> 작업 생성
-        </button>` : ''}
-        <!-- 담당자 다중선택 버튼+팝업 -->
+      <!-- 1줄 통합 툴바: 진행단계·위험도·담당자·연도·월·검색타입·키워드·페이지당·엑셀·작업생성 -->
+      <div class="flex flex-wrap items-center gap-2">
+
+        <!-- ① 진행단계 드롭다운 다중선택 -->
+        <div style="position:relative">
+          <button id="taskStatusBtn" onclick="_taskOpenStatusPicker()"
+            class="form-control" style="min-width:110px;max-width:180px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.statusList&&taskFilters.statusList.length?'#685182':'#D1D5DB'};border-radius:8px;font-size:12px;color:${taskFilters.statusList&&taskFilters.statusList.length?'#685182':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
+            <i class="fas fa-tasks" style="font-size:10px;flex-shrink:0"></i>
+            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${taskFilters.statusList&&taskFilters.statusList.length ? taskFilters.statusList.map(v=>({'unassigned':'미배정','assigned':'작업자배정','in_progress':'체크완료','tbm_done':'TBM완료','working':'진행중','work_completed':'완료대기','completed':'일지완료'}[v]||v)).join(', ') : '진행단계'}</span>
+            ${taskFilters.statusList&&taskFilters.statusList.length ? `<span style="background:#685182;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${taskFilters.statusList.length}</span>` : ''}
+          </button>
+          ${taskFilters.statusList&&taskFilters.statusList.length
+            ? `<span onclick="event.stopPropagation();_taskClearStatusFilter()" title="선택 초기화"
+                style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#685182;font-size:13px;z-index:1;font-weight:700">✕</span>`
+            : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
+          <div id="taskStatusPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:170px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F3F0FA;background:#FAFAFE">
+              <span style="font-size:11px;font-weight:700;color:#685182">진행단계 선택</span>
+              <span id="taskStPickerCount" style="font-size:11px;color:#685182;font-weight:600">${taskFilters.statusList&&taskFilters.statusList.length ? taskFilters.statusList.length+'개 선택' : ''}</span>
+            </div>
+            <div style="max-height:220px;overflow-y:auto;padding:4px 0">
+              ${[
+                {value:'unassigned',  label:'미배정'},
+                {value:'assigned',    label:'작업자배정'},
+                {value:'in_progress', label:'체크리스트완료'},
+                {value:'tbm_done',    label:'TBM완료'},
+                {value:'working',     label:'작업진행중'},
+                {value:'work_completed', label:'작업완료(일지대기)'},
+                {value:'completed',   label:'일지작성완료'}
+              ].map(t => {
+                const checked = taskFilters.statusList && taskFilters.statusList.includes(t.value);
+                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:12px;color:#374151;transition:background .1s"
+                  onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
+                  <input type="checkbox" id="taskStCb_${t.value}" ${checked?'checked':''} onchange="_taskToggleStatus('${t.value}')">
+                  <span>${t.label}</span>
+                </label>`;
+              }).join('')}
+            </div>
+            <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #F3F0FA;background:#FAFAFE">
+              <button onclick="_taskApplyStatusFilter()"
+                style="flex:1;padding:7px 0;border-radius:8px;background:#685182;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer">
+                <i class="fas fa-check mr-1"></i>적용</button>
+              <button onclick="_taskClearStatusFilter()"
+                style="flex:1;padding:7px 0;border-radius:8px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;font-size:12px;cursor:pointer">
+                전체 초기화</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ② 위험도 드롭다운 다중선택 -->
+        <div style="position:relative">
+          <button id="taskRiskBtn" onclick="_taskOpenRiskPicker()"
+            class="form-control" style="min-width:90px;max-width:160px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.riskList&&taskFilters.riskList.length?'#D70072':'#D1D5DB'};border-radius:8px;font-size:12px;color:${taskFilters.riskList&&taskFilters.riskList.length?'#D70072':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
+            <i class="fas fa-exclamation-triangle" style="font-size:10px;flex-shrink:0"></i>
+            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${taskFilters.riskList&&taskFilters.riskList.length ? taskFilters.riskList.map(v=>({'normal':'일반','medium':'중위험','high':'고위험'}[v]||v)).join(', ') : '위험도'}</span>
+            ${taskFilters.riskList&&taskFilters.riskList.length ? `<span style="background:#D70072;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${taskFilters.riskList.length}</span>` : ''}
+          </button>
+          ${taskFilters.riskList&&taskFilters.riskList.length
+            ? `<span onclick="event.stopPropagation();_taskClearRiskFilter()" title="선택 초기화"
+                style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#D70072;font-size:13px;z-index:1;font-weight:700">✕</span>`
+            : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
+          <div id="taskRiskPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:150px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F3F0FA;background:#FAFAFE">
+              <span style="font-size:11px;font-weight:700;color:#685182">위험도 선택</span>
+              <span id="taskRkPickerCount" style="font-size:11px;color:#D70072;font-weight:600">${taskFilters.riskList&&taskFilters.riskList.length ? taskFilters.riskList.length+'개 선택' : ''}</span>
+            </div>
+            <div style="padding:4px 0">
+              ${[{value:'normal',label:'일반'},{value:'medium',label:'중위험'},{value:'high',label:'고위험'}].map(t => {
+                const checked = taskFilters.riskList && taskFilters.riskList.includes(t.value);
+                const dotColor = t.value==='high'?'#D70072':t.value==='medium'?'#9B59B6':'#685182';
+                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:12px;color:#374151;transition:background .1s"
+                  onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
+                  <input type="checkbox" id="taskRkCb_${t.value}" ${checked?'checked':''} onchange="_taskToggleRisk('${t.value}')">
+                  <span style="display:inline-flex;align-items:center;gap:5px">
+                    <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};flex-shrink:0"></span>
+                    ${t.label}
+                  </span>
+                </label>`;
+              }).join('')}
+            </div>
+            <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #F3F0FA;background:#FAFAFE">
+              <button onclick="_taskApplyRiskFilter()"
+                style="flex:1;padding:7px 0;border-radius:8px;background:#D70072;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer">
+                <i class="fas fa-check mr-1"></i>적용</button>
+              <button onclick="_taskClearRiskFilter()"
+                style="flex:1;padding:7px 0;border-radius:8px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;font-size:12px;cursor:pointer">
+                전체 초기화</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ③ 담당자 다중선택 버튼+팝업 -->
         <div style="position:relative">
           <button id="taskManagerBtn" onclick="_taskOpenManagerPicker()"
-            class="form-control" style="width:auto;min-width:110px;max-width:200px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.con_manager_names.length?'#685182':'#D1D5DB'};color:${taskFilters.con_manager_names.length?'#685182':'#9CA3AF'};padding-left:10px;padding-right:26px;white-space:nowrap;overflow:hidden">
+            class="form-control" style="min-width:110px;max-width:180px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.con_manager_names.length?'#685182':'#D1D5DB'};border-radius:8px;font-size:12px;color:${taskFilters.con_manager_names.length?'#685182':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
             <i class="fas fa-user-tie" style="font-size:10px;flex-shrink:0"></i>
             <span style="overflow:hidden;text-overflow:ellipsis;flex:1">
               ${taskFilters.con_manager_names.length ? taskFilters.con_manager_names.join(', ') : '공사담당자'}
@@ -5779,11 +5987,11 @@ async function renderTasksPage(container) {
               ${_taskUserList.length ? _taskUserList.map(u => {
                 const checked = taskFilters.con_manager_names.includes(u.name);
                 const safeId = 'taskMgrCb_' + u.name.replace(/\s/g,'_');
-                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:#374151;transition:background .1s" onmouseover="this.style.background='#F8F5FC'" onmouseout="this.style.background=''">
+                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:12px;color:#374151;transition:background .1s" onmouseover="this.style.background='#F8F5FC'" onmouseout="this.style.background=''">
                   <input type="checkbox" id="${safeId}" ${checked?'checked':''} onchange="_taskToggleManager('${u.name.replace(/'/g,"\\'")}')">
                   <span>${u.name}</span>
                 </label>`;
-              }).join('') : '<div style="padding:12px 14px;font-size:13px;color:#AAA;text-align:center">담당자 없음</div>'}
+              }).join('') : '<div style="padding:12px 14px;font-size:12px;color:#AAA;text-align:center">담당자 없음</div>'}
             </div>
             <div style="padding:8px 10px;border-top:1px solid #F0EAF8;background:#FAFAFE;display:flex;gap:6px">
               <button onclick="_taskApplyManagerFilter()" style="flex:1;padding:7px 0;background:#685182;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
@@ -5793,75 +6001,67 @@ async function renderTasksPage(container) {
             </div>
           </div>
         </div>
-        <select id="statusFilter" class="form-control" style="width:auto" onchange="onStatusFilterChange(this.value)">
-          <option value="">전체 진행단계</option>
-          <option value="unassigned"  ${taskFilters.status==='unassigned' ?'selected':''}>미배정</option>
-          <option value="assigned"    ${taskFilters.status==='assigned'   ?'selected':''}>작업자배정</option>
-          <option value="in_progress" ${taskFilters.status==='in_progress'?'selected':''}>체크리스트완료</option>
-          <option value="tbm_done"       ${taskFilters.status==='tbm_done'      ?'selected':''}>TBM완료</option>
-          <option value="working"        ${taskFilters.status==='working'       ?'selected':''}>작업진행중</option>
-          <option value="work_completed" ${taskFilters.status==='work_completed'?'selected':''}>작업완료(일지대기)</option>
-          <option value="completed"      ${taskFilters.status==='completed'     ?'selected':''}>일지작성완료</option>
-        </select>
-        <select id="riskFilter" class="form-control" style="width:auto" onchange="onRiskFilterChange(this.value)">
-          <option value="">전체 위험도</option>
-          <option value="normal" ${taskFilters.risk_level==='normal' ?'selected':''}>일반</option>
-          <option value="medium" ${taskFilters.risk_level==='medium' ?'selected':''}>중위험</option>
-          <option value="high"   ${taskFilters.risk_level==='high'   ?'selected':''}>고위험</option>
-        </select>
-        <input type="date" id="dateFilter" class="form-control" style="width:auto"
-          value="${taskFilters.date||''}"
-          onchange="onDateFilterChange(this.value)">
-        ${(taskFilters.status || taskFilters.risk_level || taskFilters.date || taskFilters.con_manager_names.length) ? `
-        <button onclick="taskFilters.status=''; taskFilters.risk_level=''; taskFilters.date=''; taskFilters.start_date=''; taskFilters.end_date=''; taskFilters.con_manager_names=[]; taskFilters.page=1; renderTasksPage(document.getElementById('page-content'))"
-          class="btn btn-outline" style="flex-shrink:0;color:#C6C6C6;border-color:#C6C6C6;padding:0 10px">
-          <i class="fas fa-times mr-1"></i>필터 초기화
-        </button>` : ''}
-        <!-- 페이지당 건수 선택 -->
-        <div class="flex items-center gap-1 ml-auto" style="flex-shrink:0">
-          <label style="font-size:11px;color:#9CA3AF;white-space:nowrap">페이지당</label>
-          <select id="taskLimitSelect" class="form-control" style="width:64px"
-            onchange="taskFilters.limit=parseInt(this.value);taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))">
-            <option value="10"  ${(taskFilters.limit||20)===10 ?'selected':''}>10건</option>
-            <option value="20"  ${(taskFilters.limit||20)===20 ?'selected':''}>20건</option>
-            <option value="30"  ${(taskFilters.limit||20)===30 ?'selected':''}>30건</option>
-            <option value="50"  ${(taskFilters.limit||20)===50 ?'selected':''}>50건</option>
-          </select>
-        </div>
-        <!-- 엑셀 다운로드: 공사현황과 동일한 아이콘+텍스트 버튼 -->
-        <button onclick="downloadTaskListCSV()" class="btn btn-secondary" style="color:#059669;border-color:#059669" title="엑셀 다운로드">
-          <i class="fas fa-file-excel"></i> 엑셀
-        </button>
-      </div>
 
-      <!-- 툴바 2행: 키워드 검색 -->
-      <div class="flex gap-2 mb-1 items-center">
-        <select id="searchTypeSelect" class="form-control" style="width:100px;flex-shrink:0"
+        <!-- ④ 연도 선택 -->
+        <select id="taskYearFilter" class="form-control" style="width:88px;padding:6px 8px;font-size:12px"
+          onchange="taskFilters.year=parseInt(this.value);taskFilters.start_date='';taskFilters.end_date='';taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))">
+          ${[2023,2024,2025,2026].map(y => `<option value="${y}" ${(taskFilters.year||new Date().getFullYear())===y?'selected':''}>${y}년</option>`).join('')}
+        </select>
+
+        <!-- ⑤ 월 선택 -->
+        <select id="taskMonthFilter" class="form-control" style="width:76px;padding:6px 8px;font-size:12px"
+          onchange="taskFilters.month=this.value===''?null:parseInt(this.value);taskFilters.start_date='';taskFilters.end_date='';taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))">
+          <option value="" ${!taskFilters.month?'selected':''}>전체월</option>
+          ${[...Array(12)].map((_,i) => `<option value="${i+1}" ${taskFilters.month===i+1?'selected':''}>${i+1}월</option>`).join('')}
+        </select>
+
+        <!-- ⑥ 검색타입 + 키워드 + 검색버튼 (1줄 통합) -->
+        <select id="searchTypeSelect" class="form-control" style="width:90px;flex-shrink:0;font-size:12px;padding:6px 8px"
           onchange="taskFilters.search_type=this.value; _updateTaskSearchPlaceholder()">
           <option value="title"       ${taskFilters.search_type==='title'      ?'selected':''}>공사명</option>
           <option value="request_no"  ${taskFilters.search_type==='request_no' ?'selected':''}>요청번호</option>
           <option value="task_number" ${taskFilters.search_type==='task_number'?'selected':''}>작업번호</option>
         </select>
-        <div class="flex flex-1 gap-0" style="max-width:400px">
+        <div class="flex" style="min-width:130px;flex:1;max-width:340px">
           <input type="text" id="keywordInput"
-            class="form-control" style="border-radius:8px 0 0 8px;border-right:none"
-            placeholder="${taskFilters.search_type==='task_number' ? 'WKS-번호 또는 서브번호 입력' : taskFilters.search_type==='request_no' ? '공사요청번호 입력' : '공사명 입력'}"
+            class="form-control" style="border-radius:8px 0 0 8px;border-right:none;font-size:12px"
+            placeholder="${taskFilters.search_type==='task_number' ? 'WKS-번호 입력' : taskFilters.search_type==='request_no' ? '요청번호 입력' : '공사명 입력'}"
             value="${taskFilters.keyword||''}"
-            onkeydown="if(event.key==='Enter'){ taskFilters.keyword=this.value; renderTasksPage(document.getElementById('page-content')); }"
+            onkeydown="if(event.key==='Enter'){ taskFilters.keyword=this.value; taskFilters.page=1; renderTasksPage(document.getElementById('page-content')); }"
           >
-          <button onclick="taskFilters.keyword=document.getElementById('keywordInput').value; renderTasksPage(document.getElementById('page-content'))"
-            class="btn btn-primary" style="border-radius:0 8px 8px 0;padding:0 14px;flex-shrink:0">
+          <button onclick="taskFilters.keyword=document.getElementById('keywordInput').value;taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))"
+            class="btn btn-primary" style="border-radius:0 8px 8px 0;padding:0 12px;flex-shrink:0;font-size:12px">
             <i class="fas fa-search"></i>
           </button>
         </div>
-        ${taskFilters.keyword ? `
-        <button onclick="taskFilters.keyword=''; document.getElementById('keywordInput').value=''; renderTasksPage(document.getElementById('page-content'))"
-          class="btn btn-outline" style="flex-shrink:0;padding:0 10px">
-          <i class="fas fa-times mr-1"></i>검색 초기화
+
+        <!-- 총 건수 표시 -->
+        <span style="font-size:12px;color:#9CA3AF;white-space:nowrap;flex-shrink:0">총 <strong style="color:#685182">${_taskListTotal}</strong>건</span>
+
+        <!-- ⑦ 페이지당 건수 -->
+        <select id="taskLimitSelect" class="form-control" style="width:64px;font-size:12px;padding:6px 6px"
+          title="페이지당 건수"
+          onchange="taskFilters.limit=parseInt(this.value);taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))">
+          <option value="10"  ${(taskFilters.limit||20)===10 ?'selected':''}>10건</option>
+          <option value="20"  ${(taskFilters.limit||20)===20 ?'selected':''}>20건</option>
+          <option value="30"  ${(taskFilters.limit||20)===30 ?'selected':''}>30건</option>
+          <option value="50"  ${(taskFilters.limit||20)===50 ?'selected':''}>50건</option>
+        </select>
+
+        <!-- ⑧ 엑셀 다운로드 -->
+        <button onclick="downloadTaskListCSV()" class="btn btn-secondary" style="color:#059669;border-color:#059669;font-size:12px" title="엑셀 다운로드">
+          <i class="fas fa-file-excel"></i> 엑셀
+        </button>
+
+        <!-- ⑨ 작업 생성 (맨 우측, admin/supervisor 전용) -->
+        ${(currentUser.role === 'admin' || currentUser.role === 'supervisor') ? `
+        <button onclick="showCreateTaskModal()" class="btn btn-primary" style="font-size:12px">
+          <i class="fas fa-plus"></i> 작업 생성
         </button>` : ''}
-        <span style="font-size:11px;color:#9CA3AF;margin-left:auto;white-space:nowrap;padding-right:8px">총 <strong style="color:#685182">${_taskListTotal}</strong>건 / ${taskFilters.page||1}페이지</span>
       </div>
-      <div id="taskSearchHint" class="mb-3" style="font-size:11px;color:#9CA3AF;padding-left:2px;display:${taskFilters.search_type==='task_number'?'block':'none'}">
+
+      <!-- 작업번호 검색 형식 안내 (task_number 선택 시만 표시) -->
+      <div id="taskSearchHint" class="mt-1" style="font-size:11px;color:#9CA3AF;padding-left:2px;display:${taskFilters.search_type==='task_number'?'block':'none'}">
         <i class="fas fa-info-circle mr-1" style="color:#C4B5D5"></i>
         작업번호 형식: <span style="font-family:monospace;color:#685182;font-weight:600">WKS-######-#####-####</span>
         &nbsp;(메인작업번호-서브번호) · 일부 번호 또는 서브번호만 입력해도 조회됩니다

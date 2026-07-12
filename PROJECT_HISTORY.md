@@ -6050,3 +6050,55 @@ pm2 logs safetynote-recovery --nostream --lines 20
 git pull origin main
 # (pm2 restart 불필요 — public/static/app.js만 변경, 서버코드 무변경)
 ```
+
+---
+
+## 세션 123 (2026-07-12) — BUG-095: 작업상세 TBM 사진 추가/삭제 기능 구현 + UI 개선
+
+### 작업 요약
+- `showTaskDetail` 체크리스트 탭의 "TBM 안전조치 사진 항목" 섹션을 읽기 전용에서 **추가/삭제 가능한 인터랙티브** UI로 전면 개편
+- 스크린샷(기존 체크마크 리스트 레이아웃) 스타일을 유지하면서 사진 추가/삭제 기능 추가
+- 섹션별 한 줄 리스트 형태: 썸네일 + 항목명 + 체크/상태 + 삭제 버튼
+
+### 변경 내역
+
+#### BUG-095 1차 구현 (`9d9df97`) — 기능 추가
+- `showTaskDetail` 체크리스트 탭 TBM 사진 섹션 UI 전면 개편 (읽기 전용 → 추가/삭제 가능)
+- 헬퍼 함수 5개 추가:
+  - `_openTbmPhotoModalFromDetail(assId, taskId)` — 사진 관리 모달 열기
+  - `_uploadTbmPhotoFromDetail(input, assId, sectionId, sectionName, taskId)` — 섹션 새 사진 추가
+  - `_uploadTbmPhotoSlotFromDetail(input, assId, sectionId, photoItemId, label, taskId)` — 미등록 슬롯 사진 등록
+  - `_deleteTbmPhotoFromDetail(photoItemId, assId, label, taskId)` — 사진 삭제 (확인 팝업 포함)
+  - `_refreshTaskDetailTbmSection(taskId)` — 모달 전체 재열기 없이 TBM 사진 섹션만 DOM 갱신
+
+#### BUG-095 2차 UI 개선 (`bae4ff0`) — 레이아웃 개선
+- **기존**: 3열 그리드 + 미등록 슬롯 뱃지 방식
+- **개선**: 스크린샷 스타일 한 줄 리스트 레이아웃
+  - 섹션 헤더: 빨간 번호 뱃지 + 섹션명 + 사진 수 표시 + `+추가` 버튼
+  - 등록된 사진: `[40×40 썸네일] [항목명] [✓ 아이콘] [호버시 ✕ 삭제 버튼]`
+  - 미등록 슬롯: `[빨간 카메라 아이콘] [항목명(빨간)] [등록 버튼]`
+- `_refreshTaskDetailTbmSection` 동일 레이아웃으로 통일 (새로고침 시 일관성)
+
+### 기술 세부사항
+- **API 흐름**: `_uploadTbmPhotoFromDetail` → `POST /api/photos/upload` → `POST /checklist/{assId}/tbm-photos` → `_refreshTaskDetailTbmSection`
+- **삭제 흐름**: `_deleteTbmPhotoFromDetail` → 확인 팝업(z-index:10030) → `DELETE /checklist/{assId}/tbm-photos/{photoItemId}` → `_refreshTaskDetailTbmSection`
+- **DOM 갱신**: `taskModal.querySelector('#task-detail-tbm-photos-{assId}')` → 헤더 이후 자식 교체
+- **섹션 사진 카운트 표시**: `(등록 수/전체 수)` 형식
+
+### 커밋 로그
+| 커밋 | 내용 |
+|------|------|
+| `9d9df97` | feat: BUG-095 작업상세 TBM 안전조치 사진 항목 추가/삭제 기능 구현 |
+| `bae4ff0` | feat: BUG-095 TBM 사진 섹션 UI 개선 - 스크린샷 스타일 리스트 레이아웃 + 추가/삭제 기능 |
+
+### 파일 수정 내역
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | `showTaskDetail` TBM 사진 섹션 UI 전면 개편 + 헬퍼 함수 5개 추가 + `_refreshTaskDetailTbmSection` 레이아웃 통일 |
+| `dist/_worker.js` | 빌드 결과물 (276.27 kB) |
+
+### NAS 배포 안내
+```bash
+git pull origin main
+# (pm2 restart 불필요 — public/static/app.js만 변경, 서버코드 무변경)
+```

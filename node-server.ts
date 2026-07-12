@@ -5484,7 +5484,7 @@ app.get('/qr/:userId', async (c) => {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: linear-gradient(135deg, #F2F0EB 0%, #FDE8F3 100%); min-height: 100vh; font-family: 'LG Smart KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
-    .profile-wrap { max-width: 440px; margin: 0 auto; padding: 20px 14px 48px; }
+    .profile-wrap { max-width: 440px; margin: 0 auto; padding: 20px 14px 54px; }
     /* ─── 헤더 ─── */
     .lgu-header { background: linear-gradient(135deg, #E6007E 0%, #6B5B9A 100%); border-radius: 22px 22px 0 0; padding: 28px 24px 20px; text-align: center; color: white; }
     .lgu-avatar { width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 900; color: white; margin: 0 auto 10px; border: 3px solid rgba(255,255,255,0.45); }
@@ -5514,6 +5514,11 @@ app.get('/qr/:userId', async (c) => {
     .edu-date { font-size: 12px; font-weight: 700; color: #1A1A1A; }
     .status-badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
     .footer-note { text-align: center; font-size: 11px; color: #9CA3AF; margin-top: 20px; line-height: 1.6; }
+    /* ─── LinkMak 크레딧 바 ─── */
+    .qr-credit-bar { position: fixed; bottom: 0; left: 0; right: 0; height: 22px; background: rgba(248,246,242,0.96); border-top: 1px solid #EDE8E3; display: flex; align-items: center; justify-content: flex-end; padding: 0 14px; z-index: 50; gap: 5px; backdrop-filter: blur(4px); }
+    .qr-credit-bar .acb-text { font-size: 10px; color: #adb5bd; white-space: nowrap; }
+    .qr-credit-bar .acb-sep { width: 1px; height: 9px; background: #dee2e6; flex-shrink: 0; }
+    .qr-credit-bar .acb-brand { font-size: 10px; font-weight: 700; color: #D70072; letter-spacing: -0.2px; white-space: nowrap; }
     /* ─── Accordion 공통 ─── */
     .acc-header { display: flex; align-items: center; justify-content: space-between; padding: 13px 18px; cursor: pointer; user-select: none; transition: background 0.15s; }
     .acc-header:active { background: #F9F6F2; }
@@ -5670,6 +5675,13 @@ app.get('/qr/:userId', async (c) => {
   </div>
 
   <p class="footer-note"><i class="fas fa-shield-alt" style="color:#E6007E"></i>&nbsp;Safety NOTE<br>LGU+ 협력사 현장 안전관리 시스템</p>
+</div>
+
+<!-- LinkMak 크레딧 바 (하단 고정) -->
+<div class="qr-credit-bar">
+  <span class="acb-text">Powered by</span>
+  <span class="acb-sep"></span>
+  <span class="acb-brand">LinkMak Co., Ltd.</span>
 </div>
 
 <script>

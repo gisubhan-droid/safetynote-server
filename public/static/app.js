@@ -5176,7 +5176,7 @@ async function renderTasksPage(container) {
 
     const renderTableView = (data, startOffset) => {
       if (!data.length) return `
-        <tr><td colspan="9" style="text-align:center;padding:48px 0;color:#9CA3AF">
+        <tr><td colspan="10" style="text-align:center;padding:48px 0;color:#9CA3AF">
           <i class="fas fa-clipboard-list" style="font-size:2rem;opacity:.2;display:block;margin-bottom:8px"></i>
           등록된 작업이 없습니다.
         </td></tr>`;
@@ -5220,14 +5220,16 @@ async function renderTasksPage(container) {
               title="${_tblEsc(managerDisplay)}">${managerDisplay}</td>
           <td style="padding:7px 8px;font-size:13px;color:#1A1A2E;font-weight:600"
               title="${_tblEsc(t.title)}">${t.title || '-'}</td>
-          <td style="padding:7px 8px;text-align:right" onclick="event.stopPropagation()">
+          <td style="padding:5px 6px;text-align:center;overflow:visible" onclick="event.stopPropagation()">
             <span style="display:inline-block;font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;
                          background:${rl==='high'?'#FDE8F3':rl==='medium'?'#EDE7F6':'#F5F0F8'};
-                         color:${rlColor};margin-right:3px">${rlLabelMap2[rl]||rl}</span>
+                         color:${rlColor};white-space:nowrap">${rlLabelMap2[rl]||rl}</span>
+          </td>
+          <td style="padding:5px 6px;text-align:center;overflow:visible" onclick="event.stopPropagation()">
             <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 6px;border-radius:20px;
-                         background:#F9FAFB;color:${stColor};border:1px solid #E5E7EB">${statusLabelMap[st]||st}</span>
+                         background:#F9FAFB;color:${stColor};border:1px solid #E5E7EB;white-space:nowrap;margin-bottom:2px">${statusLabelMap[st]||st}</span>
             ${(_tblCanModify || canDeleteRow) ? `
-            <span style="display:inline-flex;gap:3px;margin-left:3px;vertical-align:middle">
+            <span style="display:inline-flex;gap:3px;vertical-align:middle;margin-left:2px">
               ${_tblCanModify ? `
               <button onclick="showEditTaskModal(${t.id})"
                 style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;
@@ -5455,7 +5457,7 @@ async function renderTasksPage(container) {
             <colgroup>
               <col class="c-seq"><col class="c-req"><col class="c-num">
               <col class="c-type"><col class="c-class"><col class="c-date">
-              <col class="c-mgr"><col class="c-title"><col class="c-state">
+              <col class="c-mgr"><col class="c-title"><col class="c-risk"><col class="c-progress">
             </colgroup>
             <thead>
               <tr style="border-bottom:2px solid #EDE7F6">
@@ -5467,7 +5469,8 @@ async function renderTasksPage(container) {
                 <th class="task-th task-th-resize" data-col="5" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','planned_date')">작업(예정)일<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
                 <th class="task-th task-th-resize" data-col="6" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','con_manager_display_name')">공사담당자<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
                 <th class="task-th task-th-resize" data-col="7" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','title')">작업명<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
-                <th class="task-th" style="text-align:right">상태/관리</th>
+                <th class="task-th" style="text-align:center;font-size:11px">위험도</th>
+                <th class="task-th" style="text-align:center;font-size:11px">진행사항</th>
               </tr>
             </thead>
           </table>
@@ -5480,7 +5483,7 @@ async function renderTasksPage(container) {
               <colgroup>
                 <col class="c-seq"><col class="c-req"><col class="c-num">
                 <col class="c-type"><col class="c-class"><col class="c-date">
-                <col class="c-mgr"><col class="c-title"><col class="c-state">
+                <col class="c-mgr"><col class="c-title"><col class="c-risk"><col class="c-progress">
               </colgroup>
               <tbody id="taskTableBody">
                 ${renderTableView(_taskListData, ((taskFilters.page||1)-1)*(taskFilters.limit||20))}

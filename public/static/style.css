@@ -1432,7 +1432,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 /* 헤더·바디 테이블 너비 동기 — table-layout:fixed로 head/body 컬럼 폭 완전 일치 */
 .task-col-table {
   width: 100%;
-  min-width: 900px;
+  min-width: 960px;   /* 9→10컬럼(위험도+진행사항 분리)에 맞게 확장 */
   table-layout: fixed;         /* 헤더 width 기준으로 바디 컬럼 폭 고정 → 어긋남 방지 */
   border-collapse: collapse;
 }
@@ -1446,7 +1446,8 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 .task-col-table col.c-date  { width: 90px; }
 .task-col-table col.c-mgr   { width: 80px; }
 .task-col-table col.c-title { width: auto; }   /* 남은 공간 */
-.task-col-table col.c-state { width: 170px; }
+.task-col-table col.c-risk     { width: 68px; }    /* 위험도 배지 전용 */
+.task-col-table col.c-progress { width: 130px; }   /* 진행사항 + 관리버튼 */
 
 /* 헤더 th 공통 스타일 */
 .task-th {
@@ -1459,6 +1460,11 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   background: #FAFAFE;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* 컬럼 세로 구분선 (헤더) */
+  border-right: 1px solid #DDD5EA;
+}
+.task-th:last-child {
+  border-right: none;
 }
 
 /* tbody td 기본 스타일 — overflow:hidden 으로 fixed layout 내 텍스트 잘림 처리 */
@@ -1466,6 +1472,11 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 컬럼 세로 구분선 (바디) */
+  border-right: 1px solid #F0EBF5;
+}
+.task-col-table td:last-child {
+  border-right: none;
 }
 
 /* 행 구분선 강화 */
@@ -1499,11 +1510,16 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 }
 
 /* ─── 작업관리 전체 레이아웃 루트 ─────────────────────────────────────── */
-/* max-width 없이 전체 너비 사용, 좌우 패딩만 유지 */
+/* max-width 없이 전체 너비 사용, 좌우 패딩 충분히 확보 */
 .task-list-root {
   width: 100%;
   box-sizing: border-box;
-  padding: 0 16px 16px;
+  padding: 0 20px 20px;   /* 좌우 여백 16→20px, 양끝 잘림 방지 */
+}
+@media (max-width: 1024px) {
+  .task-list-root {
+    padding: 0 12px 16px;
+  }
 }
 @media (max-width: 768px) {
   .task-list-root {
@@ -1648,13 +1664,14 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   width: 5px;
   cursor: col-resize;
   z-index: 10;
-  background: transparent;
+  /* 상시 표시: 얇은 구분선 색으로 항상 보임 */
+  background: rgba(200, 185, 220, 0.55);
   transition: background 0.15s;
   border-radius: 2px;
 }
 .col-resizer:hover,
 .col-resizer.resizing {
-  background: rgba(215, 0, 114, 0.35);
+  background: rgba(215, 0, 114, 0.6);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

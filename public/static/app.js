@@ -3300,61 +3300,86 @@ function _conClearManagerFilter() {
 
 // ── 공사현황 테이블 컬럼 리사이즈 초기화 ────────────────────────────────────
 function _initConColResize() {
-  // 헤더·바디 두 테이블의 colgroup col 요소를 동기화하며 너비를 조정
   const headTable = document.getElementById('conListTableHead');
   const bodyTable = document.getElementById('conListTable');
   if (!headTable || !bodyTable) return;
 
   const headCols = headTable.querySelectorAll('col');
   const bodyCols = bodyTable.querySelectorAll('col');
-  const ths = headTable.querySelectorAll('th.con-th-resize');
+  const ths      = headTable.querySelectorAll('th');   // 전체 th (리사이즈 여부 무관)
 
-  ths.forEach((th, colIdx) => {
-    const resizer = th.querySelector('.col-resizer');
-    if (!resizer) return;
-
-    let startX, startW;
-
-    resizer.addEventListener('mousedown', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      startX = e.clientX;
-      startW = th.offsetWidth;
-
-      resizer.classList.add('resizing');
-
-      function onMouseMove(e) {
-        const delta = e.clientX - startX;
-        const newW  = Math.max(50, startW + delta);
-        // col 너비 직접 설정 (px 단위)
-        if (headCols[colIdx]) headCols[colIdx].style.width = newW + 'px';
-        if (bodyCols[colIdx]) bodyCols[colIdx].style.width = newW + 'px';
+  // ── 1) col에 초기 px 너비 확정 (getBoundingClientRect 기반)
+  //    table-layout:fixed 상태에서 th.offsetWidth 는 0이 될 수 있으므로
+  //    먼저 th.getBoundingClientRect() 로 실제 렌더 너비를 읽어 col에 박음
+  requestAnimationFrame(() => {
+    ths.forEach((th, i) => {
+      const w = th.getBoundingClientRect().width;
+      if (w > 0) {
+        if (headCols[i]) headCols[i].style.width = w + 'px';
+        if (bodyCols[i]) bodyCols[i].style.width = w + 'px';
       }
-      function onMouseUp() {
-        resizer.classList.remove('resizing');
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      }
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
     });
 
-    // 더블클릭: 자동 너비 리셋
-    resizer.addEventListener('dblclick', function(e) {
-      e.stopPropagation();
-      if (headCols[colIdx]) headCols[colIdx].style.width = '';
-      if (bodyCols[colIdx]) bodyCols[colIdx].style.width = '';
+    // ── 2) 리사이즈 이벤트 등록 (con-th-resize 클래스만)
+    headTable.querySelectorAll('th.con-th-resize').forEach((th) => {
+      const resizer = th.querySelector('.col-resizer');
+      if (!resizer) return;
+
+      // th가 전체 ths 배열에서 몇 번째인지 인덱스 계산
+      const colIdx = Array.from(ths).indexOf(th);
+
+      let startX, startW;
+
+      resizer.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        startX = e.clientX;
+        // col 너비를 우선 참조, 없으면 getBoundingClientRect
+        startW = headCols[colIdx]
+          ? (parseFloat(headCols[colIdx].style.width) || th.getBoundingClientRect().width)
+          : th.getBoundingClientRect().width;
+
+        resizer.classList.add('resizing');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        function onMouseMove(e) {
+          const newW = Math.max(50, startW + (e.clientX - startX));
+          if (headCols[colIdx]) headCols[colIdx].style.width = newW + 'px';
+          if (bodyCols[colIdx]) bodyCols[colIdx].style.width = newW + 'px';
+        }
+        function onMouseUp() {
+          resizer.classList.remove('resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        }
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+
+      // 더블클릭: CSS 클래스 너비로 리셋
+      resizer.addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        if (headCols[colIdx]) headCols[colIdx].style.width = '';
+        if (bodyCols[colIdx]) bodyCols[colIdx].style.width = '';
+      });
     });
+
+    // ── 3) 헤더/바디 스크롤 동기화
+    const bodyScroll = document.getElementById('conBodyScroll');
+    const headWrap   = document.getElementById('conTheadWrap');
+    if (bodyScroll && headWrap) {
+      // 중복 등록 방지
+      if (!bodyScroll._conScrollBound) {
+        bodyScroll._conScrollBound = true;
+        bodyScroll.addEventListener('scroll', function() {
+          headWrap.scrollLeft = bodyScroll.scrollLeft;
+        });
+      }
+    }
   });
-
-  // 헤더 스크롤 동기화 (바디 ↔ 헤더)
-  const bodyScroll = document.getElementById('conBodyScroll');
-  const headWrap   = document.getElementById('conTheadWrap');
-  if (bodyScroll && headWrap) {
-    bodyScroll.addEventListener('scroll', function() {
-      headWrap.scrollLeft = bodyScroll.scrollLeft;
-    });
-  }
 }
 
 // ── 작업관리 테이블 컬럼 리사이즈 초기화 ─────────────────────────────────────
@@ -3365,52 +3390,76 @@ function _initTaskColResize() {
 
   const headCols = headTable.querySelectorAll('col');
   const bodyCols = bodyTable.querySelectorAll('col');
-  const ths = headTable.querySelectorAll('th.task-th-resize');
+  const allThs   = headTable.querySelectorAll('th');   // 전체 th (#, 요청번호, 작업번호 ...)
 
-  ths.forEach((th, colIdx) => {
-    const resizer = th.querySelector('.col-resizer');
-    if (!resizer) return;
-
-    let startX, startW;
-
-    resizer.addEventListener('mousedown', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      startX = e.clientX;
-      startW = th.offsetWidth;
-
-      resizer.classList.add('resizing');
-
-      function onMouseMove(e) {
-        const delta = e.clientX - startX;
-        const newW  = Math.max(40, startW + delta);
-        if (headCols[colIdx]) headCols[colIdx].style.width = newW + 'px';
-        if (bodyCols[colIdx]) bodyCols[colIdx].style.width = newW + 'px';
+  requestAnimationFrame(() => {
+    // ── 1) col에 초기 px 너비 확정
+    allThs.forEach((th, i) => {
+      const w = th.getBoundingClientRect().width;
+      if (w > 0) {
+        if (headCols[i]) headCols[i].style.width = w + 'px';
+        if (bodyCols[i]) bodyCols[i].style.width = w + 'px';
       }
-      function onMouseUp() {
-        resizer.classList.remove('resizing');
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      }
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
     });
 
-    resizer.addEventListener('dblclick', function(e) {
-      e.stopPropagation();
-      if (headCols[colIdx]) headCols[colIdx].style.width = '';
-      if (bodyCols[colIdx]) bodyCols[colIdx].style.width = '';
+    // ── 2) task-th-resize th에만 리사이즈 이벤트 등록
+    //    data-col 속성이 없는 경우 allThs 배열 indexOf로 fallback
+    headTable.querySelectorAll('th.task-th-resize').forEach((th) => {
+      const resizer = th.querySelector('.col-resizer');
+      if (!resizer) return;
+
+      // data-col 속성(0-based col index)을 우선 사용, 없으면 th 위치 기반
+      const colIdx = th.dataset.col !== undefined
+        ? parseInt(th.dataset.col, 10)
+        : Array.from(allThs).indexOf(th);
+
+      let startX, startW;
+
+      resizer.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        startX = e.clientX;
+        startW = headCols[colIdx]
+          ? (parseFloat(headCols[colIdx].style.width) || th.getBoundingClientRect().width)
+          : th.getBoundingClientRect().width;
+
+        resizer.classList.add('resizing');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        function onMouseMove(e) {
+          const newW = Math.max(40, startW + (e.clientX - startX));
+          if (headCols[colIdx]) headCols[colIdx].style.width = newW + 'px';
+          if (bodyCols[colIdx]) bodyCols[colIdx].style.width = newW + 'px';
+        }
+        function onMouseUp() {
+          resizer.classList.remove('resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        }
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+
+      resizer.addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        if (headCols[colIdx]) headCols[colIdx].style.width = '';
+        if (bodyCols[colIdx]) bodyCols[colIdx].style.width = '';
+      });
     });
+
+    // ── 3) 헤더/바디 스크롤 동기화 (중복 등록 방지)
+    const bodyScroll = document.getElementById('taskBodyScroll');
+    const headWrap   = document.getElementById('taskTheadWrap');
+    if (bodyScroll && headWrap && !bodyScroll._taskScrollBound) {
+      bodyScroll._taskScrollBound = true;
+      bodyScroll.addEventListener('scroll', function() {
+        headWrap.scrollLeft = bodyScroll.scrollLeft;
+      });
+    }
   });
-
-  // 헤더 스크롤 동기화
-  const bodyScroll = document.getElementById('taskBodyScroll');
-  const headWrap   = document.getElementById('taskTheadWrap');
-  if (bodyScroll && headWrap) {
-    bodyScroll.addEventListener('scroll', function() {
-      headWrap.scrollLeft = bodyScroll.scrollLeft;
-    });
-  }
 }
 
 // 공사현황 엑셀 다운로드
@@ -5344,9 +5393,9 @@ async function renderTasksPage(container) {
             <option value="50"  ${(taskFilters.limit||20)===50 ?'selected':''}>50건</option>
           </select>
         </div>
-        <!-- 엑셀 다운로드: 아이콘 전용 소형 버튼 -->
-        <button onclick="downloadTaskListCSV()" class="btn-excel-icon" title="엑셀 다운로드">
-          <i class="fas fa-file-excel"></i>
+        <!-- 엑셀 다운로드: 공사현황과 동일한 아이콘+텍스트 버튼 -->
+        <button onclick="downloadTaskListCSV()" class="btn btn-secondary" style="color:#059669;border-color:#059669" title="엑셀 다운로드">
+          <i class="fas fa-file-excel"></i> 엑셀
         </button>
       </div>
 

@@ -1943,3 +1943,28 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   .con-page-btn { min-width: 30px; height: 30px; font-size: 12px; }
   .con-pager-info { display: none; }
 }
+
+/* ─── 시공통보 금액 인라인 레이아웃 (한글표시 + 입력창 같은 줄) ─── */
+.con-amount-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.con-amount-wrap .con-amount-input {
+  flex: 1;
+  width: auto;          /* form-control width:100% 오버라이드 */
+  min-width: 0;         /* flex 축소 허용 */
+}
+.con-amount-korean {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #D70072;
+  white-space: nowrap;
+  min-width: 90px;
+  text-align: right;
+}
+.con-amount-korean.empty {
+  color: #9CA3AF;
+  font-weight: normal;
+}

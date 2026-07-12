@@ -3235,16 +3235,16 @@ function numberToKorean(num) {
 // 시공통보 금액 입력 시 한글 실시간 업데이트
 function updateAmountKorean(inputEl) {
   const raw = Number(inputEl.value.replace(/[^0-9]/g, ''));
-  const hint = inputEl.parentElement.querySelector('.amount-korean-hint');
-  if (!hint) return;
+  // .con-amount-wrap 래퍼 기준으로 탐색 (구조 변경에 안전)
+  const wrap = inputEl.closest('.con-amount-wrap');
+  const span = wrap ? wrap.querySelector('.con-amount-korean') : null;
+  if (!span) return;
   if (!raw) {
-    hint.textContent = '입력 시 자동으로 천단위 구분 적용';
-    hint.style.color = '';
-    hint.style.fontWeight = '';
+    span.textContent = '한글';
+    span.classList.add('empty');
   } else {
-    hint.textContent = numberToKorean(raw);
-    hint.style.color = '#D70072';
-    hint.style.fontWeight = '600';
+    span.textContent = numberToKorean(raw);
+    span.classList.remove('empty');
   }
 }
 
@@ -4919,11 +4919,14 @@ async function showCreateConstructionModal(editId = null) {
             <i class="fas fa-won-sign mr-1" style="color:#D70072"></i>
             시공통보 금액
           </label>
-          <input id="cNotificationAmount" type="text" inputmode="numeric" class="form-control"
-            placeholder="금액 입력 (예: 5,000,000)"
-            value="${con.notification_amount != null ? Number(con.notification_amount).toLocaleString('ko-KR') : ''}"
-            oninput="this.value=this.value.replace(/[^0-9]/g,'').replace(/\B(?=(\d{3})+(?!\d))/g,',');updateAmountKorean(this)">
-          <div class="text-xs mt-1 amount-korean-hint" style="color:${con.notification_amount ? '#D70072' : '#9CA3AF'};font-weight:${con.notification_amount ? '600' : 'normal'};">${con.notification_amount ? numberToKorean(con.notification_amount) : '입력 시 자동으로 천단위 구분 적용'}</div>
+          <div class="con-amount-wrap">
+            <input id="cNotificationAmount" type="text" inputmode="numeric"
+              class="form-control con-amount-input"
+              placeholder="금액 입력 (예: 5,000,000)"
+              value="${con.notification_amount != null ? Number(con.notification_amount).toLocaleString('ko-KR') : ''}"
+              oninput="this.value=this.value.replace(/[^0-9]/g,'').replace(/\B(?=(\d{3})+(?!\d))/g,',');updateAmountKorean(this)">
+            <span class="con-amount-korean${con.notification_amount ? '' : ' empty'}">${con.notification_amount ? numberToKorean(con.notification_amount) : '한글'}</span>
+          </div>
         </div>
 
         <!-- ⑨ 작업설명 -->

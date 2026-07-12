@@ -1736,6 +1736,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 .con-col-table col.cc-addr   { width: 160px; }   /* 작업지시주소 (신규, 분리) */
 .con-col-table col.cc-cdate  { width: 92px; }
 .con-col-table col.cc-pdate  { width: 92px; }
+.con-col-table col.cc-amount { width: 110px; }  /* 시공통보금액 */
 .con-col-table col.cc-mgr   { width: 80px;  }
 .con-col-table col.cc-sup   { width: 80px;  }
 .con-col-table col.cc-status { width: 80px;  }

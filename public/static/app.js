@@ -4036,6 +4036,7 @@ async function renderConstructionsPage(container) {
         </td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#6B7280">${createdFmt}</td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#D70072;font-weight:600">${completeFmt}</td>
+        <td class="con-td" style="text-align:right;font-size:12px;color:#374151;font-weight:600;padding-right:10px">${con.notification_amount != null ? Number(con.notification_amount).toLocaleString('ko-KR')+'원' : '<span style=\"color:#CCC\">-</span>'}</td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.manager_display_name || con.manager_name || '<span style="color:#CCC">-</span>'}</td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.supervisor_name || '<span style="color:#CCC">-</span>'}</td>
         <td class="con-td" style="text-align:center">${constructionStatusChip(con.status)}</td>
@@ -4221,7 +4222,7 @@ async function renderConstructionsPage(container) {
           <colgroup>
             <col class="cc-req"><col class="cc-type"><col class="cc-title">
             <col class="cc-addr">
-            <col class="cc-cdate"><col class="cc-pdate">
+            <col class="cc-cdate"><col class="cc-pdate"><col class="cc-amount">
             <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
           </colgroup>
           <thead>
@@ -4250,6 +4251,10 @@ async function renderConstructionsPage(container) {
                   style="text-align:center;cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('completion_date')">
                 완료예정일<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="5a" data-sortcol="notification_amount"
+                  style="text-align:right;cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('notification_amount')">
+                시공통보금액<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
               <th class="con-th con-th-resize" data-col="6" data-sortcol="manager_display_name"
                   style="text-align:center;cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('manager_display_name')">
@@ -4273,7 +4278,7 @@ async function renderConstructionsPage(container) {
             <colgroup>
               <col class="cc-req"><col class="cc-type"><col class="cc-title">
               <col class="cc-addr">
-              <col class="cc-cdate"><col class="cc-pdate">
+              <col class="cc-cdate"><col class="cc-pdate"><col class="cc-amount">
               <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
             </colgroup>
             <tbody>
@@ -4472,6 +4477,24 @@ async function showConstructionDetail(conId) {
         <div class="p-3 rounded-xl md:col-span-2" style="background:#F9F7FB">
           <div class="text-xs text-gray-400 mb-1"><i class="fas fa-map-marker-alt mr-1"></i>작업지시주소</div>
           <div class="font-semibold text-gray-700">${con.work_order_address || '-'}</div>
+        </div>
+
+        <!-- 시공통보일 | 완료예정일 | 시공통보금액 -->
+        <div class="md:col-span-2">
+          <div class="grid grid-cols-3 gap-3">
+            <div class="p-3 rounded-xl" style="background:#F3F0F8;border:1px solid #E9E3F5">
+              <div class="text-xs mb-1 font-semibold" style="color:#685182"><i class="fas fa-calendar-day mr-1"></i>시공통보일</div>
+              <div class="font-bold text-sm" style="color:#374151">${con.notification_date ? con.notification_date.slice(0,10) : (con.created_at ? con.created_at.slice(0,10) : '-')}</div>
+            </div>
+            <div class="p-3 rounded-xl" style="background:#FDE8F3;border:1px solid #FBC8E5">
+              <div class="text-xs mb-1 font-semibold" style="color:#D70072"><i class="fas fa-calendar-check mr-1"></i>완료예정일</div>
+              <div class="font-bold text-sm" style="color:#D70072">${con.completion_date ? con.completion_date.slice(0,10) : '-'}</div>
+            </div>
+            <div class="p-3 rounded-xl" style="background:#F9F7FB">
+              <div class="text-xs text-gray-400 mb-1"><i class="fas fa-won-sign mr-1"></i>시공통보금액</div>
+              <div class="font-bold text-sm" style="color:#374151">${con.notification_amount != null ? Number(con.notification_amount).toLocaleString('ko-KR')+'원' : '-'}</div>
+            </div>
+          </div>
         </div>
 
         <!-- 작업설명 (있을 때만) -->
@@ -4818,20 +4841,10 @@ async function showCreateConstructionModal(editId = null) {
           <input id="cAddress" class="form-control" placeholder="작업지시 주소를 입력하세요" value="${con.work_order_address||''}">
         </div>
 
-        <!-- ⑧ 완료예정일 + 시공통보일 (2개 한줄) -->
+        <!-- ⑧ 시공통보일 + 완료예정일 (순서: 시공통보일 좌, 완료예정일 우) -->
         <div class="form-group md:col-span-2" style="margin-bottom:4px">
           <div class="grid grid-cols-2 gap-3">
-            <!-- 완료예정일 (left) -->
-            <div>
-              <label class="form-label">
-                <i class="fas fa-calendar-check mr-1" style="color:#D70072"></i>
-                완료예정일 <span class="text-red-500">*</span>
-              </label>
-              <input id="cCompletionDate" type="date" class="form-control"
-                value="${con.completion_date || (() => { const d=new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })()}">
-              <div class="text-xs text-gray-400 mt-1">공사 완료 예정일을 선택하세요</div>
-            </div>
-            <!-- 시공통보일 (right) -->
+            <!-- 시공통보일 (left) -->
             <div>
               <label class="form-label">
                 <i class="fas fa-calendar-day mr-1" style="color:#685182"></i>
@@ -4841,7 +4854,30 @@ async function showCreateConstructionModal(editId = null) {
                 value="${con.notification_date || con.created_at?.slice(0,10) || new Date().toISOString().slice(0,10)}">
               <div class="text-xs text-gray-400 mt-1">시공 통보일 (기본값: 등록일)</div>
             </div>
+            <!-- 완료예정일 (right) -->
+            <div>
+              <label class="form-label">
+                <i class="fas fa-calendar-check mr-1" style="color:#D70072"></i>
+                완료예정일 <span class="text-red-500">*</span>
+              </label>
+              <input id="cCompletionDate" type="date" class="form-control"
+                value="${con.completion_date || (() => { const d=new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })()}">
+              <div class="text-xs text-gray-400 mt-1">공사 완료 예정일을 선택하세요</div>
+            </div>
           </div>
+        </div>
+
+        <!-- ⑩ 시공통보 금액 -->
+        <div class="form-group md:col-span-2" style="margin-bottom:4px">
+          <label class="form-label">
+            <i class="fas fa-won-sign mr-1" style="color:#D70072"></i>
+            시공통보 금액
+          </label>
+          <input id="cNotificationAmount" type="text" inputmode="numeric" class="form-control"
+            placeholder="금액 입력 (예: 5,000,000)"
+            value="${con.notification_amount != null ? Number(con.notification_amount).toLocaleString('ko-KR') : ''}"
+            oninput="this.value=this.value.replace(/[^0-9]/g,'').replace(/\B(?=(\d{3})+(?!\d))/g,',')">
+          <div class="text-xs text-gray-400 mt-1">입력 시 자동으로 천단위 구분 적용</div>
         </div>
 
         <!-- ⑨ 작업설명 -->
@@ -5079,6 +5115,8 @@ async function saveConstruction(editId) {
   const desc           = (document.getElementById('cDesc')?.value || '').trim();
   const completionDate     = (document.getElementById('cCompletionDate')?.value || '').trim() || null;
   const notificationDate   = (document.getElementById('cNotificationDate')?.value || '').trim() || null;
+  const notificationAmountRaw = (document.getElementById('cNotificationAmount')?.value || '').replace(/[^0-9]/g, '');
+  const notificationAmount = notificationAmountRaw ? parseInt(notificationAmountRaw) : null;
 
   // 자동부여 모드는 YYMMDDhhmm## = 12자리 숫자이므로 기존 검증 그대로 통과
   if (!editId && !reqNo) { toast('공사요청번호를 입력하세요', 'error'); return; }
@@ -5091,7 +5129,7 @@ async function saveConstruction(editId) {
 
   const body = { work_number: workNum, work_class: workClass, title, work_order_address: address,
     manager_id: mgId, manager_name: mgName, supervisor_name: supName, description: desc,
-    completion_date: completionDate, notification_date: notificationDate };
+    completion_date: completionDate, notification_date: notificationDate, notification_amount: notificationAmount };
   if (!editId) {
     body.request_no = reqNo;
     body.is_auto_request_no = isAutoReqNo ? 1 : 0;  // [v0.143 LGU+] 자동부여 여부 저장

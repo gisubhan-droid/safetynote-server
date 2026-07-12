@@ -142,7 +142,7 @@ app.post('/', async (c) => {
   }
 
   const body = await c.req.json<any>()
-  const { request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, is_auto_request_no, completion_date, notification_date } = body
+  const { request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, is_auto_request_no, completion_date, notification_date, notification_amount } = body
 
   if (!request_no || !title) return c.json({ error: '공사요청번호와 공사명은 필수입니다' }, 400)
 
@@ -171,8 +171,8 @@ app.post('/', async (c) => {
     const defaultNotification = notification_date || new Date().toISOString().slice(0,10)
     const result = await c.env.DB.prepare(`
       INSERT INTO constructions
-        (request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, created_by, is_auto_request_no, completion_date, notification_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, created_by, is_auto_request_no, completion_date, notification_date, notification_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       request_no,
       work_number || '',
@@ -186,7 +186,8 @@ app.post('/', async (c) => {
       user.id,
       autoReqNo,
       defaultCompletion,
-      defaultNotification
+      defaultNotification,
+      notification_amount != null ? parseInt(String(notification_amount).replace(/[^0-9]/g,'')) || null : null
     ).run()
 
     const newId = result.meta.last_row_id
@@ -210,7 +211,7 @@ app.put('/:id', async (c) => {
 
   const id = c.req.param('id')
   const body = await c.req.json<any>()
-  const { work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, completion_date: completionDatePut, notification_date: notificationDatePut } = body
+  const { work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, completion_date: completionDatePut, notification_date: notificationDatePut, notification_amount: notificationAmountPut } = body
 
   if (work_number && !/^WKS-\d{6}-\d{5}$/.test(work_number)) {
     return c.json({ error: '작업번호 형식: WKS-######-#####' }, 400)
@@ -227,17 +228,18 @@ app.put('/:id', async (c) => {
 
     await c.env.DB.prepare(`
       UPDATE constructions SET
-        work_number        = ?,
-        work_class         = ?,
-        title              = ?,
-        work_order_address = ?,
-        manager_id         = ?,
-        manager_name       = ?,
-        supervisor_name    = ?,
-        description        = ?,
-        completion_date    = ?,
-        notification_date  = ?,
-        updated_at         = CURRENT_TIMESTAMP
+        work_number           = ?,
+        work_class            = ?,
+        title                 = ?,
+        work_order_address    = ?,
+        manager_id            = ?,
+        manager_name          = ?,
+        supervisor_name       = ?,
+        description           = ?,
+        completion_date       = ?,
+        notification_date     = ?,
+        notification_amount   = ?,
+        updated_at            = CURRENT_TIMESTAMP
       WHERE id = ?
     `).bind(
       work_number || '',
@@ -250,6 +252,7 @@ app.put('/:id', async (c) => {
       description || '',
       completionDatePut || null,
       notificationDatePut || null,
+      notificationAmountPut != null ? parseInt(String(notificationAmountPut).replace(/[^0-9]/g,'')) || null : null,
       id
     ).run()
 

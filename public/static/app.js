@@ -26219,12 +26219,21 @@ async function printQrBulk() {
   /* 푸터 */
   .brand {
     text-align: center;
-    font-size: 5.5px;
-    color: #C6C6C6;
-    padding: 1px;
+    padding: 2px 2px 2.5px;
     border-top: 1px solid #D8D0DC;
     flex-shrink: 0;
+    line-height: 1.3;
+  }
+  .brand-line1 {
+    font-size: 6px;
+    font-weight: 700;
+    color: #685182;
     letter-spacing: 0.2px;
+  }
+  .brand-line2 {
+    font-size: 5px;
+    color: #C6C6C6;
+    letter-spacing: 0.1px;
   }
 
   /* ── 인쇄 전용 ── */
@@ -26274,7 +26283,10 @@ ${(() => {
           ${subParts ? `<div class="person-sub">${subParts}</div>` : ''}
         </div>
       </div>
-      <div class="brand">Safety NOTE</div>
+      <div class="brand">
+        <div class="brand-line1">Safety NOTE</div>
+        <div class="brand-line2">Powered by LinkMak Co., Ltd.</div>
+      </div>
     </div>`;
     }).join('')}</div>
 </div>`);

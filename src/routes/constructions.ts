@@ -418,6 +418,7 @@ app.post('/:id/settle-complete', async (c) => {
 // ─── [TASK-001] 공사 삭제 ────────────────────────────────────────────────────
 // [FEAT-053] 시스템관리자 전용, 완료(completed/settled) 상태만 허용
 // [FEAT-060] 등록자(created_by)는 registered 상태 + 연결 작업 0건일 때 추가 허용
+// [BUG-FIX] isSysAdmin && isCreator 동시 케이스: creator 규칙 우선 적용 (registered 삭제 허용)
 app.delete('/:id', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
@@ -430,10 +431,22 @@ app.delete('/:id', async (c) => {
     if (!con) return c.json({ error: '공사 없음' }, 404)
 
     const isSysAdmin = user.role === 'admin' && user.position === '시스템관리자'
-    const isCreator  = user.id === con.created_by
+    // [BUG-FIX] Number() 강제 변환으로 타입 불일치(string vs number) 방어
+    const isCreator  = Number(user.id) === Number(con.created_by)
 
-    // [FEAT-053] 시스템관리자: 완료(completed) 또는 정산완료(settled) 상태만 허용
-    if (isSysAdmin) {
+    if (isCreator && con.status === 'registered') {
+      // [FEAT-060] 등록자(sysadmin 포함): registered 상태 + 연결 작업 0건 → 삭제 허용
+      const taskCount = await c.env.DB.prepare(
+        `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ?`
+      ).bind(id).first<any>()
+      if ((taskCount?.cnt ?? 0) > 0) {
+        return c.json({
+          error: `연결된 작업이 ${taskCount.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 삭제해 주세요.`
+        }, 409)
+      }
+      // 조건 통과 → 삭제 진행
+    } else if (isSysAdmin) {
+      // [FEAT-053] 시스템관리자: 완료(completed) 또는 정산완료(settled) 상태만 허용
       if (con.status !== 'completed' && con.status !== 'settled') {
         return c.json({
           error: `완료되거나 정산완료된 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}`
@@ -448,25 +461,14 @@ app.delete('/:id', async (c) => {
           error: `진행 중인 작업이 ${linked.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 완료하거나 취소해 주세요.`
         }, 409)
       }
-    } else if (isCreator && con.status === 'registered') {
-      // [FEAT-060] 등록자: registered 상태이고 연결 작업이 하나도 없을 때만 허용
-      const taskCount = await c.env.DB.prepare(
-        `SELECT COUNT(*) as cnt FROM tasks WHERE construction_id = ?`
-      ).bind(id).first<any>()
-      if ((taskCount?.cnt ?? 0) > 0) {
-        return c.json({
-          error: `연결된 작업이 ${taskCount.cnt}건 있어 삭제할 수 없습니다. 작업을 먼저 삭제해 주세요.`
-        }, 409)
-      }
-    } else {
-      // 권한 없음
-      if (!isSysAdmin && !isCreator) {
-        return c.json({ error: '삭제 권한이 없습니다. 등록자 또는 시스템 관리자만 삭제할 수 있습니다.' }, 403)
-      }
+    } else if (isCreator) {
       // 등록자이지만 registered 상태가 아님
       return c.json({
         error: `등록 상태의 공사만 삭제할 수 있습니다. 현재 상태: ${con.status}`
       }, 409)
+    } else {
+      // 권한 없음 (sysadmin도 아니고 등록자도 아님)
+      return c.json({ error: '삭제 권한이 없습니다. 등록자 또는 시스템 관리자만 삭제할 수 있습니다.' }, 403)
     }
 
     await c.env.DB.prepare(`DELETE FROM constructions WHERE id = ?`).bind(id).run()

@@ -4478,10 +4478,13 @@ async function showConstructionDetail(conId) {
 
     // [FEAT-053] 삭제 버튼 표시 조건: sysadmin이고 공사가 완료/정산완료 상태
     // [FEAT-060] 등록자(isCreator)이고 registered 상태이며 연결 작업이 없을 때 추가 허용
+    // [BUG-FIX] Number() 강제 변환으로 id 타입 불일치(string vs number) 방어
     const _conIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
-    const _conIsCreator  = currentUser.id === con.created_by;
+    const _conIsCreator  = Number(currentUser.id) === Number(con.created_by);
+    const _conTaskCount  = con.task_total != null ? Number(con.task_total) : (con.tasks||[]).length;
     const _conSysAdminCanDelete = _conIsSysAdmin && (con.status === 'completed' || con.status === 'settled');
-    const _conCreatorCanDelete  = _conIsCreator  && con.status === 'registered' && (con.task_total == null ? (con.tasks||[]).length === 0 : Number(con.task_total) === 0);
+    // [BUG-FIX] isCreator && registered → sysadmin이어도 허용 (creator 규칙 우선)
+    const _conCreatorCanDelete  = _conIsCreator  && con.status === 'registered' && _conTaskCount === 0;
     const _conCanDelete = _conSysAdminCanDelete || _conCreatorCanDelete;
 
     const stageLabel = { registered:'등록', in_progress:'진행중', completed:'완료', settlement_requested:'정산요청', settled:'정산완료' };
@@ -6092,13 +6095,13 @@ async function renderTasksPage(container) {
                        color:#685182;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer">
                 <i class="fas fa-edit"></i>
               </button>
-              ${(_cardIsSysAdmin && (t.status==='completed'||t.status==='cancelled')) || (currentUser.id===t.created_by && (t.status==='unassigned'||t.status==='assigned')) ? `
+              ${(_cardIsSysAdmin && (t.status==='completed'||t.status==='cancelled')) || (Number(currentUser.id)===Number(t.created_by) && (t.status==='unassigned'||t.status==='assigned')) ? `
               <button onclick="deleteTask(${t.id}, '${t.status}')"
                 style="width:26px;height:26px;border-radius:7px;border:1px solid #FDE8F3;background:white;
                        color:#D70072;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer">
                 <i class="fas fa-trash"></i>
               </button>` : ''}
-            </div>` : ((_cardIsSysAdmin && (t.status==='completed'||t.status==='cancelled')) || (currentUser.id===t.created_by && (t.status==='unassigned'||t.status==='assigned')) ? `
+            </div>` : ((_cardIsSysAdmin && (t.status==='completed'||t.status==='cancelled')) || (Number(currentUser.id)===Number(t.created_by) && (t.status==='unassigned'||t.status==='assigned')) ? `
             <div style="display:flex;gap:4px;flex-shrink:0" onclick="event.stopPropagation()">
               <button onclick="deleteTask(${t.id}, '${t.status}')"
                 style="width:26px;height:26px;border-radius:7px;border:1px solid #FDE8F3;background:white;
@@ -6206,7 +6209,8 @@ async function renderTasksPage(container) {
         const workClassDisplay = wcShortMap2[t.work_class] || t.work_class || '-';
         // [FEAT-053] 삭제: sysadmin + completed/cancelled 상태
         // [FEAT-060] 등록자 + unassigned/assigned 상태 추가 허용
-        const _tblIsCreatorRow = currentUser.id === t.created_by;
+        // [BUG-FIX] Number() 강제 변환으로 타입 불일치 방어
+        const _tblIsCreatorRow = Number(currentUser.id) === Number(t.created_by);
         const canDeleteRow = (_tblIsSysAdmin && (st === 'completed' || st === 'cancelled'))
                           || (_tblIsCreatorRow && (st === 'unassigned' || st === 'assigned'));
 
@@ -8361,7 +8365,8 @@ async function showTaskDetail(id, openTbmTab) {
     // [FEAT-053] 삭제 버튼 표시 조건: sysadmin이고 completed 또는 cancelled 상태
     // [FEAT-060] 등록자(isCreator)이고 unassigned/assigned 상태(위험성평가 전)일 때 추가 허용
     const _taskIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
-    const _taskIsCreator  = currentUser.id === task.created_by;
+    // [BUG-FIX] Number() 강제 변환으로 타입 불일치(string vs number) 방어
+    const _taskIsCreator  = Number(currentUser.id) === Number(task.created_by);
     const _PRE_CHECKLIST  = ['unassigned', 'assigned'];
     const _taskSysAdminCanDelete = _taskIsSysAdmin && (task.status === 'completed' || task.status === 'cancelled');
     const _taskCreatorCanDelete  = _taskIsCreator  && _PRE_CHECKLIST.includes(task.status);

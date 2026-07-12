@@ -5741,6 +5741,51 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 
 ---
 
+## 세션 122 (2026-07-10) — BUG-094: TBM 추가 사진 등록 후 이미지 미표시 수정
+
+### 작업 요약
+- TBM 안전조치 사진 등록 팝업에서 추가 사진(및 필수 사진) 업로드 직후 등록된 이미지가 표시되지 않는 버그 수정
+
+### 버그 원인 분석 (BUG-094)
+
+#### 증상
+- 추가 사진 등록 시 성공 toast는 뜨지만 등록된 사진이 팝업에 보이지 않음 (빈 카드 또는 깨진 이미지)
+
+#### 원인
+세션 118(BUG-090)에서 업로드 후 DOM 카드 즉시 반영 코드를 추가했으나, 이미지 URL 생성 함수를 잘못 사용:
+
+```javascript
+// 기존 (잘못됨)
+photoImgSrc(uploadedPhotoId)
+// → /api/photos/{uploadedPhotoId}/img  (일반 task_photos 엔드포인트)
+
+// 수정 (올바름)
+tbmPhotoImgSrc(newPhotoItemId)
+// → /api/tbm-photos/{newPhotoItemId}/img  (TBM 전용 엔드포인트)
+```
+
+- `uploadedPhotoId`: `/api/photos/upload` 응답의 임시 ID → `task_photos` 테이블 기반
+- `newPhotoItemId`: `POST /checklist/{assId}/tbm-photos` 응답의 `tbm_photo_items.id` → TBM 전용 테이블
+- TBM 사진은 `/api/tbm-photos/{id}/img`로만 조회 가능 → `tbmPhotoImgSrc()` 사용 필수
+
+#### 수정 내용
+- `uploadTbmPhotoExtra()` (추가 사진): `photoImgSrc(uploadedPhotoId)` → `tbmPhotoImgSrc(newPhotoItemId)`
+- `uploadTbmPhoto()` (필수 사진): `photoImgSrc(uploadedPhotoId)` → `tbmPhotoImgSrc(newPhotoItemId)`
+- 영향 범위: 2곳 (line ~23091, ~23164)
+
+### 커밋 로그
+| 파일 | 커밋 | 내용 |
+|------|------|------|
+| `public/static/app.js` | `bc2754e` | fix: BUG-094 TBM 추가 사진 등록 후 이미지 미표시 수정 |
+
+### NAS 배포 안내
+```bash
+git pull origin main
+# pm2 restart 불필요 — public/static/app.js만 변경
+```
+
+---
+
 ## 세션 121 (2026-07-10) — FEAT: 서브작업번호 자동 카운트 + 중복 방지 기능 추가
 
 ### 작업 요약

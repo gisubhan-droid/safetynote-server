@@ -3653,7 +3653,18 @@ async function renderConstructionsPage(container) {
       const addrText = con.work_order_address
         ? `<span title="${con.work_order_address.replace(/"/g,'&quot;')}">${con.work_order_address}</span>`
         : '<span style="color:#CCC">-</span>';
-      const typeText = con.construction_type || con.work_class || '<span style="color:#CCC">-</span>';
+      // construction_type: 한글명이 저장된 경우 그대로 사용
+      // work_class 영문키가 그대로 저장된 구데이터는 한글명으로 변환
+      const _conTypeKeyMap = {
+        relocation:'지장이설', subscription:'청약개통', conduit:'관로공사',
+        environment:'환경공사', separate:'별도사업', other:'기타',
+        cable_install:'광케이블시설', cable_splice:'광케이블접속',
+        equipment_other:'장비·기타'
+      };
+      const _rawType = con.construction_type || con.work_class || '';
+      const typeText = _rawType
+        ? (_conTypeKeyMap[_rawType] || _rawType)   // 영문키면 한글변환, 이미 한글이면 그대로
+        : '<span style="color:#CCC">-</span>';
       return `<tr class="con-tr" style="border-left:3px solid ${borderColor};background:${rowBg}"
         onclick="showConstructionDetail(${con.id})" title="클릭하여 상세 보기">
         <td class="con-td" style="font-size:12px;font-family:monospace;color:#685182;font-weight:600">${con.request_no}</td>

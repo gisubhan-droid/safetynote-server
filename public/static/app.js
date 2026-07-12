@@ -5316,24 +5316,26 @@ async function renderTasksPage(container) {
           </td>
           <td class="td-progress" style="padding:4px 6px;text-align:center;overflow:visible" onclick="event.stopPropagation()">
             <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
-              <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;
-                           background:#F9FAFB;color:${stColor};border:1px solid #E5E7EB;white-space:nowrap">${statusLabelMap[st]||st}</span>
-              ${(_tblCanModify || canDeleteRow) ? `
+              ${(() => {
+                // 단계별 배경색/텍스트색 매핑
+                const _bgMap = {
+                  unassigned:'#F3F4F6', assigned:'#EFF6FF', in_progress:'#F3E8FF',
+                  tbm_done:'#EDE9FE', working:'#FDE8F3', work_completed:'#F5F0F8', completed:'#DCFCE7'
+                };
+                const _bg  = _bgMap[st] || '#F9FAFB';
+                const _bd  = stColor;   // 테두리 = statusColorMap 색상
+                const _txt = stColor;   // 텍스트 = statusColorMap 색상
+                return `<span style="display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;
+                             background:${_bg};color:${_txt};border:1.5px solid ${_bd};white-space:nowrap">${statusLabelMap[st]||st}</span>`;
+              })()}
+              ${canDeleteRow ? `
               <span style="display:inline-flex;gap:3px">
-                ${_tblCanModify ? `
-                <button onclick="showEditTaskModal(${t.id})"
-                  style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;
-                         color:#685182;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
-                  title="수정">
-                  <i class="fas fa-edit"></i>
-                </button>` : ''}
-                ${canDeleteRow ? `
                 <button onclick="deleteTask(${t.id}, '${st}')"
                   style="width:22px;height:22px;border-radius:6px;border:1px solid #FDE8F3;background:white;
                          color:#D70072;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
                   title="삭제(시스템관리자 전용)">
                   <i class="fas fa-trash"></i>
-                </button>` : ''}
+                </button>
               </span>` : ''}
             </div>
           </td>
@@ -7982,6 +7984,19 @@ async function showTaskDetail(id, openTbmTab) {
               </button>`;
             })()
         }
+      </div>
+    </div>
+    <!-- 작업 상세 하단 버튼 -->
+    <div class="modal-footer flex justify-between">
+      <!-- 좌: 빈 공간 (삭제 버튼은 테이블에서 sysadmin 전용으로만 제공) -->
+      <div></div>
+      <!-- 우: 수정 버튼 (admin/supervisor 전용) -->
+      <div class="flex gap-2">
+        ${(currentUser.role === 'admin' || currentUser.role === 'supervisor') ? `
+        <button onclick="this.closest('.modal-overlay').remove();showEditTaskModal(${task.id})"
+                class="btn btn-secondary">
+          <i class="fas fa-edit"></i> 수정
+        </button>` : ''}
       </div>
     </div>`;
 

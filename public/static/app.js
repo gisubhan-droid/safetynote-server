@@ -3691,7 +3691,7 @@ function _initTaskColResize() {
 // 공사현황 엑셀 다운로드
 function exportConstructionsExcel(list) {
   const statusLabel = { registered:'등록', in_progress:'진행중', completed:'완료', settlement_requested:'정산요청', settled:'정산완료' };
-  const headers = ['공사요청번호','작업번호','공사명','작업지시주소','공사담당자','공사감독자','진행상태','작업(전체)','작업(완료)'];
+  const headers = ['공사요청번호','작업번호','공사명','작업지시주소','공사담당자','공사감독자','진행상태','등록작업건','작업(완료)'];
   const rows = list.map(c => [
     c.request_no || '',
     c.work_number || '',
@@ -4082,6 +4082,13 @@ async function renderConstructionsPage(container) {
         </td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#6B7280">${createdFmt}</td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#D70072;font-weight:600">${completeFmt}</td>
+        <td class="con-td" style="text-align:center">
+          ${(con.task_total || 0) > 0
+            ? `<span style="display:inline-flex;align-items:center;gap:3px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:12px;padding:1px 8px;font-size:11px;font-weight:700;color:#1D4ED8">
+                <i class="fas fa-tasks" style="font-size:9px"></i>${con.task_total}
+               </span>`
+            : '<span style="color:#CCC;font-size:11px">-</span>'}
+        </td>
         <td class="con-td" style="text-align:right;font-size:12px;color:#374151;font-weight:600;padding-right:10px">${con.notification_amount != null ? Number(con.notification_amount).toLocaleString('ko-KR')+'원' : '<span style=\"color:#CCC\">-</span>'}</td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.manager_display_name || con.manager_name || '<span style="color:#CCC">-</span>'}</td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.supervisor_name || '<span style="color:#CCC">-</span>'}</td>
@@ -4268,7 +4275,7 @@ async function renderConstructionsPage(container) {
           <colgroup>
             <col class="cc-req"><col class="cc-type"><col class="cc-title">
             <col class="cc-addr">
-            <col class="cc-cdate"><col class="cc-pdate"><col class="cc-amount">
+            <col class="cc-cdate"><col class="cc-pdate"><col class="cc-tasks"><col class="cc-amount">
             <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
           </colgroup>
           <thead>
@@ -4297,6 +4304,10 @@ async function renderConstructionsPage(container) {
                   style="text-align:center;cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('completion_date')">
                 완료예정일<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="5b" data-sortcol="task_total"
+                  style="text-align:center;cursor:pointer;user-select:none"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('task_total')">
+                등록작업건<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
               <th class="con-th con-th-resize" data-col="5a" data-sortcol="notification_amount"
                   style="text-align:right;cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('notification_amount')">
@@ -4324,7 +4335,7 @@ async function renderConstructionsPage(container) {
             <colgroup>
               <col class="cc-req"><col class="cc-type"><col class="cc-title">
               <col class="cc-addr">
-              <col class="cc-cdate"><col class="cc-pdate"><col class="cc-amount">
+              <col class="cc-cdate"><col class="cc-pdate"><col class="cc-tasks"><col class="cc-amount">
               <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
             </colgroup>
             <tbody>

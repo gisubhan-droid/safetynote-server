@@ -5220,31 +5220,33 @@ async function renderTasksPage(container) {
               title="${_tblEsc(managerDisplay)}">${managerDisplay}</td>
           <td style="padding:7px 8px;font-size:13px;color:#1A1A2E;font-weight:600"
               title="${_tblEsc(t.title)}">${t.title || '-'}</td>
-          <td style="padding:5px 6px;text-align:center;overflow:visible" onclick="event.stopPropagation()">
+          <td class="td-risk" style="padding:5px 6px;text-align:center;overflow:visible" onclick="event.stopPropagation()">
             <span style="display:inline-block;font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;
                          background:${rl==='high'?'#FDE8F3':rl==='medium'?'#EDE7F6':'#F5F0F8'};
                          color:${rlColor};white-space:nowrap">${rlLabelMap2[rl]||rl}</span>
           </td>
-          <td style="padding:5px 6px;text-align:center;overflow:visible" onclick="event.stopPropagation()">
-            <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 6px;border-radius:20px;
-                         background:#F9FAFB;color:${stColor};border:1px solid #E5E7EB;white-space:nowrap;margin-bottom:2px">${statusLabelMap[st]||st}</span>
-            ${(_tblCanModify || canDeleteRow) ? `
-            <span style="display:inline-flex;gap:3px;vertical-align:middle;margin-left:2px">
-              ${_tblCanModify ? `
-              <button onclick="showEditTaskModal(${t.id})"
-                style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;
-                       color:#685182;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
-                title="수정">
-                <i class="fas fa-edit"></i>
-              </button>` : ''}
-              ${canDeleteRow ? `
-              <button onclick="deleteTask(${t.id}, '${st}')"
-                style="width:22px;height:22px;border-radius:6px;border:1px solid #FDE8F3;background:white;
-                       color:#D70072;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
-                title="삭제(시스템관리자 전용)">
-                <i class="fas fa-trash"></i>
-              </button>` : ''}
-            </span>` : ''}
+          <td class="td-progress" style="padding:4px 6px;text-align:center;overflow:visible" onclick="event.stopPropagation()">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+              <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;
+                           background:#F9FAFB;color:${stColor};border:1px solid #E5E7EB;white-space:nowrap">${statusLabelMap[st]||st}</span>
+              ${(_tblCanModify || canDeleteRow) ? `
+              <span style="display:inline-flex;gap:3px">
+                ${_tblCanModify ? `
+                <button onclick="showEditTaskModal(${t.id})"
+                  style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;
+                         color:#685182;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
+                  title="수정">
+                  <i class="fas fa-edit"></i>
+                </button>` : ''}
+                ${canDeleteRow ? `
+                <button onclick="deleteTask(${t.id}, '${st}')"
+                  style="width:22px;height:22px;border-radius:6px;border:1px solid #FDE8F3;background:white;
+                         color:#D70072;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
+                  title="삭제(시스템관리자 전용)">
+                  <i class="fas fa-trash"></i>
+                </button>` : ''}
+              </span>` : ''}
+            </div>
           </td>
         </tr>`;
       }).join('');
@@ -5426,7 +5428,7 @@ async function renderTasksPage(container) {
           class="btn btn-outline" style="flex-shrink:0;padding:0 10px">
           <i class="fas fa-times mr-1"></i>검색 초기화
         </button>` : ''}
-        <span style="font-size:11px;color:#9CA3AF;margin-left:auto;white-space:nowrap">총 <strong style="color:#685182">${_taskListTotal}</strong>건 / ${taskFilters.page||1}페이지</span>
+        <span style="font-size:11px;color:#9CA3AF;margin-left:auto;white-space:nowrap;padding-right:8px">총 <strong style="color:#685182">${_taskListTotal}</strong>건 / ${taskFilters.page||1}페이지</span>
       </div>
       <div id="taskSearchHint" class="mb-3" style="font-size:11px;color:#9CA3AF;padding-left:2px;display:${taskFilters.search_type==='task_number'?'block':'none'}">
         <i class="fas fa-info-circle mr-1" style="color:#C4B5D5"></i>

@@ -1447,7 +1447,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 .task-col-table col.c-mgr   { width: 80px; }
 .task-col-table col.c-title { width: auto; }   /* 남은 공간 */
 .task-col-table col.c-risk     { width: 68px; }    /* 위험도 배지 전용 */
-.task-col-table col.c-progress { width: 130px; }   /* 진행사항 + 관리버튼 */
+.task-col-table col.c-progress { width: 110px; }   /* 진행단계 라벨 + 버튼 (세로 분리) */
 
 /* 헤더 th 공통 스타일 */
 .task-th {
@@ -1472,11 +1472,19 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  vertical-align: middle;
   /* 컬럼 세로 구분선 (바디) */
   border-right: 1px solid #F0EBF5;
 }
 .task-col-table td:last-child {
   border-right: none;
+}
+/* 진행사항·위험도 td: 두 줄 구조(라벨+버튼)이므로 overflow:visible + white-space:normal */
+.task-col-table td.td-progress,
+.task-col-table td.td-risk {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
 }
 
 /* 행 구분선 강화 */

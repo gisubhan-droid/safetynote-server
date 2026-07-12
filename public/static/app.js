@@ -9096,7 +9096,7 @@ async function showTaskDetail(id, openTbmTab) {
                 medium:'background:#EDE7F6;color:#A8005A',   low:'background:#F5F0F8;color:#C6C6C6'
               };
               const HAZARD_LBL = { critical:'긴급', high:'높음', medium:'보통', low:'낮음' };
-              const INS_TYPE_LBL = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' };
+              const INS_TYPE_LBL = { routine:'정기점검', special:'합동점검', safety:'수시점검', joint:'합동점검', frequent:'수시점검' };
               return `
               <div class="space-y-2 mb-4">
                 ${inspections.map(i => `
@@ -14526,7 +14526,7 @@ async function renderInspectionsPage(container) {
       medium:'bg-yellow-100 text-yellow-700', low:'bg-gray-100 text-gray-500'
     };
     const HAZARD_LBL = { critical:'긴급', high:'높음', medium:'보통', low:'낮음' };
-    const INS_TYPE_LBL = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' };
+    const INS_TYPE_LBL = { routine:'정기점검', special:'합동점검', safety:'수시점검', joint:'합동점검', frequent:'수시점검' };
 
     // ── 탭별 카운트 ───────────────────────────────────────────
     const cnt = (statuses) => allTasks.filter(t => statuses.includes(t.status)).length;
@@ -14853,8 +14853,8 @@ async function showCreateInspectionModal(presetTaskId) {
         <div class="form-group"><label class="form-label">점검 유형</label>
           <select id="insType" class="form-control">
             <option value="routine">정기점검</option>
-            <option value="joint">합동점검</option>
-            <option value="frequent" selected>수시점검</option>
+            <option value="special">합동점검</option>
+            <option value="safety" selected>수시점검</option>
           </select>
         </div>
       </div>
@@ -15485,7 +15485,7 @@ async function editInspection(id) {
        </select>`
     : `<div class="text-sm text-gray-400 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200"><i class="fas fa-info-circle mr-1 text-blue-400"></i>등록된 작업이 없습니다.</div>`;
 
-  const insTypeLabelMap = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' };
+  const insTypeLabelMap = { routine:'정기점검', special:'합동점검', safety:'수시점검', joint:'합동점검', frequent:'수시점검' };
   const currentResult = ins.inspection_result || '';
   const colorMap = { '불량':'red', '적정':'yellow', '양호':'blue', '우수':'green' };
 
@@ -15512,9 +15512,9 @@ async function editInspection(id) {
         </div>
         <div class="form-group"><label class="form-label">점검 유형</label>
           <select id="insEditType" class="form-control">
-            <option value="routine" ${ins.inspection_type==='routine'?'selected':''}>정기점검</option>
-            <option value="joint"   ${ins.inspection_type==='joint'?'selected':''}>합동점검</option>
-            <option value="frequent"${ins.inspection_type==='frequent'?'selected':''}>수시점검</option>
+            <option value="routine"  ${ins.inspection_type==='routine'?'selected':''}>정기점검</option>
+            <option value="special"  ${ins.inspection_type==='special'||ins.inspection_type==='joint'?'selected':''}>합동점검</option>
+            <option value="safety"   ${ins.inspection_type==='safety'||ins.inspection_type==='frequent'?'selected':''}>수시점검</option>
           </select>
         </div>
       </div>
@@ -17673,7 +17673,7 @@ async function showInspectionListModal(type, id, label, year, month) {
 
   const hazMap = { critical:'긴급', high:'높음', medium:'보통', low:'낮음' };
   const hazBadge = { critical:'risk-critical', high:'risk-high', medium:'risk-medium', low:'risk-low' };
-  const typeMap = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' };
+  const typeMap = { routine:'정기점검', special:'합동점검', safety:'수시점검', joint:'합동점검', frequent:'수시점검' };
 
   try {
     let rows = [];
@@ -38533,7 +38533,7 @@ async function loadSiteMapMarkers(map) {
         : _rawInsList;
 
       // 점검 유형 레이블
-      const INS_TYPE_LBL = { routine:'정기점검', joint:'합동점검', frequent:'수시점검' };
+      const INS_TYPE_LBL = { routine:'정기점검', special:'합동점검', safety:'수시점검', joint:'합동점검', frequent:'수시점검' };
       const HAZARD_LBL   = { critical:'긴급', high:'높음', medium:'보통', low:'낮음' };
 
       for (const ins of insList) {

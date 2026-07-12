@@ -2649,6 +2649,37 @@ function patchSchema() {
       }
     }
   })()
+  // ── [v0.159 BUG-097] site_inspections.inspection_type CHECK constraint 확장 ──
+  // 구버전 DDL: CHECK(inspection_type IN ('routine','special','safety'))
+  // 현재 UI 선택지: 'routine'(정기), 'special'(합동), 'safety'(수시) 로 통일
+  // → 기존 DB에서 'joint','frequent' 값이 저장되어 있으면 매핑 업데이트 후
+  //   CHECK constraint를 제거한 새 컬럼으로 재생성
+  ;(function patchInspectionTypeConstraint() {
+    try {
+      // 1) 현재 inspection_type 컬럼 DDL 확인
+      const tblSql = (rawDb.prepare(
+        `SELECT sql FROM sqlite_master WHERE type='table' AND name='site_inspections'`
+      ).get() as any)?.sql || ''
+
+      const hasOldCheck = tblSql.includes("'routine','special','safety'") ||
+                          tblSql.includes("'routine', 'special', 'safety'")
+
+      if (hasOldCheck) {
+        // 2) 기존 'joint' → 'special', 'frequent' → 'safety' 데이터 마이그레이션
+        rawDb.exec(`UPDATE site_inspections SET inspection_type='special' WHERE inspection_type='joint'`)
+        rawDb.exec(`UPDATE site_inspections SET inspection_type='safety'  WHERE inspection_type='frequent'`)
+
+        // 3) 컬럼 재생성 (SQLite는 CHECK 제거 불가 → 테이블 재생성 없이 UPDATE만으로 해결)
+        //    → 실제로는 기존 값이 'routine'/'special'/'safety' 범위 내이므로 더 이상 CHECK 위반 없음
+        //    단, 신규 INSERT 시 'joint'/'frequent' 전송 차단을 위해 app.js select 값도 변경
+        console.log('[patchSchema v0.159] ✅ inspection_type joint→special, frequent→safety 데이터 마이그레이션 완료')
+      } else {
+        console.log('[patchSchema v0.159] inspection_type CHECK 패치 불필요 (이미 적용됨)')
+      }
+    } catch (e: any) {
+      console.warn('[patchSchema v0.159] inspection_type 패치 실패 (무시):', e.message)
+    }
+  })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
 patchSchema()

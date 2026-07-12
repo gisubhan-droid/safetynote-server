@@ -6102,3 +6102,53 @@ git pull origin main
 git pull origin main
 # (pm2 restart 불필요 — public/static/app.js만 변경, 서버코드 무변경)
 ```
+
+---
+
+## 세션 124 (2026-07-12) — BUG-096: 작업관리 테이블 UI 개선 (헤더 정렬/툴바 크기/엑셀 버튼)
+
+### 작업 요약
+스크린샷 기반 3가지 UI 문제 수정:
+1. 테이블 헤더와 내용 컬럼 어긋남 해소
+2. 툴바 컨트롤(버튼/드롭다운/날짜입력) 크기 불균일 해소
+3. 엑셀 다운로드 버튼 → 아이콘 전용 소형 버튼으로 간소화
+
+### 버그 원인 및 해결
+
+#### 1. 테이블 헤더/내용 어긋남 (`d3cc9b8`)
+- **원인**: thead/tbody가 별도 `<table>` 요소로 분리된 구조에서 `table-layout:auto` 사용 시 각 테이블이 독립적으로 컬럼 너비 계산 → 데이터 길이에 따라 body 컬럼 폭이 header와 달라짐
+- **해결**:
+  - `table-layout: fixed` 적용 (CSS)
+  - `<colgroup><col class="c-seq|c-req|c-num|...">` 을 thead/tbody 테이블 양쪽에 동일하게 삽입 (app.js)
+  - 각 컬럼 고정 너비: `c-seq:38px`, `c-req:110px`, `c-num:160px`, `c-type:90px`, `c-class:80px`, `c-date:90px`, `c-mgr:80px`, `c-title:auto(남은공간)`, `c-state:170px`
+  - tbody tr 인라인 `white-space:nowrap` / `max-width` / `min-width` 등 충돌 속성 제거 (CSS 클래스로 통일)
+  - 짝수 행 zebra 스트라이프 (`#FAFAFE`), 행 구분선 `#EDE7F6` 명확화
+
+#### 2. 툴바 컨트롤 크기 통일 (`d3cc9b8`)
+- **원인**: `.btn`(padding:9px 18px, font-size:14px) vs `.form-control`(padding:10px 14px, font-size:14px)의 실제 렌더 높이 차이 + 개별 인라인 스타일 파편화
+- **해결**: `.task-toolbar-sticky .btn`, `.task-toolbar-sticky .form-control` 에 `height:32px; padding-top:0; padding-bottom:0; font-size:12px; line-height:32px` 일괄 적용
+
+#### 3. 엑셀 버튼 아이콘 간소화 (`d3cc9b8`)
+- **기존**: `<button class="btn btn-outline">엑셀 다운로드</button>` (텍스트+아이콘, 큰 박스)
+- **변경**: `<button class="btn-excel-icon" title="엑셀 다운로드"><i class="fas fa-file-excel"></i></button>`
+  - 32×32px 정사각형 녹색 아이콘 버튼
+  - `.task-toolbar-sticky .btn-excel-icon` 전용 CSS 추가
+
+### 커밋 로그
+| 파일 | 커밋 | 내용 |
+|------|------|------|
+| `public/static/app.js` | `d3cc9b8` | fix: 작업관리 테이블 헤더/내용 정렬 수정 + 툴바 컨트롤 크기 통일 + 엑셀 아이콘 버튼 간소화 |
+| `public/static/style.css` | `d3cc9b8` | 동일 커밋 |
+
+### 파일 수정 내역
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/style.css` | `.task-col-table` → `table-layout:fixed` + colgroup 너비 클래스 + `.task-col-table td` overflow 처리 + 행 구분선 강화 + `.task-toolbar-sticky` 내 컨트롤 height:32px 통일 + `.btn-excel-icon` 신규 추가 |
+| `public/static/app.js` | thead/tbody 양쪽 `<colgroup>` 삽입 + tbody td 인라인 스타일 정리 + 툴바 인라인 크기 제거 + 엑셀 버튼 HTML 교체 |
+| `dist/_worker.js` | 빌드 결과물 (276.27 kB) |
+
+### NAS 배포 안내
+```bash
+git pull origin main
+# (pm2 restart 불필요 — public/static/app.js, style.css만 변경, 서버코드 무변경)
+```

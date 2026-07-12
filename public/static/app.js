@@ -25428,12 +25428,16 @@ async function renderUsersPage(container) {
         </div>
       </div>
 
-      <!-- 역할별 카운트 (업무 인원 4종 — sysadmin/LGU+ 제외) -->
+      <!-- 역할별 카운트 (업무 인원 4종 — sysadmin/LGU+ 제외, 클릭 시 해당 역할 필터) -->
       <div class="grid grid-cols-4 gap-2 mb-4">
         ${['worker','safety','engineer','site_rep'].map(uiRole=>{
           const info = UI_ROLE_DISPLAY[uiRole];
           const cnt = users.filter(u => dbRoleToUi(u.role, u.position, u.sub_role) === uiRole).length;
-          return `<div class="card p-3 text-center" style="border-top:3px solid ${info.color}">
+          return `<div class="card p-3 text-center role-filter-card"
+            data-role="${uiRole}"
+            onclick="filterUserByRole('${uiRole}')"
+            style="border-top:3px solid ${info.color};cursor:pointer;transition:transform 0.15s,box-shadow 0.15s,outline 0.15s"
+            title="${info.label}만 보기 (다시 클릭 시 해제)">
             <div class="text-2xl font-black" style="color:${info.color}">${cnt}</div>
             <div class="text-xs font-bold text-gray-500 mt-1"><i class="${info.icon} mr-1"></i>${info.label}</div>
           </div>`;

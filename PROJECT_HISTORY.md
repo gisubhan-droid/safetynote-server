@@ -1,7 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-12 (세션 126 — FEAT-062: QR 프로필 통합 UI 개편 — 프로필+안전점수 통합, 현장배정작업 accordion, 우수/불량 기록 accordion, 헤더 안전점수 / BUG-097: 현장점검 저장 500 에러 수정)
-> **GitHub 최신: `0337ee3`** — feat(FEAT-062): 근로자 QR 프로필 통합 UI 개편
+> 최종 업데이트: 2026-07-12 (세션 127 — BUG-098: 역할 카드 필터 후 QR 전체선택 시 숨겨진 사용자까지 선택되는 버그 수정)
+> **GitHub 최신: `(pending)`** — fix(BUG-098): QR 전체선택 필터 숨겨진 행 제외
+> **이전 커밋: `0337ee3`** — feat(FEAT-062): 근로자 QR 프로필 통합 UI 개편
 > **NAS 배포 완료: `bc5eb1f`** — 방식1(업데이트 버튼) 적용 완료 (세션126 배포 대기)
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
@@ -21,6 +22,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-098 | 127 | 2026-07-12 | ✅ 수정 | **QR 전체선택 — 역할 카드 필터 후 숨겨진 사용자까지 선택** — `toggleAllQrChecks()`에서 `table.querySelectorAll('.user-qr-check')` 호출 시 `tr.style.display='none'`인 필터 숨겨진 행도 전부 체크됨. 동일 원인으로 `updateQrBulkCount()` 카운트 오표시, `printQrBulk()` 숨겨진 행 인쇄 포함. **해결**: ①`toggleAllQrChecks`: `tbody tr` 순회 시 `tr.style.display==='none'` 건너뜀 ②`updateQrBulkCount`: `.user-qr-check:checked` 순회 시 `tr.style.display!=='none'`만 카운트 ③`printQrBulk`: `.user-qr-check:checked` 수집 후 `.filter(cb => tr.style.display !== 'none')` 추가 ④`filterUserList`: 행 숨길 때 `.user-qr-check` 자동 해제 + 마스터 체크박스 `indeterminate` 재동기화 + `updateQrBulkCount()` 재갱신 | `(커밋 후 업데이트)` |
 | BUG-097 | 126 | 2026-07-12 | ✅ 수정 | **현장점검 저장 500 에러** — DB `site_inspections.inspection_type` CHECK constraint = `('routine','special','safety')`인데 UI select가 `joint`/`frequent` 값을 전송 → 500 에러. **해결**: ①`app.js` 등록/수정 모달 select value를 `joint`→`special`, `frequent`→`safety`로 수정 ②`INS_TYPE_LBL` 3곳 `special`/`safety` 키 추가 + `joint`/`frequent` 하위호환 ③`node-server.ts patchSchema v0.159`: 기존 데이터 `joint`→`special`, `frequent`→`safety` 자동 마이그레이션 | `405412f` |
 | BUG-096 | 125 | 2026-07-12 | ✅ 수정 | **업무중사용자 역할 카드 클릭 필터 미동작** — `filterUserByRole()` 함수·`filterUserList()` 역할필터 로직·`clearUserSearch()` 초기화는 이전 세션에서 정상 추가됐으나, 역할 카드 HTML `<div>`에 `onclick`, `data-role`, `class="role-filter-card"`, `cursor:pointer` 속성이 누락되어 카드 클릭 자체가 이벤트를 받지 못함. **해결**: 카드 div에 `class="role-filter-card"`, `data-role="${uiRole}"`, `onclick="filterUserByRole('${uiRole}')"`, `cursor:pointer`, `transition` 스타일 추가. 2차 검증: `data-role` 충돌(sys-user-grp-all·edu-user-cb 완전 다른 element) 없음 확인 | `bc5eb1f` |
 | BUG-095 | 124 | 2026-07-12 | ✅ 수정 | **파일 저장 폴더 년도/월 계층 누락** — FEAT-042(2e38b2a)에서 `src/nas-routes/attachments-nas.ts`에만 년도/월 폴더 로직이 추가되고, `node-server.ts`의 `getUploadDir()`에는 미적용. FEAT-050(38901af)에서 `team_name` 추가 때도 누락 지속. **증상**: 02_TBM·03_작업사진·04_현장점검·05_기타 폴더가 `{루트}/{공사요청번호}_{공사명}/...`에 생성되어 년도/월 계층 없음. **해결**: `node-server.ts` 단일 파일만 수정 — ①`getUploadDir()` 함수에 `con_created_at?: string\|null` 파라미터 추가 + `yearFolder`/`monthFolder` 추출 + `basePath` 분기 로직 추가(hasConInfo&&con_created_at: `{root}/{year}/{month}/{conFolder}`, 그 외: `{root}/{conFolder}`) ②5개 SQL 쿼리에 `c.created_at AS con_created_at` 추가(TBM PDF·addInsPhoto·POST inspections·POST photos·POST tbm-photos) ③TBM PDF `taskObj`에 `con_created_at` 포함 | `a419dbd` |

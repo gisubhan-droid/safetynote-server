@@ -25507,8 +25507,6 @@ async function renderUsersPage(container) {
         if (noResultEl) noResultEl.classList.add('hidden');
         return;
       }
-
-      // 검색어 + 역할필터 동시 적용
       const matched = users.filter(u => {
         // 역할 필터 체크
         if (roleFilter && dbRoleToUi(u.role, u.position, u.sub_role) !== roleFilter) return false;
@@ -25528,8 +25526,24 @@ async function renderUsersPage(container) {
       document.querySelectorAll('#userAllTable tbody tr, #userNoTeamTable tbody tr, [id^="userTeamTable-"] tbody tr').forEach(tr => {
         const cb = tr.querySelector('input[type="checkbox"]');
         const uid = cb ? Number(cb.value) : -1;
-        tr.style.display = (uid > 0 && matchedIds.has(uid)) ? '' : 'none';
+        const isVisible = uid > 0 && matchedIds.has(uid);
+        tr.style.display = isVisible ? '' : 'none';
+        // BUG-098: 숨겨지는 행의 QR 체크박스를 자동 해제하여 필터 후 전체선택 오작동 방지
+        if (!isVisible) {
+          const qrCb = tr.querySelector('.user-qr-check');
+          if (qrCb) qrCb.checked = false;
+        }
       });
+      // BUG-098: 마스터 체크박스(전체선택) 상태를 보이는 행 기준으로 재동기화
+      document.querySelectorAll('.user-qr-check-all').forEach(masterCb => {
+        const table = masterCb.closest('table');
+        if (!table) return;
+        const visibleCbs = [...table.querySelectorAll('tbody tr')].filter(tr => tr.style.display !== 'none').map(tr => tr.querySelector('.user-qr-check')).filter(Boolean);
+        masterCb.checked = visibleCbs.length > 0 && visibleCbs.every(c => c.checked);
+        masterCb.indeterminate = !masterCb.checked && visibleCbs.some(c => c.checked);
+      });
+      // 카운트 버튼 재갱신
+      updateQrBulkCount();
 
       if (countEl) {
         const roleLabel = roleFilter ? UI_ROLE_DISPLAY[roleFilter]?.label : '';
@@ -26014,21 +26028,31 @@ function downloadUsersCSV() {
   downloadCSV(`사용자현황_${kstDateStr()}.csv`, headers, rows);
 }
 
-// QR 체크박스 전체 선택/해제 (테이블 내)
+// QR 체크박스 전체 선택/해제 (테이블 내 — 현재 보이는 행만 대상)
 function toggleAllQrChecks(masterCb, tableId) {
   const table = document.getElementById(tableId);
   if (!table) return;
-  table.querySelectorAll('.user-qr-check').forEach(cb => { cb.checked = masterCb.checked; });
+  // display:none 인 행(필터로 숨겨진 행)은 제외하고 보이는 행의 체크박스만 선택/해제
+  table.querySelectorAll('tbody tr').forEach(tr => {
+    if (tr.style.display === 'none') return; // 숨겨진 행 건너뜀
+    const cb = tr.querySelector('.user-qr-check');
+    if (cb) cb.checked = masterCb.checked;
+  });
   updateQrBulkCount();
 }
 
-// 선택된 QR 수 카운트 표시 (헤더 버튼 레이블 업데이트)
+// 선택된 QR 수 카운트 표시 (헤더 버튼 레이블 업데이트 — 보이는 행의 체크 수만 카운트)
 function updateQrBulkCount() {
-  const checked = document.querySelectorAll('.user-qr-check:checked');
+  // 보이는 행(display !== 'none')의 체크된 체크박스만 카운트
+  let count = 0;
+  document.querySelectorAll('.user-qr-check:checked').forEach(cb => {
+    const tr = cb.closest('tr');
+    if (!tr || tr.style.display !== 'none') count++;
+  });
   const btn = document.querySelector('button[onclick="printQrBulk()"]');
   if (btn) {
-    btn.innerHTML = checked.length > 0
-      ? `<i class="fas fa-qrcode mr-1"></i>QR 일괄 인쇄 <span style="background:#D70072;color:white;border-radius:999px;padding:0 6px;font-size:11px;margin-left:4px">${checked.length}</span>`
+    btn.innerHTML = count > 0
+      ? `<i class="fas fa-qrcode mr-1"></i>QR 일괄 인쇄 <span style="background:#D70072;color:white;border-radius:999px;padding:0 6px;font-size:11px;margin-left:4px">${count}</span>`
       : `<i class="fas fa-qrcode mr-1"></i>QR 일괄 인쇄`;
   }
 }
@@ -26045,7 +26069,11 @@ async function printQrBulk() {
     });
   }
 
-  const checked = [...document.querySelectorAll('.user-qr-check:checked')];
+  // 보이는 행(display !== 'none')의 체크된 체크박스만 수집 — 필터로 숨겨진 행 제외
+  const checked = [...document.querySelectorAll('.user-qr-check:checked')].filter(cb => {
+    const tr = cb.closest('tr');
+    return !tr || tr.style.display !== 'none';
+  });
   if (!checked.length) {
     toast('인쇄할 인원을 체크박스로 선택하세요.', 'error');
     return;

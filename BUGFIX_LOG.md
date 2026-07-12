@@ -5,6 +5,66 @@
 
 ---
 
+## 🚀 [최우선] 배포 방식 (반드시 먼저 확인)
+
+> ⚠️ 코드 수정 후 NAS 반영은 **항상 방식1(업데이트 버튼)을 먼저 시도**한다.
+> 방식2(NAS 직접 적용)는 방식1이 실패했을 때만 사용하는 긴급 우회 수단이다.
+
+---
+
+### ✅ 방식1: 표준 배포 — 업데이트 버튼 사용 (기본)
+
+```
+[개발서버]
+1. 코드 수정 완료
+2. git add .
+3. git commit -m "feat/fix: 변경 내용 설명"
+4. git push origin main         ← GitHub에 업로드
+
+[NAS 브라우저]
+5. 시스템설정 → 서버 업데이트 탭 접속
+6. [버전 확인] 버튼 클릭         ← git fetch origin main 실행
+7. 새 버전 확인 후 비밀번호 입력
+8. [업데이트 적용] 버튼 클릭     ← 자동 순서 실행:
+   ① git reset --hard origin/main
+   ② npm run build
+   ③ pm2 restart safetynote
+9. 완료 후 브라우저 새로고침 (Ctrl+F5)
+```
+
+**주의사항**
+- NAS branch가 `master`여도 업데이트 버튼은 `origin/main`을 직접 참조 → 정상 동작
+- `ensureCorrectRemote()` 함수가 remote URL 자동 교정 (구버전 URL 감지 시 자동 수정)
+- GitHub Token은 remote URL에 포함됨: `https://ghp_...@github.com/gisubhan-droid/safetynote-server.git`
+
+---
+
+### ⚠️ 방식2: 긴급 우회 — NAS 직접 적용 (방식1 실패 시만 사용)
+
+> 방식1이 동작하지 않을 때만 사용. git 이력에 반영되지 않으므로 이후 방식1 업데이트 시 덮어씌워짐.
+
+```bash
+# NAS SSH 접속 후 python3 스크립트 실행
+python3 << 'EOF'
+import shutil
+shutil.copy(
+    '/volume1/safetynote/public/static/app.js',
+    '/volume1/safetynote/dist/static/app.js'
+)
+print("복사 완료")
+EOF
+
+# PM2 재시작
+pm2 restart safetynote
+```
+
+**방식2 사용 후 반드시 처리**
+- 동일 내용을 개발서버에도 반영 → git commit → git push → 방식1로 NAS 재동기화
+
+---
+
+---
+
 ## 아키텍처 핵심 구조
 
 ```

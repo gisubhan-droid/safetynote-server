@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-12 (세션 124 — BUG-095: 파일 저장 폴더 년도/월 계층 누락 수정 / BUG-FIX: 공사 삭제 권한 sysadmin+creator 조건 순서 버그)
-> **GitHub 최신: `a419dbd`** — fix: BUG — 파일 저장 폴더 년도/월 계층 누락 수정 (FEAT-042 node-server.ts 미적용)
-> **NAS 배포 필요: `a419dbd`** — git pull 후 pm2 restart safetynote
+> 최종 업데이트: 2026-07-12 (세션 125 — BUG-096: 업무중사용자 역할 카드 클릭 필터 미동작 / FEAT-061: 공사현황 메뉴 이름변경 + 작업통계 하위 이동 / FEAT-배포방식: BUGFIX_LOG 배포방식 섹션 추가)
+> **GitHub 최신: `bc5eb1f`** — fix: 업무중사용자 역할 카드 onclick/data-role/class 누락 수정
+> **NAS 배포 완료: `bc5eb1f`** — 방식1(업데이트 버튼) 적용 완료
 > **캐시 버전: `?v=20260705v300`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
 > **APK 최신**: v1.4.7
@@ -21,6 +21,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-096 | 125 | 2026-07-12 | ✅ 수정 | **업무중사용자 역할 카드 클릭 필터 미동작** — `filterUserByRole()` 함수·`filterUserList()` 역할필터 로직·`clearUserSearch()` 초기화는 이전 세션에서 정상 추가됐으나, 역할 카드 HTML `<div>`에 `onclick`, `data-role`, `class="role-filter-card"`, `cursor:pointer` 속성이 누락되어 카드 클릭 자체가 이벤트를 받지 못함. **해결**: 카드 div에 `class="role-filter-card"`, `data-role="${uiRole}"`, `onclick="filterUserByRole('${uiRole}')"`, `cursor:pointer`, `transition` 스타일 추가. 2차 검증: `data-role` 충돌(sys-user-grp-all·edu-user-cb 완전 다른 element) 없음 확인 | `bc5eb1f` |
 | BUG-095 | 124 | 2026-07-12 | ✅ 수정 | **파일 저장 폴더 년도/월 계층 누락** — FEAT-042(2e38b2a)에서 `src/nas-routes/attachments-nas.ts`에만 년도/월 폴더 로직이 추가되고, `node-server.ts`의 `getUploadDir()`에는 미적용. FEAT-050(38901af)에서 `team_name` 추가 때도 누락 지속. **증상**: 02_TBM·03_작업사진·04_현장점검·05_기타 폴더가 `{루트}/{공사요청번호}_{공사명}/...`에 생성되어 년도/월 계층 없음. **해결**: `node-server.ts` 단일 파일만 수정 — ①`getUploadDir()` 함수에 `con_created_at?: string\|null` 파라미터 추가 + `yearFolder`/`monthFolder` 추출 + `basePath` 분기 로직 추가(hasConInfo&&con_created_at: `{root}/{year}/{month}/{conFolder}`, 그 외: `{root}/{conFolder}`) ②5개 SQL 쿼리에 `c.created_at AS con_created_at` 추가(TBM PDF·addInsPhoto·POST inspections·POST photos·POST tbm-photos) ③TBM PDF `taskObj`에 `con_created_at` 포함 | `a419dbd` |
 | BUG-FIX(공사삭제) | 123 | 2026-07-12 | ✅ 수정 | **공사 삭제 권한 — sysadmin+creator 동시 케이스 조건 순서 버그** — ①일반 사용자: 본인 등록 `registered` 공사 상세에서 삭제 버튼 미표시 (app.js `currentUser.id === con.created_by` 타입 불일치: string vs number) ②시스템관리자: 삭제 버튼 있으나 클릭 시 409 — DELETE 핸들러에서 `isSysAdmin` 분기가 먼저 체크되어 sysadmin이 동시에 등록자인 경우 `isCreator && registered` 분기 미도달. **해결**: ①`constructions.ts`+`node-server.ts` — 분기 순서 재배치 `isCreator&&registered → isSysAdmin → isCreator(비등록) → 권한없음` ②`app.js` — `Number()` 강제 변환 5곳 적용(con/task/card/table) | `67f7b91` |
 | BUG-093 | 120 | 2026-07-10 | ✅ 수정 | **작업 등록 성공 후 '생성 실패' 오표시** — 작업 저장 API는 정상 성공하나 동시에 분홍색 '생성 실패' toast가 함께 표시됨. 근본 원인: `_doCreate()` 내부 구조 문제 ①`uploadTaskAttachments()` 실패 시 예외가 외부 `catch`로 전파 → `toast('생성 실패', 'error')` 오출력(작업은 이미 저장됨) ②`renderTasksPage(document.getElementById('page-content'))` 호출 시 모달 제거 후 `page-content`가 null이면 `TypeError` → 외부 catch → '생성 실패'. **해결**: ①`uploadTaskAttachments` 별도 `try/catch`로 격리(내부에서 이미 toast 처리) ②`toast('작업이 등록됨')` 이후 페이지 이동 코드를 별도 `try/catch`로 격리하여 외부 catch로 전파 차단 ③`renderTasksPage` 호출 전 `page-content` null 체크 추가 | `4498c03` |
@@ -91,6 +92,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-061 | 125 | 2026-07-12 | ✅ 구현 | **공사현황 메뉴 이름변경 + 작업통계 하위 이동** — ①`volume` 그룹 label `현장공량` → `공사현황` 변경 ②`edu` 그룹 stats 서브메뉴에서 `stats-task` 제거 ③`volume` 그룹 items 맨 앞에 `stats-task`(작업통계) 추가. **배포방식 기록 추가**: `BUGFIX_LOG.md` 맨 앞에 배포방식 최우선 섹션 추가 — 방식1(업데이트 버튼=표준), 방식2(NAS 직접=긴급우회) 명확히 문서화 | `685dd29` / `a3a01c2` |
 
 | FEAT-057 | 112 | 2026-07-06 | ✅ 구현 | **사진 첨부 FCM 알림** — `node-server.ts POST /api/photos` 완료 시 supervisor/safety 역할에게 FCM 발송. multipart(파일 업로드)·json(base64 하위호환) 양쪽 경로 모두 적용. `sendFcmToRoles(['supervisor','safety'], { title:'[사진 첨부] 작업 {번호}', body:'{업로더}님이 {유형} 사진 N장을 첨부했습니다.' })`. photoTypeLabel 매핑(착공 전/진행 중/완료/TBM/점검) 포함. | `1a13c16` |
 | FEAT-056 | 112 | 2026-07-06 | ✅ 구현 | **TBM 결재 서명 완료 FCM 알림** — BUG-089로 approval_general이 최종 결재가 됨에 따라 approval_general 완료 시 ①안전관리자에게 결재완료 SSE/FCM/notification ②작업 배정 근로자 전원에게 "TBM 결재 완료" FCM+notification 발송. `tbm-extra.ts approval_general 블록`: 기존 CEO 연쇄(approval_ceo) 제거 → safetyUsers 완료 알림 + task_assignments JOIN users로 workerIds 추출 후 sendFcmToUsers(workerIds) 발송. PDF 자동생성 트리거도 approval_ceo→approval_general로 변경. | `1a13c16` |

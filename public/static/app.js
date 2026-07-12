@@ -3298,6 +3298,121 @@ function _conClearManagerFilter() {
   renderConstructionsPage(document.getElementById('page-content'));
 }
 
+// ── 공사현황 테이블 컬럼 리사이즈 초기화 ────────────────────────────────────
+function _initConColResize() {
+  // 헤더·바디 두 테이블의 colgroup col 요소를 동기화하며 너비를 조정
+  const headTable = document.getElementById('conListTableHead');
+  const bodyTable = document.getElementById('conListTable');
+  if (!headTable || !bodyTable) return;
+
+  const headCols = headTable.querySelectorAll('col');
+  const bodyCols = bodyTable.querySelectorAll('col');
+  const ths = headTable.querySelectorAll('th.con-th-resize');
+
+  ths.forEach((th, colIdx) => {
+    const resizer = th.querySelector('.col-resizer');
+    if (!resizer) return;
+
+    let startX, startW;
+
+    resizer.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      startX = e.clientX;
+      startW = th.offsetWidth;
+
+      resizer.classList.add('resizing');
+
+      function onMouseMove(e) {
+        const delta = e.clientX - startX;
+        const newW  = Math.max(50, startW + delta);
+        // col 너비 직접 설정 (px 단위)
+        if (headCols[colIdx]) headCols[colIdx].style.width = newW + 'px';
+        if (bodyCols[colIdx]) bodyCols[colIdx].style.width = newW + 'px';
+      }
+      function onMouseUp() {
+        resizer.classList.remove('resizing');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      }
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+
+    // 더블클릭: 자동 너비 리셋
+    resizer.addEventListener('dblclick', function(e) {
+      e.stopPropagation();
+      if (headCols[colIdx]) headCols[colIdx].style.width = '';
+      if (bodyCols[colIdx]) bodyCols[colIdx].style.width = '';
+    });
+  });
+
+  // 헤더 스크롤 동기화 (바디 ↔ 헤더)
+  const bodyScroll = document.getElementById('conBodyScroll');
+  const headWrap   = document.getElementById('conTheadWrap');
+  if (bodyScroll && headWrap) {
+    bodyScroll.addEventListener('scroll', function() {
+      headWrap.scrollLeft = bodyScroll.scrollLeft;
+    });
+  }
+}
+
+// ── 작업관리 테이블 컬럼 리사이즈 초기화 ─────────────────────────────────────
+function _initTaskColResize() {
+  const headTable = document.getElementById('taskListTableHead');
+  const bodyTable = document.getElementById('taskListTable');
+  if (!headTable || !bodyTable) return;
+
+  const headCols = headTable.querySelectorAll('col');
+  const bodyCols = bodyTable.querySelectorAll('col');
+  const ths = headTable.querySelectorAll('th.task-th-resize');
+
+  ths.forEach((th, colIdx) => {
+    const resizer = th.querySelector('.col-resizer');
+    if (!resizer) return;
+
+    let startX, startW;
+
+    resizer.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      startX = e.clientX;
+      startW = th.offsetWidth;
+
+      resizer.classList.add('resizing');
+
+      function onMouseMove(e) {
+        const delta = e.clientX - startX;
+        const newW  = Math.max(40, startW + delta);
+        if (headCols[colIdx]) headCols[colIdx].style.width = newW + 'px';
+        if (bodyCols[colIdx]) bodyCols[colIdx].style.width = newW + 'px';
+      }
+      function onMouseUp() {
+        resizer.classList.remove('resizing');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      }
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+
+    resizer.addEventListener('dblclick', function(e) {
+      e.stopPropagation();
+      if (headCols[colIdx]) headCols[colIdx].style.width = '';
+      if (bodyCols[colIdx]) bodyCols[colIdx].style.width = '';
+    });
+  });
+
+  // 헤더 스크롤 동기화
+  const bodyScroll = document.getElementById('taskBodyScroll');
+  const headWrap   = document.getElementById('taskTheadWrap');
+  if (bodyScroll && headWrap) {
+    bodyScroll.addEventListener('scroll', function() {
+      headWrap.scrollLeft = bodyScroll.scrollLeft;
+    });
+  }
+}
+
 // 공사현황 엑셀 다운로드
 function exportConstructionsExcel(list) {
   const statusLabel = { registered:'등록', in_progress:'진행중', completed:'완료', settlement_requested:'정산요청', settled:'정산완료' };
@@ -3487,43 +3602,66 @@ async function renderConstructionsPage(container) {
     const statusLabel = { registered:'등록', in_progress:'진행중', completed:'완료', settlement_requested:'정산요청', settled:'정산완료' };
 
     area.innerHTML = `
-    <div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #EDE9F5;box-shadow:0 1px 4px rgba(104,81,130,0.06)">
-      <!-- 테이블 헤더 -->
-      <div style="display:grid;grid-template-columns:140px 1fr 100px 100px 100px;background:#F5F3FA;border-bottom:2px solid #EDE9F5;padding:9px 16px;font-size:11px;font-weight:700;color:#685182;letter-spacing:0.04em;text-transform:uppercase">
-        <div>공사요청번호</div>
-        <div>공사명</div>
-        <div style="text-align:center">공사담당자</div>
-        <div style="text-align:center">공사감독자</div>
-        <div style="text-align:center">진행상태</div>
+    <div class="con-table-outer-wrap">
+      <!-- ── 헤더 테이블 (sticky) ── -->
+      <div class="con-thead-sticky" id="conTheadWrap">
+        <table id="conListTableHead" class="con-col-table">
+          <colgroup>
+            <col class="cc-req"><col class="cc-title">
+            <col class="cc-cdate"><col class="cc-pdate">
+            <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="con-th con-th-resize" data-col="0">공사요청번호<span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="1">공사명<span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" style="text-align:center" data-col="2">등록일<span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" style="text-align:center" data-col="3">완료예정일<span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" style="text-align:center" data-col="4">공사담당자<span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" style="text-align:center" data-col="5">공사감독자<span class="col-resizer"></span></th>
+              <th class="con-th" style="text-align:center" data-col="6">진행상태</th>
+            </tr>
+          </thead>
+        </table>
       </div>
-      <!-- 행 목록 -->
-      ${list.map((con, idx) => {
-        const borderColor = con.status==='settled'?'#4338CA':con.status==='settlement_requested'?'#D97706':con.status==='completed'?'#059669':con.status==='in_progress'?'#D70072':'#9E9BC8';
-        return `
-        <div style="display:grid;grid-template-columns:140px 1fr 100px 100px 100px;align-items:center;padding:11px 16px;cursor:pointer;border-bottom:${idx<list.length-1?'1px solid #F3F0FA':'none'};border-left:3px solid ${borderColor};background:#fff;transition:background 0.12s"
-          onmouseover="this.style.background='#FDF7FB'" onmouseout="this.style.background='#fff'"
-          onclick="showConstructionDetail(${con.id})">
-          <!-- 공사요청번호 -->
-          <div style="font-size:12px;font-family:monospace;color:#685182;font-weight:600;white-space:nowrap">${con.request_no}</div>
-          <!-- 공사명 -->
-          <div style="min-width:0;padding-right:14px">
-            <div style="font-weight:700;font-size:13px;color:#1F1F2E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${con.title}</div>
-            ${con.work_order_address ? `<div style="font-size:11px;color:#A0A0B0;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><i class="fas fa-map-marker-alt" style="color:#D70072;margin-right:3px;font-size:10px"></i>${con.work_order_address}</div>` : ''}
-          </div>
-          <!-- 공사담당자 -->
-          <div style="text-align:center;font-size:12px;color:#374151;font-weight:500">
-            ${con.manager_display_name || con.manager_name || '<span style="color:#CCC">-</span>'}
-          </div>
-          <!-- 공사감독자 -->
-          <div style="text-align:center;font-size:12px;color:#374151;font-weight:500">
-            ${con.supervisor_name || '<span style="color:#CCC">-</span>'}
-          </div>
-          <!-- 진행상태 -->
-          <div style="text-align:center">${constructionStatusChip(con.status)}</div>
-        </div>`;
-      }).join('')}
+      <!-- ── 바디 래퍼 ── -->
+      <div class="con-table-wrapper">
+        <div class="con-tbody-scroll" id="conBodyScroll">
+          <table id="conListTable" class="con-col-table">
+            <colgroup>
+              <col class="cc-req"><col class="cc-title">
+              <col class="cc-cdate"><col class="cc-pdate">
+              <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
+            </colgroup>
+            <tbody>
+              ${list.map((con, idx) => {
+                const borderColor = con.status==='settled'?'#4338CA':con.status==='settlement_requested'?'#D97706':con.status==='completed'?'#059669':con.status==='in_progress'?'#D70072':'#9E9BC8';
+                const createdFmt  = con.created_at  ? con.created_at.slice(0,10)  : '-';
+                const completeFmt = con.completion_date ? con.completion_date.slice(0,10) : '-';
+                const rowBg = idx % 2 === 0 ? '#fff' : '#FAFAFE';
+                return `<tr class="con-tr" style="border-left:3px solid ${borderColor};background:${rowBg}"
+                  onclick="showConstructionDetail(${con.id})" title="클릭하여 상세 보기">
+                  <td class="con-td" style="font-size:12px;font-family:monospace;color:#685182;font-weight:600">${con.request_no}</td>
+                  <td class="con-td">
+                    <div style="font-weight:700;font-size:13px;color:#1F1F2E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${con.title}</div>
+                    ${con.work_order_address ? '<div style="font-size:11px;color:#A0A0B0;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><i class=\"fas fa-map-marker-alt\" style=\"color:#D70072;margin-right:3px;font-size:10px\"></i>' + con.work_order_address + '</div>' : ''}
+                  </td>
+                  <td class="con-td" style="text-align:center;font-size:12px;color:#6B7280">${createdFmt}</td>
+                  <td class="con-td" style="text-align:center;font-size:12px;color:#D70072;font-weight:600">${completeFmt}</td>
+                  <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.manager_display_name || con.manager_name || '<span style="color:#CCC">-</span>'}</td>
+                  <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.supervisor_name || '<span style="color:#CCC">-</span>'}</td>
+                  <td class="con-td" style="text-align:center">${constructionStatusChip(con.status)}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
     <div style="padding:8px 16px;font-size:11px;color:#AAA;text-align:right">총 ${list.length}건</div>`;
+
+    // ── 컬럼 리사이즈 초기화 ──
+    _initConColResize();
   } catch(e) {
     document.getElementById('con-list-area').innerHTML = `<div class="text-center py-8 text-red-500"><i class="fas fa-exclamation-circle mr-2"></i>불러오기 실패</div>`;
   }
@@ -3972,7 +4110,22 @@ async function showCreateConstructionModal(editId = null) {
           <input id="cAddress" class="form-control" placeholder="작업지시 주소를 입력하세요" value="${con.work_order_address||''}">
         </div>
 
-        <!-- ⑧ 작업설명 -->
+        <!-- ⑧ 완료예정일 -->
+        <div class="form-group md:col-span-2">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="form-label">
+                <i class="fas fa-calendar-check mr-1" style="color:#D70072"></i>
+                완료예정일 <span class="text-red-500">*</span>
+              </label>
+              <input id="cCompletionDate" type="date" class="form-control"
+                value="${con.completion_date || (() => { const d=new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })()}">
+              <div class="text-xs text-gray-400 mt-1">공사 완료 예정일을 선택하세요</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ⑨ 작업설명 -->
         <div class="form-group md:col-span-2">
           <label class="form-label">
             <i class="fas fa-align-left mr-1" style="color:#685182"></i>
@@ -4203,8 +4356,9 @@ async function saveConstruction(editId) {
   const mgName   = mgSel?.value
     ? (mgSel.options[mgSel.selectedIndex]?.dataset?.name || '').trim()
     : '';
-  const supName  = (document.getElementById('cSupervisor')?.value || '').trim();
-  const desc     = (document.getElementById('cDesc')?.value || '').trim();
+  const supName        = (document.getElementById('cSupervisor')?.value || '').trim();
+  const desc           = (document.getElementById('cDesc')?.value || '').trim();
+  const completionDate = (document.getElementById('cCompletionDate')?.value || '').trim() || null;
 
   // 자동부여 모드는 YYMMDDhhmm## = 12자리 숫자이므로 기존 검증 그대로 통과
   if (!editId && !reqNo) { toast('공사요청번호를 입력하세요', 'error'); return; }
@@ -4216,7 +4370,8 @@ async function saveConstruction(editId) {
   const isAutoReqNo = !editId && !!(document.getElementById('cReqNoAuto')?.checked);
 
   const body = { work_number: workNum, work_class: workClass, title, work_order_address: address,
-    manager_id: mgId, manager_name: mgName, supervisor_name: supName, description: desc };
+    manager_id: mgId, manager_name: mgName, supervisor_name: supName, description: desc,
+    completion_date: completionDate };
   if (!editId) {
     body.request_no = reqNo;
     body.is_auto_request_no = isAutoReqNo ? 1 : 0;  // [v0.143 LGU+] 자동부여 여부 저장
@@ -5256,13 +5411,13 @@ async function renderTasksPage(container) {
             <thead>
               <tr style="border-bottom:2px solid #EDE7F6">
                 <th class="task-th" style="text-align:center">#</th>
-                ${sortTh('공사요청번호','request_no','taskListTableHead')}
-                ${sortTh('작업번호','sub_task_number','taskListTableHead')}
-                ${sortTh('작업종류','construction_type','taskListTableHead')}
-                ${sortTh('작업분류','work_class','taskListTableHead')}
-                ${sortTh('작업(예정)일','planned_date','taskListTableHead')}
-                ${sortTh('공사담당자','con_manager_display_name','taskListTableHead')}
-                ${sortTh('작업명','title','taskListTableHead')}
+                <th class="task-th task-th-resize" data-col="1" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','request_no')">공사요청번호<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+                <th class="task-th task-th-resize" data-col="2" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','sub_task_number')">작업번호<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+                <th class="task-th task-th-resize" data-col="3" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','construction_type')">작업종류<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+                <th class="task-th task-th-resize" data-col="4" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','work_class')">작업분류<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+                <th class="task-th task-th-resize" data-col="5" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','planned_date')">작업(예정)일<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+                <th class="task-th task-th-resize" data-col="6" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','con_manager_display_name')">공사담당자<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+                <th class="task-th task-th-resize" data-col="7" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','title')">작업명<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
                 <th class="task-th" style="text-align:right">상태/관리</th>
               </tr>
             </thead>
@@ -5342,14 +5497,8 @@ async function renderTasksPage(container) {
 
     // ── 렌더링 후처리: tbody 가로스크롤 동기화 + thead sticky top 계산 ──────
     requestAnimationFrame(() => {
-      // 1) 헤더 테이블과 바디 스크롤 컨테이너 가로 동기화
-      const bodyScroll = document.getElementById('taskBodyScroll');
-      const theadWrap  = document.getElementById('taskTheadWrap');
-      if (bodyScroll && theadWrap) {
-        bodyScroll.addEventListener('scroll', () => {
-          theadWrap.scrollLeft = bodyScroll.scrollLeft;
-        }, { passive: true });
-      }
+      // 1) 헤더 테이블과 바디 스크롤 컨테이너 가로 동기화 (리사이즈 함수가 등록하므로 이중등록 방지)
+      // _initTaskColResize 내에서 scroll 동기화까지 처리
 
       // 2) thead sticky top = top-header(56px) + task-toolbar 실제 높이
       const toolbar = document.querySelector('.task-toolbar-sticky');
@@ -5360,6 +5509,9 @@ async function renderTasksPage(container) {
         const topHeaderH = 56;
         theadEl.style.top = (topHeaderH + toolbarH) + 'px';
       }
+
+      // 3) 작업관리 컬럼 리사이즈 초기화
+      _initTaskColResize();
     });
 
   } catch(e) {

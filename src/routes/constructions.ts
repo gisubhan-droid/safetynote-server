@@ -142,7 +142,7 @@ app.post('/', async (c) => {
   }
 
   const body = await c.req.json<any>()
-  const { request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, is_auto_request_no } = body
+  const { request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, is_auto_request_no, completion_date } = body
 
   if (!request_no || !title) return c.json({ error: '공사요청번호와 공사명은 필수입니다' }, 400)
 
@@ -165,10 +165,12 @@ app.post('/', async (c) => {
   const autoReqNo = is_auto_request_no ? 1 : 0
 
   try {
+    // completion_date 기본값: 미입력 시 오늘+7일
+    const defaultCompletion = completion_date || new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0,10)
     const result = await c.env.DB.prepare(`
       INSERT INTO constructions
-        (request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, created_by, is_auto_request_no)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, created_by, is_auto_request_no, completion_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       request_no,
       work_number || '',
@@ -180,7 +182,8 @@ app.post('/', async (c) => {
       supervisor_name || '',
       description || '',
       user.id,
-      autoReqNo
+      autoReqNo,
+      defaultCompletion
     ).run()
 
     const newId = result.meta.last_row_id
@@ -204,7 +207,7 @@ app.put('/:id', async (c) => {
 
   const id = c.req.param('id')
   const body = await c.req.json<any>()
-  const { work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description } = body
+  const { work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, completion_date: completionDatePut } = body
 
   if (work_number && !/^WKS-\d{6}-\d{5}$/.test(work_number)) {
     return c.json({ error: '작업번호 형식: WKS-######-#####' }, 400)
@@ -229,6 +232,7 @@ app.put('/:id', async (c) => {
         manager_name       = ?,
         supervisor_name    = ?,
         description        = ?,
+        completion_date    = ?,
         updated_at         = CURRENT_TIMESTAMP
       WHERE id = ?
     `).bind(
@@ -240,6 +244,7 @@ app.put('/:id', async (c) => {
       manager_name || '',
       supervisor_name || '',
       description || '',
+      completionDatePut || null,
       id
     ).run()
 

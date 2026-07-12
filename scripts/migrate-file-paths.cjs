@@ -47,36 +47,61 @@ function getArg(name) {
   return idx >= 0 ? args[idx + 1] : null
 }
 
-// ─── DB 경로 자동 탐색 ──────────────────────────────────────────────────────
+// ─── DB 경로 자동 탐색 (node-server.ts resolveDbPath() 와 동일 로직) ─────────
 function findDbPath() {
   const explicit = getArg('--db')
   if (explicit) return explicit
 
-  // Wrangler D1 로컬 sqlite 자동 탐색
-  const d1Dir = path.join(process.cwd(), '.wrangler', 'state', 'v3', 'd1')
+  // 1) DB_PATH 환경변수 (PM2 .env 또는 인라인 환경변수)
+  if (process.env.DB_PATH && fs.existsSync(process.env.DB_PATH)) {
+    console.log(`[DB 탐색] DB_PATH 환경변수 사용: ${process.env.DB_PATH}`)
+    return process.env.DB_PATH
+  }
+
+  // 2) wrangler D1 로컬 sqlite — 10KB 이상인 가장 큰 파일 선택
+  const d1Dir = path.join(process.cwd(), '.wrangler', 'state', 'v3', 'd1', 'miniflare-D1DatabaseObject')
   if (fs.existsSync(d1Dir)) {
-    const entries = fs.readdirSync(d1Dir, { withFileTypes: true })
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const sub = path.join(d1Dir, entry.name)
-        const files = fs.readdirSync(sub).filter(f => f.endsWith('.sqlite'))
-        if (files.length > 0) return path.join(sub, files[0])
+    const files = fs.readdirSync(d1Dir)
+      .filter(f => f.endsWith('.sqlite') && !f.includes('metadata'))
+      .map(f => ({ name: f, size: fs.statSync(path.join(d1Dir, f)).size }))
+      .filter(f => f.size > 10240)
+      .sort((a, b) => b.size - a.size)
+    if (files.length > 0) {
+      const p = path.join(d1Dir, files[0].name)
+      console.log(`[DB 탐색] wrangler D1 sqlite 사용: ${p} (${(files[0].size/1024/1024).toFixed(1)}MB)`)
+      return p
+    }
+  }
+
+  // 3) fallback: safety.db (NAS 환경)
+  const safetyDb = path.join(process.cwd(), 'safety.db')
+  if (fs.existsSync(safetyDb)) {
+    console.log(`[DB 탐색] safety.db 사용: ${safetyDb}`)
+    return safetyDb
+  }
+
+  // 4) .env 파일에서 DB_PATH 직접 파싱 (PM2가 .env를 로드했을 때를 놓친 경우 대비)
+  const envFile = path.join(process.cwd(), '.env')
+  if (fs.existsSync(envFile)) {
+    const envContent = fs.readFileSync(envFile, 'utf8')
+    const match = envContent.match(/^DB_PATH\s*=\s*(.+)$/m)
+    if (match) {
+      const envDbPath = match[1].trim().replace(/^["']|["']$/g, '')
+      if (fs.existsSync(envDbPath)) {
+        console.log(`[DB 탐색] .env DB_PATH 사용: ${envDbPath}`)
+        return envDbPath
       }
     }
   }
 
-  // NAS 실서버 경로 패턴 탐색
-  const nasCandidates = [
-    '/volume1/safetynote/data/safetynote.db',
-    '/volume1/safetynote/safetynote.db',
-    path.join(process.cwd(), 'data', 'safetynote.db'),
-    path.join(process.cwd(), 'safetynote.db'),
-  ]
-  for (const p of nasCandidates) {
-    if (fs.existsSync(p)) return p
-  }
-
-  throw new Error('DB 파일을 찾을 수 없습니다. --db 옵션으로 경로를 지정하세요.')
+  throw new Error(
+    'DB 파일을 자동으로 찾지 못했습니다.\n' +
+    '  다음 중 하나로 직접 지정하세요:\n' +
+    '  1) node scripts/migrate-file-paths.cjs --db /path/to/safety.db\n' +
+    '  2) DB_PATH=/path/to/safety.db node scripts/migrate-file-paths.cjs\n\n' +
+    '  NAS에서 DB 위치 탐색:\n' +
+    '    find /volume1/safetynote -name "*.db" -o -name "*.sqlite" 2>/dev/null | xargs ls -lh'
+  )
 }
 
 // ─── 업로드 루트 결정 ───────────────────────────────────────────────────────

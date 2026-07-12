@@ -1429,21 +1429,53 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   overflow-y: visible;
 }
 
-/* 헤더·바디 테이블 너비 동기 (동일 class로 width 통일) */
+/* 헤더·바디 테이블 너비 동기 — table-layout:fixed로 head/body 컬럼 폭 완전 일치 */
 .task-col-table {
   width: 100%;
-  min-width: 860px;           /* 9컬럼 최소 너비 */
-  table-layout: auto;
+  min-width: 900px;
+  table-layout: fixed;         /* 헤더 width 기준으로 바디 컬럼 폭 고정 → 어긋남 방지 */
+  border-collapse: collapse;
 }
+
+/* 컬럼별 고정 너비 — thead 의 colgroup으로 제어 */
+.task-col-table col.c-seq   { width: 38px; }
+.task-col-table col.c-req   { width: 110px; }
+.task-col-table col.c-num   { width: 160px; }
+.task-col-table col.c-type  { width: 90px; }
+.task-col-table col.c-class { width: 80px; }
+.task-col-table col.c-date  { width: 90px; }
+.task-col-table col.c-mgr   { width: 80px; }
+.task-col-table col.c-title { width: auto; }   /* 남은 공간 */
+.task-col-table col.c-state { width: 170px; }
 
 /* 헤더 th 공통 스타일 */
 .task-th {
-  padding: 9px 10px;
+  padding: 8px 8px;
   font-size: 11px;
   font-weight: 700;
   color: #685182;
   white-space: nowrap;
   text-align: left;
+  background: #FAFAFE;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* tbody td 기본 스타일 — overflow:hidden 으로 fixed layout 내 텍스트 잘림 처리 */
+.task-col-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 행 구분선 강화 */
+#taskListTable tbody tr {
+  border-bottom: 1px solid #EDE7F6;
+}
+#taskListTable tbody tr:last-child {
+  border-bottom: none;
+}
+#taskListTable tbody tr:nth-child(even) {
   background: #FAFAFE;
 }
 
@@ -1481,26 +1513,66 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 
 /* ─── 작업관리 툴바 Sticky 고정 ────────────────────────────────────────
    top-header(56px) 바로 아래 고정
-   배경·그림자로 스크롤 시 콘텐츠와 분리
    z-index: flyout-panel(fixed,z-index:41) 보다 낮게 설정
-   → sticky z-index가 fixed flyout-panel보다 높으면 사이드 메뉴가 툴바 뒤에 숨음
-   → 30으로 낮춰서 flyout이 툴바 위에 정상 표시되도록 함
 ──────────────────────────────────────────────────────────────────── */
 .task-toolbar-sticky {
   position: sticky;
-  top: 56px;             /* top-header 높이 */
+  top: 56px;
   z-index: 30;
   background: #fff;
-  padding: 10px 0 6px;
+  padding: 8px 0 4px;
   margin-bottom: 8px;
   border-bottom: 1px solid #EDE7F6;
   box-shadow: 0 2px 8px rgba(104, 81, 130, 0.07);
 }
+
+/* ── 툴바 내 컨트롤 크기 통일 (btn/form-control/select 모두 height:32px) ── */
+.task-toolbar-sticky .btn,
+.task-toolbar-sticky .form-control,
+.task-toolbar-sticky select.form-control,
+.task-toolbar-sticky input.form-control {
+  height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12px;
+  border-radius: 8px;
+  line-height: 32px;
+  box-sizing: border-box;
+}
+.task-toolbar-sticky .btn {
+  padding-left: 12px;
+  padding-right: 12px;
+  gap: 4px;
+  display: inline-flex;
+  align-items: center;
+}
+/* 엑셀 아이콘 버튼 전용 — 정사각형 소형 */
+.task-toolbar-sticky .btn-excel-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  color: #16A34A;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  flex-shrink: 0;
+}
+.task-toolbar-sticky .btn-excel-icon:hover {
+  background: #DCFCE7;
+  transform: translateY(-1px);
+}
+
 /* 모바일: top-header가 없는 경우 top:0 */
 @media (max-width: 768px) {
   .task-toolbar-sticky {
     top: 0;
-    padding: 8px 0 4px;
+    padding: 6px 0 3px;
   }
 }
 

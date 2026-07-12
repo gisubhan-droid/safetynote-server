@@ -5001,40 +5001,40 @@ async function renderTasksPage(container) {
         const canDeleteRow = _tblIsSysAdmin && (st === 'completed' || st === 'cancelled');
 
         return `<tr onclick="showTaskDetail(${t.id})"
-          style="cursor:pointer;border-bottom:1px solid #F3F0F8;transition:background .1s"
+          style="cursor:pointer;transition:background .1s"
           onmouseover="this.style.background='#FAF8FC'" onmouseout="this.style.background=''">
-          <td style="padding:8px 10px;font-size:12px;color:#9CA3AF;text-align:center;white-space:nowrap">${offset+idx+1}</td>
-          <td style="padding:8px 10px;font-size:12px;color:#6B7280;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis"
+          <td style="padding:7px 8px;font-size:12px;color:#9CA3AF;text-align:center">${offset+idx+1}</td>
+          <td style="padding:7px 8px;font-size:11px;color:#6B7280"
               title="${_tblEsc(t.request_no)}">${t.request_no || '-'}</td>
-          <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:#685182;font-weight:600;white-space:nowrap">
+          <td style="padding:7px 8px;font-family:monospace;font-size:11px;color:#685182;font-weight:600">
             ${taskNumDisplay}</td>
-          <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis"
+          <td style="padding:7px 8px;font-size:12px;color:#374151"
               title="${_tblEsc(workTypeDisplay)}">${workTypeDisplay}</td>
-          <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap">${workClassDisplay}</td>
-          <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap">${dateDisplay}</td>
-          <td style="padding:8px 10px;font-size:12px;color:#374151;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis"
+          <td style="padding:7px 8px;font-size:12px;color:#374151">${workClassDisplay}</td>
+          <td style="padding:7px 8px;font-size:12px;color:#374151">${dateDisplay}</td>
+          <td style="padding:7px 8px;font-size:12px;color:#374151"
               title="${_tblEsc(managerDisplay)}">${managerDisplay}</td>
-          <td style="padding:8px 10px;font-size:13px;color:#1A1A2E;font-weight:600;min-width:160px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+          <td style="padding:7px 8px;font-size:13px;color:#1A1A2E;font-weight:600"
               title="${_tblEsc(t.title)}">${t.title || '-'}</td>
-          <td style="padding:8px 10px;white-space:nowrap;text-align:right" onclick="event.stopPropagation()">
-            <span style="display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;
+          <td style="padding:7px 8px;text-align:right" onclick="event.stopPropagation()">
+            <span style="display:inline-block;font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;
                          background:${rl==='high'?'#FDE8F3':rl==='medium'?'#EDE7F6':'#F5F0F8'};
-                         color:${rlColor};margin-right:4px">${rlLabelMap2[rl]||rl}</span>
-            <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;
+                         color:${rlColor};margin-right:3px">${rlLabelMap2[rl]||rl}</span>
+            <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 6px;border-radius:20px;
                          background:#F9FAFB;color:${stColor};border:1px solid #E5E7EB">${statusLabelMap[st]||st}</span>
             ${(_tblCanModify || canDeleteRow) ? `
-            <span style="display:inline-flex;gap:3px;margin-left:4px;vertical-align:middle">
+            <span style="display:inline-flex;gap:3px;margin-left:3px;vertical-align:middle">
               ${_tblCanModify ? `
               <button onclick="showEditTaskModal(${t.id})"
-                style="width:24px;height:24px;border-radius:6px;border:1px solid #E5E7EB;background:white;
-                       color:#685182;font-size:11px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
+                style="width:22px;height:22px;border-radius:6px;border:1px solid #E5E7EB;background:white;
+                       color:#685182;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
                 title="수정">
                 <i class="fas fa-edit"></i>
               </button>` : ''}
               ${canDeleteRow ? `
               <button onclick="deleteTask(${t.id}, '${st}')"
-                style="width:24px;height:24px;border-radius:6px;border:1px solid #FDE8F3;background:white;
-                       color:#D70072;font-size:11px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
+                style="width:22px;height:22px;border-radius:6px;border:1px solid #FDE8F3;background:white;
+                       color:#D70072;font-size:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer"
                 title="삭제(시스템관리자 전용)">
                 <i class="fas fa-trash"></i>
               </button>` : ''}
@@ -5111,7 +5111,7 @@ async function renderTasksPage(container) {
       <!-- ── sticky 툴바 래퍼 (스크롤 시 상단 고정) ── -->
       <div class="task-toolbar-sticky">
 
-      <!-- 툴바 1행: 작업생성 + 담당자 + 진행단계 필터 + 날짜 + 엑셀 -->
+      <!-- 툴바 1행: 작업생성 + 담당자 + 진행단계 필터 + 날짜 + 페이지당 + 엑셀 -->
       <div class="flex flex-wrap gap-2 mb-2 items-center">
         ${(currentUser.role === 'admin' || currentUser.role === 'supervisor') ? `
         <button onclick="showCreateTaskModal()" class="btn btn-primary">
@@ -5120,8 +5120,8 @@ async function renderTasksPage(container) {
         <!-- 담당자 다중선택 버튼+팝업 -->
         <div style="position:relative">
           <button id="taskManagerBtn" onclick="_taskOpenManagerPicker()"
-            class="form-control" style="min-width:120px;max-width:220px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.con_manager_names.length?'#685182':'#D1D5DB'};border-radius:8px;font-size:13px;color:${taskFilters.con_manager_names.length?'#685182':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden;max-width:220px">
-            <i class="fas fa-user-tie" style="font-size:11px;flex-shrink:0"></i>
+            class="form-control" style="width:auto;min-width:110px;max-width:200px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.con_manager_names.length?'#685182':'#D1D5DB'};color:${taskFilters.con_manager_names.length?'#685182':'#9CA3AF'};padding-left:10px;padding-right:26px;white-space:nowrap;overflow:hidden">
+            <i class="fas fa-user-tie" style="font-size:10px;flex-shrink:0"></i>
             <span style="overflow:hidden;text-overflow:ellipsis;flex:1">
               ${taskFilters.con_manager_names.length ? taskFilters.con_manager_names.join(', ') : '공사담당자'}
             </span>
@@ -5175,13 +5175,13 @@ async function renderTasksPage(container) {
           onchange="onDateFilterChange(this.value)">
         ${(taskFilters.status || taskFilters.risk_level || taskFilters.date || taskFilters.con_manager_names.length) ? `
         <button onclick="taskFilters.status=''; taskFilters.risk_level=''; taskFilters.date=''; taskFilters.start_date=''; taskFilters.end_date=''; taskFilters.con_manager_names=[]; taskFilters.page=1; renderTasksPage(document.getElementById('page-content'))"
-          class="btn btn-outline text-xs" style="flex-shrink:0;color:#C6C6C6;border-color:#C6C6C6;padding:0 10px">
+          class="btn btn-outline" style="flex-shrink:0;color:#C6C6C6;border-color:#C6C6C6;padding:0 10px">
           <i class="fas fa-times mr-1"></i>필터 초기화
         </button>` : ''}
         <!-- 페이지당 건수 선택 -->
         <div class="flex items-center gap-1 ml-auto" style="flex-shrink:0">
-          <label style="font-size:12px;color:#9CA3AF;white-space:nowrap">페이지당</label>
-          <select id="taskLimitSelect" class="form-control" style="width:68px;font-size:12px;padding:4px 6px"
+          <label style="font-size:11px;color:#9CA3AF;white-space:nowrap">페이지당</label>
+          <select id="taskLimitSelect" class="form-control" style="width:64px"
             onchange="taskFilters.limit=parseInt(this.value);taskFilters.page=1;renderTasksPage(document.getElementById('page-content'))">
             <option value="10"  ${(taskFilters.limit||20)===10 ?'selected':''}>10건</option>
             <option value="20"  ${(taskFilters.limit||20)===20 ?'selected':''}>20건</option>
@@ -5189,20 +5189,21 @@ async function renderTasksPage(container) {
             <option value="50"  ${(taskFilters.limit||20)===50 ?'selected':''}>50건</option>
           </select>
         </div>
-        <button onclick="downloadTaskListCSV()" class="btn btn-outline" style="color:#685182;border-color:#685182;flex-shrink:0">
-          <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
+        <!-- 엑셀 다운로드: 아이콘 전용 소형 버튼 -->
+        <button onclick="downloadTaskListCSV()" class="btn-excel-icon" title="엑셀 다운로드">
+          <i class="fas fa-file-excel"></i>
         </button>
       </div>
 
       <!-- 툴바 2행: 키워드 검색 -->
       <div class="flex gap-2 mb-1 items-center">
-        <select id="searchTypeSelect" class="form-control" style="width:120px;flex-shrink:0"
+        <select id="searchTypeSelect" class="form-control" style="width:100px;flex-shrink:0"
           onchange="taskFilters.search_type=this.value; _updateTaskSearchPlaceholder()">
           <option value="title"       ${taskFilters.search_type==='title'      ?'selected':''}>공사명</option>
           <option value="request_no"  ${taskFilters.search_type==='request_no' ?'selected':''}>요청번호</option>
           <option value="task_number" ${taskFilters.search_type==='task_number'?'selected':''}>작업번호</option>
         </select>
-        <div class="flex flex-1 gap-0" style="max-width:420px">
+        <div class="flex flex-1 gap-0" style="max-width:400px">
           <input type="text" id="keywordInput"
             class="form-control" style="border-radius:8px 0 0 8px;border-right:none"
             placeholder="${taskFilters.search_type==='task_number' ? 'WKS-번호 또는 서브번호 입력' : taskFilters.search_type==='request_no' ? '공사요청번호 입력' : '공사명 입력'}"
@@ -5216,10 +5217,10 @@ async function renderTasksPage(container) {
         </div>
         ${taskFilters.keyword ? `
         <button onclick="taskFilters.keyword=''; document.getElementById('keywordInput').value=''; renderTasksPage(document.getElementById('page-content'))"
-          class="btn btn-outline text-xs" style="flex-shrink:0;padding:0 10px">
+          class="btn btn-outline" style="flex-shrink:0;padding:0 10px">
           <i class="fas fa-times mr-1"></i>검색 초기화
         </button>` : ''}
-        <span class="text-xs text-gray-400 ml-auto">총 <strong style="color:#685182">${_taskListTotal}</strong>건 / ${taskFilters.page||1}페이지</span>
+        <span style="font-size:11px;color:#9CA3AF;margin-left:auto;white-space:nowrap">총 <strong style="color:#685182">${_taskListTotal}</strong>건 / ${taskFilters.page||1}페이지</span>
       </div>
       <div id="taskSearchHint" class="mb-3" style="font-size:11px;color:#9CA3AF;padding-left:2px;display:${taskFilters.search_type==='task_number'?'block':'none'}">
         <i class="fas fa-info-circle mr-1" style="color:#C4B5D5"></i>
@@ -5246,10 +5247,15 @@ async function renderTasksPage(container) {
       <div id="taskTableView" class="task-table-outer-wrap" style="display:none">
         <!-- 헤더: overflow 없는 조상 안에서 CSS sticky 정상 동작 -->
         <div class="task-thead-sticky" id="taskTheadWrap">
-          <table id="taskListTableHead" class="task-col-table" style="border-collapse:collapse">
+          <table id="taskListTableHead" class="task-col-table">
+            <colgroup>
+              <col class="c-seq"><col class="c-req"><col class="c-num">
+              <col class="c-type"><col class="c-class"><col class="c-date">
+              <col class="c-mgr"><col class="c-title"><col class="c-state">
+            </colgroup>
             <thead>
               <tr style="border-bottom:2px solid #EDE7F6">
-                <th class="task-th" style="width:36px;text-align:center">#</th>
+                <th class="task-th" style="text-align:center">#</th>
                 ${sortTh('공사요청번호','request_no','taskListTableHead')}
                 ${sortTh('작업번호','sub_task_number','taskListTableHead')}
                 ${sortTh('작업종류','construction_type','taskListTableHead')}
@@ -5257,7 +5263,7 @@ async function renderTasksPage(container) {
                 ${sortTh('작업(예정)일','planned_date','taskListTableHead')}
                 ${sortTh('공사담당자','con_manager_display_name','taskListTableHead')}
                 ${sortTh('작업명','title','taskListTableHead')}
-                <th class="task-th" style="text-align:right;white-space:nowrap">상태/관리</th>
+                <th class="task-th" style="text-align:right">상태/관리</th>
               </tr>
             </thead>
           </table>
@@ -5266,7 +5272,12 @@ async function renderTasksPage(container) {
         <div class="task-table-wrapper">
           <!-- 바디: overflow-x:auto로 가로 스크롤 전담 -->
           <div class="task-tbody-scroll" id="taskBodyScroll">
-            <table id="taskListTable" class="task-col-table" style="border-collapse:collapse">
+            <table id="taskListTable" class="task-col-table">
+              <colgroup>
+                <col class="c-seq"><col class="c-req"><col class="c-num">
+                <col class="c-type"><col class="c-class"><col class="c-date">
+                <col class="c-mgr"><col class="c-title"><col class="c-state">
+              </colgroup>
               <tbody id="taskTableBody">
                 ${renderTableView(_taskListData, ((taskFilters.page||1)-1)*(taskFilters.limit||20))}
               </tbody>

@@ -3202,6 +3202,52 @@ function formatSubTaskNo(val) {
   return val.replace(/\D/g,'').slice(0,4);
 }
 
+// ─── 금액 → 한글 변환 (예: 170000000 → "일억칠천만원정") ───────────────────
+function numberToKorean(num) {
+  if (!num || isNaN(num)) return '';
+  const n = Math.floor(Number(num));
+  if (n === 0) return '영원정';
+  const units  = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
+  const places = ['', '십', '백', '천'];
+  const bigUnits = ['', '만', '억', '조'];
+  // 4자리씩 끊어서 처리
+  function chunk4(n4) {
+    if (n4 === 0) return '';
+    let result = '';
+    for (let i = 3; i >= 0; i--) {
+      const d = Math.floor(n4 / Math.pow(10, i)) % 10;
+      if (d === 0) continue;
+      // '일십', '일백', '일천'은 '십', '백', '천'으로 줄임 (단, 일의 자리 '일'은 유지)
+      result += (d === 1 && i > 0 ? '' : units[d]) + places[i];
+    }
+    return result;
+  }
+  let result = '';
+  for (let i = 3; i >= 0; i--) {
+    const base  = Math.pow(10000, i);
+    const chunk = Math.floor(n / base) % 10000;
+    if (chunk === 0) continue;
+    result += chunk4(chunk) + bigUnits[i];
+  }
+  return result + '원정';
+}
+
+// 시공통보 금액 입력 시 한글 실시간 업데이트
+function updateAmountKorean(inputEl) {
+  const raw = Number(inputEl.value.replace(/[^0-9]/g, ''));
+  const hint = inputEl.parentElement.querySelector('.amount-korean-hint');
+  if (!hint) return;
+  if (!raw) {
+    hint.textContent = '입력 시 자동으로 천단위 구분 적용';
+    hint.style.color = '';
+    hint.style.fontWeight = '';
+  } else {
+    hint.textContent = numberToKorean(raw);
+    hint.style.color = '#D70072';
+    hint.style.fontWeight = '600';
+  }
+}
+
 // [FEAT-NEW] 서브작업번호 자동 카운트: 해당 공사 기등록 작업 중 최대값+1을 0001 형식으로 자동 입력
 // - constructionId: 공사 ID
 // - forceOverwrite: true면 기존 입력값도 덮어씀 (false면 비어있을 때만 입력)
@@ -4876,8 +4922,8 @@ async function showCreateConstructionModal(editId = null) {
           <input id="cNotificationAmount" type="text" inputmode="numeric" class="form-control"
             placeholder="금액 입력 (예: 5,000,000)"
             value="${con.notification_amount != null ? Number(con.notification_amount).toLocaleString('ko-KR') : ''}"
-            oninput="this.value=this.value.replace(/[^0-9]/g,'').replace(/\B(?=(\d{3})+(?!\d))/g,',')">
-          <div class="text-xs text-gray-400 mt-1">입력 시 자동으로 천단위 구분 적용</div>
+            oninput="this.value=this.value.replace(/[^0-9]/g,'').replace(/\B(?=(\d{3})+(?!\d))/g,',');updateAmountKorean(this)">
+          <div class="text-xs mt-1 amount-korean-hint" style="color:${con.notification_amount ? '#D70072' : '#9CA3AF'};font-weight:${con.notification_amount ? '600' : 'normal'};">${con.notification_amount ? numberToKorean(con.notification_amount) : '입력 시 자동으로 천단위 구분 적용'}</div>
         </div>
 
         <!-- ⑨ 작업설명 -->

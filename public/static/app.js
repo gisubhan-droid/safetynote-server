@@ -38449,7 +38449,7 @@ async function renderSiteMapPage(container) {
       </div>
 
       <!-- ③ 지도 (화면 70% 높이 고정) -->
-      <div id="leafletMap" style="width:100%;height:70vh;min-height:300px;max-height:600px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;flex-shrink:0;"></div>
+      <div id="leafletMap" style="width:100%;height:175vh;min-height:750px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;flex-shrink:0;"></div>
 
       <!-- ④ 범례 -->
       <div class="flex gap-4 mt-3 text-sm flex-wrap" id="siteMapLegend" style="flex-shrink:0">

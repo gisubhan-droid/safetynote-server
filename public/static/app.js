@@ -14669,6 +14669,24 @@ async function renderInspectionsPage(container) {
                       <span>${t.planned_date || t.work_date || '-'}</span>
                       ${t.location ? `<span style="color:#D8D0DC">·</span><i class="fas fa-map-marker-alt" style="color:#C6C6C6"></i><span>${t.location}</span>` : ''}
                     </div>
+                    ${(() => {
+                        // 공사담당자 + 작업팀 정보 라인 (둘 다 없으면 렌더링 안 함)
+                        const mgr = t.con_manager_display_name || '';
+                        // 작업팀: 배정 작업자 기준 "팀장이름 외 N명" 형식
+                        const workers = t.assigned_workers || [];
+                        let teamStr = '';
+                        if (workers.length === 1) {
+                          teamStr = workers[0].name;
+                        } else if (workers.length > 1) {
+                          teamStr = `${workers[0].name} 외 ${workers.length - 1}명`;
+                        }
+                        const parts = [];
+                        if (mgr)     parts.push(`<span style="display:inline-flex;align-items:center;gap:2px"><i class="fas fa-user-tie" style="color:#9CA3AF;font-size:10px"></i><span>${mgr}</span></span>`);
+                        if (teamStr) parts.push(`<span style="display:inline-flex;align-items:center;gap:2px"><i class="fas fa-users" style="color:#9CA3AF;font-size:10px"></i><span>${teamStr}</span></span>`);
+                        return parts.length
+                          ? `<div style="font-size:11px;color:#6B7280;margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${parts.join('<span style="color:#D8D0DC;margin:0 2px">|</span>')}</div>`
+                          : '';
+                      })()}
                   </div>
                   <!-- 작업상태 -->
                   <div>

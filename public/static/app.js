@@ -14450,12 +14450,12 @@ async function renderInspectionsPage(container) {
     // [현장위치지도 탭과 조회 조건 일원화]
     // risk     : 위험성체크 완료 (in_progress = 체크리스트완료)
     // tbm      : TBM 완료 ~ 작업개시 전 (tbm_done)
-    // working  : 작업개시 ~ 작업완료 전 (working, paused)
+    // working  : 작업개시 ~ 작업완료 전 (working) — paused(중지) 제외
     // completed: 작업완료 + 일지완료 (work_completed, completed)
-    // all      : 취소 제외 전체
+    // all      : 취소·중지 제외 전체
     const RISK_STATUSES      = ['in_progress'];          // 위험성(체크리스트)평가 완료 단계
     const TBM_STATUSES       = ['tbm_done'];             // TBM완료 ~ 작업개시 전
-    const WORKING_STATUSES   = ['working', 'paused'];    // 작업개시 ~ 작업완료 전
+    const WORKING_STATUSES   = ['working'];              // 작업개시 ~ 작업완료 전 (paused 중지 제외)
     const DONE_STATUSES      = ['work_completed', 'completed']; // 작업완료 + 일지완료
 
     // ── API 쿼리 파라미터 ─────────────────────────────────────
@@ -14486,7 +14486,7 @@ async function renderInspectionsPage(container) {
       if (_tab === 'tbm')      return TBM_STATUSES.includes(t.status);
       if (_tab === 'working')  return WORKING_STATUSES.includes(t.status);
       if (_tab === 'done')     return DONE_STATUSES.includes(t.status);
-      return t.status !== 'cancelled'; // all
+      return t.status !== 'cancelled' && t.status !== 'paused'; // all: 취소·중지 모두 제외
     };
     const tasks = allTasks.filter(filterByTab);
 
@@ -14532,7 +14532,7 @@ async function renderInspectionsPage(container) {
 
     // ── 탭별 카운트 ───────────────────────────────────────────
     const cnt = (statuses) => allTasks.filter(t => statuses.includes(t.status)).length;
-    const cntAll = allTasks.filter(t => t.status !== 'cancelled').length;
+    const cntAll = allTasks.filter(t => t.status !== 'cancelled' && t.status !== 'paused').length; // 중지 제외
 
     // ── 점검 필터 (점검있음/없음) ─────────────────────────────
     window._insSubFilter = window._insSubFilter || 'all';
@@ -14546,9 +14546,9 @@ async function renderInspectionsPage(container) {
     const TAB_DEFS = [
       { key:'risk',    label:'⚠️ 위험성체크', desc:'위험성(체크리스트)평가 완료 단계',  statuses: RISK_STATUSES },
       { key:'tbm',     label:'🦺 TBM',        desc:'TBM완료 ~ 작업개시 전',             statuses: TBM_STATUSES },
-      { key:'working', label:'🟢 진행',        desc:'작업개시 ~ 작업완료 전',            statuses: WORKING_STATUSES },
+      { key:'working', label:'🟢 진행',        desc:'작업개시 ~ 작업완료 전(중지 제외)',  statuses: WORKING_STATUSES },
       { key:'done',    label:'✅ 완료',         desc:'작업완료·일지완료',                 statuses: DONE_STATUSES },
-      { key:'all',     label:'전체',           desc:'취소 제외 전체',                    statuses: null },
+      { key:'all',     label:'전체',           desc:'취소·중지 제외 전체',               statuses: null },
     ];
 
     container.innerHTML = `
@@ -38747,12 +38747,12 @@ async function loadSiteMapMarkers(map) {
       }
     }
 
-    // ── ③ 진행 탭 (task_status = 'working' 또는 'paused') ───────────
+    // ── ③ 진행 탭 (task_status = 'working') — paused(중지) 제외
     // [BUG-082 수정] /api/tbm 기반으로 변경:
     //   - /tasks API는 constructions.is_auto_request_no 필터가 tbm.ts와 다르게 동작하여
     //     LGU+ 사용자에게 0건 반환되는 문제가 있음 (NAS 진단 ③ 확인)
     //   - /tbm API는 서버+클라이언트 LGU+ 이중방어가 정상 동작 확인됨
-    //   - task_status='working' 또는 'paused' 인 건만 진행 탭에 표시
+    //   - task_status='working' 인 건만 진행 탭에 표시 (중지 paused 제외)
     // GPS 우선순위: tbm_records.gps → work_logs.gps → 좌표 없음(목록만)
     if (filter === 'working') {
       // ① TBM API로 전체 TBM 목록 확보 (날짜 파라미터 미전송: working 상태는 날짜 무관)
@@ -38769,9 +38769,9 @@ async function loadSiteMapMarkers(map) {
         ? _rawTbmAllList.filter(function(t) { return t.is_auto_request_no === 0; })
         : _rawTbmAllList;
 
-      // ② task_status = 'working' 또는 'paused' 인 건만 추출 (진행 탭 조건)
+      // ② task_status = 'working' 인 건만 추출 (진행 탭 조건, paused 중지 제외)
       const workingTbmList = tbmAllFiltered.filter(function(tbm) {
-        return tbm.task_status === 'working' || tbm.task_status === 'paused';
+        return tbm.task_status === 'working';
       });
 
       if (workingTbmList.length === 0) {
@@ -38797,9 +38797,10 @@ async function loadSiteMapMarkers(map) {
 
         // ④ 마커 생성
         for (const tbm of workingTbmList) {
+          // paused(중지)는 이미 workingTbmList에서 제외됨 — task_status === 'working' 만 처리
           let lat = null, lon = null, gpsSource = '', addr = '', displayDate = '';
           const wlG = tbm.task_id ? wlGpsCache[tbm.task_id] : null;
-          const statusLabel = tbm.task_status === 'paused' ? '🟡 일시중지' : '🟢 진행';
+          const statusLabel = '🟢 진행'; // paused 제외로 항상 진행 상태만
 
           if (tbm.gps_lat && tbm.gps_lon) {
             lat = parseFloat(tbm.gps_lat);
@@ -38831,7 +38832,7 @@ async function loadSiteMapMarkers(map) {
           const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, gpsLabel) }).addTo(map);
           marker.bindPopup(`
             <div style="min-width:200px;font-size:13px;">
-              <div style="font-weight:700;color:${meta.color};margin-bottom:4px">${statusLabel === '🟡 일시중지' ? '🟡 작업 일시중지' : '🟢 작업 진행중'}</div>
+              <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🟢 작업 진행중</div>
               <div style="font-weight:600">${name}</div>
               ${conductor ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
                 <i class="fas fa-user-hard-hat mr-1"></i>${conductor}

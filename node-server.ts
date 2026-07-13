@@ -5406,7 +5406,7 @@ app.get('/tbm-share/:token', async (c) => {
   // TBM 기본 정보 (tasks.manager_name 없음 → supervisor_id JOIN으로 담당자 조회)
   const tbm = rawDb.prepare(`
     SELECT t.*, u.name AS conductor_name,
-           tk.work_number, tk.title AS task_title,
+           tk.work_number, tk.sub_task_number, tk.title AS task_title,
            tk.gps_address AS task_gps_address,
            tk.confirmed_address AS task_confirmed_address,
            sv.name AS supervisor_name
@@ -5538,7 +5538,7 @@ app.get('/tbm-share/:token', async (c) => {
     <div style="background:linear-gradient(135deg,#1D4ED8,#3B82F6);color:white;border-radius:12px;padding:16px 20px;margin-bottom:12px">
       <div style="font-size:11px;opacity:.75;margin-bottom:4px"><i class="fas fa-hard-hat" style="margin-right:4px"></i>TBM (Tool Box Meeting) 완료 결과</div>
       <h1 style="font-size:16px;font-weight:700;margin:0 0 4px">${_esc(tbm.task_title) || '작업명 없음'}</h1>
-      ${tbm.work_number ? `<div style="font-size:11px;opacity:.8">작업번호: ${_esc(tbm.work_number)}</div>` : ''}
+      ${tbm.work_number ? `<div style="font-size:11px;opacity:.8">작업번호: ${_esc(tbm.sub_task_number ? tbm.work_number + '-' + tbm.sub_task_number : tbm.work_number)}</div>` : ''}
       <div style="font-size:11px;opacity:.7;margin-top:6px"><i class="fas fa-clock" style="margin-right:4px"></i>이 링크는 ${_esc(expiresDate)}까지 유효합니다</div>
     </div>
 

@@ -10259,8 +10259,8 @@ async function showPhotoData(photoId, caption) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
-    <div class="bg-white rounded-2xl overflow-hidden max-w-2xl w-full mx-4">
-      <div class="flex justify-between items-center p-4 border-b">
+    <div class="bg-white rounded-2xl max-w-2xl w-full mx-4" style="overflow:hidden;display:flex;flex-direction:column;max-height:92vh;">
+      <div class="flex justify-between items-center p-4 border-b" style="position:sticky;top:0;background:white;z-index:1;flex-shrink:0;">
         <span class="font-medium">${caption}</span>
         <div class="flex gap-2 items-center">
           <button onclick="deleteMedia(${photoId},'${caption}',this.closest('.modal-overlay'))" class="text-red-500 hover:text-red-700 text-sm flex items-center gap-1">
@@ -10269,8 +10269,11 @@ async function showPhotoData(photoId, caption) {
           <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 text-xl ml-2"><i class="fas fa-times"></i></button>
         </div>
       </div>
-      <img src="${photoImgSrc(photoId)}" class="w-full" alt="${caption}" onerror="this.alt='사진 로드 실패'">
+      <div style="overflow-y:auto;flex:1;">
+        <img src="${photoImgSrc(photoId)}" class="w-full" style="max-height:80vh;object-fit:contain;display:block;" alt="${caption}" onerror="this.alt='사진 로드 실패'">
+      </div>
     </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
 }
 
@@ -10278,8 +10281,8 @@ async function showVideoData(videoId, caption) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
-    <div class="bg-black rounded-2xl overflow-hidden max-w-2xl w-full mx-4">
-      <div class="flex justify-between items-center p-4 border-b border-gray-700">
+    <div class="bg-black rounded-2xl max-w-2xl w-full mx-4" style="overflow:hidden;display:flex;flex-direction:column;max-height:92vh;">
+      <div class="flex justify-between items-center p-4 border-b border-gray-700" style="position:sticky;top:0;background:#000;z-index:1;flex-shrink:0;">
         <span class="font-medium text-white">${caption}</span>
         <div class="flex gap-2 items-center">
           <button onclick="deleteMedia(${videoId},'${caption}',this.closest('.modal-overlay'))" class="text-red-400 hover:text-red-200 text-sm flex items-center gap-1">
@@ -10288,8 +10291,11 @@ async function showVideoData(videoId, caption) {
           <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 text-xl ml-2"><i class="fas fa-times"></i></button>
         </div>
       </div>
-      <video src="${photoImgSrc(videoId)}" class="w-full" controls autoplay style="max-height:70vh"></video>
+      <div style="overflow-y:auto;flex:1;">
+        <video src="${photoImgSrc(videoId)}" class="w-full" controls autoplay style="max-height:75vh;display:block;"></video>
+      </div>
     </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
 }
 
@@ -15403,13 +15409,16 @@ function showInsPhotoData(photoId, caption) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
-    <div class="bg-white rounded-2xl overflow-hidden max-w-2xl w-full mx-4">
-      <div class="flex justify-between items-center p-4 border-b">
+    <div class="bg-white rounded-2xl max-w-2xl w-full mx-4" style="overflow:hidden;display:flex;flex-direction:column;max-height:92vh;">
+      <div class="flex justify-between items-center p-4 border-b" style="position:sticky;top:0;background:white;z-index:1;flex-shrink:0;">
         <span class="font-medium">${caption}</span>
         <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 text-xl"><i class="fas fa-times"></i></button>
       </div>
-      <img src="/api/inspections/photo/${photoId}/img" class="w-full" alt="${caption}" onerror="this.alt='사진 로드 실패'">
+      <div style="overflow-y:auto;flex:1;">
+        <img src="/api/inspections/photo/${photoId}/img" class="w-full" style="max-height:80vh;object-fit:contain;display:block;" alt="${caption}" onerror="this.alt='사진 로드 실패'">
+      </div>
     </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
 }
 
@@ -15417,13 +15426,16 @@ function showInsVideoData(videoId) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
-    <div class="bg-black rounded-2xl overflow-hidden max-w-2xl w-full mx-4">
-      <div class="flex justify-between items-center p-4 border-b border-gray-700">
+    <div class="bg-black rounded-2xl max-w-2xl w-full mx-4" style="overflow:hidden;display:flex;flex-direction:column;max-height:92vh;">
+      <div class="flex justify-between items-center p-4 border-b border-gray-700" style="position:sticky;top:0;background:#000;z-index:1;flex-shrink:0;">
         <span class="font-medium text-white">동영상</span>
         <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 text-xl"><i class="fas fa-times"></i></button>
       </div>
-      <video src="/api/inspections/photo/${videoId}/img" class="w-full" controls autoplay style="max-height:70vh"></video>
+      <div style="overflow-y:auto;flex:1;">
+        <video src="/api/inspections/photo/${videoId}/img" class="w-full" controls autoplay style="max-height:75vh;display:block;"></video>
+      </div>
     </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
 }
 

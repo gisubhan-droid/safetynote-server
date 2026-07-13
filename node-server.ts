@@ -5464,14 +5464,17 @@ app.get('/tbm-share/:token', async (c) => {
         const L = allPhotos[i], R = allPhotos[i + 1]
         const Lcap = `[${L.section_name}] ${L.label || ''}`.trim()
         const Rcap = R ? `[${R.section_name}] ${R.label || ''}`.trim() : ''
-        // onclick: _lbOpen(src, caption) — caption은 JSON.stringify로 안전하게 전달
+        // onclick: _lbOpen(src, caption) — caption은 싱글쿼트+이스케이프로 HTML 속성 안에 안전하게 전달
+        // JSON.stringify는 큰따옴표를 포함하므로 onclick="..." 속성이 끊어지는 버그 발생 → 싱글쿼트 방식으로 수정
+        const LcapJs = Lcap.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+        const RcapJs = Rcap.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
         grid += `<div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;cursor:pointer"
-            onclick="_lbOpen('/tbm-share/${token}/photo/${L.id}',${JSON.stringify(Lcap)})">
+            onclick="_lbOpen('/tbm-share/${token}/photo/${L.id}','${LcapJs}')">
             <img src="/tbm-share/${token}/photo/${L.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy" onerror="this.style.opacity='.3'">
             <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">${_esc(Lcap)}</div>
           </div>
           ${R ? `<div style="border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;cursor:pointer"
-            onclick="_lbOpen('/tbm-share/${token}/photo/${R.id}',${JSON.stringify(Rcap)})">
+            onclick="_lbOpen('/tbm-share/${token}/photo/${R.id}','${RcapJs}')">
             <img src="/tbm-share/${token}/photo/${R.id}" style="width:100%;aspect-ratio:4/3;object-fit:cover" loading="lazy" onerror="this.style.opacity='.3'">
             <div style="padding:4px 6px;font-size:11px;color:#374151;background:#F9FAFB">${_esc(Rcap)}</div>
           </div>` : '<div></div>'}`

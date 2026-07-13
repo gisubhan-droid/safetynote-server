@@ -33375,6 +33375,13 @@ async function _frLoadSpliceStats() {
     (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
       _spliceLabelToKey[d.label] = d.key;  // '광커넥터 현장조립/취부' → 'b000008'
     });
+    // DB prices 배열에서 추가 항목 보완 (단가관리에서 추가된 항목 포함)
+    // SPLICE_ITEMS_DEF에 없는 항목(광단자, 최종시험, 신호수추가배치 등)도 정확히 변환
+    (priceRes.data.prices || []).forEach(p => {
+      if (p.item_label && p.item_key && !_spliceLabelToKey[p.item_label]) {
+        _spliceLabelToKey[p.item_label] = p.item_key;
+      }
+    });
     const labelToKey = label => {
       if (!label) return '';
       // 1순위: SPLICE_ITEMS_DEF label→key 직접 매핑
@@ -36881,6 +36888,13 @@ async function _vsLoadSpliceStats() {
     const _vsLabelToKey = {};
     (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
       _vsLabelToKey[d.label] = d.key;
+    });
+    // DB prices 배열에서 추가 항목 보완 (단가관리에서 추가된 항목 포함)
+    // SPLICE_ITEMS_DEF에 없는 항목(광단자, 최종시험, 신호수추가배치 등)도 정확히 변환
+    prices.forEach(p => {
+      if (p.item_label && p.item_key && !_vsLabelToKey[p.item_label]) {
+        _vsLabelToKey[p.item_label] = p.item_key;
+      }
     });
     const labelToKey = label => {
       if (!label) return '';

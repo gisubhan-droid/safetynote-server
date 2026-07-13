@@ -26143,18 +26143,8 @@ function updateQrBulkCount() {
   }
 }
 
-// 체크된 인원 QR 카드 일괄 인쇄
-async function printQrBulk() {
-  // QRCode 라이브러리 로드 보장
-  if (!window.QRCode) {
-    await new Promise(resolve => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
-      s.onload = resolve;
-      document.head.appendChild(s);
-    });
-  }
-
+// QR 출력 배열 선택 다이얼로그 → 실제 인쇄 팝업
+function printQrBulk() {
   // 보이는 행(display !== 'none')의 체크된 체크박스만 수집 — 필터로 숨겨진 행 제외
   const checked = [...document.querySelectorAll('.user-qr-check:checked')].filter(cb => {
     const tr = cb.closest('tr');
@@ -26165,15 +26155,105 @@ async function printQrBulk() {
     return;
   }
 
-  const origin = window.location.origin;
-  // 각 인원의 QR 데이터 수집
-  const items = checked.map(cb => ({
+  // ── 사용자 데이터를 window 임시 변수에 저장 (onclick 속성 내 JSON 이스케이프 문제 방지) ──
+  // 이름/팀 등에 큰따옴표·특수문자가 포함될 경우 onclick="..." 속성이 끊어지는 버그 예방
+  window._qrBulkItems = checked.map(cb => ({
     id: cb.value,
     name: cb.dataset.name || ('사용자 ' + cb.value),
     team: cb.dataset.team || '',
-    position: cb.dataset.position || '',
-    url: origin + '/qr/' + cb.value
+    position: cb.dataset.position || ''
   }));
+
+  // ── 배열 선택 다이얼로그 (modal-sm 규칙: 소형 확인팝업) ──────────────────
+  const dlg = document.createElement('div');
+  dlg.className = 'modal-overlay modal-sm';
+  // 지원 배열 목록: [cols, rows] — PER_PAGE = cols * rows
+  const LAYOUTS = [
+    { cols: 2, rows: 3, label: '2 × 3 (6장/페이지)', sub: '크게 보기' },
+    { cols: 3, rows: 4, label: '3 × 4 (12장/페이지)', sub: '중간 크기' },
+    { cols: 3, rows: 5, label: '3 × 5 (15장/페이지)', sub: '중간 크기' },
+    { cols: 4, rows: 4, label: '4 × 4 (16장/페이지)', sub: '표준' },
+    { cols: 4, rows: 5, label: '4 × 5 (20장/페이지)', sub: '기본값 ★', default: true },
+    { cols: 5, rows: 5, label: '5 × 5 (25장/페이지)', sub: '작게 보기' },
+    { cols: 5, rows: 6, label: '5 × 6 (30장/페이지)', sub: '작게 보기' },
+    { cols: 6, rows: 7, label: '6 × 7 (42장/페이지)', sub: '매우 작게' },
+  ];
+  const defaultIdx = LAYOUTS.findIndex(l => l.default);
+  const cnt = checked.length;
+
+  dlg.innerHTML = `
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header" style="background:linear-gradient(135deg,#685182,#D70072);border-radius:20px 20px 0 0;border-bottom:none;padding:16px 20px">
+      <h3 class="font-black text-white text-sm"><i class="fas fa-qrcode mr-2"></i>QR 일괄 인쇄 — 배열 선택</h3>
+      <button onclick="this.closest('.modal-overlay').remove()" class="text-white opacity-70 hover:opacity-100 text-xl"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px">
+      <p style="font-size:12px;color:#6B7280;margin-bottom:12px">
+        <i class="fas fa-users" style="color:#685182;margin-right:4px"></i>
+        선택 인원 <strong style="color:#685182">${cnt}명</strong> · A4 용지 기준 한 페이지 배열을 선택하세요
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${LAYOUTS.map((l, idx) => `
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:2px solid ${idx === defaultIdx ? '#685182' : '#E5E7EB'};background:${idx === defaultIdx ? '#F5F0FB' : '#FAFAFA'};cursor:pointer;transition:all .15s" id="qr-layout-lbl-${idx}">
+          <input type="radio" name="qrLayout" value="${idx}" ${idx === defaultIdx ? 'checked' : ''} style="accent-color:#685182;width:15px;height:15px;flex-shrink:0" onchange="document.querySelectorAll('[id^=qr-layout-lbl-]').forEach((el,i)=>{el.style.borderColor=i==this.value?'#685182':'#E5E7EB';el.style.background=i==this.value?'#F5F0FB':'#FAFAFA'})">
+          <div>
+            <div style="font-size:12px;font-weight:700;color:#374151">${l.label}</div>
+            <div style="font-size:10px;color:#9CA3AF;margin-top:1px">${l.sub} · ${Math.ceil(cnt / (l.cols * l.rows))}페이지</div>
+          </div>
+        </label>`).join('')}
+      </div>
+    </div>
+    <div class="modal-footer" style="padding:12px 20px">
+      <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline" style="font-size:13px">취소</button>
+      <button onclick="var idx=document.querySelector('input[name=qrLayout]:checked').value;this.closest('.modal-overlay').remove();_printQrBulkExec(window._qrBulkItems,idx)" class="btn btn-primary" style="background:linear-gradient(135deg,#685182,#D70072);font-size:13px">
+        <i class="fas fa-print mr-1"></i>인쇄 시작
+      </button>
+    </div>
+  </div>`;
+  document.body.appendChild(dlg);
+}
+
+// 실제 QR 일괄 인쇄 실행 (배열 선택 후 호출)
+async function _printQrBulkExec(rawItems, layoutIdxStr) {
+  const LAYOUTS = [
+    { cols: 2, rows: 3 },
+    { cols: 3, rows: 4 },
+    { cols: 3, rows: 5 },
+    { cols: 4, rows: 4 },
+    { cols: 4, rows: 5 },  // index 4 = 기본값
+    { cols: 5, rows: 5 },
+    { cols: 5, rows: 6 },
+    { cols: 6, rows: 7 },
+  ];
+  const layout = LAYOUTS[Number(layoutIdxStr)] || LAYOUTS[4];
+  const COLS = layout.cols;
+  const ROWS = layout.rows;
+  const PER_PAGE = COLS * ROWS;
+
+  // ── A4 레이아웃 계산 ────────────────────────────────────────────────────
+  // A4 가용 너비: 210mm - 5mm×2(padding) = 200mm
+  // A4 가용 높이: 297mm - 5mm×2(padding) = 287mm, 타이틀 5mm 사용 → 282mm
+  const GAP_MM = 1.5;
+  // 카드 높이: (282 - (ROWS-1)×GAP) / ROWS
+  const cardHeightMm = Math.floor(((282 - (ROWS - 1) * GAP_MM) / ROWS) * 10) / 10;
+  // QR 이미지 크기: 카드 높이의 약 60% (최대 42mm, 최소 18mm)
+  const qrSizeMm = Math.min(42, Math.max(18, Math.floor(cardHeightMm * 0.60 * 10) / 10));
+  // 이름 폰트: 카드 높이에 비례 (기본 11px @ 55mm)
+  const nameFontPx = Math.min(12, Math.max(7, Math.round(cardHeightMm * 0.20)));
+  const subFontPx  = Math.min(8.5, Math.max(5, Math.round(cardHeightMm * 0.13)));
+
+  // QRCode 라이브러리 로드 보장
+  if (!window.QRCode) {
+    await new Promise(resolve => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+      s.onload = resolve;
+      document.head.appendChild(s);
+    });
+  }
+
+  const origin = window.location.origin;
+  const items = rawItems.map(r => ({ ...r, url: origin + '/qr/' + r.id }));
 
   // QR 이미지를 data URL로 생성 (canvas 기반)
   async function makeQrDataUrl(url) {
@@ -26232,21 +26312,17 @@ async function printQrBulk() {
     letter-spacing: 0.3px;
   }
 
-  /* ── 20칸 그리드: 4열 × 5행 ── */
-  /* A4 가용폭(margin 5mm×2) = 200mm, 카드 4개 + 간격 3개(1.5mm) */
-  /* 카드폭 = (200 - 3×1.5mm) / 4 = 48.9mm */
+  /* ── 그리드: COLS열 × ROWS행 (동적) ── */
   .grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1.5mm;
+    grid-template-columns: repeat(${COLS}, 1fr);
+    gap: ${GAP_MM}mm;
   }
 
-  /* ── 카드 ── */
-  /* A4 가용높이(margin 5mm×2) = 287mm, 카드 5행 + 간격 4개(1.5mm) + 타이틀 5mm */
-  /* 카드높이 = (287 - 5 - 4×1.5mm) / 5 = 55.2mm */
+  /* ── 카드 (높이 동적) ── */
   .qr-card {
     width: 100%;
-    height: 55mm;
+    height: ${cardHeightMm}mm;
     background: white;
     border-radius: 3px;
     overflow: hidden;
@@ -26278,9 +26354,10 @@ async function printQrBulk() {
     align-items: center;
     justify-content: space-between;
     gap: 1px;
+    overflow: hidden;
   }
 
-  /* QR: 가능한 최대 크기 */
+  /* QR: 동적 크기 */
   .qr-wrap {
     display: flex;
     align-items: center;
@@ -26289,16 +26366,16 @@ async function printQrBulk() {
     width: 100%;
   }
   .qr-wrap img {
-    width: 34mm;
-    height: 34mm;
+    width: ${qrSizeMm}mm;
+    height: ${qrSizeMm}mm;
     display: block;
     image-rendering: pixelated;
   }
 
-  /* 인적사항: 이름 최대, 직위/팀 70% */
+  /* 인적사항: 이름/팀 동적 폰트 */
   .person-info { text-align: center; width: 100%; line-height: 1.2; }
-  .person-name { font-size: 11px; font-weight: 900; color: #4E3A63; letter-spacing: -0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .person-sub  { font-size: 7.7px; color: #4E3A63; font-weight: 600; margin-top: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .person-name { font-size: ${nameFontPx}px; font-weight: 900; color: #4E3A63; letter-spacing: -0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .person-sub  { font-size: ${subFontPx}px; color: #4E3A63; font-weight: 600; margin-top: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .person-sub span.team  { color: #685182; }
   .person-sub span.pos   { color: #C6C6C6; }
 
@@ -26310,17 +26387,8 @@ async function printQrBulk() {
     flex-shrink: 0;
     line-height: 1.3;
   }
-  .brand-line1 {
-    font-size: 6px;
-    font-weight: 700;
-    color: #685182;
-    letter-spacing: 0.2px;
-  }
-  .brand-line2 {
-    font-size: 5px;
-    color: #C6C6C6;
-    letter-spacing: 0.1px;
-  }
+  .brand-line1 { font-size: 6px; font-weight: 700; color: #685182; letter-spacing: 0.2px; }
+  .brand-line2 { font-size: 5px; color: #C6C6C6; letter-spacing: 0.1px; }
 
   /* ── 인쇄 전용 ── */
   @media print {
@@ -26328,7 +26396,7 @@ async function printQrBulk() {
     body { background: white; }
     .page { margin: 0; padding: 0; box-shadow: none; width: 100%; min-height: unset; }
     .page-title { display: none; }
-    .grid { gap: 1.5mm; }
+    .grid { gap: ${GAP_MM}mm; }
     .page { page-break-after: always; }
     .page:last-child { page-break-after: avoid; }
     .qr-card { border: 0.5px solid #C6C6C6; }
@@ -26337,7 +26405,6 @@ async function printQrBulk() {
 </style>
 </head><body>
 ${(() => {
-  const PER_PAGE = 20;
   const pages = [];
   for (let p = 0; p < items.length; p += PER_PAGE) {
     const slice = items.slice(p, p + PER_PAGE);
@@ -26345,7 +26412,7 @@ ${(() => {
     const totalPages = Math.ceil(items.length / PER_PAGE);
     pages.push(`
 <div class="page">
-  <p class="page-title">⛑ Safety NOTE — QR 안전카드 (${items.length}명) · ${pageNum}/${totalPages}페이지 · 4×5=20장</p>
+  <p class="page-title">⛑ Safety NOTE — QR 안전카드 (${items.length}명) · ${pageNum}/${totalPages}페이지 · ${COLS}×${ROWS}=${PER_PAGE}장</p>
   <div class="grid">${slice.map((item, si) => {
       const i = p + si;
       const subParts = [
@@ -26362,7 +26429,7 @@ ${(() => {
         <div class="qr-wrap">
           ${qrImages[i]
             ? `<img src="${qrImages[i]}" alt="QR">`
-            : `<div style="width:34mm;height:34mm;display:flex;align-items:center;justify-content:center;background:#F5F0F8;border-radius:3px;font-size:7px;color:#C6C6C6">QR 오류</div>`}
+            : `<div style="width:${qrSizeMm}mm;height:${qrSizeMm}mm;display:flex;align-items:center;justify-content:center;background:#F5F0F8;border-radius:3px;font-size:7px;color:#C6C6C6">QR 오류</div>`}
         </div>
         <div class="person-info">
           <div class="person-name">${item.name}</div>

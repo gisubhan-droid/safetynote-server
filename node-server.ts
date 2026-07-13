@@ -4680,6 +4680,148 @@ app.route('/api/teams', teamRoutes)
 registerEducationExtraRoutes(app)
 app.route('/api/education', educationRoutes)
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [FEAT-063] GET /api/constructions/stats — 공사통계 (년/월/주 기간 집계)
+// Query: period=yearly|monthly|weekly  year=YYYY  month=MM(월간전용)  week_start=YYYY-MM-DD(주간전용)
+// Response:
+//   summary   : { total, completed, settled, notify_total }
+//   by_type   : [{ work_class, label, total, completed, settled, notify_total }]
+//   by_manager: [{ manager, total, completed, notify_total }]
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/constructions/stats', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const period     = c.req.query('period')     || 'yearly'   // yearly | monthly | weekly
+  const year       = c.req.query('year')       || String(new Date().getFullYear())
+  const month      = c.req.query('month')      || ''          // 월간: '1'~'12'
+  const weekStart  = c.req.query('week_start') || ''          // 주간: 'YYYY-MM-DD'
+
+  // ── 기간 WHERE 절 생성 ─────────────────────────────────────────────────────
+  let dateWhere = ''
+  const dateParams: (string | number)[] = []
+
+  if (period === 'yearly') {
+    // 연간: created_at 연도 기준
+    dateWhere = `AND strftime('%Y', c.created_at) = ?`
+    dateParams.push(year)
+  } else if (period === 'monthly') {
+    const m = month.padStart(2, '0')
+    dateWhere = `AND strftime('%Y', c.created_at) = ? AND strftime('%m', c.created_at) = ?`
+    dateParams.push(year, m)
+  } else if (period === 'weekly') {
+    // 주간: week_start ~ week_start+6일
+    if (weekStart) {
+      // SQLite date arithmetic
+      dateWhere = `AND date(c.created_at) >= date(?) AND date(c.created_at) <= date(?, '+6 days')`
+      dateParams.push(weekStart, weekStart)
+    } else {
+      // 기본: 이번 주 월요일 계산 (KST 근사)
+      const now = new Date()
+      const dayOfWeek = now.getDay() // 0=일
+      const monday = new Date(now)
+      monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+      const ws = monday.toISOString().slice(0, 10)
+      dateWhere = `AND date(c.created_at) >= date(?) AND date(c.created_at) <= date(?, '+6 days')`
+      dateParams.push(ws, ws)
+    }
+  }
+
+  // ── 공사 종류 라벨 매핑 ───────────────────────────────────────────────────
+  const WORK_CLASS_LABEL: Record<string, string> = {
+    relocation:   '지장이설',
+    subscription: '청약개통',
+    conduit:      '관로공사',
+    environment:  '환경공사',
+    separate:     '별도사업',
+    other:        '기타',
+  }
+  const WORK_CLASS_ORDER = ['relocation','subscription','conduit','environment','separate','other']
+
+  try {
+    // ── ① 전체 요약 ──────────────────────────────────────────────────────────
+    const summaryRow = rawDb.prepare(`
+      SELECT
+        COUNT(*)                                                              AS total,
+        SUM(CASE WHEN c.status = 'completed'           THEN 1 ELSE 0 END)   AS completed,
+        SUM(CASE WHEN c.status = 'settled'             THEN 1 ELSE 0 END)   AS settled,
+        SUM(CASE WHEN c.status = 'settlement_requested' THEN 1 ELSE 0 END)  AS settlement_requested,
+        COALESCE(SUM(c.notification_amount), 0)                             AS notify_total
+      FROM constructions c
+      WHERE 1=1 ${dateWhere}
+    `).get(...dateParams) as any
+
+    // ── ② 작업 종류별 집계 ───────────────────────────────────────────────────
+    const byTypeRows = rawDb.prepare(`
+      SELECT
+        COALESCE(c.work_class, 'other')                                       AS work_class,
+        COUNT(*)                                                               AS total,
+        SUM(CASE WHEN c.status = 'completed'            THEN 1 ELSE 0 END)   AS completed,
+        SUM(CASE WHEN c.status = 'settled'              THEN 1 ELSE 0 END)   AS settled,
+        SUM(CASE WHEN c.status = 'settlement_requested' THEN 1 ELSE 0 END)   AS settlement_requested,
+        COALESCE(SUM(c.notification_amount), 0)                              AS notify_total
+      FROM constructions c
+      WHERE 1=1 ${dateWhere}
+      GROUP BY COALESCE(c.work_class, 'other')
+      ORDER BY total DESC
+    `).all(...dateParams) as any[]
+
+    // 종류 순서 정렬 + 한글 라벨 추가
+    const byTypeSorted = WORK_CLASS_ORDER
+      .map(key => {
+        const row = byTypeRows.find((r: any) => r.work_class === key) || { work_class: key, total: 0, completed: 0, settled: 0, settlement_requested: 0, notify_total: 0 }
+        return { ...row, label: WORK_CLASS_LABEL[key] || key }
+      })
+      .filter(r => r.total > 0)
+
+    // ③ 데이터가 없을 경우 other 미포함 전체 byTypeRows도 포함 (unknown work_class 대비)
+    byTypeRows.forEach((r: any) => {
+      if (!WORK_CLASS_ORDER.includes(r.work_class)) {
+        byTypeSorted.push({ ...r, label: r.work_class || '기타' })
+      }
+    })
+
+    // ── ③ 담당자별 집계 ──────────────────────────────────────────────────────
+    const byManagerRows = rawDb.prepare(`
+      SELECT
+        COALESCE(NULLIF(TRIM(c.manager_name), ''), '미지정')                  AS manager,
+        COUNT(*)                                                               AS total,
+        SUM(CASE WHEN c.status = 'completed'            THEN 1 ELSE 0 END)   AS completed,
+        SUM(CASE WHEN c.status = 'settled'              THEN 1 ELSE 0 END)   AS settled,
+        SUM(CASE WHEN c.status = 'settlement_requested' THEN 1 ELSE 0 END)   AS settlement_requested,
+        COALESCE(SUM(c.notification_amount), 0)                              AS notify_total
+      FROM constructions c
+      WHERE 1=1 ${dateWhere}
+      GROUP BY COALESCE(NULLIF(TRIM(c.manager_name), ''), '미지정')
+      ORDER BY total DESC
+      LIMIT 30
+    `).all(...dateParams) as any[]
+
+    return c.json({
+      period, year, month, week_start: weekStart,
+      summary: {
+        total:                 Number(summaryRow?.total                  ?? 0),
+        completed:             Number(summaryRow?.completed              ?? 0),
+        settled:               Number(summaryRow?.settled                ?? 0),
+        settlement_requested:  Number(summaryRow?.settlement_requested   ?? 0),
+        notify_total:          Number(summaryRow?.notify_total           ?? 0),
+      },
+      by_type:    byTypeSorted,
+      by_manager: byManagerRows.map((r: any) => ({
+        manager:              r.manager,
+        total:                Number(r.total               ?? 0),
+        completed:            Number(r.completed           ?? 0),
+        settled:              Number(r.settled             ?? 0),
+        settlement_requested: Number(r.settlement_requested ?? 0),
+        notify_total:         Number(r.notify_total        ?? 0),
+      })),
+    })
+  } catch (e: any) {
+    console.error('[FEAT-063] /api/constructions/stats 오류:', e)
+    return c.json({ error: e.message || '통계 조회 실패' }, 500)
+  }
+})
+
 // ─── NAS 전용: 공사요청번호 자동생성 순번 조회 ───────────────────────────────
 // [TASK-003] GET /api/constructions/request-no-seq?date=YYMMDDhhmm
 // 형식: YYMMDDhhmm## (12자리 순수 숫자, 기존 검증 그대로 통과)

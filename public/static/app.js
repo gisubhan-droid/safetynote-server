@@ -2161,6 +2161,7 @@ function renderApp() {
     {
       id: 'volume', icon: 'fas fa-chart-line', label: '공사현황', color: '#34d399',
       items: [
+        { id:'con-stats',     icon:'fas fa-chart-pie',      label:'공사통계' },
         { id:'stats-task',    icon:'fas fa-tasks',          label:'작업통계' },
         { id:'volume-stats',  icon:'fas fa-chart-bar',      label:'물량통계' },
         { id:'report-write',  icon:'fas fa-pen-to-square',  label:'작업일보 작성' },
@@ -2870,7 +2871,7 @@ function getPageTitle(page) {
   const map = {
     constructions: '공사현황', dashboard: '작업현황', tasks: '작업관리', 'my-tasks': '내 작업목록',
     inspections: '현장점검', hazards: '위험(아차사고)신고', stats: '안전현황',
-    'stats-task': '작업통계', 'stats-inspection': '현장점검 통계', 'stats-worker-safety': '근로자 안전준수 현황',
+    'con-stats': '공사통계', 'stats-task': '작업통계', 'stats-inspection': '현장점검 통계', 'stats-worker-safety': '근로자 안전준수 현황',
     users: '업무중사용자', 'suspended-users': '업무중지사용자', 'my-stats': '내 작업통계', 'hazard-report': '위험신고',
     'admin-settings': '시스템 설정',
     'legal-notices': '법령안내 관리',
@@ -2989,6 +2990,7 @@ function navigateTo(page) {
     case 'my-tasks': renderMyTasksPage(content); break;
     case 'inspections': renderInspectionsPage(content); break;
     case 'hazards': renderHazardsPage(content); break;
+    case 'con-stats': renderConStatsPage(content); break;
     case 'stats': navigateTo('stats-task'); return;
     case 'stats-task': renderStatsPage(content); break;
     case 'stats-inspection':    renderInspectionStatsPage(content); break;
@@ -35786,6 +35788,411 @@ function _vsWeekRange(weekVal) {
   sunday.setDate(monday.getDate() + 6);
   const fmt = d => d.toISOString().slice(0, 10);
   return { from: fmt(monday), to: fmt(sunday) };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// [FEAT-063] 공사통계 페이지 — 년간/월간/주간 조회
+//   - 작업 종류별 공사 현황 (건수/완료/시공통보금액/정산완료)
+//   - 담당자별 공사 현황 (막대 그래프)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function renderConStatsPage(container) {
+  // ── 상태 변수 ────────────────────────────────────────────────────────────────
+  let _csPeriod    = 'yearly';
+  let _csYear      = new Date().getFullYear();
+  let _csMonth     = new Date().getMonth() + 1;
+  let _csWeekStart = (() => {
+    const now = new Date();
+    const d   = now.getDay();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - (d === 0 ? 6 : d - 1));
+    return monday.toISOString().slice(0, 10);
+  })();
+
+  // ── 금액 포맷터 ──────────────────────────────────────────────────────────────
+  function fmtAmt(v) {
+    if (!v || v === 0) return '<span style="color:#ccc">-</span>';
+    if (v >= 100000000) return `<span style="font-weight:700">${(v/100000000).toFixed(1)}억</span>`;
+    if (v >= 10000)     return `${Math.round(v/10000).toLocaleString()}만`;
+    return v.toLocaleString();
+  }
+  function fmtAmtPlain(v) {
+    if (!v || v === 0) return '-';
+    if (v >= 100000000) return `${(v/100000000).toFixed(1)}억`;
+    if (v >= 10000)     return `${Math.round(v/10000).toLocaleString()}만`;
+    return v.toLocaleString();
+  }
+
+  // ── 주간 날짜 계산 헬퍼 ──────────────────────────────────────────────────────
+  function getWeekRange(startStr) {
+    const d = new Date(startStr);
+    const e = new Date(d); e.setDate(d.getDate() + 6);
+    const fmt = x => `${x.getMonth()+1}/${x.getDate()}`;
+    return `${fmt(d)} ~ ${fmt(e)}`;
+  }
+
+  // ── 기간 라벨 ────────────────────────────────────────────────────────────────
+  function periodLabel() {
+    if (_csPeriod === 'yearly')  return `${_csYear}년`;
+    if (_csPeriod === 'monthly') return `${_csYear}년 ${_csMonth}월`;
+    return `${_csYear}년 ${getWeekRange(_csWeekStart)}주`;
+  }
+
+  // ── 연도 옵션 ────────────────────────────────────────────────────────────────
+  const curYear = new Date().getFullYear();
+  const yearOpts = Array.from({length: 5}, (_,i) => curYear - i);
+
+  // ── 주간 이동 헬퍼 ───────────────────────────────────────────────────────────
+  function shiftWeek(delta) {
+    const d = new Date(_csWeekStart);
+    d.setDate(d.getDate() + delta * 7);
+    _csWeekStart = d.toISOString().slice(0, 10);
+  }
+
+  // ── Chart.js 로드 ────────────────────────────────────────────────────────────
+  async function ensureChart() {
+    if (window.Chart) return;
+    await new Promise(resolve => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+      s.onload = resolve;
+      document.head.appendChild(s);
+    });
+  }
+
+  // ── 차트 인스턴스 레지스트리 ─────────────────────────────────────────────────
+  let _csCharts = {};
+  function destroyCharts() {
+    Object.values(_csCharts).forEach(c => { try { c.destroy(); } catch(e){} });
+    _csCharts = {};
+  }
+
+  // ── 색상 팔레트 ──────────────────────────────────────────────────────────────
+  const PALETTE = ['#685182','#D70072','#34d399','#60a5fa','#fbbf24','#f87171','#a78bfa','#fb923c'];
+
+  // ── API 호출 & 렌더 ──────────────────────────────────────────────────────────
+  async function loadAndRender() {
+    // 로딩 상태
+    const statsArea = document.getElementById('cs-stats-area');
+    if (statsArea) statsArea.innerHTML = `
+      <div style="text-align:center;padding:60px 0;color:#9CA3AF">
+        <i class="fas fa-spinner fa-spin" style="font-size:28px;margin-bottom:12px;display:block"></i>
+        데이터 조회 중...
+      </div>`;
+
+    destroyCharts();
+
+    // 파라미터 구성
+    const params = new URLSearchParams({ period: _csPeriod, year: _csYear });
+    if (_csPeriod === 'monthly') params.set('month', _csMonth);
+    if (_csPeriod === 'weekly')  params.set('week_start', _csWeekStart);
+
+    let data;
+    try {
+      const res = await fetch(`/api/constructions/stats?${params}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      data = await res.json();
+    } catch(e) {
+      if (statsArea) statsArea.innerHTML = `
+        <div style="text-align:center;padding:40px;color:#EF4444">
+          <i class="fas fa-exclamation-circle" style="font-size:24px;margin-bottom:8px;display:block"></i>
+          데이터 조회 실패: ${e.message}
+        </div>`;
+      return;
+    }
+
+    await ensureChart();
+
+    const { summary, by_type, by_manager } = data;
+
+    // ── 요약 카드 4개 ─────────────────────────────────────────────────────────
+    const summaryHtml = `
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+        ${[
+          { icon:'fas fa-building',         label:'전체 공사',    val: summary.total,                color:'#685182' },
+          { icon:'fas fa-check-circle',      label:'완료',         val: summary.completed,            color:'#059669' },
+          { icon:'fas fa-file-invoice-dollar',label:'시공통보금액', val: fmtAmtPlain(summary.notify_total), color:'#D70072', isAmt:true },
+          { icon:'fas fa-receipt',           label:'정산완료',     val: summary.settled,              color:'#4338CA' },
+        ].map(c => `
+          <div style="background:#fff;border-radius:12px;padding:16px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid ${c.color};display:flex;align-items:center;gap:12px">
+            <div style="background:${c.color}18;border-radius:8px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <i class="${c.icon}" style="color:${c.color};font-size:16px"></i>
+            </div>
+            <div>
+              <div style="font-size:11px;color:#9CA3AF;margin-bottom:2px">${c.label}</div>
+              <div style="font-size:${c.isAmt?'17px':'22px'};font-weight:900;color:${c.color}">${c.isAmt ? c.val : c.val.toLocaleString()}<span style="font-size:11px;font-weight:500;color:#9CA3AF;margin-left:2px">${c.isAmt?'':'건'}</span></div>
+            </div>
+          </div>
+        `).join('')}
+      </div>`;
+
+    // ── 작업 종류별 표 ────────────────────────────────────────────────────────
+    const byTypeHtml = `
+      <div style="background:#fff;border-radius:12px;padding:18px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:20px">
+        <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;display:flex;align-items:center;gap:6px">
+          <i class="fas fa-th-list" style="color:#685182"></i> 작업 종류별 공사 현황
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:#F5F0F8">
+                <th style="padding:9px 12px;text-align:left;font-weight:700;color:#685182;border-bottom:2px solid #D8D0DC;white-space:nowrap">공사 종류</th>
+                <th style="padding:9px 12px;text-align:center;font-weight:700;color:#685182;border-bottom:2px solid #D8D0DC;white-space:nowrap">전체</th>
+                <th style="padding:9px 12px;text-align:center;font-weight:700;color:#059669;border-bottom:2px solid #D8D0DC;white-space:nowrap">완료</th>
+                <th style="padding:9px 12px;text-align:center;font-weight:700;color:#D70072;border-bottom:2px solid #D8D0DC;white-space:nowrap">시공통보 금액</th>
+                <th style="padding:9px 12px;text-align:center;font-weight:700;color:#4338CA;border-bottom:2px solid #D8D0DC;white-space:nowrap">정산완료</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${by_type.length === 0
+                ? `<tr><td colspan="5" style="text-align:center;padding:30px;color:#9CA3AF">해당 기간 데이터 없음</td></tr>`
+                : by_type.map((r, i) => {
+                    const compRate = r.total > 0 ? Math.round(r.completed / r.total * 100) : 0;
+                    return `
+                      <tr style="border-bottom:1px solid #F3F4F6;${i%2===1?'background:#FAFAFA':''}">
+                        <td style="padding:10px 12px;font-weight:600;color:#374151">
+                          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${PALETTE[i%PALETTE.length]};margin-right:6px"></span>
+                          ${r.label}
+                        </td>
+                        <td style="padding:10px 12px;text-align:center;font-weight:700;color:#374151">${r.total.toLocaleString()}</td>
+                        <td style="padding:10px 12px;text-align:center">
+                          <span style="color:#059669;font-weight:600">${r.completed.toLocaleString()}</span>
+                          <span style="font-size:11px;color:#9CA3AF;margin-left:4px">(${compRate}%)</span>
+                        </td>
+                        <td style="padding:10px 12px;text-align:center;color:#D70072;font-weight:600">${fmtAmt(r.notify_total)}</td>
+                        <td style="padding:10px 12px;text-align:center;color:#4338CA;font-weight:600">${r.settled.toLocaleString()}</td>
+                      </tr>`;
+                  }).join('')}
+            </tbody>
+            ${by_type.length > 0 ? `
+            <tfoot>
+              <tr style="background:#F5F0F8;font-weight:700">
+                <td style="padding:9px 12px;color:#685182">합계</td>
+                <td style="padding:9px 12px;text-align:center;color:#374151">${summary.total.toLocaleString()}</td>
+                <td style="padding:9px 12px;text-align:center;color:#059669">${summary.completed.toLocaleString()}</td>
+                <td style="padding:9px 12px;text-align:center;color:#D70072">${fmtAmt(summary.notify_total)}</td>
+                <td style="padding:9px 12px;text-align:center;color:#4338CA">${summary.settled.toLocaleString()}</td>
+              </tr>
+            </tfoot>` : ''}
+          </table>
+        </div>
+      </div>`;
+
+    // ── 담당자별 막대 그래프 ──────────────────────────────────────────────────
+    const mgrs = by_manager.slice(0, 15); // 최대 15명 표시
+    const byMgrHtml = `
+      <div style="background:#fff;border-radius:12px;padding:18px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:20px">
+        <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:4px;display:flex;align-items:center;gap:6px">
+          <i class="fas fa-user-tie" style="color:#685182"></i> 담당자별 공사 현황
+          <span style="font-size:11px;color:#9CA3AF;font-weight:400;margin-left:4px">(공사건수 · 시공통보금액 · 완료건)</span>
+        </div>
+        ${mgrs.length === 0
+          ? `<div style="text-align:center;padding:30px;color:#9CA3AF">해당 기간 데이터 없음</div>`
+          : `
+            <!-- 막대 그래프 (Chart.js) -->
+            <div style="position:relative;height:${Math.max(220, mgrs.length * 38)}px;margin-top:12px">
+              <canvas id="cs-mgr-chart"></canvas>
+            </div>
+            <!-- 상세 표 -->
+            <div style="overflow-x:auto;margin-top:20px">
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead>
+                  <tr style="background:#F5F0F8">
+                    <th style="padding:7px 10px;text-align:left;font-weight:700;color:#685182;border-bottom:2px solid #D8D0DC">담당자</th>
+                    <th style="padding:7px 10px;text-align:center;font-weight:700;color:#685182;border-bottom:2px solid #D8D0DC">전체</th>
+                    <th style="padding:7px 10px;text-align:center;font-weight:700;color:#059669;border-bottom:2px solid #D8D0DC">완료</th>
+                    <th style="padding:7px 10px;text-align:center;font-weight:700;color:#D70072;border-bottom:2px solid #D8D0DC">시공통보</th>
+                    <th style="padding:7px 10px;text-align:center;font-weight:700;color:#4338CA;border-bottom:2px solid #D8D0DC">정산완료</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${mgrs.map((r, i) => `
+                    <tr style="border-bottom:1px solid #F3F4F6;${i%2===1?'background:#FAFAFA':''}">
+                      <td style="padding:7px 10px;font-weight:600;color:#374151">
+                        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PALETTE[i%PALETTE.length]};margin-right:5px"></span>
+                        ${r.manager}
+                      </td>
+                      <td style="padding:7px 10px;text-align:center;font-weight:700;color:#374151">${r.total.toLocaleString()}</td>
+                      <td style="padding:7px 10px;text-align:center;color:#059669;font-weight:600">${r.completed.toLocaleString()}</td>
+                      <td style="padding:7px 10px;text-align:center;color:#D70072;font-weight:600">${fmtAmt(r.notify_total)}</td>
+                      <td style="padding:7px 10px;text-align:center;color:#4338CA;font-weight:600">${r.settled.toLocaleString()}</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>`
+        }
+      </div>`;
+
+    if (statsArea) statsArea.innerHTML = summaryHtml + byTypeHtml + byMgrHtml;
+
+    // Chart.js 막대 그래프 렌더
+    if (mgrs.length > 0) {
+      const canvas = document.getElementById('cs-mgr-chart');
+      if (canvas && window.Chart) {
+        const labels = mgrs.map(r => r.manager);
+        const chart = new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: '전체 공사',
+                data: mgrs.map(r => r.total),
+                backgroundColor: '#68518280',
+                borderColor: '#685182',
+                borderWidth: 1.5,
+                borderRadius: 4,
+              },
+              {
+                label: '완료',
+                data: mgrs.map(r => r.completed),
+                backgroundColor: '#05986980',
+                borderColor: '#059669',
+                borderWidth: 1.5,
+                borderRadius: 4,
+              },
+              {
+                label: '정산완료',
+                data: mgrs.map(r => r.settled),
+                backgroundColor: '#4338CA80',
+                borderColor: '#4338CA',
+                borderWidth: 1.5,
+                borderRadius: 4,
+              },
+            ],
+          },
+          options: {
+            indexAxis: 'y',   // 수평 막대
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 14 } },
+              tooltip: {
+                callbacks: {
+                  afterBody: (items) => {
+                    const idx = items[0]?.dataIndex;
+                    if (idx == null) return '';
+                    const r = mgrs[idx];
+                    return `시공통보: ${fmtAmtPlain(r.notify_total)}`;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#F3F4F6' } },
+              y: { ticks: { font: { size: 11 }, color: '#374151' }, grid: { display: false } },
+            },
+          },
+        });
+        _csCharts['mgr'] = chart;
+      }
+    }
+  }
+
+  // ── 초기 렌더 ──────────────────────────────────────────────────────────────
+  container.innerHTML = `
+    <div class="page-container" style="padding:16px">
+      <!-- 헤더 -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:18px;font-weight:900;color:#374151;display:flex;align-items:center;gap:8px">
+          <i class="fas fa-chart-pie" style="color:#685182"></i> 공사통계
+        </div>
+      </div>
+
+      <!-- 필터 바 -->
+      <div style="background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <!-- 기간 탭 -->
+        <div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;flex-shrink:0">
+          ${['yearly','monthly','weekly'].map(p => {
+            const lbl = {yearly:'년간',monthly:'월간',weekly:'주간'}[p];
+            return `<button id="cs-tab-${p}" onclick="window._csSetPeriod('${p}')"
+              style="padding:6px 16px;font-size:12px;font-weight:600;cursor:pointer;border:none;
+                background:${p==='yearly'?'#685182':'#fff'};color:${p==='yearly'?'#fff':'#6B7280'};
+                transition:all .15s">${lbl}</button>`;
+          }).join('')}
+        </div>
+
+        <!-- 연도 -->
+        <select id="cs-year-sel" onchange="window._csSetYear(this.value)"
+          style="padding:6px 12px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;cursor:pointer">
+          ${yearOpts.map(y => `<option value="${y}" ${y===_csYear?'selected':''}>${y}년</option>`).join('')}
+        </select>
+
+        <!-- 월 선택 (월간 전용) -->
+        <select id="cs-month-sel" onchange="window._csSetMonth(this.value)"
+          style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;cursor:pointer;display:none">
+          ${Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${m}" ${m===_csMonth?'selected':''}>${m}월</option>`).join('')}
+        </select>
+
+        <!-- 주간 이동 (주간 전용) -->
+        <div id="cs-week-nav" style="display:none;align-items:center;gap:6px">
+          <button onclick="window._csWeekShift(-1)" style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8249;</button>
+          <span id="cs-week-label" style="font-size:12px;color:#374151;font-weight:600;white-space:nowrap">${getWeekRange(_csWeekStart)}</span>
+          <button onclick="window._csWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>
+        </div>
+
+        <!-- 조회 버튼 -->
+        <button onclick="window._csLoad()" style="padding:7px 20px;background:#685182;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">
+          <i class="fas fa-search" style="margin-right:5px"></i>조회
+        </button>
+
+        <!-- 기간 라벨 -->
+        <span id="cs-period-label" style="font-size:13px;color:#685182;font-weight:700;margin-left:auto">${periodLabel()}</span>
+      </div>
+
+      <!-- 통계 영역 -->
+      <div id="cs-stats-area">
+        <div style="text-align:center;padding:60px 0;color:#9CA3AF">
+          <i class="fas fa-spinner fa-spin" style="font-size:28px;margin-bottom:12px;display:block"></i>데이터 조회 중...
+        </div>
+      </div>
+    </div>`;
+
+  // ── 컨트롤 함수 전역 등록 ────────────────────────────────────────────────────
+  window._csSetPeriod = function(p) {
+    _csPeriod = p;
+    // 탭 스타일 업데이트
+    ['yearly','monthly','weekly'].forEach(x => {
+      const btn = document.getElementById(`cs-tab-${x}`);
+      if (!btn) return;
+      btn.style.background = x === p ? '#685182' : '#fff';
+      btn.style.color      = x === p ? '#fff'    : '#6B7280';
+    });
+    // 월/주 컨트롤 show/hide
+    const monthSel  = document.getElementById('cs-month-sel');
+    const weekNav   = document.getElementById('cs-week-nav');
+    if (monthSel) monthSel.style.display = p === 'monthly' ? '' : 'none';
+    if (weekNav)  weekNav.style.display  = p === 'weekly'  ? 'flex' : 'none';
+    // 기간 라벨 업데이트
+    const lbl = document.getElementById('cs-period-label');
+    if (lbl) lbl.textContent = periodLabel();
+  };
+
+  window._csSetYear = function(y) {
+    _csYear = Number(y);
+    const lbl = document.getElementById('cs-period-label');
+    if (lbl) lbl.textContent = periodLabel();
+  };
+
+  window._csSetMonth = function(m) {
+    _csMonth = Number(m);
+    const lbl = document.getElementById('cs-period-label');
+    if (lbl) lbl.textContent = periodLabel();
+  };
+
+  window._csWeekShift = function(delta) {
+    shiftWeek(delta);
+    const wl = document.getElementById('cs-week-label');
+    if (wl) wl.textContent = getWeekRange(_csWeekStart);
+    const lbl = document.getElementById('cs-period-label');
+    if (lbl) lbl.textContent = periodLabel();
+  };
+
+  window._csLoad = loadAndRender;
+
+  // 자동 최초 조회
+  loadAndRender();
 }
 
 async function renderVolumeStatsPage(container) {

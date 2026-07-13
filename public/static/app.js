@@ -14478,6 +14478,15 @@ async function renderInspectionsPage(container) {
     const _rawAllTasks = tasksRes.data.tasks || tasksRes.data || [];
     const inspections = insRes.data || [];
 
+    // [DEBUG-133] 현장점검 tasks 필드 확인 — 확인 후 제거
+    if (_rawAllTasks.length > 0) {
+      const _dbgT = _rawAllTasks[0];
+      console.log('[DEBUG-133] tasks[0] con_manager_display_name:', _dbgT.con_manager_display_name);
+      console.log('[DEBUG-133] tasks[0] assigned_workers:', JSON.stringify(_dbgT.assigned_workers));
+      console.log('[DEBUG-133] tasks[0] construction_id:', _dbgT.construction_id);
+      console.log('[DEBUG-133] tasks[0] keys:', Object.keys(_dbgT).join(', '));
+    }
+
     // ── [BUG-079] LGU+ 클라이언트 필터: is_auto_request_no=0 건만 표시 ──────
     // 서버에서 이미 필터되지만, sub_role 누락 등 방어를 위해 클라이언트도 적용
     var _insMyUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);

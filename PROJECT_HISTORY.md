@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-13 (세션 137 — fix: 접속일보 공종별 집계 금액 미적용 버그 수정)
-> **GitHub 최신: `fc2468a`** — fix: 접속일보 공종별 집계 금액 미적용 버그 수정 (세션137)
-> **이전 커밋: `1148078`** — docs: PROJECT_HISTORY 세션 136 기록 추가
+> 최종 업데이트: 2026-07-13 (세션 137-2 — fix: 접속일보 작성화면 공종별 작업량 단가없음 표시 버그 수정)
+> **GitHub 최신: `934c3cd`** — fix: 접속일보 작성화면 공종별 작업량 단가없음 표시 버그 수정 (세션137-2)
+> **이전 커밋: `fc2468a`** — fix: 접속일보 공종별 집계 금액 미적용 버그 수정 (세션137)
 > **NAS 배포 완료: `5a64403`** — 방식1(업데이트 버튼) 적용 완료 (세션128 / 세션129 배포 대기)
 > **캐시 버전: `?v=20260713b`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
@@ -22,6 +22,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-099b | 137-2 | 2026-07-13 | ✅ 수정 | **접속일보 작성화면 공종별 작업량 단가없음 표시** — `renderSpliceReportForm` 내 `_mkLabelToKey` 빌드 시 SPLICE_ITEMS_DEF(11개)만 참조 → DB 추가 항목(광단자, 최종시험, 신호수추가배치) 한글→item_key 변환 실패 → 폴백(공백/슬래시 제거) → 잘못된 key → `splicePriceFormMap` 조회 실패 → "단가없음" 표시. **해결**: `_mkLabelToKey` 빌드 시 `dbSpliceItems`(DB 로드 배열)의 `item_label→item_key` 매핑 추가 보완 | `934c3cd` |
 | BUG-099 | 137 | 2026-07-13 | ✅ 수정 | **접속일보 공종별 집계/물량통계 금액 0 표시** — 단가관리에서 추가된 항목(광단자(IJP,OFD), 케이블 최종시험(양방향/단방향), 신호수추가배치)이 `SPLICE_ITEMS_DEF`(하드코딩 11개) 기반 `labelToKey` 변환 실패 → `priceMap` 조회 불가 → 금액 0 계산. **해결**: `renderFieldReportPage._spliceLabelToKey` + `_vsLoadSpliceStats._vsLabelToKey` 빌드 시 DB `prices` API 응답의 `item_label→item_key` 매핑을 추가 보완하여 DB 추가 항목도 정확히 변환 | `fc2468a` |
 | BUG-098 | 127 | 2026-07-12 | ✅ 수정 | **QR 전체선택 — 역할 카드 필터 후 숨겨진 사용자까지 선택** — `toggleAllQrChecks()`에서 `table.querySelectorAll('.user-qr-check')` 호출 시 `tr.style.display='none'`인 필터 숨겨진 행도 전부 체크됨. 동일 원인으로 `updateQrBulkCount()` 카운트 오표시, `printQrBulk()` 숨겨진 행 인쇄 포함. **해결**: ①`toggleAllQrChecks`: `tbody tr` 순회 시 `tr.style.display==='none'` 건너뜀 ②`updateQrBulkCount`: `.user-qr-check:checked` 순회 시 `tr.style.display!=='none'`만 카운트 ③`printQrBulk`: `.user-qr-check:checked` 수집 후 `.filter(cb => tr.style.display !== 'none')` 추가 ④`filterUserList`: 행 숨길 때 `.user-qr-check` 자동 해제 + 마스터 체크박스 `indeterminate` 재동기화 + `updateQrBulkCount()` 재갱신 | `e4fe63d` |
 | BUG-097 | 126 | 2026-07-12 | ✅ 수정 | **현장점검 저장 500 에러** — DB `site_inspections.inspection_type` CHECK constraint = `('routine','special','safety')`인데 UI select가 `joint`/`frequent` 값을 전송 → 500 에러. **해결**: ①`app.js` 등록/수정 모달 select value를 `joint`→`special`, `frequent`→`safety`로 수정 ②`INS_TYPE_LBL` 3곳 `special`/`safety` 키 추가 + `joint`/`frequent` 하위호환 ③`node-server.ts patchSchema v0.159`: 기존 데이터 `joint`→`special`, `frequent`→`safety` 자동 마이그레이션 | `405412f` |

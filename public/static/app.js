@@ -35516,6 +35516,12 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     (typeof SPLICE_ITEMS_DEF !== 'undefined' ? SPLICE_ITEMS_DEF : []).forEach(d => {
       _mkLabelToKey[d.label] = d.key;
     });
+    // DB prices 배열에서 추가 항목 보완 (단가관리에서 추가된 항목 포함)
+    dbSpliceItems.forEach(p => {
+      if (p.item_label && p.item_key && !_mkLabelToKey[p.item_label]) {
+        _mkLabelToKey[p.item_label] = p.item_key;
+      }
+    });
     const mkLabelToKey = lbl => _mkLabelToKey[lbl] || lbl.replace(/ /g,'').replace(/\//g,'');
 
     // ── DB 공종 목록 기반으로 행 생성 (SPLICE_ITEMS_DEF 하드코딩 대신 DB 사용) ──

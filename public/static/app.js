@@ -14484,7 +14484,8 @@ async function renderInspectionsPage(container) {
       console.log('[DEBUG-133] tasks[0] con_manager_display_name:', _dbgT.con_manager_display_name);
       console.log('[DEBUG-133] tasks[0] assigned_workers:', JSON.stringify(_dbgT.assigned_workers));
       console.log('[DEBUG-133] tasks[0] construction_id:', _dbgT.construction_id);
-      console.log('[DEBUG-133] tasks[0] keys:', Object.keys(_dbgT).join(', '));
+      console.log('[DEBUG-133] tasks[0] status:', _dbgT.status, '/ planned_date:', _dbgT.planned_date);
+      console.log('[DEBUG-133] 전체 tasks 수:', _rawAllTasks.length, '/ 날짜범위:', _df, '~', _dt);
     }
 
     // ── [BUG-079] LGU+ 클라이언트 필터: is_auto_request_no=0 건만 표시 ──────
@@ -14661,6 +14662,11 @@ async function renderInspectionsPage(container) {
                 <div style="font-size:13px;font-weight:600;color:#9CA3AF;margin-bottom:4px">해당하는 작업이 없습니다</div>
                 <div style="font-size:11px;color:#C6C6C6">${_tab==='working'?'작업개시(진행중) 작업이 없습니다':_tab==='tbm'?'TBM완료 대기 작업이 없습니다':_tab==='risk'?'위험성체크 완료 작업이 없습니다':_tab==='done'?'완료된 작업이 없습니다':''}</div>
               </div>`;
+
+            // [DEBUG-133b] 현재 탭에서 렌더링되는 tasks 필드 확인
+            filtered.forEach((_ft, _fi) => {
+              console.log(`[DEBUG-133b] filtered[${_fi}] id=${_ft.id} mgr="${_ft.con_manager_display_name}" workers=${JSON.stringify((_ft.assigned_workers||[]).map(w=>w.name))}`);
+            });
 
             return filtered.map(t => {
               const ins    = (insMap[t.id] || []).sort((a,b) => b.id - a.id);

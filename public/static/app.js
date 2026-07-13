@@ -14478,15 +14478,7 @@ async function renderInspectionsPage(container) {
     const _rawAllTasks = tasksRes.data.tasks || tasksRes.data || [];
     const inspections = insRes.data || [];
 
-    // [DEBUG-133] 현장점검 tasks 필드 확인 — 확인 후 제거
-    if (_rawAllTasks.length > 0) {
-      const _dbgT = _rawAllTasks[0];
-      console.log('[DEBUG-133] tasks[0] con_manager_display_name:', _dbgT.con_manager_display_name);
-      console.log('[DEBUG-133] tasks[0] assigned_workers:', JSON.stringify(_dbgT.assigned_workers));
-      console.log('[DEBUG-133] tasks[0] construction_id:', _dbgT.construction_id);
-      console.log('[DEBUG-133] tasks[0] status:', _dbgT.status, '/ planned_date:', _dbgT.planned_date);
-      console.log('[DEBUG-133] 전체 tasks 수:', _rawAllTasks.length, '/ 날짜범위:', _df, '~', _dt);
-    }
+
 
     // ── [BUG-079] LGU+ 클라이언트 필터: is_auto_request_no=0 건만 표시 ──────
     // 서버에서 이미 필터되지만, sub_role 누락 등 방어를 위해 클라이언트도 적용
@@ -14642,150 +14634,197 @@ async function renderInspectionsPage(container) {
         ).join('')}
       </div>
 
-      <!-- ④ 작업 리스트 -->
-      <div class="card p-0 overflow-hidden">
-        <div style="display:grid;grid-template-columns:2fr 90px 90px 1fr 80px;background:#F5F0F8;border-bottom:1px solid #D8D0DC;padding:8px 14px;font-size:11px;font-weight:700;color:#9CA3AF;text-transform:uppercase;letter-spacing:.5px">
-          <div>작업명</div><div>작업상태</div><div>점검</div><div>최근점검내용</div><div style="text-align:right">액션</div>
-        </div>
-        <div id="insTaskList">
-          ${(() => {
-            const filtered = tasks.filter(t => {
-              const ins = insMap[t.id] || [];
-              if (window._insSubFilter === 'has_ins') return ins.length > 0;
-              if (window._insSubFilter === 'no_ins')  return ins.length === 0;
-              return true;
-            });
+      <!-- ④ 작업 리스트 — PC: 테이블, 모바일: 카드 -->
+      ${(() => {
+        // ── 공통 헬퍼 ────────────────────────────────────────────────
+        const _lmG = { 'excellent':'우수','good':'양호','pass':'적정','fail':'불량','우수':'우수','양호':'양호','적정':'적정','불량':'불량' };
+        const _cmG = { '불량':'#D70072','적정':'#D70072','양호':'#685182','우수':'#685182' };
+        const _bmG = { '불량':'#FDE8F3','적정':'#FDE8F3','양호':'#F5F0F8','우수':'#F5F0F8' };
 
-            if (filtered.length === 0) return `
-              <div style="padding:48px;text-align:center;color:#C6C6C6">
-                <i class="fas fa-hard-hat" style="font-size:2.5rem;margin-bottom:12px;display:block;opacity:.2"></i>
-                <div style="font-size:13px;font-weight:600;color:#9CA3AF;margin-bottom:4px">해당하는 작업이 없습니다</div>
-                <div style="font-size:11px;color:#C6C6C6">${_tab==='working'?'작업개시(진행중) 작업이 없습니다':_tab==='tbm'?'TBM완료 대기 작업이 없습니다':_tab==='risk'?'위험성체크 완료 작업이 없습니다':_tab==='done'?'완료된 작업이 없습니다':''}</div>
-              </div>`;
+        // 공사담당자 + 작업팀 인라인 HTML 생성 헬퍼
+        function _mgrTeamHtml(t) {
+          const mgr = t.con_manager_display_name || '';
+          const workers = t.assigned_workers || [];
+          let teamStr = '';
+          if (workers.length === 1)      teamStr = workers[0].name;
+          else if (workers.length > 1)   teamStr = workers[0].name + ' 외 ' + (workers.length - 1) + '명';
+          const parts = [];
+          if (mgr)     parts.push('<span style="display:inline-flex;align-items:center;gap:2px"><i class="fas fa-user-tie" style="color:#9CA3AF;font-size:10px"></i><span>' + mgr + '</span></span>');
+          if (teamStr) parts.push('<span style="display:inline-flex;align-items:center;gap:2px"><i class="fas fa-users" style="color:#9CA3AF;font-size:10px"></i><span>' + teamStr + '</span></span>');
+          return parts.length
+            ? '<div style="font-size:11px;color:#6B7280;margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + parts.join('<span style="color:#D8D0DC;margin:0 2px">|</span>') + '</div>'
+            : '';
+        }
 
-            // [DEBUG-133b] 현재 탭에서 렌더링되는 tasks 필드 확인
-            filtered.forEach((_ft, _fi) => {
-              console.log(`[DEBUG-133b] filtered[${_fi}] id=${_ft.id} mgr="${_ft.con_manager_display_name}" workers=${JSON.stringify((_ft.assigned_workers||[]).map(w=>w.name))}`);
-            });
+        // 점검 내역 인라인 토글 공통 HTML 생성
+        function _insDetailHtml(taskId, ins) {
+          return '<div id="ins-detail-' + taskId + '" style="display:none;background:#F5F0F8;border-top:1px solid #EDE7F6;padding:0 14px 10px">' +
+            ins.map(function(i) {
+              const krRes = i.inspection_result && i.inspection_result !== 'none' ? (_lmG[i.inspection_result] || i.inspection_result) : null;
+              const resBadge = krRes
+                ? '<span style="font-size:10px;padding:1px 6px;border-radius:999px;font-weight:700;flex-shrink:0;color:' + (_cmG[krRes]||'#C6C6C6') + ';background:' + (_bmG[krRes]||'#F5F0F8') + ';border:1px solid ' + (_cmG[krRes]||'#C6C6C6') + '44">' + krRes + '</span>'
+                : '';
+              return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F5F0F8;cursor:pointer" onclick="showInspectionDetail(' + i.id + ')">' +
+                '<i class="' + (INS_STATUS[i.status]?.icon||'fas fa-circle') + '" style="color:' + (i.status==='closed'?'#685182':i.status==='in_progress'?'#685182':'#D70072') + ';font-size:12px;width:14px;text-align:center"></i>' +
+                '<span style="font-size:11px;font-weight:700;color:#C6C6C6;width:80px;flex-shrink:0">' + (i.inspection_date_only||i.inspection_date?.split('T')[0]||'-') + '</span>' +
+                '<span style="font-size:11px;padding:1px 5px;border-radius:4px;font-weight:600;flex-shrink:0" class="' + (HAZARD_CLS[i.hazard_level]||'') + '">' + (HAZARD_LBL[i.hazard_level]||'-') + '</span>' +
+                '<span style="font-size:11px;color:#685182;white-space:nowrap;padding:1px 5px;border-radius:4px;background:#F5F0F8;flex-shrink:0">' + (INS_TYPE_LBL[i.inspection_type]||i.inspection_type||'-') + '</span>' +
+                '<span style="font-size:11px;color:#C6C6C6;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1">' + (i.findings||i.location||'-') + '</span>' +
+                resBadge +
+                '<span style="font-size:11px;color:#C6C6C6;flex-shrink:0">' + (i.inspector_name||'-') + '</span>' +
+                '<span style="font-size:11px;padding:1px 6px;border-radius:999px;font-weight:600;flex-shrink:0" class="' + (INS_STATUS[i.status]?.cls||'') + '">' + (INS_STATUS[i.status]?.label||'') + '</span>' +
+                '</div>';
+            }).join('') +
+          '</div>';
+        }
 
-            return filtered.map(t => {
-              const ins    = (insMap[t.id] || []).sort((a,b) => b.id - a.id);
-              const latest = ins[0];
-              const ts     = TASK_STATUS[t.status] || TASK_STATUS.unassigned;
-              // 점검 등록 가능 여부: 취소·일지완료는 불가, 작업완료는 열람만
-              const canRegister = !['cancelled', 'completed'].includes(t.status);
-              const isReadOnly  = t.status === 'work_completed';
+        const filtered = tasks.filter(function(t) {
+          const ins = insMap[t.id] || [];
+          if (window._insSubFilter === 'has_ins') return ins.length > 0;
+          if (window._insSubFilter === 'no_ins')  return ins.length === 0;
+          return true;
+        });
 
-              return `
-              <div style="border-bottom:1px solid #F0ECF5">
-                <div style="display:grid;grid-template-columns:2fr 90px 90px 1fr 80px;padding:10px 14px;align-items:center;gap:6px;background:${isReadOnly?'#FAFAFA':'white'}"
-                     class="hover:bg-purple-50 transition-colors">
-                  <!-- 작업명 -->
-                  <div>
-                    <div style="font-weight:700;font-size:13px;color:#685182;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer"
-                         onclick="event.stopPropagation();showTaskDetail(${t.id})"
-                         title="작업 상세 보기">${t.title}</div>
-                    <div style="font-size:11px;color:#9CA3AF;margin-top:2px;display:flex;align-items:center;gap:4px">
-                      ${t.task_number ? `<span>${t.task_number}</span><span style="color:#D8D0DC">·</span>` : ''}
-                      <span>${t.planned_date || t.work_date || '-'}</span>
-                      ${t.location ? `<span style="color:#D8D0DC">·</span><i class="fas fa-map-marker-alt" style="color:#C6C6C6"></i><span>${t.location}</span>` : ''}
-                    </div>
-                    ${(() => {
-                        // 공사담당자 + 작업팀 정보 라인 (둘 다 없으면 렌더링 안 함)
-                        const mgr = t.con_manager_display_name || '';
-                        // 작업팀: 배정 작업자 기준 "팀장이름 외 N명" 형식
-                        const workers = t.assigned_workers || [];
-                        let teamStr = '';
-                        if (workers.length === 1) {
-                          teamStr = workers[0].name;
-                        } else if (workers.length > 1) {
-                          teamStr = `${workers[0].name} 외 ${workers.length - 1}명`;
-                        }
-                        const parts = [];
-                        if (mgr)     parts.push(`<span style="display:inline-flex;align-items:center;gap:2px"><i class="fas fa-user-tie" style="color:#9CA3AF;font-size:10px"></i><span>${mgr}</span></span>`);
-                        if (teamStr) parts.push(`<span style="display:inline-flex;align-items:center;gap:2px"><i class="fas fa-users" style="color:#9CA3AF;font-size:10px"></i><span>${teamStr}</span></span>`);
-                        return parts.length
-                          ? `<div style="font-size:11px;color:#6B7280;margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${parts.join('<span style="color:#D8D0DC;margin:0 2px">|</span>')}</div>`
-                          : '';
-                      })()}
-                  </div>
-                  <!-- 작업상태 -->
-                  <div>
-                    <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600" class="${ts.cls}">
-                      <span style="width:6px;height:6px;border-radius:50%;background:${ts.dot};flex-shrink:0"></span>
-                      ${ts.label}
-                    </span>
-                  </div>
-                  <!-- 점검 현황 -->
-                  <div>
-                    ${ins.length === 0
-                      ? `<span style="font-size:11px;color:#C6C6C6"><i class="fas fa-minus-circle mr-1"></i>없음</span>`
-                      : `<span style="font-size:11px;padding:2px 8px;border-radius:999px;background:#EDE9F6;color:#685182;font-weight:700;cursor:pointer"
-                              onclick="showTaskInspectionList(${t.id},'${t.title.replace(/'/g,'&#39;')}')">
-                           <i class="fas fa-clipboard-check mr-1"></i>${ins.length}건
-                         </span>`
-                    }
-                  </div>
-                  <!-- 최근 점검 내용 -->
-                  <div style="font-size:11px;color:#9CA3AF;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
-                    ${latest ? (() => {
-                      const _lm2 = { 'excellent':'우수','good':'양호','pass':'적정','fail':'불량','우수':'우수','양호':'양호','적정':'적정','불량':'불량' };
-                      const _cm2 = { '불량':'#D70072','적정':'#D70072','양호':'#685182','우수':'#685182' };
-                      const _bm2 = { '불량':'#FDE8F3','적정':'#FDE8F3','양호':'#F5F0F8','우수':'#F5F0F8' };
-                      const krR    = latest.inspection_result && latest.inspection_result !== 'none' ? (_lm2[latest.inspection_result] || latest.inspection_result) : null;
-                      const rBadge = krR ? `<span style="padding:1px 5px;border-radius:999px;font-size:10px;font-weight:700;margin-right:4px;color:${_cm2[krR]||'#9CA3AF'};background:${_bm2[krR]||'#F5F0F8'};border:1px solid ${_cm2[krR]||'#C6C6C6'}55">${krR}</span>` : '';
-                      return `${rBadge}<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:600;margin-right:4px" class="${INS_STATUS[latest.status]?.cls||''}">${INS_STATUS[latest.status]?.label||''}</span>${latest.findings ? latest.findings.substring(0,30)+(latest.findings.length>30?'…':'') : latest.location || '-'}`;
-                    })() : '<span style="color:#D1D5DB">-</span>'}
-                  </div>
-                  <!-- 액션 버튼 -->
-                  <div style="display:flex;gap:4px;justify-content:flex-end">
-                    ${ins.length > 0
-                      ? `<button onclick="showTaskInspectionList(${t.id},'${t.title.replace(/'/g,'&#39;')}')"
-                           style="font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid #D8D0DC;background:white;cursor:pointer;color:#685182;font-weight:600"
-                           onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background='white'">
-                           <i class="fas fa-list mr-1"></i>내역
-                         </button>`
-                      : ''}
-                    ${canRegister
-                      ? `<button onclick="showCreateInspectionModal(${t.id})"
-                           style="font-size:11px;padding:3px 8px;border-radius:6px;border:none;background:#685182;cursor:pointer;color:white;font-weight:600"
-                           title="점검 등록">
-                           <i class="fas fa-plus"></i>
-                         </button>`
-                      : `<span style="font-size:10px;color:#C6C6C6;padding:3px 6px" title="일지완료 작업">-</span>`
-                    }
-                  </div>
-                </div>
-                <!-- 점검 내역 인라인 (토글) -->
-                <div id="ins-detail-${t.id}" style="display:none;background:#F5F0F8;border-top:1px solid #EDE7F6;padding:0 14px 10px">
-                  ${ins.map(i => {
-                    // inspection_result 영문→한국어 변환
-                    const _lm = { 'excellent':'우수','good':'양호','pass':'적정','fail':'불량','우수':'우수','양호':'양호','적정':'적정','불량':'불량' };
-                    const _cm = { '불량':'#D70072','적정':'#D70072','양호':'#685182','우수':'#685182' };
-                    const _bm = { '불량':'#FDE8F3','적정':'#FDE8F3','양호':'#F5F0F8','우수':'#F5F0F8' };
-                    const krRes = i.inspection_result && i.inspection_result !== 'none' ? (_lm[i.inspection_result] || i.inspection_result) : null;
-                    const resBadge = krRes
-                      ? `<span style="font-size:10px;padding:1px 6px;border-radius:999px;font-weight:700;flex-shrink:0;color:${_cm[krRes]||'#C6C6C6'};background:${_bm[krRes]||'#F5F0F8'};border:1px solid ${_cm[krRes]||'#C6C6C6'}44">${krRes}</span>`
-                      : '';
-                    return `
-                  <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F5F0F8;cursor:pointer"
-                       onclick="showInspectionDetail(${i.id})">
-                    <i class="${INS_STATUS[i.status]?.icon||'fas fa-circle'}" style="color:${i.status==='closed'?'#685182':i.status==='in_progress'?'#685182':'#D70072'};font-size:12px;width:14px;text-align:center"></i>
-                    <span style="font-size:11px;font-weight:700;color:#C6C6C6;width:80px;flex-shrink:0">${i.inspection_date_only||i.inspection_date?.split('T')[0]||'-'}</span>
-                    <span style="font-size:11px;padding:1px 5px;border-radius:4px;font-weight:600;flex-shrink:0" class="${HAZARD_CLS[i.hazard_level]||''}">${HAZARD_LBL[i.hazard_level]||'-'}</span>
-                    <span style="font-size:11px;color:#685182;white-space:nowrap;padding:1px 5px;border-radius:4px;background:#F5F0F8;flex-shrink:0">${INS_TYPE_LBL[i.inspection_type]||i.inspection_type||'-'}</span>
-                    <span style="font-size:11px;color:#C6C6C6;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1">${i.findings||i.location||'-'}</span>
-                    ${resBadge}
-                    <span style="font-size:11px;color:#C6C6C6;flex-shrink:0">${i.inspector_name||'-'}</span>
-                    <span style="font-size:11px;padding:1px 6px;border-radius:999px;font-weight:600;flex-shrink:0" class="${INS_STATUS[i.status]?.cls||''}">${INS_STATUS[i.status]?.label||''}</span>
-                  </div>`;
-                  }).join('')}
-                </div>
-              </div>`;
-            }).join('');
-          })()}
-        </div>
-      </div>
+        const emptyHtml = '<div style="padding:48px;text-align:center;color:#C6C6C6">' +
+          '<i class="fas fa-hard-hat" style="font-size:2.5rem;margin-bottom:12px;display:block;opacity:.2"></i>' +
+          '<div style="font-size:13px;font-weight:600;color:#9CA3AF;margin-bottom:4px">해당하는 작업이 없습니다</div>' +
+          '<div style="font-size:11px;color:#C6C6C6">' + (_tab==='working'?'작업개시(진행중) 작업이 없습니다':_tab==='tbm'?'TBM완료 대기 작업이 없습니다':_tab==='risk'?'위험성체크 완료 작업이 없습니다':_tab==='done'?'완료된 작업이 없습니다':'') + '</div>' +
+          '</div>';
+
+        if (filtered.length === 0) {
+          return '<div class="card p-0 overflow-hidden"><div id="insTaskList">' + emptyHtml + '</div></div>';
+        }
+
+        const isMobile = window.innerWidth <= 768;
+
+        // ── 모바일: 카드 레이아웃 ────────────────────────────────────
+        if (isMobile) {
+          const cards = filtered.map(function(t) {
+            const ins         = (insMap[t.id] || []).sort(function(a,b){ return b.id - a.id; });
+            const latest      = ins[0];
+            const ts          = TASK_STATUS[t.status] || TASK_STATUS.unassigned;
+            const canRegister = !['cancelled','completed'].includes(t.status);
+            const isReadOnly  = t.status === 'work_completed';
+
+            // 최근 점검 배지
+            const krR2    = latest && latest.inspection_result && latest.inspection_result !== 'none' ? (_lmG[latest.inspection_result] || latest.inspection_result) : null;
+            const rBadge2 = krR2 ? '<span style="padding:1px 5px;border-radius:999px;font-size:10px;font-weight:700;color:' + (_cmG[krR2]||'#9CA3AF') + ';background:' + (_bmG[krR2]||'#F5F0F8') + ';border:1px solid ' + (_cmG[krR2]||'#C6C6C6') + '55">' + krR2 + '</span>' : '';
+
+            return '<div style="background:' + (isReadOnly?'#FAFAFA':'white') + ';border-radius:14px;border:1.5px solid #F0ECF5;margin-bottom:10px;overflow:hidden">' +
+              // 카드 본문
+              '<div style="padding:12px 14px">' +
+                // 상단: 작업상태 배지 + 액션 버튼
+                '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:6px">' +
+                  '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 9px;border-radius:999px;font-weight:700;flex-shrink:0" class="' + ts.cls + '">' +
+                    '<span style="width:6px;height:6px;border-radius:50%;background:' + ts.dot + ';flex-shrink:0"></span>' +
+                    ts.label +
+                  '</span>' +
+                  '<div style="display:flex;gap:6px;flex-shrink:0">' +
+                    (ins.length > 0
+                      ? '<button onclick="showTaskInspectionList(' + t.id + ',\'' + t.title.replace(/'/g,'&#39;') + '\')" style="font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid #D8D0DC;background:white;cursor:pointer;color:#685182;font-weight:600"><i class="fas fa-list mr-1"></i>내역</button>'
+                      : '') +
+                    (canRegister
+                      ? '<button onclick="showCreateInspectionModal(' + t.id + ')" style="font-size:11px;padding:4px 12px;border-radius:8px;border:none;background:#685182;cursor:pointer;color:white;font-weight:700"><i class="fas fa-plus mr-1"></i>점검등록</button>'
+                      : '<span style="font-size:10px;color:#C6C6C6;padding:4px 8px;flex-shrink:0">일지완료</span>') +
+                  '</div>' +
+                '</div>' +
+                // 작업명
+                '<div style="font-weight:700;font-size:14px;color:#685182;line-height:1.4;margin-bottom:5px;cursor:pointer" onclick="showTaskDetail(' + t.id + ')">' +
+                  t.title +
+                '</div>' +
+                // 작업번호 · 날짜 · 위치
+                '<div style="font-size:11px;color:#9CA3AF;display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:4px">' +
+                  (t.task_number ? '<span>' + t.task_number + '</span><span style="color:#D8D0DC">·</span>' : '') +
+                  '<span>' + (t.planned_date || t.work_date || '-') + '</span>' +
+                  (t.location ? '<span style="color:#D8D0DC">·</span><i class="fas fa-map-marker-alt" style="color:#C6C6C6"></i><span>' + t.location + '</span>' : '') +
+                '</div>' +
+                // 공사담당자 + 작업팀
+                _mgrTeamHtml(t) +
+                // 점검 현황 + 최근 점검 내용
+                '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #F0ECF5;flex-wrap:wrap">' +
+                  (ins.length === 0
+                    ? '<span style="font-size:11px;color:#C6C6C6"><i class="fas fa-minus-circle mr-1"></i>점검 없음</span>'
+                    : '<span style="font-size:11px;padding:2px 9px;border-radius:999px;background:#EDE9F6;color:#685182;font-weight:700;cursor:pointer;flex-shrink:0" onclick="showTaskInspectionList(' + t.id + ',\'' + t.title.replace(/'/g,'&#39;') + '\')">' +
+                        '<i class="fas fa-clipboard-check mr-1"></i>' + ins.length + '건' +
+                      '</span>') +
+                  (latest
+                    ? rBadge2 + '<span style="font-size:11px;padding:1px 5px;border-radius:4px;font-weight:600" class="' + (INS_STATUS[latest.status]?.cls||'') + '">' + (INS_STATUS[latest.status]?.label||'') + '</span>' +
+                      '<span style="font-size:11px;color:#9CA3AF;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1;min-width:0">' + (latest.findings ? latest.findings.substring(0,30)+(latest.findings.length>30?'…':'') : latest.location || '-') + '</span>'
+                    : '') +
+                '</div>' +
+              '</div>' +
+              // 점검 내역 인라인 토글
+              _insDetailHtml(t.id, ins) +
+            '</div>';
+          }).join('');
+
+          return '<div id="insTaskList" style="padding:4px 0">' + cards + '</div>';
+        }
+
+        // ── PC: 기존 테이블 레이아웃 ─────────────────────────────────
+        const rows = filtered.map(function(t) {
+          const ins         = (insMap[t.id] || []).sort(function(a,b){ return b.id - a.id; });
+          const latest      = ins[0];
+          const ts          = TASK_STATUS[t.status] || TASK_STATUS.unassigned;
+          const canRegister = !['cancelled','completed'].includes(t.status);
+          const isReadOnly  = t.status === 'work_completed';
+
+          const krR2    = latest && latest.inspection_result && latest.inspection_result !== 'none' ? (_lmG[latest.inspection_result] || latest.inspection_result) : null;
+          const rBadge2 = krR2 ? '<span style="padding:1px 5px;border-radius:999px;font-size:10px;font-weight:700;margin-right:4px;color:' + (_cmG[krR2]||'#9CA3AF') + ';background:' + (_bmG[krR2]||'#F5F0F8') + ';border:1px solid ' + (_cmG[krR2]||'#C6C6C6') + '55">' + krR2 + '</span>' : '';
+
+          return '<div style="border-bottom:1px solid #F0ECF5">' +
+            '<div style="display:grid;grid-template-columns:2fr 90px 90px 1fr 80px;padding:10px 14px;align-items:center;gap:6px;background:' + (isReadOnly?'#FAFAFA':'white') + '" class="hover:bg-purple-50 transition-colors">' +
+              // 작업명
+              '<div>' +
+                '<div style="font-weight:700;font-size:13px;color:#685182;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer" onclick="event.stopPropagation();showTaskDetail(' + t.id + ')" title="작업 상세 보기">' + t.title + '</div>' +
+                '<div style="font-size:11px;color:#9CA3AF;margin-top:2px;display:flex;align-items:center;gap:4px">' +
+                  (t.task_number ? '<span>' + t.task_number + '</span><span style="color:#D8D0DC">·</span>' : '') +
+                  '<span>' + (t.planned_date || t.work_date || '-') + '</span>' +
+                  (t.location ? '<span style="color:#D8D0DC">·</span><i class="fas fa-map-marker-alt" style="color:#C6C6C6"></i><span>' + t.location + '</span>' : '') +
+                '</div>' +
+                _mgrTeamHtml(t) +
+              '</div>' +
+              // 작업상태
+              '<div><span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600" class="' + ts.cls + '">' +
+                '<span style="width:6px;height:6px;border-radius:50%;background:' + ts.dot + ';flex-shrink:0"></span>' + ts.label +
+              '</span></div>' +
+              // 점검 현황
+              '<div>' +
+                (ins.length === 0
+                  ? '<span style="font-size:11px;color:#C6C6C6"><i class="fas fa-minus-circle mr-1"></i>없음</span>'
+                  : '<span style="font-size:11px;padding:2px 8px;border-radius:999px;background:#EDE9F6;color:#685182;font-weight:700;cursor:pointer" onclick="showTaskInspectionList(' + t.id + ',\'' + t.title.replace(/'/g,'&#39;') + '\')">' +
+                      '<i class="fas fa-clipboard-check mr-1"></i>' + ins.length + '건' +
+                    '</span>') +
+              '</div>' +
+              // 최근 점검 내용
+              '<div style="font-size:11px;color:#9CA3AF;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">' +
+                (latest
+                  ? rBadge2 + '<span style="padding:1px 5px;border-radius:4px;font-size:10px;font-weight:600;margin-right:4px" class="' + (INS_STATUS[latest.status]?.cls||'') + '">' + (INS_STATUS[latest.status]?.label||'') + '</span>' +
+                    (latest.findings ? latest.findings.substring(0,30)+(latest.findings.length>30?'…':'') : latest.location || '-')
+                  : '<span style="color:#D1D5DB">-</span>') +
+              '</div>' +
+              // 액션 버튼
+              '<div style="display:flex;gap:4px;justify-content:flex-end">' +
+                (ins.length > 0
+                  ? '<button onclick="showTaskInspectionList(' + t.id + ',\'' + t.title.replace(/'/g,'&#39;') + '\')" style="font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid #D8D0DC;background:white;cursor:pointer;color:#685182;font-weight:600" onmouseover="this.style.background=\'#F5F0F8\'" onmouseout="this.style.background=\'white\'"><i class="fas fa-list mr-1"></i>내역</button>'
+                  : '') +
+                (canRegister
+                  ? '<button onclick="showCreateInspectionModal(' + t.id + ')" style="font-size:11px;padding:3px 8px;border-radius:6px;border:none;background:#685182;cursor:pointer;color:white;font-weight:600" title="점검 등록"><i class="fas fa-plus"></i></button>'
+                  : '<span style="font-size:10px;color:#C6C6C6;padding:3px 6px" title="일지완료 작업">-</span>') +
+              '</div>' +
+            '</div>' +
+            // 점검 내역 인라인 토글
+            _insDetailHtml(t.id, ins) +
+          '</div>';
+        }).join('');
+
+        return '<div class="card p-0 overflow-hidden">' +
+          '<div style="display:grid;grid-template-columns:2fr 90px 90px 1fr 80px;background:#F5F0F8;border-bottom:1px solid #D8D0DC;padding:8px 14px;font-size:11px;font-weight:700;color:#9CA3AF;text-transform:uppercase;letter-spacing:.5px">' +
+            '<div>작업명</div><div>작업상태</div><div>점검</div><div>최근점검내용</div><div style="text-align:right">액션</div>' +
+          '</div>' +
+          '<div id="insTaskList">' + rows + '</div>' +
+        '</div>';
+      })()}
     </div>`;
   } catch(e) {
     container.innerHTML = `<p class="text-red-500 p-4">로드 실패: ${e.message}</p>`;

@@ -3770,7 +3770,7 @@ app.post('/api/tbm/:id/share-token', async (c) => {
   const tbmRow = rawDb.prepare(`
     SELECT tbm.id, tbm.task_id, tbm.attendees,
            tbm.gps_address,
-           tk.work_number, tk.title AS task_title,
+           tk.work_number, tk.sub_task_number, tk.title AS task_title,
            tk.gps_address AS task_gps_address,
            tk.confirmed_address AS task_confirmed_address,
            tk.contractor_name,
@@ -3818,6 +3818,7 @@ app.post('/api/tbm/:id/share-token', async (c) => {
     url: `/tbm-share/${token}`,
     // 텍스트 복사용 정보
     work_number:       tbmRow.work_number || '',
+    sub_task_number:   tbmRow.sub_task_number || '',
     task_title:        tbmRow.task_title || '',
     contractor_name:   tbmRow.contractor_name || '',   // 공사담당자 (담당자)
     lgu_supervisor:    tbmRow.lgu_supervisor || '',    // 공사감독자
@@ -6289,13 +6290,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260713b">
+  <link rel="stylesheet" href="/static/style.css?v=20260713c">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260713b"></script>
+  <script src="/static/app.js?v=20260713c"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260713b"></script>
+  <script src="/static/mobile-app.js?v=20260713c"></script>
 </body>
 </html>`)
 })

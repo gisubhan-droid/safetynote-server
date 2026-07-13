@@ -14157,7 +14157,11 @@ async function _tbmShare(tbmId, btnEl) {
     // ── 복사 텍스트 구성 ──────────────────────────────────────────
     const workerList = (d.attendees && d.attendees.length > 0 ? d.attendees : d.assigned_workers) || [];
     const lines = [];
-    if (d.work_number)      lines.push(`작업번호   : ${d.work_number}`);
+    // 작업번호: work_number + sub_task_number 조합 (WKS-######-#####-#### 형식)
+    if (d.work_number) {
+      const fullWorkNum = d.sub_task_number ? `${d.work_number}-${d.sub_task_number}` : d.work_number;
+      lines.push(`작업번호   : ${fullWorkNum}`);
+    }
     if (d.task_title)       lines.push(`작업명     : ${d.task_title}`);
     if (d.contractor_name)  lines.push(`담당자     : ${d.contractor_name}`);
     if (d.lgu_supervisor)   lines.push(`공사감독자 : ${d.lgu_supervisor}`);

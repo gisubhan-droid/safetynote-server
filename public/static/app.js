@@ -8931,9 +8931,15 @@ async function showTaskDetail(id, openTbmTab) {
             </div>
           `).join('')}
         ${task.status === 'in_progress' || task.status === 'tbm_done' || task.status === 'working' ? `
-        <button onclick="showTbmForm(${task.id})" class="btn btn-primary w-full mt-2">
-          <i class="fas fa-plus"></i> TBM 추가 실시
-        </button>` : ''}
+        <div class="flex gap-2 mt-2">
+          <button onclick="_showTbmAddConfirm(${task.id}, ${tbms.length})" class="btn btn-primary flex-1">
+            <i class="fas fa-plus"></i> TBM 추가 실시
+          </button>
+          ${task.status === 'tbm_done' ? `
+          <button onclick="changeTaskStatus(${task.id},'working')" class="btn btn-success flex-1">
+            <i class="fas fa-play"></i> 작업개시
+          </button>` : ''}
+        </div>` : ''}
       </div>
 
       <!-- 작업 일지 탭 -->
@@ -14142,6 +14148,49 @@ async function _tbmPrint(tbmId) {
     _openPrintOverlay(_tbmPrintHtml);
   } catch(e) {
     toast(e.message || 'TBM 인쇄 데이터 로딩 실패', 'error');
+  }
+}
+
+// TBM 추가 실시 버튼 클릭: TBM 이력이 있으면 "기존 TBM 이동 / 신규 등록" 확인 팝업
+// tbmCount: 현재 TBM 탭에 렌더링된 tbms.length (이력 유무 판단용)
+async function _showTbmAddConfirm(taskId, tbmCount) {
+  if (tbmCount > 0) {
+    // TBM 이력 있음 → 확인 팝업
+    const m = document.createElement('div');
+    m.className = 'modal-overlay modal-sm';
+    m.innerHTML = `
+      <div class="modal" style="max-width:360px">
+        <div class="modal-header" style="background:linear-gradient(135deg,#685182,#8E72A8);color:white">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-users text-lg"></i>
+            <h3 class="font-bold">TBM 이력 확인</h3>
+          </div>
+          <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="background:#F5F0F8;border:1.5px solid #C4B5D4;border-radius:12px;padding:14px 16px;margin-bottom:4px">
+            <p style="font-size:13px;font-weight:700;color:#4E3A63;margin-bottom:6px">
+              <i class="fas fa-info-circle mr-2" style="color:#8E72A8"></i>TBM 이력이 있습니다.
+            </p>
+            <p style="font-size:12px;color:#6B7280;margin:0">기존 TBM으로 이동하시겠습니까?<br>아니오 선택 시 신규 TBM을 등록합니다.</p>
+          </div>
+        </div>
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="this.closest('.modal-overlay').remove();showTbmForm(${taskId})"
+            class="btn btn-outline" style="min-width:80px">
+            아니오
+          </button>
+          <button onclick="this.closest('.modal-overlay').remove()"
+            class="btn btn-primary" style="min-width:80px;background:#685182;border-color:#685182">
+            네
+          </button>
+        </div>
+      </div>`;
+    m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+    document.body.appendChild(m);
+  } else {
+    // TBM 이력 없음 → 바로 신규 TBM 등록
+    await showTbmForm(taskId);
   }
 }
 

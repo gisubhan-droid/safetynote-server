@@ -996,11 +996,15 @@ function showMapModal(address) {
         window.location.href = appUrl;
       }
 
-      // 1500ms 후 앱이 안 열렸으면(미설치) 웹 URL을 시스템 브라우저로 열기
+      // [BUG-FIX-2] 1500ms 후 앱이 안 열렸으면(미설치) 웹 URL을 시스템 브라우저로 열기
+      // 네이버지도 웹 URL은 MainActivity에서 launchInSystemBrowser()로 처리됨
+      // (https://map.naver.com/ 도메인 → 외부 브라우저 강제 실행)
       setTimeout(() => {
         document.removeEventListener('visibilitychange', onHide);
         if (!appOpened) {
+          // _system으로 전달 → MainActivity가 외부 브라우저로 강제 오픈 (네이버지도 포함)
           try { window.open(webUrl, '_system'); } catch(e) {
+            // _system 지원 안 되면 _blank (PC 웹 환경 폴백)
             window.open(webUrl, '_blank');
           }
         }
@@ -10006,6 +10010,31 @@ function switchDetailTab(name, el) {
 async function openAttachment(id, fileName, mimeType) {
   try {
     const token = localStorage.getItem('token');
+
+    // ── [BUG-FIX-1] Capacitor(Android WebView) 환경 감지 ───────────────────
+    // Capacitor 환경에서는 blob URL + window.open('', '_blank') 방식이
+    // WebView 내부에서 열려 이전 화면으로 돌아갈 수 없음.
+    // → 대신 다운로드 URL을 window.open(url, '_system')으로 전달
+    //   → MainActivity.shouldOverrideUrlLoading에서 인터셉트
+    //   → DownloadManager로 다운로드 후 외부 뷰어 앱(Chooser)으로 열기
+    const ua = navigator.userAgent || '';
+    const isCapacitor = !!(window.Capacitor) || (/Android/i.test(ua) && (/wv\b|WebView/i.test(ua) || !/Chrome\/\d/i.test(ua)));
+    if (isCapacitor) {
+      // 토큰을 URL 쿼리에 포함시켜 MainActivity에서 헤더 추가 가능하도록 전달
+      // filename 힌트도 포함 (MIME 감지용)
+      const safeFileName = encodeURIComponent(fileName || 'attachment');
+      const downloadUrl = `/api/attachments/${id}/download?token=${encodeURIComponent(token||'')}&filename=${safeFileName}`;
+      try {
+        window.open(downloadUrl, '_system');
+        toast(`"${fileName}" 파일을 여는 중...`, 'info');
+      } catch(e) {
+        // _system 실패 시 일반 방식으로 폴백
+        window.open(downloadUrl, '_blank');
+      }
+      return;
+    }
+
+    // ── 일반 브라우저 (PC / 일반 모바일 브라우저) ────────────────────────────
     const res = await fetch(`/api/attachments/${id}/download`, {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {}
     });

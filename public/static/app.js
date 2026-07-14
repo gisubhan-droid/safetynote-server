@@ -8932,7 +8932,7 @@ async function showTaskDetail(id, openTbmTab) {
           `).join('')}
         ${task.status === 'in_progress' || task.status === 'tbm_done' || task.status === 'working' ? `
         <div class="flex gap-2 mt-2">
-          <button onclick="_showTbmAddConfirm(${task.id}, ${tbms.length})" class="btn btn-primary flex-1">
+          <button onclick="_showTbmAddConfirm(${task.id}, ${tbms.length > 0 ? tbms[tbms.length-1].id : 0})" class="btn btn-primary flex-1">
             <i class="fas fa-plus"></i> TBM 추가 실시
           </button>
           ${task.status === 'tbm_done' ? `
@@ -14153,8 +14153,8 @@ async function _tbmPrint(tbmId) {
 
 // TBM 추가 실시 버튼 클릭: TBM 이력이 있으면 "기존 TBM 이동 / 신규 등록" 확인 팝업
 // tbmCount: 현재 TBM 탭에 렌더링된 tbms.length (이력 유무 판단용)
-async function _showTbmAddConfirm(taskId, tbmCount) {
-  if (tbmCount > 0) {
+async function _showTbmAddConfirm(taskId, latestTbmId) {
+  if (latestTbmId > 0) {
     // TBM 이력 있음 → 확인 팝업
     const m = document.createElement('div');
     m.className = 'modal-overlay modal-sm';
@@ -14175,12 +14175,12 @@ async function _showTbmAddConfirm(taskId, tbmCount) {
             <p style="font-size:12px;color:#6B7280;margin:0">기존 TBM으로 이동하시겠습니까?<br>아니오 선택 시 신규 TBM을 등록합니다.</p>
           </div>
         </div>
-        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:center">
           <button onclick="this.closest('.modal-overlay').remove();showTbmForm(${taskId})"
             class="btn btn-outline" style="min-width:80px">
             아니오
           </button>
-          <button onclick="this.closest('.modal-overlay').remove()"
+          <button onclick="this.closest('.modal-overlay').remove();showTbmDetail(${latestTbmId})"
             class="btn btn-primary" style="min-width:80px;background:#685182;border-color:#685182">
             네
           </button>

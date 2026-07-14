@@ -11356,6 +11356,36 @@ async function showTbmForm(taskId) {
   </div>`;
   document.body.appendChild(modal);
 
+  // ── [FEAT-051-AUTO] 체크리스트 조건부 작업유형 → TBM 작업유형 칩 자동 선택 ──
+  // item_work_class (bucket/pole/rooftop/ladder/heavy) → WORK_TYPE_SAFETY 키 매핑
+  const CONDITIONAL_TO_WTSAFETY = {
+    bucket:  '바켓차량작업',
+    pole:    '전주승주',
+    rooftop: '옥상옥탑작업',
+    ladder:  '사다리사용작업',
+    heavy:   '중장비사용',
+  };
+  const conditionalClasses = new Set(['bucket', 'pole', 'rooftop', 'ladder', 'heavy']);
+  const responses = Array.isArray(clData.responses) ? clData.responses : [];
+  // 응답 중 조건부 항목에 해당하는 work_class 수집 (중복 제거)
+  const detectedTypes = new Set(
+    responses
+      .filter(r => conditionalClasses.has(r.item_work_class))
+      .map(r => CONDITIONAL_TO_WTSAFETY[r.item_work_class])
+      .filter(Boolean)
+  );
+  // DOM 삽입 후 micro-task에서 실행 (버튼이 렌더된 뒤 적용)
+  if (detectedTypes.size > 0) {
+    setTimeout(() => {
+      for (const typeKey of detectedTypes) {
+        const btn = document.querySelector(`.wt-chip[data-type="${typeKey}"]`);
+        if (btn && !btn.classList.contains('wt-chip--active')) {
+          _applyWorkTypeSafety(typeKey);
+        }
+      }
+    }, 0);
+  }
+
   // GPS 자동 로드
   loadTbmGPS();
 }

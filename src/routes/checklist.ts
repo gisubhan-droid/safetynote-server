@@ -130,9 +130,9 @@ app.get('/task/:taskId', async (c) => {
 
     if (!assessment) return c.json({ assessment: null })
 
-    // 응답 항목 조회
+    // 응답 항목 조회 (ci.work_class 포함 — TBM 작업유형 자동선택에 사용)
     const responses = await c.env.DB.prepare(
-      `SELECT cr.*, ci.category, ci.question, ci.note, ci.sort_order
+      `SELECT cr.*, ci.category, ci.question, ci.note, ci.sort_order, ci.work_class as item_work_class
        FROM checklist_responses cr
        JOIN checklist_items ci ON ci.id = cr.item_id
        WHERE cr.assessment_id = ?

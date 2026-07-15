@@ -10018,26 +10018,29 @@ async function openAttachment(id, fileName, mimeType) {
     //   → MainActivity.shouldOverrideUrlLoading에서 인터셉트
     //   → DownloadManager로 다운로드 후 외부 뷰어 앱(Chooser)으로 열기
     const ua = navigator.userAgent || '';
-    const isCapacitor = !!(window.Capacitor) || (/Android/i.test(ua) && (/wv\b|WebView/i.test(ua) || !/Chrome\/\d/i.test(ua)));
+    // ✅ [BUG-014/BUG-011 수정] SafetyNoteApp 브릿지 존재 = 앱 환경 100% 확실
+    // isCapacitor 감지보다 SafetyNoteApp 브릿지 유무를 최우선 판단 기준으로 사용
+    const isAppBridge = !!(window.SafetyNoteApp);
+    const isCapacitor = isAppBridge || !!(window.Capacitor) || (/Android/i.test(ua) && (/wv\b|WebView/i.test(ua) || !/Chrome\/\d/i.test(ua)));
+
+    // ✅ 절대 URL 생성: DownloadManager는 반드시 http(s):// 절대경로 필요
+    // 앱 환경 여부와 관계없이 미리 생성 (isAppBridge 직접 체크에서도 사용)
+    const safeFileName = encodeURIComponent(fileName || 'attachment');
+    const absoluteUrl = window.location.origin
+      + `/api/attachments/${id}/download`
+      + `?token=${encodeURIComponent(token||'')}&filename=${safeFileName}`;
+
+    // ✅ 1순위: SafetyNoteApp 브릿지 직접 호출 (isCapacitor 감지 결과와 무관하게 항상 시도)
+    if (isAppBridge && typeof window.SafetyNoteApp.openAttachment === 'function') {
+      try {
+        window.SafetyNoteApp.openAttachment(absoluteUrl, fileName || 'attachment');
+        toast(`"${fileName}" 파일을 여는 중...`, 'info');
+        return;
+      } catch(e) { /* 폴백으로 계속 */ }
+    }
+
     if (isCapacitor) {
-      // ✅ 절대 URL 사용: DownloadManager는 반드시 http(s):// 절대경로 필요
-      // window.location.origin = 현재 서버 주소 (예: https://linkmax.myds.me:3443)
-      const safeFileName = encodeURIComponent(fileName || 'attachment');
-      const absoluteUrl = window.location.origin
-        + `/api/attachments/${id}/download`
-        + `?token=${encodeURIComponent(token||'')}&filename=${safeFileName}`;
-
-      // ✅ JS→Java 브릿지 우선 시도 (window.SafetyNoteApp.openAttachment)
-      // v1.4.9+ 에서 지원, 구버전에서는 폴백
-      if (window.SafetyNoteApp && typeof window.SafetyNoteApp.openAttachment === 'function') {
-        try {
-          window.SafetyNoteApp.openAttachment(absoluteUrl, fileName || 'attachment');
-          toast(`"${fileName}" 파일을 여는 중...`, 'info');
-          return;
-        } catch(e) { /* 폴백으로 계속 */ }
-      }
-
-      // ✅ _system 방식: shouldOverrideUrlLoading 인터셉트 (절대 URL 전달)
+      // ✅ 2순위: _system 방식 (shouldOverrideUrlLoading 인터셉트)
       try {
         window.open(absoluteUrl, '_system');
         toast(`"${fileName}" 파일을 여는 중...`, 'info');
@@ -32723,7 +32726,8 @@ function resolveApkUrl(apkUrl) {
  */
 function doApkDownload(url, newVersion) {
   const ua = navigator.userAgent || '';
-  const isCapacitor = !!(window.Capacitor) || /wv\b|WebView/i.test(ua);
+  // ✅ [BUG-013 수정] SafetyNoteApp 브릿지 존재 = 앱 환경 100% 확실 (최우선 판단)
+  const isCapacitor = !!(window.SafetyNoteApp) || !!(window.Capacitor) || /wv\b|WebView/i.test(ua);
 
   // 새 버전 번호가 전달된 경우 미리 저장 (설치 완료 전이지만 다운로드 시작 시 기록)
   if (newVersion) {

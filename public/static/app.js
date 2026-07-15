@@ -10020,16 +10020,29 @@ async function openAttachment(id, fileName, mimeType) {
     const ua = navigator.userAgent || '';
     const isCapacitor = !!(window.Capacitor) || (/Android/i.test(ua) && (/wv\b|WebView/i.test(ua) || !/Chrome\/\d/i.test(ua)));
     if (isCapacitor) {
-      // 토큰을 URL 쿼리에 포함시켜 MainActivity에서 헤더 추가 가능하도록 전달
-      // filename 힌트도 포함 (MIME 감지용)
+      // ✅ 절대 URL 사용: DownloadManager는 반드시 http(s):// 절대경로 필요
+      // window.location.origin = 현재 서버 주소 (예: https://linkmax.myds.me:3443)
       const safeFileName = encodeURIComponent(fileName || 'attachment');
-      const downloadUrl = `/api/attachments/${id}/download?token=${encodeURIComponent(token||'')}&filename=${safeFileName}`;
+      const absoluteUrl = window.location.origin
+        + `/api/attachments/${id}/download`
+        + `?token=${encodeURIComponent(token||'')}&filename=${safeFileName}`;
+
+      // ✅ JS→Java 브릿지 우선 시도 (window.SafetyNoteApp.openAttachment)
+      // v1.4.9+ 에서 지원, 구버전에서는 폴백
+      if (window.SafetyNoteApp && typeof window.SafetyNoteApp.openAttachment === 'function') {
+        try {
+          window.SafetyNoteApp.openAttachment(absoluteUrl, fileName || 'attachment');
+          toast(`"${fileName}" 파일을 여는 중...`, 'info');
+          return;
+        } catch(e) { /* 폴백으로 계속 */ }
+      }
+
+      // ✅ _system 방식: shouldOverrideUrlLoading 인터셉트 (절대 URL 전달)
       try {
-        window.open(downloadUrl, '_system');
+        window.open(absoluteUrl, '_system');
         toast(`"${fileName}" 파일을 여는 중...`, 'info');
       } catch(e) {
-        // _system 실패 시 일반 방식으로 폴백
-        window.open(downloadUrl, '_blank');
+        window.open(absoluteUrl, '_blank');
       }
       return;
     }

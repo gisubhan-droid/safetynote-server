@@ -156,15 +156,31 @@ export function getApkFilePath(uploadRoot: string): string {
 /**
  * Authorization: Bearer <base64(JSON)> 에서 사용자 정보 추출
  * 이 앱은 서명 없는 base64 방식 사용 (lightweight)
+ *
+ * ✅ DownloadManager 대응: 헤더 없이 쿼리 파라미터로 token 전달 가능
+ *    - DownloadManager는 WebView SSL 예외를 공유하지 않아 Authorization 헤더를 추가해도
+ *      NAS 자체서명 인증서 문제로 실패할 수 있음
+ *    - 해결: ?token=... 쿼리 파라미터를 추가로 허용 (다운로드 전용 엔드포인트)
  */
 export function getUser(c: any): any {
+  // 1순위: Authorization 헤더
   const auth = c.req.header('Authorization') || ''
-  if (!auth.startsWith('Bearer ')) return null
+  if (auth.startsWith('Bearer ')) {
+    try {
+      const token = auth.slice(7)
+      const buf = Buffer.from(token, 'base64')
+      return JSON.parse(buf.toString('utf-8'))
+    } catch(_) { return null }
+  }
+  // 2순위: ?token= 쿼리 파라미터 (DownloadManager / 직접 링크 다운로드용)
   try {
-    const token = auth.slice(7)
-    const buf = Buffer.from(token, 'base64')
-    return JSON.parse(buf.toString('utf-8'))
-  } catch(_) { return null }
+    const qToken = c.req.query('token')
+    if (qToken) {
+      const buf = Buffer.from(qToken, 'base64')
+      return JSON.parse(buf.toString('utf-8'))
+    }
+  } catch(_) {}
+  return null
 }
 
 // ─── 역할 변환 헬퍼 ──────────────────────────────────────────────────────────

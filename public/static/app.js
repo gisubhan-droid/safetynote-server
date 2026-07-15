@@ -39257,12 +39257,14 @@ async function loadSiteMapMarkers(map) {
     //   - task_status='work_completed' 또는 'completed' 인 건만 완료 탭에 표시
     // GPS 우선순위: tbm_records.gps → work_logs.gps → 좌표 없음(목록만)
     if (filter === 'completed') {
-      // ① TBM API로 전체 TBM 목록 확보
-      // [BUG-084] 날짜 파라미터 제거: 완료건도 날짜 무관 전체 조회 후 클라이언트 필터
-      //   dateParams() 사용 시 기본 30일 범위 밖 완료 TBM 레코드 필터아웃 → 0건
-      //   날짜 필터는 UI 날짜 범위 선택기로 별도 제공 예정
+      // ① TBM API로 완료 목록 확보 — 날짜 파라미터 적용
+      // [BUG-085 수정] 날짜 파라미터를 서버에 전달하여 날짜 필터링 정상 동작
+      //   tbm.ts: date(COALESCE(tbm.tbm_date, tbm.created_at)) >= date_from ~ <= date_to 필터 지원
+      //   '오늘' 선택 시 dateFrom=dateTo=오늘 → 오늘 완료 건만 조회
       const tcp = new URLSearchParams();
-      if (userId) tcp.set('user_id', userId);
+      if (dateFrom) tcp.set('date_from', dateFrom);
+      if (dateTo)   tcp.set('date_to',   dateTo);
+      if (userId)   tcp.set('user_id',   userId);
       tcp.set('limit', '500');
       const tbmDoneRes = await API.get(`/tbm?${tcp.toString()}`);
       const _rawTbmDoneList = Array.isArray(tbmDoneRes.data) ? tbmDoneRes.data

@@ -2367,6 +2367,11 @@ function renderApp() {
         <span>로그아웃</span>
       </div>
     </div>
+    <!-- 앱 버전 표시 — 아이콘 레일 하단 -->
+    <div class="rail-app-version" id="rail-app-version" title="앱 버전 정보" onclick="safeNavigateTo('my-profile')" style="cursor:pointer">
+      <i class="fas fa-mobile-alt" style="font-size:10px;opacity:0.7"></i>
+      <span id="rail-version-text" style="font-size:9px;opacity:0.7">v—</span>
+    </div>
     <!-- FEAT-059: LinkMak 크레딧 — 아이콘 레일 최하단 -->
     <div class="rail-credit" title="Powered by LinkMak Co.">
       <span class="rail-credit-name">LinkMak</span>
@@ -2443,6 +2448,19 @@ function renderApp() {
 
   // buildLayout에서 생성한 그룹 데이터를 전역에 등록 (syncFlyoutActive에서 사용)
   window._flyoutGroups = groups;
+
+  // 레일 앱 버전 초기값 세팅 (localStorage 우선, 없으면 서버 조회)
+  const _railVerEl = document.getElementById('rail-version-text');
+  if (_railVerEl) {
+    const _stored = localStorage.getItem('apk-installed-version');
+    if (_stored) {
+      _railVerEl.textContent = `v${_stored}`;
+    } else {
+      fetch('/api/app-version').then(r => r.ok ? r.json() : {}).then(info => {
+        if (info.version && _railVerEl) _railVerEl.textContent = `v${info.version}`;
+      }).catch(() => {});
+    }
+  }
 
   navigateTo(currentPage);
   // 로그인 후 서명 요청 카운트 폴링 시작
@@ -29278,12 +29296,45 @@ async function renderMyProfilePage(container) {
         </div>
       </div>
 
+      <!-- ─── 앱 정보 카드 ─────────────────────────────────────────────────── -->
+      <div style="background:#fff;border-radius:16px;box-shadow:0 1px 6px rgba(104,81,130,0.08);padding:20px;margin-bottom:16px" id="app-info-card">
+        <div style="font-size:15px;font-weight:700;color:#374151;display:flex;align-items:center;gap:8px;margin-bottom:16px">
+          <i class="fas fa-mobile-alt" style="color:#685182"></i>앱 정보
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+
+          <!-- 설치된 APK 버전 -->
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#F9F5FF;border-radius:10px;border:1px solid #EDE7F6">
+            <div style="display:flex;align-items:center;gap:8px">
+              <i class="fab fa-android" style="color:#3DDC84;font-size:16px"></i>
+              <span style="font-size:13px;color:#374151;font-weight:600">설치된 앱 버전</span>
+            </div>
+            <span id="profile-installed-ver" style="font-size:13px;font-weight:700;color:#685182;font-family:monospace">—</span>
+          </div>
+
+          <!-- 서버 최신 버전 -->
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#F0FDF4;border-radius:10px;border:1px solid #BBF7D0">
+            <div style="display:flex;align-items:center;gap:8px">
+              <i class="fas fa-server" style="color:#22C55E;font-size:14px"></i>
+              <span style="font-size:13px;color:#374151;font-weight:600">서버 최신 버전</span>
+            </div>
+            <span id="profile-server-ver" style="font-size:13px;font-weight:700;color:#16A34A;font-family:monospace">—</span>
+          </div>
+
+          <!-- 업데이트 상태 -->
+          <div id="profile-update-status" style="display:none;padding:10px 14px;border-radius:10px;font-size:12px;text-align:center;font-weight:600"></div>
+
+        </div>
+      </div>
+
     </div>`;
   } catch(e) {
     container.innerHTML = `<p class="text-red-500 p-4">로드 실패: ${e.message}</p>`;
   }
   // 카드 렌더링 후 위치 이력 자동 로드
   _loadLocationHistory();
+  // 앱 정보 카드 버전 정보 로드
+  _loadProfileAppVersion();
 }
 
 async function saveMyProfile() {
@@ -29415,6 +29466,50 @@ function applyUserPrefs() {
 }
 
 // ─── 2단계: 위치 이력 로드 & 렌더 ────────────────────────────────────────────
+/** 내 계정 페이지 — 앱 정보 카드 버전 정보 로드 */
+async function _loadProfileAppVersion() {
+  const installedEl = document.getElementById('profile-installed-ver');
+  const serverEl    = document.getElementById('profile-server-ver');
+  const statusEl    = document.getElementById('profile-update-status');
+  const railEl      = document.getElementById('rail-version-text');
+  if (!installedEl) return;
+
+  try {
+    // 서버 최신 버전 조회
+    const res = await fetch('/api/app-version');
+    const info = res.ok ? await res.json() : {};
+    const serverVer = info.version || '—';
+
+    // 설치된 버전 (localStorage)
+    const installedVer = localStorage.getItem('apk-installed-version') || '—';
+
+    if (serverEl)    serverEl.textContent    = serverVer !== '—' ? `v${serverVer}` : '—';
+    if (installedEl) installedEl.textContent = installedVer !== '—' ? `v${installedVer}` : '—';
+
+    // 레일 버전 텍스트 업데이트
+    if (railEl) railEl.textContent = installedVer !== '—' ? `v${installedVer}` : (serverVer !== '—' ? `v${serverVer}` : 'v—');
+
+    // 업데이트 상태 표시
+    if (statusEl && serverVer !== '—' && installedVer !== '—') {
+      const needUpdate = compareVersions(installedVer, serverVer) < 0;
+      statusEl.style.display = 'block';
+      if (needUpdate) {
+        statusEl.style.background = '#FFF7ED';
+        statusEl.style.border = '1px solid #FED7AA';
+        statusEl.style.color = '#EA580C';
+        statusEl.innerHTML = `<i class="fas fa-arrow-up-circle mr-1"></i>업데이트 가능 (v${serverVer})`;
+      } else {
+        statusEl.style.background = '#F0FDF4';
+        statusEl.style.border = '1px solid #BBF7D0';
+        statusEl.style.color = '#16A34A';
+        statusEl.innerHTML = `<i class="fas fa-check-circle mr-1"></i>최신 버전입니다`;
+      }
+    }
+  } catch(e) {
+    if (installedEl) installedEl.textContent = localStorage.getItem('apk-installed-version') || '—';
+  }
+}
+
 async function _loadLocationHistory() {
   const el = document.getElementById('locationHistoryList');
   if (!el) return;

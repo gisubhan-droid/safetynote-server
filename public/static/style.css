@@ -673,6 +673,19 @@ body {
 .rail-logout-btn:hover { background: rgba(255,100,100,0.15); color: rgba(255,180,180,1); }
 
 /* FEAT-059: LinkMak 크레딧 — 아이콘 레일 최하단 */
+/* 앱 버전 표시 — 레일 하단 (LinkMak 크레딧 바로 위) */
+.rail-app-version {
+  width: 100%; padding: 5px 0 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: opacity 0.2s;
+  user-select: none;
+}
+.rail-app-version:hover { opacity: 1; }
+.rail-app-version i { color: rgba(255,255,255,0.85); }
+.rail-app-version span { color: rgba(255,255,255,0.85); letter-spacing: 0.2px; }
+
 .rail-credit {
   width: 100%; padding: 4px 0 5px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;

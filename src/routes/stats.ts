@@ -405,6 +405,69 @@ app.get('/completed/by-team', async (c) => {
   }
 })
 
+// 팀별 진행중 작업건수 (완료·취소 제외)
+app.get('/active/by-team', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT tm.id as team_id, tm.name as team_name,
+              COUNT(DISTINCT u.id) as member_count,
+              GROUP_CONCAT(DISTINCT u.name) as member_names,
+              COUNT(DISTINCT CASE WHEN t.status NOT IN ('completed','cancelled') THEN t.id END) as active_count,
+              COUNT(DISTINCT CASE WHEN t.status = 'unassigned'    THEN t.id END) as unassigned_count,
+              COUNT(DISTINCT CASE WHEN t.status = 'assigned'      THEN t.id END) as assigned_count,
+              COUNT(DISTINCT CASE WHEN t.status = 'in_progress'   THEN t.id END) as inprogress_count,
+              COUNT(DISTINCT CASE WHEN t.status = 'tbm_done'      THEN t.id END) as tbm_count,
+              COUNT(DISTINCT CASE WHEN t.status = 'working'       THEN t.id END) as working_count,
+              COUNT(DISTINCT CASE WHEN t.status = 'work_completed' THEN t.id END) as work_completed_count
+       FROM teams tm
+       LEFT JOIN users u ON u.team_id = tm.id AND u.is_active = 1
+       LEFT JOIN task_assignments ta ON ta.worker_id = u.id
+       LEFT JOIN tasks t ON t.id = ta.task_id AND t.status NOT IN ('completed','cancelled')
+       WHERE tm.is_active = 1
+       GROUP BY tm.id
+       ORDER BY active_count DESC, tm.id`
+    ).all<any>()
+
+    return c.json({ rows: rows.results || [] })
+  } catch (e: any) {
+    console.error('[stats GET /active/by-team]', e.message)
+    return c.json({ error: e.message || '팀별 진행중 통계 조회 실패' }, 500)
+  }
+})
+
+// 팀별 진행중 작업 상세 목록 (완료·취소 제외)
+app.get('/active/by-team/:teamId/tasks', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  try {
+    const teamId = c.req.param('teamId')
+    const tasks = await c.env.DB.prepare(
+      `SELECT DISTINCT t.id, t.task_number, t.title, t.location, t.work_order_address,
+              t.planned_date, t.work_date, t.status,
+              wc.name as category_name,
+              GROUP_CONCAT(DISTINCT u2.name) as worker_names
+       FROM tasks t
+       INNER JOIN task_assignments ta ON ta.task_id = t.id
+       INNER JOIN users u ON u.id = ta.worker_id AND u.team_id = ?
+       LEFT JOIN work_categories wc ON wc.id = t.category_id
+       LEFT JOIN task_assignments ta2 ON ta2.task_id = t.id
+       LEFT JOIN users u2 ON u2.id = ta2.worker_id
+       WHERE t.status NOT IN ('completed','cancelled')
+       GROUP BY t.id
+       ORDER BY COALESCE(t.planned_date, t.created_at) ASC`
+    ).bind(teamId).all<any>()
+
+    return c.json({ tasks: tasks.results || [] })
+  } catch (e: any) {
+    console.error('[stats GET /active/by-team/:teamId/tasks]', e.message)
+    return c.json({ error: e.message || '팀별 진행중 작업 목록 조회 실패' }, 500)
+  }
+})
+
 // 팀별 완료 작업 목록
 app.get('/completed/by-team/:teamId/tasks', async (c) => {
   const user = getUser(c)

@@ -16797,16 +16797,18 @@ async function renderStatsPage(container) {
   const month = (now.getMonth() + 1).toString().padStart(2, '0');
 
   try {
-    const [weeklyRes, monthlyRes, byCatRes, byTeamRes] = await Promise.all([
+    const [weeklyRes, monthlyRes, byCatRes, byTeamRes, activeByTeamRes] = await Promise.all([
       API.get('/stats/weekly'),
       API.get('/stats/monthly', { params: { year, month } }),
       API.get('/stats/completed/by-category', { params: { year, month } }),
-      API.get('/stats/completed/by-team', { params: { year, month } })
+      API.get('/stats/completed/by-team', { params: { year, month } }),
+      API.get('/stats/active/by-team')
     ]);
     const weekly = weeklyRes.data;
     const monthly = monthlyRes.data;
     const byCat = byCatRes.data;
     const byTeam = byTeamRes.data;
+    const activeByTeam = activeByTeamRes.data;
 
     const taskStatusMap = { unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료', tbm_done:'TBM완료', working:'작업진행중', work_completed:'작업완료', completed:'일지완료', cancelled:'취소' };
     const totalMonthly = monthly.taskStats.reduce((s,r) => s+r.count, 0);
@@ -16913,6 +16915,20 @@ async function renderStatsPage(container) {
                   }).join('');
                 })()}
               </div>
+            </div>
+          </div>
+
+          <!-- 작업팀별 진행중 작업건수 테이블 (완료 제외) -->
+          <div class="card mb-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-bold text-gray-800">
+                <i class="fas fa-tasks mr-2" style="color:#685182"></i>작업팀별 작업건수
+                <span class="ml-2 text-xs font-normal px-2 py-0.5 rounded-full" style="background:#68518215;color:#685182">완료 제외</span>
+              </h3>
+              <span class="text-xs text-gray-400">건수 클릭 시 작업 목록 확인</span>
+            </div>
+            <div id="activeByTeamTable">
+              ${renderActiveByTeamTable(activeByTeam.rows)}
             </div>
           </div>
 
@@ -17357,6 +17373,187 @@ function renderByTeamTable(rows, year, month) {
     </div>`;
 }
 
+// 작업팀별 진행중 작업건수 테이블 렌더링 (완료·취소 제외)
+function renderActiveByTeamTable(rows) {
+  if (!rows || rows.length === 0) {
+    return `<div class="text-center text-gray-400 py-6">
+      <i class="fas fa-users-slash text-3xl mb-2"></i>
+      <p class="text-sm">현재 진행 중인 작업이 없습니다.</p>
+    </div>`;
+  }
+  const maxCount = Math.max(...rows.map(r => r.active_count || 0), 1);
+  const barColors = ['#685182','#685182','#FF349E','#685182','#D70072','#685182','#685182','#FF349E'];
+
+  // 상태 배지 헬퍼
+  const statusBadge = (count, color, label) => count > 0
+    ? `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-bold" style="background:${color}22;color:${color}">${label} ${count}</span>`
+    : '';
+
+  return `
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-200">
+            <th class="text-left px-4 py-3 font-semibold text-gray-600">순위</th>
+            <th class="text-left px-4 py-3 font-semibold text-gray-600">팀명</th>
+            <th class="text-center px-4 py-3 font-semibold text-gray-600">인원</th>
+            <th class="text-center px-4 py-3 font-semibold text-gray-600">진행 건수</th>
+            <th class="text-left px-4 py-3 font-semibold text-gray-600">단계별 현황</th>
+            <th class="text-left px-4 py-3 font-semibold text-gray-600">상대 실적</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((r, i) => {
+            const cnt  = r.active_count || 0;
+            const pct  = maxCount > 0 ? Math.round(cnt / maxCount * 100) : 0;
+            const color = barColors[i % barColors.length];
+            const safeTeamName = (r.team_name||'').replace(/'/g, "\\'");
+            return `
+            <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
+                  ${i===0?'bg-yellow-100 text-yellow-700': i===1?'bg-gray-100 text-gray-600': i===2?'bg-orange-100 text-orange-600':'bg-gray-50 text-gray-400'}">
+                  ${i+1}
+                </span>
+              </td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                    style="background-color:${color}">
+                    <i class="fas fa-users" style="font-size:11px"></i>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-800">${r.team_name||'-'}</div>
+                    <div class="text-xs text-gray-400 truncate max-w-[160px]" title="${r.member_names||''}">
+                      ${r.member_names ? r.member_names.split(',').slice(0,3).join(', ') + (r.member_names.split(',').length > 3 ? ' 외' : '') : '-'}
+                    </div>
+                  </div>
+                </div>
+              </td>
+              <td class="px-4 py-3 text-center">
+                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold bg-blue-50 text-blue-600">
+                  ${r.member_count||0}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-center">
+                ${cnt > 0
+                  ? `<button onclick="showActiveTasksModal('${r.team_id}','${safeTeamName}')"
+                      class="text-lg font-bold hover:opacity-80 transition-colors cursor-pointer px-3 py-1 rounded-lg"
+                      style="color:#685182;background:#68518220">
+                      ${cnt}
+                    </button>`
+                  : `<span class="text-gray-300 font-bold text-lg">0</span>`
+                }
+              </td>
+              <td class="px-4 py-3">
+                <div class="flex flex-wrap gap-1">
+                  ${statusBadge(r.unassigned_count,    '#6B7280', '미배정')}
+                  ${statusBadge(r.assigned_count,      '#3B82F6', '배정')}
+                  ${statusBadge(r.inprogress_count,    '#F59E0B', '체크')}
+                  ${statusBadge(r.tbm_count,           '#685182', 'TBM')}
+                  ${statusBadge(r.working_count,       '#10B981', '진행')}
+                  ${statusBadge(r.work_completed_count,'#D70072', '완료대기')}
+                </div>
+              </td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <div class="flex-1 bg-gray-100 rounded-full h-2.5" style="min-width:60px">
+                    <div class="h-2.5 rounded-full transition-all" style="width:${pct}%;background-color:${color}"></div>
+                  </div>
+                  <span class="text-xs text-gray-400 w-8 text-right">${pct}%</span>
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// 팀별 진행중 작업 상세 모달
+async function showActiveTasksModal(teamId, teamName) {
+  const STATUS_LABEL = {
+    unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료',
+    tbm_done:'TBM완료', working:'작업진행중', work_completed:'완료대기'
+  };
+  const STATUS_COLOR = {
+    unassigned:'#6B7280', assigned:'#3B82F6', in_progress:'#F59E0B',
+    tbm_done:'#685182', working:'#10B981', work_completed:'#D70072'
+  };
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4" style="max-height:85vh;display:flex;flex-direction:column;">
+      <div class="flex items-center justify-between p-5 border-b border-gray-100">
+        <div>
+          <h2 class="font-bold text-gray-800 text-lg">
+            <i class="fas fa-list-check mr-2" style="color:#685182"></i>진행중 작업 목록
+          </h2>
+          <p class="text-xs text-gray-400 mt-0.5">완료·취소 제외 · ${teamName}</p>
+        </div>
+        <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 hover:text-gray-600 text-xl w-8 h-8 flex items-center justify-center">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div id="activeTasksList" class="overflow-y-auto p-5 flex-1">
+        <div class="text-center py-8 text-gray-400">
+          <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+          <p class="text-sm">로딩 중...</p>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  addOverlayClickClose(modal, () => modal.remove());
+
+  try {
+    const res = await API.get(`/stats/active/by-team/${teamId}/tasks`);
+    const tasks = res.data?.tasks || [];
+    const listEl = document.getElementById('activeTasksList');
+    if (!listEl) return;
+
+    if (tasks.length === 0) {
+      listEl.innerHTML = `<div class="text-center text-gray-400 py-8">
+        <i class="fas fa-clipboard-check text-3xl mb-2"></i>
+        <p class="text-sm">진행중인 작업이 없습니다.</p>
+      </div>`;
+      return;
+    }
+
+    listEl.innerHTML = `
+      <div class="mb-3 text-xs text-gray-400">총 ${tasks.length}건</div>
+      <div class="space-y-2">
+        ${tasks.map(t => {
+          const sLabel = STATUS_LABEL[t.status] || t.status;
+          const sColor = STATUS_COLOR[t.status] || '#6B7280';
+          const dateStr = t.planned_date ? t.planned_date.slice(0,10) : '-';
+          return `
+          <div class="rounded-xl p-3 border border-gray-100 hover:border-gray-200 transition-all cursor-pointer"
+               onclick="safeNavigateTo('tasks');this.closest('.modal-overlay').remove()"
+               style="background:#FAFAFA">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-gray-800 text-sm truncate">${t.title || '-'}</div>
+                <div class="text-xs text-gray-400 mt-0.5 truncate">${t.work_order_address || t.location || '-'}</div>
+                ${t.worker_names ? `<div class="text-xs mt-0.5" style="color:#685182"><i class="fas fa-user mr-1"></i>${t.worker_names.split(',').slice(0,3).join(', ')}</div>` : ''}
+              </div>
+              <div class="flex flex-col items-end gap-1 flex-shrink-0">
+                <span class="text-xs font-bold px-2 py-0.5 rounded-full" style="background:${sColor}22;color:${sColor}">${sLabel}</span>
+                <span class="text-xs text-gray-400">${dateStr}</span>
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  } catch(e) {
+    const listEl = document.getElementById('activeTasksList');
+    if (listEl) listEl.innerHTML = `<div class="text-center text-red-400 py-8">
+      <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
+      <p class="text-sm">작업 목록 조회 실패</p>
+    </div>`;
+  }
+}
+
 // 완료 작업 목록 모달
 async function showCompletedTasksModal(type, id, label, year, month) {
   const now = new Date();
@@ -17454,14 +17651,16 @@ async function loadMonthlyStats() {
   const year = document.getElementById('statYear').value;
   const month = document.getElementById('statMonth').value;
   try {
-    const [monthlyRes, byCatRes, byTeamRes] = await Promise.all([
+    const [monthlyRes, byCatRes, byTeamRes, activeByTeamRes2] = await Promise.all([
       API.get('/stats/monthly', { params: { year, month } }),
       API.get('/stats/completed/by-category', { params: { year, month } }),
-      API.get('/stats/completed/by-team', { params: { year, month } })
+      API.get('/stats/completed/by-team', { params: { year, month } }),
+      API.get('/stats/active/by-team')
     ]);
     const monthly = monthlyRes.data;
     const byCat = byCatRes.data;
     const byTeam = byTeamRes.data;
+    const activeByTeam2 = activeByTeamRes2.data;
     const taskStatusMap = { unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료', tbm_done:'TBM완료', working:'작업진행중', work_completed:'작업완료', completed:'일지완료', cancelled:'취소' };
     const totalMonthly = monthly.taskStats.reduce((s,r) => s+r.count, 0);
     const completedCount = monthly.taskStats.find(s=>s.status==='completed')?.count||0;
@@ -17479,6 +17678,9 @@ async function loadMonthlyStats() {
     if (catEl)  catEl.innerHTML  = renderByCategoryTable(byCat.rows, year, month);
     const teamEl = document.getElementById('byTeamTable');
     if (teamEl) teamEl.innerHTML = renderByTeamTable(byTeam.rows, year, month);
+    // 팀별 진행중 작업건수 테이블 업데이트 (완료 제외 — 월 무관 현재 상태)
+    const activeTeamEl = document.getElementById('activeByTeamTable');
+    if (activeTeamEl) activeTeamEl.innerHTML = renderActiveByTeamTable(activeByTeam2.rows);
 
     // 도넛 차트 재생성
     const oldDonut = document.getElementById('workClassDonutChart');

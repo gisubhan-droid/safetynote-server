@@ -14370,9 +14370,9 @@ let _myTasksFilter = null;  // 'all' | 'working' | 'completed' | 'logs' | 'quant
 let _myTasksSearchKw = '';  // 검색 키워드 (등록건명 or 공사담당자) — 필터와 독립 유지
 
 // ─── 공사통계 공사종류 필터 전역 상태 ───────────────────────────────────────
-// CON_TYPE_DEF의 label(한글)을 담는 배열 — 기본값: 지장이설만 선택
+// CON_TYPE_DEF의 label(한글)을 담는 배열 — 기본값: 전체 선택
 // DB의 construction_type 컬럼이 한글 저장이므로 label 기준으로 관리
-let _statsConTypes = ['지장이설'];
+let _statsConTypes = CON_TYPE_DEF.map(d => d.label);
 let _statsConTypesOpen = false;  // 드롭다운 열림 상태
 function navigateMyTasksWithFilter(filterType) {
   _myTasksFilter = filterType;
@@ -16884,8 +16884,9 @@ async function renderStatsPage(container) {
   _statsConTypesOpen = false;
 
   try {
-    // con_types 파라미터: 현재 선택된 공사종류 배열로 초기 조회
-    const conTypesParam = _statsConTypes.length > 0 ? _statsConTypes.join(',') : undefined;
+    // con_types 파라미터: 전체 선택이면 미전달(= 필터 없음), 일부 선택 시에만 전달
+    const isAllSelected = _statsConTypes.length === 0 || _statsConTypes.length === CON_TYPE_DEF.length;
+    const conTypesParam = isAllSelected ? undefined : _statsConTypes.join(',');
     const [weeklyRes, monthlyRes, byCatRes, byTeamRes, activeByTeamRes, workAmtRes, spliceAmtRes] = await Promise.all([
       API.get('/stats/weekly'),
       API.get('/stats/monthly', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
@@ -17018,7 +17019,7 @@ async function renderStatsPage(container) {
           <div class="card mb-6">
             <div class="flex items-center justify-between mb-4">
               <h3 class="font-bold" style="color:#4E3A63"><i class="fas fa-hard-hat mr-2" style="color:#D70072"></i>작업종류별 현황</h3>
-              <span class="text-xs" style="color:#C6C6C6">전체 ${totalMonthly}건</span>
+              <span class="text-xs" style="color:#C6C6C6">전체 <span id="workClassTotalCount">${totalMonthly}</span>건</span>
             </div>
             <div class="flex flex-col md:flex-row items-center gap-6">
               <!-- 도넛 차트 + 범례 -->
@@ -17040,7 +17041,7 @@ async function renderStatsPage(container) {
                 </div>
               </div>
               <!-- 공사종류별 건수·완료율 카드 -->
-              <div class="flex-1 w-full grid grid-cols-2 gap-3">
+              <div id="workClassCardsGrid" class="flex-1 w-full grid grid-cols-2 gap-3">
                 ${(() => {
                   // CON_TYPE_DEF 기반 — 항목 추가 시 카드 자동 반영
                   const ctStats     = monthly.ctStats     || [];
@@ -17848,23 +17849,27 @@ function onStatsConTypeChange(checkbox) {
   }
   // 버튼 라벨 업데이트
   const btn = document.getElementById('statsConTypeBtn');
-  if (!btn) return;
-  if (_statsConTypes.length === 0) {
-    btn.innerHTML = '<i class="fas fa-filter mr-1"></i>공사종류 <i class="fas fa-chevron-down ml-1 text-xs"></i>';
-  } else if (_statsConTypes.length === CON_TYPE_DEF.length) {
-    btn.innerHTML = '<i class="fas fa-filter mr-1"></i>전체 <i class="fas fa-chevron-down ml-1 text-xs"></i>';
-  } else {
-    const firstLabel = _statsConTypes[0];
-    const more = _statsConTypes.length > 1 ? ` +${_statsConTypes.length - 1}` : '';
-    btn.innerHTML = `<i class="fas fa-filter mr-1"></i>${firstLabel}${more} <i class="fas fa-chevron-down ml-1 text-xs"></i>`;
+  if (btn) {
+    if (_statsConTypes.length === 0) {
+      btn.innerHTML = '<i class="fas fa-filter mr-1"></i>공사종류 <i class="fas fa-chevron-down ml-1 text-xs"></i>';
+    } else if (_statsConTypes.length === CON_TYPE_DEF.length) {
+      btn.innerHTML = '<i class="fas fa-filter mr-1"></i>전체 <i class="fas fa-chevron-down ml-1 text-xs"></i>';
+    } else {
+      const firstLabel = _statsConTypes[0];
+      const more = _statsConTypes.length > 1 ? ` +${_statsConTypes.length - 1}` : '';
+      btn.innerHTML = `<i class="fas fa-filter mr-1"></i>${firstLabel}${more} <i class="fas fa-chevron-down ml-1 text-xs"></i>`;
+    }
   }
+  // ✅ 필터 변경 시 통계 자동 재조회 (금액 카드 + 팀별 테이블 + 공사종류별 카드 모두 갱신)
+  loadMonthlyStats();
 }
 
 async function loadMonthlyStats() {
   const year = document.getElementById('statYear').value;
   const month = document.getElementById('statMonth').value;
-  // 현재 선택된 공사종류 필터 — 선택된 것이 있으면 쉼표 구분 문자열로 전달
-  const conTypesParam = _statsConTypes.length > 0 ? _statsConTypes.join(',') : undefined;
+  // 전체 선택이면 필터 미전달(= 필터 없음), 일부 선택 시에만 con_types 전달
+  const isAllSelected = _statsConTypes.length === 0 || _statsConTypes.length === CON_TYPE_DEF.length;
+  const conTypesParam = isAllSelected ? undefined : _statsConTypes.join(',');
   try {
     const [monthlyRes, byCatRes, byTeamRes, activeByTeamRes2, workAmtRes2, spliceAmtRes2] = await Promise.all([
       API.get('/stats/monthly', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
@@ -17937,6 +17942,42 @@ async function loadMonthlyStats() {
     // 팀별 진행중 작업건수 테이블 업데이트 (완료 제외 — 월 무관 현재 상태)
     const activeTeamEl = document.getElementById('activeByTeamTable');
     if (activeTeamEl) activeTeamEl.innerHTML = renderActiveByTeamTable(activeByTeam2.rows);
+
+    // ✅ 작업종류별 현황 — 공사종류별 카드 그리드 업데이트 (필터 변경 반영)
+    const wcCardsGrid = document.getElementById('workClassCardsGrid');
+    if (wcCardsGrid) {
+      const ctStatsNew     = monthly.ctStats     || [];
+      const ctCompletedNew = monthly.ctCompletedStats || [];
+      const ctTotal = ctStatsNew.reduce((s, r) => s + (r.count || 0), 0) || 1;
+      wcCardsGrid.innerHTML = CON_TYPE_DEF.map(d => {
+        const st  = ctStatsNew.find(r => r.construction_type === d.label);
+        const co  = ctCompletedNew.find(r => r.construction_type === d.label);
+        const cnt          = st?.count || 0;
+        const completedCnt = co?.completed_count || 0;
+        const pct     = Math.round(cnt / ctTotal * 100);
+        const donePct = cnt > 0 ? Math.round(completedCnt / cnt * 100) : 0;
+        return `<div class="rounded-xl p-3 flex flex-col gap-1.5" style="background:${d.badgeBg};border:1.5px solid ${d.border}">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${d.dotColor}"></span>
+            <span class="text-xs font-semibold truncate" style="color:${d.badgeTxt}">${d.label}</span>
+          </div>
+          <div class="flex items-end justify-between">
+            <div class="flex items-end gap-1">
+              <span class="text-2xl font-bold" style="color:${d.dotColor}">${completedCnt}</span>
+              <span class="text-xs mb-0.5" style="color:#C6C6C6">/ ${cnt}건</span>
+            </div>
+            <span class="text-xs" style="color:#C6C6C6">${pct}%</span>
+          </div>
+          <div class="w-full rounded-full h-2" style="background:#fff">
+            <div class="h-2 rounded-full transition-all" style="width:${donePct}%;background:${d.barColor}"></div>
+          </div>
+          <div class="text-xs" style="color:${d.badgeTxt}">완료율 ${donePct}%</div>
+        </div>`;
+      }).join('');
+    }
+    // ✅ 작업종류별 현황 — 전체 건수 카운터 업데이트
+    const totalCountEl = document.getElementById('workClassTotalCount');
+    if (totalCountEl) totalCountEl.textContent = totalMonthly;
 
     // 도넛 차트 재생성
     const oldDonut = document.getElementById('workClassDonutChart');

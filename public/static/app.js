@@ -16852,8 +16852,8 @@ async function renderStatsPage(container) {
               <div class="text-xs mt-1" style="color:#FF349E"><i class="fas fa-mouse-pointer"></i> 클릭하여 목록 보기</div>
             </div>
             <div class="stat-card shadow-sm" style="border-top:3px solid #685182;min-height:0">
-              <div class="text-2xl font-bold" style="color:#685182">${monthly.quantityStats?.total_quantity?.toFixed(1)||0}</div>
-              <div class="text-xs mt-1" style="color:#C6C6C6">총 시공 물량</div>
+              <div class="text-2xl font-bold qty-main-value" style="color:#685182">${totalReportAmt > 0 ? (totalReportAmt >= 1000000 ? (totalReportAmt/1000000).toFixed(1)+'백만' : Number(totalReportAmt).toLocaleString('ko-KR')+'원') : (monthly.quantityStats?.total_quantity?.toFixed(1)||0)}</div>
+              <div class="text-xs mt-1 qty-main-label" style="color:#C6C6C6">${totalReportAmt > 0 ? '총 시공 금액' : '총 시공 물량'}</div>
               <div class="monthly-amt-block">${totalReportAmt > 0 ? `
               <div class="mt-2 pt-2" style="border-top:1px dashed #E5D8F0">
                 <div class="flex justify-between items-center mb-0.5">
@@ -17696,8 +17696,16 @@ async function loadMonthlyStats() {
     if (cards[0]) cards[0].querySelector('.text-2xl').textContent = totalMonthly;
     if (cards[1]) cards[1].querySelector('.text-2xl').textContent = completedCount;
     if (cards[2]) {
-      // 총 시공물량 수치 업데이트
-      cards[2].querySelector('.text-2xl').textContent = monthly.quantityStats?.total_quantity?.toFixed(1)||0;
+      // 총 시공물량/금액 수치 업데이트
+      const qty2MainEl = cards[2].querySelector('.qty-main-value');
+      const qty2LabelEl = cards[2].querySelector('.qty-main-label');
+      if (totalReportAmt2 > 0) {
+        if (qty2MainEl) qty2MainEl.textContent = totalReportAmt2 >= 1000000 ? (totalReportAmt2/1000000).toFixed(1)+'백만' : Number(totalReportAmt2).toLocaleString('ko-KR')+'원';
+        if (qty2LabelEl) qty2LabelEl.textContent = '총 시공 금액';
+      } else {
+        if (qty2MainEl) qty2MainEl.textContent = monthly.quantityStats?.total_quantity?.toFixed(1)||0;
+        if (qty2LabelEl) qty2LabelEl.textContent = '총 시공 물량';
+      }
       // 금액 블록 업데이트 — 기존 금액 블록 제거 후 재생성
       const existingAmtBlock = cards[2].querySelector('.monthly-amt-block');
       if (existingAmtBlock) existingAmtBlock.remove();

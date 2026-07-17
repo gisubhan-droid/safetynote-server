@@ -37363,7 +37363,7 @@ async function renderVolumeStatsPage(container) {
           { label:'총 건수',           val: rows.length + '건',   icon:'fas fa-file-alt',    color:'pink' },
           { label:'광케이블 신설',      val: fmtMZ(rows.reduce((s,r)=>s+(r.cable_new_m||0),0))+'M', icon:'fas fa-plus-circle', color:'blue' },
           { label:'광케이블 철거',      val: fmtMZ(rows.reduce((s,r)=>s+(r.cable_remove_m||0),0))+'M', icon:'fas fa-minus-circle', color:'red' },
-          { label:'추가입력 건수',      val: Object.keys(extrasMap).length + '건', icon:'fas fa-clipboard-list', color:'orange' },
+          { label:'달성금액',           val: isWorker ? '-' : (cableTotalAmt >= 1000000 ? (cableTotalAmt/1000000).toFixed(1)+'백만원' : Number(cableTotalAmt).toLocaleString('ko-KR')+'원'), icon:'fas fa-won-sign', color:'green' },
         ].map(c=>`
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
           <div class="flex items-center gap-2 mb-1">

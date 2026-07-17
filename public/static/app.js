@@ -35198,11 +35198,13 @@ function downloadWorkReportListCSV() {
 async function renderWorkReportForm(container, taskId) {
   container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
-    const [taskRes, reportRes, typesRes] = await Promise.all([
+    const [taskRes, reportRes, typesRes, tbmInfoRes] = await Promise.all([
       API.get(`/tasks/${taskId}`),
       API.get(`/work-reports/task/${taskId}`).catch(() => ({ data: { report: null, lines: [], cables: [], confirms: [] } })),
       // volume-unit-prices: 공종별 작업량 동적 로드 (DB에서 공종 목록 가져옴)
-      API.get('/volume-unit-prices').catch(() => ({ data: { prices: [] } }))
+      API.get('/volume-unit-prices').catch(() => ({ data: { prices: [] } })),
+      // TBM 정보: 시행자(conductor_name) + 참석자(attendees) 로드
+      API.get(`/tasks/${taskId}/tbm-info`).catch(() => ({ data: { tbm: null } }))
     ]);
     const task    = taskRes.data.task || taskRes.data;
     const report  = reportRes.data.report;
@@ -35212,11 +35214,35 @@ async function renderWorkReportForm(container, taskId) {
     const extras  = reportRes.data.extras   || [];
     // otherTypes는 volume-unit-prices로 대체 (공종별 작업량 동적 로드)
 
+    // TBM 시행자 + 참석자 기반 workerTeam 구성
+    // 우선순위: 1) 기존 저장값(report.worker_team) 2) TBM conductor+attendees 3) assigned_workers 4) contractor_name
+    const _wrTbm = tbmInfoRes.data?.tbm || null;
+    let workerTeam;
+    if (report?.worker_team) {
+      // 기존 저장된 값 우선 (수정 시 덮어쓰지 않음)
+      workerTeam = report.worker_team;
+    } else if (_wrTbm && (_wrTbm.conductor_name || (Array.isArray(_wrTbm.attendees) && _wrTbm.attendees.length > 0))) {
+      // TBM 시행자 + 참석자 목록
+      const _wrConductor = _wrTbm.conductor_name || '';
+      const _wrAttendees = Array.isArray(_wrTbm.attendees) ? _wrTbm.attendees : [];
+      const _wrParts = [];
+      if (_wrConductor) _wrParts.push(_wrConductor);
+      if (_wrAttendees.length > 0) {
+        const _wrAtNames = _wrAttendees.filter(a => a && a !== _wrConductor);
+        if (_wrAtNames.length > 0) _wrParts.push(..._wrAtNames);
+      }
+      workerTeam = _wrParts.join(', ') || task.contractor_name || '-';
+    } else if (Array.isArray(task.assigned_workers) && task.assigned_workers.length > 0) {
+      // TBM 없으면 배정 근로자 목록
+      workerTeam = task.assigned_workers.map(w => w.name || w).join(', ');
+    } else {
+      workerTeam = task.contractor_name || '-';
+    }
+
     // 자동입력 값
     const constrType  = task.construction_type || report?.work_class || '-';
     const requestNo   = task.request_no || '-';
     const taskTitle   = task.title || '-';
-    const workerTeam  = report?.worker_team || task.contractor_name || '-';
     const workDate    = (task.work_completed_at || task.work_date || '').slice(0,10);
     const managerName = report?.manager_name || task.lgu_supervisor || '-';
     const reportId    = report?.id || null;
@@ -36240,7 +36266,36 @@ async function renderSpliceReportForm(container, reportId, taskId) {
     } catch(_) {}
 
     const workDate   = report?.work_date   || (task?.work_completed_at || '').slice(0,10) || '';
-    const workerTeam = report?.worker_team || task?.contractor_name || '-';
+
+    // TBM 시행자 + 참석자 기반 workerTeam 구성
+    // 우선순위: 1) 기존 저장값(report.worker_team) 2) TBM conductor+attendees 3) assigned_workers 4) contractor_name
+    let workerTeam;
+    if (report?.worker_team) {
+      workerTeam = report.worker_team;
+    } else {
+      let _srTbm = null;
+      if (tId) {
+        try {
+          const _srTbmRes = await API.get(`/tasks/${tId}/tbm-info`);
+          _srTbm = _srTbmRes.data?.tbm || null;
+        } catch(_) {}
+      }
+      if (_srTbm && (_srTbm.conductor_name || (Array.isArray(_srTbm.attendees) && _srTbm.attendees.length > 0))) {
+        const _srConductor = _srTbm.conductor_name || '';
+        const _srAttendees = Array.isArray(_srTbm.attendees) ? _srTbm.attendees : [];
+        const _srParts = [];
+        if (_srConductor) _srParts.push(_srConductor);
+        if (_srAttendees.length > 0) {
+          const _srAtNames = _srAttendees.filter(a => a && a !== _srConductor);
+          if (_srAtNames.length > 0) _srParts.push(..._srAtNames);
+        }
+        workerTeam = _srParts.join(', ') || task?.contractor_name || '-';
+      } else if (task && Array.isArray(task.assigned_workers) && task.assigned_workers.length > 0) {
+        workerTeam = task.assigned_workers.map(w => w.name || w).join(', ');
+      } else {
+        workerTeam = task?.contractor_name || '-';
+      }
+    }
     const managerName= report?.manager_name|| task?.lgu_supervisor  || '-';
     const remark     = report?.remark      || '';
     const status     = report?.status      || 'draft';

@@ -36654,6 +36654,11 @@ async function renderConStatsPage(container) {
     return monday.toISOString().slice(0, 10);
   })();
 
+  // ── 공사종류 필터 상태 (기본: 지장이설만 선택) ────────────────────────────────
+  // CON_TYPE_DEF의 key(영문) 기준 — constructions.work_class 컬럼과 일치
+  let _csWorkClasses = ['relocation'];   // 기본값: 지장이설
+  let _csWcOpen      = false;            // 드롭다운 열림 상태
+
   // ── 금액 포맷터 ──────────────────────────────────────────────────────────────
   function fmtAmt(v) {
     if (!v || v === 0) return '<span style="color:#ccc">-</span>';
@@ -36731,6 +36736,8 @@ async function renderConStatsPage(container) {
     const params = new URLSearchParams({ period: _csPeriod, year: _csYear });
     if (_csPeriod === 'monthly') params.set('month', _csMonth);
     if (_csPeriod === 'weekly')  params.set('week_start', _csWeekStart);
+    // 공사종류 필터 — 선택된 key가 있으면 쉼표 구분 문자열로 전달
+    if (_csWorkClasses.length > 0) params.set('work_classes', _csWorkClasses.join(','));
 
     let data;
     try {
@@ -36978,6 +36985,48 @@ async function renderConStatsPage(container) {
           <button onclick="window._csWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>
         </div>
 
+        <!-- 공사종류 필터 드롭다운 -->
+        <div id="cs-wc-wrapper" style="position:relative;z-index:100;flex-shrink:0">
+          <button id="cs-wc-btn" onclick="window._csToggleWc()"
+            style="padding:6px 12px;border:1.5px solid #C4A8D8;border-radius:8px;background:#F5F0F8;
+                   color:#4E3A63;font-size:12px;font-weight:700;cursor:pointer;
+                   display:flex;align-items:center;gap:5px;white-space:nowrap;min-width:88px">
+            <i class="fas fa-filter" style="font-size:11px"></i>
+            <span id="cs-wc-label">${_csWorkClasses.length===0?'공사종류':_csWorkClasses.length===CON_TYPE_DEF.length?'전체':(CON_TYPE_DEF.find(d=>d.key===_csWorkClasses[0])?.label||_csWorkClasses[0])+(_csWorkClasses.length>1?' +'+(_csWorkClasses.length-1):'')}</span>
+            <i class="fas fa-chevron-down" style="font-size:10px;margin-left:auto"></i>
+          </button>
+          <!-- 드롭다운 패널 -->
+          <div id="cs-wc-panel" style="display:none;position:absolute;left:0;top:calc(100% + 4px);
+               background:#fff;border:1.5px solid #D8C8EC;border-radius:12px;
+               box-shadow:0 4px 16px rgba(104,81,130,0.15);min-width:160px;z-index:200">
+            <div style="padding:8px 12px 6px;border-bottom:1px solid #F0E8F8">
+              <span style="font-size:11px;font-weight:800;color:#685182">공사종류 선택</span>
+            </div>
+            <ul style="list-style:none;padding:4px 0;margin:0">
+              ${CON_TYPE_DEF.map(d => `
+              <li>
+                <label style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;
+                              font-size:13px;color:#333;transition:background .1s"
+                       onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
+                  <input type="checkbox" id="cs-wc-cb-${d.key}" value="${d.key}"
+                         ${_csWorkClasses.includes(d.key)?'checked':''}
+                         onchange="window._csWcChange(this)"
+                         style="accent-color:${d.color};width:15px;height:15px;cursor:pointer">
+                  <span style="color:${d.color};font-weight:700">${d.label}</span>
+                </label>
+              </li>`).join('')}
+            </ul>
+            <div style="padding:6px 10px 8px;border-top:1px solid #F0E8F8;display:flex;gap:6px">
+              <button onclick="window._csWcSelectAll()"
+                style="flex:1;padding:4px 0;border-radius:6px;border:none;background:#F5F0F8;
+                       color:#685182;font-size:11px;font-weight:700;cursor:pointer">전체</button>
+              <button onclick="window._csWcClearAll()"
+                style="flex:1;padding:4px 0;border-radius:6px;border:none;background:#F8F8F8;
+                       color:#9CA3AF;font-size:11px;font-weight:600;cursor:pointer">해제</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 조회 버튼 -->
         <button onclick="window._csLoad()" style="padding:7px 20px;background:#685182;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">
           <i class="fas fa-search" style="margin-right:5px"></i>조회
@@ -37036,6 +37085,74 @@ async function renderConStatsPage(container) {
   };
 
   window._csLoad = loadAndRender;
+
+  // ── 공사종류 드롭다운 컨트롤 ────────────────────────────────────────────────
+  /** 드롭다운 버튼 라벨 갱신 */
+  function _csUpdateWcLabel() {
+    const span = document.getElementById('cs-wc-label');
+    if (!span) return;
+    if (_csWorkClasses.length === 0) {
+      span.textContent = '공사종류';
+    } else if (_csWorkClasses.length === CON_TYPE_DEF.length) {
+      span.textContent = '전체';
+    } else {
+      const first = CON_TYPE_DEF.find(d => d.key === _csWorkClasses[0])?.label || _csWorkClasses[0];
+      const more  = _csWorkClasses.length > 1 ? ` +${_csWorkClasses.length - 1}` : '';
+      span.textContent = first + more;
+    }
+  }
+
+  /** 드롭다운 열기/닫기 */
+  window._csToggleWc = function() {
+    _csWcOpen = !_csWcOpen;
+    const panel = document.getElementById('cs-wc-panel');
+    if (panel) panel.style.display = _csWcOpen ? 'block' : 'none';
+  };
+
+  /** 체크박스 변경 핸들러 */
+  window._csWcChange = function(cb) {
+    if (cb.checked) {
+      if (!_csWorkClasses.includes(cb.value)) _csWorkClasses.push(cb.value);
+    } else {
+      _csWorkClasses = _csWorkClasses.filter(v => v !== cb.value);
+    }
+    _csUpdateWcLabel();
+  };
+
+  /** 전체 선택 */
+  window._csWcSelectAll = function() {
+    _csWorkClasses = CON_TYPE_DEF.map(d => d.key);
+    CON_TYPE_DEF.forEach(d => {
+      const cb = document.getElementById(`cs-wc-cb-${d.key}`);
+      if (cb) (cb as HTMLInputElement).checked = true;
+    });
+    _csUpdateWcLabel();
+  };
+
+  /** 전체 해제 */
+  window._csWcClearAll = function() {
+    _csWorkClasses = [];
+    CON_TYPE_DEF.forEach(d => {
+      const cb = document.getElementById(`cs-wc-cb-${d.key}`);
+      if (cb) (cb as HTMLInputElement).checked = false;
+    });
+    _csUpdateWcLabel();
+  };
+
+  /** 외부 클릭 시 드롭다운 닫기 */
+  function _csOutsideClickHandler(e) {
+    const wrapper = document.getElementById('cs-wc-wrapper');
+    if (!wrapper) {
+      document.removeEventListener('click', _csOutsideClickHandler);
+      return;
+    }
+    if (!wrapper.contains(e.target)) {
+      _csWcOpen = false;
+      const panel = document.getElementById('cs-wc-panel');
+      if (panel) panel.style.display = 'none';
+    }
+  }
+  document.addEventListener('click', _csOutsideClickHandler);
 
   // 자동 최초 조회
   loadAndRender();

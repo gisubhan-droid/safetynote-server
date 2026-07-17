@@ -4684,6 +4684,7 @@ app.route('/api/education', educationRoutes)
 // ─────────────────────────────────────────────────────────────────────────────
 // [FEAT-063] GET /api/constructions/stats — 공사통계 (년/월/주 기간 집계)
 // Query: period=yearly|monthly|weekly  year=YYYY  month=MM(월간전용)  week_start=YYYY-MM-DD(주간전용)
+//        work_classes=relocation,subscription,...  (쉼표 구분 영문키 복수선택, 생략시 전체)
 // Response:
 //   summary   : { total, completed, settled, notify_total }
 //   by_type   : [{ work_class, label, total, completed, settled, notify_total }]
@@ -4693,10 +4694,21 @@ app.get('/api/constructions/stats', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const period     = c.req.query('period')     || 'yearly'   // yearly | monthly | weekly
-  const year       = c.req.query('year')       || String(new Date().getFullYear())
-  const month      = c.req.query('month')      || ''          // 월간: '1'~'12'
-  const weekStart  = c.req.query('week_start') || ''          // 주간: 'YYYY-MM-DD'
+  const period     = c.req.query('period')       || 'yearly'   // yearly | monthly | weekly
+  const year       = c.req.query('year')         || String(new Date().getFullYear())
+  const month      = c.req.query('month')        || ''          // 월간: '1'~'12'
+  const weekStart  = c.req.query('week_start')   || ''          // 주간: 'YYYY-MM-DD'
+  // work_classes: 쉼표 구분 영문 key (예: 'relocation,subscription') — 생략 시 전체
+  const rawWorkClasses = c.req.query('work_classes') || ''
+  const workClassList: string[] = rawWorkClasses
+    ? rawWorkClasses.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : []
+  const hasWcFilter = workClassList.length > 0
+  const wcPlaceholders = workClassList.map(() => '?').join(',')
+  // WHERE 절 추가 조각: constructions.work_class IN (?,?)
+  const wcWhere = hasWcFilter
+    ? `AND COALESCE(c.work_class, 'other') IN (${wcPlaceholders})`
+    : ''
 
   // ── 기간 WHERE 절 생성 ─────────────────────────────────────────────────────
   let dateWhere = ''
@@ -4728,6 +4740,9 @@ app.get('/api/constructions/stats', async (c) => {
     }
   }
 
+  // 최종 바인딩 파라미터 = 날짜 파라미터 + work_class 파라미터 (순서 준수)
+  const allParams: (string | number)[] = [...dateParams, ...workClassList]
+
   // ── 공사 종류 라벨 매핑 ───────────────────────────────────────────────────
   const WORK_CLASS_LABEL: Record<string, string> = {
     relocation:   '지장이설',
@@ -4749,8 +4764,8 @@ app.get('/api/constructions/stats', async (c) => {
         SUM(CASE WHEN c.status = 'settlement_requested' THEN 1 ELSE 0 END)  AS settlement_requested,
         COALESCE(SUM(c.notification_amount), 0)                             AS notify_total
       FROM constructions c
-      WHERE 1=1 ${dateWhere}
-    `).get(...dateParams) as any
+      WHERE 1=1 ${dateWhere} ${wcWhere}
+    `).get(...allParams) as any
 
     // ── ② 작업 종류별 집계 ───────────────────────────────────────────────────
     const byTypeRows = rawDb.prepare(`
@@ -4762,25 +4777,29 @@ app.get('/api/constructions/stats', async (c) => {
         SUM(CASE WHEN c.status = 'settlement_requested' THEN 1 ELSE 0 END)   AS settlement_requested,
         COALESCE(SUM(c.notification_amount), 0)                              AS notify_total
       FROM constructions c
-      WHERE 1=1 ${dateWhere}
+      WHERE 1=1 ${dateWhere} ${wcWhere}
       GROUP BY COALESCE(c.work_class, 'other')
       ORDER BY total DESC
-    `).all(...dateParams) as any[]
+    `).all(...allParams) as any[]
 
     // 종류 순서 정렬 + 한글 라벨 추가
-    const byTypeSorted = WORK_CLASS_ORDER
+    // 필터가 있으면 선택된 work_class만, 없으면 전체 WORK_CLASS_ORDER 기준
+    const orderBase = hasWcFilter ? workClassList : WORK_CLASS_ORDER
+    const byTypeSorted = orderBase
       .map(key => {
         const row = byTypeRows.find((r: any) => r.work_class === key) || { work_class: key, total: 0, completed: 0, settled: 0, settlement_requested: 0, notify_total: 0 }
         return { ...row, label: WORK_CLASS_LABEL[key] || key }
       })
       .filter(r => r.total > 0)
 
-    // ③ 데이터가 없을 경우 other 미포함 전체 byTypeRows도 포함 (unknown work_class 대비)
-    byTypeRows.forEach((r: any) => {
-      if (!WORK_CLASS_ORDER.includes(r.work_class)) {
-        byTypeSorted.push({ ...r, label: r.work_class || '기타' })
-      }
-    })
+    // 필터 없을 때: unknown work_class(WORK_CLASS_ORDER 외) 행 추가
+    if (!hasWcFilter) {
+      byTypeRows.forEach((r: any) => {
+        if (!WORK_CLASS_ORDER.includes(r.work_class)) {
+          byTypeSorted.push({ ...r, label: r.work_class || '기타' })
+        }
+      })
+    }
 
     // ── ③ 담당자별 집계 ──────────────────────────────────────────────────────
     const byManagerRows = rawDb.prepare(`
@@ -4792,11 +4811,11 @@ app.get('/api/constructions/stats', async (c) => {
         SUM(CASE WHEN c.status = 'settlement_requested' THEN 1 ELSE 0 END)   AS settlement_requested,
         COALESCE(SUM(c.notification_amount), 0)                              AS notify_total
       FROM constructions c
-      WHERE 1=1 ${dateWhere}
+      WHERE 1=1 ${dateWhere} ${wcWhere}
       GROUP BY COALESCE(NULLIF(TRIM(c.manager_name), ''), '미지정')
       ORDER BY total DESC
       LIMIT 30
-    `).all(...dateParams) as any[]
+    `).all(...allParams) as any[]
 
     return c.json({
       period, year, month, week_start: weekStart,

@@ -1,8 +1,10 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-14 (세션 139 — feat: TBM 탭 추가 실시 이력 확인 팝업 + 작업개시 버튼 추가)
-> **GitHub 최신: `1f4bcbd`** — feat: TBM 탭 추가 실시 이력 확인 팝업 + 작업개시 버튼 추가 (세션139)
-> **이전 커밋: `cbf9dda`** — fix: TBM 공유 페이지 헤더 작업번호 sub_task_number 조합 반영 (세션138-2)
+> 최종 업데이트: 2026-07-17 (세션 142 — feat: 작업자(팀) 필드 TBM 시행자+배정근로자 기반으로 변경)
+> **GitHub 최신: `1af97a3`** — feat(report): 작업자(팀) 필드를 TBM 시행자+배정근로자 기반으로 변경 (세션142)
+> **이전 커밋: `241e5c1`** — feat(stats-task): 작업금액 외선/접속/소계 3컬럼 분리 및 페이지 즉시 로딩 (세션141)
+> **세션140 커밋: `6a0416d`** — hotfix: app.js TypeScript 'as HTMLInputElement' 구문 제거 (세션140)
+> **이전 커밋: `1f4bcbd`** — feat: TBM 탭 추가 실시 이력 확인 팝업 + 작업개시 버튼 추가 (세션139)
 > **NAS 배포 완료: `5a64403`** — 방식1(업데이트 버튼) 적용 완료 (세션128 / 세션129 배포 대기)
 > **캐시 버전: `?v=20260714a`** (service-worker v12)
 > **앱 버전: v3.0-hotfix** (PLAN-UI-001 Option C + BUG-077 수정)
@@ -22,6 +24,8 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-103 | 142 | 2026-07-17 | ✅ 적용 | **일보 작업자(팀) — TBM 시행자+배정근로자 기반 표시** — 외선일보·접속일보 `작업자(팀)` 필드가 저장자(로그인 사용자, `contractor_name`)를 표시하던 것을, TBM `conductor_name`(시행자) + `attendees`(참석자) 기반으로 변경. 우선순위: ①기존 저장값(`report.worker_team`) ②TBM 시행자+참석자 ③`assigned_workers` ④`contractor_name`. 두 일보 함수(`renderWorkReportForm`/`renderSpliceReportForm`) 모두 적용 | `1af97a3` |
+| FEAT-102 | 141 | 2026-07-17 | ✅ 적용 | **작업통계 작업금액 컬럼 외선/접속/소계 3컬럼 분리 + tfoot 합계행** — `renderByTeamTable`·`renderByCategoryTable` 단일 금액 컬럼 → 외선/접속/소계 3컬럼 분리, tfoot 합계행 추가. `loadMonthlyStats()` 내 `teamAmtMap2`→`workTeamAmtMap2`+`spliceTeamAmtMap2`, `catAmtMap2`→`workCatAmtMap2`+`spliceCatAmtMap2` 분리. `renderStatsPage()` 말미 `loadMonthlyStats()` 자동 호출 추가(페이지 진입 즉시 로딩). 세션140 누락 버그 수정: `loadMonthlyStats()` `con_types` 파라미터 누락 수정, 대시보드 UI 개편(작업팀별 삭제·상대실적→작업금액), 물량통계 추가입력→달성금액, `cableTotalAmt is not defined` 수정, 단위 백만원 통일 | `241e5c1` |
 | FEAT-101 | 139 | 2026-07-14 | ✅ 적용 | **TBM 탭 추가 실시 이력 확인 팝업 + 작업개시 버튼 추가** — ①TBM 추가 실시 클릭 시 TBM 이력 있으면 "네/아니오" 팝업 표시 (네=팝업닫기, 아니오=신규 TBM 등록) ②tbm_done 상태일 때 TBM 탭 하단에 "작업개시" 버튼 추가 (changeTaskStatus working 연결) ③TBM 이력 없으면 팝업 없이 바로 showTbmForm() 호출 (하위호환) | `1f4bcbd` |
 | BUG-100 | 138 | 2026-07-13 | ✅ 수정 | **TBM 공유 텍스트 작업번호 형식 오류** — `_tbmShare()` 복사 텍스트에서 작업번호가 `WKS-######-#####`만 표시되고 `sub_task_number`(####)가 누락됨. API `share-token` SQL에 `tk.sub_task_number` 미포함이 원인. **해결**: ①`node-server.ts` SQL에 `tk.sub_task_number` 추가 + 응답 JSON에 `sub_task_number` 포함 ②`app.js` `_tbmShare()` 복사 텍스트 구성 시 `sub_task_number` 있으면 `${work_number}-${sub_task_number}` 조합, 없으면 `work_number` 그대로 (하위호환) | `021178d` |
 | BUG-099b | 137-2 | 2026-07-13 | ✅ 수정 | **접속일보 작성화면 공종별 작업량 단가없음 표시** — `renderSpliceReportForm` 내 `_mkLabelToKey` 빌드 시 SPLICE_ITEMS_DEF(11개)만 참조 → DB 추가 항목(광단자, 최종시험, 신호수추가배치) 한글→item_key 변환 실패 → 폴백(공백/슬래시 제거) → 잘못된 key → `splicePriceFormMap` 조회 실패 → "단가없음" 표시. **해결**: `_mkLabelToKey` 빌드 시 `dbSpliceItems`(DB 로드 배열)의 `item_label→item_key` 매핑 추가 보완 | `934c3cd` |
@@ -7186,3 +7190,177 @@ if (el) el.checked = true;
 - GitHub push → ✅ (`main` 브랜치, 커밋 `6a0416d`)
 - 사용자 실기기 확인 → ✅ **"복구 되고 잘 동작 됩니다"**
 
+---
+
+## 세션 141 (2026-07-17) — feat: 작업통계 작업금액 3컬럼 분리 + 즉시 로딩
+
+### 배경
+
+세션140에서 완료된 작업통계 UI 개편(대시보드 개편, 달성금액 교체 등)의 연속 작업.
+현장팀별·작업분류별 완료건수 테이블의 `작업금액` 단일 컬럼을 **외선/접속/소계 3컬럼**으로 분리하고,
+페이지 진입 즉시 금액 데이터가 자동 로딩되도록 개선.
+
+### 변경 내용
+
+#### ① renderByTeamTable — 3컬럼 분리 + tfoot 합계행 (커밋 `241e5c1`)
+
+**변경 전**: `작업금액` 단일 컬럼 (외선+접속 합산)
+
+**변경 후**: 외선 / 접속 / 소계 3개 별도 컬럼 + tfoot 합계행
+
+```
+thead: 순위 | 팀명 | 인원 | 완료건수 | 외선(백만) | 접속(백만) | 소계(백만)
+tfoot: (합계) | -   |  -  |  -      |  외선합계  |  접속합계  |  소계합계
+```
+
+**핵심 변경**:
+- 함수 시그니처: `renderByTeamTable(rows, year, month, workAmtMap, spliceAmtMap)` (맵 2개 분리)
+- `wAmt = (workAmtMap[teamName] || 0) / 1_000_000`
+- `sAmt = (spliceAmtMap[teamName] || 0) / 1_000_000`
+- `fmtAmtTeam(v)` 헬퍼: `v > 0 ? v.toFixed(1) : '-'`
+
+#### ② renderByCategoryTable — 동일 방식 적용
+
+```
+thead: 순위 | 작업분류 | 배정 | 완료 | 완료율 | 외선(백만) | 접속(백만) | 소계(백만)
+tfoot: 합계행
+```
+
+#### ③ loadMonthlyStats() — 맵 4개 분리
+
+```javascript
+// 변경 전: 합산 맵
+const teamAmtMap2 = {};   // 외선+접속 합산
+const catAmtMap2  = {};   // 외선+접속 합산
+
+// 변경 후: 종류별 분리
+const workTeamAmtMap2   = {};  // 팀별 외선 금액
+const spliceTeamAmtMap2 = {};  // 팀별 접속 금액
+const workCatAmtMap2    = {};  // 분류별 외선 금액
+const spliceCatAmtMap2  = {};  // 분류별 접속 금액
+```
+
+#### ④ renderStatsPage() 말미 자동 호출 추가
+
+```javascript
+// 변경 전: 수동으로 "조회" 버튼 클릭 필요
+_initStatsConTypeOutsideClick();
+
+// 변경 후: 페이지 진입 즉시 자동 로딩
+_initStatsConTypeOutsideClick();
+loadMonthlyStats();  // ✅ 자동 호출
+```
+
+### 수정 파일
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | renderByTeamTable·renderByCategoryTable 3컬럼 분리+tfoot / loadMonthlyStats 맵 분리 / renderStatsPage 자동호출 |
+
+### 빌드/배포 상태
+
+- `npm run build` → ✅ **성공** (`dist/_worker.js 281.03 kB`, 1.32s)
+- JS 파싱 검사 → ✅ **OK**
+- GitHub push → ✅ (`main` 브랜치, 커밋 `241e5c1`)
+
+---
+
+## 세션 142 (2026-07-17) — feat: 일보 작업자(팀) 필드 TBM 시행자+배정근로자 기반으로 변경
+
+### 배경
+
+외선일보·접속일보 작성 화면의 `작업자(팀)` 필드가 일보 **저장자(로그인 사용자)** 의 `contractor_name`을 표시하고 있었음.
+실제 현장에서 필요한 것은 TBM 시행자 및 배정된 근로자 목록이므로, 이를 기반으로 표시하도록 변경.
+
+### 분석
+
+**TBM 데이터 구조**:
+- `tbm.conductor_name` — TBM 실시자(시행자)
+- `tbm.attendees` — TBM 참석자 문자열 배열 `string[]`
+
+**task 데이터 구조**:
+- `task.assigned_workers` — 배정된 근로자 객체 배열 `{id, name, position}[]`
+
+**API**:
+- `GET /tasks/:id/tbm-info` → `{ tbm: { conductor_name, attendees, tbm_date, ... } }`
+
+### 변경 내용
+
+#### ① 외선일보 (`renderWorkReportForm`) — Promise.all에 tbm-info 추가
+
+```javascript
+// 변경 전
+const [taskRes, reportRes, typesRes] = await Promise.all([
+  API.get(`/tasks/${taskId}`),
+  API.get(`/work-reports/task/${taskId}`).catch(...),
+  API.get('/volume-unit-prices').catch(...)
+]);
+const workerTeam = report?.worker_team || task.contractor_name || '-';
+
+// 변경 후
+const [taskRes, reportRes, typesRes, tbmInfoRes] = await Promise.all([
+  API.get(`/tasks/${taskId}`),
+  API.get(`/work-reports/task/${taskId}`).catch(...),
+  API.get('/volume-unit-prices').catch(...),
+  API.get(`/tasks/${taskId}/tbm-info`).catch(() => ({ data: { tbm: null } }))  // ✅ 추가
+]);
+const _wrTbm = tbmInfoRes.data?.tbm || null;
+let workerTeam;
+if (report?.worker_team) {
+  workerTeam = report.worker_team;                        // ① 기존 저장값 우선
+} else if (_wrTbm && (_wrTbm.conductor_name || ...)) {
+  // ② TBM 시행자 + 참석자 (conductor 중복 제거)
+  workerTeam = [conductor, ...attendees].join(', ');
+} else if (task.assigned_workers?.length > 0) {
+  workerTeam = task.assigned_workers.map(w => w.name).join(', ');  // ③ 배정근로자
+} else {
+  workerTeam = task.contractor_name || '-';               // ④ 폴백
+}
+```
+
+#### ② 접속일보 (`renderSpliceReportForm`) — tbm-info 추가 호출
+
+접속일보는 task를 별도 호출로 로드하는 구조이므로, task 로드 후 tbm-info를 추가 호출.
+동일한 우선순위 로직(`report.worker_team` → TBM → `assigned_workers` → `contractor_name`) 적용.
+
+```javascript
+// 변경 전
+const workerTeam = report?.worker_team || task?.contractor_name || '-';
+
+// 변경 후
+let workerTeam;
+if (report?.worker_team) {
+  workerTeam = report.worker_team;
+} else {
+  let _srTbm = null;
+  if (tId) {
+    try {
+      const _srTbmRes = await API.get(`/tasks/${tId}/tbm-info`);
+      _srTbm = _srTbmRes.data?.tbm || null;
+    } catch(_) {}
+  }
+  // ... 동일 우선순위 로직 ...
+}
+```
+
+### 2차 재검증 체크리스트
+
+| 항목 | 결과 |
+|------|------|
+| `tbmInfoRes` 변수명 충돌 | ✅ 안전 (line 9773은 다른 함수 스코프 내 `const`) |
+| `typesRes` Promise.all 인덱스 | ✅ 안전 (3번째 그대로, 4번째에 추가) |
+| `let workerTeam` 중복 선언 | ✅ 안전 (각각 다른 함수 스코프) |
+| `sr-worker-team` hidden input | ✅ 정상 (`${workerTeam || ''}` 그대로 사용) |
+| 저장된 일보 수정 시 기존값 보존 | ✅ 정상 (`report?.worker_team` 우선 조건) |
+
+### 수정 파일
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | renderWorkReportForm — Promise.all tbm-info 추가 + workerTeam 재구성 / renderSpliceReportForm — tbm-info 추가 호출 + workerTeam 재구성 |
+
+### 빌드/배포 상태
+
+- JS 파싱 검사 → ✅ **OK** (`node -e "new Function(...)"`)
+- `npm run build` → ✅ **성공** (`dist/_worker.js 281.03 kB`, 1.29s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `1af97a3`)

@@ -37376,7 +37376,7 @@ async function renderVolumeStatsPage(container) {
           { label:'총 건수',           val: rows.length + '건',   icon:'fas fa-file-alt',    color:'pink' },
           { label:'광케이블 신설',      val: fmtMZ(rows.reduce((s,r)=>s+(r.cable_new_m||0),0))+'M', icon:'fas fa-plus-circle', color:'blue' },
           { label:'광케이블 철거',      val: fmtMZ(rows.reduce((s,r)=>s+(r.cable_remove_m||0),0))+'M', icon:'fas fa-minus-circle', color:'red' },
-          { label:'달성금액',           val: isWorker ? '-' : (summaryTotalAmt >= 1000000 ? (summaryTotalAmt/1000000).toFixed(1)+'백만원' : Number(summaryTotalAmt).toLocaleString('ko-KR')+'원'), icon:'fas fa-won-sign', color:'green' },
+          { label:'달성금액',           val: isWorker ? '-' : (summaryTotalAmt > 0 ? (summaryTotalAmt/1000000).toFixed(1)+'백만원' : '0.0백만원'), icon:'fas fa-won-sign', color:'green' },
         ].map(c=>`
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
           <div class="flex items-center gap-2 mb-1">
@@ -37869,7 +37869,7 @@ async function _vsLoadSpliceStats() {
           { label:'완료 일보 수',   val: totalReports+'건',        icon:'fas fa-file-alt',       color:'indigo' },
           { label:'함체작업 완료',  val: encQty > 0 ? encQty+'개소' : '-', icon:'fas fa-box',    color:'blue'   },
           { label:'광탭 작업 완료', val: tapQty > 0 ? tapQty+'개소' : '-', icon:'fas fa-satellite-dish', color:'purple' },
-          ...(!isWorker ? [{ label:'달성금액', val: totalAmt > 0 ? Math.round(totalAmt/10000).toLocaleString()+'만원' : '-', icon:'fas fa-won-sign', color:'green' }] : [{ label:'참여팀수', val: allTeams.length+'팀', icon:'fas fa-users', color:'teal' }]),
+          ...(!isWorker ? [{ label:'달성금액', val: totalAmt > 0 ? (totalAmt/1000000).toFixed(1)+'백만원' : '0.0백만원', icon:'fas fa-won-sign', color:'green' }] : [{ label:'참여팀수', val: allTeams.length+'팀', icon:'fas fa-users', color:'teal' }]),
         ].map(c=>`
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
           <div class="flex items-center gap-2 mb-1">

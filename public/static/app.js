@@ -14422,20 +14422,29 @@ async function renderMyTasksPage(container) {
       } catch(e) { logTaskIds = new Set(); }
     }
 
+    // KST 기준 오늘 날짜 (금일예정 필터용)
+    const todayKST = getKSTDate();
+
     // 필터 정의
     const FILTER_META = {
       all:       { label:'전체 배정 작업',    icon:'fas fa-list',           color:'#3B82F6' },
       working:   { label:'진행 중 작업',      icon:'fas fa-spinner',        color:'#10B981' },
       completed: { label:'완료 작업',         icon:'fas fa-check-circle',   color:'#F59E0B' },
+      today:     { label:'금일 예정 작업',    icon:'fas fa-calendar-day',   color:'#D70072' },
       logs:      { label:'작업 일지 작성 작업', icon:'fas fa-book-open',      color:'#F59E0B' },
       quantity:  { label:'시공 실적 작업',     icon:'fas fa-ruler-combined', color:'#8B5CF6' },
     };
+
+    // 금일예정 카운트 (myTasks 기준, cancelled 제외, 예정일=오늘)
+    const todayCount = myTasks.filter(t => t.planned_date === todayKST && t.status !== 'cancelled').length;
 
     let filteredTasks = myTasks;
     if (activeFilter === 'working') {
       filteredTasks = myTasks.filter(t => t.status === 'working');
     } else if (activeFilter === 'completed') {
       filteredTasks = myTasks.filter(t => t.status === 'completed');
+    } else if (activeFilter === 'today') {
+      filteredTasks = myTasks.filter(t => t.planned_date === todayKST && t.status !== 'cancelled');
     } else if (activeFilter === 'logs' && logTaskIds) {
       filteredTasks = myTasks.filter(t => logTaskIds.has(t.id));
     } else if (activeFilter === 'quantity' && logTaskIds) {
@@ -14491,24 +14500,35 @@ async function renderMyTasksPage(container) {
         </button>
       </div>` : ''}
 
-      <div class="mb-4 grid grid-cols-3 gap-3">
+      <div class="mb-4 grid grid-cols-4 gap-2">
         <div class="stat-card blue shadow-sm text-center cursor-pointer hover:shadow-md transition-shadow active:scale-95"
-             onclick="applyMyTasksFilter('all')" title="전체 작업 목록">
-          <div class="text-2xl font-bold text-blue-600">${myTasks.length}</div>
-          <div class="text-xs text-gray-500">내 작업</div>
+             onclick="applyMyTasksFilter('all')" title="전체 작업 목록"
+             style="padding:10px 6px">
+          <div class="text-xl font-bold text-blue-600">${myTasks.length}</div>
+          <div class="text-xs text-gray-500 mt-0.5">내 작업</div>
           <div class="text-xs mt-1" style="color:#3B82F6;opacity:0.7"><i class="fas fa-arrow-right text-xs"></i></div>
         </div>
         <div class="stat-card green shadow-sm text-center cursor-pointer hover:shadow-md transition-shadow active:scale-95"
-             onclick="applyMyTasksFilter('working')" title="진행 중 작업 목록">
-          <div class="text-2xl font-bold text-green-600">${myTasks.filter(t=>t.status==='working').length}</div>
-          <div class="text-xs text-gray-500">진행중</div>
+             onclick="applyMyTasksFilter('working')" title="진행 중 작업 목록"
+             style="padding:10px 6px">
+          <div class="text-xl font-bold text-green-600">${myTasks.filter(t=>t.status==='working').length}</div>
+          <div class="text-xs text-gray-500 mt-0.5">진행중</div>
           <div class="text-xs mt-1" style="color:#10B981;opacity:0.7"><i class="fas fa-arrow-right text-xs"></i></div>
         </div>
         <div class="stat-card yellow shadow-sm text-center cursor-pointer hover:shadow-md transition-shadow active:scale-95"
-             onclick="applyMyTasksFilter('completed')" title="완료 작업 목록">
-          <div class="text-2xl font-bold text-yellow-600">${myTasks.filter(t=>t.status==='completed').length}</div>
-          <div class="text-xs text-gray-500">완료</div>
+             onclick="applyMyTasksFilter('completed')" title="완료 작업 목록"
+             style="padding:10px 6px">
+          <div class="text-xl font-bold text-yellow-600">${myTasks.filter(t=>t.status==='completed').length}</div>
+          <div class="text-xs text-gray-500 mt-0.5">완료</div>
           <div class="text-xs mt-1" style="color:#F59E0B;opacity:0.7"><i class="fas fa-arrow-right text-xs"></i></div>
+        </div>
+        <div class="stat-card shadow-sm text-center cursor-pointer hover:shadow-md transition-shadow active:scale-95"
+             onclick="applyMyTasksFilter('today')" title="금일 예정 작업"
+             style="padding:10px 6px;border-top:3px solid #D70072;${activeFilter==='today'?'background:#FFF0F6;':''} position:relative">
+          <div class="text-xl font-bold" style="color:#D70072">${todayCount}</div>
+          <div class="text-xs mt-0.5" style="color:#685182;font-weight:600">금일예정</div>
+          <div class="text-xs mt-1" style="color:#D70072;opacity:0.7"><i class="fas fa-calendar-day text-xs"></i></div>
+          ${todayCount > 0 ? `<span style="position:absolute;top:4px;right:4px;width:7px;height:7px;border-radius:50%;background:#D70072;display:block"></span>` : ''}
         </div>
       </div>
       ${!activeFilter && unassigned.length > 0 ? `

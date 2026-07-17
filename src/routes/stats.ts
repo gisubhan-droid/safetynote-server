@@ -212,6 +212,23 @@ app.get('/monthly', async (c) => {
 
   try {
     const { year, month } = c.req.query()
+    // con_types: 쉼표 구분 문자열 또는 배열 파라미터 모두 지원
+    // 예) ?con_types=지장이설,청약개통  또는  ?con_types[]=지장이설&con_types[]=청약개통
+    const rawConTypes = c.req.queries('con_types') || []
+    const conTypes: string[] = rawConTypes
+      .flatMap((s: string) => s.split(',').map((x: string) => x.trim()))
+      .filter(Boolean)
+    const hasConFilter = conTypes.length > 0
+    const conPlaceholders = conTypes.map(() => '?').join(',')
+    // con_types 필터 SQL 절 (tasks.construction_type 컬럼은 한글 저장)
+    const conFilterClause = hasConFilter
+      ? `AND t.construction_type IN (${conPlaceholders})`
+      : ''
+    // tasks 테이블 직접 필터 (JOIN 없는 쿼리용)
+    const conFilterDirect = hasConFilter
+      ? `AND construction_type IN (${conPlaceholders})`
+      : ''
+
     const now = new Date()
     const y = year || now.getFullYear()
     const m = (month || (now.getMonth() + 1)).toString().padStart(2, '0')
@@ -219,32 +236,34 @@ app.get('/monthly', async (c) => {
     const end = new Date(Number(y), Number(m), 0).toISOString().split('T')[0]
 
     const [taskStats, categoryStats, quantityStats, workClassStats, workClassCompletedStats, ctStats, ctCompletedStats] = await Promise.all([
+      // con_types 필터 적용 — tasks 직접
       c.env.DB.prepare(
         `SELECT status, COUNT(*) as count FROM tasks
-         WHERE planned_date BETWEEN ? AND ? GROUP BY status`
-      ).bind(start, end).all<any>(),
+         WHERE planned_date BETWEEN ? AND ? ${conFilterDirect} GROUP BY status`
+      ).bind(start, end, ...conTypes).all<any>(),
+      // 카테고리 통계 — con_types 필터 적용
       c.env.DB.prepare(
         `SELECT wc.name as category, COUNT(t.id) as count
          FROM tasks t LEFT JOIN work_categories wc ON wc.id = t.category_id
-         WHERE t.planned_date BETWEEN ? AND ? GROUP BY t.category_id ORDER BY count DESC`
-      ).bind(start, end).all<any>(),
+         WHERE t.planned_date BETWEEN ? AND ? ${conFilterClause} GROUP BY t.category_id ORDER BY count DESC`
+      ).bind(start, end, ...conTypes).all<any>(),
       c.env.DB.prepare(
         `SELECT SUM(actual_quantity) as total_quantity, COUNT(*) as log_count
          FROM work_logs WHERE log_date BETWEEN ? AND ?`
       ).bind(start, end).first<any>(),
-      // 작업 분류별(work_class) 전체 건수 — 기존 유지
+      // 작업 분류별(work_class) 전체 건수 — con_types 필터 적용
       c.env.DB.prepare(
         `SELECT COALESCE(work_class_new, work_class, 'cable_install') as work_class, COUNT(*) as count
-         FROM tasks WHERE planned_date BETWEEN ? AND ?
+         FROM tasks WHERE planned_date BETWEEN ? AND ? ${conFilterDirect}
          GROUP BY COALESCE(work_class_new, work_class, 'cable_install') ORDER BY count DESC`
-      ).bind(start, end).all<any>(),
-      // 작업 분류별(work_class) 완료 건수 — 기존 유지
+      ).bind(start, end, ...conTypes).all<any>(),
+      // 작업 분류별(work_class) 완료 건수 — con_types 필터 적용
       c.env.DB.prepare(
         `SELECT COALESCE(work_class_new, work_class, 'cable_install') as work_class, COUNT(*) as completed_count
-         FROM tasks WHERE planned_date BETWEEN ? AND ? AND status = 'completed'
+         FROM tasks WHERE planned_date BETWEEN ? AND ? AND status = 'completed' ${conFilterDirect}
          GROUP BY COALESCE(work_class_new, work_class, 'cable_install')`
-      ).bind(start, end).all<any>(),
-      // 공사종류(construction_type) 기준 전체 건수
+      ).bind(start, end, ...conTypes).all<any>(),
+      // 공사종류(construction_type) 기준 전체 건수 — 항상 고정 4종 전체 반환 (필터 미적용)
       c.env.DB.prepare(
         `SELECT ct.key as construction_type, COUNT(t.id) as count
          FROM (
@@ -257,7 +276,7 @@ app.get('/monthly', async (c) => {
            AND t.planned_date BETWEEN ? AND ?
          GROUP BY ct.key ORDER BY ct.ord`
       ).bind(start, end).all<any>(),
-      // 공사종류(construction_type) 기준 완료 건수
+      // 공사종류(construction_type) 기준 완료 건수 — 항상 고정 4종 전체 반환 (필터 미적용)
       c.env.DB.prepare(
         `SELECT ct.key as construction_type, COUNT(t.id) as completed_count
          FROM (
@@ -297,6 +316,18 @@ app.get('/completed/by-category', async (c) => {
 
   try {
     const { year, month } = c.req.query()
+    // con_types 필터 파라미터
+    const rawConTypes = c.req.queries('con_types') || []
+    const conTypes: string[] = rawConTypes
+      .flatMap((s: string) => s.split(',').map((x: string) => x.trim()))
+      .filter(Boolean)
+    const hasConFilter = conTypes.length > 0
+    const conPlaceholders = conTypes.map(() => '?').join(',')
+    // LEFT JOIN 조건에 추가 (ct 고정목록과 tasks 조인 시 공사종류 한정)
+    const conJoinClause = hasConFilter
+      ? `AND t.construction_type IN (${conPlaceholders})`
+      : ''
+
     const now = new Date()
     const y = year || now.getFullYear()
     const m = (month || (now.getMonth() + 1)).toString().padStart(2, '0')
@@ -305,6 +336,7 @@ app.get('/completed/by-category', async (c) => {
 
     // construction_type 4종 고정 목록 기준 (작업 등록폼 공사종류와 일치)
     // planned_date 또는 work_date 중 하나라도 기간 내이면 집계
+    // con_types 필터: LEFT JOIN 조건에 추가하여 필터된 종류만 집계
     const rows = await c.env.DB.prepare(
       `SELECT
          ct.key as category_code,
@@ -321,10 +353,10 @@ app.get('/completed/by-category', async (c) => {
          SELECT '관로'     as key, '관로'     as label, 3 as ord UNION ALL
          SELECT '환경공사' as key, '환경공사' as label, 4 as ord
        ) ct
-       LEFT JOIN tasks t ON t.construction_type = ct.key
+       LEFT JOIN tasks t ON t.construction_type = ct.key ${conJoinClause}
        GROUP BY ct.key
        ORDER BY ct.ord`
-    ).bind(start, end, start, end, start, end, start, end).all<any>()
+    ).bind(start, end, start, end, start, end, start, end, ...conTypes).all<any>()
 
     return c.json({ year: y, month: m, start, end, rows: rows.results || [] })
   } catch (e: any) {
@@ -376,6 +408,18 @@ app.get('/completed/by-team', async (c) => {
 
   try {
     const { year, month } = c.req.query()
+    // con_types 필터 파라미터
+    const rawConTypes = c.req.queries('con_types') || []
+    const conTypes: string[] = rawConTypes
+      .flatMap((s: string) => s.split(',').map((x: string) => x.trim()))
+      .filter(Boolean)
+    const hasConFilter = conTypes.length > 0
+    const conPlaceholders = conTypes.map(() => '?').join(',')
+    // LEFT JOIN tasks 조건에 추가
+    const conJoinClause = hasConFilter
+      ? `AND t.construction_type IN (${conPlaceholders})`
+      : ''
+
     const now = new Date()
     const y = year || now.getFullYear()
     const m = (month || (now.getMonth() + 1)).toString().padStart(2, '0')
@@ -392,11 +436,11 @@ app.get('/completed/by-team', async (c) => {
        FROM teams tm
        LEFT JOIN users u ON u.team_id = tm.id AND u.is_active = 1
        LEFT JOIN task_assignments ta ON ta.worker_id = u.id
-       LEFT JOIN tasks t ON t.id = ta.task_id
+       LEFT JOIN tasks t ON t.id = ta.task_id ${conJoinClause}
        WHERE tm.is_active = 1
        GROUP BY tm.id
        ORDER BY completed_count DESC, tm.id`
-    ).bind(start, end, start, end).all<any>()
+    ).bind(start, end, start, end, ...conTypes).all<any>()
 
     return c.json({ year: y, month: m, start, end, rows: rows.results || [] })
   } catch (e: any) {

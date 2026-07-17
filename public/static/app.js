@@ -14368,6 +14368,12 @@ async function _tbmShareByTaskId(taskId, btnEl) {
 // 나의작업현황 카드 클릭 → 내 작업 페이지로 필터 이동
 let _myTasksFilter = null;  // 'all' | 'working' | 'completed' | 'logs' | 'quantity'
 let _myTasksSearchKw = '';  // 검색 키워드 (등록건명 or 공사담당자) — 필터와 독립 유지
+
+// ─── 공사통계 공사종류 필터 전역 상태 ───────────────────────────────────────
+// CON_TYPE_DEF의 label(한글)을 담는 배열 — 기본값: 지장이설만 선택
+// DB의 construction_type 컬럼이 한글 저장이므로 label 기준으로 관리
+let _statsConTypes = ['지장이설'];
+let _statsConTypesOpen = false;  // 드롭다운 열림 상태
 function navigateMyTasksWithFilter(filterType) {
   _myTasksFilter = filterType;
   navigateTo('my-tasks');
@@ -16874,13 +16880,17 @@ async function renderStatsPage(container) {
   const now = new Date();
   const year = now.getFullYear();
   const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  // 페이지 진입 시 전역 드롭다운 상태 초기화 (열려 있으면 닫기)
+  _statsConTypesOpen = false;
 
   try {
+    // con_types 파라미터: 현재 선택된 공사종류 배열로 초기 조회
+    const conTypesParam = _statsConTypes.length > 0 ? _statsConTypes.join(',') : undefined;
     const [weeklyRes, monthlyRes, byCatRes, byTeamRes, activeByTeamRes, workAmtRes, spliceAmtRes] = await Promise.all([
       API.get('/stats/weekly'),
-      API.get('/stats/monthly', { params: { year, month } }),
-      API.get('/stats/completed/by-category', { params: { year, month } }),
-      API.get('/stats/completed/by-team', { params: { year, month } }),
+      API.get('/stats/monthly', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
+      API.get('/stats/completed/by-category', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
+      API.get('/stats/completed/by-team', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
       API.get('/stats/active/by-team'),
       API.get('/work-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { work_report_amount: 0 } })),
       API.get('/splice-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { splice_report_amount: 0 } }))
@@ -16910,11 +16920,60 @@ async function renderStatsPage(container) {
 
       <!-- 월별 탭 -->
       <div id="stab-monthly">
-        <!-- 기간 선택 -->
-        <div class="flex items-center gap-3 mb-4">
+        <!-- 기간 선택 + 공사종류 필터 -->
+        <div class="flex flex-wrap items-center gap-2 mb-4">
           <input id="statYear" type="number" value="${year}" class="form-control w-24" placeholder="연도">
-          <select id="statMonth" class="form-control w-32">${monthOpts}</select>
-          <button onclick="loadMonthlyStats()" class="btn btn-primary">조회</button>
+          <select id="statMonth" class="form-control w-28">${monthOpts}</select>
+
+          <!-- 공사종류 드롭다운+체크박스 필터 -->
+          <div id="statsConTypeWrapper" class="relative" style="z-index:50">
+            <button id="statsConTypeBtn"
+                    onclick="toggleStatsConTypeDropdown()"
+                    class="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg border"
+                    style="background:#F5F0F8;border-color:#C4A8D8;color:#4E3A63;white-space:nowrap;min-width:90px">
+              ${(()=>{
+                if (_statsConTypes.length === 0) return '<i class="fas fa-filter mr-1"></i>공사종류 <i class="fas fa-chevron-down ml-1 text-xs"></i>';
+                if (_statsConTypes.length === CON_TYPE_DEF.length) return '<i class="fas fa-filter mr-1"></i>전체 <i class="fas fa-chevron-down ml-1 text-xs"></i>';
+                const more = _statsConTypes.length > 1 ? ` +${_statsConTypes.length-1}` : '';
+                return `<i class="fas fa-filter mr-1"></i>${_statsConTypes[0]}${more} <i class="fas fa-chevron-down ml-1 text-xs"></i>`;
+              })()}
+            </button>
+            <!-- 드롭다운 패널 — 기본 hidden -->
+            <div id="statsConTypePanel"
+                 class="hidden absolute left-0 mt-1 rounded-xl shadow-lg border"
+                 style="background:#fff;border-color:#E5D8F0;min-width:160px;top:100%">
+              <div class="px-3 py-2 border-b" style="border-color:#F0E8F8">
+                <span class="text-xs font-bold" style="color:#685182">공사종류 선택</span>
+              </div>
+              <ul class="py-1">
+                ${CON_TYPE_DEF.map(d => `
+                <li>
+                  <label class="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-purple-50 rounded-lg"
+                         style="color:#333">
+                    <input type="checkbox"
+                           value="${d.label}"
+                           ${_statsConTypes.includes(d.label) ? 'checked' : ''}
+                           onchange="onStatsConTypeChange(this)"
+                           style="accent-color:${d.color};width:15px;height:15px">
+                    <span class="text-sm"
+                          style="color:${d.color};font-weight:600">${d.label}</span>
+                  </label>
+                </li>`).join('')}
+              </ul>
+              <div class="px-3 py-2 border-t flex gap-2" style="border-color:#F0E8F8">
+                <button onclick="_statsConTypes=CON_TYPE_DEF.map(d=>d.label);document.querySelectorAll('#statsConTypePanel input[type=checkbox]').forEach(cb=>cb.checked=true);onStatsConTypeChange({value:'',checked:false})"
+                        class="flex-1 text-xs py-1 rounded-lg"
+                        style="background:#F5F0F8;color:#685182;font-weight:600">전체</button>
+                <button onclick="_statsConTypes=[];document.querySelectorAll('#statsConTypePanel input[type=checkbox]').forEach(cb=>cb.checked=false);onStatsConTypeChange({value:'',checked:false})"
+                        class="flex-1 text-xs py-1 rounded-lg"
+                        style="background:#F8F8F8;color:#999">해제</button>
+              </div>
+            </div>
+          </div>
+
+          <button onclick="loadMonthlyStats()" class="btn btn-primary">
+            <i class="fas fa-search mr-1"></i>조회
+          </button>
         </div>
 
         <div id="monthlyStats">
@@ -17267,6 +17326,9 @@ async function renderStatsPage(container) {
         });
       }
     }, 100);
+
+    // 공사종류 드롭다운 외부클릭 닫기 초기화
+    _initStatsConTypeOutsideClick();
   } catch(e) {
     container.innerHTML = `<p class="text-red-500 p-4">로드 실패: ${e.message}</p>`;
   }
@@ -17746,14 +17808,68 @@ async function showCompletedTasksModal(type, id, label, year, month) {
   }
 }
 
+// ─── 공사통계 공사종류 필터 드롭다운 함수들 ──────────────────────────────────
+/** 드롭다운 열기/닫기 토글 */
+function toggleStatsConTypeDropdown() {
+  _statsConTypesOpen = !_statsConTypesOpen;
+  const panel = document.getElementById('statsConTypePanel');
+  if (!panel) return;
+  if (_statsConTypesOpen) {
+    panel.classList.remove('hidden');
+  } else {
+    panel.classList.add('hidden');
+  }
+}
+
+/** 드롭다운 외부 클릭 시 닫기 (document 이벤트 위임) */
+function _initStatsConTypeOutsideClick() {
+  document.addEventListener('click', function _statsConTypeClickHandler(e) {
+    const wrapper = document.getElementById('statsConTypeWrapper');
+    if (!wrapper) {
+      // 페이지가 언마운트 됐으면 이벤트 리스너 제거
+      document.removeEventListener('click', _statsConTypeClickHandler);
+      return;
+    }
+    if (!wrapper.contains(e.target)) {
+      _statsConTypesOpen = false;
+      const panel = document.getElementById('statsConTypePanel');
+      if (panel) panel.classList.add('hidden');
+    }
+  });
+}
+
+/** 체크박스 변경 시 전역 상태 업데이트 후 버튼 라벨 갱신 */
+function onStatsConTypeChange(checkbox) {
+  const val = checkbox.value;
+  if (checkbox.checked) {
+    if (!_statsConTypes.includes(val)) _statsConTypes.push(val);
+  } else {
+    _statsConTypes = _statsConTypes.filter(v => v !== val);
+  }
+  // 버튼 라벨 업데이트
+  const btn = document.getElementById('statsConTypeBtn');
+  if (!btn) return;
+  if (_statsConTypes.length === 0) {
+    btn.innerHTML = '<i class="fas fa-filter mr-1"></i>공사종류 <i class="fas fa-chevron-down ml-1 text-xs"></i>';
+  } else if (_statsConTypes.length === CON_TYPE_DEF.length) {
+    btn.innerHTML = '<i class="fas fa-filter mr-1"></i>전체 <i class="fas fa-chevron-down ml-1 text-xs"></i>';
+  } else {
+    const firstLabel = _statsConTypes[0];
+    const more = _statsConTypes.length > 1 ? ` +${_statsConTypes.length - 1}` : '';
+    btn.innerHTML = `<i class="fas fa-filter mr-1"></i>${firstLabel}${more} <i class="fas fa-chevron-down ml-1 text-xs"></i>`;
+  }
+}
+
 async function loadMonthlyStats() {
   const year = document.getElementById('statYear').value;
   const month = document.getElementById('statMonth').value;
+  // 현재 선택된 공사종류 필터 — 선택된 것이 있으면 쉼표 구분 문자열로 전달
+  const conTypesParam = _statsConTypes.length > 0 ? _statsConTypes.join(',') : undefined;
   try {
     const [monthlyRes, byCatRes, byTeamRes, activeByTeamRes2, workAmtRes2, spliceAmtRes2] = await Promise.all([
-      API.get('/stats/monthly', { params: { year, month } }),
-      API.get('/stats/completed/by-category', { params: { year, month } }),
-      API.get('/stats/completed/by-team', { params: { year, month } }),
+      API.get('/stats/monthly', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
+      API.get('/stats/completed/by-category', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
+      API.get('/stats/completed/by-team', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
       API.get('/stats/active/by-team'),
       API.get('/work-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { work_report_amount: 0 } })),
       API.get('/splice-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { splice_report_amount: 0 } }))

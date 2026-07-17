@@ -37124,7 +37124,7 @@ async function renderConStatsPage(container) {
     _csWorkClasses = CON_TYPE_DEF.map(d => d.key);
     CON_TYPE_DEF.forEach(d => {
       const cb = document.getElementById(`cs-wc-cb-${d.key}`);
-      if (cb) (cb as HTMLInputElement).checked = true;
+      if (cb) cb.checked = true;
     });
     _csUpdateWcLabel();
   };
@@ -37134,7 +37134,7 @@ async function renderConStatsPage(container) {
     _csWorkClasses = [];
     CON_TYPE_DEF.forEach(d => {
       const cb = document.getElementById(`cs-wc-cb-${d.key}`);
-      if (cb) (cb as HTMLInputElement).checked = false;
+      if (cb) cb.checked = false;
     });
     _csUpdateWcLabel();
   };

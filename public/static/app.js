@@ -37292,6 +37292,19 @@ async function renderVolumeStatsPage(container) {
     extras.forEach(ex => { if (!WR_EXTRA_ORDER_DB.includes(ex.item_key) && !allItemKeys.includes(ex.item_key)) allItemKeys.push(ex.item_key); });
     _volumeStatsCache.allItemKeys = allItemKeys;
 
+    // 요약 카드용 달성금액 미리 계산 (cableTotalAmt는 innerHTML 이후 블록에서 계산되므로 여기서 별도 산출)
+    let summaryTotalAmt = 0;
+    if (!isWorker) {
+      rows.forEach(function(row) {
+        const em = extrasMap[row.report_id] || {};
+        summaryTotalAmt +=
+          (row.cable_new_m    || 0) * (priceMap['a000001'] || 0) +
+          (row.cable_remove_m || 0) * (priceMap['a000002'] || 0) +
+          (row.cable_move_m   || 0) * (priceMap['a000003'] || 0) +
+          allItemKeys.reduce(function(s, k) { return s + (em[k] || 0) * (priceMap[k] || 0); }, 0);
+      });
+    }
+
     container.innerHTML = `
     <div class="page-container">
       <div class="flex items-center justify-between flex-wrap gap-2">
@@ -37363,7 +37376,7 @@ async function renderVolumeStatsPage(container) {
           { label:'총 건수',           val: rows.length + '건',   icon:'fas fa-file-alt',    color:'pink' },
           { label:'광케이블 신설',      val: fmtMZ(rows.reduce((s,r)=>s+(r.cable_new_m||0),0))+'M', icon:'fas fa-plus-circle', color:'blue' },
           { label:'광케이블 철거',      val: fmtMZ(rows.reduce((s,r)=>s+(r.cable_remove_m||0),0))+'M', icon:'fas fa-minus-circle', color:'red' },
-          { label:'달성금액',           val: isWorker ? '-' : (cableTotalAmt >= 1000000 ? (cableTotalAmt/1000000).toFixed(1)+'백만원' : Number(cableTotalAmt).toLocaleString('ko-KR')+'원'), icon:'fas fa-won-sign', color:'green' },
+          { label:'달성금액',           val: isWorker ? '-' : (summaryTotalAmt >= 1000000 ? (summaryTotalAmt/1000000).toFixed(1)+'백만원' : Number(summaryTotalAmt).toLocaleString('ko-KR')+'원'), icon:'fas fa-won-sign', color:'green' },
         ].map(c=>`
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
           <div class="flex items-center gap-2 mb-1">

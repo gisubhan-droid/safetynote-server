@@ -16893,8 +16893,8 @@ async function renderStatsPage(container) {
       API.get('/stats/completed/by-category', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
       API.get('/stats/completed/by-team', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
       API.get('/stats/active/by-team'),
-      API.get('/work-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { work_report_amount: 0 } })),
-      API.get('/splice-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { splice_report_amount: 0 } }))
+      API.get('/work-reports/monthly-amount', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { work_report_amount: 0 } })),
+      API.get('/splice-reports/monthly-amount', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { splice_report_amount: 0 } }))
     ]);
     const weekly = weeklyRes.data;
     const monthly = monthlyRes.data;
@@ -17876,8 +17876,8 @@ async function loadMonthlyStats() {
       API.get('/stats/completed/by-category', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
       API.get('/stats/completed/by-team', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
       API.get('/stats/active/by-team'),
-      API.get('/work-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { work_report_amount: 0 } })),
-      API.get('/splice-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { splice_report_amount: 0 } }))
+      API.get('/work-reports/monthly-amount', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { work_report_amount: 0 } })),
+      API.get('/splice-reports/monthly-amount', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { splice_report_amount: 0 } }))
     ]);
     const monthly = monthlyRes.data;
     const byCat = byCatRes.data;

@@ -108,11 +108,30 @@ spliceApp.get('/monthly-amount', async (c) => {
   const start = `${y}-${m}-01`
   const end   = new Date(Number(y), Number(m), 0).toISOString().split('T')[0]
 
+  // con_types 필터: 쉼표 구분 문자열 → 배열 (tasks.construction_type 한글 기준)
+  const rawConTypes = c.req.query('con_types') || ''
+  const conTypeList: string[] = rawConTypes
+    ? rawConTypes.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : []
+  const hasConFilter = conTypeList.length > 0
+  // con_types 필터가 있으면 tasks JOIN으로 construction_type 필터링
+  const conJoinClause  = hasConFilter
+    ? `LEFT JOIN tasks t ON t.id = sr.task_id`
+    : ''
+  const conWhereClause = hasConFilter
+    ? `AND (t.construction_type IN (${conTypeList.map(() => '?').join(',')}) OR (sr.task_id IS NULL))`
+    : ''
+
   try {
-    // ① 해당 월 작성완료(submitted) 접속일보 ID 목록
+    // ① 해당 월 작성완료(submitted) 접속일보 ID 목록 (con_types 필터 적용)
+    const baseParams: any[] = [start, end, ...conTypeList]
     const reports: any[] = rawDb.prepare(
-      `SELECT id FROM splice_reports WHERE status = 'submitted' AND work_date BETWEEN ? AND ?`
-    ).all(start, end) as any[]
+      `SELECT sr.id FROM splice_reports sr
+       ${conJoinClause}
+       WHERE sr.status = 'submitted'
+         AND sr.work_date BETWEEN ? AND ?
+         ${conWhereClause}`
+    ).all(...baseParams) as any[]
 
     if (reports.length === 0) {
       return c.json({ year: y, month: m, splice_report_amount: 0 })

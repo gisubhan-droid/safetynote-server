@@ -17077,20 +17077,6 @@ async function renderStatsPage(container) {
             </div>
           </div>
 
-          <!-- 작업팀별 진행중 작업건수 테이블 (완료 제외) -->
-          <div class="card mb-6">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="font-bold text-gray-800">
-                <i class="fas fa-tasks mr-2" style="color:#685182"></i>작업팀별 작업건수
-                <span class="ml-2 text-xs font-normal px-2 py-0.5 rounded-full" style="background:#68518215;color:#685182">완료 제외</span>
-              </h3>
-              <span class="text-xs text-gray-400">건수 클릭 시 작업 목록 확인</span>
-            </div>
-            <div id="activeByTeamTable">
-              ${renderActiveByTeamTable(activeByTeam.rows)}
-            </div>
-          </div>
-
           <!-- 현장팀별 완료건수 테이블 -->
           <div class="card mb-6">
             <div class="flex items-center justify-between mb-4">
@@ -17100,7 +17086,7 @@ async function renderStatsPage(container) {
               <span class="text-xs text-gray-400">완료 건수를 클릭하면 작업 목록을 볼 수 있습니다</span>
             </div>
             <div id="byTeamTable">
-              ${renderByTeamTable(byTeam.rows, year, month)}
+              ${renderByTeamTable(byTeam.rows, year, month, {})}
             </div>
           </div>
 
@@ -17113,7 +17099,7 @@ async function renderStatsPage(container) {
               <span class="text-xs text-gray-400">완료 건수를 클릭하면 작업 목록을 볼 수 있습니다</span>
             </div>
             <div id="byCategoryTable">
-              ${renderByCategoryTable(byCat.rows, year, month)}
+              ${renderByCategoryTable(byCat.rows, year, month, {})}
             </div>
           </div>
         </div>
@@ -17337,15 +17323,14 @@ async function renderStatsPage(container) {
 
 // 작업 종류별 완료건수 테이블 렌더링
 // construction_type 4종 기준 (작업 등록폼 공사종류와 동일)
-function renderByCategoryTable(rows, year, month) {
-  // 공사종류 4종 고정 정의 (작업 등록폼 순서와 동일)
-  // CON_TYPE_DEF 기반 — 항목 추가 시 이 테이블도 자동 반영
-  // rows API: category_code = construction_type(한글명)
+function renderByCategoryTable(rows, year, month, catAmtMap) {
+  // CON_TYPE_DEF 기반 — rows API: category_code = construction_type(한글명)
   const rowMap = {};
   (rows || []).forEach(r => { rowMap[r.category_code] = r; });
+  const amtMap = catAmtMap || {};
 
   const mergedRows = CON_TYPE_DEF.map(d => ({
-    key:       d.label,          // construction_type 컬럼은 한글명으로 저장
+    key:       d.label,
     label:     d.label,
     icon:      d.icon,
     bar:       d.barColor,
@@ -17357,6 +17342,7 @@ function renderByCategoryTable(rows, year, month) {
 
   const totalCompleted = mergedRows.reduce((s,r) => s + r.completed_count, 0);
   const totalTasks     = mergedRows.reduce((s,r) => s + r.total_count, 0);
+  const totalAmt       = Object.values(amtMap).reduce(function(s, v) { return s + v; }, 0);
 
   // 완료 기준 내림차순 정렬 (순위 계산)
   const sorted = [...mergedRows].sort((a,b) => b.completed_count - a.completed_count);
@@ -17373,15 +17359,14 @@ function renderByCategoryTable(rows, year, month) {
             <th class="text-left px-4 py-3 font-semibold" style="color:#685182">작업 분류</th>
             <th class="text-center px-4 py-3 font-semibold" style="color:#685182">배정</th>
             <th class="text-center px-4 py-3 font-semibold" style="color:#685182">완료</th>
-            <th class="text-center px-3 py-3 font-semibold w-16" style="color:#685182">비율</th>
-            <th class="text-left px-4 py-3 font-semibold" style="color:#685182">완료율</th>
+            <th class="text-center px-4 py-3 font-semibold" style="color:#685182">완료율</th>
+            <th class="text-right px-4 py-3 font-semibold" style="color:#685182">작업 금액</th>
           </tr>
         </thead>
         <tbody>
           ${mergedRows.map(r => {
             const completed = r.completed_count;
             const total = r.total_count;
-            const completedPct = totalCompleted > 0 ? Math.round(completed / totalCompleted * 100) : 0;
             const donePct = total > 0 ? Math.round(completed / total * 100) : 0;
             const isZero = completed === 0;
             const rank = rankMap[r.key];
@@ -17392,6 +17377,12 @@ function renderByCategoryTable(rows, year, month) {
               : rank===3
               ? 'background:#F5F0F8;color:#8E72A8'
               : 'background:#F5F0F8;color:#C6C6C6';
+            const catAmt = amtMap[r.key] || 0;
+            const amtStr = catAmt > 0
+              ? (catAmt >= 1000000
+                  ? (catAmt/1000000).toFixed(1) + '백만'
+                  : Number(catAmt).toLocaleString('ko-KR') + '원')
+              : '-';
             return `
             <tr style="border-bottom:1px solid #D8D0DC;${isZero?'opacity:0.55':''};transition:background .15s"
                 onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
@@ -17420,14 +17411,11 @@ function renderByCategoryTable(rows, year, month) {
                     </button>`
                   : `<span class="text-sm" style="color:#C6C6C6">0</span>`}
               </td>
-              <td class="px-3 py-3 text-center text-xs" style="color:#C6C6C6">${completedPct}%</td>
-              <td class="px-4 py-3">
-                <div class="flex items-center gap-2">
-                  <div class="flex-1 rounded-full h-2 min-w-16" style="background:#D8D0DC">
-                    <div class="h-2 rounded-full transition-all" style="width:${donePct}%;background:${r.bar}"></div>
-                  </div>
-                  <span class="text-xs w-8 text-right" style="color:${r.bar};font-weight:600">${donePct}%</span>
-                </div>
+              <td class="px-4 py-3 text-center">
+                <span class="text-sm font-bold" style="color:${donePct > 0 ? r.bar : '#C6C6C6'}">${donePct}%</span>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <span class="text-sm font-bold" style="color:${catAmt > 0 ? '#685182' : '#C6C6C6'}">${amtStr}</span>
               </td>
             </tr>`;
           }).join('')}
@@ -17442,14 +17430,13 @@ function renderByCategoryTable(rows, year, month) {
                 ${totalCompleted}
               </button>
             </td>
-            <td class="px-3 py-3 text-center text-xs" style="color:#685182">100%</td>
-            <td class="px-4 py-3">
-              <div class="flex items-center gap-2">
-                <div class="flex-1 rounded-full h-2 min-w-16" style="background:#D8D0DC">
-                  <div class="h-2 rounded-full" style="width:${totalTasks>0?Math.round(totalCompleted/totalTasks*100):0}%;background:linear-gradient(90deg,#D70072,#FF349E)"></div>
-                </div>
-                <span class="text-xs w-8 text-right font-bold" style="color:#D70072">${totalTasks>0?Math.round(totalCompleted/totalTasks*100):0}%</span>
-              </div>
+            <td class="px-4 py-3 text-center">
+              <span class="text-sm font-bold" style="color:#D70072">${totalTasks>0?Math.round(totalCompleted/totalTasks*100):0}%</span>
+            </td>
+            <td class="px-4 py-3 text-right">
+              <span class="text-sm font-bold" style="color:${totalAmt > 0 ? '#D70072' : '#C6C6C6'}">
+                ${totalAmt > 0 ? (totalAmt >= 1000000 ? (totalAmt/1000000).toFixed(1)+'백만' : Number(totalAmt).toLocaleString('ko-KR')+'원') : '-'}
+              </span>
             </td>
           </tr>
         </tbody>
@@ -17458,14 +17445,14 @@ function renderByCategoryTable(rows, year, month) {
 }
 
 // 현장팀별 완료건수 테이블 렌더링
-function renderByTeamTable(rows, year, month) {
+function renderByTeamTable(rows, year, month, teamAmtMap) {
   if (!rows || rows.length === 0) {
     return `<div class="text-center text-gray-400 py-6">
       <i class="fas fa-users-slash text-3xl mb-2"></i>
       <p class="text-sm">해당 기간 완료된 작업이 없습니다.</p>
     </div>`;
   }
-  const maxCount = Math.max(...rows.map(r => r.completed_count || 0), 1);
+  const amtMap = teamAmtMap || {};
   const barColors = ['#685182','#685182','#FF349E','#685182','#D70072','#685182','#685182','#FF349E'];
   return `
     <div class="overflow-x-auto">
@@ -17476,14 +17463,19 @@ function renderByTeamTable(rows, year, month) {
             <th class="text-left px-4 py-3 font-semibold text-gray-600">팀명</th>
             <th class="text-center px-4 py-3 font-semibold text-gray-600">인원</th>
             <th class="text-center px-4 py-3 font-semibold text-gray-600">완료 건수</th>
-            <th class="text-left px-4 py-3 font-semibold text-gray-600">상대 실적</th>
+            <th class="text-right px-4 py-3 font-semibold text-gray-600">작업 금액</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map((r, i) => {
-            const pct = maxCount > 0 ? Math.round((r.completed_count||0) / maxCount * 100) : 0;
             const color = barColors[i % barColors.length];
             const safeTeamName = (r.team_name||'').replace(/'/g, "\\'");
+            const teamAmt = amtMap[r.team_name] || 0;
+            const amtStr = teamAmt > 0
+              ? (teamAmt >= 1000000
+                  ? (teamAmt/1000000).toFixed(1) + '백만'
+                  : Number(teamAmt).toLocaleString('ko-KR') + '원')
+              : '-';
             return `
             <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
               <td class="px-4 py-3">
@@ -17520,13 +17512,8 @@ function renderByTeamTable(rows, year, month) {
                   : `<span class="text-gray-300 font-bold text-lg">0</span>`
                 }
               </td>
-              <td class="px-4 py-3">
-                <div class="flex items-center gap-2">
-                  <div class="flex-1 bg-gray-100 rounded-full h-2.5">
-                    <div class="h-2.5 rounded-full transition-all" style="width:${pct}%;background-color:${color}"></div>
-                  </div>
-                  <span class="text-xs text-gray-400 w-8 text-right">${pct}%</span>
-                </div>
+              <td class="px-4 py-3 text-right">
+                <span class="text-sm font-bold" style="color:${teamAmt > 0 ? '#685182' : '#C6C6C6'}">${amtStr}</span>
               </td>
             </tr>`;
           }).join('')}
@@ -17871,13 +17858,17 @@ async function loadMonthlyStats() {
   const isAllSelected = _statsConTypes.length === 0 || _statsConTypes.length === CON_TYPE_DEF.length;
   const conTypesParam = isAllSelected ? undefined : _statsConTypes.join(',');
   try {
-    const [monthlyRes, byCatRes, byTeamRes, activeByTeamRes2, workAmtRes2, spliceAmtRes2] = await Promise.all([
+    const [monthlyRes, byCatRes, byTeamRes, activeByTeamRes2, workAmtRes2, spliceAmtRes2, workByTeamRes, spliceByTeamRes, workByCatRes, spliceByCatRes] = await Promise.all([
       API.get('/stats/monthly', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
       API.get('/stats/completed/by-category', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
       API.get('/stats/completed/by-team', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
       API.get('/stats/active/by-team'),
       API.get('/work-reports/monthly-amount', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { work_report_amount: 0 } })),
-      API.get('/splice-reports/monthly-amount', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { splice_report_amount: 0 } }))
+      API.get('/splice-reports/monthly-amount', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { splice_report_amount: 0 } })),
+      API.get('/work-reports/monthly-amount-by-team', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { by_team: [] } })),
+      API.get('/splice-reports/monthly-amount-by-team', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { by_team: [] } })),
+      API.get('/work-reports/monthly-amount-by-category', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { by_category: [] } })),
+      API.get('/splice-reports/monthly-amount-by-category', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }).catch(() => ({ data: { by_category: [] } }))
     ]);
     const monthly = monthlyRes.data;
     const byCat = byCatRes.data;
@@ -17886,6 +17877,25 @@ async function loadMonthlyStats() {
     const workAmt2   = workAmtRes2.data?.work_report_amount   || 0;
     const spliceAmt2 = spliceAmtRes2.data?.splice_report_amount || 0;
     const totalReportAmt2 = workAmt2 + spliceAmt2;
+
+    // 팀별 금액 맵 합산 (외선 + 접속)
+    const teamAmtMap2 = {};
+    (workByTeamRes.data?.by_team || []).forEach(function(r) {
+      teamAmtMap2[r.team_name] = (teamAmtMap2[r.team_name] || 0) + (r.work_amount || 0);
+    });
+    (spliceByTeamRes.data?.by_team || []).forEach(function(r) {
+      teamAmtMap2[r.team_name] = (teamAmtMap2[r.team_name] || 0) + (r.splice_amount || 0);
+    });
+
+    // 분류별 금액 맵 합산 (외선 + 접속)
+    const catAmtMap2 = {};
+    (workByCatRes.data?.by_category || []).forEach(function(r) {
+      catAmtMap2[r.category] = (catAmtMap2[r.category] || 0) + (r.work_amount || 0);
+    });
+    (spliceByCatRes.data?.by_category || []).forEach(function(r) {
+      catAmtMap2[r.category] = (catAmtMap2[r.category] || 0) + (r.splice_amount || 0);
+    });
+
     const taskStatusMap = { unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료', tbm_done:'TBM완료', working:'작업진행중', work_completed:'작업완료', completed:'일지완료', cancelled:'취소' };
     const totalMonthly = monthly.taskStats.reduce((s,r) => s+r.count, 0);
     const completedCount = monthly.taskStats.find(s=>s.status==='completed')?.count||0;
@@ -17936,9 +17946,9 @@ async function loadMonthlyStats() {
 
     // 분류별/팀별 테이블 업데이트
     const catEl  = document.getElementById('byCategoryTable');
-    if (catEl)  catEl.innerHTML  = renderByCategoryTable(byCat.rows, year, month);
+    if (catEl)  catEl.innerHTML  = renderByCategoryTable(byCat.rows, year, month, catAmtMap2);
     const teamEl = document.getElementById('byTeamTable');
-    if (teamEl) teamEl.innerHTML = renderByTeamTable(byTeam.rows, year, month);
+    if (teamEl) teamEl.innerHTML = renderByTeamTable(byTeam.rows, year, month, teamAmtMap2);
     // 팀별 진행중 작업건수 테이블 업데이트 (완료 제외 — 월 무관 현재 상태)
     const activeTeamEl = document.getElementById('activeByTeamTable');
     if (activeTeamEl) activeTeamEl.innerHTML = renderActiveByTeamTable(activeByTeam2.rows);

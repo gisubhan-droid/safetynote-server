@@ -130,6 +130,202 @@ app.get('/monthly-amount', async (c) => {
   }
 })
 
+// ─── GET /monthly-amount-by-team — 팀별 외선일보 금액 합계 ──────────────────
+// ⚠️ RULE-002: /volume-stats, /:id 보다 앞에 등록
+app.get('/monthly-amount-by-team', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rawDb = getRawDb()
+  const { year, month } = c.req.query()
+  const now = new Date()
+  const y = year || now.getFullYear()
+  const m = (month || (now.getMonth() + 1)).toString().padStart(2, '0')
+  const start = `${y}-${m}-01`
+  const end   = new Date(Number(y), Number(m), 0).toISOString().split('T')[0]
+
+  const rawConTypes = c.req.query('con_types') || ''
+  const conTypeList: string[] = rawConTypes
+    ? rawConTypes.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : []
+  const hasConFilter = conTypeList.length > 0
+  const conJoinClause  = hasConFilter ? `LEFT JOIN tasks t ON t.id = r.task_id` : ''
+  const conWhereClause = hasConFilter
+    ? `AND (t.construction_type IN (${conTypeList.map(() => '?').join(',')}) OR (r.task_id IS NULL))`
+    : ''
+
+  try {
+    const baseParams: any[] = [start, end, ...conTypeList]
+    // worker_team 기준으로 일보 목록 조회
+    const reports: any[] = rawDb.prepare(
+      `SELECT r.id, r.worker_team,
+              (SELECT COALESCE(SUM(rc.usage_m),0) FROM work_report_cables rc WHERE rc.report_id=r.id AND rc.proc='신설') AS cable_new_m,
+              (SELECT COALESCE(SUM(rc.usage_m),0) FROM work_report_cables rc WHERE rc.report_id=r.id AND rc.proc='철거') AS cable_remove_m,
+              (SELECT COALESCE(SUM(rc.usage_m),0) FROM work_report_cables rc WHERE rc.report_id=r.id AND rc.proc='이설') AS cable_move_m
+       FROM work_reports r
+       ${conJoinClause}
+       WHERE r.status = 'submitted'
+         AND r.work_date BETWEEN ? AND ?
+         ${conWhereClause}`
+    ).all(...baseParams) as any[]
+
+    if (reports.length === 0) {
+      return c.json({ year: y, month: m, by_team: [] })
+    }
+
+    const priceRows: any[] = rawDb.prepare(
+      `SELECT item_key, unit_price FROM volume_unit_prices`
+    ).all() as any[]
+    const priceMap: Record<string, number> = {}
+    priceRows.forEach((p: any) => { priceMap[p.item_key] = Number(p.unit_price) || 0 })
+    const pNew    = priceMap['a000001'] || 0
+    const pRemove = priceMap['a000002'] || 0
+    const pMove   = priceMap['a000003'] || 0
+
+    const reportIds = reports.map((r: any) => r.id)
+    const ph = reportIds.map(() => '?').join(',')
+    const extras: any[] = rawDb.prepare(
+      `SELECT report_id, item_key, SUM(qty) AS qty,
+              MIN(unit_price_snapshot) AS unit_price_snapshot
+       FROM work_report_extras
+       WHERE report_id IN (${ph})
+       GROUP BY report_id, item_key`
+    ).all(...reportIds) as any[]
+
+    // report_id → 금액 맵
+    const amtByReport: Record<number, number> = {}
+    for (const r of reports) {
+      let amt = 0
+      amt += (Number(r.cable_new_m)    || 0) * pNew
+      amt += (Number(r.cable_remove_m) || 0) * pRemove
+      amt += (Number(r.cable_move_m)   || 0) * pMove
+      amtByReport[r.id] = amt
+    }
+    for (const e of extras) {
+      const qty  = Number(e.qty) || 0
+      const snap = e.unit_price_snapshot != null ? Number(e.unit_price_snapshot) : null
+      const up   = snap != null ? snap : (priceMap[e.item_key] || 0)
+      amtByReport[e.report_id] = (amtByReport[e.report_id] || 0) + qty * up
+    }
+
+    // 팀별 합산
+    const teamAmtMap: Record<string, number> = {}
+    for (const r of reports) {
+      const team = r.worker_team || '미지정'
+      teamAmtMap[team] = (teamAmtMap[team] || 0) + (amtByReport[r.id] || 0)
+    }
+
+    const byTeam = Object.entries(teamAmtMap).map(([team_name, amount]) => ({
+      team_name,
+      work_amount: Math.round(amount)
+    }))
+
+    return c.json({ year: y, month: m, by_team: byTeam })
+  } catch (e: any) {
+    console.error('[work-reports GET /monthly-amount-by-team]', e.message)
+    return c.json({ error: e.message || '팀별 외선일보 금액 조회 실패' }, 500)
+  }
+})
+
+// ─── GET /monthly-amount-by-category — 분류별 외선일보 금액 합계 ─────────────
+// ⚠️ RULE-002: /volume-stats, /:id 보다 앞에 등록
+app.get('/monthly-amount-by-category', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rawDb = getRawDb()
+  const { year, month } = c.req.query()
+  const now = new Date()
+  const y = year || now.getFullYear()
+  const m = (month || (now.getMonth() + 1)).toString().padStart(2, '0')
+  const start = `${y}-${m}-01`
+  const end   = new Date(Number(y), Number(m), 0).toISOString().split('T')[0]
+
+  const rawConTypes = c.req.query('con_types') || ''
+  const conTypeList: string[] = rawConTypes
+    ? rawConTypes.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : []
+  const hasConFilter = conTypeList.length > 0
+  const conJoinClause  = hasConFilter
+    ? `LEFT JOIN tasks t2 ON t2.id = r.task_id`
+    : `LEFT JOIN tasks t2 ON t2.id = r.task_id`
+  const conWhereClause = hasConFilter
+    ? `AND (t2.construction_type IN (${conTypeList.map(() => '?').join(',')}) OR (r.task_id IS NULL))`
+    : ''
+
+  try {
+    const baseParams: any[] = [start, end, ...conTypeList]
+    const reports: any[] = rawDb.prepare(
+      `SELECT r.id, COALESCE(t2.construction_type, '미분류') AS construction_type,
+              (SELECT COALESCE(SUM(rc.usage_m),0) FROM work_report_cables rc WHERE rc.report_id=r.id AND rc.proc='신설') AS cable_new_m,
+              (SELECT COALESCE(SUM(rc.usage_m),0) FROM work_report_cables rc WHERE rc.report_id=r.id AND rc.proc='철거') AS cable_remove_m,
+              (SELECT COALESCE(SUM(rc.usage_m),0) FROM work_report_cables rc WHERE rc.report_id=r.id AND rc.proc='이설') AS cable_move_m
+       FROM work_reports r
+       ${conJoinClause}
+       WHERE r.status = 'submitted'
+         AND r.work_date BETWEEN ? AND ?
+         ${conWhereClause}`
+    ).all(...baseParams) as any[]
+
+    if (reports.length === 0) {
+      return c.json({ year: y, month: m, by_category: [] })
+    }
+
+    const priceRows: any[] = rawDb.prepare(
+      `SELECT item_key, unit_price FROM volume_unit_prices`
+    ).all() as any[]
+    const priceMap: Record<string, number> = {}
+    priceRows.forEach((p: any) => { priceMap[p.item_key] = Number(p.unit_price) || 0 })
+    const pNew    = priceMap['a000001'] || 0
+    const pRemove = priceMap['a000002'] || 0
+    const pMove   = priceMap['a000003'] || 0
+
+    const reportIds = reports.map((r: any) => r.id)
+    const ph = reportIds.map(() => '?').join(',')
+    const extras: any[] = rawDb.prepare(
+      `SELECT report_id, item_key, SUM(qty) AS qty,
+              MIN(unit_price_snapshot) AS unit_price_snapshot
+       FROM work_report_extras
+       WHERE report_id IN (${ph})
+       GROUP BY report_id, item_key`
+    ).all(...reportIds) as any[]
+
+    const amtByReport: Record<number, number> = {}
+    for (const r of reports) {
+      let amt = 0
+      amt += (Number(r.cable_new_m)    || 0) * pNew
+      amt += (Number(r.cable_remove_m) || 0) * pRemove
+      amt += (Number(r.cable_move_m)   || 0) * pMove
+      amtByReport[r.id] = amt
+    }
+    for (const e of extras) {
+      const qty  = Number(e.qty) || 0
+      const snap = e.unit_price_snapshot != null ? Number(e.unit_price_snapshot) : null
+      const up   = snap != null ? snap : (priceMap[e.item_key] || 0)
+      amtByReport[e.report_id] = (amtByReport[e.report_id] || 0) + qty * up
+    }
+
+    // 분류별 합산
+    const catAmtMap: Record<string, number> = {}
+    const reportCatMap: Record<number, string> = {}
+    for (const r of reports) {
+      reportCatMap[r.id] = r.construction_type
+    }
+    for (const r of reports) {
+      const cat = reportCatMap[r.id] || '미분류'
+      catAmtMap[cat] = (catAmtMap[cat] || 0) + (amtByReport[r.id] || 0)
+    }
+
+    const byCategory = Object.entries(catAmtMap).map(([category, amount]) => ({
+      category,
+      work_amount: Math.round(amount)
+    }))
+
+    return c.json({ year: y, month: m, by_category: byCategory })
+  } catch (e: any) {
+    console.error('[work-reports GET /monthly-amount-by-category]', e.message)
+    return c.json({ error: e.message || '분류별 외선일보 금액 조회 실패' }, 500)
+  }
+})
+
 // ─── GET /volume-stats ───────────────────────────────────────────────────────
 app.get('/volume-stats', async (c) => {
   const user = getUser(c)

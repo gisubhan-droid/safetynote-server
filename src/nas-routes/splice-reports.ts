@@ -186,6 +186,176 @@ spliceApp.get('/monthly-amount', async (c) => {
   }
 })
 
+// GET /monthly-amount-by-team — 팀별 접속일보 금액 합계
+// ⚠️ /:id, /stats 보다 반드시 먼저 등록
+spliceApp.get('/monthly-amount-by-team', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rawDb = getRawDb()
+  const { year, month } = c.req.query()
+  const now = new Date()
+  const y = year || now.getFullYear()
+  const m = (month || (now.getMonth() + 1)).toString().padStart(2, '0')
+  const start = `${y}-${m}-01`
+  const end   = new Date(Number(y), Number(m), 0).toISOString().split('T')[0]
+
+  const rawConTypes = c.req.query('con_types') || ''
+  const conTypeList: string[] = rawConTypes
+    ? rawConTypes.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : []
+  const hasConFilter = conTypeList.length > 0
+  const conJoinClause  = hasConFilter ? `LEFT JOIN tasks t ON t.id = sr.task_id` : ''
+  const conWhereClause = hasConFilter
+    ? `AND (t.construction_type IN (${conTypeList.map(() => '?').join(',')}) OR (sr.task_id IS NULL))`
+    : ''
+
+  try {
+    const baseParams: any[] = [start, end, ...conTypeList]
+    const reports: any[] = rawDb.prepare(
+      `SELECT sr.id, sr.worker_team FROM splice_reports sr
+       ${conJoinClause}
+       WHERE sr.status = 'submitted'
+         AND sr.work_date BETWEEN ? AND ?
+         ${conWhereClause}`
+    ).all(...baseParams) as any[]
+
+    if (reports.length === 0) {
+      return c.json({ year: y, month: m, by_team: [] })
+    }
+
+    const priceRows: any[] = rawDb.prepare(
+      `SELECT item_key, item_label, unit_price, night_price, aerial_price FROM splice_unit_prices`
+    ).all() as any[]
+    const labelPriceMap: Record<string, { base: number; night: number; aerial: number }> = {}
+    priceRows.forEach((p: any) => {
+      if (p.item_label) labelPriceMap[p.item_label] = {
+        base:   Number(p.unit_price)   || 0,
+        night:  Number(p.night_price)  || 0,
+        aerial: Number(p.aerial_price) || 0,
+      }
+    })
+
+    const reportIds = reports.map((r: any) => r.id)
+    const ph = reportIds.map(() => '?').join(',')
+    const items: any[] = rawDb.prepare(
+      `SELECT report_id, work_label, qty, is_night, is_aerial
+       FROM splice_work_items
+       WHERE report_id IN (${ph})`
+    ).all(...reportIds) as any[]
+
+    // report_id → 금액 맵
+    const amtByReport: Record<number, number> = {}
+    for (const it of items) {
+      const qty     = Number(it.qty) || 0
+      const p       = labelPriceMap[it.work_label] || { base: 0, night: 0, aerial: 0 }
+      const unitAmt = p.base + (it.is_night ? p.night : 0) + (it.is_aerial ? p.aerial : 0)
+      amtByReport[it.report_id] = (amtByReport[it.report_id] || 0) + qty * unitAmt
+    }
+
+    // 팀별 합산
+    const teamAmtMap: Record<string, number> = {}
+    for (const r of reports) {
+      const team = r.worker_team || '미지정'
+      teamAmtMap[team] = (teamAmtMap[team] || 0) + (amtByReport[r.id] || 0)
+    }
+
+    const byTeam = Object.entries(teamAmtMap).map(([team_name, amount]) => ({
+      team_name,
+      splice_amount: Math.round(amount)
+    }))
+
+    return c.json({ year: y, month: m, by_team: byTeam })
+  } catch (e: any) {
+    console.error('[splice-reports GET /monthly-amount-by-team]', e.message)
+    return c.json({ error: e.message || '팀별 접속일보 금액 조회 실패' }, 500)
+  }
+})
+
+// GET /monthly-amount-by-category — 분류별 접속일보 금액 합계
+// ⚠️ /:id, /stats 보다 반드시 먼저 등록
+spliceApp.get('/monthly-amount-by-category', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rawDb = getRawDb()
+  const { year, month } = c.req.query()
+  const now = new Date()
+  const y = year || now.getFullYear()
+  const m = (month || (now.getMonth() + 1)).toString().padStart(2, '0')
+  const start = `${y}-${m}-01`
+  const end   = new Date(Number(y), Number(m), 0).toISOString().split('T')[0]
+
+  const rawConTypes = c.req.query('con_types') || ''
+  const conTypeList: string[] = rawConTypes
+    ? rawConTypes.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : []
+  const hasConFilter = conTypeList.length > 0
+  const conJoinClause  = `LEFT JOIN tasks t ON t.id = sr.task_id`
+  const conWhereClause = hasConFilter
+    ? `AND (t.construction_type IN (${conTypeList.map(() => '?').join(',')}) OR (sr.task_id IS NULL))`
+    : ''
+
+  try {
+    const baseParams: any[] = [start, end, ...conTypeList]
+    const reports: any[] = rawDb.prepare(
+      `SELECT sr.id, COALESCE(t.construction_type, '미분류') AS construction_type
+       FROM splice_reports sr
+       ${conJoinClause}
+       WHERE sr.status = 'submitted'
+         AND sr.work_date BETWEEN ? AND ?
+         ${conWhereClause}`
+    ).all(...baseParams) as any[]
+
+    if (reports.length === 0) {
+      return c.json({ year: y, month: m, by_category: [] })
+    }
+
+    const priceRows: any[] = rawDb.prepare(
+      `SELECT item_key, item_label, unit_price, night_price, aerial_price FROM splice_unit_prices`
+    ).all() as any[]
+    const labelPriceMap: Record<string, { base: number; night: number; aerial: number }> = {}
+    priceRows.forEach((p: any) => {
+      if (p.item_label) labelPriceMap[p.item_label] = {
+        base:   Number(p.unit_price)   || 0,
+        night:  Number(p.night_price)  || 0,
+        aerial: Number(p.aerial_price) || 0,
+      }
+    })
+
+    const reportIds = reports.map((r: any) => r.id)
+    const ph = reportIds.map(() => '?').join(',')
+    const items: any[] = rawDb.prepare(
+      `SELECT report_id, work_label, qty, is_night, is_aerial
+       FROM splice_work_items
+       WHERE report_id IN (${ph})`
+    ).all(...reportIds) as any[]
+
+    const amtByReport: Record<number, number> = {}
+    for (const it of items) {
+      const qty     = Number(it.qty) || 0
+      const p       = labelPriceMap[it.work_label] || { base: 0, night: 0, aerial: 0 }
+      const unitAmt = p.base + (it.is_night ? p.night : 0) + (it.is_aerial ? p.aerial : 0)
+      amtByReport[it.report_id] = (amtByReport[it.report_id] || 0) + qty * unitAmt
+    }
+
+    // 분류별 합산
+    const catAmtMap: Record<string, number> = {}
+    for (const r of reports) {
+      const cat = r.construction_type || '미분류'
+      catAmtMap[cat] = (catAmtMap[cat] || 0) + (amtByReport[r.id] || 0)
+    }
+
+    const byCategory = Object.entries(catAmtMap).map(([category, amount]) => ({
+      category,
+      splice_amount: Math.round(amount)
+    }))
+
+    return c.json({ year: y, month: m, by_category: byCategory })
+  } catch (e: any) {
+    console.error('[splice-reports GET /monthly-amount-by-category]', e.message)
+    return c.json({ error: e.message || '분류별 접속일보 금액 조회 실패' }, 500)
+  }
+})
+
 // GET /stats — 공량내역/물량통계
 // ⚠️ /:id 보다 반드시 먼저 등록
 spliceApp.get('/stats', async (c) => {

@@ -6947,3 +6947,242 @@ task.status = 'paused'(일시중지/작업중지 신고 상태)가 두 페이지
 - GitHub push ✅ (`b2ba246 → 0de543f`)
 - NAS 배포: 방식1(업데이트 버튼) 적용 필요
 
+
+---
+
+## 세션 134 (2026-07-14) — feat: QR 일괄 인쇄 / TBM 공유 수정 / 사진 확대 모달 수정
+
+> ※ 세션 134~139는 이전 PROJECT_HISTORY 기록에서 순번이 129 이후로 점프됨.  
+> 아래 세션 140은 2026-07-17 기준 이번 개발 세션 입니다.
+
+---
+
+## 세션 140 (2026-07-17) — 기능 고도화 5종 + JS 파싱 오류 긴급 수정
+
+### 작업 배경
+이전 세션(139)에서 미완료된 `loadMonthlyStats()` 금액 재조회 연결을 포함,  
+공시현황·내 작업 목록·공사통계 페이지의 UX 개선 요청 5건을 일괄 처리.  
+작업 도중 `app.js`에 TypeScript 구문 삽입으로 메인 페이지 전체 불가 장애 발생 → 긴급 핫픽스.
+
+---
+
+### 구현 내용
+
+#### ① `loadMonthlyStats()` — workAmt/spliceAmt 재조회 + DOM 갱신 (커밋 `33e7557`)
+
+**배경**: 공시현황(stats-task) 페이지의 "총 시공물량" 카드 초기 렌더 시 접속·외선 일보 금액이  
+`0` 으로 고정되어 있던 문제. `loadMonthlyStats()` 호출 시에만 최신 값이 반영되고  
+DOM 업데이트 경로가 분리되어 있어 카드 헤더에 반영되지 않았음.
+
+**해결**:
+- `loadMonthlyStats()` 내부에서 `/work-reports/monthly-amount`, `/splice-reports/monthly-amount` 병렬 호출 추가
+- `qty-main-value` / `qty-main-label` 클래스로 DOM 타겟 지정 → 연도/월 변경 시에도 실시간 갱신
+- `.monthly-amt-block` 제거 후 재생성 방식으로 중복 렌더 방지
+
+```javascript
+// Promise.all 6개 병렬 조회
+const [monthlyRes, byCatRes, byTeamRes, activeByTeamRes2, workAmtRes2, spliceAmtRes2] = await Promise.all([
+  API.get('/stats/monthly', { params: { year, month, ...(conTypesParam ? { con_types: conTypesParam } : {}) } }),
+  API.get('/stats/completed/by-category', { ... }),
+  API.get('/stats/completed/by-team',     { ... }),
+  API.get('/stats/active/by-team'),
+  API.get('/work-reports/monthly-amount',  { params: { year, month } }).catch(() => ({ data: { work_report_amount: 0 } })),
+  API.get('/splice-reports/monthly-amount',{ params: { year, month } }).catch(() => ({ data: { splice_report_amount: 0 } }))
+]);
+```
+
+---
+
+#### ② 총 시공물량 카드 헤더 합계 금액 표시 (커밋 `53a42f1`)
+
+**배경**: 공시현황 "총 시공물량" 카드 헤더(큰 숫자)가 항상 `0.0`으로 고정.
+
+**해결**:
+- 접속일보(`splice_report_amount`) + 외선일보(`work_report_amount`) 합산
+- **표시 형식**: 합계가 100만 이상이면 `N.N백만`, 미만이면 원 단위 표시
+- `qty-main-value` DOM 엘리먼트를 타겟으로 실시간 업데이트
+
+**표시 예시**:
+```
+총 시공물량    ← 카드 타이틀
+3.7백만        ← qty-main-value (접속 2.1 + 외선 1.6 백만)
+금액(원)       ← qty-main-label
+```
+
+---
+
+#### ③ 근로자 내 작업 목록 — 등록건명/공사담당자 텍스트 검색 (커밋 `5c5e167`)
+
+**배경**: 작업이 많아질수록 특정 건을 찾기 어렵다는 현장 피드백.
+
+**구현 위치**: `public/static/app.js` — 전역 상태 + `renderMyTasksPage()` 내부
+
+**추가 전역 상태**:
+```javascript
+let _myTasksSearchKw = '';       // 검색 키워드
+let _myTasksSearchTimer = null;  // debounce 타이머 핸들
+```
+
+**검색 동작**:
+- 검색 대상 필드: `title`(등록건명), `con_manager_display_name`(공사담당자), `supervisor_name`, `construction_title`
+- debounce: **300ms** (연속 입력 시 API 재호출 없이 클라이언트 사이드 필터링)
+- 재렌더 후 포커스 자동 복원 (`inp.setSelectionRange(len, len)`)
+- 페이지 이탈(`navigateTo()`) 시 `_myTasksSearchKw = ''` 자동 초기화
+
+```javascript
+function applyMyTasksSearch(kw) {
+  _myTasksSearchKw = (kw || '').trim();
+  clearTimeout(_myTasksSearchTimer);
+  _myTasksSearchTimer = setTimeout(() => {
+    renderMyTasksPage(content).then(() => {
+      const inp = document.getElementById('myTasksSearchInput');
+      if (inp) { inp.focus(); const len = inp.value.length; inp.setSelectionRange(len, len); }
+    });
+  }, 300);
+}
+```
+
+---
+
+#### ④ 내 작업 목록 — 금일예정 필터 카드 추가 (커밋 `b811273`)
+
+**배경**: 오늘 예정된 작업만 빠르게 확인하고 싶다는 요청.
+
+**구현**:
+- 기존 3열(전체·진행중·완료) → **4열(전체·진행중·완료·금일예정)** 로 확장 (`grid-cols-4`)
+- KST 기준 오늘 날짜(`getKSTDate()`) 자동 계산
+- 필터 조건: `planned_date === todayKST && status !== 'cancelled'`
+- **빨간 알림 뱃지**: `todayCount > 0` 이면 카드 우상단에 빨간 점 표시
+
+```javascript
+const todayKST   = getKSTDate();  // 'YYYY-MM-DD' (KST)
+const todayCount = myTasks.filter(
+  t => t.planned_date === todayKST && t.status !== 'cancelled'
+).length;
+```
+
+---
+
+#### ⑤ 공사통계(con-stats) — 공사종류 드롭다운+체크박스 필터 (커밋 `fa15bcc`)
+
+**배경**: 공사통계 페이지에서 공사종류별 필터 없이 전체 합산만 표시되어,  
+특정 공사종류(예: 지장이설)만 선택적으로 분석하기 어려움.
+
+**추가 전역 상태** (`renderConStatsPage` 스코프 내):
+```javascript
+let _csWorkClasses = ['relocation'];  // 기본: 지장이설
+let _csWcOpen      = false;           // 드롭다운 열림 상태
+```
+
+**UI 구성**:
+```
+┌──────────────────────────────────────────┐
+│ [공사종류 ▼ 지장이설]                     │  ← 드롭다운 버튼
+│ ┌────────────────────────────────────┐   │
+│ │ [전체선택] [전체해제]               │   │
+│ │ ☑ 지장이설  ☐ 청약개통             │   │
+│ │ ☐ 관로공사  ☐ 환경공사             │   │
+│ │ ☐ 별도사업  ☐ 기타                 │   │
+│ └────────────────────────────────────┘   │
+└──────────────────────────────────────────┘
+```
+
+**동작**:
+- 체크박스 변경 즉시 `loadAndRender()` 재호출 → `work_classes` 파라미터로 API 전달
+- 전체 선택/해제 빠른 버튼 제공
+- 외부 클릭 시 드롭다운 자동 닫기 (`document.addEventListener('click', _csOutsideClickHandler)`)
+- 버튼 라벨: 선택 1종이면 종류명 표시, 복수이면 "N종 선택" 표시
+
+**백엔드 수정** (`node-server.ts` `/api/constructions/stats`):
+```typescript
+const rawWorkClasses = c.req.query('work_classes') || ''
+const workClassList: string[] = rawWorkClasses
+  ? rawWorkClasses.split(',').map((s: string) => s.trim()).filter(Boolean)
+  : []
+const hasWcFilter    = workClassList.length > 0
+const wcPlaceholders = workClassList.map(() => '?').join(',')
+const wcWhere        = hasWcFilter
+  ? `AND COALESCE(c.work_class, 'other') IN (${wcPlaceholders})`
+  : ''
+// summary / by_type / by_manager 3개 쿼리 모두 wcWhere 적용
+```
+
+> ⚠️ `constructions.work_class`는 **영문 key** 저장 (relocation, subscription, conduit, environment, separate, other)  
+> → API 파라미터도 반드시 영문 key로 전달해야 함
+
+---
+
+#### ⑥ hotfix: JS 파싱 오류 긴급 수정 (커밋 `6a0416d`)
+
+**원인**: `app.js`(순수 JavaScript 파일)에 TypeScript 캐스팅 구문 삽입
+
+```javascript
+// ❌ 잘못된 코드 (TypeScript 전용 구문)
+(document.getElementById('csWcDropdown') as HTMLInputElement).checked = true
+
+// ✅ 수정 코드 (순수 JavaScript)
+const el = document.getElementById('csWcDropdown');
+if (el) el.checked = true;
+```
+
+**영향**: 메인 페이지 전체 `new Function()` 파싱 실패 → 앱 완전 불가 (흰 화면)  
+**수정 후**: `node -e "new Function(require('fs').readFileSync('public/static/app.js','utf8'))"` → **파싱 OK**
+
+> 🔑 **재발 방지 규칙**: `app.js`는 **순수 JavaScript** 파일. `: Type`, `as Type`, `<Type>` 등  
+> TypeScript 전용 구문 절대 사용 불가. 수정 후 반드시 파싱 검사 실행.
+
+---
+
+### 신규 API 목록
+
+| HTTP | 경로 | 파일 | 설명 |
+|------|------|------|------|
+| GET | `/work-reports/monthly-amount` | `src/nas-routes/work-reports.ts` | 외선일보 월별 합계 금액 |
+| GET | `/splice-reports/monthly-amount` | `src/nas-routes/splice-reports.ts` | 접속일보 월별 합계 금액 |
+
+> RULE-002 준수: 각 파일에서 `/volume-stats`, `/:id` 동적 라우트보다 **먼저** 등록
+
+**응답 형식**:
+```json
+// GET /work-reports/monthly-amount?year=2026&month=7
+{ "work_report_amount": 1600000 }
+
+// GET /splice-reports/monthly-amount?year=2026&month=7
+{ "splice_report_amount": 2100000 }
+```
+
+---
+
+### 수정 파일 요약
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | ① loadMonthlyStats 금액재조회+DOM갱신 ② 총시공금액 헤더표시 ③ 내작업 검색기능 ④ 금일예정 필터카드 ⑤ con-stats 드롭다운 UI ⑥ hotfix TS구문제거 |
+| `src/routes/stats.ts` | `/monthly`, `/completed/by-category`, `/completed/by-team` — `con_types` 파라미터 지원 (D1) |
+| `node-server.ts` | `/api/constructions/stats` — `work_classes` 필터 파라미터 추가 (rawDb) |
+| `src/nas-routes/work-reports.ts` | `GET /monthly-amount` 신규 API 추가 |
+| `src/nas-routes/splice-reports.ts` | `GET /monthly-amount` 신규 API 추가 |
+
+---
+
+### 커밋 히스토리
+
+| 커밋 | 메시지 |
+|------|--------|
+| `33e7557` | feat: 공시현황 총 시공물량 카드에 접속/외선 일보 금액 표시 |
+| `53a42f1` | feat: 총 시공물량 카드 헤더값을 합계 금액(백만원 축약)으로 표시 |
+| `5c5e167` | feat: 근로자 내 작업 목록에 등록건명/공사담당자 검색 기능 추가 |
+| `b811273` | feat: 내 작업 목록 상단 카드에 금일예정 필터 추가 |
+| `4a1e0dc` | feat: 공사통계 페이지 공사종류별 드롭다운+체크박스 필터 추가 |
+| `fa15bcc` | fix: 공사통계(con-stats) 페이지에 공사종류별 드롭다운+체크박스 필터 추가 |
+| `6a0416d` | hotfix: app.js TypeScript 'as HTMLInputElement' 구문 제거 — JS 파싱 오류 수정 |
+
+---
+
+### 빌드/배포 상태
+
+- `npm run build` → ✅ **성공** (`dist/_worker.js 281.03 kB`, 1.30s)
+- JS 파싱 검사 → ✅ **OK** (`node -e "new Function(...)"`)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `6a0416d`)
+- 사용자 실기기 확인 → ✅ **"복구 되고 잘 동작 됩니다"**
+

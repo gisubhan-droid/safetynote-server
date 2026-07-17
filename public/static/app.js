@@ -17086,7 +17086,7 @@ async function renderStatsPage(container) {
               <span class="text-xs text-gray-400">완료 건수를 클릭하면 작업 목록을 볼 수 있습니다</span>
             </div>
             <div id="byTeamTable">
-              ${renderByTeamTable(byTeam.rows, year, month, {})}
+              ${renderByTeamTable(byTeam.rows, year, month, {}, {})}
             </div>
           </div>
 
@@ -17099,7 +17099,7 @@ async function renderStatsPage(container) {
               <span class="text-xs text-gray-400">완료 건수를 클릭하면 작업 목록을 볼 수 있습니다</span>
             </div>
             <div id="byCategoryTable">
-              ${renderByCategoryTable(byCat.rows, year, month, {})}
+              ${renderByCategoryTable(byCat.rows, year, month, {}, {})}
             </div>
           </div>
         </div>
@@ -17316,6 +17316,8 @@ async function renderStatsPage(container) {
 
     // 공사종류 드롭다운 외부클릭 닫기 초기화
     _initStatsConTypeOutsideClick();
+    // ✅ 페이지 진입 즉시 금액 데이터(팀별/분류별) 자동 로딩
+    loadMonthlyStats();
   } catch(e) {
     container.innerHTML = `<p class="text-red-500 p-4">로드 실패: ${e.message}</p>`;
   }
@@ -17323,205 +17325,216 @@ async function renderStatsPage(container) {
 
 // 작업 종류별 완료건수 테이블 렌더링
 // construction_type 4종 기준 (작업 등록폼 공사종류와 동일)
-function renderByCategoryTable(rows, year, month, catAmtMap) {
-  // CON_TYPE_DEF 기반 — rows API: category_code = construction_type(한글명)
-  const rowMap = {};
-  (rows || []).forEach(r => { rowMap[r.category_code] = r; });
-  const amtMap = catAmtMap || {};
+// workAmtMap: { [category]: work_amount }  spliceAmtMap: { [category]: splice_amount }
+function renderByCategoryTable(rows, year, month, workAmtMap, spliceAmtMap) {
+  var rowMap = {};
+  (rows || []).forEach(function(r) { rowMap[r.category_code] = r; });
+  var wAmt = workAmtMap || {};
+  var sAmt = spliceAmtMap || {};
 
-  const mergedRows = CON_TYPE_DEF.map(d => ({
-    key:       d.label,
-    label:     d.label,
-    icon:      d.icon,
-    bar:       d.barColor,
-    badge_bg:  d.badgeBg,
-    badge_color: d.badgeTxt,
-    completed_count: rowMap[d.label]?.completed_count || 0,
-    total_count:     rowMap[d.label]?.total_count     || 0,
-  }));
+  var mergedRows = CON_TYPE_DEF.map(function(d) {
+    return {
+      key:         d.label,
+      label:       d.label,
+      icon:        d.icon,
+      bar:         d.barColor,
+      badge_bg:    d.badgeBg,
+      badge_color: d.badgeTxt,
+      completed_count: rowMap[d.label] ? (rowMap[d.label].completed_count || 0) : 0,
+      total_count:     rowMap[d.label] ? (rowMap[d.label].total_count     || 0) : 0
+    };
+  });
 
-  const totalCompleted = mergedRows.reduce((s,r) => s + r.completed_count, 0);
-  const totalTasks     = mergedRows.reduce((s,r) => s + r.total_count, 0);
-  const totalAmt       = Object.values(amtMap).reduce(function(s, v) { return s + v; }, 0);
+  var totalCompleted = mergedRows.reduce(function(s,r) { return s + r.completed_count; }, 0);
+  var totalTasks     = mergedRows.reduce(function(s,r) { return s + r.total_count; }, 0);
+  var totalWork      = Object.values(wAmt).reduce(function(s,v) { return s + v; }, 0);
+  var totalSplice    = Object.values(sAmt).reduce(function(s,v) { return s + v; }, 0);
+  var totalAmt       = totalWork + totalSplice;
 
-  // 완료 기준 내림차순 정렬 (순위 계산)
-  const sorted = [...mergedRows].sort((a,b) => b.completed_count - a.completed_count);
-  const rankMap = {};
-  let ri = 0;
-  sorted.forEach(r => { rankMap[r.key] = r.completed_count > 0 ? ++ri : null; });
-
-  return `
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr style="background:#F5F0F8;border-bottom:1.5px solid #D8D0DC">
-            <th class="text-center px-3 py-3 font-semibold w-10" style="color:#685182">순위</th>
-            <th class="text-left px-4 py-3 font-semibold" style="color:#685182">작업 분류</th>
-            <th class="text-center px-4 py-3 font-semibold" style="color:#685182">배정</th>
-            <th class="text-center px-4 py-3 font-semibold" style="color:#685182">완료</th>
-            <th class="text-center px-4 py-3 font-semibold" style="color:#685182">완료율</th>
-            <th class="text-right px-4 py-3 font-semibold" style="color:#685182">작업 금액</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${mergedRows.map(r => {
-            const completed = r.completed_count;
-            const total = r.total_count;
-            const donePct = total > 0 ? Math.round(completed / total * 100) : 0;
-            const isZero = completed === 0;
-            const rank = rankMap[r.key];
-            const rankStyle = rank===1
-              ? 'background:#FDE8F3;color:#D70072'
-              : rank===2
-              ? 'background:#EDE7F6;color:#685182'
-              : rank===3
-              ? 'background:#F5F0F8;color:#8E72A8'
-              : 'background:#F5F0F8;color:#C6C6C6';
-            const catAmt = amtMap[r.key] || 0;
-            const amtStr = catAmt > 0
-              ? (catAmt >= 1000000
-                  ? (catAmt/1000000).toFixed(1) + '백만'
-                  : Number(catAmt).toLocaleString('ko-KR') + '원')
-              : '-';
-            return `
-            <tr style="border-bottom:1px solid #D8D0DC;${isZero?'opacity:0.55':''};transition:background .15s"
-                onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
-              <td class="px-3 py-3 text-center">
-                ${rank
-                  ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold" style="${rankStyle}">${rank}</span>`
-                  : `<span class="text-xs" style="color:#C6C6C6">-</span>`}
-              </td>
-              <td class="px-4 py-3">
-                <div class="flex items-center gap-2">
-                  <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0"
-                        style="background:${r.badge_bg};color:${r.badge_color}">
-                    <i class="${r.icon} text-xs"></i>
-                  </span>
-                  <span class="font-medium" style="color:#4E3A63">${r.label}</span>
-                </div>
-              </td>
-              <td class="px-4 py-3 text-center" style="color:#C6C6C6">${total}</td>
-              <td class="px-4 py-3 text-center">
-                ${completed > 0
-                  ? `<button onclick="showCompletedTasksModal('category','${r.key}','${r.label}', '${year}', '${month}')"
-                      class="text-base font-bold px-3 py-1 rounded-lg cursor-pointer transition-colors"
-                      style="color:${r.bar};background:${r.badge_bg}"
-                      onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
-                      ${completed}
-                    </button>`
-                  : `<span class="text-sm" style="color:#C6C6C6">0</span>`}
-              </td>
-              <td class="px-4 py-3 text-center">
-                <span class="text-sm font-bold" style="color:${donePct > 0 ? r.bar : '#C6C6C6'}">${donePct}%</span>
-              </td>
-              <td class="px-4 py-3 text-right">
-                <span class="text-sm font-bold" style="color:${catAmt > 0 ? '#685182' : '#C6C6C6'}">${amtStr}</span>
-              </td>
-            </tr>`;
-          }).join('')}
-          <tr class="font-semibold" style="background:#EDE7F6;border-top:2px solid #685182">
-            <td class="px-3 py-3" colspan="2" style="color:#4E3A63"><i class="fas fa-sigma mr-1" style="color:#685182"></i>합계</td>
-            <td class="px-4 py-3 text-center" style="color:#685182">${totalTasks}</td>
-            <td class="px-4 py-3 text-center">
-              <button onclick="showCompletedTasksModal('all','all','전체 완료 작업', '${year}', '${month}')"
-                class="text-base font-bold px-3 py-1 rounded-lg transition-colors"
-                style="color:#D70072;background:#FDE8F3"
-                onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
-                ${totalCompleted}
-              </button>
-            </td>
-            <td class="px-4 py-3 text-center">
-              <span class="text-sm font-bold" style="color:#D70072">${totalTasks>0?Math.round(totalCompleted/totalTasks*100):0}%</span>
-            </td>
-            <td class="px-4 py-3 text-right">
-              <span class="text-sm font-bold" style="color:${totalAmt > 0 ? '#D70072' : '#C6C6C6'}">
-                ${totalAmt > 0 ? (totalAmt >= 1000000 ? (totalAmt/1000000).toFixed(1)+'백만' : Number(totalAmt).toLocaleString('ko-KR')+'원') : '-'}
-              </span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>`;
-}
-
-// 현장팀별 완료건수 테이블 렌더링
-function renderByTeamTable(rows, year, month, teamAmtMap) {
-  if (!rows || rows.length === 0) {
-    return `<div class="text-center text-gray-400 py-6">
-      <i class="fas fa-users-slash text-3xl mb-2"></i>
-      <p class="text-sm">해당 기간 완료된 작업이 없습니다.</p>
-    </div>`;
+  function fmtAmtCat(v) {
+    if (!v || v <= 0) return '-';
+    return v >= 1000000 ? (v/1000000).toFixed(1)+'백만' : Number(v).toLocaleString('ko-KR')+'원';
   }
-  const amtMap = teamAmtMap || {};
-  const barColors = ['#685182','#685182','#FF349E','#685182','#D70072','#685182','#685182','#FF349E'];
-  return `
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="bg-gray-50 border-b border-gray-200">
-            <th class="text-left px-4 py-3 font-semibold text-gray-600">순위</th>
-            <th class="text-left px-4 py-3 font-semibold text-gray-600">팀명</th>
-            <th class="text-center px-4 py-3 font-semibold text-gray-600">인원</th>
-            <th class="text-center px-4 py-3 font-semibold text-gray-600">완료 건수</th>
-            <th class="text-right px-4 py-3 font-semibold text-gray-600">작업 금액</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map((r, i) => {
-            const color = barColors[i % barColors.length];
-            const safeTeamName = (r.team_name||'').replace(/'/g, "\\'");
-            const teamAmt = amtMap[r.team_name] || 0;
-            const amtStr = teamAmt > 0
-              ? (teamAmt >= 1000000
-                  ? (teamAmt/1000000).toFixed(1) + '백만'
-                  : Number(teamAmt).toLocaleString('ko-KR') + '원')
-              : '-';
-            return `
-            <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-              <td class="px-4 py-3">
-                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
-                  ${i===0?'bg-yellow-100 text-yellow-700': i===1?'bg-gray-100 text-gray-600': i===2?'bg-orange-100 text-orange-600':'bg-gray-50 text-gray-400'}">
-                  ${i+1}
-                </span>
-              </td>
-              <td class="px-4 py-3">
-                <div class="flex items-center gap-2">
-                  <div class="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                    style="background-color:${color}">
-                    <i class="fas fa-users" style="font-size:11px"></i>
-                  </div>
-                  <div>
-                    <div class="font-medium text-gray-800">${r.team_name||'-'}</div>
-                    <div class="text-xs text-gray-400 truncate max-w-[160px]" title="${r.member_names||''}">
-                      ${r.member_names ? r.member_names.split(',').slice(0,3).join(', ') + (r.member_names.split(',').length > 3 ? ' 외' : '') : '-'}
-                    </div>
-                  </div>
-                </div>
-              </td>
-              <td class="px-4 py-3 text-center">
-                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold bg-blue-50 text-blue-600">
-                  ${r.member_count||0}
-                </span>
-              </td>
-              <td class="px-4 py-3 text-center">
-                ${(r.completed_count||0) > 0
-                  ? `<button onclick="showCompletedTasksModal('team','${r.team_id}','${safeTeamName}','${year}','${month}')"
-                      class="text-lg font-bold text-green-600 hover:text-green-800 transition-colors cursor-pointer bg-green-50 hover:bg-green-100 px-3 py-1 rounded-lg">
-                      ${r.completed_count}
-                    </button>`
-                  : `<span class="text-gray-300 font-bold text-lg">0</span>`
-                }
-              </td>
-              <td class="px-4 py-3 text-right">
-                <span class="text-sm font-bold" style="color:${teamAmt > 0 ? '#685182' : '#C6C6C6'}">${amtStr}</span>
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>`;
-}
 
+  var sorted = mergedRows.slice().sort(function(a,b) { return b.completed_count - a.completed_count; });
+  var rankMap = {};
+  var ri = 0;
+  sorted.forEach(function(r) { rankMap[r.key] = r.completed_count > 0 ? ++ri : null; });
+
+  var html = '<div class="overflow-x-auto"><table class="w-full text-sm"><thead>'
+    + '<tr style="background:#F5F0F8;border-bottom:1.5px solid #D8D0DC">'
+    + '<th class="text-center px-3 py-3 font-semibold w-10" style="color:#685182">순위</th>'
+    + '<th class="text-left px-4 py-3 font-semibold" style="color:#685182">작업 분류</th>'
+    + '<th class="text-center px-4 py-3 font-semibold" style="color:#685182">배정</th>'
+    + '<th class="text-center px-4 py-3 font-semibold" style="color:#685182">완료</th>'
+    + '<th class="text-center px-4 py-3 font-semibold" style="color:#685182">완료율</th>'
+    + '<th class="text-right px-4 py-3 font-semibold" style="color:#685182">외선</th>'
+    + '<th class="text-right px-4 py-3 font-semibold" style="color:#685182">접속</th>'
+    + '<th class="text-right px-4 py-3 font-semibold" style="color:#685182">소계</th>'
+    + '</tr></thead><tbody>';
+
+  mergedRows.forEach(function(r) {
+    var completed = r.completed_count;
+    var total = r.total_count;
+    var donePct = total > 0 ? Math.round(completed / total * 100) : 0;
+    var isZero = completed === 0;
+    var rank = rankMap[r.key];
+    var rankStyle = rank===1 ? 'background:#FDE8F3;color:#D70072'
+      : rank===2 ? 'background:#EDE7F6;color:#685182'
+      : rank===3 ? 'background:#F5F0F8;color:#8E72A8'
+      : 'background:#F5F0F8;color:#C6C6C6';
+    var catWork   = wAmt[r.key] || 0;
+    var catSplice = sAmt[r.key] || 0;
+    var catTotal  = catWork + catSplice;
+
+    html += '<tr style="border-bottom:1px solid #D8D0DC;' + (isZero ? 'opacity:0.55;' : '') + 'transition:background .15s"'
+      + ' onmouseover="this.style.background=\'#F5F0F8\'" onmouseout="this.style.background=\'\'">'
+      + '<td class="px-3 py-3 text-center">'
+      + (rank
+          ? '<span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold" style="' + rankStyle + '">' + rank + '</span>'
+          : '<span class="text-xs" style="color:#C6C6C6">-</span>')
+      + '</td>'
+      + '<td class="px-4 py-3"><div class="flex items-center gap-2">'
+      + '<span class="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style="background:' + r.badge_bg + ';color:' + r.badge_color + '">'
+      + '<i class="' + r.icon + ' text-xs"></i></span>'
+      + '<span class="font-medium" style="color:#4E3A63">' + r.label + '</span>'
+      + '</div></td>'
+      + '<td class="px-4 py-3 text-center" style="color:#C6C6C6">' + total + '</td>'
+      + '<td class="px-4 py-3 text-center">';
+
+    if (completed > 0) {
+      html += '<button onclick="showCompletedTasksModal(\'category\',\'' + r.key + '\',\'' + r.label + '\',\'' + year + '\',\'' + month + '\')"'
+        + ' class="text-base font-bold px-3 py-1 rounded-lg cursor-pointer transition-colors"'
+        + ' style="color:' + r.bar + ';background:' + r.badge_bg + '"'
+        + ' onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">'
+        + completed + '</button>';
+    } else {
+      html += '<span class="text-sm" style="color:#C6C6C6">0</span>';
+    }
+
+    html += '</td>'
+      + '<td class="px-4 py-3 text-center">'
+      + '<span class="text-sm font-bold" style="color:' + (donePct > 0 ? r.bar : '#C6C6C6') + '">' + donePct + '%</span>'
+      + '</td>'
+      + '<td class="px-4 py-3 text-right">'
+      + '<span class="text-sm font-bold" style="color:' + (catWork > 0 ? '#685182' : '#C6C6C6') + '">' + fmtAmtCat(catWork) + '</span>'
+      + '</td>'
+      + '<td class="px-4 py-3 text-right">'
+      + '<span class="text-sm font-bold" style="color:' + (catSplice > 0 ? '#8E72A8' : '#C6C6C6') + '">' + fmtAmtCat(catSplice) + '</span>'
+      + '</td>'
+      + '<td class="px-4 py-3 text-right">'
+      + '<span class="text-sm font-bold" style="color:' + (catTotal > 0 ? '#D70072' : '#C6C6C6') + '">' + fmtAmtCat(catTotal) + '</span>'
+      + '</td></tr>';
+  });
+
+  // 합계 행
+  html += '<tr class="font-semibold" style="background:#EDE7F6;border-top:2px solid #685182">'
+    + '<td class="px-3 py-3" colspan="2" style="color:#4E3A63"><i class="fas fa-sigma mr-1" style="color:#685182"></i>합계</td>'
+    + '<td class="px-4 py-3 text-center" style="color:#685182">' + totalTasks + '</td>'
+    + '<td class="px-4 py-3 text-center">'
+    + '<button onclick="showCompletedTasksModal(\'all\',\'all\',\'전체 완료 작업\',\'' + year + '\',\'' + month + '\')"'
+    + ' class="text-base font-bold px-3 py-1 rounded-lg transition-colors"'
+    + ' style="color:#D70072;background:#FDE8F3"'
+    + ' onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">'
+    + totalCompleted + '</button>'
+    + '</td>'
+    + '<td class="px-4 py-3 text-center">'
+    + '<span class="text-sm font-bold" style="color:#D70072">' + (totalTasks > 0 ? Math.round(totalCompleted/totalTasks*100) : 0) + '%</span>'
+    + '</td>'
+    + '<td class="px-4 py-3 text-right"><span class="text-sm font-bold" style="color:' + (totalWork > 0 ? '#685182' : '#C6C6C6') + '">' + fmtAmtCat(totalWork) + '</span></td>'
+    + '<td class="px-4 py-3 text-right"><span class="text-sm font-bold" style="color:' + (totalSplice > 0 ? '#8E72A8' : '#C6C6C6') + '">' + fmtAmtCat(totalSplice) + '</span></td>'
+    + '<td class="px-4 py-3 text-right"><span class="text-sm font-bold" style="color:' + (totalAmt > 0 ? '#D70072' : '#C6C6C6') + '">' + fmtAmtCat(totalAmt) + '</span></td>'
+    + '</tr></tbody></table></div>';
+
+  return html;
+}
+// 현장팀별 완료건수 테이블 렌더링
+// workAmtMap: { [team_name]: work_amount }  spliceAmtMap: { [team_name]: splice_amount }
+function renderByTeamTable(rows, year, month, workAmtMap, spliceAmtMap) {
+  if (!rows || rows.length === 0) {
+    return '<div class="text-center text-gray-400 py-6">'
+      + '<i class="fas fa-users-slash text-3xl mb-2"></i>'
+      + '<p class="text-sm">해당 기간 완료된 작업이 없습니다.</p>'
+      + '</div>';
+  }
+  var wAmt = workAmtMap || {};
+  var sAmt = spliceAmtMap || {};
+  var barColors = ['#685182','#685182','#FF349E','#685182','#D70072','#685182','#685182','#FF349E'];
+
+  function fmtAmtTeam(v) {
+    if (!v || v <= 0) return '-';
+    return v >= 1000000 ? (v/1000000).toFixed(1)+'백만' : Number(v).toLocaleString('ko-KR')+'원';
+  }
+
+  var sumWork   = rows.reduce(function(s,r) { return s + (wAmt[r.team_name] || 0); }, 0);
+  var sumSplice = rows.reduce(function(s,r) { return s + (sAmt[r.team_name] || 0); }, 0);
+  var sumTotal  = sumWork + sumSplice;
+
+  var html = '<div class="overflow-x-auto"><table class="w-full text-sm"><thead>'
+    + '<tr class="bg-gray-50 border-b border-gray-200">'
+    + '<th class="text-left px-4 py-3 font-semibold text-gray-600">순위</th>'
+    + '<th class="text-left px-4 py-3 font-semibold text-gray-600">팀명</th>'
+    + '<th class="text-center px-4 py-3 font-semibold text-gray-600">인원</th>'
+    + '<th class="text-center px-4 py-3 font-semibold text-gray-600">완료 건수</th>'
+    + '<th class="text-right px-4 py-3 font-semibold text-gray-600">외선</th>'
+    + '<th class="text-right px-4 py-3 font-semibold text-gray-600">접속</th>'
+    + '<th class="text-right px-4 py-3 font-semibold text-gray-600">소계</th>'
+    + '</tr></thead><tbody>';
+
+  rows.forEach(function(r, i) {
+    var color = barColors[i % barColors.length];
+    var safeTeamName = (r.team_name||'').replace(/'/g, "\\'");
+    var teamWork   = wAmt[r.team_name] || 0;
+    var teamSplice = sAmt[r.team_name] || 0;
+    var teamTotal  = teamWork + teamSplice;
+    var rankClass = i===0 ? 'bg-yellow-100 text-yellow-700'
+      : i===1 ? 'bg-gray-100 text-gray-600'
+      : i===2 ? 'bg-orange-100 text-orange-600'
+      : 'bg-gray-50 text-gray-400';
+    var memberList = r.member_names
+      ? r.member_names.split(',').slice(0,3).join(', ') + (r.member_names.split(',').length > 3 ? ' 외' : '')
+      : '-';
+
+    html += '<tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">'
+      + '<td class="px-4 py-3">'
+      + '<span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ' + rankClass + '">'
+      + (i+1) + '</span></td>'
+      + '<td class="px-4 py-3"><div class="flex items-center gap-2">'
+      + '<div class="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style="background-color:' + color + '">'
+      + '<i class="fas fa-users" style="font-size:11px"></i></div>'
+      + '<div><div class="font-medium text-gray-800">' + (r.team_name||'-') + '</div>'
+      + '<div class="text-xs text-gray-400 truncate max-w-[160px]" title="' + (r.member_names||'') + '">' + memberList + '</div>'
+      + '</div></div></td>'
+      + '<td class="px-4 py-3 text-center">'
+      + '<span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold bg-blue-50 text-blue-600">'
+      + (r.member_count||0) + '</span></td>'
+      + '<td class="px-4 py-3 text-center">';
+
+    if ((r.completed_count||0) > 0) {
+      html += '<button onclick="showCompletedTasksModal(\'team\',\'' + r.team_id + '\',\'' + safeTeamName + '\',\'' + year + '\',\'' + month + '\')"'
+        + ' class="text-lg font-bold text-green-600 hover:text-green-800 transition-colors cursor-pointer bg-green-50 hover:bg-green-100 px-3 py-1 rounded-lg">'
+        + r.completed_count + '</button>';
+    } else {
+      html += '<span class="text-gray-300 font-bold text-lg">0</span>';
+    }
+
+    html += '</td>'
+      + '<td class="px-4 py-3 text-right"><span class="text-sm font-bold" style="color:' + (teamWork > 0 ? '#685182' : '#C6C6C6') + '">' + fmtAmtTeam(teamWork) + '</span></td>'
+      + '<td class="px-4 py-3 text-right"><span class="text-sm font-bold" style="color:' + (teamSplice > 0 ? '#8E72A8' : '#C6C6C6') + '">' + fmtAmtTeam(teamSplice) + '</span></td>'
+      + '<td class="px-4 py-3 text-right"><span class="text-sm font-bold" style="color:' + (teamTotal > 0 ? '#D70072' : '#C6C6C6') + '">' + fmtAmtTeam(teamTotal) + '</span></td>'
+      + '</tr>';
+  });
+
+  // 합계 행
+  html += '<tr class="font-semibold" style="background:#F5F0F8;border-top:2px solid #685182">'
+    + '<td class="px-4 py-3" colspan="4" style="color:#4E3A63"><i class="fas fa-sigma mr-1" style="color:#685182"></i>합계</td>'
+    + '<td class="px-4 py-3 text-right"><span class="text-sm font-bold" style="color:' + (sumWork > 0 ? '#685182' : '#C6C6C6') + '">' + fmtAmtTeam(sumWork) + '</span></td>'
+    + '<td class="px-4 py-3 text-right"><span class="text-sm font-bold" style="color:' + (sumSplice > 0 ? '#8E72A8' : '#C6C6C6') + '">' + fmtAmtTeam(sumSplice) + '</span></td>'
+    + '<td class="px-4 py-3 text-right"><span class="text-sm font-bold" style="color:' + (sumTotal > 0 ? '#D70072' : '#C6C6C6') + '">' + fmtAmtTeam(sumTotal) + '</span></td>'
+    + '</tr></tbody></table></div>';
+
+  return html;
+}
 // 작업팀별 진행중 작업건수 테이블 렌더링 (완료·취소 제외)
 function renderActiveByTeamTable(rows) {
   if (!rows || rows.length === 0) {
@@ -17878,22 +17891,24 @@ async function loadMonthlyStats() {
     const spliceAmt2 = spliceAmtRes2.data?.splice_report_amount || 0;
     const totalReportAmt2 = workAmt2 + spliceAmt2;
 
-    // 팀별 금액 맵 합산 (외선 + 접속)
-    const teamAmtMap2 = {};
+    // 팀별 금액 맵 — 외선/접속 분리
+    const workTeamAmtMap2 = {};
     (workByTeamRes.data?.by_team || []).forEach(function(r) {
-      teamAmtMap2[r.team_name] = (teamAmtMap2[r.team_name] || 0) + (r.work_amount || 0);
+      workTeamAmtMap2[r.team_name] = (workTeamAmtMap2[r.team_name] || 0) + (r.work_amount || 0);
     });
+    const spliceTeamAmtMap2 = {};
     (spliceByTeamRes.data?.by_team || []).forEach(function(r) {
-      teamAmtMap2[r.team_name] = (teamAmtMap2[r.team_name] || 0) + (r.splice_amount || 0);
+      spliceTeamAmtMap2[r.team_name] = (spliceTeamAmtMap2[r.team_name] || 0) + (r.splice_amount || 0);
     });
 
-    // 분류별 금액 맵 합산 (외선 + 접속)
-    const catAmtMap2 = {};
+    // 분류별 금액 맵 — 외선/접속 분리
+    const workCatAmtMap2 = {};
     (workByCatRes.data?.by_category || []).forEach(function(r) {
-      catAmtMap2[r.category] = (catAmtMap2[r.category] || 0) + (r.work_amount || 0);
+      workCatAmtMap2[r.category] = (workCatAmtMap2[r.category] || 0) + (r.work_amount || 0);
     });
+    const spliceCatAmtMap2 = {};
     (spliceByCatRes.data?.by_category || []).forEach(function(r) {
-      catAmtMap2[r.category] = (catAmtMap2[r.category] || 0) + (r.splice_amount || 0);
+      spliceCatAmtMap2[r.category] = (spliceCatAmtMap2[r.category] || 0) + (r.splice_amount || 0);
     });
 
     const taskStatusMap = { unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료', tbm_done:'TBM완료', working:'작업진행중', work_completed:'작업완료', completed:'일지완료', cancelled:'취소' };
@@ -17944,11 +17959,11 @@ async function loadMonthlyStats() {
     }
     if (cards[3]) cards[3].querySelector('.text-2xl').textContent = monthly.quantityStats?.log_count||0;
 
-    // 분류별/팀별 테이블 업데이트
+    // 분류별/팀별 테이블 업데이트 (외선/접속 분리 맵 전달)
     const catEl  = document.getElementById('byCategoryTable');
-    if (catEl)  catEl.innerHTML  = renderByCategoryTable(byCat.rows, year, month, catAmtMap2);
+    if (catEl)  catEl.innerHTML  = renderByCategoryTable(byCat.rows, year, month, workCatAmtMap2, spliceCatAmtMap2);
     const teamEl = document.getElementById('byTeamTable');
-    if (teamEl) teamEl.innerHTML = renderByTeamTable(byTeam.rows, year, month, teamAmtMap2);
+    if (teamEl) teamEl.innerHTML = renderByTeamTable(byTeam.rows, year, month, workTeamAmtMap2, spliceTeamAmtMap2);
     // 팀별 진행중 작업건수 테이블 업데이트 (완료 제외 — 월 무관 현재 상태)
     const activeTeamEl = document.getElementById('activeByTeamTable');
     if (activeTeamEl) activeTeamEl.innerHTML = renderActiveByTeamTable(activeByTeam2.rows);

@@ -16797,18 +16797,23 @@ async function renderStatsPage(container) {
   const month = (now.getMonth() + 1).toString().padStart(2, '0');
 
   try {
-    const [weeklyRes, monthlyRes, byCatRes, byTeamRes, activeByTeamRes] = await Promise.all([
+    const [weeklyRes, monthlyRes, byCatRes, byTeamRes, activeByTeamRes, workAmtRes, spliceAmtRes] = await Promise.all([
       API.get('/stats/weekly'),
       API.get('/stats/monthly', { params: { year, month } }),
       API.get('/stats/completed/by-category', { params: { year, month } }),
       API.get('/stats/completed/by-team', { params: { year, month } }),
-      API.get('/stats/active/by-team')
+      API.get('/stats/active/by-team'),
+      API.get('/work-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { work_report_amount: 0 } })),
+      API.get('/splice-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { splice_report_amount: 0 } }))
     ]);
     const weekly = weeklyRes.data;
     const monthly = monthlyRes.data;
     const byCat = byCatRes.data;
     const byTeam = byTeamRes.data;
     const activeByTeam = activeByTeamRes.data;
+    const workAmt   = workAmtRes.data?.work_report_amount   || 0;
+    const spliceAmt = spliceAmtRes.data?.splice_report_amount || 0;
+    const totalReportAmt = workAmt + spliceAmt;
 
     const taskStatusMap = { unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료', tbm_done:'TBM완료', working:'작업진행중', work_completed:'작업완료', completed:'일지완료', cancelled:'취소' };
     const totalMonthly = monthly.taskStats.reduce((s,r) => s+r.count, 0);
@@ -16846,9 +16851,24 @@ async function renderStatsPage(container) {
               <div class="text-xs mt-1" style="color:#C6C6C6">완료 건수</div>
               <div class="text-xs mt-1" style="color:#FF349E"><i class="fas fa-mouse-pointer"></i> 클릭하여 목록 보기</div>
             </div>
-            <div class="stat-card shadow-sm" style="border-top:3px solid #685182">
+            <div class="stat-card shadow-sm" style="border-top:3px solid #685182;min-height:0">
               <div class="text-2xl font-bold" style="color:#685182">${monthly.quantityStats?.total_quantity?.toFixed(1)||0}</div>
               <div class="text-xs mt-1" style="color:#C6C6C6">총 시공 물량</div>
+              <div class="monthly-amt-block">${totalReportAmt > 0 ? `
+              <div class="mt-2 pt-2" style="border-top:1px dashed #E5D8F0">
+                <div class="flex justify-between items-center mb-0.5">
+                  <span class="text-xs" style="color:#A594B8"><i class="fas fa-plug mr-1" style="font-size:9px"></i>접속</span>
+                  <span class="text-xs font-bold" style="color:#685182">${spliceAmt > 0 ? Number(spliceAmt).toLocaleString('ko-KR')+'원' : '-'}</span>
+                </div>
+                <div class="flex justify-between items-center mb-1">
+                  <span class="text-xs" style="color:#A594B8"><i class="fas fa-cable-car mr-1" style="font-size:9px"></i>외선</span>
+                  <span class="text-xs font-bold" style="color:#685182">${workAmt > 0 ? Number(workAmt).toLocaleString('ko-KR')+'원' : '-'}</span>
+                </div>
+                <div class="flex justify-between items-center" style="border-top:1px solid #D8D0DC;padding-top:3px">
+                  <span class="text-xs font-bold" style="color:#4E3A63">합계</span>
+                  <span class="text-sm font-black" style="color:#D70072">${Number(totalReportAmt).toLocaleString('ko-KR')}원</span>
+                </div>
+              </div>` : `<div class="text-xs mt-1" style="color:#DDD">일보 금액 없음</div>`}</div>
             </div>
             <div class="stat-card shadow-sm" style="border-top:3px solid #C6C6C6">
               <div class="text-2xl font-bold" style="color:#685182">${monthly.quantityStats?.log_count||0}</div>
@@ -17651,16 +17671,21 @@ async function loadMonthlyStats() {
   const year = document.getElementById('statYear').value;
   const month = document.getElementById('statMonth').value;
   try {
-    const [monthlyRes, byCatRes, byTeamRes, activeByTeamRes2] = await Promise.all([
+    const [monthlyRes, byCatRes, byTeamRes, activeByTeamRes2, workAmtRes2, spliceAmtRes2] = await Promise.all([
       API.get('/stats/monthly', { params: { year, month } }),
       API.get('/stats/completed/by-category', { params: { year, month } }),
       API.get('/stats/completed/by-team', { params: { year, month } }),
-      API.get('/stats/active/by-team')
+      API.get('/stats/active/by-team'),
+      API.get('/work-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { work_report_amount: 0 } })),
+      API.get('/splice-reports/monthly-amount', { params: { year, month } }).catch(() => ({ data: { splice_report_amount: 0 } }))
     ]);
     const monthly = monthlyRes.data;
     const byCat = byCatRes.data;
     const byTeam = byTeamRes.data;
     const activeByTeam2 = activeByTeamRes2.data;
+    const workAmt2   = workAmtRes2.data?.work_report_amount   || 0;
+    const spliceAmt2 = spliceAmtRes2.data?.splice_report_amount || 0;
+    const totalReportAmt2 = workAmt2 + spliceAmt2;
     const taskStatusMap = { unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료', tbm_done:'TBM완료', working:'작업진행중', work_completed:'작업완료', completed:'일지완료', cancelled:'취소' };
     const totalMonthly = monthly.taskStats.reduce((s,r) => s+r.count, 0);
     const completedCount = monthly.taskStats.find(s=>s.status==='completed')?.count||0;
@@ -17670,7 +17695,35 @@ async function loadMonthlyStats() {
     const cards = statsEl.querySelectorAll('.stat-card');
     if (cards[0]) cards[0].querySelector('.text-2xl').textContent = totalMonthly;
     if (cards[1]) cards[1].querySelector('.text-2xl').textContent = completedCount;
-    if (cards[2]) cards[2].querySelector('.text-2xl').textContent = monthly.quantityStats?.total_quantity?.toFixed(1)||0;
+    if (cards[2]) {
+      // 총 시공물량 수치 업데이트
+      cards[2].querySelector('.text-2xl').textContent = monthly.quantityStats?.total_quantity?.toFixed(1)||0;
+      // 금액 블록 업데이트 — 기존 금액 블록 제거 후 재생성
+      const existingAmtBlock = cards[2].querySelector('.monthly-amt-block');
+      if (existingAmtBlock) existingAmtBlock.remove();
+      const amtBlockEl = document.createElement('div');
+      amtBlockEl.className = 'monthly-amt-block';
+      if (totalReportAmt2 > 0) {
+        amtBlockEl.innerHTML = `
+        <div class="mt-2 pt-2" style="border-top:1px dashed #E5D8F0">
+          <div class="flex justify-between items-center mb-0.5">
+            <span class="text-xs" style="color:#A594B8"><i class="fas fa-plug mr-1" style="font-size:9px"></i>접속</span>
+            <span class="text-xs font-bold" style="color:#685182">${spliceAmt2 > 0 ? Number(spliceAmt2).toLocaleString('ko-KR')+'원' : '-'}</span>
+          </div>
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-xs" style="color:#A594B8"><i class="fas fa-cable-car mr-1" style="font-size:9px"></i>외선</span>
+            <span class="text-xs font-bold" style="color:#685182">${workAmt2 > 0 ? Number(workAmt2).toLocaleString('ko-KR')+'원' : '-'}</span>
+          </div>
+          <div class="flex justify-between items-center" style="border-top:1px solid #D8D0DC;padding-top:3px">
+            <span class="text-xs font-bold" style="color:#4E3A63">합계</span>
+            <span class="text-sm font-black" style="color:#D70072">${Number(totalReportAmt2).toLocaleString('ko-KR')}원</span>
+          </div>
+        </div>`;
+      } else {
+        amtBlockEl.innerHTML = `<div class="text-xs mt-1" style="color:#DDD">일보 금액 없음</div>`;
+      }
+      cards[2].appendChild(amtBlockEl);
+    }
     if (cards[3]) cards[3].querySelector('.text-2xl').textContent = monthly.quantityStats?.log_count||0;
 
     // 분류별/팀별 테이블 업데이트

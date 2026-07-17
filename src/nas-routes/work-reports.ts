@@ -38,6 +38,81 @@ app.get('/other-work-types', async (c) => {
   return c.json({ types: rows })
 })
 
+// ─── GET /monthly-amount — 월별 외선일보 작성완료 금액 합계 ─────────────────
+// ⚠️ RULE-002: /volume-stats 보다 앞에 등록 (경로 우선순위)
+app.get('/monthly-amount', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rawDb = getRawDb()
+  const { year, month } = c.req.query()
+  const now = new Date()
+  const y = year || now.getFullYear()
+  const m = (month || (now.getMonth() + 1)).toString().padStart(2, '0')
+  const start = `${y}-${m}-01`
+  const end   = new Date(Number(y), Number(m), 0).toISOString().split('T')[0]
+
+  try {
+    // ① 해당 월 작성완료(submitted) 외선일보 목록
+    const reports: any[] = rawDb.prepare(
+      `SELECT r.id,
+              (SELECT COALESCE(SUM(rc.usage_m),0) FROM work_report_cables rc WHERE rc.report_id=r.id AND rc.proc='신설') AS cable_new_m,
+              (SELECT COALESCE(SUM(rc.usage_m),0) FROM work_report_cables rc WHERE rc.report_id=r.id AND rc.proc='철거') AS cable_remove_m,
+              (SELECT COALESCE(SUM(rc.usage_m),0) FROM work_report_cables rc WHERE rc.report_id=r.id AND rc.proc='이설') AS cable_move_m
+       FROM work_reports r
+       WHERE r.status = 'submitted'
+         AND r.work_date BETWEEN ? AND ?`
+    ).all(start, end) as any[]
+
+    if (reports.length === 0) {
+      return c.json({ year: y, month: m, work_report_amount: 0 })
+    }
+
+    // ② 현재 단가 맵 (스냅샷 없는 건 fallback)
+    const priceRows: any[] = rawDb.prepare(
+      `SELECT item_key, unit_price FROM volume_unit_prices`
+    ).all() as any[]
+    const priceMap: Record<string, number> = {}
+    priceRows.forEach((p: any) => { priceMap[p.item_key] = Number(p.unit_price) || 0 })
+
+    // 케이블 단가 (고정 키)
+    const pNew    = priceMap['a000001'] || 0
+    const pRemove = priceMap['a000002'] || 0
+    const pMove   = priceMap['a000003'] || 0
+
+    // ③ extras 배치 조회 (스냅샷 단가 포함)
+    const reportIds = reports.map((r: any) => r.id)
+    const ph = reportIds.map(() => '?').join(',')
+    const extras: any[] = rawDb.prepare(
+      `SELECT report_id, item_key, SUM(qty) AS qty,
+              MIN(unit_price_snapshot) AS unit_price_snapshot
+       FROM work_report_extras
+       WHERE report_id IN (${ph})
+       GROUP BY report_id, item_key`
+    ).all(...reportIds) as any[]
+
+    // ④ 금액 합산
+    let totalAmt = 0
+    // 케이블 금액
+    for (const r of reports) {
+      totalAmt += (Number(r.cable_new_m)    || 0) * pNew
+      totalAmt += (Number(r.cable_remove_m) || 0) * pRemove
+      totalAmt += (Number(r.cable_move_m)   || 0) * pMove
+    }
+    // extras 금액 (item_key별 스냅샷 단가 우선, 없으면 현재 단가)
+    for (const e of extras) {
+      const qty  = Number(e.qty) || 0
+      const snap = e.unit_price_snapshot != null ? Number(e.unit_price_snapshot) : null
+      const up   = snap != null ? snap : (priceMap[e.item_key] || 0)
+      totalAmt  += qty * up
+    }
+
+    return c.json({ year: y, month: m, work_report_amount: Math.round(totalAmt) })
+  } catch (e: any) {
+    console.error('[work-reports GET /monthly-amount]', e.message)
+    return c.json({ error: e.message || '외선일보 금액 조회 실패' }, 500)
+  }
+})
+
 // ─── GET /volume-stats ───────────────────────────────────────────────────────
 app.get('/volume-stats', async (c) => {
   const user = getUser(c)

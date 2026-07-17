@@ -95,6 +95,78 @@ spliceApp.get('/', async (c) => {
   return c.json({ reports: rows, ...(total !== undefined ? { total, page: pageNum, limit: limitNum } : {}) })
 })
 
+// GET /monthly-amount — 월별 접속일보 작성완료 금액 합계
+// ⚠️ /:id 및 /stats 보다 반드시 먼저 등록
+spliceApp.get('/monthly-amount', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rawDb = getRawDb()
+  const { year, month } = c.req.query()
+  const now = new Date()
+  const y = year || now.getFullYear()
+  const m = (month || (now.getMonth() + 1)).toString().padStart(2, '0')
+  const start = `${y}-${m}-01`
+  const end   = new Date(Number(y), Number(m), 0).toISOString().split('T')[0]
+
+  try {
+    // ① 해당 월 작성완료(submitted) 접속일보 ID 목록
+    const reports: any[] = rawDb.prepare(
+      `SELECT id FROM splice_reports WHERE status = 'submitted' AND work_date BETWEEN ? AND ?`
+    ).all(start, end) as any[]
+
+    if (reports.length === 0) {
+      return c.json({ year: y, month: m, splice_report_amount: 0 })
+    }
+
+    // ② 단가 맵 로드 (unit_price + night_price + aerial_price)
+    const priceRows: any[] = rawDb.prepare(
+      `SELECT item_key, item_label, unit_price, night_price, aerial_price FROM splice_unit_prices`
+    ).all() as any[]
+    const priceMap: Record<string, { base: number; night: number; aerial: number }> = {}
+    priceRows.forEach((p: any) => {
+      priceMap[p.item_key] = {
+        base:   Number(p.unit_price)   || 0,
+        night:  Number(p.night_price)  || 0,
+        aerial: Number(p.aerial_price) || 0,
+      }
+    })
+    // item_label → 단가 매핑 (work_label이 label로 저장된 경우 대응)
+    const labelPriceMap: Record<string, { base: number; night: number; aerial: number }> = {}
+    priceRows.forEach((p: any) => {
+      if (p.item_label) labelPriceMap[p.item_label] = {
+        base:   Number(p.unit_price)   || 0,
+        night:  Number(p.night_price)  || 0,
+        aerial: Number(p.aerial_price) || 0,
+      }
+    })
+
+    // ③ splice_work_items 배치 조회
+    const reportIds = reports.map((r: any) => r.id)
+    const ph = reportIds.map(() => '?').join(',')
+    const items: any[] = rawDb.prepare(
+      `SELECT work_label, qty, is_night, is_aerial
+       FROM splice_work_items
+       WHERE report_id IN (${ph})`
+    ).all(...reportIds) as any[]
+
+    // ④ 금액 합산 (야간/가공 추가금 포함)
+    let totalAmt = 0
+    for (const it of items) {
+      const qty    = Number(it.qty) || 0
+      const p      = labelPriceMap[it.work_label] || { base: 0, night: 0, aerial: 0 }
+      const unitAmt = p.base
+                    + (it.is_night   ? p.night  : 0)
+                    + (it.is_aerial  ? p.aerial : 0)
+      totalAmt += qty * unitAmt
+    }
+
+    return c.json({ year: y, month: m, splice_report_amount: Math.round(totalAmt) })
+  } catch (e: any) {
+    console.error('[splice-reports GET /monthly-amount]', e.message)
+    return c.json({ error: e.message || '접속일보 금액 조회 실패' }, 500)
+  }
+})
+
 // GET /stats — 공량내역/물량통계
 // ⚠️ /:id 보다 반드시 먼저 등록
 spliceApp.get('/stats', async (c) => {

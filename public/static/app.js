@@ -2964,6 +2964,8 @@ function showNavigationWarning(onConfirm) {
 }
 
 function navigateTo(page) {
+  // 내 작업 페이지 이탈 시 검색어 초기화
+  if (page !== 'my-tasks') _myTasksSearchKw = '';
   currentPage = page;
   clearFormDirty();
   // 페이지 전환 시 잔여 오버레이 전체 정리 (딤 처리 버그 방지)
@@ -14365,6 +14367,7 @@ async function _tbmShareByTaskId(taskId, btnEl) {
 // ======= 근로자 - 내 작업 목록 =======
 // 나의작업현황 카드 클릭 → 내 작업 페이지로 필터 이동
 let _myTasksFilter = null;  // 'all' | 'working' | 'completed' | 'logs' | 'quantity'
+let _myTasksSearchKw = '';  // 검색 키워드 (등록건명 or 공사담당자) — 필터와 독립 유지
 function navigateMyTasksWithFilter(filterType) {
   _myTasksFilter = filterType;
   navigateTo('my-tasks');
@@ -14376,11 +14379,28 @@ function applyMyTasksFilter(filterType) {
   const content = document.getElementById('page-content') || document.getElementById('main-content');
   if (content) renderMyTasksPage(content);
 }
+// 검색어 변경 시 debounce 후 재렌더링 (서버 재요청 없이 클라이언트 필터)
+let _myTasksSearchTimer = null;
+function applyMyTasksSearch(kw) {
+  _myTasksSearchKw = (kw || '').trim();
+  clearTimeout(_myTasksSearchTimer);
+  _myTasksSearchTimer = setTimeout(() => {
+    const content = document.getElementById('page-content') || document.getElementById('main-content');
+    if (!content) return;
+    renderMyTasksPage(content).then(() => {
+      // 재렌더링 후 검색 input에 포커스 복원 (모바일 키보드 유지)
+      const inp = document.getElementById('myTasksSearchInput');
+      if (inp) { inp.focus(); const len = inp.value.length; inp.setSelectionRange(len, len); }
+    });
+  }, 300);
+}
 
 async function renderMyTasksPage(container) {
   // 나의작업현황에서 넘어온 필터 소비
   const activeFilter = _myTasksFilter;
   _myTasksFilter = null;
+  // 검색어는 유지 (재렌더링 시 초기화하지 않음)
+  const activeSearchKw = _myTasksSearchKw || '';
 
   try {
     // 내 작업 + 미배정 작업(직접 선택 가능) 모두 로드
@@ -14423,14 +14443,40 @@ async function renderMyTasksPage(container) {
     }
 
     // 필터 없을 때만 미배정 포함
-    const tasks = activeFilter
+    const tasksBeforeSearch = activeFilter
       ? filteredTasks
       : [...myTasks, ...unassigned.map(t => ({...t, _unassigned: true}))];
+
+    // ── 클라이언트 검색 필터 (등록건명 | 공사담당자) ──────────────────────────
+    const kwLower = activeSearchKw.toLowerCase();
+    const tasks = kwLower
+      ? tasksBeforeSearch.filter(t => {
+          const titleMatch  = (t.title || '').toLowerCase().includes(kwLower);
+          const mgrMatch    = (t.con_manager_display_name || t.supervisor_name || '').toLowerCase().includes(kwLower);
+          const conMatch    = (t.construction_title || '').toLowerCase().includes(kwLower);
+          return titleMatch || mgrMatch || conMatch;
+        })
+      : tasksBeforeSearch;
 
     const fm = activeFilter ? FILTER_META[activeFilter] : null;
 
     container.innerHTML = `
     <div class="page-container">
+
+      <!-- ── 검색 바 ── -->
+      <div class="mb-3" style="position:relative">
+        <div style="display:flex;align-items:center;background:#fff;border:1.5px solid ${activeSearchKw ? '#D70072' : '#E5E7EB'};border-radius:14px;padding:0 12px;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,0.06);transition:border-color .2s">
+          <i class="fas fa-search" style="color:${activeSearchKw ? '#D70072' : '#C6C6C6'};font-size:14px;flex-shrink:0"></i>
+          <input id="myTasksSearchInput" type="search" inputmode="search" placeholder="등록건명 또는 공사담당자 검색"
+            value="${activeSearchKw.replace(/"/g,'&quot;')}"
+            oninput="applyMyTasksSearch(this.value)"
+            style="flex:1;border:none;outline:none;font-size:14px;padding:11px 0;background:transparent;color:#374151;min-width:0"
+            autocomplete="off" autocorrect="off" spellcheck="false">
+          ${activeSearchKw ? `<button onclick="applyMyTasksSearch('');document.getElementById('myTasksSearchInput').value=''" style="background:none;border:none;padding:4px;cursor:pointer;color:#C6C6C6;font-size:16px;line-height:1;flex-shrink:0" aria-label="검색 초기화"><i class="fas fa-times-circle"></i></button>` : ''}
+        </div>
+        ${activeSearchKw ? `<div style="margin-top:5px;padding:0 4px;font-size:12px;color:#D70072;font-weight:600"><i class="fas fa-filter mr-1"></i>"${activeSearchKw}" 검색 결과 ${tasks.length}건</div>` : ''}
+      </div>
+
       ${fm ? `
       <!-- 필터 배너 -->
       <div class="flex items-center justify-between mb-4 px-3 py-2 rounded-xl"
@@ -14474,19 +14520,32 @@ async function renderMyTasksPage(container) {
       <div class="space-y-3">
         ${tasks.length === 0 ? `
           <div class="text-center py-12 text-gray-400">
-            <i class="fas fa-clipboard-list text-5xl mb-3"></i>
-            <p>배정된 작업이 없습니다.</p>
+            <i class="${activeSearchKw ? 'fas fa-search-minus' : 'fas fa-clipboard-list'} text-5xl mb-3"></i>
+            <p>${activeSearchKw ? `"${activeSearchKw}"에 해당하는 작업이 없습니다.` : '배정된 작업이 없습니다.'}</p>
+            ${activeSearchKw ? `<button onclick="applyMyTasksSearch('');document.getElementById('myTasksSearchInput').value=''" class="mt-3 text-sm" style="color:#D70072;background:none;border:none;cursor:pointer;font-weight:600"><i class="fas fa-times mr-1"></i>검색 초기화</button>` : ''}
           </div>` :
           tasks.map(t => `
             <div class="card cursor-pointer hover:shadow-md transition-shadow" onclick="showTaskDetail(${t.id})">
               <div class="flex justify-between items-start mb-2">
                 <div class="flex-1 min-w-0">
-                  <h3 class="font-bold text-gray-800 truncate">${t.title}</h3>
-                  <p class="text-xs text-gray-400 mt-1">${t.category_name||''} ${t.work_type_name?'· '+t.work_type_name:''}</p>
+                  <h3 class="font-bold text-gray-800" style="word-break:break-word;line-height:1.4">${
+                    kwLower && t.title && t.title.toLowerCase().includes(kwLower)
+                      ? t.title.replace(new RegExp('('+activeSearchKw.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'), '<mark style="background:#FFF3CD;color:#D70072;border-radius:2px;padding:0 1px">$1</mark>')
+                      : t.title
+                  }</h3>
+                  <p class="text-xs text-gray-400 mt-0.5">${t.category_name||''} ${t.work_type_name?'· '+t.work_type_name:''}</p>
+                  ${(t.con_manager_display_name || t.supervisor_name) ? `<p class="text-xs mt-0.5" style="color:#A594B8"><i class="fas fa-user-tie mr-1" style="font-size:10px"></i>${
+                    (() => {
+                      const mgr = t.con_manager_display_name || t.supervisor_name || '';
+                      return kwLower && mgr.toLowerCase().includes(kwLower)
+                        ? mgr.replace(new RegExp('('+activeSearchKw.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'), '<mark style="background:#FFF3CD;color:#D70072;border-radius:2px;padding:0 1px">$1</mark>')
+                        : mgr;
+                    })()
+                  }</p>` : ''}
                 </div>
                 ${statusBadge(t.status)}
               </div>
-              <div class="flex gap-4 text-xs text-gray-500 mb-3">
+              <div class="flex gap-4 text-xs text-gray-500 mb-3" style="flex-wrap:wrap">
                 <span><i class="fas fa-map-marker-alt mr-1"></i>${t.location||'-'}</span>
                 <span><i class="fas fa-calendar mr-1"></i>${formatDate(t.planned_date)}</span>
                 ${priorityBadge(t.priority)}

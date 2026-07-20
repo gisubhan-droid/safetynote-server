@@ -39769,7 +39769,7 @@ async function loadSiteMapMarkers(map) {
         // GPS 없는 건은 목록에만 추가 (지도 마커는 GPS 보유 건만)
         if (!gpsValid) {
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: supervisor, address: addr, lat: null, lon: null, noGps: true });
+            author: supervisor, address: addr, lat: null, lon: null, noGps: true, taskId: t.id });
           continue;
         }
 
@@ -39790,11 +39790,15 @@ async function loadSiteMapMarkers(map) {
             ${gpsFromCk ? `<div style="color:#F59E0B;font-size:10px;margin-top:3px">
               <i class="fas fa-info-circle mr-1"></i>체크리스트 완료 시 GPS 기록
             </div>` : ''}
+            <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
+              <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+              <button onclick="showTaskDetail(${t.id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>
+            </div>
           </div>`);
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: supervisor, address: addr, lat, lon });
+          author: supervisor, address: addr, lat, lon, taskId: t.id });
       }
     }
 
@@ -39843,11 +39847,15 @@ async function loadSiteMapMarkers(map) {
             <div style="color:#6B7280;font-size:11px;margin-top:2px">
               <i class="fas fa-map-marker-alt mr-1"></i>${addr}
             </div>
+            <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
+              <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+              ${tbm.task_id ? `<button onclick="showTaskDetail(${tbm.task_id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
+            </div>
           </div>`);
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: tbm.conductor_name || '', address: addr, lat, lon });
+          author: tbm.conductor_name || '', address: addr, lat, lon, taskId: tbm.task_id || null });
       }
     }
 
@@ -39928,7 +39936,7 @@ async function loadSiteMapMarkers(map) {
           if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
             // GPS 없는 건은 목록에만 추가
             listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-              author: conductor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true });
+              author: conductor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: tbm.task_id || null });
             continue;
           }
 
@@ -39950,11 +39958,15 @@ async function loadSiteMapMarkers(map) {
               ${gpsSource === 'worklog' ? `<div style="color:#10B981;font-size:10px;margin-top:3px">
                 <i class="fas fa-info-circle mr-1"></i>작업일지 GPS 기준
               </div>` : ''}
+              <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
+                <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+                ${tbm.task_id ? `<button onclick="showTaskDetail(${tbm.task_id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
+              </div>
             </div>`);
 
           latLngs.push([lat, lon]);
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: conductor, address: addr, lat, lon });
+            author: conductor, address: addr, lat, lon, taskId: tbm.task_id || null });
         }
       }
     }
@@ -40037,7 +40049,7 @@ async function loadSiteMapMarkers(map) {
           if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
             // GPS 없는 건은 목록에만 추가
             listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-              author: conductor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true });
+              author: conductor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: tbm.task_id || null });
             continue;
           }
 
@@ -40058,11 +40070,15 @@ async function loadSiteMapMarkers(map) {
               ${gpsSource === 'worklog' ? `<div style="color:#6B7280;font-size:10px;margin-top:3px">
                 <i class="fas fa-info-circle mr-1"></i>작업일지 GPS 기준
               </div>` : ''}
+              <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
+                <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+                ${tbm.task_id ? `<button onclick="showTaskDetail(${tbm.task_id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
+              </div>
             </div>`);
 
           latLngs.push([lat, lon]);
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: conductor, address: addr, lat, lon });
+            author: conductor, address: addr, lat, lon, taskId: tbm.task_id || null });
         }
       }
     }
@@ -40107,7 +40123,7 @@ async function loadSiteMapMarkers(map) {
         if (!gpsValid) {
           // GPS 없는 건: 목록에만 추가
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: ins.inspector_name || '', address: addr, lat: null, lon: null, noGps: true });
+            author: ins.inspector_name || '', address: addr, lat: null, lon: null, noGps: true, taskId: ins.task_id || null });
           continue;
         }
 
@@ -40131,11 +40147,15 @@ async function loadSiteMapMarkers(map) {
             ${ins.findings ? `<div style="color:#374151;font-size:11px;margin-top:4px;border-top:1px solid #E5E7EB;padding-top:4px">
               <i class="fas fa-clipboard mr-1"></i>${ins.findings.substring(0,60)}${ins.findings.length>60?'...':''}
             </div>` : ''}
+            <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
+              <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+              ${ins.task_id ? `<button onclick="showTaskDetail(${ins.task_id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
+            </div>
           </div>`);
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: ins.inspector_name || '', address: addr, lat, lon });
+          author: ins.inspector_name || '', address: addr, lat, lon, taskId: ins.task_id || null });
       }
     }
 
@@ -40169,15 +40189,16 @@ async function loadSiteMapMarkers(map) {
             <div class="text-xs text-gray-400">${dateRangeLabel}</div>
           </div>
           ${listItems.map(item => `
-            <div class="flex items-center gap-3 p-3 bg-white rounded-xl border ${item.noGps ? 'border-dashed border-gray-200 opacity-75' : 'border-gray-100 hover:bg-gray-50'} transition-colors">
+            <div class="flex items-center gap-3 p-3 bg-white rounded-xl border ${item.noGps ? 'border-dashed border-gray-200 opacity-75' : 'border-gray-100 hover:bg-gray-50'} transition-colors"
+              style="${item.taskId ? 'cursor:pointer' : ''}"
+              ${item.taskId ? `onclick="showTaskDetail(${item.taskId})" title="작업 상세 보기"` : ''}>
               <!-- 아이콘 (GPS 있으면 클릭 → 지도 이동, 없으면 비활성) -->
               <div style="width:36px;height:36px;background:${item.noGps ? '#D1D5DB' : item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;${item.noGps ? 'cursor:default' : 'cursor:pointer'}"
-                ${item.noGps ? '' : `onclick="_moveSiteMapTo(${item.lat}, ${item.lon})" title="지도에서 위치 보기"`}>
+                ${item.noGps ? '' : `onclick="event.stopPropagation();_moveSiteMapTo(${item.lat}, ${item.lon})" title="지도에서 위치 보기"`}>
                 <i class="fas ${item.noGps ? 'fa-map-marker' : item.icon} text-white text-xs"></i>
               </div>
               <!-- 내용 -->
-              <div class="flex-1 min-w-0 ${item.noGps ? '' : 'cursor-pointer'}"
-                ${item.noGps ? '' : `onclick="_moveSiteMapTo(${item.lat}, ${item.lon})"`}>
+              <div class="flex-1 min-w-0">
                 <div class="font-semibold text-gray-800 text-sm truncate">${item.name}</div>
                 ${item.author ? `<div class="text-xs font-medium truncate" style="color:${item.noGps ? '#9CA3AF' : item.color}">
                   <i class="fas fa-user mr-1"></i>${item.author}
@@ -40188,13 +40209,8 @@ async function loadSiteMapMarkers(map) {
                   ${item.noGps ? '<span class="ml-1 text-gray-300">(GPS미기록)</span>' : ''}
                 </div>
               </div>
-              <!-- 작업 상세 이동 버튼 (taskId 있을 때만) -->
-              ${item.taskId ? `
-              <button onclick="event.stopPropagation();showTaskDetail(${item.taskId})"
-                title="작업 상세 보기"
-                style="flex-shrink:0;padding:5px 9px;border-radius:8px;border:1.5px solid #D8D0DC;background:#fff;color:#685182;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
-                <i class="fas fa-file-alt mr-1"></i>상세
-              </button>` : `<i class="fas fa-chevron-right text-gray-300 flex-shrink-0"></i>`}
+              <!-- 우측 아이콘: taskId 있으면 상세 화살표, 없으면 회색 화살표 -->
+              <i class="fas fa-chevron-right flex-shrink-0" style="color:${item.taskId ? '#685182' : '#D1D5DB'};font-size:13px"></i>
             </div>
           `).join('')}`;
       }

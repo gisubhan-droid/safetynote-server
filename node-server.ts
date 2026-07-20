@@ -3624,6 +3624,81 @@ app.delete('/api/tasks/:id', async (c) => {
 })
 
 app.route('/api/tasks', taskRoutes)
+
+// ─── [BUG-104] NAS 전용: DELETE /api/users/:id/hard-delete ──────────────────
+// src/routes/users.ts(D1)의 hard-delete가 NAS에서 c.env.DB(undefined) → 500 오류 해결
+// rawDb 직접 사용 + PRAGMA foreign_keys OFF 연쇄 삭제
+// RULE-002: /api/users/:id/hard-delete 고정 경로를 app.route('/api/users') 동적 라우트보다 먼저 등록
+app.delete('/api/users/:id/hard-delete', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  // 시스템관리자 여부 추가 확인
+  const meRow: any = rawDb.prepare('SELECT position FROM users WHERE id = ?').get(user.id)
+  if (!meRow || meRow.position !== '시스템관리자') {
+    return c.json({ error: '시스템관리자 전용 기능입니다.' }, 403)
+  }
+
+  const id = Number(c.req.param('id'))
+  if (isNaN(id)) return c.json({ error: '잘못된 ID' }, 400)
+
+  // 자기 자신 삭제 방지
+  if (id === user.id) return c.json({ error: '자신의 계정은 삭제할 수 없습니다.' }, 400)
+
+  const targetRow: any = rawDb.prepare('SELECT id, name FROM users WHERE id = ?').get(id)
+  if (!targetRow) return c.json({ error: '사용자를 찾을 수 없습니다.' }, 404)
+
+  try {
+    rawDb.exec('PRAGMA foreign_keys = OFF')
+
+    const sd = (sql: string, ...params: any[]) => {
+      try { rawDb.prepare(sql).run(...params) } catch(e: any) {
+        if (!e.message?.includes('no such table') && !e.message?.includes('no such column'))
+          console.warn(`[BUG-104/hard-delete] ${e.message} | SQL: ${sql.slice(0,80)}`)
+      }
+    }
+
+    // ① 서명 요청 (signature_requests)
+    sd('DELETE FROM signature_requests WHERE requester_id = ? OR target_user_id = ?', id, id)
+
+    // ② TBM 서명 (tbm_signatures)
+    sd('DELETE FROM tbm_signatures WHERE user_id = ?', id)
+
+    // ③ 알림 (notifications)
+    sd('DELETE FROM notifications WHERE user_id = ?', id)
+
+    // ④ TBM 참석자 연결 정리 (tbm_records conductor — 이름 필드이므로 NULL 처리)
+    // tbm_records.conductor_name 은 TEXT이므로 직접 삭제 불필요
+
+    // ⑤ 안전교육 참석자 (education_attendees)
+    sd('DELETE FROM education_attendees WHERE user_id = ?', id)
+
+    // ⑥ 현장점검 작업자 (inspection_workers)
+    sd('DELETE FROM inspection_workers WHERE user_id = ?', id)
+
+    // ⑦ 작업 배정 (task_assignments)
+    sd('DELETE FROM task_assignments WHERE worker_id = ?', id)
+
+    // ⑧ work_logs
+    sd('DELETE FROM work_logs WHERE worker_id = ?', id)
+
+    // ⑨ team_id 정리 (팀장/팀원 참조 해제)
+    sd('UPDATE users SET team_id = NULL, is_leader = 0 WHERE id = ?', id)
+
+    // ⑩ 마지막으로 users 본체 삭제
+    rawDb.prepare('DELETE FROM users WHERE id = ?').run(id)
+
+    console.log(`[BUG-104] 사용자 완전 삭제 완료: user_id=${id} name="${targetRow.name}" by ${user.name}`)
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[BUG-104] 사용자 삭제 실패:', e.message)
+    return c.json({ error: e.message || '사용자 삭제 실패' }, 500)
+  } finally {
+    try { rawDb.exec('PRAGMA foreign_keys = ON') } catch(_) {}
+  }
+})
+
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
 

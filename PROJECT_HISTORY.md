@@ -1,7 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-20 (세션 143 — feat: site-map 지도 마커 팝업 지도앱 연결 + 하단 리스트 카드 작업상세 이동)
-> **GitHub 최신: `999e9ad`** — feat(site-map): 지도 마커 팝업 지도앱 연결 + 하단 리스트 카드 작업상세 이동 (세션143)
+> 최종 업데이트: 2026-07-20 (세션 143-2 — fix: [BUG-105] 지도앱 열기 PC 콘솔 오류 수정 + 카드 상세 버튼 별도 분리)
+> **GitHub 최신: `bcbcc9f`** — fix(site-map): [BUG-105] 지도앱 열기 PC 콘솔 오류 수정 + 카드 상세 버튼 별도 분리 (세션143-2)
+> **이전 커밋: `999e9ad`** — feat(site-map): 지도 마커 팝업 지도앱 연결 + 하단 리스트 카드 작업상세 이동 (세션143)
 > **이전 커밋: `83e802a`** — fix(nas): [BUG-104] 계정 삭제 NAS 500 오류 수정 (세션142)
 > **이전 커밋: `1af97a3`** — feat(report): 작업자(팀) 필드를 TBM 시행자+배정근로자 기반으로 변경 (세션142)
 > **이전 커밋: `241e5c1`** — feat(stats-task): 작업금액 외선/접속/소계 3컬럼 분리 및 페이지 즉시 로딩 (세션141)
@@ -26,6 +27,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-105 | 143-2 | 2026-07-20 | ✅ 수정 | **site-map 지도앱 열기 PC 콘솔 에러 + 카드 상세 버튼 분리** — ①PC 브라우저에서 `tryOpenMap` 앱스킴(`kakaomap://` 등) 시도 시 `Failed to launch` 콘솔 에러 반복 출력 → PC 분기에서 앱스킴 시도 제거, `window.open(webUrl, '_blank')` 직접 호출로 변경(Android 분기 기존 유지) ②하단 카드 클릭이 작업상세 이동으로 되어 있어 지도 이동과 충돌 → 카드 전체 클릭=지도이동(`_moveSiteMapTo`)으로 원복, 우측에 별도 보라색 `[상세]` 버튼 추가(`event.stopPropagation()+showTaskDetail(taskId)`로 분리) | `bcbcc9f` |
 | FEAT-104 | 143 | 2026-07-20 | ✅ 적용 | **site-map 지도 마커 팝업 → 지도앱 연결 + 하단 리스트 카드 → 작업상세 이동** — ①5개 탭(위험성/TBM/진행/완료/현장점검) 마커 팝업 하단에 "지도앱 열기" 버튼 추가(기존 `showMapModal(address)` 재사용, T맵/카카오맵/네이버지도 선택) + task_id 있을 때 "작업상세" 버튼 병렬 표시 ②하단 리스트 카드 클릭 시 `showTaskDetail(taskId)` 호출(카드 전체 onclick) ③아이콘(지도이동) 클릭 시 `event.stopPropagation()`으로 버블링 차단 ④5개 탭 listItems.push에 `taskId` 필드 추가(risk: `t.id`, tbm/working/completed: `tbm.task_id`, inspection: `ins.task_id`) | `999e9ad` |
 | FEAT-103 | 142 | 2026-07-17 | ✅ 적용 | **일보 작업자(팀) — TBM 시행자+배정근로자 기반 표시** — 외선일보·접속일보 `작업자(팀)` 필드가 저장자(로그인 사용자, `contractor_name`)를 표시하던 것을, TBM `conductor_name`(시행자) + `attendees`(참석자) 기반으로 변경. 우선순위: ①기존 저장값(`report.worker_team`) ②TBM 시행자+참석자 ③`assigned_workers` ④`contractor_name`. 두 일보 함수(`renderWorkReportForm`/`renderSpliceReportForm`) 모두 적용 | `1af97a3` |
 | FEAT-102 | 141 | 2026-07-17 | ✅ 적용 | **작업통계 작업금액 컬럼 외선/접속/소계 3컬럼 분리 + tfoot 합계행** — `renderByTeamTable`·`renderByCategoryTable` 단일 금액 컬럼 → 외선/접속/소계 3컬럼 분리, tfoot 합계행 추가. `loadMonthlyStats()` 내 `teamAmtMap2`→`workTeamAmtMap2`+`spliceTeamAmtMap2`, `catAmtMap2`→`workCatAmtMap2`+`spliceCatAmtMap2` 분리. `renderStatsPage()` 말미 `loadMonthlyStats()` 자동 호출 추가(페이지 진입 즉시 로딩). 세션140 누락 버그 수정: `loadMonthlyStats()` `con_types` 파라미터 누락 수정, 대시보드 UI 개편(작업팀별 삭제·상대실적→작업금액), 물량통계 추가입력→달성금액, `cableTotalAmt is not defined` 수정, 단위 백만원 통일 | `241e5c1` |

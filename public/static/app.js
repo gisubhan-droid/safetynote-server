@@ -14483,6 +14483,101 @@ async function _tbmShareByTaskId(taskId, btnEl) {
 let _myTasksFilter = null;  // 'all' | 'working' | 'completed' | 'logs' | 'quantity'
 let _myTasksSearchKw = '';  // 검색 키워드 (등록건명 or 공사담당자) — 필터와 독립 유지
 
+// ─── 내 작업목록 진행단계 다중선택 필터 ──────────────────────────────────────
+// 기본값: 미배정(unassigned), 일지작성완료(completed) 제외 5개 선택
+var _MY_TASK_STATUS_ALL = ['unassigned','assigned','in_progress','tbm_done','working','work_completed','completed'];
+var _MY_TASK_STATUS_LABELS = {
+  unassigned:     '미배정',
+  assigned:       '작업자배정',
+  in_progress:    '체크리스트완료',
+  tbm_done:       'TBM완료',
+  working:        '작업진행중',
+  work_completed: '작업완료(일지대기)',
+  completed:      '일지작성완료'
+};
+// 기본 선택: unassigned·completed 제외
+var _myTasksStatusFilter = ['assigned','in_progress','tbm_done','working','work_completed'];
+var _myTasksStatusPickerOpen = false;
+
+// 드롭다운 토글
+function _myTasksToggleStatusPicker() {
+  _myTasksStatusPickerOpen = !_myTasksStatusPickerOpen;
+  var pop = document.getElementById('myTasksStatusPicker');
+  if (pop) pop.style.display = _myTasksStatusPickerOpen ? 'block' : 'none';
+  // 외부 클릭 닫기 리스너 등록/해제
+  if (_myTasksStatusPickerOpen) {
+    setTimeout(function() {
+      document.addEventListener('click', _myTasksStatusPickerOutside, true);
+    }, 10);
+  } else {
+    document.removeEventListener('click', _myTasksStatusPickerOutside, true);
+  }
+}
+function _myTasksStatusPickerOutside(e) {
+  var pop = document.getElementById('myTasksStatusPicker');
+  var btn = document.getElementById('myTasksStatusPickerBtn');
+  if (pop && !pop.contains(e.target) && btn && !btn.contains(e.target)) {
+    _myTasksStatusPickerOpen = false;
+    pop.style.display = 'none';
+    document.removeEventListener('click', _myTasksStatusPickerOutside, true);
+  }
+}
+// 체크박스 토글
+function _myTasksToggleStatus(val) {
+  var idx = _myTasksStatusFilter.indexOf(val);
+  if (idx === -1) _myTasksStatusFilter.push(val);
+  else _myTasksStatusFilter.splice(idx, 1);
+  // 체크박스 UI 즉시 갱신
+  var cb = document.getElementById('myTasksStCb_' + val);
+  if (cb) cb.checked = _myTasksStatusFilter.indexOf(val) !== -1;
+  // 버튼 레이블 갱신
+  _myTasksUpdatePickerLabel();
+}
+// 전체 선택/초기화
+function _myTasksStatusSelectAll() {
+  _myTasksStatusFilter = _MY_TASK_STATUS_ALL.slice();
+  _MY_TASK_STATUS_ALL.forEach(function(v) {
+    var cb = document.getElementById('myTasksStCb_' + v);
+    if (cb) cb.checked = true;
+  });
+  _myTasksUpdatePickerLabel();
+}
+function _myTasksStatusReset() {
+  _myTasksStatusFilter = ['assigned','in_progress','tbm_done','working','work_completed'];
+  _MY_TASK_STATUS_ALL.forEach(function(v) {
+    var cb = document.getElementById('myTasksStCb_' + v);
+    if (cb) cb.checked = _myTasksStatusFilter.indexOf(v) !== -1;
+  });
+  _myTasksUpdatePickerLabel();
+}
+// 버튼 레이블 갱신 헬퍼
+function _myTasksUpdatePickerLabel() {
+  var btn = document.getElementById('myTasksStatusPickerBtn');
+  if (!btn) return;
+  var span = btn.querySelector('.myTasksStLabel');
+  var badge = btn.querySelector('.myTasksStBadge');
+  if (!span) return;
+  var cnt = _myTasksStatusFilter.length;
+  var total = _MY_TASK_STATUS_ALL.length;
+  if (cnt === 0) {
+    span.textContent = '진행단계 (없음)';
+  } else if (cnt === total) {
+    span.textContent = '진행단계 (전체)';
+  } else {
+    span.textContent = '진행단계';
+  }
+  if (badge) badge.textContent = cnt < total ? cnt + '개' : '';
+}
+// 적용 버튼 → 드롭다운 닫고 재렌더링
+function _myTasksApplyStatusFilter() {
+  _myTasksStatusPickerOpen = false;
+  var pop = document.getElementById('myTasksStatusPicker');
+  if (pop) pop.style.display = 'none';
+  document.removeEventListener('click', _myTasksStatusPickerOutside, true);
+  var content = document.getElementById('page-content') || document.getElementById('main-content');
+  if (content) renderMyTasksPage(content);
+}
+
 // ─── 공사통계 공사종류 필터 전역 상태 ───────────────────────────────────────
 // CON_TYPE_DEF의 label(한글)을 담는 배열 — 기본값: 전체 선택
 // DB의 construction_type 컬럼이 한글 저장이므로 label 기준으로 관리
@@ -14571,10 +14666,18 @@ async function renderMyTasksPage(container) {
       filteredTasks = myTasks.filter(t => logTaskIds.has(t.id));
     }
 
-    // 필터 없을 때만 미배정 포함
-    const tasksBeforeSearch = activeFilter
+    // 필터 없을 때만 미배정 포함 (unassigned 항목은 API /tasks/unassigned-list 기반)
+    const _baseList = activeFilter
       ? filteredTasks
       : [...myTasks, ...unassigned.map(t => ({...t, _unassigned: true}))];
+
+    // ── 진행단계 다중선택 필터 적용 (FEAT-108) ──────────────────────────────
+    // _myTasksStatusFilter가 전체 선택이거나 비어있으면 필터 미적용
+    const _stFilterActive = _myTasksStatusFilter.length > 0
+      && _myTasksStatusFilter.length < _MY_TASK_STATUS_ALL.length;
+    const tasksBeforeSearch = _stFilterActive
+      ? _baseList.filter(function(t) { return _myTasksStatusFilter.indexOf(t.status) !== -1; })
+      : _baseList;
 
     // ── 클라이언트 검색 필터 (등록건명 | 공사담당자) ──────────────────────────
     const kwLower = activeSearchKw.toLowerCase();
@@ -14593,7 +14696,7 @@ async function renderMyTasksPage(container) {
     <div class="page-container">
 
       <!-- ── 검색 바 ── -->
-      <div class="mb-3" style="position:relative">
+      <div class="mb-2" style="position:relative">
         <div style="display:flex;align-items:center;background:#fff;border:1.5px solid ${activeSearchKw ? '#D70072' : '#E5E7EB'};border-radius:14px;padding:0 12px;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,0.06);transition:border-color .2s">
           <i class="fas fa-search" style="color:${activeSearchKw ? '#D70072' : '#C6C6C6'};font-size:14px;flex-shrink:0"></i>
           <input id="myTasksSearchInput" type="search" inputmode="search" placeholder="등록건명 또는 공사담당자 검색"
@@ -14604,6 +14707,65 @@ async function renderMyTasksPage(container) {
           ${activeSearchKw ? `<button onclick="applyMyTasksSearch('');document.getElementById('myTasksSearchInput').value=''" style="background:none;border:none;padding:4px;cursor:pointer;color:#C6C6C6;font-size:16px;line-height:1;flex-shrink:0" aria-label="검색 초기화"><i class="fas fa-times-circle"></i></button>` : ''}
         </div>
         ${activeSearchKw ? `<div style="margin-top:5px;padding:0 4px;font-size:12px;color:#D70072;font-weight:600"><i class="fas fa-filter mr-1"></i>"${activeSearchKw}" 검색 결과 ${tasks.length}건</div>` : ''}
+      </div>
+
+      <!-- ── 진행단계 필터 드롭다운 ── -->
+      <div class="mb-3" style="position:relative">
+        ${(function() {
+          var stCnt = _myTasksStatusFilter.length;
+          var stTotal = _MY_TASK_STATUS_ALL.length;
+          var isFiltered = stCnt < stTotal;
+          var btnLabel = stCnt === 0 ? '진행단계 (없음)' : stCnt === stTotal ? '진행단계 (전체)' : '진행단계';
+          var badgeText = isFiltered ? stCnt + '개' : '';
+          var btnBorder = isFiltered ? '#685182' : '#E5E7EB';
+          var btnBg = isFiltered ? '#F5F0F9' : '#fff';
+          var iconColor = isFiltered ? '#685182' : '#9CA3AF';
+          return '<button id="myTasksStatusPickerBtn"'
+            + ' onclick="_myTasksToggleStatusPicker()"'
+            + ' style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;'
+            + 'border-radius:12px;border:1.5px solid ' + btnBorder + ';background:' + btnBg + ';'
+            + 'cursor:pointer;text-align:left;box-shadow:0 1px 3px rgba(0,0,0,0.05)">'
+            + '<i class="fas fa-filter" style="color:' + iconColor + ';font-size:13px;flex-shrink:0"></i>'
+            + '<span class="myTasksStLabel" style="flex:1;font-size:13px;font-weight:600;color:#374151">' + btnLabel + '</span>'
+            + (badgeText ? '<span class="myTasksStBadge" style="font-size:11px;font-weight:700;color:#fff;background:#685182;border-radius:20px;padding:1px 8px">' + badgeText + '</span>' : '<span class="myTasksStBadge"></span>')
+            + '<i class="fas fa-chevron-down" style="color:#9CA3AF;font-size:11px;flex-shrink:0"></i>'
+            + '</button>';
+        })()}
+
+        <!-- 드롭다운 패널 -->
+        <div id="myTasksStatusPicker"
+          style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:999;
+                 background:#fff;border:1.5px solid #E5E7EB;border-radius:14px;
+                 box-shadow:0 8px 24px rgba(0,0,0,0.12);overflow:hidden">
+          <div style="padding:10px 14px 6px;border-bottom:1px solid #F3F4F6">
+            <span style="font-size:12px;font-weight:700;color:#685182">진행단계 선택</span>
+          </div>
+          <div style="max-height:260px;overflow-y:auto;padding:6px 0">
+            ${_MY_TASK_STATUS_ALL.map(function(v) {
+              var checked = _myTasksStatusFilter.indexOf(v) !== -1;
+              var lbl = _MY_TASK_STATUS_LABELS[v] || v;
+              return '<label style="display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;'
+                + (checked ? 'background:#FAF7FF' : '')
+                + '" onmouseover="this.style.background=\'#F5F0F9\'" onmouseout="this.style.background=\'' + (checked ? '#FAF7FF' : '#fff') + '\'">'
+                + '<input type="checkbox" id="myTasksStCb_' + v + '"'
+                + ' onchange="_myTasksToggleStatus(\'' + v + '\')"'
+                + ' ' + (checked ? 'checked' : '')
+                + ' style="width:16px;height:16px;accent-color:#685182;cursor:pointer;flex-shrink:0">'
+                + '<span style="font-size:13px;color:#374151;font-weight:' + (checked ? '600' : '400') + '">' + lbl + '</span>'
+                + '</label>';
+            }).join('')}
+          </div>
+          <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid #F3F4F6">
+            <button onclick="_myTasksApplyStatusFilter()"
+              style="flex:1;padding:8px 0;border-radius:9px;border:none;background:#685182;color:#fff;font-size:13px;font-weight:700;cursor:pointer">
+              <i class="fas fa-check mr-1"></i>적용
+            </button>
+            <button onclick="_myTasksStatusReset();_myTasksApplyStatusFilter()"
+              style="flex:1;padding:8px 0;border-radius:9px;border:1.5px solid #E5E7EB;background:#fff;color:#6B7280;font-size:13px;font-weight:600;cursor:pointer">
+              기본값
+            </button>
+          </div>
+        </div>
       </div>
 
       ${fm ? `

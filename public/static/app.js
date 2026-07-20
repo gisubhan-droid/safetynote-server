@@ -937,16 +937,9 @@ function showMapModal(address) {
     return;
   }
   const enc = encodeURIComponent(address.trim());
+  // [BUG-107] T-MAP 제거: tmap.life 웹 URL이 좌표/주소 직접 연결 미지원으로 연결 에러 발생
+  // 카카오맵 + 네이버지도 2개만 유지
   const maps = [
-    {
-      id: 'tmap',
-      label: 'T-MAP',
-      icon: 'fa-route',
-      color: '#1A6BFF',
-      bg: '#EAF0FF',
-      appUrl: `tmap://search?name=${enc}`,
-      webUrl: `https://tmap.life/search?query=${enc}`,
-    },
     {
       id: 'kakao',
       label: '카카오맵',
@@ -1063,10 +1056,10 @@ function showMapModal(address) {
     </div>`;
 
   // 클로저로 각 버튼 핸들러 저장 (onclick 인라인에서 특수문자 이스케이프 문제 회피)
+  // [BUG-107] T-MAP 제거 후 인덱스: kakao=[0], naver=[1]
   window.__mapOpeners = {
-    tmap:  () => tryOpenMap(maps[0].appUrl, maps[0].webUrl),
-    kakao: () => tryOpenMap(maps[1].appUrl, maps[1].webUrl),
-    naver: () => tryOpenMap(maps[2].appUrl, maps[2].webUrl),
+    kakao: () => tryOpenMap(maps[0].appUrl, maps[0].webUrl),
+    naver: () => tryOpenMap(maps[1].appUrl, maps[1].webUrl),
   };
 
   // 모달 바깥 클릭 시 닫기 (modal-sm — 모바일에서도 허용)
@@ -1078,7 +1071,7 @@ function showMapModal(address) {
  * showMapModalByCoords(lat, lon, name, addr)
  * GPS 좌표를 직접 지도앱에 전달하여 정확한 핀 위치를 표시한다.
  * lat/lon이 유효하지 않으면 addr(주소 문자열)로 fallback.
- * T맵: tmap://route?goalx={lon}&goaly={lat}&goalname={name}
+ * [BUG-107] T-MAP 제거: tmap.life 웹 URL 좌표 연결 미지원 에러
  * 카카오맵: kakaomap://look?p={lat},{lon}  /  웹: map.kakao.com/link/map/{name},{lat},{lon}
  * 네이버지도: nmap://place?lat={lat}&lng={lon}&name={name}&appname=kr.co.safety
  */
@@ -1099,19 +1092,9 @@ function showMapModalByCoords(lat, lon, name, addr) {
 
   var displayName = (name || '현장 위치').trim();
   var encName = encodeURIComponent(displayName);
-  var encAddr = encodeURIComponent(addr || displayName);
 
+  // [BUG-107] T-MAP 제거 — 카카오맵 + 네이버지도 2개만 유지
   var maps = [
-    {
-      id: 'tmap',
-      label: 'T-MAP',
-      icon: 'fa-route',
-      color: '#1A6BFF',
-      bg: '#EAF0FF',
-      // T맵: 목적지 좌표 직접 전달 (경도=goalx, 위도=goaly)
-      appUrl: 'tmap://route?goalx=' + lonN + '&goaly=' + latN + '&goalname=' + encName,
-      webUrl: 'https://tmap.life/place?lat=' + latN + '&lng=' + lonN + '&name=' + encName,
-    },
     {
       id: 'kakao',
       label: '카카오맵',
@@ -1203,10 +1186,10 @@ function showMapModalByCoords(lat, lon, name, addr) {
     + '</div>';
 
   // 클로저로 각 버튼 핸들러 저장
+  // [BUG-107] T-MAP 제거 후 인덱스: kakao=[0], naver=[1]
   window.__mapCoordOpeners = {
-    tmap:  function() { _tryOpen(maps[0].appUrl, maps[0].webUrl); },
-    kakao: function() { _tryOpen(maps[1].appUrl, maps[1].webUrl); },
-    naver: function() { _tryOpen(maps[2].appUrl, maps[2].webUrl); },
+    kakao: function() { _tryOpen(maps[0].appUrl, maps[0].webUrl); },
+    naver: function() { _tryOpen(maps[1].appUrl, maps[1].webUrl); },
   };
 
   addOverlayClickClose(modal, function() { modal.remove(); });

@@ -81,7 +81,7 @@ import constructionRoutes from './src/routes/constructions'
 import notificationRoutes from './src/routes/notifications'
 
 // NAS 전용 라우트 임포트 (Phase 3 — src/nas-routes/)
-import { setRawDb, setDB, makeD1 as nasD1, getUploadRootNow } from './src/nas-db'
+import { setRawDb, setDB, makeD1 as nasD1, getUploadRootNow, setSysSettings as nasSetSysSettings } from './src/nas-db'
 import adminRoutes, { createAppVersionRoute } from './src/nas-routes/admin'
 import distRoutes from './src/nas-routes/dist'
 import workReportsRoutes, { createVolumeUnitPricesRoutes } from './src/nas-routes/work-reports'
@@ -2784,10 +2784,31 @@ async function loadSystemSettings(db: any): Promise<void> {
         ('apk_release_note',           '',    'APK 업데이트 내역', '사용자에게 표시할 버전 업데이트 내용'),
         ('apk_force_update',           '0',   'APK 강제 업데이트', '1이면 구버전 앱에서 강제 업데이트 팝업 표시');
     `)
+    // ① D1(Cloudflare) 설정 로드 — 개발/배포 환경 기준
     const rows = await db.prepare('SELECT key, value FROM system_settings').all()
     for (const row of (rows.results || [])) {
       sysSettings[row.key] = row.value
     }
+
+    // ② [BUG-106 수정] NAS rawDb(SQLite) 설정으로 덮어씌우기
+    //    NAS 운영 환경에서는 rawDb에 실제 설정값(카카오 API 키 등)이 저장됨.
+    //    서버 재시작 후 D1에는 해당 키가 없어 sysSettings가 빈 값이 되는 문제 해결.
+    //    rawDb 값이 D1보다 우선함 (NAS 환경의 실제 운영값 보장).
+    try {
+      const rawRows = rawDb.prepare('SELECT key, value FROM system_settings').all() as Array<{key: string, value: string}>
+      for (const row of rawRows) {
+        if (row.key && row.value !== undefined && row.value !== null) {
+          sysSettings[row.key] = String(row.value)
+        }
+      }
+      // nas-db.ts의 _sysSettings 인메모리 캐시도 동기화
+      // (geocode.ts 등 nas-routes에서 getSetting()으로 접근하는 경우를 위해)
+      nasSetSysSettings(sysSettings)
+      console.log('[설정] rawDb system_settings 동기화 완료 (' + rawRows.length + '건)')
+    } catch (rawErr) {
+      console.warn('[설정] rawDb system_settings 로드 실패 (무시):', rawErr)
+    }
+
     // DB 설정값이 있으면 UPLOAD_ROOT 재정의
     const dbPath = getSetting('upload_root_path')
     if (dbPath) {

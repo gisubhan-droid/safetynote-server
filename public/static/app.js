@@ -1074,6 +1074,145 @@ function showMapModal(address) {
   document.body.appendChild(modal);
 }
 
+/**
+ * showMapModalByCoords(lat, lon, name, addr)
+ * GPS 좌표를 직접 지도앱에 전달하여 정확한 핀 위치를 표시한다.
+ * lat/lon이 유효하지 않으면 addr(주소 문자열)로 fallback.
+ * T맵: tmap://route?goalx={lon}&goaly={lat}&goalname={name}
+ * 카카오맵: kakaomap://look?p={lat},{lon}  /  웹: map.kakao.com/link/map/{name},{lat},{lon}
+ * 네이버지도: nmap://place?lat={lat}&lng={lon}&name={name}&appname=kr.co.safety
+ */
+function showMapModalByCoords(lat, lon, name, addr) {
+  var latN = parseFloat(lat);
+  var lonN = parseFloat(lon);
+  var hasCoords = !isNaN(latN) && !isNaN(lonN) && latN !== 0 && lonN !== 0;
+
+  // 좌표 없으면 주소 기반 fallback
+  if (!hasCoords) {
+    if (addr && addr.trim() && addr.trim() !== '-') {
+      showMapModal(addr);
+    } else {
+      toast('GPS 좌표 및 주소 정보가 없습니다.', 'error');
+    }
+    return;
+  }
+
+  var displayName = (name || '현장 위치').trim();
+  var encName = encodeURIComponent(displayName);
+  var encAddr = encodeURIComponent(addr || displayName);
+
+  var maps = [
+    {
+      id: 'tmap',
+      label: 'T-MAP',
+      icon: 'fa-route',
+      color: '#1A6BFF',
+      bg: '#EAF0FF',
+      // T맵: 목적지 좌표 직접 전달 (경도=goalx, 위도=goaly)
+      appUrl: 'tmap://route?goalx=' + lonN + '&goaly=' + latN + '&goalname=' + encName,
+      webUrl: 'https://tmap.life/place?lat=' + latN + '&lng=' + lonN + '&name=' + encName,
+    },
+    {
+      id: 'kakao',
+      label: '카카오맵',
+      icon: 'fa-map',
+      color: '#3A1D1D',
+      bg: '#FEE500',
+      // 카카오맵: 좌표 핀 표시
+      appUrl: 'kakaomap://look?p=' + latN + ',' + lonN,
+      webUrl: 'https://map.kakao.com/link/map/' + encName + ',' + latN + ',' + lonN,
+    },
+    {
+      id: 'naver',
+      label: '네이버지도',
+      icon: 'fa-map-marked-alt',
+      color: '#03C75A',
+      bg: '#EBFBF1',
+      // 네이버지도: 좌표 핀 표시
+      appUrl: 'nmap://place?lat=' + latN + '&lng=' + lonN + '&name=' + encName + '&appname=kr.co.safety',
+      webUrl: 'https://map.naver.com/p/search/' + latN + ',' + lonN,
+    },
+  ];
+
+  // tryOpenMap은 showMapModal 내부 클로저이므로 동일 로직을 인라인 함수로 재정의
+  function _tryOpen(appUrl, webUrl) {
+    var ua = navigator.userAgent || '';
+    var isAndroid = /Android/i.test(ua);
+    if (isAndroid) {
+      var isCapacitor = !!(window.Capacitor) || /wv\b|WebView/i.test(ua);
+      var appOpened = false;
+      var onHide = function() { if (document.hidden) appOpened = true; };
+      document.addEventListener('visibilitychange', onHide);
+      if (isCapacitor) {
+        try { window.open(appUrl, '_system'); } catch(e) {}
+      } else {
+        window.location.href = appUrl;
+      }
+      setTimeout(function() {
+        document.removeEventListener('visibilitychange', onHide);
+        if (!appOpened) {
+          try { window.open(webUrl, '_system'); } catch(e) { window.open(webUrl, '_blank'); }
+        }
+      }, 1500);
+      return;
+    }
+    // PC: 바로 웹 URL 새 탭으로 오픈
+    window.open(webUrl, '_blank');
+  }
+
+  var coordLabel = latN.toFixed(5) + ', ' + lonN.toFixed(5);
+  var headerSub = addr && addr.trim() && addr.trim() !== coordLabel ? addr.trim() : coordLabel;
+
+  var modal = document.createElement('div');
+  modal.className = 'modal-overlay modal-sm';
+  modal.style.zIndex = '9999';
+  modal.innerHTML = '<div class="modal" style="max-width:360px">'
+    + '<div class="modal-header" style="padding-bottom:12px">'
+    + '<div class="flex items-center gap-2">'
+    + '<span style="width:34px;height:34px;border-radius:50%;background:#EAF0FF;display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+    + '<i class="fas fa-crosshairs" style="color:#1A6BFF;font-size:15px"></i>'
+    + '</span>'
+    + '<div>'
+    + '<div class="font-bold text-sm" style="color:#333">' + displayName + '</div>'
+    + '<div class="text-xs mt-0.5" style="color:#888;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + headerSub + '">' + headerSub + '</div>'
+    + '</div>'
+    + '</div>'
+    + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-gray-400 text-xl"><i class="fas fa-times"></i></button>'
+    + '</div>'
+    + '<div class="modal-body" style="padding-top:8px;padding-bottom:16px">'
+    + '<p class="text-xs mb-4" style="color:#888">GPS 좌표(' + coordLabel + ')로 이동합니다.<br>앱이 설치되어 있으면 앱이, 없으면 웹 지도가 열립니다.</p>'
+    + '<div class="flex flex-col gap-3">'
+    + maps.map(function(m) {
+        return '<button id="mapCBtn_' + m.id + '"'
+          + ' style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:14px;border:1.5px solid #E5E5E5;background:#fff;cursor:pointer;text-align:left;transition:box-shadow .15s"'
+          + ' onmouseover="this.style.boxShadow=\'0 2px 10px rgba(0,0,0,.10)\'"'
+          + ' onmouseout="this.style.boxShadow=\'none\'"'
+          + ' onclick="(function(){document.querySelector(\'.modal-overlay[style*=\\\'9999\\\']\')&&document.querySelector(\'.modal-overlay[style*=\\\'9999\\\']\').remove();var fn=window.__mapCoordOpeners&&window.__mapCoordOpeners[\'' + m.id + '\'];if(fn)fn();})()">'
+          + '<span style="width:42px;height:42px;border-radius:12px;background:' + m.bg + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+          + '<i class="fas ' + m.icon + '" style="color:' + m.color + ';font-size:18px"></i>'
+          + '</span>'
+          + '<div>'
+          + '<div class="font-bold text-sm" style="color:#333">' + m.label + '</div>'
+          + '<div class="text-xs mt-0.5" style="color:#AAA">GPS 좌표로 정확한 위치 표시</div>'
+          + '</div>'
+          + '<i class="fas fa-chevron-right ml-auto" style="color:#CCC;font-size:12px"></i>'
+          + '</button>';
+      }).join('')
+    + '</div>'
+    + '</div>'
+    + '</div>';
+
+  // 클로저로 각 버튼 핸들러 저장
+  window.__mapCoordOpeners = {
+    tmap:  function() { _tryOpen(maps[0].appUrl, maps[0].webUrl); },
+    kakao: function() { _tryOpen(maps[1].appUrl, maps[1].webUrl); },
+    naver: function() { _tryOpen(maps[2].appUrl, maps[2].webUrl); },
+  };
+
+  addOverlayClickClose(modal, function() { modal.remove(); });
+  document.body.appendChild(modal);
+}
+
 /** 지도 버튼 HTML 생성 헬퍼 (인라인 사용용) */
 function _mapBtnHtml(getAddrExpr) {
   return `<button type="button"
@@ -39783,7 +39922,7 @@ async function loadSiteMapMarkers(map) {
               <i class="fas fa-info-circle mr-1"></i>체크리스트 완료 시 GPS 기록
             </div>` : ''}
             <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
-              <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+              <button onclick="showMapModalByCoords(${lat}, ${lon}, '${name.replace(/'/g, '')}', '${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
               <button onclick="showTaskDetail(${t.id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>
             </div>
           </div>`);
@@ -39840,7 +39979,7 @@ async function loadSiteMapMarkers(map) {
               <i class="fas fa-map-marker-alt mr-1"></i>${addr}
             </div>
             <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
-              <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+              <button onclick="showMapModalByCoords(${lat}, ${lon}, '${name.replace(/'/g, '')}', '${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
               ${tbm.task_id ? `<button onclick="showTaskDetail(${tbm.task_id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
             </div>
           </div>`);
@@ -39951,7 +40090,7 @@ async function loadSiteMapMarkers(map) {
                 <i class="fas fa-info-circle mr-1"></i>작업일지 GPS 기준
               </div>` : ''}
               <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
-                <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+                <button onclick="showMapModalByCoords(${lat}, ${lon}, '${name.replace(/'/g, '')}', '${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
                 ${tbm.task_id ? `<button onclick="showTaskDetail(${tbm.task_id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
               </div>
             </div>`);
@@ -40063,7 +40202,7 @@ async function loadSiteMapMarkers(map) {
                 <i class="fas fa-info-circle mr-1"></i>작업일지 GPS 기준
               </div>` : ''}
               <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
-                <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+                <button onclick="showMapModalByCoords(${lat}, ${lon}, '${name.replace(/'/g, '')}', '${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
                 ${tbm.task_id ? `<button onclick="showTaskDetail(${tbm.task_id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
               </div>
             </div>`);
@@ -40140,7 +40279,7 @@ async function loadSiteMapMarkers(map) {
               <i class="fas fa-clipboard mr-1"></i>${ins.findings.substring(0,60)}${ins.findings.length>60?'...':''}
             </div>` : ''}
             <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
-              <button onclick="showMapModal('${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
+              <button onclick="showMapModalByCoords(${lat}, ${lon}, '${name.replace(/'/g, '')}', '${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
               ${ins.task_id ? `<button onclick="showTaskDetail(${ins.task_id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
             </div>
           </div>`);

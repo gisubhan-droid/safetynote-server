@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-17 (세션 142 — feat: 작업자(팀) 필드 TBM 시행자+배정근로자 기반으로 변경)
-> **GitHub 최신: `1af97a3`** — feat(report): 작업자(팀) 필드를 TBM 시행자+배정근로자 기반으로 변경 (세션142)
+> 최종 업데이트: 2026-07-20 (세션 143 — feat: site-map 지도 마커 팝업 지도앱 연결 + 하단 리스트 카드 작업상세 이동)
+> **GitHub 최신: `999e9ad`** — feat(site-map): 지도 마커 팝업 지도앱 연결 + 하단 리스트 카드 작업상세 이동 (세션143)
+> **이전 커밋: `83e802a`** — fix(nas): [BUG-104] 계정 삭제 NAS 500 오류 수정 (세션142)
+> **이전 커밋: `1af97a3`** — feat(report): 작업자(팀) 필드를 TBM 시행자+배정근로자 기반으로 변경 (세션142)
 > **이전 커밋: `241e5c1`** — feat(stats-task): 작업금액 외선/접속/소계 3컬럼 분리 및 페이지 즉시 로딩 (세션141)
 > **세션140 커밋: `6a0416d`** — hotfix: app.js TypeScript 'as HTMLInputElement' 구문 제거 (세션140)
 > **이전 커밋: `1f4bcbd`** — feat: TBM 탭 추가 실시 이력 확인 팝업 + 작업개시 버튼 추가 (세션139)
@@ -24,6 +26,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-104 | 143 | 2026-07-20 | ✅ 적용 | **site-map 지도 마커 팝업 → 지도앱 연결 + 하단 리스트 카드 → 작업상세 이동** — ①5개 탭(위험성/TBM/진행/완료/현장점검) 마커 팝업 하단에 "지도앱 열기" 버튼 추가(기존 `showMapModal(address)` 재사용, T맵/카카오맵/네이버지도 선택) + task_id 있을 때 "작업상세" 버튼 병렬 표시 ②하단 리스트 카드 클릭 시 `showTaskDetail(taskId)` 호출(카드 전체 onclick) ③아이콘(지도이동) 클릭 시 `event.stopPropagation()`으로 버블링 차단 ④5개 탭 listItems.push에 `taskId` 필드 추가(risk: `t.id`, tbm/working/completed: `tbm.task_id`, inspection: `ins.task_id`) | `999e9ad` |
 | FEAT-103 | 142 | 2026-07-17 | ✅ 적용 | **일보 작업자(팀) — TBM 시행자+배정근로자 기반 표시** — 외선일보·접속일보 `작업자(팀)` 필드가 저장자(로그인 사용자, `contractor_name`)를 표시하던 것을, TBM `conductor_name`(시행자) + `attendees`(참석자) 기반으로 변경. 우선순위: ①기존 저장값(`report.worker_team`) ②TBM 시행자+참석자 ③`assigned_workers` ④`contractor_name`. 두 일보 함수(`renderWorkReportForm`/`renderSpliceReportForm`) 모두 적용 | `1af97a3` |
 | FEAT-102 | 141 | 2026-07-17 | ✅ 적용 | **작업통계 작업금액 컬럼 외선/접속/소계 3컬럼 분리 + tfoot 합계행** — `renderByTeamTable`·`renderByCategoryTable` 단일 금액 컬럼 → 외선/접속/소계 3컬럼 분리, tfoot 합계행 추가. `loadMonthlyStats()` 내 `teamAmtMap2`→`workTeamAmtMap2`+`spliceTeamAmtMap2`, `catAmtMap2`→`workCatAmtMap2`+`spliceCatAmtMap2` 분리. `renderStatsPage()` 말미 `loadMonthlyStats()` 자동 호출 추가(페이지 진입 즉시 로딩). 세션140 누락 버그 수정: `loadMonthlyStats()` `con_types` 파라미터 누락 수정, 대시보드 UI 개편(작업팀별 삭제·상대실적→작업금액), 물량통계 추가입력→달성금액, `cableTotalAmt is not defined` 수정, 단위 백만원 통일 | `241e5c1` |
 | FEAT-101 | 139 | 2026-07-14 | ✅ 적용 | **TBM 탭 추가 실시 이력 확인 팝업 + 작업개시 버튼 추가** — ①TBM 추가 실시 클릭 시 TBM 이력 있으면 "네/아니오" 팝업 표시 (네=팝업닫기, 아니오=신규 TBM 등록) ②tbm_done 상태일 때 TBM 탭 하단에 "작업개시" 버튼 추가 (changeTaskStatus working 연결) ③TBM 이력 없으면 팝업 없이 바로 showTbmForm() 호출 (하위호환) | `1f4bcbd` |
@@ -7262,6 +7265,45 @@ loadMonthlyStats();  // ✅ 자동 호출
 - `npm run build` → ✅ **성공** (`dist/_worker.js 281.03 kB`, 1.32s)
 - JS 파싱 검사 → ✅ **OK**
 - GitHub push → ✅ (`main` 브랜치, 커밋 `241e5c1`)
+
+---
+
+## 세션 143 (2026-07-20) — feat: site-map 지도 마커 팝업 지도앱 연결 + 하단 리스트 카드 작업상세 이동
+
+### 배경
+
+`site-map`(현장위치 지도) 화면에서 두 가지 기능 추가 요청:
+1. 지도 마커 클릭 시 T맵/카카오맵/네이버지도 앱 선택 모달 표시 (기존 TBM/현장 지도 연결과 동일)
+2. 하단 작업 목록 카드 클릭 시 해당 작업 상세 화면으로 이동
+
+### 변경 내용
+
+**1. 마커 팝업 지도앱 연결 (5개 탭 전체)**
+- 기존 `showMapModal(address)` 함수 재사용 (T맵/카카오맵/네이버지도 선택 모달)
+- 각 탭 마커 `bindPopup()` 하단에 `<div>` 버튼 영역 추가
+- "지도앱 열기" 버튼: `showMapModal('${addr.replace(/'/g, '')}')` — 작은따옴표 제거로 onclick 안전
+- task_id 있을 때 "작업상세" 버튼 병렬 표시 (TBM/진행/완료/현장점검 탭)
+- risk 탭: 항상 `t.id`로 "작업상세" 버튼 표시
+
+**2. 하단 리스트 카드 → 작업 상세 이동**
+- 카드 `<div>` 전체에 `onclick="showTaskDetail(item.taskId)"` 추가 (taskId 있을 때만)
+- 아이콘 원형 버튼(지도 이동): `event.stopPropagation()`으로 카드 onclick 버블링 차단
+- 우측 화살표: taskId 있으면 보라색(`#685182`), 없으면 회색(`#D1D5DB`) 시각 구분
+
+**3. listItems.push에 taskId 필드 추가 (9개 push 포인트 전체)**
+- risk 탭: `t.id` (tasks.id 직접)
+- tbm 탭: `tbm.task_id || null`
+- working 탭: `tbm.task_id || null`
+- completed 탭: `tbm.task_id || null`
+- inspection 탭: `ins.task_id || null`
+
+### 수정 파일
+- `public/static/app.js` — `loadSiteMapMarkers()` 내 5개 탭 마커 팝업 + listItems + 카드 HTML
+
+### 검증
+- JS 파싱 검사: ✅ OK
+- npm run build: ✅ 281.03 kB
+- git commit: `999e9ad` / push: ✅
 
 ---
 

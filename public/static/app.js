@@ -1013,18 +1013,10 @@ function showMapModal(address) {
     }
 
     // ── 일반 브라우저 (PC 크롬, Safari 등) ───────────────────────────────
-    const start = Date.now();
-    const hidden = document.createElement('a');
-    hidden.href = appUrl;
-    hidden.style.display = 'none';
-    document.body.appendChild(hidden);
-    hidden.click();
-    document.body.removeChild(hidden);
-    setTimeout(() => {
-      if (document.hasFocus() && Date.now() - start < 1500) {
-        window.open(webUrl, '_blank');
-      }
-    }, 1200);
+    // [BUG-105 수정] PC 환경에서는 앱스킴 시도를 하지 않음
+    //   기존: <a href="appUrl">.click() → 앱 미설치 시 브라우저 콘솔에 에러 출력
+    //   변경: 바로 웹 URL 새 탭으로 오픈 (PC에는 모바일 앱이 없으므로 앱스킴 불필요)
+    window.open(webUrl, '_blank');
   }
 
   const modal = document.createElement('div');
@@ -40190,11 +40182,10 @@ async function loadSiteMapMarkers(map) {
           </div>
           ${listItems.map(item => `
             <div class="flex items-center gap-3 p-3 bg-white rounded-xl border ${item.noGps ? 'border-dashed border-gray-200 opacity-75' : 'border-gray-100 hover:bg-gray-50'} transition-colors"
-              style="${item.taskId ? 'cursor:pointer' : ''}"
-              ${item.taskId ? `onclick="showTaskDetail(${item.taskId})" title="작업 상세 보기"` : ''}>
-              <!-- 아이콘 (GPS 있으면 클릭 → 지도 이동, 없으면 비활성) -->
-              <div style="width:36px;height:36px;background:${item.noGps ? '#D1D5DB' : item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;${item.noGps ? 'cursor:default' : 'cursor:pointer'}"
-                ${item.noGps ? '' : `onclick="event.stopPropagation();_moveSiteMapTo(${item.lat}, ${item.lon})" title="지도에서 위치 보기"`}>
+              style="${!item.noGps ? 'cursor:pointer' : ''}"
+              ${!item.noGps ? `onclick="_moveSiteMapTo(${item.lat}, ${item.lon})" title="지도에서 위치 보기"` : ''}>
+              <!-- 아이콘 (탭 색상, GPS 없으면 회색) -->
+              <div style="width:36px;height:36px;background:${item.noGps ? '#D1D5DB' : item.color};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
                 <i class="fas ${item.noGps ? 'fa-map-marker' : item.icon} text-white text-xs"></i>
               </div>
               <!-- 내용 -->
@@ -40209,8 +40200,14 @@ async function loadSiteMapMarkers(map) {
                   ${item.noGps ? '<span class="ml-1 text-gray-300">(GPS미기록)</span>' : ''}
                 </div>
               </div>
-              <!-- 우측 아이콘: taskId 있으면 상세 화살표, 없으면 회색 화살표 -->
-              <i class="fas fa-chevron-right flex-shrink-0" style="color:${item.taskId ? '#685182' : '#D1D5DB'};font-size:13px"></i>
+              <!-- 우측: 작업상세 버튼 (taskId 있을 때) -->
+              ${item.taskId ? `
+              <button
+                onclick="event.stopPropagation();showTaskDetail(${item.taskId})"
+                title="작업 상세 보기"
+                style="flex-shrink:0;padding:6px 10px;border-radius:8px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;line-height:1.4">
+                <i class="fas fa-file-alt mr-1"></i>상세
+              </button>` : `<i class="fas fa-chevron-right flex-shrink-0" style="color:#D1D5DB;font-size:13px"></i>`}
             </div>
           `).join('')}`;
       }

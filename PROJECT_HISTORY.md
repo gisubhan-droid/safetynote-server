@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-20 (세션 143-2 — fix: [BUG-105] 지도앱 열기 PC 콘솔 오류 수정 + 카드 상세 버튼 별도 분리)
-> **GitHub 최신: `bcbcc9f`** — fix(site-map): [BUG-105] 지도앱 열기 PC 콘솔 오류 수정 + 카드 상세 버튼 별도 분리 (세션143-2)
+> 최종 업데이트: 2026-07-21 (세션 144 — feat: [FEAT-109] 작업분류 드롭다운 다중선택 필터 추가 (모바일+PC))
+> **GitHub 최신: `20eefda`** — feat(tasks): [FEAT-109] 작업분류 드롭다운 다중선택 필터 추가 (모바일+PC) (세션144)
+> **이전 커밋: `06dd159`** — feat(my-tasks): [FEAT-108] 내 작업목록 진행단계 다중선택 드롭다운 필터 추가 (세션143-3)
+> **이전 커밋: `bcbcc9f`** — fix(site-map): [BUG-105] 지도앱 열기 PC 콘솔 오류 수정 + 카드 상세 버튼 별도 분리 (세션143-2)
 > **이전 커밋: `999e9ad`** — feat(site-map): 지도 마커 팝업 지도앱 연결 + 하단 리스트 카드 작업상세 이동 (세션143)
 > **이전 커밋: `83e802a`** — fix(nas): [BUG-104] 계정 삭제 NAS 500 오류 수정 (세션142)
 > **이전 커밋: `1af97a3`** — feat(report): 작업자(팀) 필드를 TBM 시행자+배정근로자 기반으로 변경 (세션142)
@@ -7408,3 +7410,127 @@ if (report?.worker_team) {
 - JS 파싱 검사 → ✅ **OK** (`node -e "new Function(...)"`)
 - `npm run build` → ✅ **성공** (`dist/_worker.js 281.03 kB`, 1.29s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `1af97a3`)
+
+---
+
+## 세션 144 (2026-07-21) — feat: [FEAT-109] 작업분류 드롭다운 다중선택 필터 추가 (모바일+PC)
+
+### 배경
+
+FEAT-108에서 모바일 내 작업목록에 진행단계 드롭다운 필터가 추가된 후, 동일 방식으로 "작업분류" 필터를 모바일+PC 양쪽에 추가 요청.
+
+### 분석
+
+**데이터 구조**:
+- `work_class`: DB에 영문 key로 저장 (`cable_install`, `cable_splice`, `conduit`, `relocation`, `subscription`, `separate`, `environment`, `other` 등)
+- `CON_TYPE_DEF`: 단일 진실 공급원 (key/label/color 배열) — line 5140
+- `WC_LABEL`: `CON_TYPE_DEF`에서 자동 생성된 key→한국어 맵 — line 5239
+
+**필터 방식 결정**:
+- 모바일: 클라이언트 필터 (FEAT-108 진행단계 패턴 동일)
+- PC: 클라이언트 필터 (연도/월 다중선택과 동일 패턴 — `newTasks` 후처리)
+
+### 변경 내용
+
+#### ① 전역변수 초기화 (taskFilters + 모바일 전역)
+
+```javascript
+// PC: taskFilters에 workClassList 추가
+let taskFilters = { ..., workClassList: [] };
+
+// 모바일: _myTasksWcFilter 추가 (기본값: 전체 선택)
+var _myTasksWcFilter = CON_TYPE_DEF.map(function(d) { return d.key; });
+var _myTasksWcPickerOpen = false;
+```
+
+#### ② PC 헬퍼 함수 추가 (line ~5901~5940)
+
+```javascript
+function _taskOpenWorkClassPicker()    // 팝업 토글, 다른 팝업 닫기
+function _taskCloseWorkClassPicker()   // 팝업 닫기
+function _taskToggleWorkClass(key)     // 체크박스 토글
+function _taskApplyWorkClassFilter()   // 적용 → renderTasksPage
+function _taskClearWorkClassFilter()   // 전체 초기화
+```
+
+#### ③ PC 툴바 UI 삽입 (진행단계 ① 과 위험도 ② 사이에 ② 작업분류 삽입, 기존 ②→③)
+
+- Sky blue(#0EA5E9) 테마
+- CON_TYPE_DEF 색상 dot 표시
+- ✕ 버튼: 선택 건수 뱃지 + 개별 초기화
+
+#### ④ PC 클라이언트 필터 적용
+
+```javascript
+// newTasks 후처리 단계 (연도/월 필터 이후)
+if (taskFilters.workClassList && taskFilters.workClassList.length > 0) {
+  newTasks = newTasks.filter(function(t) {
+    const wc = t.work_class || 'other';
+    return taskFilters.workClassList.includes(wc);
+  });
+}
+// total 보정 로직에도 workClassList 조건 추가
+```
+
+#### ⑤ 모바일 헬퍼 함수 추가 (line ~14582~14635)
+
+```javascript
+function _myTasksToggleWcPicker()    // 팝업 토글 + 외부클릭 감지
+function _myTasksWcPickerOutside()   // 외부클릭 이벤트 리스너
+function _myTasksToggleWc(key)       // 체크박스 토글
+function _myTasksWcSelectAll()       // 전체 선택
+function _myTasksWcReset()           // 기본값(전체선택) 복원
+function _myTasksApplyWcFilter()     // 적용 → renderMyTasksPage
+```
+
+#### ⑥ 모바일 renderMyTasksPage 필터 로직
+
+```javascript
+// 진행단계 필터 결과 → _afterStatusFilter (const → 이름 변경)
+const _afterStatusFilter = _stFilterActive ? ... : _baseList;
+
+// 작업분류 필터 적용
+var _wcAllKeys = CON_TYPE_DEF.map(function(d) { return d.key; });
+var _wcFilterActive = _myTasksWcFilter.length > 0 && _myTasksWcFilter.length < _wcAllKeys.length;
+var tasksBeforeSearch = _wcFilterActive
+  ? _afterStatusFilter.filter(function(t) {
+      var wc = t.work_class || 'other';
+      return _myTasksWcFilter.indexOf(wc) !== -1;
+    })
+  : _afterStatusFilter;
+```
+
+#### ⑦ 모바일 드롭다운 UI 삽입
+
+진행단계 드롭다운 `</div>` 직후, 필터배너(`fm`) 이전 위치.
+Sky blue(#0EA5E9 / #E0F2FE) 테마로 진행단계(보라)와 구별.
+
+#### ⑧ 팝업 상호 닫기 목록 업데이트
+
+기존 4개 팝업 열기 함수(`_taskOpenStatusPicker`, `_taskOpenRiskPicker`, `_taskOpenYearPicker`, `_taskOpenMonthPicker`)와 `_taskOpenManagerPicker`에 `taskWorkClassPicker` 닫기 추가.
+
+### 2차 재검증 체크리스트
+
+| 항목 | 결과 |
+|------|------|
+| `_myTasksWcFilter` 변수명 기존 중복 | ✅ 안전 (신규 도입) |
+| `taskFilters.workClassList` 기존 중복 | ✅ 안전 (신규 추가) |
+| `myTasksWcPicker` DOM ID 중복 | ✅ 안전 (신규) |
+| `taskWorkClassPicker` DOM ID 중복 | ✅ 안전 (신규) |
+| `tasksBeforeSearch` const→var 변경 | ✅ 안전 (같은 함수 스코프 내 재선언 없음) |
+| `_afterStatusFilter` 선언 전 참조 | ✅ 안전 (const 먼저 선언 후 var 사용) |
+| CON_TYPE_DEF null 케이스 work_class | ✅ 처리 (`|| 'other'` 폴백) |
+| PC total 보정 조건 누락 | ✅ workClassList 조건 추가 |
+| 팝업 상호 닫기 누락 | ✅ 5개 팝업 함수 모두 업데이트 |
+
+### 수정 파일
+
+| 파일 | 변경 내용 |
+|------|-----------| 
+| `public/static/app.js` | FEAT-109 전체 구현 (226줄 추가, 9줄 수정) |
+
+### 빌드/배포 상태
+
+- JS 파싱 검사 → ✅ **OK** (`node -e "new Function(...)"`)
+- `npm run build` → ✅ **성공** (`dist/_worker.js 281.03 kB`, 1.14s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `20eefda`)

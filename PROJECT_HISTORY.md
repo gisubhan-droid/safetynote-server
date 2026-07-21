@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-21 (세션 144 — feat: [FEAT-109] 작업분류 드롭다운 다중선택 필터 추가 (모바일+PC))
-> **GitHub 최신: `20eefda`** — feat(tasks): [FEAT-109] 작업분류 드롭다운 다중선택 필터 추가 (모바일+PC) (세션144)
+> 최종 업데이트: 2026-07-21 (세션 147 — feat: [FEAT-111] 내 작업 가져오기 시 소속 팀 전원 자동 배정)
+> **GitHub 최신: `5812529`** — feat(tasks): [FEAT-111] 내 작업 가져오기 시 소속 팀 전원 자동 배정 (세션147)
 > **이전 커밋: `06dd159`** — feat(my-tasks): [FEAT-108] 내 작업목록 진행단계 다중선택 드롭다운 필터 추가 (세션143-3)
 > **이전 커밋: `bcbcc9f`** — fix(site-map): [BUG-105] 지도앱 열기 PC 콘솔 오류 수정 + 카드 상세 버튼 별도 분리 (세션143-2)
 > **이전 커밋: `999e9ad`** — feat(site-map): 지도 마커 팝업 지도앱 연결 + 하단 리스트 카드 작업상세 이동 (세션143)
@@ -7706,3 +7706,106 @@ _baseList → [진행단계] → _afterStatusFilter
 - JS 파싱 검사 → ✅ **OK** (`node -e "new Function(...)"`)
 - `npm run build` → ✅ **성공** (`dist/_worker.js 281.03 kB`, 1.40s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `9e476a1`)
+
+---
+
+## 세션147 — FEAT-111: 내 작업 가져오기 시 소속 팀 전원 자동 배정
+
+### 작업 일시
+2026-07-21
+
+### 작업 개요
+근로자가 "내 작업 가져오기"(selfAssignTask) 실행 시, 기존에는 본인 1명만 배정되던 동작을
+소속 팀 전원이 함께 배정되도록 확장.
+
+### 사전 분석 결과
+- `node-server.ts`: self-assign 엔드포인트 **없음** — `API.post('/tasks/${taskId}/self-assign')`은
+  Cloudflare D1 백엔드(`tasks.ts`)로만 라우팅 → NAS 백엔드 수정 불필요
+- `tasks.ts` line 1098: 기존에 `user.id` 1건만 `task_assignments` INSERT → 팀 전원으로 확장
+- 기존 팀 전체 배정 SQL 패턴(lines 590~819)이 동일 파일 내 3곳 존재 → 동일 패턴 재사용
+
+### 변경 내용
+
+#### A. `src/routes/tasks.ts` — `POST /:id/self-assign` (line 1098)
+
+**변경 전**: 본인(`user.id`) 1명만 `task_assignments` INSERT
+
+**변경 후**: 팀 전원 자동 배정
+
+```typescript
+// ① 본인 team_id 조회
+const myInfo = await c.env.DB.prepare(
+  'SELECT team_id FROM users WHERE id = ?'
+).bind(user.id).first<any>()
+
+const allMemberIds: number[] = [user.id]  // 본인 항상 포함
+
+// ② 팀 소속 시 전체 활성 멤버 조회 (본인 제외)
+if (myInfo?.team_id) {
+  const membersRes = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE team_id = ? AND is_active = 1 AND id != ?'
+  ).bind(myInfo.team_id, user.id).all<any>()
+  for (const m of (membersRes.results || [])) {
+    allMemberIds.push(m.id)
+  }
+}
+
+// ③ INSERT OR IGNORE — 팀원 전원 (중복 방지)
+const assignPlaceholders = allMemberIds.map(() => '(?, ?, ?)').join(', ')
+// ... batch INSERT
+
+// ④ 응답에 assignedCount 포함
+return c.json({ success: true, assignedCount })
+```
+
+**처리 규칙:**
+| 케이스 | 동작 |
+|--------|------|
+| 팀 소속 근로자 | 본인 + 팀 전체 활성 멤버 배정 |
+| 팀 미소속 근로자 | 본인 1명만 배정 (기존 동작 유지) |
+| 이미 배정된 팀원 | `INSERT OR IGNORE`로 중복 방지 |
+| task.status 전환 | unassigned → assigned (기존 로직 유지) |
+
+**SSE 메시지 분기:**
+- 팀 배정: `"${user.name}님이 "${task.title}" 작업을 팀원 N명과 함께 배정했습니다."`
+- 단독 배정: `"${user.name}님이 "${task.title}" 작업을 자기 배정했습니다."` (기존)
+
+#### B. `public/static/app.js` — `selfAssignTask()` (line 9933)
+
+**모달 안내 문구 추가:**
+```
+이 작업을 내 작업으로 가져오시겠습니까?
+👥 소속 팀이 있는 경우 팀 전원이 함께 배정됩니다.
+```
+
+**토스트 메시지 분기 (assignedCount 활용):**
+- 팀 배정: `'작업이 배정되었습니다. (팀원 N명 포함)'`
+- 단독 배정: `'작업이 배정되었습니다.'`
+
+**순수 JS 유지 체크포인트:**
+- `const` → `var` (응답 처리 지역변수)
+- `forEach(mo => mo.remove())` → `forEach(function(mo) { mo.remove(); })`
+- `setTimeout(() => ...)` → `setTimeout(function() { ... })`
+- `currentUser?.role` → `currentUser && currentUser.role`
+- `e.response?.data?.error` → `e.response && e.response.data && e.response.data.error`
+
+#### C. `node-server.ts`
+수정 없음. self-assign 라우트 미존재 확인 → Cloudflare D1 전용 엔드포인트로 확정.
+
+### 2차 재검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| `allMemberIds` 신규 변수명 충돌 | ✅ 0건 안전 |
+| `assignedCount` 신규 변수명 충돌 | ✅ 0건 안전 |
+| `myInfo` 신규 변수명 충돌 | ✅ 0건 안전 |
+| INSERT `id` 바인딩 (task_id) 정확성 | ✅ `assignBinds.push(id, wid, user.id)` — `id = c.req.param('id')` |
+| 본인 항상 포함 확인 | ✅ `allMemberIds: number[] = [user.id]` 초기값 |
+| 팀 미소속 시 본인만 배정 | ✅ `if (myInfo?.team_id)` 조건 미충족 시 배열 크기 1 |
+| optional chaining `?.` 없음 (app.js) | ✅ 0건 |
+| TypeScript 구문 없음 (app.js) | ✅ 0건 |
+| JS 파싱 검사 | ✅ **OK** (`node -e "new Function(...)"`) |
+
+### 빌드/배포 상태
+- JS 파싱 검사 → ✅ **OK** (`node -e "new Function(...)"`)
+- `npm run build` → ✅ **성공** (`dist/_worker.js 281.45 kB`, 1.34s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `5812529`)

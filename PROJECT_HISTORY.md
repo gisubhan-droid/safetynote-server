@@ -7611,3 +7611,98 @@ Sky blue(#0EA5E9 / #E0F2FE) 테마로 진행단계(보라)와 구별.
 - JS 파싱 검사 → ✅ **OK** (`node -e "new Function(...)"`)
 - `npm run build` → ✅ **성공** (`dist/_worker.js 281.03 kB`, 1.76s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `87e57c2`)
+
+---
+
+## 세션146 — BUG-110 + FEAT-110: 작업종류 필터 수정 및 공사종류 필터 추가
+
+### 작업 일시
+2026-07-21
+
+### 작업 개요
+모바일 내 작업목록(근로자 화면)의 작업종류 필터가 공사종류 항목을 잘못 표시하던 버그 수정,
+공사종류 필터 신규 추가.
+
+### 문제 원인 (BUG-110)
+`CON_TYPE_DEF`가 `construction_type`(공사종류)과 `work_class`(작업종류) 두 컬럼을 혼용하는 구조였으나,
+작업종류 필터가 `CON_TYPE_DEF`를 그대로 사용하여 공사종류 항목(지장이설·청약개통 등 6개)을 표시.
+실제 work_class 값은 4개(cable_install 등)와 불일치.
+
+### 변경 내용
+
+#### A. WORK_CLASS_DEF 상수 신설
+```javascript
+const WORK_CLASS_DEF = [
+  { key: 'cable_install',   label: '광케이블 시설',    color: '#1D4ED8' },
+  { key: 'cable_splice',    label: '광케이블 접속',    color: '#4338CA' },
+  { key: 'equipment_other', label: '장비 시설및 기타', color: '#C2410C' },
+  { key: 'conduit',         label: '관로시설',         color: '#15803D' },
+];
+```
+- `CON_TYPE_DEF`(공사종류 전용)와 완전 분리된 `work_class` 컬럼 전용 배열
+- 삽입 위치: `WC_LABEL` 상수 바로 아래 (line ~5241)
+
+#### B. 작업종류 필터 수정 (BUG-110)
+| 위치 | 변경 전 | 변경 후 |
+|------|--------|--------|
+| `_myTasksWcFilter` 초기값 | `CON_TYPE_DEF.map(key)` 6개 | `WORK_CLASS_DEF.map(key)` 4개 |
+| `_myTasksWcSelectAll()` | `CON_TYPE_DEF` 기반 | `WORK_CLASS_DEF` 기반 |
+| 필터 적용 로직 `_wcAllKeys` | `CON_TYPE_DEF.map(key)` | `WORK_CLASS_DEF.map(key)` |
+| 필터 결과 변수명 | `tasksBeforeSearch` | `_afterWcFilter` (파이프라인 분리) |
+| 모바일 드롭다운 항목 | `CON_TYPE_DEF.map()` 6개 | `WORK_CLASS_DEF.map()` 4개 |
+| PC 툴바 드롭다운 항목 | `CON_TYPE_DEF.map()` 6개 | `WORK_CLASS_DEF.map()` 4개 |
+
+#### C. 공사종류 필터 신규 추가 (FEAT-110) — 모바일 전용
+**전역 변수:**
+- `_myTasksCtFilter`: `CON_TYPE_DEF.map(label)` 전체 선택 기본값
+- `_myTasksCtPickerOpen`: false
+
+**헬퍼 함수 6개:**
+- `_myTasksToggleCtPicker()`: 팝업 토글 + wcPicker/statusPicker 상호 닫기
+- `_myTasksCtPickerOutside()`: 외부클릭 닫기
+- `_myTasksToggleCtFilter(label)`: 체크박스 개별 토글
+- `_myTasksCtSelectAll()`: 전체선택
+- `_myTasksCtReset()`: 기본값 복원
+- `_myTasksApplyCtFilter()`: 적용 → renderMyTasksPage
+
+**필터 파이프라인 확장:**
+```
+_baseList → [진행단계] → _afterStatusFilter
+          → [작업종류] → _afterWcFilter       ← 변수명 분리
+          → [공사종류] → tasksBeforeSearch    ← 신규 단계
+          → [검색]     → tasks
+```
+
+**드롭다운 UI:**
+- 핑크(#D70072) 테마, 하드햇 아이콘
+- 위치: 작업종류 드롭다운 아래, 필터배너 위
+- CON_TYPE_DEF 6개 항목 + 색상 dot 표시
+
+**상호 닫기 처리:**
+- `_myTasksToggleWcPicker()`: ctPicker + statusPicker 닫기 추가
+- `_myTasksToggleCtPicker()`: wcPicker + statusPicker 닫기 포함
+
+### 최종 UI 구조 (모바일 내 작업목록)
+```
+[ 검색창                              ]
+[ 진행단계 ▼ ]   ← 보라 #685182
+[ 작업종류  ▼ ]   ← 하늘 #0EA5E9  (4개: 광케이블시설·접속·장비·관로)
+[ 공사종류  ▼ ]   ← 핑크 #D70072  (6개: 지장이설·청약개통·관로공사 등)
+[ 필터배너 or 작업 카드 목록          ]
+```
+
+### 2차 재검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| WORK_CLASS_DEF 신규 변수명 기존 충돌 | ✅ 0건 안전 |
+| _myTasksCtFilter 등 신규 변수명 충돌 | ✅ 0건 안전 |
+| myTasksCtPicker DOM ID 충돌 | ✅ 0건 안전 |
+| myTasksCtCb_ DOM ID 충돌 | ✅ 0건 안전 |
+| 필터 파이프라인 변수 흐름 | ✅ afterStatusFilter→afterWcFilter→tasksBeforeSearch 정상 |
+| _myTasksCtPickerOpen 선언 전 참조 | ✅ 안전 (var 호이스팅, 함수 런타임 시점에 이미 선언) |
+| CON_TYPE_DEF 기존 참조 코드 영향 없음 | ✅ 공사통계·차트·공사관리 등 무변경 |
+
+### 빌드/배포 상태
+- JS 파싱 검사 → ✅ **OK** (`node -e "new Function(...)"`)
+- `npm run build` → ✅ **성공** (`dist/_worker.js 281.03 kB`, 1.40s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `9e476a1`)

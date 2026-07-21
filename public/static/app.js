@@ -5755,7 +5755,7 @@ function onDashRangeApply() {
 }
 
 // ======= 작업 관리 (관리감독자) =======
-let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [], year: new Date().getFullYear(), month: new Date().getMonth()+1, yearList: [], monthList: [], statusList: [], riskList: [] };
+let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [], year: new Date().getFullYear(), month: new Date().getMonth()+1, yearList: [], monthList: [], statusList: [], riskList: [], workClassList: [] };
 let _taskManagerDefaultApplied = false; // 작업관리 담당자 기본값 1회 적용 플래그
 let _taskUserList = []; // 작업관리 담당자 선택용 사용자 목록 (전역 캐시)
 
@@ -5764,9 +5764,11 @@ function _taskOpenManagerPicker() {
   const picker = document.getElementById('taskManagerPicker');
   if (!picker) return;
   const isOpen = picker.style.display !== 'none';
-  // 공사현황 팝업 닫기 (동시에 하나만)
+  // 다른 팝업 닫기
   const cPop = document.getElementById('conManagerPicker');
   if (cPop) cPop.style.display = 'none';
+  const wcPop = document.getElementById('taskWorkClassPicker');
+  if (wcPop) wcPop.style.display = 'none';
   if (isOpen) { picker.style.display = 'none'; return; }
   // 열릴 때 체크박스 현재 선택 상태 동기화
   _taskUserList.forEach(u => {
@@ -5814,7 +5816,7 @@ function _taskOpenStatusPicker() {
   if (!pop) return;
   const isOpen = pop.style.display === 'block';
   // 다른 팝업 닫기
-  ['taskManagerPicker','taskRiskPicker','conManagerPicker','conStatusPicker'].forEach(id => {
+  ['taskManagerPicker','taskRiskPicker','taskWorkClassPicker','conManagerPicker','conStatusPicker'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -5860,7 +5862,7 @@ function _taskOpenRiskPicker() {
   const pop = document.getElementById('taskRiskPicker');
   if (!pop) return;
   const isOpen = pop.style.display === 'block';
-  ['taskManagerPicker','taskStatusPicker','conManagerPicker','conStatusPicker'].forEach(id => {
+  ['taskManagerPicker','taskStatusPicker','taskWorkClassPicker','conManagerPicker','conStatusPicker'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -5898,12 +5900,53 @@ function _taskClearRiskFilter() {
   renderTasksPage(document.getElementById('page-content'));
 }
 
+// ── 작업관리 작업분류 드롭다운 다중선택 헬퍼 (FEAT-109) ───────────────────────
+function _taskOpenWorkClassPicker() {
+  const pop = document.getElementById('taskWorkClassPicker');
+  if (!pop) return;
+  const isOpen = pop.style.display === 'block';
+  // 다른 팝업 닫기
+  ['taskManagerPicker','taskStatusPicker','taskRiskPicker','conManagerPicker','conStatusPicker'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  pop.style.display = isOpen ? 'none' : 'block';
+}
+function _taskCloseWorkClassPicker() {
+  const pop = document.getElementById('taskWorkClassPicker');
+  if (pop) pop.style.display = 'none';
+}
+function _taskToggleWorkClass(key) {
+  if (!taskFilters.workClassList) taskFilters.workClassList = [];
+  const idx = taskFilters.workClassList.indexOf(key);
+  if (idx === -1) taskFilters.workClassList.push(key);
+  else taskFilters.workClassList.splice(idx, 1);
+  const cb = document.getElementById('taskWcCb_' + key);
+  if (cb) cb.checked = taskFilters.workClassList.includes(key);
+  const countEl = document.getElementById('taskWcPickerCount');
+  if (countEl) countEl.textContent = taskFilters.workClassList.length ? `${taskFilters.workClassList.length}개 선택` : '';
+}
+function _taskApplyWorkClassFilter() {
+  taskFilters.page = 1;
+  _taskCloseWorkClassPicker();
+  renderTasksPage(document.getElementById('page-content'));
+}
+function _taskClearWorkClassFilter() {
+  taskFilters.workClassList = [];
+  document.querySelectorAll('[id^="taskWcCb_"]').forEach(cb => cb.checked = false);
+  const countEl = document.getElementById('taskWcPickerCount');
+  if (countEl) countEl.textContent = '';
+  taskFilters.page = 1;
+  _taskCloseWorkClassPicker();
+  renderTasksPage(document.getElementById('page-content'));
+}
+
 // ── 작업관리 연도 드롭다운 다중선택 헬퍼 ────────────────────────────────────
 function _taskOpenYearPicker() {
   const pop = document.getElementById('taskYearPicker');
   if (!pop) return;
   const isOpen = pop.style.display === 'block';
-  ['taskManagerPicker','taskStatusPicker','taskRiskPicker','taskMonthPicker'].forEach(id => {
+  ['taskManagerPicker','taskStatusPicker','taskRiskPicker','taskWorkClassPicker','taskMonthPicker'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   pop.style.display = isOpen ? 'none' : 'block';
@@ -5946,7 +5989,7 @@ function _taskOpenMonthPicker() {
   const pop = document.getElementById('taskMonthPicker');
   if (!pop) return;
   const isOpen = pop.style.display === 'block';
-  ['taskManagerPicker','taskStatusPicker','taskRiskPicker','taskYearPicker'].forEach(id => {
+  ['taskManagerPicker','taskStatusPicker','taskRiskPicker','taskWorkClassPicker','taskYearPicker'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   pop.style.display = isOpen ? 'none' : 'block';
@@ -6163,8 +6206,17 @@ async function renderTasksPage(container) {
       });
     }
 
+    // ── 작업분류 다중선택 클라이언트 필터 (FEAT-109) ─────────────────────────
+    if (taskFilters.workClassList && taskFilters.workClassList.length > 0) {
+      newTasks = newTasks.filter(function(t) {
+        // work_class 없는 항목은 'other'로 취급
+        const wc = t.work_class || 'other';
+        return taskFilters.workClassList.includes(wc);
+      });
+    }
+
     // LGU+ 필터 적용 시 total도 필터된 건수로 보정
-    _taskListTotal = (_taskIsLguPlus || _tYrListNow.length > 1 || _tMoListNow.length > 1)
+    _taskListTotal = (_taskIsLguPlus || _tYrListNow.length > 1 || _tMoListNow.length > 1 || (taskFilters.workClassList && taskFilters.workClassList.length > 0))
       ? newTasks.length
       : (tasksRes.data.total ?? newTasks.length);
     // 전체 페이지 수 계산
@@ -6571,7 +6623,48 @@ async function renderTasksPage(container) {
           </div>
         </div>
 
-        <!-- ② 위험도 드롭다운 다중선택 -->
+        <!-- ② 작업분류 드롭다운 다중선택 (FEAT-109) -->
+        <div style="position:relative">
+          <button id="taskWorkClassBtn" onclick="_taskOpenWorkClassPicker()"
+            class="form-control" style="min-width:100px;max-width:180px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.workClassList&&taskFilters.workClassList.length?'#0EA5E9':'#D1D5DB'};border-radius:8px;font-size:12px;color:${taskFilters.workClassList&&taskFilters.workClassList.length?'#0EA5E9':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
+            <i class="fas fa-layer-group" style="font-size:10px;flex-shrink:0"></i>
+            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${taskFilters.workClassList&&taskFilters.workClassList.length ? taskFilters.workClassList.map(k=>WC_LABEL[k]||k).join(', ') : '작업분류'}</span>
+            ${taskFilters.workClassList&&taskFilters.workClassList.length ? `<span style="background:#0EA5E9;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${taskFilters.workClassList.length}</span>` : ''}
+          </button>
+          ${taskFilters.workClassList&&taskFilters.workClassList.length
+            ? `<span onclick="event.stopPropagation();_taskClearWorkClassFilter()" title="선택 초기화"
+                style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#0EA5E9;font-size:13px;z-index:1;font-weight:700">✕</span>`
+            : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
+          <div id="taskWorkClassPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:160px;background:#fff;border:1px solid #BAE6FD;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #E0F2FE;background:#F0F9FF">
+              <span style="font-size:11px;font-weight:700;color:#0EA5E9">작업분류 선택</span>
+              <span id="taskWcPickerCount" style="font-size:11px;color:#0EA5E9;font-weight:600">${taskFilters.workClassList&&taskFilters.workClassList.length ? taskFilters.workClassList.length+'개 선택' : ''}</span>
+            </div>
+            <div style="max-height:220px;overflow-y:auto;padding:4px 0">
+              ${CON_TYPE_DEF.map(d => {
+                const checked = taskFilters.workClassList && taskFilters.workClassList.includes(d.key);
+                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:12px;color:#374151;transition:background .1s"
+                  onmouseover="this.style.background='#E0F2FE'" onmouseout="this.style.background=''">
+                  <input type="checkbox" id="taskWcCb_${d.key}" ${checked?'checked':''} onchange="_taskToggleWorkClass('${d.key}')">
+                  <span style="display:inline-flex;align-items:center;gap:5px">
+                    <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${d.color};flex-shrink:0"></span>
+                    ${d.label}
+                  </span>
+                </label>`;
+              }).join('')}
+            </div>
+            <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #E0F2FE;background:#F0F9FF">
+              <button onclick="_taskApplyWorkClassFilter()"
+                style="flex:1;padding:7px 0;border-radius:8px;background:#0EA5E9;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer">
+                <i class="fas fa-check mr-1"></i>적용</button>
+              <button onclick="_taskClearWorkClassFilter()"
+                style="flex:1;padding:7px 0;border-radius:8px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;font-size:12px;cursor:pointer">
+                전체 초기화</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ③ 위험도 드롭다운 다중선택 -->
         <div style="position:relative">
           <button id="taskRiskBtn" onclick="_taskOpenRiskPicker()"
             class="form-control" style="min-width:90px;max-width:160px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.riskList&&taskFilters.riskList.length?'#D70072':'#D1D5DB'};border-radius:8px;font-size:12px;color:${taskFilters.riskList&&taskFilters.riskList.length?'#D70072':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
@@ -14578,6 +14671,59 @@ function _myTasksApplyStatusFilter() {
   if (content) renderMyTasksPage(content);
 }
 
+// ─── 내 작업목록 작업분류 다중선택 필터 (FEAT-109) ────────────────────────────
+// work_class DB 영문키 기반, CON_TYPE_DEF를 단일 진실 공급원으로 사용
+// 기본값: 전체 선택
+var _myTasksWcFilter = CON_TYPE_DEF.map(function(d) { return d.key; }); // 전체 선택
+var _myTasksWcPickerOpen = false;
+
+function _myTasksToggleWcPicker() {
+  _myTasksWcPickerOpen = !_myTasksWcPickerOpen;
+  var pop = document.getElementById('myTasksWcPicker');
+  if (pop) pop.style.display = _myTasksWcPickerOpen ? 'block' : 'none';
+  if (_myTasksWcPickerOpen) {
+    setTimeout(function() {
+      document.addEventListener('click', _myTasksWcPickerOutside, true);
+    }, 0);
+  } else {
+    document.removeEventListener('click', _myTasksWcPickerOutside, true);
+  }
+}
+function _myTasksWcPickerOutside(e) {
+  var pop = document.getElementById('myTasksWcPicker');
+  var btn = document.getElementById('myTasksWcPickerBtn');
+  if (pop && btn && !pop.contains(e.target) && !btn.contains(e.target)) {
+    _myTasksWcPickerOpen = false;
+    pop.style.display = 'none';
+    document.removeEventListener('click', _myTasksWcPickerOutside, true);
+  }
+}
+function _myTasksToggleWc(key) {
+  var idx = _myTasksWcFilter.indexOf(key);
+  if (idx === -1) _myTasksWcFilter.push(key);
+  else _myTasksWcFilter.splice(idx, 1);
+  var cb = document.getElementById('myTasksWcCb_' + key);
+  if (cb) cb.checked = _myTasksWcFilter.indexOf(key) !== -1;
+}
+function _myTasksWcSelectAll() {
+  _myTasksWcFilter = CON_TYPE_DEF.map(function(d) { return d.key; });
+  CON_TYPE_DEF.forEach(function(d) {
+    var cb = document.getElementById('myTasksWcCb_' + d.key);
+    if (cb) cb.checked = true;
+  });
+}
+function _myTasksWcReset() {
+  _myTasksWcSelectAll(); // 기본값 = 전체 선택
+}
+function _myTasksApplyWcFilter() {
+  _myTasksWcPickerOpen = false;
+  var pop = document.getElementById('myTasksWcPicker');
+  if (pop) pop.style.display = 'none';
+  document.removeEventListener('click', _myTasksWcPickerOutside, true);
+  var content = document.getElementById('page-content') || document.getElementById('main-content');
+  if (content) renderMyTasksPage(content);
+}
+
 // ─── 공사통계 공사종류 필터 전역 상태 ───────────────────────────────────────
 // CON_TYPE_DEF의 label(한글)을 담는 배열 — 기본값: 전체 선택
 // DB의 construction_type 컬럼이 한글 저장이므로 label 기준으로 관리
@@ -14675,9 +14821,21 @@ async function renderMyTasksPage(container) {
     // _myTasksStatusFilter가 전체 선택이거나 비어있으면 필터 미적용
     const _stFilterActive = _myTasksStatusFilter.length > 0
       && _myTasksStatusFilter.length < _MY_TASK_STATUS_ALL.length;
-    const tasksBeforeSearch = _stFilterActive
+    const _afterStatusFilter = _stFilterActive
       ? _baseList.filter(function(t) { return _myTasksStatusFilter.indexOf(t.status) !== -1; })
       : _baseList;
+
+    // ── 작업분류 다중선택 필터 적용 (FEAT-109) ──────────────────────────────
+    // _myTasksWcFilter가 전체 선택(CON_TYPE_DEF 전체)이면 필터 미적용
+    var _wcAllKeys = CON_TYPE_DEF.map(function(d) { return d.key; });
+    var _wcFilterActive = _myTasksWcFilter.length > 0 && _myTasksWcFilter.length < _wcAllKeys.length;
+    var tasksBeforeSearch = _wcFilterActive
+      ? _afterStatusFilter.filter(function(t) {
+          // work_class 없는 항목(null/undefined/'')은 'other'로 취급하여 포함
+          var wc = t.work_class || 'other';
+          return _myTasksWcFilter.indexOf(wc) !== -1;
+        })
+      : _afterStatusFilter;
 
     // ── 클라이언트 검색 필터 (등록건명 | 공사담당자) ──────────────────────────
     const kwLower = activeSearchKw.toLowerCase();
@@ -14763,6 +14921,65 @@ async function renderMyTasksPage(container) {
             <button onclick="_myTasksStatusReset();_myTasksApplyStatusFilter()"
               style="flex:1;padding:8px 0;border-radius:9px;border:1.5px solid #E5E7EB;background:#fff;color:#6B7280;font-size:13px;font-weight:600;cursor:pointer">
               기본값
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 작업분류 필터 드롭다운 (FEAT-109) ── -->
+      <div class="mb-3" style="position:relative">
+        ${(function() {
+          var wcAllKeys = CON_TYPE_DEF.map(function(d) { return d.key; });
+          var wcCnt = _myTasksWcFilter.length;
+          var wcTotal = wcAllKeys.length;
+          var isFiltered = wcCnt < wcTotal;
+          var btnLabel = wcCnt === 0 ? '작업분류 (없음)' : wcCnt === wcTotal ? '작업분류 (전체)' : '작업분류';
+          var badgeText = isFiltered ? wcCnt + '개' : '';
+          var btnBorder = isFiltered ? '#0EA5E9' : '#E5E7EB';
+          var btnBg = isFiltered ? '#F0F9FF' : '#fff';
+          var iconColor = isFiltered ? '#0EA5E9' : '#9CA3AF';
+          return '<button id="myTasksWcPickerBtn"'
+            + ' onclick="_myTasksToggleWcPicker()"'
+            + ' style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;'
+            + 'border-radius:12px;border:1.5px solid ' + btnBorder + ';background:' + btnBg + ';'
+            + 'cursor:pointer;text-align:left;box-shadow:0 1px 3px rgba(0,0,0,0.05)">'
+            + '<i class="fas fa-layer-group" style="color:' + iconColor + ';font-size:13px;flex-shrink:0"></i>'
+            + '<span style="flex:1;font-size:13px;font-weight:600;color:#374151">' + btnLabel + '</span>'
+            + (badgeText ? '<span style="font-size:11px;font-weight:700;color:#fff;background:#0EA5E9;border-radius:20px;padding:1px 8px">' + badgeText + '</span>' : '<span></span>')
+            + '<i class="fas fa-chevron-down" style="color:#9CA3AF;font-size:11px;flex-shrink:0"></i>'
+            + '</button>';
+        })()}
+
+        <!-- 드롭다운 패널 -->
+        <div id="myTasksWcPicker"
+          style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:999;
+                 background:#fff;border:1.5px solid #E5E7EB;border-radius:14px;
+                 box-shadow:0 8px 24px rgba(0,0,0,0.12);overflow:hidden">
+          <div style="padding:10px 14px 6px;border-bottom:1px solid #F3F4F6">
+            <span style="font-size:12px;font-weight:700;color:#0EA5E9">작업분류 선택</span>
+          </div>
+          <div style="max-height:260px;overflow-y:auto;padding:6px 0">
+            ${CON_TYPE_DEF.map(function(d) {
+              var checked = _myTasksWcFilter.indexOf(d.key) !== -1;
+              return '<label style="display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;'
+                + (checked ? 'background:#F0F9FF' : '')
+                + '" onmouseover="this.style.background=\'#E0F2FE\'" onmouseout="this.style.background=\'' + (checked ? '#F0F9FF' : '#fff') + '\'">'
+                + '<input type="checkbox" id="myTasksWcCb_' + d.key + '"'
+                + ' onchange="_myTasksToggleWc(\'' + d.key + '\')"'
+                + ' ' + (checked ? 'checked' : '')
+                + ' style="width:16px;height:16px;accent-color:#0EA5E9;cursor:pointer;flex-shrink:0">'
+                + '<span style="font-size:13px;color:#374151;font-weight:' + (checked ? '600' : '400') + '">' + d.label + '</span>'
+                + '</label>';
+            }).join('')}
+          </div>
+          <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid #F3F4F6">
+            <button onclick="_myTasksApplyWcFilter()"
+              style="flex:1;padding:8px 0;border-radius:9px;border:none;background:#0EA5E9;color:#fff;font-size:13px;font-weight:700;cursor:pointer">
+              <i class="fas fa-check mr-1"></i>적용
+            </button>
+            <button onclick="_myTasksWcReset();_myTasksApplyWcFilter()"
+              style="flex:1;padding:8px 0;border-radius:9px;border:1.5px solid #E5E7EB;background:#fff;color:#6B7280;font-size:13px;font-weight:600;cursor:pointer">
+              전체선택
             </button>
           </div>
         </div>

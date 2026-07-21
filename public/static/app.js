@@ -5900,7 +5900,7 @@ function _taskClearRiskFilter() {
   renderTasksPage(document.getElementById('page-content'));
 }
 
-// ── 작업관리 작업분류 드롭다운 다중선택 헬퍼 (FEAT-109) ───────────────────────
+// ── 작업관리 작업종류 드롭다운 다중선택 헬퍼 (FEAT-109) ───────────────────────
 function _taskOpenWorkClassPicker() {
   const pop = document.getElementById('taskWorkClassPicker');
   if (!pop) return;
@@ -6206,7 +6206,7 @@ async function renderTasksPage(container) {
       });
     }
 
-    // ── 작업분류 다중선택 클라이언트 필터 (FEAT-109) ─────────────────────────
+    // ── 작업종류 다중선택 클라이언트 필터 (FEAT-109) ─────────────────────────
     if (taskFilters.workClassList && taskFilters.workClassList.length > 0) {
       newTasks = newTasks.filter(function(t) {
         // work_class 없는 항목은 'other'로 취급
@@ -6264,7 +6264,7 @@ async function renderTasksPage(container) {
         const curLabel = stageLabels[curIdx] || t.status;
         const labelColor = curIdx >= 5 ? '#685182' : (curIdx >= 0 ? '#D70072' : '#9CA3AF');
 
-        // 공사종류 · 작업분류 배지 (짧게)
+        // 공사종류 · 작업종류 배지 (짧게)
         const wcShort = { cable_install:'광케이블시설', cable_splice:'광케이블접속', equipment_other:'장비·기타', conduit:'관로시설' };
 
         return `
@@ -6395,9 +6395,9 @@ async function renderTasksPage(container) {
         const dateDisplay = t.planned_date || t.work_date || '-';
         // 공사담당자 (XSS 방어: title 속성에 escaping 적용)
         const managerDisplay = t.con_manager_display_name || '-';
-        // 작업종류 (공사종류)
+        // 공사종류 (construction_type)
         const workTypeDisplay = t.construction_type || '-';
-        // 작업분류
+        // 작업종류 (work_class)
         const workClassDisplay = wcShortMap2[t.work_class] || t.work_class || '-';
         // [FEAT-053] 삭제: sysadmin + completed/cancelled 상태
         // [FEAT-060] 등록자 + unassigned/assigned 상태 추가 허용
@@ -6623,12 +6623,12 @@ async function renderTasksPage(container) {
           </div>
         </div>
 
-        <!-- ② 작업분류 드롭다운 다중선택 (FEAT-109) -->
+        <!-- ② 작업종류 드롭다운 다중선택 (FEAT-109) -->
         <div style="position:relative">
           <button id="taskWorkClassBtn" onclick="_taskOpenWorkClassPicker()"
             class="form-control" style="min-width:100px;max-width:180px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.workClassList&&taskFilters.workClassList.length?'#0EA5E9':'#D1D5DB'};border-radius:8px;font-size:12px;color:${taskFilters.workClassList&&taskFilters.workClassList.length?'#0EA5E9':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
             <i class="fas fa-layer-group" style="font-size:10px;flex-shrink:0"></i>
-            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${taskFilters.workClassList&&taskFilters.workClassList.length ? taskFilters.workClassList.map(k=>WC_LABEL[k]||k).join(', ') : '작업분류'}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${taskFilters.workClassList&&taskFilters.workClassList.length ? taskFilters.workClassList.map(k=>WC_LABEL[k]||k).join(', ') : '작업종류'}</span>
             ${taskFilters.workClassList&&taskFilters.workClassList.length ? `<span style="background:#0EA5E9;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${taskFilters.workClassList.length}</span>` : ''}
           </button>
           ${taskFilters.workClassList&&taskFilters.workClassList.length
@@ -6637,7 +6637,7 @@ async function renderTasksPage(container) {
             : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
           <div id="taskWorkClassPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:160px;background:#fff;border:1px solid #BAE6FD;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #E0F2FE;background:#F0F9FF">
-              <span style="font-size:11px;font-weight:700;color:#0EA5E9">작업분류 선택</span>
+              <span style="font-size:11px;font-weight:700;color:#0EA5E9">작업종류 선택</span>
               <span id="taskWcPickerCount" style="font-size:11px;color:#0EA5E9;font-weight:600">${taskFilters.workClassList&&taskFilters.workClassList.length ? taskFilters.workClassList.length+'개 선택' : ''}</span>
             </div>
             <div style="max-height:220px;overflow-y:auto;padding:4px 0">
@@ -6907,8 +6907,8 @@ async function renderTasksPage(container) {
                 <th class="task-th" style="text-align:center">#</th>
                 <th class="task-th task-th-resize" data-col="1" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','request_no')">공사요청번호<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
                 <th class="task-th task-th-resize" data-col="2" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','sub_task_number')">작업번호<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
-                <th class="task-th task-th-resize" data-col="3" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','construction_type')">작업종류<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
-                <th class="task-th task-th-resize" data-col="4" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','work_class')">작업분류<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+                <th class="task-th task-th-resize" data-col="3" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','construction_type')">공사종류<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+                <th class="task-th task-th-resize" data-col="4" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','work_class')">작업종류<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
                 <th class="task-th task-th-resize" data-col="5" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','planned_date')">작업(예정)일<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
                 <th class="task-th task-th-resize" data-col="6" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','con_manager_display_name')">공사담당자<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
                 <th class="task-th task-th-resize" data-col="7" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="if(window._sortTrigger)window._sortTrigger('taskListTableHead','title')">작업명<span class="sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
@@ -7016,7 +7016,7 @@ async function renderTasksPage(container) {
 
 // 작업목록 엑셀(CSV) 다운로드
 function downloadTaskListCSV() {
-  const headers = ['요청번호','공사종류','작업분류','공사명','위험도','진행단계','작업지시주소'];
+  const headers = ['요청번호','공사종류','작업종류','공사명','위험도','진행단계','작업지시주소'];
   const wcMap = { cable_install:'광케이블 시설', cable_splice:'광케이블 접속', equipment_other:'장비 시설및 기타', conduit:'관로시설' };
   const rlMap = { high:'고위험', medium:'중위험', normal:'일반' };
   const stMap = { unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료', tbm_done:'TBM완료', working:'작업진행중', completed:'작업완료' };
@@ -8715,12 +8715,12 @@ async function showTaskDetail(id, openTbmTab) {
             <span class="font-mono text-xs text-gray-300 ml-1">${task.task_number||'-'}</span>
           </div>
 
-          <!-- ② 작업종류(공사종류) / 작업분류 -->
+          <!-- ② 공사종류 / 작업종류 -->
           <div class="grid grid-cols-2 gap-2">
             <div class="bg-pink-50 rounded-lg p-3 border border-pink-100">
               <div class="flex items-center gap-1 mb-1">
                 <i class="fas fa-hard-hat text-xs text-pink-400"></i>
-                <span class="text-gray-500 text-xs font-semibold">작업종류</span>
+                <span class="text-gray-500 text-xs font-semibold">공사종류</span>
               </div>
               <span class="font-medium ${task.construction_type ? '' : 'text-gray-400'}" style="${task.construction_type ? 'color:#D70072' : ''}">${task.construction_type||'-'}</span>
             </div>
@@ -8728,7 +8728,7 @@ async function showTaskDetail(id, openTbmTab) {
               <div class="flex items-center justify-between mb-1">
                 <div class="flex items-center gap-1">
                   <i class="fas fa-tags text-xs text-blue-400"></i>
-                  <span class="text-gray-500 text-xs font-semibold">작업분류</span>
+                  <span class="text-gray-500 text-xs font-semibold">작업종류</span>
                 </div>
                 ${!isWorker ? `<button onclick="showChangeWorkClassModal(${task.id},'${task.work_class||'cable_install'}')" class="text-xs text-blue-400 hover:text-blue-600"><i class="fas fa-edit"></i></button>` : ''}
               </div>
@@ -14671,7 +14671,7 @@ function _myTasksApplyStatusFilter() {
   if (content) renderMyTasksPage(content);
 }
 
-// ─── 내 작업목록 작업분류 다중선택 필터 (FEAT-109) ────────────────────────────
+// ─── 내 작업목록 작업종류 다중선택 필터 (FEAT-109) ────────────────────────────
 // work_class DB 영문키 기반, CON_TYPE_DEF를 단일 진실 공급원으로 사용
 // 기본값: 전체 선택
 var _myTasksWcFilter = CON_TYPE_DEF.map(function(d) { return d.key; }); // 전체 선택
@@ -14825,7 +14825,7 @@ async function renderMyTasksPage(container) {
       ? _baseList.filter(function(t) { return _myTasksStatusFilter.indexOf(t.status) !== -1; })
       : _baseList;
 
-    // ── 작업분류 다중선택 필터 적용 (FEAT-109) ──────────────────────────────
+    // ── 작업종류 다중선택 필터 적용 (FEAT-109) ──────────────────────────────
     // _myTasksWcFilter가 전체 선택(CON_TYPE_DEF 전체)이면 필터 미적용
     var _wcAllKeys = CON_TYPE_DEF.map(function(d) { return d.key; });
     var _wcFilterActive = _myTasksWcFilter.length > 0 && _myTasksWcFilter.length < _wcAllKeys.length;
@@ -14926,14 +14926,14 @@ async function renderMyTasksPage(container) {
         </div>
       </div>
 
-      <!-- ── 작업분류 필터 드롭다운 (FEAT-109) ── -->
+      <!-- ── 작업종류 필터 드롭다운 (FEAT-109) ── -->
       <div class="mb-3" style="position:relative">
         ${(function() {
           var wcAllKeys = CON_TYPE_DEF.map(function(d) { return d.key; });
           var wcCnt = _myTasksWcFilter.length;
           var wcTotal = wcAllKeys.length;
           var isFiltered = wcCnt < wcTotal;
-          var btnLabel = wcCnt === 0 ? '작업분류 (없음)' : wcCnt === wcTotal ? '작업분류 (전체)' : '작업분류';
+          var btnLabel = wcCnt === 0 ? '작업종류 (없음)' : wcCnt === wcTotal ? '작업종류 (전체)' : '작업종류';
           var badgeText = isFiltered ? wcCnt + '개' : '';
           var btnBorder = isFiltered ? '#0EA5E9' : '#E5E7EB';
           var btnBg = isFiltered ? '#F0F9FF' : '#fff';
@@ -14956,7 +14956,7 @@ async function renderMyTasksPage(container) {
                  background:#fff;border:1.5px solid #E5E7EB;border-radius:14px;
                  box-shadow:0 8px 24px rgba(0,0,0,0.12);overflow:hidden">
           <div style="padding:10px 14px 6px;border-bottom:1px solid #F3F4F6">
-            <span style="font-size:12px;font-weight:700;color:#0EA5E9">작업분류 선택</span>
+            <span style="font-size:12px;font-weight:700;color:#0EA5E9">작업종류 선택</span>
           </div>
           <div style="max-height:260px;overflow-y:auto;padding:6px 0">
             ${CON_TYPE_DEF.map(function(d) {
@@ -17508,10 +17508,10 @@ async function renderStatsPage(container) {
             </div>
           </div>
 
-          <!-- 작업종류별 현황 (공사종류 기반 도넛차트 + 완료현황) -->
+          <!-- 공사종류별 현황 (도넛차트 + 완료현황) -->
           <div class="card mb-6">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="font-bold" style="color:#4E3A63"><i class="fas fa-hard-hat mr-2" style="color:#D70072"></i>작업종류별 현황</h3>
+              <h3 class="font-bold" style="color:#4E3A63"><i class="fas fa-hard-hat mr-2" style="color:#D70072"></i>공사종류별 현황</h3>
               <span class="text-xs" style="color:#C6C6C6">전체 <span id="workClassTotalCount">${totalMonthly}</span>건</span>
             </div>
             <div class="flex flex-col md:flex-row items-center gap-6">
@@ -18461,7 +18461,7 @@ async function loadMonthlyStats() {
     const activeTeamEl = document.getElementById('activeByTeamTable');
     if (activeTeamEl) activeTeamEl.innerHTML = renderActiveByTeamTable(activeByTeam2.rows);
 
-    // ✅ 작업종류별 현황 — 공사종류별 카드 그리드 업데이트 (필터 변경 반영)
+    // ✅ 공사종류별 현황 — 공사종류별 카드 그리드 업데이트 (필터 변경 반영)
     const wcCardsGrid = document.getElementById('workClassCardsGrid');
     if (wcCardsGrid) {
       const ctStatsNew     = monthly.ctStats     || [];
@@ -18493,7 +18493,7 @@ async function loadMonthlyStats() {
         </div>`;
       }).join('');
     }
-    // ✅ 작업종류별 현황 — 전체 건수 카운터 업데이트
+    // ✅ 공사종류별 현황 — 전체 건수 카운터 업데이트
     const totalCountEl = document.getElementById('workClassTotalCount');
     if (totalCountEl) totalCountEl.textContent = totalMonthly;
 
@@ -35006,7 +35006,7 @@ async function renderReportWritePage(container, activeType, cSubInit, sSubInit) 
   try {
     const r = await API.get('/tasks?status=working,work_completed,completed');
     allTasks   = r.data.tasks || [];
-    // 작업분류에 따라 일보 작성 대상 분리
+    // 작업종류에 따라 일보 작성 대상 분리
     // cable_install(광케이블 시설) → 외선 작업일보만 대상
     // cable_splice (광케이블 접속) → 접속 작업일보만 대상
     // 그 외 (관로시설/장비기타 등) → 외선·접속 일보 대상 아님

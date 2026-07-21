@@ -9945,7 +9945,10 @@ function selfAssignTask(taskId) {
     <div class="modal-body">
       <div style="background:#F5F0F8;border:1.5px solid #EDE7F6;border-radius:12px;padding:14px 16px;color:#4E3A63;font-size:14px;line-height:1.6">
         <i class="fas fa-info-circle mr-2 text-blue-400"></i>
-        이 작업을 내 작업으로 가져오시겠습니까?
+        이 작업을 내 작업으로 가져오시겠습니까?<br>
+        <span style="font-size:12px;color:#7C5EA0;margin-top:4px;display:block">
+          <i class="fas fa-users mr-1"></i>소속 팀이 있는 경우 팀 전원이 함께 배정됩니다.
+        </span>
       </div>
     </div>
     <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
@@ -9957,19 +9960,23 @@ function selfAssignTask(taskId) {
   m.querySelector('#doSelfAssignBtn').onclick = async () => {
     m.remove();
     try {
-      await API.post(`/tasks/${taskId}/self-assign`);
-      toast('작업이 배정되었습니다.');
+      var res = await API.post(`/tasks/${taskId}/self-assign`);
+      var assignedCount = (res.data && res.data.assignedCount) || 1;
+      var toastMsg = assignedCount > 1
+        ? '작업이 배정되었습니다. (팀원 ' + assignedCount + '명 포함)'
+        : '작업이 배정되었습니다.';
+      toast(toastMsg);
       // 모달 전체 닫기 후 작업 상세 재오픈 (창 상태 유지)
-      document.querySelectorAll('.modal-overlay').forEach(mo => mo.remove());
-      setTimeout(() => showTaskDetail(taskId), 200);
+      document.querySelectorAll('.modal-overlay').forEach(function(mo) { mo.remove(); });
+      setTimeout(function() { showTaskDetail(taskId); }, 200);
       // 배경 목록도 조용히 갱신 (필터 유지)
-      const content = document.getElementById('page-content');
+      var content = document.getElementById('page-content');
       if (content) {
-        if (currentUser?.role === 'worker') renderMyTasksPage(content);
+        if (currentUser && currentUser.role === 'worker') renderMyTasksPage(content);
         else renderTasksPage(content);
       }
     } catch(e) {
-      toast(e.response?.data?.error || '배정 실패', 'error');
+      toast((e.response && e.response.data && e.response.data.error) || '배정 실패', 'error');
     }
   };
 }

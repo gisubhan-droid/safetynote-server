@@ -1094,7 +1094,8 @@ app.patch('/:id/status', async (c) => {
   return c.json({ success: true })
 })
 
-// 작업자 자기 배정 (작업자가 미배정 작업을 직접 선택)
+// 작업자 자기 배정 (작업자가 미배정 작업을 직접 선택 → 소속 팀 전원 자동 배정)
+// FEAT-111: 팀 소속 근로자는 팀 전원을 함께 배정, 팀 미소속 시 본인만 배정
 app.post('/:id/self-assign', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
@@ -1105,16 +1106,31 @@ app.post('/:id/self-assign', async (c) => {
   const task = await c.env.DB.prepare('SELECT *, COALESCE(work_class_new, work_class, \'cable_install\') as work_class_cur FROM tasks WHERE id = ?').bind(id).first<any>()
   if (!task) return c.json({ error: '작업을 찾을 수 없습니다.' }, 404)
 
-  // 이미 배정된 경우 worker도 배정 가능하지만 중복 방지
-  const existing = await c.env.DB.prepare(
-    'SELECT id FROM task_assignments WHERE task_id = ? AND worker_id = ?'
-  ).bind(id, user.id).first<any>()
+  // ─── FEAT-111: 배정 대상 멤버 목록 수집 ──────────────────────────────────
+  // 본인 team_id 조회
+  const myInfo = await c.env.DB.prepare(
+    'SELECT team_id FROM users WHERE id = ?'
+  ).bind(user.id).first<any>()
 
-  if (!existing) {
-    await c.env.DB.prepare(
-      'INSERT OR IGNORE INTO task_assignments (task_id, worker_id, assigned_by) VALUES (?, ?, ?)'
-    ).bind(id, user.id, user.id).run()
+  const allMemberIds: number[] = [user.id]
+
+  if (myInfo?.team_id) {
+    // 팀 전체 활성 멤버 조회 (본인 제외)
+    const membersRes = await c.env.DB.prepare(
+      'SELECT id FROM users WHERE team_id = ? AND is_active = 1 AND id != ?'
+    ).bind(myInfo.team_id, user.id).all<any>()
+    for (const m of (membersRes.results || [])) {
+      allMemberIds.push(m.id)
+    }
   }
+
+  // ─── INSERT OR IGNORE — 팀원 전원 (중복 방지) ────────────────────────────
+  const assignPlaceholders = allMemberIds.map(() => '(?, ?, ?)').join(', ')
+  const assignBinds: any[] = []
+  for (const wid of allMemberIds) assignBinds.push(id, wid, user.id)
+  await c.env.DB.prepare(
+    `INSERT OR IGNORE INTO task_assignments (task_id, worker_id, assigned_by) VALUES ${assignPlaceholders}`
+  ).bind(...assignBinds).run()
 
   // 상태를 assigned로 변경 (미배정인 경우)
   if (task.status === 'unassigned') {
@@ -1124,16 +1140,22 @@ app.post('/:id/self-assign', async (c) => {
   }
 
   // ─── SSE: 자기 배정 알림 (관리자/감독자에게)
+  const assignedCount = allMemberIds.length
+  const sseMessage = assignedCount > 1
+    ? `[작업 배정] ${user.name}님이 "${task.title}" 작업을 팀원 ${assignedCount}명과 함께 배정했습니다.`
+    : `[작업 배정] ${user.name}님이 "${task.title}" 작업을 자기 배정했습니다.`
+
   broadcastToRoles(['admin', 'supervisor'], {
     type: 'task_assigned',
     taskId: Number(id),
     title: task.title,
     actor: user.name,
-    message: `[작업 배정] ${user.name}님이 "${task.title}" 작업을 자기 배정했습니다.`,
+    assignedCount,
+    message: sseMessage,
     ts: Date.now()
   })
 
-  return c.json({ success: true })
+  return c.json({ success: true, assignedCount })
 })
 
 // 작업 분류 변경 (광케이블 시설/광케이블 접속/장비 시설및 기타/관로시설)

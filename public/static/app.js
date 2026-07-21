@@ -5238,6 +5238,16 @@ function conTypeTaskSelectOptions(selectedLabel) {
 // ── 기존 WC_LABEL 유지 (CON_TYPE_DEF 기반으로 자동 생성 — 삭제 불가) ────
 const WC_LABEL = Object.fromEntries(CON_TYPE_DEF.map(d => [d.key, d.label]));
 
+// ── WORK_CLASS_DEF — work_class 컬럼 전용 정의 (단일 진실 공급원) ──────────
+// DB 컬럼: tasks.work_class (영문 key 저장)
+// CON_TYPE_DEF(공사종류)와 완전히 분리된 별도 배열
+const WORK_CLASS_DEF = [
+  { key: 'cable_install',   label: '광케이블 시설',    color: '#1D4ED8' },
+  { key: 'cable_splice',    label: '광케이블 접속',    color: '#4338CA' },
+  { key: 'equipment_other', label: '장비 시설및 기타', color: '#C2410C' },
+  { key: 'conduit',         label: '관로시설',         color: '#15803D' },
+];
+
 // 공사요청번호 입력 → 공사정보 자동 연동
 async function autoLinkConstruction() {
   const reqNoInput = document.getElementById('mConReqNo');
@@ -6641,7 +6651,7 @@ async function renderTasksPage(container) {
               <span id="taskWcPickerCount" style="font-size:11px;color:#0EA5E9;font-weight:600">${taskFilters.workClassList&&taskFilters.workClassList.length ? taskFilters.workClassList.length+'개 선택' : ''}</span>
             </div>
             <div style="max-height:220px;overflow-y:auto;padding:4px 0">
-              ${CON_TYPE_DEF.map(d => {
+              ${WORK_CLASS_DEF.map(d => {
                 const checked = taskFilters.workClassList && taskFilters.workClassList.includes(d.key);
                 return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:12px;color:#374151;transition:background .1s"
                   onmouseover="this.style.background='#E0F2FE'" onmouseout="this.style.background=''">
@@ -14672,9 +14682,9 @@ function _myTasksApplyStatusFilter() {
 }
 
 // ─── 내 작업목록 작업종류 다중선택 필터 (FEAT-109) ────────────────────────────
-// work_class DB 영문키 기반, CON_TYPE_DEF를 단일 진실 공급원으로 사용
+// work_class DB 영문키 기반, WORK_CLASS_DEF를 단일 진실 공급원으로 사용
 // 기본값: 전체 선택
-var _myTasksWcFilter = CON_TYPE_DEF.map(function(d) { return d.key; }); // 전체 선택
+var _myTasksWcFilter = WORK_CLASS_DEF.map(function(d) { return d.key; }); // 전체 선택
 var _myTasksWcPickerOpen = false;
 
 function _myTasksToggleWcPicker() {
@@ -14682,6 +14692,11 @@ function _myTasksToggleWcPicker() {
   var pop = document.getElementById('myTasksWcPicker');
   if (pop) pop.style.display = _myTasksWcPickerOpen ? 'block' : 'none';
   if (_myTasksWcPickerOpen) {
+    // 다른 피커 닫기
+    var stp = document.getElementById('myTasksStatusPicker');
+    if (stp) { stp.style.display = 'none'; _myTasksStatusPickerOpen = false; document.removeEventListener('click', _myTasksStatusPickerOutside, true); }
+    var ctp = document.getElementById('myTasksCtPicker');
+    if (ctp) { ctp.style.display = 'none'; _myTasksCtPickerOpen = false; document.removeEventListener('click', _myTasksCtPickerOutside, true); }
     setTimeout(function() {
       document.addEventListener('click', _myTasksWcPickerOutside, true);
     }, 0);
@@ -14706,8 +14721,8 @@ function _myTasksToggleWc(key) {
   if (cb) cb.checked = _myTasksWcFilter.indexOf(key) !== -1;
 }
 function _myTasksWcSelectAll() {
-  _myTasksWcFilter = CON_TYPE_DEF.map(function(d) { return d.key; });
-  CON_TYPE_DEF.forEach(function(d) {
+  _myTasksWcFilter = WORK_CLASS_DEF.map(function(d) { return d.key; });
+  WORK_CLASS_DEF.forEach(function(d) {
     var cb = document.getElementById('myTasksWcCb_' + d.key);
     if (cb) cb.checked = true;
   });
@@ -14720,6 +14735,64 @@ function _myTasksApplyWcFilter() {
   var pop = document.getElementById('myTasksWcPicker');
   if (pop) pop.style.display = 'none';
   document.removeEventListener('click', _myTasksWcPickerOutside, true);
+  var content = document.getElementById('page-content') || document.getElementById('main-content');
+  if (content) renderMyTasksPage(content);
+}
+
+// ─── 내 작업목록 공사종류 다중선택 필터 (FEAT-110) ───────────────────────────
+// construction_type DB 한글값 기반, CON_TYPE_DEF를 단일 진실 공급원으로 사용
+// 기본값: 전체 선택
+var _myTasksCtFilter = CON_TYPE_DEF.map(function(d) { return d.label; }); // 전체 선택
+var _myTasksCtPickerOpen = false;
+
+function _myTasksToggleCtPicker() {
+  _myTasksCtPickerOpen = !_myTasksCtPickerOpen;
+  var pop = document.getElementById('myTasksCtPicker');
+  if (pop) pop.style.display = _myTasksCtPickerOpen ? 'block' : 'none';
+  // 다른 피커 닫기
+  if (_myTasksCtPickerOpen) {
+    var wcp = document.getElementById('myTasksWcPicker');
+    if (wcp) { wcp.style.display = 'none'; _myTasksWcPickerOpen = false; document.removeEventListener('click', _myTasksWcPickerOutside, true); }
+    var stp = document.getElementById('myTasksStatusPicker');
+    if (stp) { stp.style.display = 'none'; _myTasksStatusPickerOpen = false; document.removeEventListener('click', _myTasksStatusPickerOutside, true); }
+    setTimeout(function() {
+      document.addEventListener('click', _myTasksCtPickerOutside, true);
+    }, 0);
+  } else {
+    document.removeEventListener('click', _myTasksCtPickerOutside, true);
+  }
+}
+function _myTasksCtPickerOutside(e) {
+  var pop = document.getElementById('myTasksCtPicker');
+  var btn = document.getElementById('myTasksCtPickerBtn');
+  if (pop && btn && !pop.contains(e.target) && !btn.contains(e.target)) {
+    _myTasksCtPickerOpen = false;
+    pop.style.display = 'none';
+    document.removeEventListener('click', _myTasksCtPickerOutside, true);
+  }
+}
+function _myTasksToggleCtFilter(label) {
+  var idx = _myTasksCtFilter.indexOf(label);
+  if (idx === -1) _myTasksCtFilter.push(label);
+  else _myTasksCtFilter.splice(idx, 1);
+  var cb = document.getElementById('myTasksCtCb_' + label);
+  if (cb) cb.checked = _myTasksCtFilter.indexOf(label) !== -1;
+}
+function _myTasksCtSelectAll() {
+  _myTasksCtFilter = CON_TYPE_DEF.map(function(d) { return d.label; });
+  CON_TYPE_DEF.forEach(function(d) {
+    var cb = document.getElementById('myTasksCtCb_' + d.label);
+    if (cb) cb.checked = true;
+  });
+}
+function _myTasksCtReset() {
+  _myTasksCtSelectAll(); // 기본값 = 전체 선택
+}
+function _myTasksApplyCtFilter() {
+  _myTasksCtPickerOpen = false;
+  var pop = document.getElementById('myTasksCtPicker');
+  if (pop) pop.style.display = 'none';
+  document.removeEventListener('click', _myTasksCtPickerOutside, true);
   var content = document.getElementById('page-content') || document.getElementById('main-content');
   if (content) renderMyTasksPage(content);
 }
@@ -14826,16 +14899,26 @@ async function renderMyTasksPage(container) {
       : _baseList;
 
     // ── 작업종류 다중선택 필터 적용 (FEAT-109) ──────────────────────────────
-    // _myTasksWcFilter가 전체 선택(CON_TYPE_DEF 전체)이면 필터 미적용
-    var _wcAllKeys = CON_TYPE_DEF.map(function(d) { return d.key; });
+    // _myTasksWcFilter가 전체 선택(WORK_CLASS_DEF 전체)이면 필터 미적용
+    var _wcAllKeys = WORK_CLASS_DEF.map(function(d) { return d.key; });
     var _wcFilterActive = _myTasksWcFilter.length > 0 && _myTasksWcFilter.length < _wcAllKeys.length;
-    var tasksBeforeSearch = _wcFilterActive
+    var _afterWcFilter = _wcFilterActive
       ? _afterStatusFilter.filter(function(t) {
-          // work_class 없는 항목(null/undefined/'')은 'other'로 취급하여 포함
-          var wc = t.work_class || 'other';
+          var wc = t.work_class || '';
           return _myTasksWcFilter.indexOf(wc) !== -1;
         })
       : _afterStatusFilter;
+
+    // ── 공사종류 다중선택 필터 적용 (FEAT-110) ──────────────────────────────
+    // _myTasksCtFilter가 전체 선택(CON_TYPE_DEF 전체)이면 필터 미적용
+    var _ctAllLabels = CON_TYPE_DEF.map(function(d) { return d.label; });
+    var _ctFilterActive = _myTasksCtFilter.length > 0 && _myTasksCtFilter.length < _ctAllLabels.length;
+    var tasksBeforeSearch = _ctFilterActive
+      ? _afterWcFilter.filter(function(t) {
+          var ct = t.construction_type || '';
+          return _myTasksCtFilter.indexOf(ct) !== -1;
+        })
+      : _afterWcFilter;
 
     // ── 클라이언트 검색 필터 (등록건명 | 공사담당자) ──────────────────────────
     const kwLower = activeSearchKw.toLowerCase();
@@ -14926,10 +15009,10 @@ async function renderMyTasksPage(container) {
         </div>
       </div>
 
-      <!-- ── 작업종류 필터 드롭다운 (FEAT-109) ── -->
+      <!-- ── 작업종류 필터 드롭다운 (FEAT-109 수정: WORK_CLASS_DEF 기반) ── -->
       <div class="mb-3" style="position:relative">
         ${(function() {
-          var wcAllKeys = CON_TYPE_DEF.map(function(d) { return d.key; });
+          var wcAllKeys = WORK_CLASS_DEF.map(function(d) { return d.key; });
           var wcCnt = _myTasksWcFilter.length;
           var wcTotal = wcAllKeys.length;
           var isFiltered = wcCnt < wcTotal;
@@ -14959,7 +15042,7 @@ async function renderMyTasksPage(container) {
             <span style="font-size:12px;font-weight:700;color:#0EA5E9">작업종류 선택</span>
           </div>
           <div style="max-height:260px;overflow-y:auto;padding:6px 0">
-            ${CON_TYPE_DEF.map(function(d) {
+            ${WORK_CLASS_DEF.map(function(d) {
               var checked = _myTasksWcFilter.indexOf(d.key) !== -1;
               return '<label style="display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;'
                 + (checked ? 'background:#F0F9FF' : '')
@@ -14968,7 +15051,9 @@ async function renderMyTasksPage(container) {
                 + ' onchange="_myTasksToggleWc(\'' + d.key + '\')"'
                 + ' ' + (checked ? 'checked' : '')
                 + ' style="width:16px;height:16px;accent-color:#0EA5E9;cursor:pointer;flex-shrink:0">'
-                + '<span style="font-size:13px;color:#374151;font-weight:' + (checked ? '600' : '400') + '">' + d.label + '</span>'
+                + '<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#374151;font-weight:' + (checked ? '600' : '400') + '">'
+                + '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + d.color + ';flex-shrink:0"></span>'
+                + d.label + '</span>'
                 + '</label>';
             }).join('')}
           </div>
@@ -14978,6 +15063,67 @@ async function renderMyTasksPage(container) {
               <i class="fas fa-check mr-1"></i>적용
             </button>
             <button onclick="_myTasksWcReset();_myTasksApplyWcFilter()"
+              style="flex:1;padding:8px 0;border-radius:9px;border:1.5px solid #E5E7EB;background:#fff;color:#6B7280;font-size:13px;font-weight:600;cursor:pointer">
+              전체선택
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 공사종류 필터 드롭다운 (FEAT-110) ── -->
+      <div class="mb-3" style="position:relative">
+        ${(function() {
+          var ctAllLabels = CON_TYPE_DEF.map(function(d) { return d.label; });
+          var ctCnt = _myTasksCtFilter.length;
+          var ctTotal = ctAllLabels.length;
+          var isFiltered = ctCnt < ctTotal;
+          var btnLabel = ctCnt === 0 ? '공사종류 (없음)' : ctCnt === ctTotal ? '공사종류 (전체)' : '공사종류';
+          var badgeText = isFiltered ? ctCnt + '개' : '';
+          var btnBorder = isFiltered ? '#D70072' : '#E5E7EB';
+          var btnBg = isFiltered ? '#FDE8F3' : '#fff';
+          var iconColor = isFiltered ? '#D70072' : '#9CA3AF';
+          return '<button id="myTasksCtPickerBtn"'
+            + ' onclick="_myTasksToggleCtPicker()"'
+            + ' style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;'
+            + 'border-radius:12px;border:1.5px solid ' + btnBorder + ';background:' + btnBg + ';'
+            + 'cursor:pointer;text-align:left;box-shadow:0 1px 3px rgba(0,0,0,0.05)">'
+            + '<i class="fas fa-hard-hat" style="color:' + iconColor + ';font-size:13px;flex-shrink:0"></i>'
+            + '<span style="flex:1;font-size:13px;font-weight:600;color:#374151">' + btnLabel + '</span>'
+            + (badgeText ? '<span style="font-size:11px;font-weight:700;color:#fff;background:#D70072;border-radius:20px;padding:1px 8px">' + badgeText + '</span>' : '<span></span>')
+            + '<i class="fas fa-chevron-down" style="color:#9CA3AF;font-size:11px;flex-shrink:0"></i>'
+            + '</button>';
+        })()}
+
+        <!-- 드롭다운 패널 -->
+        <div id="myTasksCtPicker"
+          style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:999;
+                 background:#fff;border:1.5px solid #FDE8F3;border-radius:14px;
+                 box-shadow:0 8px 24px rgba(0,0,0,0.12);overflow:hidden">
+          <div style="padding:10px 14px 6px;border-bottom:1px solid #FDE8F3;background:#FFF5FA">
+            <span style="font-size:12px;font-weight:700;color:#D70072">공사종류 선택</span>
+          </div>
+          <div style="max-height:260px;overflow-y:auto;padding:6px 0">
+            ${CON_TYPE_DEF.map(function(d) {
+              var checked = _myTasksCtFilter.indexOf(d.label) !== -1;
+              return '<label style="display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;'
+                + (checked ? 'background:#FFF5FA' : '')
+                + '" onmouseover="this.style.background=\'#FDE8F3\'" onmouseout="this.style.background=\'' + (checked ? '#FFF5FA' : '#fff') + '\'">'
+                + '<input type="checkbox" id="myTasksCtCb_' + d.label + '"'
+                + ' onchange="_myTasksToggleCtFilter(\'' + d.label + '\')"'
+                + ' ' + (checked ? 'checked' : '')
+                + ' style="width:16px;height:16px;accent-color:#D70072;cursor:pointer;flex-shrink:0">'
+                + '<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#374151;font-weight:' + (checked ? '600' : '400') + '">'
+                + '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + d.color + ';flex-shrink:0"></span>'
+                + d.label + '</span>'
+                + '</label>';
+            }).join('')}
+          </div>
+          <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid #FDE8F3">
+            <button onclick="_myTasksApplyCtFilter()"
+              style="flex:1;padding:8px 0;border-radius:9px;border:none;background:#D70072;color:#fff;font-size:13px;font-weight:700;cursor:pointer">
+              <i class="fas fa-check mr-1"></i>적용
+            </button>
+            <button onclick="_myTasksCtReset();_myTasksApplyCtFilter()"
               style="flex:1;padding:8px 0;border-radius:9px;border:1.5px solid #E5E7EB;background:#fff;color:#6B7280;font-size:13px;font-weight:600;cursor:pointer">
               전체선택
             </button>

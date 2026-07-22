@@ -8962,9 +8962,9 @@ async function showTaskDetail(id, openTbmTab) {
         ${(isWorker && task.construction_id) ? `
         <div id="linked-photos-section-${task.id}" class="mt-4 p-3 rounded-xl" style="background:#F0FDF4;border:1px solid #BBF7D0">
           <div class="flex items-center gap-2 mb-2">
-            <i class="fas fa-images" style="color:#059669"></i>
-            <span class="text-sm font-bold" style="color:#065F46">같은 공사의 연계작업 사진</span>
-            <span class="text-xs text-gray-400">(읽기 전용 · 위험성평가 이후 단계)</span>
+            <i class="fas fa-camera" style="color:#059669"></i>
+            <span class="text-sm font-bold" style="color:#065F46">연계작업 사진</span>
+            <span class="text-xs text-gray-400">(읽기 전용 · 작업번호 클릭 시 사진 보기)</span>
           </div>
           <div id="linked-photos-content-${task.id}">
             <div class="text-xs text-gray-400 py-2"><i class="fas fa-spinner fa-spin mr-1"></i>불러오는 중...</div>
@@ -10352,13 +10352,10 @@ async function openAttachment(id, fileName, mimeType) {
 }
 
 // ─── [FEAT-112 v3] 연계 작업 사진 로드 (worker 전용) ────────────────────────
-// ─── 연계작업 사진 로드 (세션148~151) ────────────────────────────────────────
-// [BUG-FIX] GET /tasks?construction_id= → worker INNER JOIN 제약 우회
-// [BUG-FIX] 사진 클릭 시 showPhotoData/showVideoData → 삭제 버튼 노출 → 읽기전용 뷰어로 교체
-// [UX] 인라인 photo-grid 제거 → 버튼 클릭 시 전용 팝업 모달로 전환
-// [세션151 FIX] taskMap 저장: dataset → window.__linkedTaskMap_ 전역 변수로 교체 (신뢰성 향상)
-//              onclick: JSON.stringify(tid) → 숫자형 task_id 직접 사용
-//              _showLinkedPhotoModal: 사이드바 제거, 단순 스크롤 모달로 전면 재작성
+// ─── 연계작업 사진 로드 (세션148~152) ────────────────────────────────────────
+// [세션152 UX] 버튼 나열 → sub_task_number 기반 링크 목록으로 교체 (화면 복잡도 감소)
+//              섹션 타이틀: "같은 공사의 연계작업 사진" → "연계작업 사진"
+//              팝업: 680px 모달 → 전체화면(inset:0) 전환
 async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
   var container = document.getElementById('linked-photos-content-' + currentTaskId);
   if (!container) return;
@@ -10371,40 +10368,51 @@ async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
       return;
     }
 
-    // task_id 기준으로 그룹핑 (사진이 있는 작업만 자동 포함)
-    var taskMap = {};    // { taskId: { label, status, photos[] } }
-    var taskOrder = [];  // 순서 유지
+    // task_id 기준으로 그룹핑 (sub_task_number 우선 정렬)
+    var taskMap = {};   // { taskId: { subNum, label, status, photos[] } }
+    var taskOrder = []; // 순서 유지
     var STATUS_LABEL = { in_progress: '위험성평가', tbm_done: 'TBM완료', working: '작업중', work_completed: '작업완료', completed: '완료' };
     allPhotos.forEach(function(p) {
       var tid = String(p.task_id);
       if (!taskMap[tid]) {
-        var label = p.sub_task_number ? ('작업 #' + p.sub_task_number) : (p.task_title || ('작업 #' + p.task_id));
-        taskMap[tid] = { label: label, status: p.task_status || '', photos: [] };
+        var subNum = p.sub_task_number ? String(p.sub_task_number) : '';
+        var title = p.task_title || '';
+        taskMap[tid] = { subNum: subNum, title: title, status: p.task_status || '', photos: [] };
         taskOrder.push(tid);
       }
       taskMap[tid].photos.push(p);
     });
 
-    // [세션151 FIX] taskMap을 전역 변수에 저장 (dataset.taskMap 대신 → dataset 문자열 파싱 오류 방지)
+    // sub_task_number 숫자 오름차순 정렬 (없으면 맨 뒤)
+    taskOrder.sort(function(a, b) {
+      var na = taskMap[a].subNum ? Number(taskMap[a].subNum) : 99999;
+      var nb = taskMap[b].subNum ? Number(taskMap[b].subNum) : 99999;
+      return na - nb;
+    });
+
+    // 전역 변수에 저장 (팝업에서 재사용)
     window['__linkedTaskMap_' + currentTaskId] = taskMap;
     window['__linkedTaskOrder_' + currentTaskId] = taskOrder;
 
-    // 버튼 목록 (작업 선택) — 클릭 시 팝업 모달 오픈
-    // [세션151 FIX] onclick: JSON.stringify(tid) 제거 → p.task_id 숫자 직접 사용
-    var html = '<div class="flex flex-wrap gap-2">';
+    // [세션152 UX] 링크 목록 렌더링 — sub_task_number 기반, 1행씩 간결하게
+    var html = '<div style="display:flex;flex-direction:column;gap:4px">';
     taskOrder.forEach(function(tid) {
       var info = taskMap[tid];
       var cnt = info.photos.length;
-      var stLabel = STATUS_LABEL[info.status] || info.status || '';
-      var numericTid = Number(tid); // task_id는 숫자 → onclick 인수로 안전하게 전달
-      html += '<button onclick="_showLinkedPhotoModal(' + numericTid + ',' + currentTaskId + ')"'
-        + ' class="text-xs px-3 py-1.5 rounded-lg font-semibold border flex items-center gap-1"'
-        + ' style="background:#ffffff;color:#059669;border-color:#BBF7D0;transition:background 0.15s"'
-        + ' onmouseover="this.style.background=\'#F0FDF4\'" onmouseout="this.style.background=\'#ffffff\'">'
-        + '<i class="fas fa-images" style="font-size:11px"></i>'
-        + '<span>' + info.label + '</span>'
-        + (stLabel ? '<span style="color:#6B7280;font-weight:400;font-size:10px">[' + stLabel + ']</span>' : '')
-        + '<span style="color:#059669;font-weight:700">(' + cnt + ')</span></button>';
+      var stLabel = STATUS_LABEL[info.status] || '';
+      var numericTid = Number(tid);
+      // 표시 레이블: "#42 작업명" 또는 "#42" 형태
+      var dispLabel = info.subNum ? ('#' + info.subNum) : ('#' + tid);
+      var titleText = info.title ? info.title : '';
+      html += '<div onclick="_showLinkedPhotoModal(' + numericTid + ',' + currentTaskId + ')"'
+        + ' style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;background:#ffffff;border:1px solid #D1FAE5;transition:background 0.12s"'
+        + ' onmouseover="this.style.background=\'#ECFDF5\'" onmouseout="this.style.background=\'#ffffff\'">'
+        + '<span style="font-size:12px;font-weight:700;color:#059669;min-width:36px;flex-shrink:0">' + dispLabel + '</span>'
+        + (titleText ? '<span style="font-size:11px;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + titleText + '</span>' : '<span style="flex:1"></span>')
+        + (stLabel ? '<span style="font-size:10px;color:#9CA3AF;flex-shrink:0">[' + stLabel + ']</span>' : '')
+        + '<span style="font-size:11px;font-weight:700;color:#059669;flex-shrink:0">' + cnt + '장</span>'
+        + '<i class="fas fa-chevron-right" style="font-size:10px;color:#6EE7B7;flex-shrink:0"></i>'
+        + '</div>';
     });
     html += '</div>';
     container.innerHTML = html;
@@ -10414,10 +10422,10 @@ async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
   }
 }
 
-// ─── 연계 작업 사진 팝업 모달 (읽기 전용) — 세션151 전면 재작성 ───────────────
-// 변경: 사이드바 탭 제거 → 버튼 클릭 시 해당 작업 사진 전체를 단순 스크롤 모달로 표시
-// photo_type 컬러 배지 + 4열 그리드 + 캡션 오버레이 (두 번째 캡처 UI 기준)
-// taskMap: window.__linkedTaskMap_${currentTaskId} 전역 변수에서 읽음 (dataset 제거)
+// ─── 연계 작업 사진 팝업 모달 — 세션152: 전체화면 팝업 ───────────────────────
+// [세션152] max-width:680px → 전체화면(position:fixed;inset:0) 으로 변경
+// 헤더: sub_task_number + 작업명 + 사진수 표시
+// 바디: photo_type 컬러 배지 + 4열~5열 그리드 + 캡션 오버레이 (읽기 전용)
 function _showLinkedPhotoModal(linkedTaskId, currentTaskId) {
   // 전역 변수에서 taskMap 읽기
   var taskMap = window['__linkedTaskMap_' + currentTaskId] || {};
@@ -10427,7 +10435,7 @@ function _showLinkedPhotoModal(linkedTaskId, currentTaskId) {
     return;
   }
 
-  // 기존 같은 모달이 있으면 제거 후 재생성
+  // 기존 모달 제거 후 재생성
   var existingModal = document.getElementById('linked-photo-modal');
   if (existingModal) existingModal.remove();
 
@@ -10452,25 +10460,25 @@ function _showLinkedPhotoModal(linkedTaskId, currentTaskId) {
     return oa !== ob ? oa - ob : a.localeCompare(b);
   });
 
-  // 사진 그리드 HTML 생성
+  // 사진 그리드 HTML 생성 (photo_type 섹션별)
   var bodyHtml = '';
   if (totalCnt === 0) {
-    bodyHtml = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;color:#9CA3AF">'
-      + '<i class="fas fa-image" style="font-size:2rem;margin-bottom:8px;opacity:0.4"></i>'
+    bodyHtml = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:#9CA3AF">'
+      + '<i class="fas fa-image" style="font-size:2.5rem;margin-bottom:12px;opacity:0.3"></i>'
       + '<p style="font-size:14px">등록된 사진이 없습니다.</p></div>';
   } else {
     sortedTypes.forEach(function(type) {
       var list = typeGroups[type];
       var typeLabel = TYPE_LABEL[type] || type;
       var typeColor = TYPE_COLOR[type] || '#6B7280';
-      bodyHtml += '<div style="margin-bottom:20px">';
+      bodyHtml += '<div style="margin-bottom:24px">';
       // 섹션 헤더: 컬러 배지 + 장수
-      bodyHtml += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
-        + '<span style="background:' + typeColor + ';color:white;font-size:11px;font-weight:700;padding:2px 10px;border-radius:12px">' + typeLabel + '</span>'
-        + '<span style="color:#9CA3AF;font-size:11px">(' + list.length + '장)</span>'
+      bodyHtml += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #F3F4F6">'
+        + '<span style="background:' + typeColor + ';color:white;font-size:11px;font-weight:700;padding:3px 12px;border-radius:12px">' + typeLabel + '</span>'
+        + '<span style="color:#9CA3AF;font-size:12px">' + list.length + '장</span>'
         + '</div>';
-      // 4열 그리드
-      bodyHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">';
+      // 그리드: 4열 기본 (모바일 2열)
+      bodyHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
       list.forEach(function(p) {
         var rawCap = p.caption || p.file_name || '';
         var escapedCap = rawCap.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
@@ -10499,39 +10507,37 @@ function _showLinkedPhotoModal(linkedTaskId, currentTaskId) {
   }
 
   var stLabel = STATUS_LABEL[info.status] || '';
+  // 헤더 타이틀: "연계작업 #42 — 작업명" 또는 "연계작업 #42"
+  var headerTitle = info.subNum ? ('연계작업(#' + info.subNum + ')') : ('연계작업');
+  var headerSub = info.title || '';
 
-  // 모달 생성 — position:fixed로 직접 지정 (modal-overlay CSS 클래스 의존 제거)
+  // 모달 생성 — 전체화면(inset:0), padding 없음
   var modal = document.createElement('div');
   modal.id = 'linked-photo-modal';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9500;background:#fff;display:flex;flex-direction:column;overflow:hidden';
 
   modal.innerHTML = ''
-    + '<div style="background:white;border-radius:16px;max-width:680px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 25px 50px rgba(0,0,0,0.35)">'
-    // 헤더
-    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(135deg,#059669,#10B981);flex-shrink:0">'
-    + '<div>'
-    + '<div style="font-weight:700;color:white;font-size:15px">'
-    + '<i class="fas fa-images" style="margin-right:8px"></i>'
-    + info.label
-    + (stLabel ? '<span style="font-size:11px;font-weight:400;margin-left:8px;opacity:0.85">[' + stLabel + ']</span>' : '')
+    // ── 헤더 (상단 고정)
+    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(135deg,#059669,#10B981);flex-shrink:0">'
+    + '<div style="min-width:0;flex:1">'
+    + '<div style="font-weight:700;color:white;font-size:16px;display:flex;align-items:center;gap:8px">'
+    + '<i class="fas fa-camera" style="opacity:0.9"></i>'
+    + '<span>' + headerTitle + '</span>'
+    + (stLabel ? '<span style="font-size:11px;font-weight:400;opacity:0.8;padding:1px 8px;border-radius:8px;background:rgba(255,255,255,0.2)">' + stLabel + '</span>' : '')
     + '</div>'
-    + '<div style="color:rgba(255,255,255,0.82);font-size:11px;margin-top:3px">'
-    + '총 ' + totalCnt + '장 &nbsp;·&nbsp; <i class="fas fa-lock" style="font-size:9px;margin-right:3px"></i>읽기 전용</div>'
+    + (headerSub ? '<div style="color:rgba(255,255,255,0.82);font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + headerSub + '</div>' : '')
+    + '<div style="color:rgba(255,255,255,0.7);font-size:11px;margin-top:2px">'
+    + '총 ' + totalCnt + '장 &nbsp;·&nbsp; <i class="fas fa-lock" style="font-size:9px;margin-right:2px"></i>읽기 전용</div>'
     + '</div>'
     + '<button onclick="document.getElementById(\'linked-photo-modal\').remove()"'
-    + ' style="background:rgba(255,255,255,0.2);border:none;color:white;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+    + ' style="background:rgba(255,255,255,0.2);border:none;color:white;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:12px">'
     + '<i class="fas fa-times"></i></button>'
     + '</div>'
-    // 스크롤 바디 (사이드바 없음 — 단순 스크롤)
-    + '<div style="flex:1;overflow-y:auto;padding:16px">'
+    // ── 스크롤 바디
+    + '<div style="flex:1;overflow-y:auto;padding:16px 16px 24px">'
     + bodyHtml
-    + '</div>'
     + '</div>';
 
-  // 배경 클릭 시 닫기
-  modal.addEventListener('click', function(e) {
-    if (e.target === modal) modal.remove();
-  });
   document.body.appendChild(modal);
 }
 

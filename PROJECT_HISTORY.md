@@ -1,8 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (FEAT-157 — feat: 근로자 내 작업목록 상단 안전점수 배너 추가)
-> **GitHub 최신: `7f68473`** — feat: [FEAT-157] 근로자 내 작업목록 상단 안전점수 배너 추가
-> **이전 커밋: `555426a`** — docs: [NAS-MULTI] 다중 NAS 설치 가이드 업데이트
+> 최종 업데이트: 2026-07-22 (FEAT-158 — feat: my-stats 안전 순위 카드 추가)
+> **GitHub 최신: `2605aa4`** — feat: [FEAT-158] my-stats 안전 순위 카드 추가 — 이번 달 기준 본인 순위 표시
+> **이전 커밋: `ffe68d0`** — docs: [FEAT-157] PROJECT_HISTORY.md 안전점수 배너 기록 추가
+> **이전 커밋: `7f68473`** — feat: [FEAT-157] 근로자 내 작업목록 상단 안전점수 배너 추가
 > **이전 커밋: `bca951c`** — docs: [KST-001] PROJECT_HISTORY 필수 코딩 규칙 섹션 신설 + BUG-156 기록
 > **이전 커밋: `7587688`** — fix: [BUG-156] 작업중지현황 stopped_at UTC→KST 변환 누락 수정
 > **이전 커밋: `00ff80e`** — fix: [FEAT-155m] 검증 팝업 확인 버튼 SyntaxError 수정
@@ -162,6 +163,7 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-158 | 157 | 2026-07-22 | ✅ 적용 | **my-stats 상세화면에 본인 안전 순위 카드 추가** — 근로자 `my-stats` 페이지의 ①안전점수 메인 카드 아래, ②요약 카드 3개 위에 "이번 달 나의 순위" 카드 삽입. 기존 `/inspections/stats/worker-safety?period_type=monthly` API 재사용(백엔드 변경 없음). `workers[]` 배열에서 `Number(currentUser.id)`로 본인 찾기 → 배열 인덱스+1 = 순위. 구성: 순위(N위/공동 N위), 전체 인원, 상위 %, 프로그레스 바(높을수록 채움), 격려 멘트 5단계. 순위 구간별 색상: 1위=금(`#B45309`), 상위25%=보라(`#685182`), 상위50%=파랑(`#2563EB`), 하위=회색(`#6B7280`). 검증: ①변수명 충돌 없음(`_rk` 접두사 기존 코드베이스 전체 미사용 확인) ②RULE-001 준수(`var` 전용, HTML 문자열 연결 방식) ③KST-002 준수(`getKSTYear()`/`getKSTMonth()` 사용) ④`worker_id` 타입 불일치 방지 — `Number()` 강제 변환 양쪽 적용 ⑤기록 없거나(`!hasRecord`) API 실패 시 카드 미표시 — 기존 화면 완전 무영향 ⑥`currentUser` null guard 적용 | `2605aa4` |
 | FEAT-157 | 156 | 2026-07-22 | ✅ 적용 | **근로자 접속화면(내 작업목록) 상단 안전점수 배너 추가** — 근로자(`role=worker`) 로그인 시 `my-tasks` 페이지 최상단에 안전점수 컴팩트 배너 자동 표시. 기존 `/inspections/stats/my-safety` API 재사용(백엔드 변경 없음). 구성: 보라→핑크 그라데이션 배너, 점수+등급(S/A/B/C/D), 우수/불량 건수, 진행바(0~100%). 클릭 시 `my-stats` 페이지 이동. 검증: ①변수명 충돌 없음(`_sbRes/_sbData/_sbScore` 등 신규 접두사 `_sb` 사용) ②RULE-001 준수(var 전용, 백틱 중첩 없음 — HTML을 문자열 연결로 구성) ③RULE-003 준수(`onclick="navigateTo('my-stats')"` 패턴 — 기존 코드 동일 패턴 확인) ④KST-001 해당 없음(DB datetime 직접 표시 없음) ⑤API 실패 시 배너 미표시 — 작업목록 로드에 영향 없음(완전 격리) ⑥비근로자(관리자/감독자) 화면에는 표시 안 됨(`currentUser.role==='worker'` 조건) | `7f68473` |
 | BUG-156 | 155n+ | 2026-07-22 | ✅ 수정 | **작업중지현황 stopped_at UTC 그대로 표시** — `stopped_at`이 DB에 UTC(`CURRENT_TIMESTAMP`)로 저장되는데, `renderWorkStopsPage`(카드 `stoppedAt` 변수)·작업상세 stops 이력(`line 8963`) 두 곳에서 `.replace('T',' ').substring(0,16)` 으로 UTC 그대로 자름 → 9시간 빠르게 표시(예: KST 14:49 → 05:49). **해결**: 두 곳 모두 `_toKSTDateTime(s.stopped_at)` 로 교체. **영구 규칙 KST-001 확립**: DB datetime 컬럼 표시 시 반드시 `_toKSTDateTime()` 사용 (PROJECT_HISTORY 필수 코딩 규칙 섹션 등재) | `7587688` |
 | FEAT-155n | 155n | 2026-07-22 | ✅ 적용 | **전체 시간 표현 KST(UTC+9) 일괄 통일** — app.js: ①getKSTYear()/getKSTMonth()/_kstDateOf() 헬퍼 3개 신규 추가. ②new Date().getFullYear() → getKSTYear() (28곳), getMonth()+1 → getKSTMonth() (10곳). ③renderDashboard/renderStatsPage×2/showCompletedModal/showInspListModal/renderWorkerSafetyStats 6개 함수 const now→var now=getKSTNow() 교체. ④renderFieldReportPage 주간계산/공사통계 주간 초기값 KST 교체. ⑤Date계산 후 .toISOString().slice(0,10) → _kstDateOf() 전면 교체(공사비보고서/공사통계/근로자통계). UTC 잔여: 0곳. node-server.ts: ①kstDateStr()/kstNowStr() 헬퍼 2개 신규 추가. ②fmtDateStr fallback/TBM dateStr/백업stamp → kstDateStr(). ③work_completed_at kstNowStr(). ④이번주 월요일 UTC→KST 보정. ⑤scheduleDailyBackup setHours(2)→setUTCHours(17) [UTC17=KST02]. ⑥공사통계 연도 fallback KST 기준 | `d0ca2c3` |

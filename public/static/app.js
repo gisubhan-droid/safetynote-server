@@ -16171,10 +16171,10 @@ async function showCreateInspectionModal(presetTaskId) {
         <div class="flex gap-2 flex-wrap" id="insResultBtns">
           ${['불량','적정','양호','우수'].map((v,i) => {
             const colors = ['red','yellow','blue','green'];
-            return \`<button type="button" onclick="selectInsResult('\${v}')"
-              id="insResult_\${v}"
-              class="px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all border-gray-200 text-gray-500 hover:border-\${colors[i]}-400"
-              data-result="\${v}">\${v}</button>\`;
+            return '<button type="button" onclick="selectInsResult(\'' + v + '\')"' +
+              ' id="insResult_' + v + '"' +
+              ' class="px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all border-gray-200 text-gray-500 hover:border-' + colors[i] + '-400"' +
+              ' data-result="' + v + '">' + v + '</button>';
           }).join('')}
         </div>
         <input type="hidden" id="insResult" value="">

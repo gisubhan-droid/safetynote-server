@@ -16573,12 +16573,279 @@ async function showInspectionDetail(id) {
           <button onclick="deleteInspection(${ins.id})" class="btn btn-danger">
             <i class="fas fa-trash"></i> 삭제
           </button>` : ''}
+        <button onclick="_printInspectionReport(${ins.id})" class="btn" style="background:#1E3A5F;color:white;border:none">
+          <i class="fas fa-print"></i> 출력
+        </button>
         <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">닫기</button>
       </div>
     </div>`;
     document.body.appendChild(modal);
   } catch(e) { toast('로드 실패', 'error'); }
 }
+
+// ─── 안전점검일지 + 사진대장 출력 (세션154) ─────────────────────────────────
+// 점검항목 목록 (안전점검일지 출력용 — 산업안전보건기준에 관한 규칙 기준)
+var _INS_CHECKLIST = [
+  { group: '부적합 작업발판 사용', items: [
+    { text: '일자형 사다리 작업발판 사용여부', basis: '제68조(이동식비계)' },
+    { text: '이동식 A형사다리 <안전작업지침> 준수여부', basis: '고용노동부 이동식사다리 안전작업지침' },
+  ]},
+  { group: '보호구 미 지급/미 착용', items: [
+    { text: '안전모 착용 및 턱끈 결속여부(경량안전모는 미착용 간주)', basis: '제32조(보호구 지급등)' },
+    { text: '안전화 착용여부(등산화는 미착용 간주)', basis: '제32조(보호구 지급등)' },
+  ]},
+  { group: '버켓차량 불안전', items: [
+    { text: '출입금지 표지 설치여부 *공사안전표지판 및 라바콘', basis: '제20조(출입의 금지 등)' },
+    { text: '버켓차량 안전검사 합격여부 및 합격증 표시 *합격증 표시 - 차량외부 부착', basis: '제36조(사용의 제한)' },
+    { text: '버켓차량 작업계획서 작성 및 보유여부', basis: '제38조(작업계획서의 작성 등)' },
+    { text: '안전대 착용 *버켓차량 탑승시 필수 착용 안전대 고리체결 *몸이 버켓(탑승기) 외부로 이탈하는 경우', basis: '제32조(보호구 지급등), 제42조(추락의 방지)' },
+    { text: '아우트리거 펼침상태 및 미끄럼방지조치 설치여부 *전후좌우 4개의 아우트리거 설치, 경사로시 고임목 설치', basis: '제186조(고소작업대 설치등의 조치)' },
+    { text: '기타 안전수칙 준수여부 *수평센서 등 안전장치 기능해제 금지, 버켓 올린상태로 이동 금지 등', basis: '제93조(방호장치의 해제 금지), 제186조(고소작업대 설치등의 조치)' },
+  ]},
+  { group: '밀폐공간 법규 위반', items: [
+    { text: '감시인 배치여부 *원장 작업자 외 1인 별도 배치 필요', basis: '제623조(감시인의 배치 등)' },
+    { text: '출입금지 표지 설치여부 *밀폐공간출입금지표판 및 라바콘', basis: '제622조(출입의 금지)' },
+    { text: '맨홀작업 전 산소/유해가스 측정여부 *O2 18~23.5%, CO2 1.5%미만, CO 30ppm미만, H2S 10ppm미만, 가연성가스 10%미만', basis: '제619조의2(산소 및 유해가스 농도의 측정)' },
+    { text: '맨홀작업 전 환기 실시여부 ①맨홀내부 미진입 자연환기 ②맨홀내부 진입시 환기팬+자바라를 통한 강제환기', basis: '제620조(환기 등)' },
+  ]},
+  { group: '고소작업 불안전(승주작업)', items: [
+    { text: '안전모 착용 및 턱끈 결속여부', basis: '제32조(보호구 지급등)' },
+    { text: '주상 안전대 착용 및 결속여부 *당사는 1개걸이/U자걸이 겸용 안전대지급, 공사업체는 동일 안전대 또는 주상안전대 착용해야함', basis: '제42조(추락의 방지)' },
+  ]},
+  { group: '기타', items: [
+    { text: '충전전로 인근 작업시 활선접근경보기 착용 및 활선충전부 접근한계거리 준수여부 *특고압-90cm / 고압-60cm / 저압-30cm', basis: '제321조(충전전로에서의 전기작업)' },
+    { text: '화기작업 시 안전수칙 준수 여부 *개인보호구 착용, 소화기 비치, 가연물 이동, 불티비산시 방지포 설치', basis: '제32조(보호구 지급등), 제241조(통풍 등이 충분하지 않은 장소에서의 용접 등)' },
+    { text: '시저형 작업대 사용 시 안전수칙 준수 여부 *탑승기 안전난간, 안전고리 안전난간에 체결, 적재하중 준수 등 메모 참조', basis: '제20조(출입의 금지 등), 제186조(고소작업대 설치등의 조치)' },
+    { text: '옥상 추락단부 1m이내 작업시 안전대 착용 및 안전고리 체결 *1m이내 - 중계기 등 위치기준 / 난간없는 옥상 안전대 착용, 고리체결 필수', basis: '제32조(보호구 지급등), 제42조(추락의 방지)' },
+  ]},
+];
+
+// ── HTML 이스케이프 헬퍼 (전역 — makeHeaderTable 보다 먼저 정의) ──
+function _escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── 사진 셀 생성 (for 루프 밖 독립 함수) ──
+function _makePhotoCell(photo, idx, escFn) {
+  var captionDefault = photo ? (photo.caption || ('점검사진 #' + (idx + 1))) : '';
+  var imgHtml = photo
+    ? '<img src="/api/inspections/photo/' + photo.id + '/img" alt="' + escFn(captionDefault) + '" style="max-height:155mm;width:auto;display:block;margin:0 auto">'
+    : '<div style="height:155mm;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:10pt">사진 없음</div>';
+  return imgHtml;
+}
+
+// ── 캡션 생성 (for 루프 밖 독립 함수) ──
+function _makePhotoCaption(photo, idx, escFn) {
+  if (!photo) return '&nbsp;';
+  return escFn(photo.caption || ('점검사진 #' + (idx + 1)));
+}
+
+async function _printInspectionReport(insId) {
+  try {
+    var token = localStorage.getItem('token');
+    var res = await fetch('/api/inspections/' + insId, {
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+    });
+    if (!res.ok) throw new Error('점검 데이터 로드 실패');
+    var ins = await res.json();
+
+    // ── 기본 정보 준비 ──
+    var INS_TYPE_LBL = { routine: '정기점검', special: '합동점검', safety: '수시점검', joint: '합동점검', frequent: '수시점검' };
+    var insType = INS_TYPE_LBL[ins.inspection_type] || ins.inspection_type || '';
+    // 협력업체명: contractor_name(tasks 조인) 또는 con_manager_name
+    var companyName = ins.contractor_name || ins.con_manager_name || '';
+    // 작업번호: work_number + sub_task_number 조합
+    var workNum = ins.work_number
+      ? (ins.sub_task_number ? ins.work_number + '-' + ins.sub_task_number : ins.work_number)
+      : (ins.task_number || '');
+    // 점검 일자
+    var insDate = (ins.inspection_date_only || (ins.inspection_date || '').substring(0, 10) || '').replace(/-/g, '.') || '';
+    // 점검 주소
+    var insAddr = ins.task_confirmed_address || ins.location || '';
+    // 구분: 공사종류 & 작업종류
+    var WC_MAP = { cable_install: '광케이블 시설', cable_splice: '광케이블 접속', equipment_other: '장비 시설및 기타', conduit: '관로시설' };
+    var conType = ins.construction_type || '';
+    var workClass = WC_MAP[ins.work_class] || ins.work_class || '';
+    var guBun = [conType, workClass].filter(Boolean).join(' & ');
+    // 현장책임자: supervisor_name (공사담당자)
+    var siteManager = ins.supervisor_name || ins.con_manager_name || '';
+    // 작업자 목록
+    var workers = Array.isArray(ins.workers) ? ins.workers : [];
+    var workerStr = workers.map(function(w) { return w.worker_name; }).join(', ') || '';
+    // 점검자
+    var inspectorName = ins.inspector_name || '';
+
+    // ── _esc: 이 async 함수 내 로컬 별칭 (전역 _escHtml 참조) ──
+    var _esc = _escHtml;
+
+    // ── CSS (공통) ──
+    var CSS_COMMON = '<style>' +
+      '*{box-sizing:border-box;margin:0;padding:0}' +
+      'body{font-family:"맑은 고딕","Malgun Gothic",sans-serif;font-size:9pt;color:#000;background:#fff}' +
+      '.page{width:210mm;min-height:297mm;padding:10mm 10mm 10mm 10mm;page-break-after:always}' +
+      'table{width:100%;border-collapse:collapse}' +
+      'td,th{border:1px solid #555;padding:2px 4px;font-size:8pt;vertical-align:middle}' +
+      '.title-row td{background:#d9d9d9;font-weight:bold;font-size:10pt;text-align:center;padding:6px}' +
+      '.section-hdr td{background:#d9d9d9;font-weight:bold;text-align:center;font-size:8.5pt;padding:3px}' +
+      '.check-col{width:28px;text-align:center}' +
+      '.basis-col{width:220px;font-size:7pt}' +
+      '.item-col{font-size:7.5pt}' +
+      '.ncr-col{width:60px;text-align:center;font-size:7pt}' +
+      '.lbl{background:#e8e8e8;font-weight:bold;text-align:center;width:60px;font-size:8pt}' +
+      '.val{font-size:8pt}' +
+      '.photo-cell{text-align:center;vertical-align:middle;padding:4px}' +
+      '.photo-cell img{max-width:100%;max-height:155mm;object-fit:contain;display:block;margin:0 auto}' +
+      '.caption-cell{font-size:7pt;text-align:center;padding:2px 4px;background:#f5f5f5;height:28px;vertical-align:top}' +
+      '.sida-lbl{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;font-weight:bold;font-size:9pt;background:#e8e8e8;padding:4px 2px;width:20px}' +
+      '.add-note{font-size:7pt;vertical-align:top;height:40px;padding:4px}' +
+      '.btn-print-bar{position:fixed;top:0;left:0;width:100%;background:#1E3A5F;color:#fff;padding:8px 16px;display:flex;gap:12px;align-items:center;z-index:9999}' +
+      '.btn-p{padding:6px 18px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-size:13px}' +
+      '@media print{.btn-print-bar{display:none!important}.page{margin:0;padding:8mm 8mm 8mm 8mm}}' +
+      '</style>';
+
+    // ── 헤더 정보 테이블 (이미지 양식 일치: 4행 4열, rowspan 없음) ──
+    // 이미지 구조:
+    //  1행: 협력업체명 | (값) | 점검일자    | (값)
+    //  2행: 작업번호   | (값) | 점검자      | (값)
+    //  3행: 점검주소   | (값) | 현장책임자  | (값)
+    //  4행: 구분       | (값) | 작업자      | (값)
+    function makeHeaderTable() {
+      return '<table style="margin-bottom:6px">' +
+        '<tr>' +
+          '<td class="lbl" style="width:60px">협력업체명</td>' +
+          '<td class="val" style="width:180px">' + _esc(companyName) + '</td>' +
+          '<td class="lbl" style="width:60px">점&nbsp;검&nbsp;일자</td>' +
+          '<td class="val">' + _esc(insDate) + '</td>' +
+        '</tr>' +
+        '<tr>' +
+          '<td class="lbl">작&nbsp;업&nbsp;번호</td>' +
+          '<td class="val">' + _esc(workNum) + '</td>' +
+          '<td class="lbl">점&nbsp;&nbsp;&nbsp;검&nbsp;&nbsp;&nbsp;자</td>' +
+          '<td class="val">' + _esc(inspectorName) + '</td>' +
+        '</tr>' +
+        '<tr>' +
+          '<td class="lbl">점&nbsp;검&nbsp;주소</td>' +
+          '<td class="val">' + _esc(insAddr) + '</td>' +
+          '<td class="lbl">현장책임자</td>' +
+          '<td class="val">' + _esc(siteManager) + '</td>' +
+        '</tr>' +
+        '<tr>' +
+          '<td class="lbl">구&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;분</td>' +
+          '<td class="val">' + _esc(guBun) + '</td>' +
+          '<td class="lbl">작&nbsp;&nbsp;&nbsp;업&nbsp;&nbsp;&nbsp;자</td>' +
+          '<td class="val">' + _esc(workerStr) + '</td>' +
+        '</tr>' +
+      '</table>';
+    }
+
+    // ── 1페이지: 안전점검일지 ──
+    var checklistRows = '';
+    _INS_CHECKLIST.forEach(function(sec) {
+      checklistRows += '<tr class="section-hdr"><td colspan="6">' + _esc(sec.group) + '</td></tr>';
+      sec.items.forEach(function(item) {
+        checklistRows +=
+          '<tr>' +
+            '<td class="item-col">' + _esc(item.text) + '</td>' +
+            '<td class="basis-col">' + _esc(item.basis) + '</td>' +
+            '<td class="check-col"></td>' +
+            '<td class="check-col"></td>' +
+            '<td class="check-col"></td>' +
+            '<td class="ncr-col">NCR 발행대상</td>' +
+          '</tr>';
+      });
+    });
+
+    var page1 = '<div class="page">' +
+      '<table style="margin-bottom:6px">' +
+        '<tr class="title-row"><td colspan="4">안전점검일지(' + _esc(insType) + ')</td></tr>' +
+      '</table>' +
+      makeHeaderTable() +
+      '<table>' +
+        '<tr style="background:#d9d9d9;font-weight:bold;font-size:8pt">' +
+          '<th class="item-col">점검항목</th>' +
+          '<th class="basis-col">시행근거<br><span style="font-size:7pt;font-weight:normal">&lt;산업안전보건기준에 관한 규칙&gt;</span></th>' +
+          '<th class="check-col">양호</th>' +
+          '<th class="check-col">불량</th>' +
+          '<th class="check-col">해당<br>없음</th>' +
+          '<th class="ncr-col">비고</th>' +
+        '</tr>' +
+        checklistRows +
+        '<tr>' +
+          '<td class="lbl" style="white-space:nowrap;font-size:8pt">추가기록</td>' +
+          '<td colspan="5" class="add-note">' + _esc(ins.findings || '') + '</td>' +
+        '</tr>' +
+      '</table>' +
+    '</div>';
+
+    // ── 2페이지~: 안전점검 사진대장 ──
+    // 동영상 제외, 이미지만 사용
+    var photos = Array.isArray(ins.photos) ? ins.photos.filter(function(p) {
+      var fn = (p.file_name || '').toLowerCase();
+      return !fn.match(/\.(mp4|mov|avi|webm|mkv)$/) && !(p.mime_type || '').startsWith('video/');
+    }) : [];
+
+    // 페이지당 4장(2x2), 최소 1페이지 보장
+    var photoPages = '';
+    var pageCount = Math.max(1, Math.ceil(photos.length / 4));
+
+    for (var pg = 0; pg < pageCount; pg++) {
+      var batch = photos.slice(pg * 4, pg * 4 + 4);
+      // 4장 미만이면 빈 슬롯으로 채우기
+      while (batch.length < 4) { batch.push(null); }
+
+      var slideLabel = (pg === 0) ? '사\n진\n대\n지\n(1)' : '사\n진\n대\n지\n(' + (pg + 1) + ')';
+      var pairTop = [batch[0], batch[1]];
+      var pairBot = [batch[2], batch[3]];
+
+      photoPages += '<div class="page">' +
+        '<table style="margin-bottom:6px"><tr class="title-row"><td colspan="4">안전점검 사진 대장</td></tr></table>' +
+        makeHeaderTable() +
+        '<table style="height:240mm">' +
+          '<tr>' +
+            '<td class="sida-lbl" rowspan="4" style="white-space:pre-line">' + slideLabel + '</td>' +
+            '<td class="photo-cell" style="width:48%">' + _makePhotoCell(pairTop[0], pg*4+0, _esc) + '</td>' +
+            '<td class="photo-cell" style="width:48%">' + _makePhotoCell(pairTop[1], pg*4+1, _esc) + '</td>' +
+          '</tr>' +
+          '<tr>' +
+            '<td class="caption-cell">점검사항<br>' + _makePhotoCaption(pairTop[0], pg*4+0, _esc) + '</td>' +
+            '<td class="caption-cell">점검사항<br>' + _makePhotoCaption(pairTop[1], pg*4+1, _esc) + '</td>' +
+          '</tr>' +
+          '<tr style="border-top:2px solid #888">' +
+            '<td class="photo-cell">' + _makePhotoCell(pairBot[0], pg*4+2, _esc) + '</td>' +
+            '<td class="photo-cell">' + _makePhotoCell(pairBot[1], pg*4+3, _esc) + '</td>' +
+          '</tr>' +
+          '<tr>' +
+            '<td class="caption-cell">점검사항<br>' + _makePhotoCaption(pairBot[0], pg*4+2, _esc) + '</td>' +
+            '<td class="caption-cell">점검사항<br>' + _makePhotoCaption(pairBot[1], pg*4+3, _esc) + '</td>' +
+          '</tr>' +
+        '</table>' +
+      '</div>';
+    }
+
+    // ── 전체 HTML 조립 ──
+    var fullHtml = '<!DOCTYPE html><html lang="ko"><head>' +
+      '<meta charset="UTF-8">' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>안전점검일지 #' + insId + '</title>' +
+      CSS_COMMON +
+      '</head><body>' +
+      '<div class="btn-print-bar">' +
+        '<span style="font-size:14px;font-weight:700">안전점검일지 — ' + _esc(inspectorName) + ' (' + _esc(insDate) + ')</span>' +
+        '<button class="btn-p" style="background:#D70072" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>' +
+        '<button class="btn-p" style="background:#374151" onclick="window.parent.postMessage(\'closePrintOverlay\',\'*\')">✕ 닫기</button>' +
+      '</div>' +
+      '<div style="height:42px"></div>' +
+      page1 +
+      photoPages +
+      '</body></html>';
+
+    _openPrintOverlay(fullHtml);
+  } catch(e) {
+    toast('출력 준비 실패: ' + (e.message || e), 'error');
+  }
+}
+
 
 function showInsPhotoData(photoId, caption) {
   const modal = document.createElement('div');

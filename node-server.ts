@@ -4095,6 +4095,67 @@ app.route('/api/tbm', tbmExtraRoutes)
 app.route('/api/tbm', tbmRoutes)
 app.route('/api/stats', statsRoutes)
 
+// ─── [RULE-002] NAS 전용: GET /api/inspections/:id — 추가 필드 포함 ──────────────
+// inspections.ts GET /:id 는 tasks JOIN에서 sub_task_number, construction_type, work_class,
+// contractor_name, supervisor_name, con_request_no, con_title 등을 포함하지 않음
+// → NAS rawDb로 직접 조회하여 안전점검일지 출력에 필요한 필드 모두 반환
+app.get('/api/inspections/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  if (!id) return c.json({ error: '잘못된 ID' }, 400)
+  try {
+    const ins: any = rawDb.prepare(`
+      SELECT si.*,
+             u.name  AS inspector_name,
+             t.title AS task_title,
+             t.task_number,
+             t.sub_task_number,
+             t.work_number,
+             t.construction_type,
+             t.work_class,
+             t.contractor_name,
+             t.location   AS task_location,
+             t.confirmed_address                AS task_confirmed_address,
+             t.confirmed_address_source         AS task_confirmed_address_source,
+             t.confirmed_address_at             AS task_confirmed_address_at,
+             t.work_order_address               AS task_work_order_address,
+             sv.name AS supervisor_name,
+             c.request_no  AS con_request_no,
+             c.title       AS con_title,
+             c.manager_name AS con_manager_name
+      FROM site_inspections si
+      LEFT JOIN users u    ON u.id  = si.inspector_id
+      LEFT JOIN tasks t    ON t.id  = si.task_id
+      LEFT JOIN users sv   ON sv.id = t.supervisor_id
+      LEFT JOIN constructions c ON c.id = t.construction_id
+      WHERE si.id = ?
+    `).get(id) as any
+    if (!ins) return c.json({ error: '점검 없음' }, 404)
+
+    // 사진 목록
+    ins.photos = (rawDb.prepare(
+      'SELECT * FROM inspection_photos WHERE inspection_id = ? ORDER BY id ASC'
+    ).all(id) as any[])
+
+    // 연결된 작업자 목록
+    try {
+      ins.workers = (rawDb.prepare(`
+        SELECT iw.worker_id, iw.result_type, u.name AS worker_name, u.position
+        FROM inspection_workers iw
+        JOIN users u ON u.id = iw.worker_id
+        WHERE iw.inspection_id = ?
+      `).all(id) as any[])
+    } catch (_) {
+      ins.workers = []
+    }
+    return c.json(ins)
+  } catch (e: any) {
+    console.error('[GET /api/inspections/:id NAS] 오류:', e.message)
+    return c.json({ error: '점검 조회 실패' }, 500)
+  }
+})
+
 // 점검 사진/동영상 서빙 - inspectionRoutes보다 먼저 등록해야 인증 없이 <img> 서빙 가능
 app.get('/api/inspections/photo/:id/img', async (c) => {
   const photo: any = await DB.prepare(

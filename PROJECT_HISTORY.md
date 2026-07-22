@@ -8002,3 +8002,72 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 ### 빌드/배포 상태
 - `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 2.02s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `0b8360e`)
+
+---
+
+## 세션154 — 현장점검 출력 기능 추가
+
+### 작업 일시
+2026-07-22
+
+### 요청 사항
+현장점검 상세 모달에 출력 버튼 추가 — 안전점검일지(1페이지) + 안전점검 사진대장(2페이지~) 형태로 출력, 이미지 캡처 양식과 동일한 레이아웃, 사진 최소 4장(4장 이상 시 동일 형태 페이지 자동 추가)
+
+### 변경 내용
+
+#### `node-server.ts` [NAS 오버라이드 추가]
+- **[RULE-002] GET /api/inspections/:id NAS 오버라이드** 신규 추가 (line ~4098)
+  - 기존 `src/routes/inspections.ts` GET /:id 는 `sub_task_number`, `work_number`, `construction_type`, `work_class`, `contractor_name`, `supervisor_name`, `con_request_no` 등 출력 필요 필드 미포함
+  - `tasks` + `users(sv)` + `constructions` 3-way JOIN으로 안전점검일지 출력에 필요한 모든 필드 반환
+  - `inspection_photos`, `inspection_workers` 포함
+  - `/api/inspections/photo/:id/img` 보다 앞에 등록 (RULE-002 우선순위 준수)
+
+#### `public/static/app.js` [출력 기능 추가]
+
+**1. showInspectionDetail 모달 footer 출력 버튼 추가**
+- 닫기 버튼 앞에 `<button onclick="_printInspectionReport(${ins.id})">` 삽입
+- 스타일: `background:#1E3A5F;color:white` (SafetyNOTE 브랜드 색상)
+
+**2. `_INS_CHECKLIST` 데이터 배열 (전역)**
+- 6개 섹션, 22개 항목 (산업안전보건기준에 관한 규칙 기준)
+  - 부적합 작업발판 사용 (2항목)
+  - 보호구 미 지급/미 착용 (2항목)
+  - 버켓차량 불안전 (6항목)
+  - 밀폐공간 법규 위반 (4항목)
+  - 고소작업 불안전(승주작업) (2항목)
+  - 기타 (4항목) — 충전전로, 화기작업, 시저형작업대, 옥상추락단부
+
+**3. 전역 헬퍼 함수 3개 (for 루프 클로저 안전 설계)**
+- `_escHtml(s)` — HTML 이스케이프 (전역, makeHeaderTable 보다 먼저 정의)
+- `_makePhotoCell(photo, idx, escFn)` — 사진 셀 생성 (for 루프 밖 독립 정의)
+- `_makePhotoCaption(photo, idx, escFn)` — 캡션 생성 (for 루프 밖 독립 정의)
+
+**4. `_printInspectionReport(insId)` async 함수**
+- `/api/inspections/:id` (NAS 오버라이드) 호출로 모든 필드 확보
+- **헤더 테이블**: 이미지 양식 4행 4열 (rowspan 없음) 구조 일치
+  - 1행: 협력업체명 | 점검일자
+  - 2행: 작업번호 | 점검자
+  - 3행: 점검주소 | 현장책임자
+  - 4행: 구분 | 작업자
+- **1페이지**: 안전점검일지 (체크리스트 22항목 + 추가기록)
+- **2페이지~**: 안전점검 사진대장 (페이지당 4장 2x2, 동영상 제외, 빈 슬롯 자동 채움)
+- `_openPrintOverlay(fullHtml)` 기존 헬퍼 재사용 (Blob URL + iframe 방식)
+- `@media print { .btn-print-bar { display:none } }` 인쇄 바 숨김 포함
+
+### 2차 재검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| JS 파싱 검사 (`new Function`) | ✅ OK |
+| optional chaining `?.` 없음 | ✅ 0건 |
+| TypeScript 타입 어노테이션 없음 | ✅ 0건 |
+| `const`/`let` 없음 (var 전용) | ✅ 0건 |
+| 화살표함수 없음 | ✅ 0건 |
+| 헤더 rowspan=2 제거 (이미지 양식 일치) | ✅ 제거 |
+| 현장책임자 중복 제거 (4행→작업자) | ✅ 수정 |
+| `_esc` 정의 순서 (전역 `_escHtml` → 로컬 별칭) | ✅ OK |
+| `_makePhotoCell` for 루프 외부 독립 함수 | ✅ 적용 |
+| `_makePhotoCaption` for 루프 외부 독립 함수 | ✅ 적용 |
+| `npm run build` | ✅ 성공 (`dist/_worker.js 282.10 kB`) |
+
+### 빌드/배포 상태
+- `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.33s)

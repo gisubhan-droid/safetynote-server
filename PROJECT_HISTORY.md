@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (세션 155m — feat: [FEAT-155m] 현장점검 등록 저장 시 4개 검증 팝업 추가)
-> **GitHub 최신: `ce7a8ae`** — fix: [FEAT-155d] 현장점검 출력 추가 수정 4종 + 디자인 개선
+> 최종 업데이트: 2026-07-22 (세션 155n — feat: [FEAT-155n] 전체 시간 표현 KST(UTC+9) 일괄 통일)
+> **GitHub 최신: `d0ca2c3`** — feat: [FEAT-155n] 전체 시간 표현 KST(UTC+9) 일괄 통일
+> **이전 커밋: `00ff80e`** — fix: [FEAT-155m] 검증 팝업 확인 버튼 SyntaxError 수정
+> **이전 커밋: `ce7a8ae`** — fix: [FEAT-155d] 현장점검 출력 추가 수정 4종 + 디자인 개선
 > **이전 커밋: `2778cc9`** — docs: [FEAT-155c] PROJECT_HISTORY.md 세션155c 기록 추가
 > **이전 커밋: `f804cac`** — fix: [FEAT-155c] 현장점검 출력 버그 수정 3종
 > **이전 커밋: `125b901`** — feat: [FEAT-112 세션153] 연계작업 사진 칩버튼 UX + NAS 데이터 필터 수정
@@ -36,8 +38,9 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
-| FEAT-155m | 155m | 2026-07-22 | ✅ 적용 | **현장점검 등록 저장 시 4개 검증 팝업** — ①체크리스트 미체크: _INS_CHECKLIST 순회 → _insRegChkMap 키 없는 항목 수집 → 최대 3개 + "외 N개" 표시. ②사진 4장 미만: 체크된(good/bad) 항목 있을 때 _insRegChkPhotoMap 카운트 < 4 → 부족 장수 안내. ③최종점검결과 미선택: insResult 빈값 → 버튼 선택 안내. ④우수/불량 작업자 미선택: selectedWorkerIds 0명 → 작업자 목록 선택 안내. _showInsValidationPopup(issues) 신규 함수 — 네이비 헤더+카드형 항목+배경클릭닫기. 기존 toast 검증 블록 완전 교체. submitInspection 내 const→var 전환(insResult, taskId, insReason, photoFiles 등) | `미커밋` |
-| FEAT-155l | 155l | 2026-07-22 | ✅ 적용 | **체크리스트 섹션 헤더 전체 해당없음 체크박스** — ①등록 모달(`_insRegChkHtml` 빌더) 섹션 헤더 우측에 "전체 해당없음" 체크박스 추가(flex layout, accent-color:#fff, data-secgrp=encodeURIComponent(sec.group)). ②수정 탭(`_renderInsChkTab`) 섹션 헤더 동일 패턴 적용(accent-color:#685182, data-ins=insId 추가). ③신규 함수 `_setInsRegSecAllNa(cb)`: 등록 모달용 — secgrp decode 후 _INS_CHECKLIST 순회 → 해당 섹션 나 버튼 querySelector → _setInsRegChk 일괄 호출. ④신규 함수 `_setInsSecAllNa(cb)`: 수정 탭용 — secgrp+insId decode → _setInsChk 일괄 호출. ⑤모두 var 전용, 백틱 중첩 없음 | 미커밋 |
+| FEAT-155n | 155n | 2026-07-22 | ✅ 적용 | **전체 시간 표현 KST(UTC+9) 일괄 통일** — app.js: ①getKSTYear()/getKSTMonth()/_kstDateOf() 헬퍼 3개 신규 추가. ②new Date().getFullYear() → getKSTYear() (28곳), getMonth()+1 → getKSTMonth() (10곳). ③renderDashboard/renderStatsPage×2/showCompletedModal/showInspListModal/renderWorkerSafetyStats 6개 함수 const now→var now=getKSTNow() 교체. ④renderFieldReportPage 주간계산/공사통계 주간 초기값 KST 교체. ⑤Date계산 후 .toISOString().slice(0,10) → _kstDateOf() 전면 교체(공사비보고서/공사통계/근로자통계). UTC 잔여: 0곳. node-server.ts: ①kstDateStr()/kstNowStr() 헬퍼 2개 신규 추가. ②fmtDateStr fallback/TBM dateStr/백업stamp → kstDateStr(). ③work_completed_at kstNowStr(). ④이번주 월요일 UTC→KST 보정. ⑤scheduleDailyBackup setHours(2)→setUTCHours(17) [UTC17=KST02]. ⑥공사통계 연도 fallback KST 기준 | `d0ca2c3` |
+| FEAT-155m | 155m | 2026-07-22 | ✅ 적용 | **현장점검 등록 저장 시 4개 검증 팝업** — ①체크리스트 미체크: _INS_CHECKLIST 순회 → _insRegChkMap 키 없는 항목 수집 → 최대 3개 + "외 N개" 표시. ②사진 4장 미만: 체크된(good/bad) 항목 있을 때 _insRegChkPhotoMap 카운트 < 4 → 부족 장수 안내. ③최종점검결과 미선택: insResult 빈값 → 버튼 선택 안내. ④우수/불량 작업자 미선택: selectedWorkerIds 0명 → 작업자 목록 선택 안내. _showInsValidationPopup(issues) 신규 함수 — 네이비 헤더+카드형 항목+배경클릭닫기. 기존 toast 검증 블록 완전 교체. submitInspection 내 const→var 전환(insResult, taskId, insReason, photoFiles 등) | `00ff80e` |
+| FEAT-155l | 155l | 2026-07-22 | ✅ 적용 | **체크리스트 섹션 헤더 전체 해당없음 체크박스** — ①등록 모달(`_insRegChkHtml` 빌더) 섹션 헤더 우측에 "전체 해당없음" 체크박스 추가(flex layout, accent-color:#fff, data-secgrp=encodeURIComponent(sec.group)). ②수정 탭(`_renderInsChkTab`) 섹션 헤더 동일 패턴 적용(accent-color:#685182, data-ins=insId 추가). ③신규 함수 `_setInsRegSecAllNa(cb)`: 등록 모달용 — secgrp decode 후 _INS_CHECKLIST 순회 → 해당 섹션 나 버튼 querySelector → _setInsRegChk 일괄 호출. ④신규 함수 `_setInsSecAllNa(cb)`: 수정 탭용 — secgrp+insId decode → _setInsChk 일괄 호출. ⑤모두 var 전용, 백틱 중첩 없음 | `bf062c3` |
 | FEAT-155k | 155k | 2026-07-22 | ✅ 적용 | **사진대장 점검사항 헤더 높이/정렬/페이지번호/구분선** — ①점검사항 헤더 높이 = title-row(font-size:11pt, padding:5px 2px, letter-spacing:1.5pt). ②양쪽 모두 text-align:center(float:left 제거). ③페이지번호 최하단 별도 행 중앙정렬(colspan=2, background:#1E3A5F). ④구분선 5mm → 8mm | `8f4b127` |
 | FEAT-155j | 155j | 2026-07-22 | ✅ 적용 | **사진대장 sida-lbl 완전 제거 + 2열 레이아웃** — CSS .sida-lbl 삭제, .photo-sec-hdr/.photo-divider 신규, photoPages 3열→2열 재구성 | `882cddc` |
 | FEAT-155i | 155i | 2026-07-22 | ✅ 적용 | **사진대장 object-fit cover + A4 단일테이블** — cover+100% + sida-lbl 28px/overflow:hidden + 단일테이블 88mm | `19a4c55` |

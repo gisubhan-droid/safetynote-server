@@ -16041,9 +16041,16 @@ async function showCreateInspectionModal(presetTaskId) {
     '양호/불량 선택 시 사진 첨부 슬롯이 나타납니다. <strong>최소 4개 항목</strong>에 사진을 첨부해 주세요.' +
   '</div>';
   _INS_CHECKLIST.forEach(function(sec) {
+    var _regEncGrp = encodeURIComponent(sec.group);
     _insRegChkHtml += '<div style="margin-bottom:8px">' +
-      '<div style="background:#685182;color:#fff;border-radius:5px 5px 0 0;padding:4px 10px;font-size:11px;font-weight:700">' +
-        sec.group +
+      '<div style="background:#685182;color:#fff;border-radius:5px 5px 0 0;padding:4px 10px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:space-between">' +
+        '<span>' + sec.group + '</span>' +
+        '<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:400;cursor:pointer;opacity:.9;white-space:nowrap">' +
+          '<input type="checkbox" style="width:13px;height:13px;cursor:pointer;accent-color:#fff"' +
+               ' data-secgrp="' + _regEncGrp + '"' +
+               ' onchange="_setInsRegSecAllNa(this)">' +
+          '전체 해당없음' +
+        '</label>' +
       '</div>';
     sec.items.forEach(function(item, i) {
       var key = sec.group + '::' + i;
@@ -16785,6 +16792,43 @@ async function showInspectionDetail(id) {
 // 체크리스트 탭 토글: 탭 표시/숨김 + 데이터 로드
 // ─── 등록 모달 전용 체크리스트 핸들러 ──────────────────────────────────────
 // data-* 속성 기반 (onclick 따옴표 중첩 파싱 오류 방지)
+// ── 섹션 전체 해당없음 — 등록 모달용 ──────────────────────────────────────
+function _setInsRegSecAllNa(cb) {
+  var grp = cb.getAttribute('data-secgrp');
+  var decodedGrp = decodeURIComponent(grp);
+  if (!cb.checked) return;
+  _INS_CHECKLIST.forEach(function(sec) {
+    if (sec.group !== decodedGrp) return;
+    sec.items.forEach(function(item, i) {
+      var key = sec.group + '::' + i;
+      var quotedKey = key.replace(/"/g, '&quot;');
+      var naBtn = document.querySelector(
+        '[data-key="' + quotedKey + '"][data-val="na"]'
+      );
+      if (naBtn) _setInsRegChk(key, 'na', naBtn);
+    });
+  });
+}
+
+// ── 섹션 전체 해당없음 — 수정 탭용 ────────────────────────────────────────
+function _setInsSecAllNa(cb) {
+  var grp   = cb.getAttribute('data-secgrp');
+  var insId = cb.getAttribute('data-ins');
+  var decodedGrp = decodeURIComponent(grp);
+  if (!cb.checked) return;
+  _INS_CHECKLIST.forEach(function(sec) {
+    if (sec.group !== decodedGrp) return;
+    sec.items.forEach(function(item, i) {
+      var key = sec.group + '::' + i;
+      var quotedKey = key.replace(/"/g, '&quot;');
+      var naBtn = document.querySelector(
+        '[data-ins="' + insId + '"][data-key="' + quotedKey + '"][data-val="na"]'
+      );
+      if (naBtn) _setInsChk(insId, key, 'na', naBtn);
+    });
+  });
+}
+
 function _setInsRegChkByEl(btn) {
   var key = btn.getAttribute('data-key');
   var val = btn.getAttribute('data-val');
@@ -16917,9 +16961,16 @@ function _renderInsChkTab(insId, saved) {
     '</div>';
 
   _INS_CHECKLIST.forEach(function(sec) {
+    var _chkEncGrp = encodeURIComponent(sec.group);
     html += '<div style="margin-bottom:6px">' +
-      '<div style="background:#e8e0f0;border-left:4px solid #685182;padding:4px 8px;font-size:11px;font-weight:700;color:#4E3A63">' +
-        sec.group +
+      '<div style="background:#e8e0f0;border-left:4px solid #685182;padding:4px 8px;font-size:11px;font-weight:700;color:#4E3A63;display:flex;align-items:center;justify-content:space-between">' +
+        '<span>' + sec.group + '</span>' +
+        '<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:400;cursor:pointer;color:#685182;white-space:nowrap">' +
+          '<input type="checkbox" style="width:13px;height:13px;cursor:pointer;accent-color:#685182"' +
+               ' data-secgrp="' + _chkEncGrp + '" data-ins="' + insId + '"' +
+               ' onchange="_setInsSecAllNa(this)">' +
+          '전체 해당없음' +
+        '</label>' +
       '</div>';
     sec.items.forEach(function(item, i) {
       var key = sec.group + '::' + i;

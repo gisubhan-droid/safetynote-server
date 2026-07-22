@@ -1,6 +1,6 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (세션 155j — fix: [FEAT-155j] 사진대장 sida-lbl 완전 제거 + 깔끔한 2열 레이아웃 재구성)
+> 최종 업데이트: 2026-07-22 (세션 155l — feat: [FEAT-155l] 체크리스트 섹션 헤더 전체 해당없음 체크박스 추가)
 > **GitHub 최신: `ce7a8ae`** — fix: [FEAT-155d] 현장점검 출력 추가 수정 4종 + 디자인 개선
 > **이전 커밋: `2778cc9`** — docs: [FEAT-155c] PROJECT_HISTORY.md 세션155c 기록 추가
 > **이전 커밋: `f804cac`** — fix: [FEAT-155c] 현장점검 출력 버그 수정 3종
@@ -36,6 +36,10 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-155l | 155l | 2026-07-22 | ✅ 적용 | **체크리스트 섹션 헤더 전체 해당없음 체크박스** — ①등록 모달(`_insRegChkHtml` 빌더) 섹션 헤더 우측에 "전체 해당없음" 체크박스 추가(flex layout, accent-color:#fff, data-secgrp=encodeURIComponent(sec.group)). ②수정 탭(`_renderInsChkTab`) 섹션 헤더 동일 패턴 적용(accent-color:#685182, data-ins=insId 추가). ③신규 함수 `_setInsRegSecAllNa(cb)`: 등록 모달용 — secgrp decode 후 _INS_CHECKLIST 순회 → 해당 섹션 나 버튼 querySelector → _setInsRegChk 일괄 호출. ④신규 함수 `_setInsSecAllNa(cb)`: 수정 탭용 — secgrp+insId decode → _setInsChk 일괄 호출. ⑤모두 var 전용, 백틱 중첩 없음 | 미커밋 |
+| FEAT-155k | 155k | 2026-07-22 | ✅ 적용 | **사진대장 점검사항 헤더 높이/정렬/페이지번호/구분선** — ①점검사항 헤더 높이 = title-row(font-size:11pt, padding:5px 2px, letter-spacing:1.5pt). ②양쪽 모두 text-align:center(float:left 제거). ③페이지번호 최하단 별도 행 중앙정렬(colspan=2, background:#1E3A5F). ④구분선 5mm → 8mm | `8f4b127` |
+| FEAT-155j | 155j | 2026-07-22 | ✅ 적용 | **사진대장 sida-lbl 완전 제거 + 2열 레이아웃** — CSS .sida-lbl 삭제, .photo-sec-hdr/.photo-divider 신규, photoPages 3열→2열 재구성 | `882cddc` |
+| FEAT-155i | 155i | 2026-07-22 | ✅ 적용 | **사진대장 object-fit cover + A4 단일테이블** — cover+100% + sida-lbl 28px/overflow:hidden + 단일테이블 88mm | `19a4c55` |
 | FEAT-155d | 155d | 2026-07-22 | ✅ 수정 | **현장점검 출력 추가 수정 4종 + 디자인 개선** — ①출력창 방식: `_openPrintOverlay`(전체화면 오버레이) → `window.open` 별도 팝업창 (기존 작업화면 유지, 팝업차단 시 toast, 닫기버튼 `window.close()`). ②구분값 수정: `WC_MAP` 확장(`line`→선로공사,`inside`→구내공사 등), `CON_TYPE_KR` 객체로 `construction_type` 영문키도 한글변환, 한글 직접입력값 유지. ③작업자 폴백: `node-server.ts` — `inspection_workers` 비어있고 `task_id` 있으면 `task_assignments JOIN users`로 폴백. ④디자인 전면 개선: 제목행 네이비(#1E3A5F)+흰글자, 헤더테이블 colgroup 너비조정+점검주소/구분 colspan=3, 체크리스트헤더 네이비, 섹션헤더 연파랑(#dce6f1), lbl셀 통일, print-color-adjust(인쇄 배경색 유지) | `ce7a8ae` |
 | FEAT-155c | 155c | 2026-07-22 | ✅ 수정 | **현장점검 출력 버그 수정 3종** — ①사진 로딩 불가: `_makePhotoCell(photo, idx, escFn, origin)` origin 파라미터 추가, blob URL iframe 내 `/api/inspections/photo/` 절대 URL prefix(`window.location.origin`) 처리. `_printInspectionReport` 내 `_origin = window.location.origin` 선언, 사진 4셀 호출부 모두 `_origin` 전달. ②협력업체명 오류: `node-server.ts` `GET /api/inspections/:id` SELECT에 `u.company AS inspector_company` 추가. `app.js companyName = ins.inspector_company \|\| ins.contractor_name \|\| ...` 우선순위 수정. ③구분 구분자 오류: `join(' & ')` → `join(' / ')` (EX: 청약개통 / 광케이블 접속). ④점검자 서명란 삭제: `makeHeaderTable` sign-cell + 중첩 table 제거, 점검자 이름 단순 td 표시 | `f804cac` |
 | FEAT-112c | 153 | 2026-07-22 | ✅ 적용 | **연계작업 사진 칩버튼 UX + NAS 데이터 필터 수정** — ①`app.js _loadLinkedCompletedPhotos`: 행 목록(flex-direction:column) → 칩(chip) 버튼 가로 나열(flex-wrap:wrap)으로 교체. 형식: `[📷 연계작업 사진 #0042  7장]` `[📷 연계작업 사진 #0043  3장]`. sub_task_number 4자리 0패딩. 버튼 클릭 시 전체화면 팝업 호출 ②`node-server.ts GET /api/photos` NAS 오버라이드: `construction_id`+`exclude_task_id`+tasks JOIN+LINKED_STATUSES 필터 추가 — 기존에 파라미터 완전 무시로 전체 사진 반환하던 버그 수정. 같은 공사의 LINKED_STATUSES 상태 작업 사진만 반환, 현재 작업 제외 | `125b901` |
@@ -8485,3 +8489,46 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 ### 빌드/배포 상태
 - `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.55s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `01a8674`)
+
+---
+
+## 세션155l — 체크리스트 섹션 헤더 전체 해당없음 체크박스 (2026-07-22)
+
+### 변경 파일
+- `public/static/app.js`
+- `patch_155l.py` (신규)
+
+### 수정 내용
+
+#### 1. 등록 모달 섹션 헤더 변경 (`_insRegChkHtml` 빌더, line ~16044)
+- 기존: 단순 `<div style="background:#685182...">sec.group</div>`
+- 변경: flex + justify-content:space-between → 좌측 섹션명, 우측 "전체 해당없음" 체크박스
+- 체크박스: `accent-color:#fff`, `data-secgrp=encodeURIComponent(sec.group)`, `onchange="_setInsRegSecAllNa(this)"`
+
+#### 2. 수정 탭 섹션 헤더 변경 (`_renderInsChkTab`, line ~16964)
+- 기존: 단순 `<div style="background:#e8e0f0;border-left:4px solid #685182...">sec.group</div>`
+- 변경: flex + justify-content:space-between → 동일 패턴
+- 체크박스: `accent-color:#685182`, `data-secgrp=encodeURIComponent(sec.group)`, `data-ins=insId`, `onchange="_setInsSecAllNa(this)"`
+
+#### 3. 신규 함수 `_setInsRegSecAllNa(cb)` (등록 모달용)
+- `data-secgrp` getAttribute → decodeURIComponent
+- `cb.checked` false 시 즉시 return (체크 해제 시 자동 복원 없음)
+- `_INS_CHECKLIST` 순회 → 섹션 일치 시 항목별 na 버튼 querySelector
+- `_setInsRegChk(key, 'na', naBtn)` 호출 → 기존 사진 슬롯 숨김 로직도 자동 동작
+
+#### 4. 신규 함수 `_setInsSecAllNa(cb)` (수정 탭용)
+- `data-secgrp` + `data-ins` 읽기
+- 동일 패턴으로 `_setInsChk(insId, key, 'na', naBtn)` 호출
+
+#### 충돌 없음 확인
+| 항목 | 결과 |
+|------|------|
+| `_setInsRegChk` / `_setInsChk` 기존 함수 그대로 재사용 | ✅ |
+| `var` 전용 (const/let/?.  없음) | ✅ |
+| 백틱 중첩 없음 | ✅ |
+| `data-key` 셀렉터 방식 — 기존 `_setInsRegChkByEl`과 동일 | ✅ |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ `dist/_worker.js 282.10 kB`
+- PM2 재시작 → HTTP 200

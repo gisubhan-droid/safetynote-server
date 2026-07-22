@@ -625,7 +625,12 @@ app.get('/worker/:id', async (c) => {
   try {
     const workerId = c.req.param('id') === 'me' ? user.id : c.req.param('id')
 
-    const [taskStats, recentLogs, totalQuantity] = await Promise.all([
+    // ── [FEAT-160] 일보 총금액: 본인이 배정된 팀(task_assignments) 전체 기준 ─────
+    // 옵션A: submitted + confirmed 상태만 집계
+    // 외선일보: work_report_extras.qty × COALESCE(unit_price_snapshot, volume_unit_prices.unit_price)
+    // 접속일보: splice_work_items.qty × COALESCE(unit_price_snapshot, splice_unit_prices.unit_price)
+    //           + is_night × night_price + is_aerial × aerial_price (스냅샷 우선)
+    const [taskStats, recentLogs, totalQuantity, workReportAmt, spliceReportAmt] = await Promise.all([
       c.env.DB.prepare(
         `SELECT t.status, COUNT(*) as count FROM tasks t
          INNER JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?
@@ -638,13 +643,47 @@ app.get('/worker/:id', async (c) => {
       ).bind(workerId).all<any>(),
       c.env.DB.prepare(
         `SELECT SUM(actual_quantity) as total FROM work_logs WHERE worker_id = ?`
+      ).bind(workerId).first<any>(),
+      // 외선일보 금액: 본인 팀 배정 작업의 제출/확인된 일보
+      c.env.DB.prepare(
+        `SELECT COALESCE(SUM(
+           wre.qty * COALESCE(wre.unit_price_snapshot, vup.unit_price, 0)
+         ), 0) AS total
+         FROM work_report_extras wre
+         JOIN work_reports wr ON wr.id = wre.report_id
+         JOIN tasks t ON t.id = wr.task_id
+         JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?
+         LEFT JOIN volume_unit_prices vup ON vup.item_key = wre.item_key
+         WHERE wr.status IN ('submitted','confirmed')`
+      ).bind(workerId).first<any>(),
+      // 접속일보 금액: 본인 팀 배정 작업의 제출/확인된 일보 (야간/가공 추가금 포함)
+      c.env.DB.prepare(
+        `SELECT COALESCE(SUM(
+           swi.qty * (
+             COALESCE(swi.unit_price_snapshot,  sup.unit_price,  0)
+             + CASE WHEN swi.is_night   = 1 THEN COALESCE(swi.night_price_snapshot,  sup.night_price,  0) ELSE 0 END
+             + CASE WHEN swi.is_aerial  = 1 THEN COALESCE(swi.aerial_price_snapshot, sup.aerial_price, 0) ELSE 0 END
+           )
+         ), 0) AS total
+         FROM splice_work_items swi
+         JOIN splice_reports sr ON sr.id = swi.report_id
+         JOIN tasks t ON t.id = sr.task_id
+         JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?
+         LEFT JOIN splice_unit_prices sup ON sup.item_label = swi.work_label
+         WHERE sr.status IN ('submitted','confirmed')`
       ).bind(workerId).first<any>()
     ])
+    // ── [FEAT-160] 끝 ─────────────────────────────────────────────────────────
+
+    const totalReportAmount = Math.round(
+      (Number(workReportAmt?.total) || 0) + (Number(spliceReportAmt?.total) || 0)
+    )
 
     return c.json({
       taskStats: taskStats.results || [],
       recentLogs: recentLogs.results || [],
-      totalQuantity: totalQuantity?.total || 0
+      totalQuantity: totalQuantity?.total || 0,
+      totalReportAmount
     })
   } catch (e: any) {
     console.error('[stats GET /worker/:id]', e.message)

@@ -32130,6 +32130,12 @@ async function renderMyStatsPage(container) {
       API.get('/inspections/stats/my-safety').catch(() => ({ data: null }))
     ]);
     const { taskStats, recentLogs, totalQuantity } = taskRes.data;
+    // ── [FEAT-160] 일보 총금액 추출 ──────────────────────────────────────────
+    var _f160Amt = Number(taskRes.data.totalReportAmount) || 0;
+    var _f160AmtStr = _f160Amt >= 1000000
+      ? (_f160Amt / 1000000).toFixed(1) + '백만원'
+      : _f160Amt > 0 ? _f160Amt.toLocaleString('ko-KR') + '원' : '0원';
+    // ── [FEAT-160] 끝 ────────────────────────────────────────────────────────
     const safety = safetyRes.data;
 
     const totalTasks = taskStats.reduce((s,r) => s+r.count, 0);
@@ -32374,8 +32380,8 @@ async function renderMyStatsPage(container) {
         </div>
         <div class="stat-card purple shadow-sm text-center cursor-pointer hover:shadow-md transition-shadow active:scale-95"
              onclick="navigateMyTasksWithFilter('quantity')">
-          <div class="text-2xl font-bold text-purple-600">${parseFloat(totalQuantity).toFixed(1)}</div>
-          <div class="text-xs text-gray-500 mt-1">총 시공 물량</div>
+          <div class="text-2xl font-bold text-purple-600">${_f160AmtStr}</div>
+          <div class="text-xs text-gray-500 mt-1">총 일보 금액</div>
           <div class="text-xs mt-1" style="color:#D70072;opacity:0.7"><i class="fas fa-arrow-right text-xs"></i></div>
         </div>
       </div>

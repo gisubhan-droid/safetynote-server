@@ -4156,6 +4156,87 @@ app.get('/api/tbm/:id', async (c) => {
 // ─── TBM 서명/결재 → nas-routes/tbm-extra.ts (RULE-002: tbmRoutes 앞에 마운트) ─
 app.route('/api/tbm', tbmExtraRoutes)
 app.route('/api/tbm', tbmRoutes)
+
+// ─── [FEAT-160 / RULE-002] NAS 전용: GET /api/stats/worker/me ─────────────────
+// Cloudflare stats.ts의 /worker/:id 와 동일 엔드포인트를 NAS rawDb 로 직접 계산.
+// totalReportAmount = 외선일보 + 접속일보 금액 (팀 전체, submitted+confirmed)
+// 단가 스냅샷 우선, 없으면 현재 단가 폴백 (FEAT-161 정책)
+// RULE-002: statsRoutes app.route 보다 반드시 먼저 등록
+app.get('/api/stats/worker/me', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const rawDb = getRawDb()
+  const workerId = user.id
+
+  try {
+    // ① 작업 상태별 카운트 (본인 배정 작업)
+    const taskStats: any[] = rawDb.prepare(
+      `SELECT t.status, COUNT(*) as count FROM tasks t
+       INNER JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?
+       GROUP BY t.status`
+    ).all(workerId) as any[]
+
+    // ② 최근 작업일지 10건
+    const recentLogs: any[] = rawDb.prepare(
+      `SELECT wl.*, t.title as task_title FROM work_logs wl
+       LEFT JOIN tasks t ON t.id = wl.task_id WHERE wl.worker_id = ?
+       ORDER BY wl.log_date DESC LIMIT 10`
+    ).all(workerId) as any[]
+
+    // ③ 총 시공 물량 (기존 필드 — 하위호환 유지)
+    const totalQuantityRow: any = rawDb.prepare(
+      `SELECT SUM(actual_quantity) as total FROM work_logs WHERE worker_id = ?`
+    ).get(workerId) as any
+
+    // ④ 외선일보 총금액: 본인 팀 배정 작업, submitted+confirmed
+    //    단가 스냅샷 우선 → 없으면 volume_unit_prices 현재 단가 폴백 (FEAT-161)
+    const workReportAmtRow: any = rawDb.prepare(
+      `SELECT COALESCE(SUM(
+         wre.qty * COALESCE(wre.unit_price_snapshot, vup.unit_price, 0)
+       ), 0) AS total
+       FROM work_report_extras wre
+       JOIN work_reports wr ON wr.id = wre.report_id
+       JOIN tasks t ON t.id = wr.task_id
+       JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?
+       LEFT JOIN volume_unit_prices vup ON vup.item_key = wre.item_key
+       WHERE wr.status IN ('submitted','confirmed')`
+    ).get(workerId) as any
+
+    // ⑤ 접속일보 총금액: 본인 팀 배정 작업, submitted+confirmed
+    //    야간/가공 추가금 포함, 단가 스냅샷 우선 → 없으면 splice_unit_prices 폴백 (FEAT-161)
+    const spliceReportAmtRow: any = rawDb.prepare(
+      `SELECT COALESCE(SUM(
+         swi.qty * (
+           COALESCE(swi.unit_price_snapshot,  sup.unit_price,  0)
+           + CASE WHEN swi.is_night  = 1 THEN COALESCE(swi.night_price_snapshot,  sup.night_price,  0) ELSE 0 END
+           + CASE WHEN swi.is_aerial = 1 THEN COALESCE(swi.aerial_price_snapshot, sup.aerial_price, 0) ELSE 0 END
+         )
+       ), 0) AS total
+       FROM splice_work_items swi
+       JOIN splice_reports sr ON sr.id = swi.report_id
+       JOIN tasks t ON t.id = sr.task_id
+       JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?
+       LEFT JOIN splice_unit_prices sup ON sup.item_label = swi.work_label
+       WHERE sr.status IN ('submitted','confirmed')`
+    ).get(workerId) as any
+
+    const totalReportAmount = Math.round(
+      (Number(workReportAmtRow?.total) || 0) + (Number(spliceReportAmtRow?.total) || 0)
+    )
+
+    return c.json({
+      taskStats,
+      recentLogs,
+      totalQuantity:     totalQuantityRow?.total || 0,
+      totalReportAmount
+    })
+  } catch(e: any) {
+    console.error('[FEAT-160] GET /api/stats/worker/me NAS 오류:', e.message)
+    return c.json({ error: e.message || '개인 통계 조회 실패' }, 500)
+  }
+})
+// ─── [FEAT-160] NAS 오버라이드 끝 ──────────────────────────────────────────────
+
 app.route('/api/stats', statsRoutes)
 
 // ─── [RULE-002] NAS 전용: GET /api/inspections/:id — 추가 필드 포함 ──────────────

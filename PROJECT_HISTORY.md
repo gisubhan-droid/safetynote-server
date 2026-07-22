@@ -1,9 +1,10 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (BUG-156 — fix: 작업중지현황 stopped_at UTC→KST 변환 누락 수정)
-> **GitHub 최신: `7587688`** — fix: [BUG-156] 작업중지현황 stopped_at UTC→KST 변환 누락 수정
-> **이전 커밋: `9969d0b`** — docs: PROJECT_HISTORY 세션155n 기록
-> **이전 커밋: `d0ca2c3`** — feat: [FEAT-155n] 전체 시간 표현 KST(UTC+9) 일괄 통일
+> 최종 업데이트: 2026-07-22 (FEAT-157 — feat: 근로자 내 작업목록 상단 안전점수 배너 추가)
+> **GitHub 최신: `7f68473`** — feat: [FEAT-157] 근로자 내 작업목록 상단 안전점수 배너 추가
+> **이전 커밋: `555426a`** — docs: [NAS-MULTI] 다중 NAS 설치 가이드 업데이트
+> **이전 커밋: `bca951c`** — docs: [KST-001] PROJECT_HISTORY 필수 코딩 규칙 섹션 신설 + BUG-156 기록
+> **이전 커밋: `7587688`** — fix: [BUG-156] 작업중지현황 stopped_at UTC→KST 변환 누락 수정
 > **이전 커밋: `00ff80e`** — fix: [FEAT-155m] 검증 팝업 확인 버튼 SyntaxError 수정
 > **이전 커밋: `ce7a8ae`** — fix: [FEAT-155d] 현장점검 출력 추가 수정 4종 + 디자인 개선
 > **이전 커밋: `2778cc9`** — docs: [FEAT-155c] PROJECT_HISTORY.md 세션155c 기록 추가
@@ -161,6 +162,7 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-157 | 156 | 2026-07-22 | ✅ 적용 | **근로자 접속화면(내 작업목록) 상단 안전점수 배너 추가** — 근로자(`role=worker`) 로그인 시 `my-tasks` 페이지 최상단에 안전점수 컴팩트 배너 자동 표시. 기존 `/inspections/stats/my-safety` API 재사용(백엔드 변경 없음). 구성: 보라→핑크 그라데이션 배너, 점수+등급(S/A/B/C/D), 우수/불량 건수, 진행바(0~100%). 클릭 시 `my-stats` 페이지 이동. 검증: ①변수명 충돌 없음(`_sbRes/_sbData/_sbScore` 등 신규 접두사 `_sb` 사용) ②RULE-001 준수(var 전용, 백틱 중첩 없음 — HTML을 문자열 연결로 구성) ③RULE-003 준수(`onclick="navigateTo('my-stats')"` 패턴 — 기존 코드 동일 패턴 확인) ④KST-001 해당 없음(DB datetime 직접 표시 없음) ⑤API 실패 시 배너 미표시 — 작업목록 로드에 영향 없음(완전 격리) ⑥비근로자(관리자/감독자) 화면에는 표시 안 됨(`currentUser.role==='worker'` 조건) | `7f68473` |
 | BUG-156 | 155n+ | 2026-07-22 | ✅ 수정 | **작업중지현황 stopped_at UTC 그대로 표시** — `stopped_at`이 DB에 UTC(`CURRENT_TIMESTAMP`)로 저장되는데, `renderWorkStopsPage`(카드 `stoppedAt` 변수)·작업상세 stops 이력(`line 8963`) 두 곳에서 `.replace('T',' ').substring(0,16)` 으로 UTC 그대로 자름 → 9시간 빠르게 표시(예: KST 14:49 → 05:49). **해결**: 두 곳 모두 `_toKSTDateTime(s.stopped_at)` 로 교체. **영구 규칙 KST-001 확립**: DB datetime 컬럼 표시 시 반드시 `_toKSTDateTime()` 사용 (PROJECT_HISTORY 필수 코딩 규칙 섹션 등재) | `7587688` |
 | FEAT-155n | 155n | 2026-07-22 | ✅ 적용 | **전체 시간 표현 KST(UTC+9) 일괄 통일** — app.js: ①getKSTYear()/getKSTMonth()/_kstDateOf() 헬퍼 3개 신규 추가. ②new Date().getFullYear() → getKSTYear() (28곳), getMonth()+1 → getKSTMonth() (10곳). ③renderDashboard/renderStatsPage×2/showCompletedModal/showInspListModal/renderWorkerSafetyStats 6개 함수 const now→var now=getKSTNow() 교체. ④renderFieldReportPage 주간계산/공사통계 주간 초기값 KST 교체. ⑤Date계산 후 .toISOString().slice(0,10) → _kstDateOf() 전면 교체(공사비보고서/공사통계/근로자통계). UTC 잔여: 0곳. node-server.ts: ①kstDateStr()/kstNowStr() 헬퍼 2개 신규 추가. ②fmtDateStr fallback/TBM dateStr/백업stamp → kstDateStr(). ③work_completed_at kstNowStr(). ④이번주 월요일 UTC→KST 보정. ⑤scheduleDailyBackup setHours(2)→setUTCHours(17) [UTC17=KST02]. ⑥공사통계 연도 fallback KST 기준 | `d0ca2c3` |
 | FEAT-155m | 155m | 2026-07-22 | ✅ 적용 | **현장점검 등록 저장 시 4개 검증 팝업** — ①체크리스트 미체크: _INS_CHECKLIST 순회 → _insRegChkMap 키 없는 항목 수집 → 최대 3개 + "외 N개" 표시. ②사진 4장 미만: 체크된(good/bad) 항목 있을 때 _insRegChkPhotoMap 카운트 < 4 → 부족 장수 안내. ③최종점검결과 미선택: insResult 빈값 → 버튼 선택 안내. ④우수/불량 작업자 미선택: selectedWorkerIds 0명 → 작업자 목록 선택 안내. _showInsValidationPopup(issues) 신규 함수 — 네이비 헤더+카드형 항목+배경클릭닫기. 기존 toast 검증 블록 완전 교체. submitInspection 내 const→var 전환(insResult, taskId, insReason, photoFiles 등) | `00ff80e` |

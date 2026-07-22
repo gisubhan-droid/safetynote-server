@@ -1,7 +1,22 @@
 # SafetyNOTE 설치 가이드
 
 > **현장 안전관리 시스템** — 자체 서버(온프레미스) 배포판  
-> Node.js + SQLite 기반 / NAS·Linux 서버 설치 가능
+> Node.js + SQLite 기반 / 다중 NAS·Linux 서버 동시 설치 지원
+
+---
+
+## ⚠️ 다중 NAS 설치 핵심 원칙
+
+| 항목 | 기본값 | 각 NAS별 독립 설정 방법 |
+|------|--------|------------------------|
+| 설치 경로 | `/volume1/safetynote` | `INSTALL_DIR` 변수 변경 |
+| 서버 포트 | `3443` | `.env` `PORT=` 수정 |
+| DB 경로 | `<INSTALL_DIR>/safety.db` | `.env` `DB_PATH=` 수정 |
+| 업로드 경로 | `<INSTALL_DIR>/public/uploads` | `.env` `UPLOAD_PATH=` 수정 |
+| JWT 시크릿 | 자동 생성(32자) | 자동 생성 — **NAS마다 다름** ✅ |
+| 비상복구 PW | `recovery1234` | `.env` `RECOVERY_PASSWORD=` 수정 |
+
+**🔴 NAS마다 반드시 달리 설정해야 할 항목**: `PORT`, `JWT_SECRET`, `RECOVERY_PASSWORD`
 
 ---
 
@@ -12,12 +27,13 @@
 4. [환경변수 설정](#4-환경변수-설정)
 5. [NAS 연동](#5-nas-연동)
 6. [방화벽 설정](#6-방화벽-설정)
-7. [HTTPS 설정 (Nginx)](#7-https-설정-nginx)
+7. [HTTPS 설정 (Synology DSM)](#7-https-설정-synology-dsm)
 8. [서비스 관리](#8-서비스-관리)
 9. [백업 및 복구](#9-백업-및-복구)
 10. [초기 계정 및 사용자 등록](#10-초기-계정-및-사용자-등록)
 11. [모바일 앱 설치 (PWA)](#11-모바일-앱-설치-pwa)
 12. [문제 해결](#12-문제-해결)
+13. [다중 NAS 운영 체크리스트](#13-다중-nas-운영-체크리스트)
 
 ---
 
@@ -188,15 +204,62 @@ sudo firewall-cmd --reload
 
 ---
 
-## 7. HTTPS 설정 (Nginx)
+## 7. HTTPS 설정 (Synology DSM)
 
-### Nginx 설치
-```bash
-sudo apt-get install -y nginx
+### Synology NAS — node-server.ts HTTPS 직접 서빙 (권장)
+
+> Synology DSM Let's Encrypt 인증서를 node-server.ts가 **자동 탐지**하여 HTTPS 직접 서빙.  
+> **Nginx 리버스 프록시 불필요** — DSM 인증서 갱신 시 `pm2 restart safetynote`만 실행.
+
+```
+앱/브라우저
+    ↓ https://NAS_DDNS:3443
+공유기 포트포워딩 (외부 3443 → NAS 내부 IP:3443)
+    ↓
+node-server.ts (PORT=3443)
+    ← https.createServer() 로 HTTPS 직접 서빙
+    ← Synology DSM 인증서 자동 로드
 ```
 
-### 설정 파일
+#### DSM 인증서 경로 (자동 탐지 — 수동 설정 불필요)
 ```bash
+# 현재 활성 인증서 폴더 확인
+cat /usr/syno/etc/certificate/_archive/DEFAULT  # 예: 4a2zGZ
+
+# 인증서 파일 목록 확인
+ls /usr/syno/etc/certificate/_archive/$(cat /usr/syno/etc/certificate/_archive/DEFAULT)/
+# cert.pem  chain.pem  fullchain.pem  privkey.pem
+```
+
+#### 서버 시작 시 정상 로그
+```
+[SSL] Synology 인증서 로드 완료: /usr/syno/etc/certificate/_archive/4a2zGZ
+✅ 서버 실행 중 (HTTPS): https://0.0.0.0:3443
+```
+
+#### 인증서 갱신 후 처리
+```bash
+# DSM이 Let's Encrypt 인증서 자동 갱신하면 → PM2 재시작만 하면 됨
+pm2 restart safetynote --update-env
+sleep 5 && pm2 logs safetynote --nostream --lines 5
+```
+
+#### 샌드박스/개발 환경 (자동 HTTP 폴백)
+```
+Synology 인증서 경로 없음 → HTTP 자동 폴백
+✅ 서버 실행 중 (HTTP): http://0.0.0.0:3000
+```
+> 코드 변경 없이 두 환경에서 모두 동작.
+
+---
+
+### Linux 서버 (Ubuntu) — Nginx 리버스 프록시 + Let's Encrypt
+
+```bash
+# Nginx + Certbot 설치
+sudo apt-get install -y nginx certbot python3-certbot-nginx
+
+# Nginx 설정
 sudo nano /etc/nginx/sites-available/safetynote
 ```
 
@@ -223,11 +286,6 @@ server {
 ```bash
 sudo ln -s /etc/nginx/sites-available/safetynote /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-```
-
-### SSL 인증서 (Let's Encrypt)
-```bash
-sudo apt-get install certbot python3-certbot-nginx
 sudo certbot --nginx -d your-domain.com
 ```
 
@@ -401,4 +459,113 @@ pm2 start safety-management
 
 ---
 
-*SafetyNOTE v1.0 — 현장 안전관리 시스템*
+## 13. 다중 NAS 운영 체크리스트
+
+> 2대 이상의 NAS에 동시 설치 시 반드시 확인할 항목.
+
+### 📋 NAS별 독립 설정 체크리스트
+
+```bash
+# 각 NAS에서 아래 명령으로 설정 확인
+cat /volume1/safetynote/.env
+```
+
+| 항목 | NAS-A (예시) | NAS-B (예시) | 비고 |
+|------|------------|------------|------|
+| `PORT` | `3443` | `3443` | 공유기 포트포워딩 각자 독립 |
+| `DB_PATH` | `/volume1/safetynote/safety.db` | `/volume1/safetynote/safety.db` | NAS마다 별도 파일 |
+| `UPLOAD_PATH` | `/volume1/safetynote/public/uploads` | `/volume1/safetynote/public/uploads` | NAS마다 별도 |
+| `JWT_SECRET` | `auto-generated-32chars-A` | `auto-generated-32chars-B` | **⚠️ 반드시 달라야 함** |
+| `RECOVERY_PASSWORD` | 변경 권장 | 변경 권장 | **⚠️ 보안상 변경 필수** |
+| `DEPLOY_WEBHOOK_SECRET` | 각자 설정 | 각자 설정 | 선택사항 |
+
+### 🔧 PM2 등록 방법 (NAS별 실행 — ecosystem.config.cjs 방식은 hang 발생)
+
+```bash
+# ── [메인 서버] ─────────────────────────────────────────────────────────────
+PORT=3443 pm2 start /volume1/safetynote/node_modules/.bin/tsx \
+  --name safetynote \
+  --interpreter /usr/local/bin/node \
+  -- node-server.ts
+
+# ── [비상 복구 서버] ─────────────────────────────────────────────────────────
+pm2 start /volume1/safetynote/scripts/recovery-server.py \
+  --name safetynote-recovery \
+  --interpreter /usr/bin/python3 \
+  -- /volume1/safetynote 3445
+
+pm2 save
+```
+
+> **주의**: `ecosystem.config.cjs`는 참고 문서용. NAS에서 `pm2 start ecosystem.config.cjs` 실행 시 hang 발생.  
+> 반드시 위의 커맨드라인 직접 등록 방법 사용.
+
+### 🔍 시스템 점검 결과 요약 (2026-07-22 기준)
+
+#### ✅ 정상 동작 확인된 항목
+
+| 항목 | 상태 | 내용 |
+|------|------|------|
+| `resolveDbPath()` | ✅ | 1) `DB_PATH` env → 2) wrangler D1 로컬 sqlite → 3) `safety.db` 순 자동 탐지 |
+| `UPLOAD_ROOT` | ✅ | `UPLOAD_PATH` env 없으면 `<설치경로>/public/uploads` 기본값 |
+| `patchSchema` | ✅ | 서버 시작 시 자동 실행. `duplicate column`/`already exists` 오류 무시 처리 — 다중 NAS 안전 |
+| HTTPS 자동 탐지 | ✅ | Synology 인증서 없으면 HTTP 자동 폴백 — 코드 변경 불필요 |
+| `recovery-server.py` | ✅ | `sys.argv[1]`로 설치 경로 주입 — 다중 NAS 대응 |
+| KST 시간 표시 | ✅ | 전체 `_toKSTDateTime()` / `getKSTNow()` 헬퍼 적용 완료 |
+
+#### ⚠️ 주의 필요 항목 (운영 시 확인)
+
+| 항목 | 위치 | 내용 |
+|------|------|------|
+| `/volume1/safetynote` fallback | `node-server.ts` L2303, L3880 | `reset_risk_master_data.sql` 탐색 경로 마지막에 고정 경로 존재 — `cwd()/scriptDir()` 먼저 탐색하므로 정상 동작 |
+| Node.js 버전 | `install.sh` | v18만 탐지 — v20 NAS는 수동 설치 필요 (v20 경로: `/volume1/@appstore/Node.js_v20/...`) |
+| `pm2 startup` | 재부팅 대응 | 설치 후 `pm2 startup` + `pm2 save` 필수 |
+| 비상복구 기본 PW | `.env` | `RECOVERY_PASSWORD=recovery1234` 기본값 → **반드시 변경** |
+
+#### 🚫 각 NAS별 독립성 보장 확인
+
+```bash
+# 각 NAS에서 실행 — DB 분리 확인
+pm2 logs safetynote --nostream --lines 5
+# 정상: [DB] /volume1/safetynote/safety.db 또는 DB_PATH 값
+
+# JWT 시크릿 서로 다른지 확인 (NAS-A와 NAS-B 비교)
+grep JWT_SECRET /volume1/safetynote/.env
+```
+
+### 🔄 업데이트 절차 (다중 NAS 일괄 업데이트)
+
+```bash
+# 각 NAS에서 개별 실행 (원격 SSH 가능 시)
+cd /volume1/safetynote
+bash scripts/nas-deploy.sh   # git pull + pm2 restart + 동작 검증 자동화
+
+# 또는 수동
+git pull origin main
+pm2 restart safetynote --update-env
+sleep 5 && pm2 logs safetynote --nostream --lines 10
+```
+
+### 📁 NAS 필수 폴더 구조
+
+```
+/volume1/safetynote/          ← 설치 루트 (INSTALL_DIR)
+├── .env                       ← ⚠️ NAS별 고유 설정 (git 제외)
+├── safety.db                  ← SQLite DB (또는 DB_PATH 지정 경로)
+├── node-server.ts             ← 메인 서버
+├── public/uploads/            ← 업로드 파일 루트
+│   ├── 2026/07/               ← 연도/월 자동 분류 (UPLOAD_SUBDIR=true)
+│   └── apk/                   ← Android APK
+├── backups/                   ← 자동 백업 DB
+├── scripts/
+│   ├── recovery-server.py     ← 비상복구 서버 (포트 3445)
+│   ├── pm2-watchdog.sh        ← PM2 자동복구 (DSM 작업 스케줄러)
+│   └── nas-deploy.sh          ← 업데이트 스크립트
+└── node_modules/
+    └── .bin/tsx               ← tsx 실행 파일 (PM2 직접 등록용)
+```
+
+---
+
+*SafetyNOTE v1.0 — 현장 안전관리 시스템*  
+*최종 점검: 2026-07-22 | 다중 NAS 설치 검증 완료*

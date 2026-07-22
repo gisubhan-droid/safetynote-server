@@ -7937,3 +7937,61 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 ### 빌드/배포 상태
 - `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.36s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `61f49ff`)
+
+---
+
+## 세션 150 — FEAT-112 UX: 연계작업 사진 팝업 모달 구현 + 읽기전용 뷰어 버그 수정
+
+### 날짜
+2025년 (세션149 직후)
+
+### 요청 사항
+1. 작업 버튼 클릭 시 사진을 인라인으로 펼치지 말고 **팝업 창**으로 표시
+2. TBM 공유 시 보여지는 형태 참고 (사이드바 + 콘텐츠 영역)
+3. 팝업 내 기존 버그(`showPhotoData` → `deleteMedia` 버튼 노출) 수정
+
+### 기존 버그 분석
+- `_toggleLinkedTaskPhotos`에서 썸네일 클릭 → `showPhotoData(id, cap)` / `showVideoData(id, cap)` 호출
+- 해당 함수 내부에 `deleteMedia` 버튼 하드코딩 → **worker가 연계 사진 뷰어에서 삭제 버튼 노출**
+- 인라인 photo-grid: 작업이 100개 이상일 경우 화면 가독성 저하
+
+### 변경 내용 (`public/static/app.js`)
+
+#### 신규 함수 3개
+1. **`_showLinkedPhotoModal(linkedTaskId, currentTaskId)`**
+   - `container.dataset.taskMap` 캐시에서 데이터 로드 (API 재호출 없음)
+   - 모달 구조: 헤더(그라디언트) + 좌측 사이드바(작업 선택) + 우측 사진 그리드
+   - 사이드바: 현재 선택 작업 초록 배경 강조, 사진 수·상태 표시
+   - 사진 그리드: `photo_type` 배지(작업 전/중/후/위험 등) 별 그룹 분리
+   - `window._linkedModalSelectTask` 전역 등록 (innerHTML onclick 접근용)
+
+2. **`window._linkedModalSelectTask(taskId, ctId)`**
+   - 사이드바 탭 클릭 시 사이드바 + 사진 영역 동시 갱신
+   - `photo_type` 그룹핑·정렬·배지 색상 동일 적용
+
+3. **`_showLinkedPhotoView(photoId, caption, isVideo)`**
+   - 읽기 전용 전용 뷰어: `deleteMedia` 버튼 **없음**
+   - `zIndex: 10100` (연계사진 모달보다 위)
+   - "읽기 전용" 배지 표시
+
+#### 제거된 함수
+- `_toggleLinkedTaskPhotos` — `_showLinkedPhotoModal`로 완전 교체
+
+#### 수정된 함수
+- `_loadLinkedCompletedPhotos`: photo-grid 인라인 제거 → 버튼 클릭 시 팝업 호출
+
+### 2차 재검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| `_showLinkedPhotoModal` 함수명 충돌 | ✅ 0건 |
+| `_showLinkedPhotoView` 함수명 충돌 | ✅ 0건 |
+| `_linkedModalSelectTask` 함수명 충돌 | ✅ 0건 |
+| `_toggleLinkedTaskPhotos` 잔존 참조 | ✅ 0건 (완전 제거) |
+| photo-grid 인라인 잔존 | ✅ 0건 |
+| optional chaining `?.` 없음 (신규 코드) | ✅ 0건 |
+| TypeScript 구문 없음 (신규 코드) | ✅ 0건 |
+| JS 파싱 검사 | ✅ **OK** |
+
+### 빌드/배포 상태
+- `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 2.02s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `0b8360e`)

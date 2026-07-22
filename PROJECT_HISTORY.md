@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (FEAT-159 — feat: 근로자 메인화면 my-stats 변경 + FEAT-157 my-tasks 배너 제거)
-> **GitHub 최신: `a15fb0a`** — feat: [FEAT-159] 근로자 메인화면 my-stats 변경 + FEAT-157 my-tasks 배너 제거
+> 최종 업데이트: 2026-07-22 (FEAT-161 — feat: 접속일보 단가 불변 정책 구현 — splice_work_items 저장 시점 단가 스냅샷 보존)
+> **GitHub 최신: `4b04bdc`** — feat: [FEAT-161] 접속일보 단가 불변 정책 구현 — splice_work_items 저장 시점 단가 스냅샷 보존
+> **이전 커밋: `fa205d5`** — docs: [FEAT-159] PROJECT_HISTORY.md 근로자 메인화면 변경 기록 추가
+> **이전 커밋: `a15fb0a`** — feat: [FEAT-159] 근로자 메인화면 my-stats 변경 + FEAT-157 my-tasks 배너 제거
 > **이전 커밋: `475b7e3`** — docs: [FEAT-158] PROJECT_HISTORY.md 안전 순위 카드 기록 추가
 > **이전 커밋: `2605aa4`** — feat: [FEAT-158] my-stats 안전 순위 카드 추가 — 이번 달 기준 본인 순위 표시
 > **이전 커밋: `bca951c`** — docs: [KST-001] PROJECT_HISTORY 필수 코딩 규칙 섹션 신설 + BUG-156 기록
@@ -163,6 +165,7 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-161 | 159 | 2026-07-22 | ✅ 적용 | **접속일보(splice_work_items) 단가 불변 정책 구현** — 기존에는 접속일보 저장 시 단가를 저장하지 않아 이후 단가 변경 시 과거 금액이 달라지는 구조적 결함 존재. 옵션2(선구현)로 결정. ①`patchSchema v0.163`: `splice_work_items` 테이블에 `unit_price_snapshot / night_price_snapshot / aerial_price_snapshot` (REAL DEFAULT NULL) 3컬럼 추가 — 기존 데이터는 NULL, 계산 시 현재 단가로 자동 폴백(하위호환). ②`src/nas-routes/splice-reports.ts` 저장(POST/PUT) 로직: `splice_unit_prices`에서 `item_label` 기준 단가 맵 구성 후 각 항목 저장 시 기본/야간/신호수 단가 스냅샷 함께 INSERT. ③금액계산 3종 전체 교체(`monthly-amount` / `monthly-amount-by-team` / `monthly-amount-by-category`): SELECT에 스냅샷 컬럼 3개 추가, 계산 시 `snapshot != null ? snapshot : 현재단가` 폴백 로직 적용. 외선일보(`work_report_extras.unit_price_snapshot`, v0.137)와 정책 완전 통일. 검증: `node --check` ✅, `npm run build` ✅(282.10 kB), `pm2 restart` + HTTP 200 ✅ | `4b04bdc` |
 | FEAT-159 | 158 | 2026-07-22 | ✅ 적용 | **근로자 접속 메인화면을 my-stats(내 작업통계)로 변경 + my-tasks 안전점수 배너 제거** — ①`doLogin()` 로그인 경로: `renderApp()` 호출 직전 `if (currentUser.role==='worker') currentPage='my-stats'` 추가. ②`init()` 자동로그인 경로: `currentPage = worker ? 'my-tasks' : 'dashboard'` → `worker ? 'my-stats' : 'dashboard'` 변경. ③`my-tasks` 상단 FEAT-157 안전점수 배너 블록 완전 제거(77줄, `_sbRes/_sbData/_sbScore` 등 `_sb` 계열 변수 전부 삭제). 검증: `node --check` ✅, `npm run build` ✅(282.10 kB), `pm2 restart` + HTTP 200 ✅ | `a15fb0a` |
 | FEAT-158 | 157 | 2026-07-22 | ✅ 적용 | **my-stats 상세화면에 본인 안전 순위 카드 추가** — 근로자 `my-stats` 페이지의 ①안전점수 메인 카드 아래, ②요약 카드 3개 위에 "이번 달 나의 순위" 카드 삽입. 기존 `/inspections/stats/worker-safety?period_type=monthly` API 재사용(백엔드 변경 없음). `workers[]` 배열에서 `Number(currentUser.id)`로 본인 찾기 → 배열 인덱스+1 = 순위. 구성: 순위(N위/공동 N위), 전체 인원, 상위 %, 프로그레스 바(높을수록 채움), 격려 멘트 5단계. 순위 구간별 색상: 1위=금(`#B45309`), 상위25%=보라(`#685182`), 상위50%=파랑(`#2563EB`), 하위=회색(`#6B7280`). 검증: ①변수명 충돌 없음(`_rk` 접두사 기존 코드베이스 전체 미사용 확인) ②RULE-001 준수(`var` 전용, HTML 문자열 연결 방식) ③KST-002 준수(`getKSTYear()`/`getKSTMonth()` 사용) ④`worker_id` 타입 불일치 방지 — `Number()` 강제 변환 양쪽 적용 ⑤기록 없거나(`!hasRecord`) API 실패 시 카드 미표시 — 기존 화면 완전 무영향 ⑥`currentUser` null guard 적용 | `2605aa4` |
 | FEAT-157 | 156 | 2026-07-22 | ✅ 적용 | **근로자 접속화면(내 작업목록) 상단 안전점수 배너 추가** — 근로자(`role=worker`) 로그인 시 `my-tasks` 페이지 최상단에 안전점수 컴팩트 배너 자동 표시. 기존 `/inspections/stats/my-safety` API 재사용(백엔드 변경 없음). 구성: 보라→핑크 그라데이션 배너, 점수+등급(S/A/B/C/D), 우수/불량 건수, 진행바(0~100%). 클릭 시 `my-stats` 페이지 이동. 검증: ①변수명 충돌 없음(`_sbRes/_sbData/_sbScore` 등 신규 접두사 `_sb` 사용) ②RULE-001 준수(var 전용, 백틱 중첩 없음 — HTML을 문자열 연결로 구성) ③RULE-003 준수(`onclick="navigateTo('my-stats')"` 패턴 — 기존 코드 동일 패턴 확인) ④KST-001 해당 없음(DB datetime 직접 표시 없음) ⑤API 실패 시 배너 미표시 — 작업목록 로드에 영향 없음(완전 격리) ⑥비근로자(관리자/감독자) 화면에는 표시 안 됨(`currentUser.role==='worker'` 조건) | `7f68473` |

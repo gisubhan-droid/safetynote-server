@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (세션 153 — feat: [FEAT-112 세션153] 연계작업 사진 칩버튼 UX + NAS 데이터 필터 수정)
-> **GitHub 최신: `125b901`** — feat: [FEAT-112 세션153] 연계작업 사진 칩버튼 UX + NAS 데이터 필터 수정
+> 최종 업데이트: 2026-07-22 (세션 155c — fix: [FEAT-155c] 현장점검 출력 버그 수정 3종)
+> **GitHub 최신: `f804cac`** — fix: [FEAT-155c] 현장점검 출력 버그 수정 3종 (사진 로딩, 협력업체명, 구분/서명란)
+> **이전 커밋: `2ea6a2d`** — docs: [FEAT-155] PROJECT_HISTORY.md 세션155 기록 추가
+> **이전 커밋: `125b901`** — feat: [FEAT-112 세션153] 연계작업 사진 칩버튼 UX + NAS 데이터 필터 수정
 > **이전 커밋: `ab01d70`** — feat: [FEAT-112 세션152] 연계작업 사진 UX 개선
 > **이전 커밋: `9354335`** — fix: [FEAT-112 세션151] _showLinkedPhotoModal 전면 재작성 (세션151)
 > **이전 커밋: `e035c01`** — docs: [FEAT-112 UX] PROJECT_HISTORY.md 세션150 기록 추가
@@ -33,6 +35,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-155c | 155c | 2026-07-22 | ✅ 수정 | **현장점검 출력 버그 수정 3종** — ①사진 로딩 불가: `_makePhotoCell(photo, idx, escFn, origin)` origin 파라미터 추가, blob URL iframe 내 `/api/inspections/photo/` 절대 URL prefix(`window.location.origin`) 처리. `_printInspectionReport` 내 `_origin = window.location.origin` 선언, 사진 4셀 호출부 모두 `_origin` 전달. ②협력업체명 오류: `node-server.ts` `GET /api/inspections/:id` SELECT에 `u.company AS inspector_company` 추가. `app.js companyName = ins.inspector_company \|\| ins.contractor_name \|\| ...` 우선순위 수정. ③구분 구분자 오류: `join(' & ')` → `join(' / ')` (EX: 청약개통 / 광케이블 접속). ④점검자 서명란 삭제: `makeHeaderTable` sign-cell + 중첩 table 제거, 점검자 이름 단순 td 표시 | `f804cac` |
 | FEAT-112c | 153 | 2026-07-22 | ✅ 적용 | **연계작업 사진 칩버튼 UX + NAS 데이터 필터 수정** — ①`app.js _loadLinkedCompletedPhotos`: 행 목록(flex-direction:column) → 칩(chip) 버튼 가로 나열(flex-wrap:wrap)으로 교체. 형식: `[📷 연계작업 사진 #0042  7장]` `[📷 연계작업 사진 #0043  3장]`. sub_task_number 4자리 0패딩. 버튼 클릭 시 전체화면 팝업 호출 ②`node-server.ts GET /api/photos` NAS 오버라이드: `construction_id`+`exclude_task_id`+tasks JOIN+LINKED_STATUSES 필터 추가 — 기존에 파라미터 완전 무시로 전체 사진 반환하던 버그 수정. 같은 공사의 LINKED_STATUSES 상태 작업 사진만 반환, 현재 작업 제외 | `125b901` |
 | FEAT-112b | 152 | 2026-07-22 | ✅ 적용 | **연계작업 사진 UX 개선** — ①섹션 타이틀: "같은 공사의 연계작업 사진" → "연계작업 사진" ②버튼 수십 개 나열 → sub_task_number 기반 행 목록으로 교체(flex-direction:column, 1행 = #번호 + 작업명 + N장 + 화살표) ③팝업: max-width:680px 모달 → position:fixed;inset:0 전체화면 전환 | `ab01d70` |
 | BUG-105 | 143-2 | 2026-07-20 | ✅ 수정 | **site-map 지도앱 열기 PC 콘솔 에러 + 카드 상세 버튼 분리** — ①PC 브라우저에서 `tryOpenMap` 앱스킴(`kakaomap://` 등) 시도 시 `Failed to launch` 콘솔 에러 반복 출력 → PC 분기에서 앱스킴 시도 제거, `window.open(webUrl, '_blank')` 직접 호출로 변경(Android 분기 기존 유지) ②하단 카드 클릭이 작업상세 이동으로 되어 있어 지도 이동과 충돌 → 카드 전체 클릭=지도이동(`_moveSiteMapTo`)으로 원복, 우측에 별도 보라색 `[상세]` 버튼 추가(`event.stopPropagation()+showTaskDetail(taskId)`로 분리) | `bcbcc9f` |

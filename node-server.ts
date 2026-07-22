@@ -5141,19 +5141,49 @@ function photoTypeToStage(photoType: string): string {
 }
 
 // GET /api/photos?task_id=X&photo_type=Y — 목록 조회
+// [FEAT-112 세션152 NAS FIX] construction_id + exclude_task_id 파라미터 추가
+//   construction_id 지정 시: 해당 공사의 특정 상태 작업 사진만 반환 (tasks JOIN)
+//   exclude_task_id: 현재 작업 본인 제외
 app.get('/api/photos', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { task_id, photo_type } = c.req.query()
-  let q = `SELECT p.id, p.task_id, p.photo_type, p.file_name, p.file_path, p.file_size, p.mime_type,
-    p.caption, p.taken_at, p.created_at, u.name as uploader_name
-    FROM task_photos p LEFT JOIN users u ON u.id = p.uploader_id`
+  const { task_id, photo_type, construction_id, exclude_task_id } = c.req.query()
+
+  const LINKED_STATUSES = ['in_progress', 'tbm_done', 'working', 'work_completed', 'completed']
+
+  let q: string
   const params: any[] = []
   const wheres: string[] = []
-  if (task_id) { wheres.push('p.task_id = ?'); params.push(task_id) }
-  if (photo_type) { wheres.push('p.photo_type = ?'); params.push(photo_type) }
-  if (wheres.length) q += ' WHERE ' + wheres.join(' AND ')
-  q += ' ORDER BY p.created_at DESC'
+
+  if (construction_id) {
+    // construction_id 기반: tasks JOIN으로 해당 공사 작업 사진 조회
+    q = `SELECT p.id, p.task_id, p.photo_type, p.file_name, p.file_path, p.file_size, p.mime_type,
+      p.caption, p.taken_at, p.created_at, u.name as uploader_name,
+      t.sub_task_number, t.title as task_title, t.status as task_status
+      FROM task_photos p
+      LEFT JOIN users u ON u.id = p.uploader_id
+      INNER JOIN tasks t ON t.id = p.task_id`
+    wheres.push('t.construction_id = ?')
+    params.push(parseInt(construction_id, 10))
+    wheres.push(`t.status IN (${LINKED_STATUSES.map(() => '?').join(',')})`)
+    params.push(...LINKED_STATUSES)
+    if (exclude_task_id) {
+      wheres.push('p.task_id != ?')
+      params.push(parseInt(exclude_task_id, 10))
+    }
+    if (photo_type) { wheres.push('p.photo_type = ?'); params.push(photo_type) }
+    q += ' WHERE ' + wheres.join(' AND ')
+    q += ' ORDER BY t.sub_task_number ASC, p.task_id ASC, p.created_at ASC'
+  } else {
+    q = `SELECT p.id, p.task_id, p.photo_type, p.file_name, p.file_path, p.file_size, p.mime_type,
+      p.caption, p.taken_at, p.created_at, u.name as uploader_name
+      FROM task_photos p LEFT JOIN users u ON u.id = p.uploader_id`
+    if (task_id) { wheres.push('p.task_id = ?'); params.push(task_id) }
+    if (photo_type) { wheres.push('p.photo_type = ?'); params.push(photo_type) }
+    if (wheres.length) q += ' WHERE ' + wheres.join(' AND ')
+    q += ' ORDER BY p.created_at DESC'
+  }
+
   const rows = rawDb.prepare(q).all(...params)
   return c.json(rows)
 })

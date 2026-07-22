@@ -10352,10 +10352,10 @@ async function openAttachment(id, fileName, mimeType) {
 }
 
 // ─── [FEAT-112 v3] 연계 작업 사진 로드 (worker 전용) ────────────────────────
-// ─── 연계작업 사진 로드 (세션148~152) ────────────────────────────────────────
-// [세션152 UX] 버튼 나열 → sub_task_number 기반 링크 목록으로 교체 (화면 복잡도 감소)
-//              섹션 타이틀: "같은 공사의 연계작업 사진" → "연계작업 사진"
-//              팝업: 680px 모달 → 전체화면(inset:0) 전환
+// ─── 연계작업 사진 로드 (세션148~153) ────────────────────────────────────────
+// [세션153 UX] 행 목록 → 칩(chip) 버튼 가로 나열로 교체
+//              형식: [연계작업 사진 #0042  7장] [연계작업 사진 #0043  3장]
+//              데이터: construction_id + exclude_task_id 파라미터 정상 전달
 async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
   var container = document.getElementById('linked-photos-content-' + currentTaskId);
   if (!container) return;
@@ -10369,9 +10369,8 @@ async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
     }
 
     // task_id 기준으로 그룹핑 (sub_task_number 우선 정렬)
-    var taskMap = {};   // { taskId: { subNum, label, status, photos[] } }
-    var taskOrder = []; // 순서 유지
-    var STATUS_LABEL = { in_progress: '위험성평가', tbm_done: 'TBM완료', working: '작업중', work_completed: '작업완료', completed: '완료' };
+    var taskMap = {};
+    var taskOrder = [];
     allPhotos.forEach(function(p) {
       var tid = String(p.task_id);
       if (!taskMap[tid]) {
@@ -10394,25 +10393,26 @@ async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
     window['__linkedTaskMap_' + currentTaskId] = taskMap;
     window['__linkedTaskOrder_' + currentTaskId] = taskOrder;
 
-    // [세션152 UX] 링크 목록 렌더링 — sub_task_number 기반, 1행씩 간결하게
-    var html = '<div style="display:flex;flex-direction:column;gap:4px">';
+    // [세션153 UX] 칩(chip) 버튼 가로 나열 렌더링
+    var html = '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 0">';
     taskOrder.forEach(function(tid) {
       var info = taskMap[tid];
       var cnt = info.photos.length;
-      var stLabel = STATUS_LABEL[info.status] || '';
       var numericTid = Number(tid);
-      // 표시 레이블: "#42 작업명" 또는 "#42" 형태
-      var dispLabel = info.subNum ? ('#' + info.subNum) : ('#' + tid);
-      var titleText = info.title ? info.title : '';
-      html += '<div onclick="_showLinkedPhotoModal(' + numericTid + ',' + currentTaskId + ')"'
-        + ' style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;background:#ffffff;border:1px solid #D1FAE5;transition:background 0.12s"'
-        + ' onmouseover="this.style.background=\'#ECFDF5\'" onmouseout="this.style.background=\'#ffffff\'">'
-        + '<span style="font-size:12px;font-weight:700;color:#059669;min-width:36px;flex-shrink:0">' + dispLabel + '</span>'
-        + (titleText ? '<span style="font-size:11px;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + titleText + '</span>' : '<span style="flex:1"></span>')
-        + (stLabel ? '<span style="font-size:10px;color:#9CA3AF;flex-shrink:0">[' + stLabel + ']</span>' : '')
-        + '<span style="font-size:11px;font-weight:700;color:#059669;flex-shrink:0">' + cnt + '장</span>'
-        + '<i class="fas fa-chevron-right" style="font-size:10px;color:#6EE7B7;flex-shrink:0"></i>'
-        + '</div>';
+      var subLabel = info.subNum ? info.subNum.padStart(4, '0') : String(tid);
+      html += '<button onclick="_showLinkedPhotoModal(' + numericTid + ',' + currentTaskId + ')"'
+        + ' type="button"'
+        + ' style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;'
+        + 'border:1px solid #6EE7B7;background:#ffffff;cursor:pointer;font-size:12px;'
+        + 'color:#065F46;font-weight:600;white-space:nowrap;transition:background 0.15s;'
+        + 'box-shadow:0 1px 2px rgba(0,0,0,0.05)"'
+        + ' onmouseover="this.style.background=\'#ECFDF5\';this.style.borderColor=\'#34D399\'"'
+        + ' onmouseout="this.style.background=\'#ffffff\';this.style.borderColor=\'#6EE7B7\'">'
+        + '<i class="fas fa-camera" style="font-size:10px;color:#059669"></i>'
+        + '<span>연계작업 사진 #' + subLabel + '</span>'
+        + '<span style="font-size:11px;font-weight:700;color:#059669;background:#D1FAE5;'
+        + 'padding:1px 6px;border-radius:10px;margin-left:2px">' + cnt + '장</span>'
+        + '</button>';
     });
     html += '</div>';
     container.innerHTML = html;
@@ -10421,6 +10421,7 @@ async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
     container.innerHTML = '<p class="text-xs text-red-400 py-2">불러오기 실패</p>';
   }
 }
+
 
 // ─── 연계 작업 사진 팝업 모달 — 세션152: 전체화면 팝업 ───────────────────────
 // [세션152] max-width:680px → 전체화면(position:fixed;inset:0) 으로 변경

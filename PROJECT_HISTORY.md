@@ -1,6 +1,6 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (세션 155d — fix: [FEAT-155d] 현장점검 출력 추가 수정 4종 + 디자인 개선)
+> 최종 업데이트: 2026-07-22 (세션 155i — fix: [FEAT-155i] 사진대장 사진 cover + sida-lbl 수정 + A4 비율 단일테이블 통합)
 > **GitHub 최신: `ce7a8ae`** — fix: [FEAT-155d] 현장점검 출력 추가 수정 4종 + 디자인 개선
 > **이전 커밋: `2778cc9`** — docs: [FEAT-155c] PROJECT_HISTORY.md 세션155c 기록 추가
 > **이전 커밋: `f804cac`** — fix: [FEAT-155c] 현장점검 출력 버그 수정 3종
@@ -8324,6 +8324,56 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 ### 빌드/배포 상태
 - `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.45s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `976a595`)
+
+---
+
+## 세션155i — 사진대장 사진 cover + sida-lbl 수정 + A4 비율 단일테이블 통합 (2026-07-22)
+
+### 변경 파일
+- `public/static/app.js`
+- `patch_155i.py` (신규)
+
+### 수정 내용
+
+#### 1. 사진 object-fit contain → cover (전체 3곳)
+| 위치 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| CSS `.photo-cell img` | `object-fit:contain;max-width:100%;max-height:100%;margin:0 auto` | `object-fit:cover;object-position:center;width:100%;height:100%` |
+| `_makePhotoCell` 인라인 스타일 | 동일 contain | cover로 수정 |
+| `_makeChkPhotoCell` 인라인 스타일 | 동일 contain | cover로 수정 |
+- 효과: 사진이 셀 전체 면적을 꽉 채우도록 변경 (비율 유지하며 크롭)
+
+#### 2. CSS `.sida-lbl` 개선 — "사진대지" 글씨 칸 밖 넘어감 수정
+| 속성 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| `width` | `20px` | **`28px`** |
+| `font-size` | `7pt` | **`6pt`** |
+| `overflow` | (없음) | **`hidden`** 추가 |
+| `letter-spacing` | (없음) | **`-0.5pt`** 추가 |
+
+#### 3. photoPages 이중 테이블 → 단일 테이블 통합
+- **기존**: 상단 `flex:1` 테이블 + 하단 `flex:none` 테이블 분리 구조
+- **변경**: 단일 테이블 8행 구조 (rowspan 상단:4, 하단:3)
+- 안정적인 A4 비율 유지 (flex 충돌 제거)
+- `colgroup col[0]` width: `20px` → **`28px`**
+
+#### 4. 사진 셀 높이 mm 단위로 A4 고정
+| 항목 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| 사진셀 높이 | `height:105px` | **`height:88mm`** (A4 인쇄 고정) |
+| 캡션행 높이 | `height:20px` | **`height:12mm`** |
+| 구분선 높이 | `height:4px` | **`height:6mm`** |
+| `padding:0` 추가 | (기본 3px) | **`padding:0`** (cover 이미지 꽉 채움) |
+
+#### A4 비율 계산 근거
+- A4 유효높이: 297mm - 패딩(10mm) = 287mm
+- 제목행: ~10mm, 헤더5행: ~38mm → 사진구역: ~239mm
+- 사진대지(1)/(2): 각 ~119mm → 사진셀 88mm + 캡션 12mm + 구분 6mm + 헤더 ~8mm ≈ 114mm ✅
+
+### 커밋
+- `node --check` → ✅ OK
+- `npm run build` → ✅ `dist/_worker.js 282.10 kB`
+- PM2 재시작 → HTTP 200
 
 ---
 

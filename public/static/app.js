@@ -8960,7 +8960,7 @@ async function showTaskDetail(id, openTbmTab) {
                       ${s.reporter_position ? `<span class="opacity-60">(${s.reporter_position})</span>` : ''}
                     </span>
                   </div>
-                  <span class="text-xs text-gray-400 flex-shrink-0">${(s.stopped_at||'').replace('T',' ').substring(0,16)}</span>
+                  <span class="text-xs text-gray-400 flex-shrink-0">${_toKSTDateTime(s.stopped_at||'')}</span>
                 </div>
                 ${s.notes ? `<div class="text-xs text-gray-700 mt-1.5 leading-relaxed pl-1">
                   <i class="fas fa-quote-left text-gray-300 mr-1 text-xs"></i>${s.notes}
@@ -32581,7 +32581,7 @@ async function renderWorkStopsPage(container) {
           const detailIcon = cfg.detailIcons?.[detail] || 'fa-circle';
           const stClass = STATUS_COLOR[s.task_status] || 'bg-gray-100 text-gray-800';
           const stLabel = STATUS_LABEL[s.task_status]  || s.task_status;
-          const stoppedAt = s.stopped_at ? s.stopped_at.replace('T',' ').substring(0,16) : '-';
+          const stoppedAt = s.stopped_at ? _toKSTDateTime(s.stopped_at) : '-';
           return `
           <div class="bg-white rounded-xl border mb-3 overflow-hidden shadow-sm cursor-pointer"
                style="border-color:#F0F0F0" onclick="showTaskDetail(${s.task_id})" role="button">

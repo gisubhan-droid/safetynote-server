@@ -4133,7 +4133,8 @@ app.get('/api/inspections/:id', async (c) => {
   try {
     const ins: any = rawDb.prepare(`
       SELECT si.*,
-             u.name  AS inspector_name,
+             u.name    AS inspector_name,
+             u.company AS inspector_company,
              t.title AS task_title,
              t.task_number,
              t.sub_task_number,

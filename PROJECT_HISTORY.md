@@ -8139,3 +8139,86 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 ### 빌드/배포 상태
 - `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.23s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `409f846`)
+
+---
+
+## 세션155c — 출력 기능 버그 3종 수정 (2025-07)
+
+### 변경 파일
+- `public/static/app.js`
+- `node-server.ts`
+
+### 수정 내용
+1. **사진 로딩 안됨** — `_makePhotoCell`에 `origin` 파라미터 추가, blob URL iframe에서 `/api/...` → `window.location.origin + /api/...`
+2. **협력업체명 오류** — `node-server.ts` `u.company AS inspector_company` SELECT 추가, `companyName` 우선순위 변경
+3. **구분 구분자 `' & '` → `' / '`** 변경, 점검자 서명란(sign-cell) 삭제
+
+### 빌드/배포 상태
+- `npm run build` → ✅ 성공
+- GitHub push → ✅ (`main` 브랜치, 커밋 `f804cac`)
+
+---
+
+## 세션155d — 출력 추가 개선 4종 (2025-07)
+
+### 변경 파일
+- `public/static/app.js`
+- `node-server.ts`
+
+### 수정 내용
+1. **출력 동일창 → 새 팝업창** — `_openPrintOverlay` 전면 제거 → `window.open('', '_blank', 'width=920,...')`
+2. **구분 "line" 영문 노출** — `WC_MAP`에 `line`→선로공사 등 추가, `CON_TYPE_KR` 맵 신규 추가
+3. **작업자 빈값 폴백** — `inspection_workers` 비어있으면 `task_assignments` JOIN 쿼리 폴백
+4. **출력 디자인 전면 개선** — 네이비(#1E3A5F) 타이틀, dce6f1 섹션헤더, colgroup, print-color-adjust
+
+### 빌드/배포 상태
+- `npm run build` → ✅ 성공
+- GitHub push → ✅ (`main` 브랜치, 커밋 `c69aa2e`)
+
+---
+
+## 세션155e — 현장점검 등록 모달 체크리스트 포함 + 점검결과 순서 변경 (2025-07)
+
+### 변경 파일
+- `public/static/app.js`
+- `patch_155e.py` (신규)
+
+### 수정 내용
+1. **`showCreateInspectionModal` 4섹션 구조 재편**
+   - ① 기본 정보: 작업연결, 점검일, 유형, 위치, 위험도, 점검내용, 조치사항
+   - ② 점검 체크리스트: `_INS_CHECKLIST` 22항목 인라인 렌더링 (양호/불량/해당없음 버튼)
+   - ③ 사진 / 동영상 첨부
+   - ④ 최종 점검 결과: 불량/적정/양호/우수 + 사유 + 작업자 선택
+   - 모달 헤더 네이비 그라데이션 디자인 개선 (`linear-gradient(135deg,#1E3A5F,#2d5a9e)`)
+
+2. **`submitInspection` 3단계 추가**
+   - 1단계: JSON 저장 (기존)
+   - 2단계: 사진 업로드 (기존)
+   - 3단계: `window._insRegChkMap` → POST `/api/inspections/:id/checklist-results` 자동 저장
+   - 저장 후 `window._insRegChkMap = {}` 초기화
+
+3. **신규 함수 2개** (`_toggleInsChkTab` 앞에 삽입)
+   - `_setInsRegChkByEl(btn)`: `data-*` 속성 기반 래퍼 (onclick 따옴표 중첩 방지)
+   - `_setInsRegChk(key, val, btn)`: 버튼 상태 업데이트 + `window._insRegChkMap[key] = val`
+
+### 설계 원칙
+- `window._insRegChkMap`: 등록 모달 전용 독립 메모리 (기존 `_insChkResponses`와 충돌 없음)
+- `const/let` 사용: `submitInspection`은 원래 ES6+ `async function`이므로 정상
+- 신규 UI 함수(`_setInsRegChkByEl`, `_setInsRegChk`)는 순수 JS — `var`만 사용
+
+### 2차 검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| 등록모달 체크리스트 섹션 존재 | ✅ |
+| `_INS_CHECKLIST forEach` in modal | ✅ |
+| `_setInsRegChkByEl` 함수 정의 | ✅ |
+| `_setInsRegChk` 함수 정의 | ✅ |
+| `submitInspection` 3단계 추가 | ✅ |
+| `window._insRegChkMap = {}` 초기화 | ✅ |
+| `/checklist-results` API 호출 | ✅ |
+| 최종 점검 결과 섹션 마지막 위치 | ✅ |
+| `_openPrintOverlay(fullHtml)` 제거됨 (window.open 방식) | ✅ |
+
+### 빌드/배포 상태
+- `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.58s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `8715c22`)

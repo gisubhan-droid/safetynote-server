@@ -2717,6 +2717,21 @@ function patchSchema() {
     else console.log('[patchSchema v0.162] photo 컬럼 이미 존재 — 스킵')
   }
 
+  // ─── patchSchema v0.163: splice_work_items — unit_price_snapshot 컬럼 추가 ──
+  // 접속일보 단가 불변 정책 (FEAT-161):
+  //   저장 시점의 단가를 스냅샷으로 보존 → 이후 단가 변경 시에도 과거 금액 불변
+  //   외선일보(work_report_extras)의 unit_price_snapshot 정책과 동일하게 통일
+  //   기존 데이터: NULL → 금액 계산 시 splice_unit_prices 현재 단가로 폴백
+  try {
+    rawDb.exec(`ALTER TABLE splice_work_items ADD COLUMN unit_price_snapshot    REAL DEFAULT NULL`)
+    rawDb.exec(`ALTER TABLE splice_work_items ADD COLUMN night_price_snapshot   REAL DEFAULT NULL`)
+    rawDb.exec(`ALTER TABLE splice_work_items ADD COLUMN aerial_price_snapshot  REAL DEFAULT NULL`)
+    console.log('[patchSchema v0.163] ✅ splice_work_items 단가 스냅샷 3컬럼 추가 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.163]', e.message)
+    else console.log('[patchSchema v0.163] splice_work_items 단가 스냅샷 컬럼 이미 존재 — 스킵')
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }

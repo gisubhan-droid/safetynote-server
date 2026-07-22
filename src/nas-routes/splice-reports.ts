@@ -159,23 +159,27 @@ spliceApp.get('/monthly-amount', async (c) => {
       }
     })
 
-    // ③ splice_work_items 배치 조회
+    // ③ splice_work_items 배치 조회 (단가 스냅샷 포함 — FEAT-161)
     const reportIds = reports.map((r: any) => r.id)
     const ph = reportIds.map(() => '?').join(',')
     const items: any[] = rawDb.prepare(
-      `SELECT work_label, qty, is_night, is_aerial
+      `SELECT work_label, qty, is_night, is_aerial,
+              unit_price_snapshot, night_price_snapshot, aerial_price_snapshot
        FROM splice_work_items
        WHERE report_id IN (${ph})`
     ).all(...reportIds) as any[]
 
-    // ④ 금액 합산 (야간/가공 추가금 포함)
+    // ④ 금액 합산 — 스냅샷 단가 우선, 없으면(NULL) 현재 단가 폴백 (FEAT-161)
     let totalAmt = 0
     for (const it of items) {
       const qty    = Number(it.qty) || 0
       const p      = labelPriceMap[it.work_label] || { base: 0, night: 0, aerial: 0 }
-      const unitAmt = p.base
-                    + (it.is_night   ? p.night  : 0)
-                    + (it.is_aerial  ? p.aerial : 0)
+      const base   = it.unit_price_snapshot   != null ? Number(it.unit_price_snapshot)   : p.base
+      const night  = it.night_price_snapshot  != null ? Number(it.night_price_snapshot)  : p.night
+      const aerial = it.aerial_price_snapshot != null ? Number(it.aerial_price_snapshot) : p.aerial
+      const unitAmt = base
+                    + (it.is_night   ? night  : 0)
+                    + (it.is_aerial  ? aerial : 0)
       totalAmt += qty * unitAmt
     }
 
@@ -238,17 +242,21 @@ spliceApp.get('/monthly-amount-by-team', async (c) => {
     const reportIds = reports.map((r: any) => r.id)
     const ph = reportIds.map(() => '?').join(',')
     const items: any[] = rawDb.prepare(
-      `SELECT report_id, work_label, qty, is_night, is_aerial
+      `SELECT report_id, work_label, qty, is_night, is_aerial,
+              unit_price_snapshot, night_price_snapshot, aerial_price_snapshot
        FROM splice_work_items
        WHERE report_id IN (${ph})`
     ).all(...reportIds) as any[]
 
-    // report_id → 금액 맵
+    // report_id → 금액 맵 — 스냅샷 단가 우선, 없으면 현재 단가 폴백 (FEAT-161)
     const amtByReport: Record<number, number> = {}
     for (const it of items) {
       const qty     = Number(it.qty) || 0
       const p       = labelPriceMap[it.work_label] || { base: 0, night: 0, aerial: 0 }
-      const unitAmt = p.base + (it.is_night ? p.night : 0) + (it.is_aerial ? p.aerial : 0)
+      const base    = it.unit_price_snapshot   != null ? Number(it.unit_price_snapshot)   : p.base
+      const night   = it.night_price_snapshot  != null ? Number(it.night_price_snapshot)  : p.night
+      const aerial  = it.aerial_price_snapshot != null ? Number(it.aerial_price_snapshot) : p.aerial
+      const unitAmt = base + (it.is_night ? night : 0) + (it.is_aerial ? aerial : 0)
       amtByReport[it.report_id] = (amtByReport[it.report_id] || 0) + qty * unitAmt
     }
 
@@ -324,16 +332,21 @@ spliceApp.get('/monthly-amount-by-category', async (c) => {
     const reportIds = reports.map((r: any) => r.id)
     const ph = reportIds.map(() => '?').join(',')
     const items: any[] = rawDb.prepare(
-      `SELECT report_id, work_label, qty, is_night, is_aerial
+      `SELECT report_id, work_label, qty, is_night, is_aerial,
+              unit_price_snapshot, night_price_snapshot, aerial_price_snapshot
        FROM splice_work_items
        WHERE report_id IN (${ph})`
     ).all(...reportIds) as any[]
 
+    // 스냅샷 단가 우선, 없으면 현재 단가 폴백 (FEAT-161)
     const amtByReport: Record<number, number> = {}
     for (const it of items) {
       const qty     = Number(it.qty) || 0
       const p       = labelPriceMap[it.work_label] || { base: 0, night: 0, aerial: 0 }
-      const unitAmt = p.base + (it.is_night ? p.night : 0) + (it.is_aerial ? p.aerial : 0)
+      const base    = it.unit_price_snapshot   != null ? Number(it.unit_price_snapshot)   : p.base
+      const night   = it.night_price_snapshot  != null ? Number(it.night_price_snapshot)  : p.night
+      const aerial  = it.aerial_price_snapshot != null ? Number(it.aerial_price_snapshot) : p.aerial
+      const unitAmt = base + (it.is_night ? night : 0) + (it.is_aerial ? aerial : 0)
       amtByReport[it.report_id] = (amtByReport[it.report_id] || 0) + qty * unitAmt
     }
 
@@ -520,15 +533,42 @@ spliceApp.post('/', async (c) => {
   }
 
   rawDb.prepare(`DELETE FROM splice_work_items WHERE report_id=?`).run(reportId)
+
+  // ── [FEAT-161] 단가 불변 정책: 저장 시점 단가 스냅샷 로드 ─────────────────
+  // splice_unit_prices에서 item_label 기준으로 단가 맵 구성
+  // (splice_work_items는 item_key가 아닌 work_label(한글명)로 저장됨)
+  const _snapRows: any[] = rawDb.prepare(
+    `SELECT item_label, unit_price, night_price, aerial_price FROM splice_unit_prices`
+  ).all() as any[]
+  const _snapMap: Record<string, { base: number; night: number; aerial: number }> = {}
+  for (const p of _snapRows) {
+    if (p.item_label) _snapMap[p.item_label] = {
+      base:   Number(p.unit_price)   || 0,
+      night:  Number(p.night_price)  || 0,
+      aerial: Number(p.aerial_price) || 0,
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const stmt = rawDb.prepare(`
-    INSERT INTO splice_work_items (report_id, item_order, work_label, is_night, is_aerial, qty, unit, remark)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO splice_work_items
+      (report_id, item_order, work_label, is_night, is_aerial, qty, unit, remark,
+       unit_price_snapshot, night_price_snapshot, aerial_price_snapshot)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   let order = 0
   for (const it of (items || [])) {
     if (!it.work_label) continue
-    stmt.run(reportId, order++, it.work_label, it.is_night ? 1 : 0, it.is_aerial ? 1 : 0,
-             parseInt(it.qty) || 0, it.unit || '', it.remark || '')
+    // 저장 시점 단가 스냅샷 (없으면 NULL → 계산 시 현재 단가로 폴백)
+    const _snap = _snapMap[it.work_label] || null
+    stmt.run(
+      reportId, order++, it.work_label,
+      it.is_night ? 1 : 0, it.is_aerial ? 1 : 0,
+      parseInt(it.qty) || 0, it.unit || '', it.remark || '',
+      _snap ? _snap.base   : null,
+      _snap ? _snap.night  : null,
+      _snap ? _snap.aerial : null
+    )
   }
 
   return c.json({ ok: true, reportId })

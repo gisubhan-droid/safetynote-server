@@ -17214,12 +17214,12 @@ async function _printInspectionReport(insId) {
       /* 추가기록 내용 */
       '.add-note{font-size:7pt;vertical-align:top;padding:3px 5px;color:#333}' +
       // 사진대장
-      '.photo-page{width:210mm;min-height:297mm;height:297mm;padding:6mm 7mm 4mm 7mm;page-break-after:always;overflow:hidden;display:flex;flex-direction:column}' +
-      '.photo-cell{text-align:center;vertical-align:middle;padding:3px;overflow:hidden;background:#f9f9f9}' +
+      '.photo-page{width:210mm;min-height:297mm;height:297mm;padding:6mm 8mm 4mm 8mm;page-break-after:always;overflow:hidden;display:flex;flex-direction:column;box-sizing:border-box}' +
+      '.photo-cell{text-align:center;vertical-align:middle;padding:0;overflow:hidden;background:#eee}' +
       '.photo-cell img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}' +
-      '.caption-cell{font-size:6.5pt;text-align:center;padding:2px 4px;background:#eef2f7;color:#1E3A5F;font-weight:600;vertical-align:middle;height:15px}' +
-      '.sida-lbl{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;font-weight:bold;font-size:6pt;' +
-                'background:#dce6f1;color:#1E3A5F;padding:2px 1px;width:28px;vertical-align:middle;overflow:hidden;letter-spacing:-0.5pt}' +
+      '.caption-cell{font-size:7pt;text-align:left;padding:4px 8px;background:#f0f4fa;color:#1E3A5F;font-weight:500;vertical-align:middle;line-height:1.4}' +
+      '.photo-sec-hdr{background:#1E3A5F;color:#fff;font-size:7.5pt;font-weight:700;text-align:center;padding:4px 6px;letter-spacing:0.5pt}' +
+      '.photo-divider{height:5mm;background:#dce6f1;border-top:1.5px solid #9ab;border-bottom:1.5px solid #9ab}' +
       /* 인쇄 버튼 바 */
       '.btn-print-bar{position:fixed;top:0;left:0;width:100%;background:#1E3A5F;color:#fff;padding:7px 16px;' +
                      'display:flex;gap:10px;align-items:center;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.3)}' +
@@ -17393,62 +17393,66 @@ async function _printInspectionReport(insId) {
       var pairTop = [batch[0], batch[1]];
       var pairBot = [batch[2], batch[3]];
 
-      // ── v155i: 단일 테이블 구조 — A4 고정 비율, cover 이미지, sida-lbl 개선
-      // A4(297mm) - 상하패딩(10mm) - 제목(10mm) - 헤더5행(약38mm) - 구분여백(4mm) = 약235mm
-      // 사진대지(1)+(2) 각 = 235mm/2 = 약117mm
-      // 각 구역: 헤더행(8mm) + 사진셀(88mm) + 캡션행(10mm) + 구분(11mm) = 117mm
-      var slideLabel1 = '사\n진\n대\n지\n(' + (pg + 1) + ')';
+      // ── v155j: sida-lbl 완전 제거 — 깔끔한 2열 구조
+      // A4(297mm) - 패딩(10mm) - 제목(10mm) - 헤더(38mm) = 239mm 사진구역
+      // 상단구역: 헤더(8mm)+사진(95mm)+캡션(12mm) = 115mm
+      // 구분선: 5mm
+      // 하단구역: 헤더(8mm)+사진(95mm)+캡션(12mm) = 115mm  합: 235mm
+      var pgLabel = (pg + 1) + ' / ' + _pgCount;
       photoPages += '<div class="photo-page">' +
         '<table style="margin-bottom:3px;flex-shrink:0"><tr class="title-row"><td>안&nbsp;전&nbsp;점&nbsp;검&nbsp;&nbsp;사&nbsp;진&nbsp;&nbsp;대&nbsp;장</td></tr></table>' +
         makeHeaderTable() +
-        '<table style="flex:1;width:100%;table-layout:fixed;border:1px solid #9ab;border-collapse:collapse">' +
-          '<colgroup>' +
-            '<col style="width:28px">' +
-            '<col style="width:calc(50% - 14px)">' +
-            '<col style="width:calc(50% - 14px)">' +
-          '</colgroup>' +
-          // ── 상단 헤더행 (사진대지(1) rowspan:4) ──
-          '<tr style="height:20px;background:#dce6f1">' +
-            '<td rowspan="4" class="sida-lbl" style="width:28px;white-space:pre-line">' + slideLabel1 + '</td>' +
-            '<td style="text-align:center;font-size:7.5pt;font-weight:700;color:#1E3A5F;border-color:#9ab;padding:2px 4px">점검사항</td>' +
-            '<td style="text-align:center;font-size:7.5pt;font-weight:700;color:#1E3A5F;border-color:#9ab;padding:2px 4px">점검사항</td>' +
-          '</tr>' +
-          // ── 상단 사진 2장 (A4 고정 높이) ──
+        '<table style="flex:1;width:100%;table-layout:fixed;border-collapse:collapse;border:1.5px solid #1E3A5F">' +
+          '<colgroup><col style="width:50%"><col style="width:50%"></colgroup>' +
+
+          // ── 상단 헤더행 ──
           '<tr>' +
-            '<td class="photo-cell" style="height:88mm;padding:0;border-color:#9ab">' + _makeSlotCell(pairTop[0]) + '</td>' +
-            '<td class="photo-cell" style="height:88mm;padding:0;border-color:#9ab">' + _makeSlotCell(pairTop[1]) + '</td>' +
+            '<th class="photo-sec-hdr" style="border-right:1px solid #4a6fa5;border-bottom:1px solid #4a6fa5">점검사항</th>' +
+            '<th class="photo-sec-hdr" style="border-bottom:1px solid #4a6fa5;text-align:right;padding-right:8px">' +
+              '<span style="float:left;font-weight:700">점검사항</span>' +
+              '<span style="font-size:6pt;font-weight:400;opacity:.8">' + pgLabel + '쪽</span>' +
+            '</th>' +
           '</tr>' +
+
+          // ── 상단 사진 2장 ──
+          '<tr>' +
+            '<td class="photo-cell" style="height:95mm;border-right:1px solid #9ab;border-bottom:none">' + _makeSlotCell(pairTop[0]) + '</td>' +
+            '<td class="photo-cell" style="height:95mm;border-bottom:none">' + _makeSlotCell(pairTop[1]) + '</td>' +
+          '</tr>' +
+
           // ── 상단 캡션 ──
-          '<tr style="height:12mm;background:#eef2f7">' +
-            '<td class="caption-cell" style="font-size:7pt;border-color:#9ab;padding:3px 6px;text-align:left;vertical-align:top">' +
-              '<span style="color:#888;font-weight:400">▶ </span>' + _makeSlotCaption(pairTop[0]) + '</td>' +
-            '<td class="caption-cell" style="font-size:7pt;border-color:#9ab;padding:3px 6px;text-align:left;vertical-align:top">' +
-              '<span style="color:#888;font-weight:400">▶ </span>' + _makeSlotCaption(pairTop[1]) + '</td>' +
+          '<tr>' +
+            '<td class="caption-cell" style="height:12mm;border-right:1px solid #9ab;border-top:1px solid #c5d0e0">' +
+              '<span style="color:#1E3A5F;font-weight:700;margin-right:4px">▶</span>' + _makeSlotCaption(pairTop[0]) + '</td>' +
+            '<td class="caption-cell" style="height:12mm;border-top:1px solid #c5d0e0">' +
+              '<span style="color:#1E3A5F;font-weight:700;margin-right:4px">▶</span>' + _makeSlotCaption(pairTop[1]) + '</td>' +
           '</tr>' +
-          // ── 구분선 (사진대지 1/2 경계) ──
-          '<tr style="height:6mm;background:#dce6f1">' +
-            '<td colspan="2" style="border-color:#9ab;padding:0;background:#dce6f1"></td>' +
+
+          // ── 구분선 ──
+          '<tr>' +
+            '<td colspan="2" class="photo-divider"></td>' +
           '</tr>' +
-          // ── 하단 헤더행 (사진대지(2) rowspan:3) ──
-          '<tr style="height:20px;background:#dce6f1">' +
-            '<td rowspan="3" class="sida-lbl" style="width:28px;white-space:pre-line">' +
-              '사\n진\n대\n지\n(' + (pg + 1) + ')' +
-            '</td>' +
-            '<td style="text-align:center;font-size:7.5pt;font-weight:700;color:#1E3A5F;border-color:#9ab;padding:2px 4px">점검사항</td>' +
-            '<td style="text-align:center;font-size:7.5pt;font-weight:700;color:#1E3A5F;border-color:#9ab;padding:2px 4px">점검사항</td>' +
+
+          // ── 하단 헤더행 ──
+          '<tr>' +
+            '<th class="photo-sec-hdr" style="border-right:1px solid #4a6fa5;border-bottom:1px solid #4a6fa5">점검사항</th>' +
+            '<th class="photo-sec-hdr" style="border-bottom:1px solid #4a6fa5">점검사항</th>' +
           '</tr>' +
+
           // ── 하단 사진 2장 ──
           '<tr>' +
-            '<td class="photo-cell" style="height:88mm;padding:0;border-color:#9ab">' + _makeSlotCell(pairBot[0]) + '</td>' +
-            '<td class="photo-cell" style="height:88mm;padding:0;border-color:#9ab">' + _makeSlotCell(pairBot[1]) + '</td>' +
+            '<td class="photo-cell" style="height:95mm;border-right:1px solid #9ab;border-bottom:none">' + _makeSlotCell(pairBot[0]) + '</td>' +
+            '<td class="photo-cell" style="height:95mm;border-bottom:none">' + _makeSlotCell(pairBot[1]) + '</td>' +
           '</tr>' +
+
           // ── 하단 캡션 ──
-          '<tr style="height:12mm;background:#eef2f7">' +
-            '<td class="caption-cell" style="font-size:7pt;border-color:#9ab;padding:3px 6px;text-align:left;vertical-align:top">' +
-              '<span style="color:#888;font-weight:400">▶ </span>' + _makeSlotCaption(pairBot[0]) + '</td>' +
-            '<td class="caption-cell" style="font-size:7pt;border-color:#9ab;padding:3px 6px;text-align:left;vertical-align:top">' +
-              '<span style="color:#888;font-weight:400">▶ </span>' + _makeSlotCaption(pairBot[1]) + '</td>' +
+          '<tr>' +
+            '<td class="caption-cell" style="height:12mm;border-right:1px solid #9ab;border-top:1px solid #c5d0e0">' +
+              '<span style="color:#1E3A5F;font-weight:700;margin-right:4px">▶</span>' + _makeSlotCaption(pairBot[0]) + '</td>' +
+            '<td class="caption-cell" style="height:12mm;border-top:1px solid #c5d0e0">' +
+              '<span style="color:#1E3A5F;font-weight:700;margin-right:4px">▶</span>' + _makeSlotCaption(pairBot[1]) + '</td>' +
           '</tr>' +
+
         '</table>' +
       '</div>';
     }

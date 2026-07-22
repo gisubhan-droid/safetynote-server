@@ -2905,8 +2905,18 @@ function safeFsName(s: string): string {
   return (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim()
 }
 
+// KST(UTC+9) 기준 현재 날짜 문자열 (YYYY-MM-DD)
+function kstDateStr(): string {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+// KST(UTC+9) 기준 현재 datetime 문자열 (YYYY-MM-DD HH:MM:SS)
+function kstNowStr(): string {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+}
+
 function fmtDateStr(d: string | null | undefined): string {
-  if (!d) return new Date().toISOString().slice(0, 10)
+  if (!d) return kstDateStr()
   return String(d).slice(0, 10)
 }
 
@@ -3081,7 +3091,7 @@ async function generateTbmApprovalPdf(tbmId: number): Promise<void> {
       team_name: tbm.team_name || null,  // [FEAT-050] 팀명 포함
     }
     const saveDir  = getUploadDir(taskObj, 'tbm')
-    const dateStr  = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const dateStr  = kstDateStr().replace(/-/g, '')
     const filePath = join(saveDir, `TBM결과보고_${dateStr}.pdf`)
 
     const fmtDt = (v?: string) =>
@@ -3437,7 +3447,7 @@ app.patch('/api/tasks/:id/status', async (c) => {
     } else if (status === 'work_completed') {
       rawDb.prepare(
         `UPDATE tasks SET status=?, work_completed_at=?, work_log_required=1, updated_at=CURRENT_TIMESTAMP WHERE id=?`
-      ).run(status, work_completed_at || new Date().toISOString(), id)
+      ).run(status, work_completed_at || kstNowStr(), id)
     } else if (status === 'completed') {
       rawDb.prepare(
         `UPDATE tasks SET status=?, work_log_required=0, updated_at=CURRENT_TIMESTAMP WHERE id=?`
@@ -5088,7 +5098,7 @@ app.get('/api/constructions/stats', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const period     = c.req.query('period')       || 'yearly'   // yearly | monthly | weekly
-  const year       = c.req.query('year')         || String(new Date().getFullYear())
+  const year       = c.req.query('year')         || String(new Date(Date.now() + 9*3600*1000).getUTCFullYear())
   const month      = c.req.query('month')        || ''          // 월간: '1'~'12'
   const weekStart  = c.req.query('week_start')   || ''          // 주간: 'YYYY-MM-DD'
   // work_classes: 쉼표 구분 영문 key (예: 'relocation,subscription') — 생략 시 전체
@@ -5122,11 +5132,12 @@ app.get('/api/constructions/stats', async (c) => {
       dateWhere = `AND date(c.created_at) >= date(?) AND date(c.created_at) <= date(?, '+6 days')`
       dateParams.push(weekStart, weekStart)
     } else {
-      // 기본: 이번 주 월요일 계산 (KST 근사)
-      const now = new Date()
-      const dayOfWeek = now.getDay() // 0=일
-      const monday = new Date(now)
-      monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+      // 기본: 이번 주 월요일 계산 (KST 기준)
+      const nowKstMs = Date.now() + 9 * 3600 * 1000
+      const nowKstD  = new Date(nowKstMs)
+      const dayOfWeek = nowKstD.getUTCDay() // 0=일
+      const monday = new Date(nowKstMs)
+      monday.setUTCDate(nowKstD.getUTCDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
       const ws = monday.toISOString().slice(0, 10)
       dateWhere = `AND date(c.created_at) >= date(?) AND date(c.created_at) <= date(?, '+6 days')`
       dateParams.push(ws, ws)
@@ -6823,9 +6834,11 @@ function runCmd(
 
 function scheduleDailyBackup() {
   const now   = new Date()
+  const kstNow = new Date(Date.now() + 9 * 3600 * 1000)
   const next  = new Date(now)
-  next.setDate(now.getDate() + (now.getHours() >= 2 ? 1 : 0))
-  next.setHours(2, 0, 0, 0)                     // 다음 새벽 2:00:00
+  // KST 기준 새벽 2시 = UTC 전날 17:00
+  next.setUTCDate(kstNow.getUTCDate() + (kstNow.getUTCHours() >= 2 ? 1 : 0))
+  next.setUTCHours(17, 0, 0, 0)                 // UTC 17:00 = KST 02:00
   const delay = next.getTime() - now.getTime()
 
   setTimeout(async () => {
@@ -6843,7 +6856,7 @@ async function runDailyBackup() {
     const backupDir = join(__dirname, 'backups')
     mkdirSync(backupDir, { recursive: true })
 
-    const stamp   = new Date().toISOString().slice(0, 10).replace(/-/g, '') // YYYYMMDD
+    const stamp   = kstDateStr().replace(/-/g, '') // YYYYMMDD (KST 기준)
     const dbSrc   = DB_FILE
     const destPath = join(backupDir, `safety_${stamp}.db`)
 

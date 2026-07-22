@@ -514,6 +514,23 @@ function getKSTDate() {
   return getKSTNow().toISOString().split('T')[0];
 }
 
+// KST 기준 현재 연도 (getKSTYear() 대체)
+function getKSTYear() {
+  return parseInt(getKSTNow().toISOString().slice(0, 4), 10);
+}
+
+// KST 기준 현재 월 1~12 (getKSTMonth() 대체)
+function getKSTMonth() {
+  return parseInt(getKSTNow().toISOString().slice(5, 7), 10);
+}
+
+// KST 기준 Date 객체를 YYYY-MM-DD 문자열로 변환
+// (Date 계산 후 .toISOString().slice(0,10) 대체 — UTC 기준 오류 방지)
+function _kstDateOf(dateObj) {
+  var kst = new Date(dateObj.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
 // KST 기준 현재 시각 (HH:MM)
 function getKSTTime() {
   const kst = getKSTNow();
@@ -3413,7 +3430,7 @@ async function _autoFillSubTaskNo(constructionId, forceOverwrite = false) {
 }
 
 // 공사현황 필터 상태
-let _conFilters = { status:'', statusList:[], year: new Date().getFullYear(), month: new Date().getMonth()+1, yearList:[], monthList:[], keyword:'', manager_names:[], page:1, limit:20 };
+let _conFilters = { status:'', statusList:[], year: getKSTYear(), month: getKSTMonth(), yearList:[], monthList:[], keyword:'', manager_names:[], page:1, limit:20 };
 let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 적용 플래그
 
 // ── 담당자 팝업 외부클릭 닫기 (공사현황·작업관리 공용) ─────────────────────
@@ -3910,7 +3927,7 @@ async function renderConstructionsPage(container) {
 
   // 연도/월 버튼 레이블 계산
   const _yrList = _conFilters.yearList || [];
-  const _yrLabel = _yrList.length === 0 ? `${_conFilters.year||new Date().getFullYear()}년`
+  const _yrLabel = _yrList.length === 0 ? `${_conFilters.year||getKSTYear()}년`
     : _yrList.length === 1 ? `${_yrList[0]}년`
     : `${_yrList.length}개 연도`;
   const _yrActive = _yrList.length > 0;
@@ -5060,7 +5077,7 @@ async function showCreateConstructionModal(editId = null) {
                 시공통보일
               </label>
               <input id="cNotificationDate" type="date" class="form-control"
-                value="${con.notification_date || con.created_at?.slice(0,10) || new Date().toISOString().slice(0,10)}">
+                value="${con.notification_date || con.created_at?.slice(0,10) || getKSTDate()}">
               <div class="text-xs text-gray-400 mt-1">시공 통보일 (기본값: 등록일)</div>
             </div>
             <!-- 완료예정일 (right) -->
@@ -5070,7 +5087,7 @@ async function showCreateConstructionModal(editId = null) {
                 완료예정일 <span class="text-red-500">*</span>
               </label>
               <input id="cCompletionDate" type="date" class="form-control"
-                value="${con.completion_date || (() => { const d=new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })()}">
+                value="${con.completion_date || (function() { var d=getKSTNow(); d.setUTCDate(d.getUTCDate()+7); return d.toISOString().slice(0,10); })()}">
               <div class="text-xs text-gray-400 mt-1">공사 완료 예정일을 선택하세요</div>
             </div>
           </div>
@@ -5433,17 +5450,17 @@ async function showCreateTaskFromConstruction(con) {
 // ======= 대시보드 =======
 // 공사현황 기간 상태 (모듈 레벨 유지)
 let _dashPeriodMode = 'month'; // 'month' | 'range' | 'year'
-let _dashYear  = new Date().getFullYear();
-let _dashMonth = new Date().getMonth() + 1;
+let _dashYear  = getKSTYear();
+let _dashMonth = getKSTMonth();
 let _dashStart = '';
 let _dashEnd   = '';
 
 async function renderDashboard(container) {
   // 초기 기간 파라미터 결정
-  const now = new Date();
+  var now = getKSTNow();
   if (!_dashStart) {
-    _dashYear  = now.getFullYear();
-    _dashMonth = now.getMonth() + 1;
+    _dashYear  = getKSTYear();
+    _dashMonth = getKSTMonth();
   }
 
   await _renderDashboardInner(container);
@@ -5477,7 +5494,7 @@ async function _renderDashboardInner(container) {
     else if (_dashStart && _dashEnd) periodLabel = `${_dashStart} ~ ${_dashEnd}`;
 
     // 연도 옵션 (현재년도 ±3)
-    const curYear = new Date().getFullYear();
+    const curYear = getKSTYear();
     const yearOpts = Array.from({length:7},(_,i)=>curYear-3+i)
       .map(y=>`<option value="${y}" ${y===_dashYear?'selected':''}>${y}년</option>`).join('');
     const monthOpts = Array.from({length:12},(_,i)=>i+1)
@@ -5765,7 +5782,7 @@ function onDashRangeApply() {
 }
 
 // ======= 작업 관리 (관리감독자) =======
-let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [], year: new Date().getFullYear(), month: new Date().getMonth()+1, yearList: [], monthList: [], statusList: [], riskList: [], workClassList: [] };
+let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [], year: getKSTYear(), month: getKSTMonth(), yearList: [], monthList: [], statusList: [], riskList: [], workClassList: [] };
 let _taskManagerDefaultApplied = false; // 작업관리 담당자 기본값 1회 적용 플래그
 let _taskUserList = []; // 작업관리 담당자 선택용 사용자 목록 (전역 캐시)
 
@@ -6166,7 +6183,7 @@ async function renderTasksPage(container) {
     const _tMoListNow = taskFilters.monthList || [];
     if (!_finalStart && !_finalEnd) {
       // yearList 선택 시: 가장 이른 연도~가장 늦은 연도 전체 범위로 서버 요청
-      const _taskYear  = _tYrListNow.length > 0 ? Math.min(..._tYrListNow) : (taskFilters.year || new Date().getFullYear());
+      const _taskYear  = _tYrListNow.length > 0 ? Math.min(..._tYrListNow) : (taskFilters.year || getKSTYear());
       const _taskYearEnd = _tYrListNow.length > 0 ? Math.max(..._tYrListNow) : _taskYear;
       // monthList 선택 시: 가장 이른 월~가장 늦은 월 범위
       const _taskMonth    = _tMoListNow.length > 0 ? Math.min(..._tMoListNow) : (taskFilters.month || null);
@@ -6525,7 +6542,7 @@ async function renderTasksPage(container) {
     // 연도/월 버튼 레이블 계산
     const _tYrList = taskFilters.yearList || [];
     const _tYrLabel = _tYrList.length === 0
-      ? `${taskFilters.year||new Date().getFullYear()}년`
+      ? `${taskFilters.year||getKSTYear()}년`
       : _tYrList.length === 1 ? `${_tYrList[0]}년` : `${_tYrList.length}개 연도`;
     const _tYrActive = _tYrList.length > 0;
     const _tMoList = taskFilters.monthList || [];
@@ -18883,9 +18900,9 @@ async function _submitResolveHazard(id) {
 
 // ======= 통계 페이지 (관리자용) =======
 async function renderStatsPage(container) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  var now = getKSTNow();
+  var year = getKSTYear();
+  var month = String(getKSTMonth()).padStart(2, '0');
   // 페이지 진입 시 전역 드롭다운 상태 초기화 (열려 있으면 닫기)
   _statsConTypesOpen = false;
 
@@ -19210,7 +19227,7 @@ async function renderStatsPage(container) {
       <!-- 일별 탭 -->
       <div id="stab-daily" class="hidden">
         <div class="flex items-center gap-3 mb-4">
-          <input id="dailyDate" type="date" value="${now.toISOString().split('T')[0]}" class="form-control w-40">
+          <input id="dailyDate" type="date" value="${getKSTDate()}" class="form-control w-40">
           <button onclick="loadDailyStats()" class="btn btn-primary">조회</button>
         </div>
         <div id="dailyStats"></div>
@@ -19724,9 +19741,9 @@ async function showActiveTasksModal(teamId, teamName) {
 
 // 완료 작업 목록 모달
 async function showCompletedTasksModal(type, id, label, year, month) {
-  const now = new Date();
-  const y = year || now.getFullYear();
-  const m = month || (now.getMonth() + 1).toString().padStart(2, '0');
+  var now = getKSTNow();
+  var y = year || getKSTYear();
+  var m = month || String(getKSTMonth()).padStart(2, '0');
   const periodLabel = `${y}년 ${parseInt(m)}월`;
 
   // 모달 생성
@@ -20094,9 +20111,9 @@ function switchStatsTab(name, el) {
 
 // ======= 현장점검 통계 =======
 async function renderInspectionStatsPage(container) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  var now = getKSTNow();
+  var year = getKSTYear();
+  var month = String(getKSTMonth()).padStart(2, '0');
 
   container.innerHTML = `
   <div class="page-container">
@@ -20114,8 +20131,8 @@ async function renderInspectionStatsPage(container) {
 }
 
 async function loadInspectionStats() {
-  const year  = document.getElementById('insStatYear')?.value  || new Date().getFullYear();
-  const month = document.getElementById('insStatMonth')?.value || String(new Date().getMonth()+1).padStart(2,'0');
+  const year  = document.getElementById('insStatYear')?.value  || getKSTYear();
+  const month = document.getElementById('insStatMonth')?.value || String(getKSTMonth()).padStart(2,'0');
   const body  = document.getElementById('insStatsBody');
   if (!body) return;
   body.innerHTML = `<div class="text-center py-10 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl"></i></div>`;
@@ -20408,9 +20425,9 @@ async function loadInspectionStats() {
 
 // 점검 목록 모달
 async function showInspectionListModal(type, id, label, year, month) {
-  const now = new Date();
-  const y = year || now.getFullYear();
-  const m = month || String(now.getMonth()+1).padStart(2,'0');
+  var now = getKSTNow();
+  var y = year || getKSTYear();
+  var m = month || String(getKSTMonth()).padStart(2,'0');
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
@@ -30907,10 +30924,10 @@ async function restoreUser(id, name) {
 
 // ======= 근로자 안전준수 현황 통계 =======
 async function renderWorkerSafetyStatsPage(container) {
-  const now = new Date();
-  const curYear  = now.getFullYear();
-  const curMonth = now.getMonth() + 1;
-  const curQ     = Math.ceil(curMonth / 3);
+  var now = getKSTNow();
+  var curYear  = getKSTYear();
+  var curMonth = getKSTMonth();
+  var curQ     = Math.ceil(curMonth / 3);
 
   container.innerHTML = `
   <div class="page-container">
@@ -31006,14 +31023,14 @@ async function loadWsSafetyStats(periodType) {
   // 파라미터 수집
   let params = { period_type: periodType };
   if (periodType === 'monthly') {
-    params.year  = document.getElementById('wsMonthYear')?.value  || new Date().getFullYear();
-    params.month = document.getElementById('wsMonthSel')?.value   || new Date().getMonth()+1;
+    params.year  = document.getElementById('wsMonthYear')?.value  || getKSTYear();
+    params.month = document.getElementById('wsMonthSel')?.value   || getKSTMonth();
   } else if (periodType === 'weekly') {
-    params.year  = document.getElementById('wsWeekYear')?.value   || new Date().getFullYear();
-    params.month = document.getElementById('wsWeekMonth')?.value  || new Date().getMonth()+1;
+    params.year  = document.getElementById('wsWeekYear')?.value   || getKSTYear();
+    params.month = document.getElementById('wsWeekMonth')?.value  || getKSTMonth();
   } else {
-    params.year    = document.getElementById('wsQtrYear')?.value  || new Date().getFullYear();
-    params.quarter = document.getElementById('wsQtrSel')?.value   || Math.ceil((new Date().getMonth()+1)/3);
+    params.year    = document.getElementById('wsQtrYear')?.value  || getKSTYear();
+    params.quarter = document.getElementById('wsQtrSel')?.value   || Math.ceil((getKSTMonth())/3);
   }
 
   try {
@@ -32160,7 +32177,7 @@ async function renderMyStatsPage(container) {
               <div class="text-white text-xs font-semibold opacity-80 mb-0.5">
                 <i class="fas fa-shield-halved mr-1"></i>나의 안전점수
               </div>
-              <div class="text-white text-xs opacity-60">${new Date().getFullYear()}년 누적</div>
+              <div class="text-white text-xs opacity-60">${getKSTYear()}년 누적</div>
             </div>
             <div style="background:rgba(255,255,255,0.15);border-radius:50%;width:48px;height:48px;display:flex;align-items:center;justify-content:center">
               <span style="font-size:22px;font-weight:900;color:#fff">${scoreGrade}</span>
@@ -32749,7 +32766,7 @@ async function renderEducationPage(container, eduType) {
     } catch(e) { /* 폴백 사용 */ }
   }
 
-  const year = new Date().getFullYear();
+  const year = getKSTYear();
   container.innerHTML = `
     <div class="page-container">
       <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -32927,7 +32944,7 @@ async function loadEduSessions(eduType) {
   const area = document.getElementById('edu-list-area');
   if (!area) return;
   const meta = EDU_TYPE_META[eduType];
-  const year = document.getElementById('edu-year-sel')?.value || new Date().getFullYear();
+  const year = document.getElementById('edu-year-sel')?.value || getKSTYear();
   const quarter = document.getElementById('edu-quarter-sel')?.value || '';
 
   try {
@@ -33019,7 +33036,7 @@ async function showEduSessionModal(sessionId, eduType) {
   }
 
   const today = kstDateStr();
-  const year  = new Date().getFullYear();
+  const year  = getKSTYear();
 
   // 사용자 목록 로드
   let allUsers = [];
@@ -35158,7 +35175,7 @@ async function _deleteEduPhoto(photoId, sessionId, eduType) {
 
 // ─── 교육현황 통계 페이지 ──────────────────────────────────────────────────
 async function renderEducationStatsPage(container) {
-  const year = new Date().getFullYear();
+  const year = getKSTYear();
   container.innerHTML = `
     <div class="page-container">
       <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -35188,7 +35205,7 @@ async function renderEducationStatsPage(container) {
 async function loadEduStats() {
   const area = document.getElementById('edu-stats-area');
   if (!area) return;
-  const year = document.getElementById('stats-year-sel')?.value || new Date().getFullYear();
+  const year = document.getElementById('stats-year-sel')?.value || getKSTYear();
 
   try {
     const res = await API.get(`/education/stats?year=${year}`);
@@ -35677,7 +35694,7 @@ function _frCalcDateRange() {
   const mVal  = document.getElementById('fr-period-month')?.value || '';
   const wVal  = document.getElementById('fr-period-week')?.value  || '';
   const qVal  = document.getElementById('fr-period-quarter')?.value || '';
-  const yVal  = document.getElementById('fr-period-year')?.value  || String(new Date().getFullYear());
+  const yVal  = document.getElementById('fr-period-year')?.value  || String(getKSTYear());
   let from = '', to = '';
   if (mode === 'week' && wVal) {
     const [yr, wk] = wVal.split('-W').map(Number);
@@ -35685,18 +35702,18 @@ function _frCalcDateRange() {
     const startOfWeek = new Date(jan4.getTime() + (wk - 1) * 7 * 86400000);
     startOfWeek.setDate(startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7));
     const endOfWeek = new Date(startOfWeek.getTime() + 6 * 86400000);
-    from = startOfWeek.toISOString().slice(0,10);
-    to   = endOfWeek.toISOString().slice(0,10);
+    from = _kstDateOf(startOfWeek);
+    to   = _kstDateOf(endOfWeek);
   } else if (mode === 'month' && mVal) {
     from = mVal + '-01';
-    const d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-    to = d.toISOString().slice(0,10);
+    var d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+    to = _kstDateOf(d);
   } else if (mode === 'quarter' && qVal && yVal) {
-    const q = parseInt(qVal);
-    from = `${yVal}-${String((q-1)*3+1).padStart(2,'0')}-01`;
-    const d = new Date(`${yVal}-${String(q*3).padStart(2,'0')}-01`);
+    var q = parseInt(qVal);
+    from = yVal + '-' + String((q-1)*3+1).padStart(2,'0') + '-01';
+    var d = new Date(yVal + '-' + String(q*3).padStart(2,'00') + '-01');
     d.setMonth(d.getMonth()+1); d.setDate(0);
-    to = d.toISOString().slice(0,10);
+    to = _kstDateOf(d);
   } else if (mode === 'year' && yVal) {
     from = `${yVal}-01-01`; to = `${yVal}-12-31`;
   }
@@ -35706,7 +35723,7 @@ function _frCalcDateRange() {
 async function renderFieldReportPage(container) {
   // ⚠️ DOM 값을 innerHTML 덮어쓰기 전에 먼저 읽어야 함 (DOM 소멸 방지)
   // container.innerHTML = ... 하기 전에 현재 필터/탭 상태를 변수에 저장
-  const nowYear   = new Date().getFullYear();
+  const nowYear   = getKSTYear();
   const frMode    = document.getElementById('fr-period-mode')?.value    || 'month';
   const frMVal    = document.getElementById('fr-period-month')?.value   || new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);
   const frWVal    = document.getElementById('fr-period-week')?.value    || '';
@@ -35753,15 +35770,16 @@ async function renderFieldReportPage(container) {
     const savedFrMode = frMode, savedFrMVal = frMVal, savedFrWVal = frWVal;
     const savedFrQVal = frQVal, savedFrYVal = frYVal, savedFrTab  = frTab;
 
-    // 주간 기본값 계산
-    const _nowWeekStr = (() => {
-      const now = new Date();
-      const jan4 = new Date(now.getFullYear(), 0, 4);
-      const wk = Math.ceil(((now - new Date(now.getFullYear(),0,1)) / 86400000 + new Date(now.getFullYear(),0,1).getDay() + 1) / 7);
-      return `${now.getFullYear()}-W${String(wk).padStart(2,'0')}`;
+    // 주간 기본값 계산 (KST 기준)
+    var _nowWeekStr = (function() {
+      var now = getKSTNow();
+      var yr  = getKSTYear();
+      var jan4 = new Date(yr, 0, 4);
+      var wk = Math.ceil(((now - new Date(yr,0,1)) / 86400000 + new Date(yr,0,1).getDay() + 1) / 7);
+      return yr + '-W' + String(wk).padStart(2,'0');
     })();
-    const displayWeekVal = savedFrWVal || _nowWeekStr;
-    const _curQ = Math.ceil((new Date().getMonth()+1)/3);
+    var displayWeekVal = savedFrWVal || _nowWeekStr;
+    var _curQ = Math.ceil(getKSTMonth()/3);
 
     const extrasMap = {};     // report_id → { item_key: qty }
     const extrasSnapMap = {}; // report_id → { item_key: unit_price_snapshot } (단가 불변 정책)
@@ -37277,7 +37295,7 @@ async function renderWorkReportForm(container, taskId) {
     const SPEC_OPTS     = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
     const KIND_OPTS     = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
     const PROC_OPTS     = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
-    const YEAR_OPTS     = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
+    const YEAR_OPTS     = (()=>{const a=[];const y=getKSTYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
     // ── 공종별 작업량 공종 목록: volume_unit_prices DB에서 동적 로드 ──
     // cable_new / cable_remove / cable_move 등 케이블 전용 항목은 제외
     const CABLE_ONLY_KEYS = new Set(['a000001','a000002','a000003']);
@@ -37575,7 +37593,7 @@ function _wrAddCableSet() {
   const SPEC_OPTS   = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
   const KIND_OPTS2  = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
   const PROC_OPTS   = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
-  const YEAR_OPTS   = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
+  const YEAR_OPTS   = (()=>{const a=[];const y=getKSTYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
   const OD_OPTS     = ['','32','50','63','75','100','125','150','200'].map(v=>`<option value="${v}">${v||'외경'}</option>`).join('');
   const ID_OPTS     = ['','26','42','51','63','82','101','127','170'].map(v=>`<option value="${v}">${v||'내경'}</option>`).join('');
   const PURPOSE_OPTS= ['','가공','관로','포설(기존)','포설(신규)','가공+포설','기타'].map(v=>`<option value="${v}">${v||'용도'}</option>`).join('');
@@ -37732,7 +37750,7 @@ function _wrAddCableRow(tbodyId) {
   const SPEC_OPTS3  = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
   const KIND_OPTS3  = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
   const PROC_OPTS3  = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
-  const YEAR_OPTS   = (()=>{const a=[];const y=new Date().getFullYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
+  const YEAR_OPTS   = (()=>{const a=[];const y=getKSTYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
   const tr = document.createElement('tr');
   tr.className = 'hover:bg-gray-50';
   tr.innerHTML = `
@@ -38759,7 +38777,7 @@ function _vsWeekRange(weekVal) {
   monday.setDate(jan4.getDate() - (dayOfWeek - 1) + (wk - 1) * 7);
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-  const fmt = d => d.toISOString().slice(0, 10);
+  var fmt = function(d) { return _kstDateOf(d); };
   return { from: fmt(monday), to: fmt(sunday) };
 }
 
@@ -38771,14 +38789,14 @@ function _vsWeekRange(weekVal) {
 async function renderConStatsPage(container) {
   // ── 상태 변수 ────────────────────────────────────────────────────────────────
   let _csPeriod    = 'yearly';
-  let _csYear      = new Date().getFullYear();
-  let _csMonth     = new Date().getMonth() + 1;
-  let _csWeekStart = (() => {
-    const now = new Date();
-    const d   = now.getDay();
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - (d === 0 ? 6 : d - 1));
-    return monday.toISOString().slice(0, 10);
+  let _csYear      = getKSTYear();
+  let _csMonth     = getKSTMonth();
+  var _csWeekStart = (function() {
+    var now = getKSTNow();
+    var d   = now.getUTCDay();
+    var monday = new Date(now.getTime());
+    monday.setUTCDate(now.getUTCDate() - (d === 0 ? 6 : d - 1));
+    return _kstDateOf(monday);
   })();
 
   // ── 공사종류 필터 상태 (기본: 지장이설만 선택) ────────────────────────────────
@@ -38816,14 +38834,14 @@ async function renderConStatsPage(container) {
   }
 
   // ── 연도 옵션 ────────────────────────────────────────────────────────────────
-  const curYear = new Date().getFullYear();
+  const curYear = getKSTYear();
   const yearOpts = Array.from({length: 5}, (_,i) => curYear - i);
 
   // ── 주간 이동 헬퍼 ───────────────────────────────────────────────────────────
   function shiftWeek(delta) {
     const d = new Date(_csWeekStart);
     d.setDate(d.getDate() + delta * 7);
-    _csWeekStart = d.toISOString().slice(0, 10);
+    _csWeekStart = _kstDateOf(d);
   }
 
   // ── Chart.js 로드 ────────────────────────────────────────────────────────────
@@ -39293,7 +39311,7 @@ async function renderVolumeStatsPage(container) {
     const vsMVal  = document.getElementById('vs-period-month')?.value || '';
     const vsWVal  = document.getElementById('vs-period-week')?.value  || '';
     const vsQVal  = document.getElementById('vs-period-quarter')?.value || '';
-    const nowYear = new Date().getFullYear();
+    const nowYear = getKSTYear();
     const vsYVal  = document.getElementById('vs-period-year')?.value  || String(nowYear);
     const vsConsVal = document.getElementById('vs-construction')?.value || '';
 
@@ -39303,15 +39321,15 @@ async function renderVolumeStatsPage(container) {
       vsFromDate = wr.from; vsToDate = wr.to;
     } else if (vsMode === 'month' && vsMVal) {
       vsFromDate = vsMVal + '-01';
-      const d = new Date(vsMVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      vsToDate = d.toISOString().slice(0,10);
+      var d = new Date(vsMVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      vsToDate = _kstDateOf(d);
     } else if (vsMode === 'quarter' && vsQVal && vsYVal) {
       const q = parseInt(vsQVal);
       const startM = String((q-1)*3+1).padStart(2,'0');
       const endM   = String(q*3).padStart(2,'0');
       vsFromDate = `${vsYVal}-${startM}-01`;
-      const d = new Date(`${vsYVal}-${endM}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
-      vsToDate = d.toISOString().slice(0,10);
+      var d = new Date(vsYVal + '-' + endM + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      vsToDate = _kstDateOf(d);
     } else if (vsMode === 'year' && vsYVal) {
       vsFromDate = `${vsYVal}-01-01`;
       vsToDate   = `${vsYVal}-12-31`;
@@ -39789,21 +39807,21 @@ async function _vsLoadSpliceStats() {
     const mode = document.getElementById('vs-splice-period-mode')?.value || 'week';
     const cons  = document.getElementById('vs-splice-construction')?.value || '';
     let from = '', to = '';
-    const nowY = new Date().getFullYear();
+    const nowY = getKSTYear();
     if (mode === 'week') {
       const wv = document.getElementById('vs-splice-period-week')?.value || '';
       if (wv) { const wr = _vsWeekRange(wv); from = wr.from; to = wr.to; }
     } else if (mode === 'month') {
       const mv = document.getElementById('vs-splice-period-month')?.value || new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);
       from = mv + '-01';
-      const d = new Date(mv + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      to = d.toISOString().slice(0,10);
+      var d = new Date(mv + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      to = _kstDateOf(d);
     } else if (mode === 'quarter') {
       const y = parseInt(document.getElementById('vs-splice-period-year')?.value || nowY);
       const q = parseInt(document.getElementById('vs-splice-period-quarter')?.value || 1);
       from = `${y}-${String((q-1)*3+1).padStart(2,'0')}-01`;
-      const d = new Date(`${y}-${String(q*3).padStart(2,'0')}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
-      to = d.toISOString().slice(0,10);
+      var d = new Date(y + '-' + String(q*3).padStart(2,'0') + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      to = _kstDateOf(d);
     } else if (mode === 'year') {
       const y = parseInt(document.getElementById('vs-splice-period-year')?.value || nowY);
       from = `${y}-01-01`; to = `${y}-12-31`;
@@ -40393,15 +40411,15 @@ async function renderCableDetailPage(container) {
     let fromDate = '', toDate = '';
     if (mode === 'month' && mVal) {
       fromDate = mVal + '-01';
-      const d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      toDate = d.toISOString().slice(0,10);
+      var d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      toDate = _kstDateOf(d);
     } else if (mode === 'quarter' && qVal && yVal) {
       const q = parseInt(qVal);
       const startM = String((q-1)*3+1).padStart(2,'0');
       const endM   = String(q*3).padStart(2,'0');
       fromDate = `${yVal}-${startM}-01`;
-      const d = new Date(`${yVal}-${endM}-01`); d.setMonth(d.getMonth()+1); d.setDate(0);
-      toDate = d.toISOString().slice(0,10);
+      var d = new Date(yVal + '-' + endM + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      toDate = _kstDateOf(d);
     } else if (mode === 'year' && yVal) {
       fromDate = `${yVal}-01-01`;
       toDate   = `${yVal}-12-31`;
@@ -40422,7 +40440,7 @@ async function renderCableDetailPage(container) {
     _cableDetailCache = cables;
 
     // 연도 목록 생성 (2020~현재년)
-    const nowYear = new Date().getFullYear();
+    const nowYear = getKSTYear();
     const years = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
     const savedMode = mode; const savedMVal = mVal; const savedQVal = qVal; const savedYVal = yVal || String(nowYear);
 

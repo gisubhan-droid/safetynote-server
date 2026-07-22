@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (세션 155n — feat: [FEAT-155n] 전체 시간 표현 KST(UTC+9) 일괄 통일)
-> **GitHub 최신: `d0ca2c3`** — feat: [FEAT-155n] 전체 시간 표현 KST(UTC+9) 일괄 통일
+> 최종 업데이트: 2026-07-22 (BUG-156 — fix: 작업중지현황 stopped_at UTC→KST 변환 누락 수정)
+> **GitHub 최신: `7587688`** — fix: [BUG-156] 작업중지현황 stopped_at UTC→KST 변환 누락 수정
+> **이전 커밋: `9969d0b`** — docs: PROJECT_HISTORY 세션155n 기록
+> **이전 커밋: `d0ca2c3`** — feat: [FEAT-155n] 전체 시간 표현 KST(UTC+9) 일괄 통일
 > **이전 커밋: `00ff80e`** — fix: [FEAT-155m] 검증 팝업 확인 버튼 SyntaxError 수정
 > **이전 커밋: `ce7a8ae`** — fix: [FEAT-155d] 현장점검 출력 추가 수정 4종 + 디자인 개선
 > **이전 커밋: `2778cc9`** — docs: [FEAT-155c] PROJECT_HISTORY.md 세션155c 기록 추가
@@ -30,6 +32,127 @@
 
 ---
 
+## 🔴 필수 코딩 규칙 (반드시 준수 — 매 세션 확인)
+
+> 아래 규칙들은 반복 버그 발생 이력을 바탕으로 확립된 **절대 규칙**입니다.
+> 새 코드 작성 또는 기존 코드 수정 시 **무조건 적용**하세요.
+
+### KST-001 · DB 시간값 화면 표시 시 반드시 `_toKSTDateTime()` 사용
+
+| 구분 | 내용 |
+|------|------|
+| **적용 파일** | `public/static/app.js` |
+| **함수 위치** | `line 545` — `function _toKSTDateTime(raw)` |
+| **확립 계기** | BUG-156 (세션155n 이후): `stopped_at` UTC 그대로 표시 → 9시간 오차 |
+
+**규칙 내용:**
+DB(Cloudflare D1 / SQLite NAS)에서 가져온 **datetime 컬럼** 값을 화면에 표시할 때는
+반드시 `_toKSTDateTime(value)` 헬퍼를 사용해야 합니다.
+
+```javascript
+// ❌ 금지 — UTC 그대로 잘라서 표시 (9시간 오차 발생)
+s.stopped_at.replace('T', ' ').substring(0, 16)
+raw.replace('T', ' ').slice(0, 16)
+value.substring(0, 16)
+
+// ✅ 필수 — KST 변환 후 표시
+_toKSTDateTime(s.stopped_at)
+_toKSTDateTime(raw || '')
+```
+
+**`_toKSTDateTime(raw)` 동작 원리:**
+- 날짜만(`YYYY-MM-DD` 10자): 변환 없이 그대로 반환
+- datetime 문자열: `Z`/`+` 없으면 UTC로 가정 → `+9h` 보정 → `YYYY-MM-DD HH:MM` 반환
+- 파싱 실패 시: 날짜 부분(`substring(0,10)`)만 반환 (안전 폴백)
+
+**적용 대상 DB 컬럼 예시 (이 외에도 datetime 컬럼이면 모두 해당):**
+
+| 테이블 | 컬럼 | 비고 |
+|--------|------|------|
+| `task_stops` | `stopped_at` | 작업중지 시각 |
+| `tasks` | `created_at`, `updated_at`, `planned_date`(날짜만이면 불필요) | |
+| `site_inspections` | `inspection_date`, `created_at` | |
+| `tbm_records` | `tbm_date`, `created_at` | |
+| `work_reports` | `work_date`, `created_at` | |
+| `hazard_reports` | `created_at` | |
+
+**이미 `_toKSTDateTime` 적용 완료된 곳:**
+- `_toKSTDateTime` 함수 자체: `app.js line 545`
+- 현장위치 지도 타임스탬프: `_toKSTDateTime` 직접 사용
+- 작업중지현황 카드 `stoppedAt`: `line 32584` (BUG-156 수정)
+- 작업상세 stops 이력 시각: `line 8963` (BUG-156 수정)
+
+**새 코드 작성 체크리스트:**
+- [ ] DB에서 가져온 datetime 값을 `.replace('T',' ')` 또는 `.substring()` 으로 바로 자르지 않았는가?
+- [ ] 모든 datetime 표시에 `_toKSTDateTime()` 을 사용했는가?
+- [ ] `formatDateTime()` / `kstDateTimeLocal()` 등 다른 KST 헬퍼와 혼용하지 않았는가?
+  - `formatDateTime(d)` — Date 객체를 받아 KST 포맷 (DB 문자열 직접 입력 불가)
+  - `_toKSTDateTime(raw)` — DB에서 읽은 **문자열** 받아 KST 포맷 ← **DB 표시용 표준**
+
+---
+
+### KST-002 · `new Date()` 직접 생성 금지 (KST 헬퍼 사용)
+
+| 구분 | 내용 |
+|------|------|
+| **적용 파일** | `public/static/app.js`, `node-server.ts` |
+| **확립 계기** | FEAT-155n (세션155n): UTC 기준 연도/월/날짜 오류 전면 교체 |
+
+```javascript
+// ❌ 금지 (app.js)
+new Date().getFullYear()   → getKSTYear()
+new Date().getMonth() + 1  → getKSTMonth()
+new Date().toISOString().slice(0, 10)  → getKSTDate()
+new Date()  (now 변수로 연도/월 추출 시)  → getKSTNow()
+d.toISOString().slice(0, 10)  (날짜계산 후)  → _kstDateOf(d)
+
+// ❌ 금지 (node-server.ts)
+new Date().toISOString().slice(0, 10)  → kstDateStr()
+new Date().toISOString()  (저장용)  → kstNowStr()
+```
+
+---
+
+### RULE-001 · `app.js`는 순수 JavaScript — ES6+ 문법 절대 금지
+
+| 금지 | 대체 |
+|------|------|
+| `const` / `let` | `var` |
+| `?.` (옵셔널 체이닝) | `x && x.y` 또는 `(x || {}).y` |
+| 백틱 템플릿 리터럴 **중첩** | 문자열 연결 `+` 로 분리 |
+| 화살표 함수 `=>` (이벤트핸들러·콜백 내부) | `function(){}` |
+
+---
+
+### RULE-002 · NAS 오버라이드 라우트 등록 순서
+
+**NAS rawDb 오버라이드 라우트는 반드시 Cloudflare 라우트(`src/routes/`) import보다 먼저 등록**
+```typescript
+// node-server.ts 내 순서
+app.get('/api/xxx', nasOverride)   // ← 먼저
+// ... (나중에)
+app.route('/api/xxx', cloudflareRoute)  // ← 나중에
+```
+
+---
+
+### RULE-003 · `onclick` 속성 내 따옴표 중첩 금지
+
+HTML 속성 `onclick="..."` 안에서 `document.getElementById("id")` 직접 사용 금지
+→ 반드시 전역 함수로 분리 후 함수명만 호출
+
+```javascript
+// ❌ 금지
+onclick="document.getElementById('popup').remove()"
+
+// ✅ 필수 — 전역 함수 분리
+function _closePopup() { var el = document.getElementById('popup'); if (el) el.remove(); }
+// HTML:
+onclick="_closePopup()"
+```
+
+---
+
 ## 📋 BUG / FEAT 전체 인덱스
 
 > 최근 → 과거 순 정렬. 세션 번호 클릭으로 상세 참조.
@@ -38,6 +161,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-156 | 155n+ | 2026-07-22 | ✅ 수정 | **작업중지현황 stopped_at UTC 그대로 표시** — `stopped_at`이 DB에 UTC(`CURRENT_TIMESTAMP`)로 저장되는데, `renderWorkStopsPage`(카드 `stoppedAt` 변수)·작업상세 stops 이력(`line 8963`) 두 곳에서 `.replace('T',' ').substring(0,16)` 으로 UTC 그대로 자름 → 9시간 빠르게 표시(예: KST 14:49 → 05:49). **해결**: 두 곳 모두 `_toKSTDateTime(s.stopped_at)` 로 교체. **영구 규칙 KST-001 확립**: DB datetime 컬럼 표시 시 반드시 `_toKSTDateTime()` 사용 (PROJECT_HISTORY 필수 코딩 규칙 섹션 등재) | `7587688` |
 | FEAT-155n | 155n | 2026-07-22 | ✅ 적용 | **전체 시간 표현 KST(UTC+9) 일괄 통일** — app.js: ①getKSTYear()/getKSTMonth()/_kstDateOf() 헬퍼 3개 신규 추가. ②new Date().getFullYear() → getKSTYear() (28곳), getMonth()+1 → getKSTMonth() (10곳). ③renderDashboard/renderStatsPage×2/showCompletedModal/showInspListModal/renderWorkerSafetyStats 6개 함수 const now→var now=getKSTNow() 교체. ④renderFieldReportPage 주간계산/공사통계 주간 초기값 KST 교체. ⑤Date계산 후 .toISOString().slice(0,10) → _kstDateOf() 전면 교체(공사비보고서/공사통계/근로자통계). UTC 잔여: 0곳. node-server.ts: ①kstDateStr()/kstNowStr() 헬퍼 2개 신규 추가. ②fmtDateStr fallback/TBM dateStr/백업stamp → kstDateStr(). ③work_completed_at kstNowStr(). ④이번주 월요일 UTC→KST 보정. ⑤scheduleDailyBackup setHours(2)→setUTCHours(17) [UTC17=KST02]. ⑥공사통계 연도 fallback KST 기준 | `d0ca2c3` |
 | FEAT-155m | 155m | 2026-07-22 | ✅ 적용 | **현장점검 등록 저장 시 4개 검증 팝업** — ①체크리스트 미체크: _INS_CHECKLIST 순회 → _insRegChkMap 키 없는 항목 수집 → 최대 3개 + "외 N개" 표시. ②사진 4장 미만: 체크된(good/bad) 항목 있을 때 _insRegChkPhotoMap 카운트 < 4 → 부족 장수 안내. ③최종점검결과 미선택: insResult 빈값 → 버튼 선택 안내. ④우수/불량 작업자 미선택: selectedWorkerIds 0명 → 작업자 목록 선택 안내. _showInsValidationPopup(issues) 신규 함수 — 네이비 헤더+카드형 항목+배경클릭닫기. 기존 toast 검증 블록 완전 교체. submitInspection 내 const→var 전환(insResult, taskId, insReason, photoFiles 등) | `00ff80e` |
 | FEAT-155l | 155l | 2026-07-22 | ✅ 적용 | **체크리스트 섹션 헤더 전체 해당없음 체크박스** — ①등록 모달(`_insRegChkHtml` 빌더) 섹션 헤더 우측에 "전체 해당없음" 체크박스 추가(flex layout, accent-color:#fff, data-secgrp=encodeURIComponent(sec.group)). ②수정 탭(`_renderInsChkTab`) 섹션 헤더 동일 패턴 적용(accent-color:#685182, data-ins=insId 추가). ③신규 함수 `_setInsRegSecAllNa(cb)`: 등록 모달용 — secgrp decode 후 _INS_CHECKLIST 순회 → 해당 섹션 나 버튼 querySelector → _setInsRegChk 일괄 호출. ④신규 함수 `_setInsSecAllNa(cb)`: 수정 탭용 — secgrp+insId decode → _setInsChk 일괄 호출. ⑤모두 var 전용, 백틱 중첩 없음 | `bf062c3` |

@@ -8071,3 +8071,66 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 
 ### 빌드/배포 상태
 - `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.33s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `2fbbfe9`)
+
+---
+
+## 세션155 — 현장점검 체크리스트 탭 + 출력 A4 개선
+
+### 작업 일시
+2026-07-22
+
+### 요청 사항
+1. 점검자 서명란 추가 (헤더 테이블 점검자 옆)
+2. 작업자 란 = 팀장 (is_leader=1 우선)
+3. 양호/불량/해당없음 체크 입력 — 위험성(체크리스트)평가 방식, 사진 첨부 가능
+4. 출력 권한 — worker/lgu_plus/lgu 제외
+5. 출력 화면 비율 목표 양식과 동일하게 수정
+6. 각 페이지 A4 1장 맞춤
+
+### 변경 내용
+
+#### `node-server.ts` [세션155 + 세션155b]
+- **세션155**: inspection_workers 쿼리에 `is_leader` 필드 + `ORDER BY COALESCE(u.is_leader,0) DESC` 추가
+- **세션155b**: `patchSchema v0.161` — `inspection_checklist_results` 테이블 신규 생성
+  - `(inspection_id, item_key, item_group, item_text, item_basis, result, memo, UNIQUE(inspection_id, item_key))`
+- **세션155b**: `GET /api/inspections/:id/checklist-results` NAS 오버라이드 추가 (RULE-002)
+- **세션155b**: `POST /api/inspections/:id/checklist-results` NAS 오버라이드 추가 (UPSERT, RULE-002)
+  - inspectionRoutes 마운트(line 4706) 앞에 등록 완료
+
+#### `public/static/app.js` [세션155 + 세션155b]
+
+**세션155 (1차 — 기존 유지):**
+- `showInspectionDetail` footer: 출력 버튼에 `role !== 'worker' && !== 'lgu_plus' && !== 'lgu'` 조건
+- `_printInspectionReport` 전체 교체: 서명란, A4 CSS, 팀장 로직, 권한 체크
+
+**세션155b (2차 신규):**
+- `showInspectionDetail` 모달에 체크리스트 탭 추가
+  - 보라색 "체크리스트" 버튼 → 탭 토글 방식 (위험성평가 방식 동일)
+  - `_toggleInsChkTab(insId)` — 탭 표시/숨김 + 데이터 로드
+  - `_loadInsChkTab(insId)` — GET API 호출 → 저장 결과 로드
+  - `_renderInsChkTab(insId, saved)` — _INS_CHECKLIST 기반 UI 렌더링
+    - 섹션별 항목 나열 + 양호(초록)/불량(분홍)/해당없음(회색) 버튼
+    - 불량 선택 시 행 배경 #fff5f8 강조
+  - `_setInsChkByEl(btn)` — data-* 속성 기반 클릭 핸들러 (onclick 문자열 파싱 오류 방지)
+  - `_setInsChk(insId, key, val, btn)` — 버튼 상태 및 메모리 저장
+  - `_saveInsChk(insId)` — POST API 일괄 저장
+- `_printInspectionReport` CSS A4 비율 수정
+  - 폰트 7.5pt → 7pt, 패딩 8mm → 6mm (22항목 체크리스트 A4 1장 맞춤)
+  - 사진대장 사진 셀 100px → 108px
+- 출력 시 `savedChkMap` 로드: 저장된 체크 결과(양호/불량/해당없음) ✔ 마크 표시
+
+### 2차 재검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| `_setInsChkByEl` 함수명 충돌 | ✅ 0건 |
+| onclick 문자열 '' 연접 파싱 오류 | ✅ data-* 방식으로 수정 |
+| optional chaining `?.` 없음 (신규 코드) | ✅ 0건 |
+| `const`/`let` 없음 (신규 코드) | ✅ 0건 |
+| TypeScript 구문 없음 (신규 코드) | ✅ 0건 |
+| JS 파싱 검사 | ✅ **OK** |
+| RULE-002 API 등록 순서 | ✅ inspectionRoutes(4706) 앞 확인 |
+
+### 빌드/배포 상태
+- `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.23s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `409f846`)

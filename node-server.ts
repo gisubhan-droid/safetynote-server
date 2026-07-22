@@ -2679,6 +2679,32 @@ function patchSchema() {
     } catch (e: any) {
       console.warn('[patchSchema v0.159] inspection_type 패치 실패 (무시):', e.message)
     }
+
+  // ─── patchSchema v0.161: inspection_checklist_results 테이블 ──────────────
+  // 현장점검 항목별 양호/불량/해당없음 체크 결과 저장 테이블
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS inspection_checklist_results (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        inspection_id   INTEGER NOT NULL REFERENCES site_inspections(id) ON DELETE CASCADE,
+        item_key        TEXT    NOT NULL,
+        item_group      TEXT,
+        item_text       TEXT,
+        item_basis      TEXT,
+        result          TEXT    CHECK(result IN ('good','bad','na')),
+        memo            TEXT,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(inspection_id, item_key)
+      )
+    `)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_ins_chk_ins ON inspection_checklist_results(inspection_id)`)
+    console.log('[patchSchema v0.161] ✅ inspection_checklist_results 테이블 준비 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.161] inspection_checklist_results 생성 실패 (무시):', e.message)
+    else console.log('[patchSchema v0.161] inspection_checklist_results 이미 존재 — 스킵')
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -4141,10 +4167,12 @@ app.get('/api/inspections/:id', async (c) => {
     // 연결된 작업자 목록
     try {
       ins.workers = (rawDb.prepare(`
-        SELECT iw.worker_id, iw.result_type, u.name AS worker_name, u.position
+        SELECT iw.worker_id, iw.result_type, u.name AS worker_name, u.position,
+               COALESCE(u.is_leader, 0) AS is_leader
         FROM inspection_workers iw
         JOIN users u ON u.id = iw.worker_id
         WHERE iw.inspection_id = ?
+        ORDER BY COALESCE(u.is_leader, 0) DESC, u.name ASC
       `).all(id) as any[])
     } catch (_) {
       ins.workers = []
@@ -4508,6 +4536,71 @@ app.put('/api/inspections/:id', async (c) => {
   }
 
   return c.json({ success: true, workers_saved: workersSaved })
+})
+
+// ─── [RULE-002] NAS 전용: GET /api/inspections/:id/checklist-results ─────────
+// 현장점검 항목별 체크 결과 조회
+app.get('/api/inspections/:id/checklist-results', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  if (!id) return c.json({ error: '잘못된 ID' }, 400)
+  try {
+    const rows = rawDb.prepare(
+      `SELECT * FROM inspection_checklist_results WHERE inspection_id = ? ORDER BY id ASC`
+    ).all(id) as any[]
+    return c.json({ results: rows })
+  } catch (e: any) {
+    // 테이블 없으면 빈 배열 반환 (방어)
+    return c.json({ results: [] })
+  }
+})
+
+// ─── [RULE-002] NAS 전용: POST /api/inspections/:id/checklist-results ─────────
+// 현장점검 항목별 체크 결과 일괄 저장 (UPSERT)
+app.post('/api/inspections/:id/checklist-results', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  const id = Number(c.req.param('id'))
+  if (!id) return c.json({ error: '잘못된 ID' }, 400)
+  let body: any
+  try { body = await c.req.json() } catch (e: any) {
+    return c.json({ error: `요청 파싱 실패: ${e.message}` }, 400)
+  }
+  const { items } = body  // [{ item_key, item_group, item_text, item_basis, result, memo }]
+  if (!Array.isArray(items)) return c.json({ error: 'items 배열 필요' }, 400)
+  try {
+    const upsert = rawDb.prepare(`
+      INSERT INTO inspection_checklist_results
+        (inspection_id, item_key, item_group, item_text, item_basis, result, memo, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(inspection_id, item_key) DO UPDATE SET
+        result     = excluded.result,
+        memo       = excluded.memo,
+        item_group = excluded.item_group,
+        item_text  = excluded.item_text,
+        item_basis = excluded.item_basis,
+        updated_at = CURRENT_TIMESTAMP
+    `)
+    const saveAll = rawDb.transaction((rows: any[]) => {
+      for (const row of rows) {
+        upsert.run(
+          id,
+          row.item_key || '',
+          row.item_group || '',
+          row.item_text  || '',
+          row.item_basis || '',
+          row.result     || null,
+          row.memo       || null
+        )
+      }
+    })
+    saveAll(items)
+    return c.json({ success: true, saved: items.length })
+  } catch (e: any) {
+    console.error('[POST /api/inspections/:id/checklist-results]', e.message)
+    return c.json({ error: `저장 실패: ${e.message}` }, 500)
+  }
 })
 
 // ─── [RULE-002] NAS 전용: PATCH /api/inspections/:id/status ─────────────────

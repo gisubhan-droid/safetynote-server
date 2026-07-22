@@ -16551,6 +16551,12 @@ async function showInspectionDetail(id) {
             </div>
           </div>` : ''}
       </div>
+      <!-- ─── 현장점검 체크리스트 탭 (세션155b) ─── -->
+      <div id="insChkTab_${ins.id}" style="display:none;padding:0">
+        <div id="insChkTabBody_${ins.id}">
+          <div style="text-align:center;padding:20px;color:#999"><i class="fas fa-spinner fa-spin"></i> 로딩 중...</div>
+        </div>
+      </div>
       <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
         ${currentUser && currentUser.role !== 'worker' ? `
           <!-- 처리상태 드롭다운 -->
@@ -16573,9 +16579,14 @@ async function showInspectionDetail(id) {
           <button onclick="deleteInspection(${ins.id})" class="btn btn-danger">
             <i class="fas fa-trash"></i> 삭제
           </button>` : ''}
+        ${currentUser && currentUser.role !== 'worker' ? `
+        <button id="insChkToggleBtn_${ins.id}" onclick="_toggleInsChkTab(${ins.id})" class="btn" style="background:#685182;color:white;border:none">
+          <i class="fas fa-clipboard-check"></i> 체크리스트
+        </button>` : ''}
+        ${currentUser && currentUser.role !== 'worker' && currentUser.role !== 'lgu_plus' && currentUser.role !== 'lgu' ? `
         <button onclick="_printInspectionReport(${ins.id})" class="btn" style="background:#1E3A5F;color:white;border:none">
           <i class="fas fa-print"></i> 출력
-        </button>
+        </button>` : ''}
         <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">닫기</button>
       </div>
     </div>`;
@@ -16583,7 +16594,169 @@ async function showInspectionDetail(id) {
   } catch(e) { toast('로드 실패', 'error'); }
 }
 
-// ─── 안전점검일지 + 사진대장 출력 (세션154) ─────────────────────────────────
+// ─── 현장점검 체크리스트 탭 함수들 (세션155b) ─────────────────────────────────
+
+// 체크리스트 탭 토글: 탭 표시/숨김 + 데이터 로드
+function _toggleInsChkTab(insId) {
+  var tab = document.getElementById('insChkTab_' + insId);
+  var btn = document.getElementById('insChkToggleBtn_' + insId);
+  if (!tab) return;
+  if (tab.style.display === 'none' || tab.style.display === '') {
+    tab.style.display = 'block';
+    if (btn) { btn.style.background = '#4E3A63'; btn.innerHTML = '<i class="fas fa-times"></i> 닫기'; }
+    _loadInsChkTab(insId);
+  } else {
+    tab.style.display = 'none';
+    if (btn) { btn.style.background = '#685182'; btn.innerHTML = '<i class="fas fa-clipboard-check"></i> 체크리스트'; }
+  }
+}
+
+// 체크리스트 탭 데이터 로드
+async function _loadInsChkTab(insId) {
+  var body = document.getElementById('insChkTabBody_' + insId);
+  if (!body) return;
+  body.innerHTML = '<div style="text-align:center;padding:20px;color:#999"><i class="fas fa-spinner fa-spin"></i> 로딩 중...</div>';
+  try {
+    var token = localStorage.getItem('token');
+    var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    var res = await fetch('/api/inspections/' + insId + '/checklist-results', { headers: headers });
+    var data = res.ok ? await res.json() : { results: [] };
+    var saved = {};
+    (data.results || []).forEach(function(r) { saved[r.item_key] = r.result; });
+    _renderInsChkTab(insId, saved);
+  } catch(e) {
+    body.innerHTML = '<div style="color:#e74c3c;padding:12px">로드 실패: ' + e.message + '</div>';
+  }
+}
+
+// 체크리스트 탭 렌더링
+function _renderInsChkTab(insId, saved) {
+  var body = document.getElementById('insChkTabBody_' + insId);
+  if (!body) return;
+
+  var html = '<div style="border-top:2px solid #685182;padding:10px 12px 0">' +
+    '<div style="font-size:11px;font-weight:700;color:#685182;margin-bottom:8px">' +
+      '<i class="fas fa-clipboard-check" style="margin-right:4px"></i>현장점검 체크리스트' +
+      ' <span style="font-size:10px;font-weight:400;color:#888;margin-left:4px">항목별 양호/불량/해당없음 체크</span>' +
+    '</div>';
+
+  _INS_CHECKLIST.forEach(function(sec) {
+    html += '<div style="margin-bottom:6px">' +
+      '<div style="background:#e8e0f0;border-left:4px solid #685182;padding:4px 8px;font-size:11px;font-weight:700;color:#4E3A63">' +
+        sec.group +
+      '</div>';
+    sec.items.forEach(function(item, i) {
+      var key = sec.group + '::' + i;
+      var cur = saved[key] || '';
+      var goodActive  = cur === 'good' ? 'background:#2DB400;color:#fff;border-color:#2DB400' : 'background:#fff;color:#555;border-color:#ccc';
+      var badActive   = cur === 'bad'  ? 'background:#D70072;color:#fff;border-color:#D70072' : 'background:#fff;color:#555;border-color:#ccc';
+      var naActive    = cur === 'na'   ? 'background:#888;color:#fff;border-color:#888'     : 'background:#fff;color:#555;border-color:#ccc';
+      html +=
+        '<div style="display:flex;align-items:flex-start;gap:6px;padding:5px 8px;border-bottom:1px solid #f0f0f0;background:' + (cur === 'bad' ? '#fff5f8' : '#fff') + '"' +
+             ' id="ins-chk-row-' + insId + '-' + encodeURIComponent(key) + '">' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-size:10.5px;color:#333;line-height:1.3">' + item.text + '</div>' +
+            '<div style="font-size:9px;color:#888;margin-top:1px">' + item.basis + '</div>' +
+          '</div>' +
+          '<div style="display:flex;gap:3px;flex-shrink:0;margin-top:2px">' +
+            '<button onclick="_setInsChkByEl(this)"' +
+              ' style="font-size:9px;padding:2px 7px;border-radius:4px;border:1px solid;cursor:pointer;font-weight:700;' + goodActive + '"' +
+              ' data-ins="' + insId + '" data-key="' + key.replace(/"/g, '&quot;') + '" data-val="good">양호</button>' +
+            '<button onclick="_setInsChkByEl(this)"' +
+              ' style="font-size:9px;padding:2px 7px;border-radius:4px;border:1px solid;cursor:pointer;font-weight:700;' + badActive + '"' +
+              ' data-ins="' + insId + '" data-key="' + key.replace(/"/g, '&quot;') + '" data-val="bad">불량</button>' +
+            '<button onclick="_setInsChkByEl(this)"' +
+              ' style="font-size:9px;padding:2px 7px;border-radius:4px;border:1px solid;cursor:pointer;font-weight:700;' + naActive + '"' +
+              ' data-ins="' + insId + '" data-key="' + key.replace(/"/g, '&quot;') + '" data-val="na">해당없음</button>' +
+          '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+  });
+
+  html +=
+    '<div style="padding:8px 8px 4px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #e0d8ea;margin-top:4px">' +
+      '<button onclick="_saveInsChk(' + insId + ')" class="btn btn-primary" style="font-size:12px;padding:6px 16px">' +
+        '<i class="fas fa-save" style="margin-right:4px"></i>체크리스트 저장' +
+      '</button>' +
+    '</div>' +
+  '</div>';
+
+  body.innerHTML = html;
+  // 저장된 응답 메모리에도 반영
+  if (!window._insChkResponses) window._insChkResponses = {};
+  window._insChkResponses[insId] = JSON.parse(JSON.stringify(saved));
+}
+
+// 단일 항목 체크 선택 (data-* 속성 기반 — onclick에서 직접 호출)
+function _setInsChkByEl(btn) {
+  var insId = btn.getAttribute('data-ins');
+  var key   = btn.getAttribute('data-key');
+  var val   = btn.getAttribute('data-val');
+  _setInsChk(insId, key, val, btn);
+}
+
+// 단일 항목 체크 선택
+function _setInsChk(insId, key, val, btn) {
+  // 같은 행의 버튼 초기화
+  var btns = document.querySelectorAll('[data-ins="' + insId + '"][data-key="' + key.replace(/"/g, '&quot;') + '"]');
+  var colors = { good: '#2DB400', bad: '#D70072', na: '#888' };
+  btns.forEach(function(b) {
+    b.style.background = '#fff';
+    b.style.color = '#555';
+    b.style.borderColor = '#ccc';
+  });
+  // 선택 버튼 활성화
+  var c = colors[val] || '#555';
+  btn.style.background = c;
+  btn.style.color = '#fff';
+  btn.style.borderColor = c;
+
+  // 불량이면 행 배경 분홍
+  var rowId = 'ins-chk-row-' + insId + '-' + encodeURIComponent(key);
+  var row = document.getElementById(rowId);
+  if (row) {
+    row.style.background = val === 'bad' ? '#fff5f8' : '#fff';
+  }
+
+  // 메모리에 저장
+  if (!window._insChkResponses) window._insChkResponses = {};
+  if (!window._insChkResponses[insId]) window._insChkResponses[insId] = {};
+  window._insChkResponses[insId][key] = val;
+}
+
+// 체크리스트 저장
+async function _saveInsChk(insId) {
+  var responses = (window._insChkResponses && window._insChkResponses[insId]) || {};
+  var items = [];
+  _INS_CHECKLIST.forEach(function(sec) {
+    sec.items.forEach(function(item, i) {
+      var key = sec.group + '::' + i;
+      items.push({
+        item_key:   key,
+        item_group: sec.group,
+        item_text:  item.text,
+        item_basis: item.basis,
+        result:     responses[key] || null,
+        memo:       null
+      });
+    });
+  });
+  try {
+    var token = localStorage.getItem('token');
+    var res = await fetch('/api/inspections/' + insId + '/checklist-results', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),
+      body: JSON.stringify({ items: items })
+    });
+    if (!res.ok) throw new Error('저장 실패 (' + res.status + ')');
+    toast('체크리스트 저장 완료', 'success');
+  } catch(e) {
+    toast('저장 실패: ' + e.message, 'error');
+  }
+}
+
+// ─── 안전점검일지 + 사진대장 출력 (세션155) ─────────────────────────────────
 // 점검항목 목록 (안전점검일지 출력용 — 산업안전보건기준에 관한 규칙 기준)
 var _INS_CHECKLIST = [
   { group: '부적합 작업발판 사용', items: [
@@ -16620,7 +16793,7 @@ var _INS_CHECKLIST = [
   ]},
 ];
 
-// ── HTML 이스케이프 헬퍼 (전역 — makeHeaderTable 보다 먼저 정의) ──
+// ── HTML 이스케이프 헬퍼 (전역) ──
 function _escHtml(s) {
   if (!s) return '';
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -16629,10 +16802,9 @@ function _escHtml(s) {
 // ── 사진 셀 생성 (for 루프 밖 독립 함수) ──
 function _makePhotoCell(photo, idx, escFn) {
   var captionDefault = photo ? (photo.caption || ('점검사진 #' + (idx + 1))) : '';
-  var imgHtml = photo
-    ? '<img src="/api/inspections/photo/' + photo.id + '/img" alt="' + escFn(captionDefault) + '" style="max-height:155mm;width:auto;display:block;margin:0 auto">'
-    : '<div style="height:155mm;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:10pt">사진 없음</div>';
-  return imgHtml;
+  return photo
+    ? '<img src="/api/inspections/photo/' + photo.id + '/img" alt="' + escFn(captionDefault) + '" style="max-width:100%;max-height:100%;object-fit:contain;display:block;margin:0 auto">'
+    : '<div style="width:100%;height:100%;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:9pt">사진 없음</div>';
 }
 
 // ── 캡션 생성 (for 루프 밖 독립 함수) ──
@@ -16642,6 +16814,14 @@ function _makePhotoCaption(photo, idx, escFn) {
 }
 
 async function _printInspectionReport(insId) {
+  // ── 출력 권한 확인: worker / lgu_plus / lgu 제외 ──
+  if (typeof currentUser !== 'undefined' && currentUser) {
+    var _role = currentUser.role || '';
+    if (_role === 'worker' || _role === 'lgu_plus' || _role === 'lgu') {
+      toast('출력 권한이 없습니다.', 'error');
+      return;
+    }
+  }
   try {
     var token = localStorage.getItem('token');
     var res = await fetch('/api/inspections/' + insId, {
@@ -16650,79 +16830,102 @@ async function _printInspectionReport(insId) {
     if (!res.ok) throw new Error('점검 데이터 로드 실패');
     var ins = await res.json();
 
+    // ── 저장된 체크리스트 결과 로드 ──
+    var savedChkMap = {};
+    try {
+      var chkToken = localStorage.getItem('token');
+      var chkRes = await fetch('/api/inspections/' + insId + '/checklist-results', {
+        headers: chkToken ? { 'Authorization': 'Bearer ' + chkToken } : {}
+      });
+      if (chkRes.ok) {
+        var chkData = await chkRes.json();
+        (chkData.results || []).forEach(function(r) { savedChkMap[r.item_key] = r.result; });
+      }
+    } catch(_) {}
+
     // ── 기본 정보 준비 ──
     var INS_TYPE_LBL = { routine: '정기점검', special: '합동점검', safety: '수시점검', joint: '합동점검', frequent: '수시점검' };
-    var insType = INS_TYPE_LBL[ins.inspection_type] || ins.inspection_type || '';
-    // 협력업체명: contractor_name(tasks 조인) 또는 con_manager_name
+    var insType     = INS_TYPE_LBL[ins.inspection_type] || ins.inspection_type || '';
     var companyName = ins.contractor_name || ins.con_manager_name || '';
-    // 작업번호: work_number + sub_task_number 조합
-    var workNum = ins.work_number
+    var workNum     = ins.work_number
       ? (ins.sub_task_number ? ins.work_number + '-' + ins.sub_task_number : ins.work_number)
       : (ins.task_number || '');
-    // 점검 일자
-    var insDate = (ins.inspection_date_only || (ins.inspection_date || '').substring(0, 10) || '').replace(/-/g, '.') || '';
-    // 점검 주소
-    var insAddr = ins.task_confirmed_address || ins.location || '';
-    // 구분: 공사종류 & 작업종류
-    var WC_MAP = { cable_install: '광케이블 시설', cable_splice: '광케이블 접속', equipment_other: '장비 시설및 기타', conduit: '관로시설' };
-    var conType = ins.construction_type || '';
-    var workClass = WC_MAP[ins.work_class] || ins.work_class || '';
-    var guBun = [conType, workClass].filter(Boolean).join(' & ');
-    // 현장책임자: supervisor_name (공사담당자)
+    var insDate     = (ins.inspection_date_only || (ins.inspection_date || '').substring(0, 10) || '').replace(/-/g, '.') || '';
+    var insAddr     = ins.task_confirmed_address || ins.location || '';
+    var WC_MAP      = { cable_install: '광케이블 시설', cable_splice: '광케이블 접속', equipment_other: '장비 시설및 기타', conduit: '관로시설' };
+    var conType     = ins.construction_type || '';
+    var workClass   = WC_MAP[ins.work_class] || ins.work_class || '';
+    var guBun       = [conType, workClass].filter(Boolean).join(' & ');
     var siteManager = ins.supervisor_name || ins.con_manager_name || '';
-    // 작업자 목록
-    var workers = Array.isArray(ins.workers) ? ins.workers : [];
-    var workerStr = workers.map(function(w) { return w.worker_name; }).join(', ') || '';
-    // 점검자
     var inspectorName = ins.inspector_name || '';
 
-    // ── _esc: 이 async 함수 내 로컬 별칭 (전역 _escHtml 참조) ──
+    // 작업자: is_leader=1 팀장 우선, 없으면 전체 목록
+    var workers = Array.isArray(ins.workers) ? ins.workers : [];
+    var leaders  = workers.filter(function(w) { return w.is_leader === 1 || w.is_leader === '1'; });
+    var workerStr = (leaders.length > 0 ? leaders : workers).map(function(w) { return w.worker_name; }).join(', ') || '';
+
+    // ── 로컬 esc 별칭 ──
     var _esc = _escHtml;
 
-    // ── CSS (공통) ──
+    // ── CSS (A4 1장 맞춤 — 체크리스트 22항목 + 헤더 + 추가기록) ──
     var CSS_COMMON = '<style>' +
       '*{box-sizing:border-box;margin:0;padding:0}' +
-      'body{font-family:"맑은 고딕","Malgun Gothic",sans-serif;font-size:9pt;color:#000;background:#fff}' +
-      '.page{width:210mm;min-height:297mm;padding:10mm 10mm 10mm 10mm;page-break-after:always}' +
+      'body{font-family:"맑은 고딕","Malgun Gothic",sans-serif;font-size:7pt;color:#000;background:#fff}' +
+      // A4: 210x297mm, padding 6mm 사방 — 22항목 체크리스트가 1페이지에 들어오도록 축소
+      '.page{width:210mm;min-height:297mm;height:297mm;padding:6mm 7mm 5mm 7mm;page-break-after:always;overflow:hidden;' +
+             'display:flex;flex-direction:column}' +
       'table{width:100%;border-collapse:collapse}' +
-      'td,th{border:1px solid #555;padding:2px 4px;font-size:8pt;vertical-align:middle}' +
-      '.title-row td{background:#d9d9d9;font-weight:bold;font-size:10pt;text-align:center;padding:6px}' +
-      '.section-hdr td{background:#d9d9d9;font-weight:bold;text-align:center;font-size:8.5pt;padding:3px}' +
-      '.check-col{width:28px;text-align:center}' +
-      '.basis-col{width:220px;font-size:7pt}' +
-      '.item-col{font-size:7.5pt}' +
-      '.ncr-col{width:60px;text-align:center;font-size:7pt}' +
-      '.lbl{background:#e8e8e8;font-weight:bold;text-align:center;width:60px;font-size:8pt}' +
-      '.val{font-size:8pt}' +
-      '.photo-cell{text-align:center;vertical-align:middle;padding:4px}' +
-      '.photo-cell img{max-width:100%;max-height:155mm;object-fit:contain;display:block;margin:0 auto}' +
-      '.caption-cell{font-size:7pt;text-align:center;padding:2px 4px;background:#f5f5f5;height:28px;vertical-align:top}' +
-      '.sida-lbl{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;font-weight:bold;font-size:9pt;background:#e8e8e8;padding:4px 2px;width:20px}' +
-      '.add-note{font-size:7pt;vertical-align:top;height:40px;padding:4px}' +
-      '.btn-print-bar{position:fixed;top:0;left:0;width:100%;background:#1E3A5F;color:#fff;padding:8px 16px;display:flex;gap:12px;align-items:center;z-index:9999}' +
-      '.btn-p{padding:6px 18px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-size:13px}' +
-      '@media print{.btn-print-bar{display:none!important}.page{margin:0;padding:8mm 8mm 8mm 8mm}}' +
+      'td,th{border:1px solid #555;padding:1px 2px;font-size:6.5pt;vertical-align:middle}' +
+      '.title-row td{background:#d9d9d9;font-weight:bold;font-size:9pt;text-align:center;padding:3px 2px}' +
+      '.section-hdr td{background:#d9d9d9;font-weight:bold;text-align:center;font-size:7pt;padding:1.5px 2px}' +
+      '.check-col{width:20px;text-align:center;font-size:6pt}' +
+      '.basis-col{width:38mm;font-size:5.5pt;line-height:1.15}' +
+      '.item-col{font-size:6pt;line-height:1.15}' +
+      '.ncr-col{width:13mm;text-align:center;font-size:5.5pt}' +
+      '.lbl{background:#e8e8e8;font-weight:bold;text-align:center;width:15mm;font-size:6.5pt;white-space:nowrap}' +
+      '.val{font-size:6.5pt}' +
+      '.sign-cell{font-size:6pt;text-align:center;color:#888;vertical-align:bottom;padding-bottom:2px;width:20mm;border-left:1px solid #555}' +
+      // 사진대장
+      '.photo-page{width:210mm;min-height:297mm;height:297mm;padding:6mm 7mm 5mm 7mm;page-break-after:always;overflow:hidden;' +
+                  'display:flex;flex-direction:column}' +
+      '.photo-cell{text-align:center;vertical-align:middle;padding:2px;overflow:hidden}' +
+      '.photo-cell img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:0 auto}' +
+      '.caption-cell{font-size:6pt;text-align:center;padding:1px 2px;background:#f5f5f5;vertical-align:middle;height:13px}' +
+      '.sida-lbl{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;font-weight:bold;font-size:7.5pt;' +
+                'background:#e8e8e8;padding:2px;width:12px}' +
+      '.add-note{font-size:6pt;vertical-align:top;padding:2px}' +
+      '.btn-print-bar{position:fixed;top:0;left:0;width:100%;background:#1E3A5F;color:#fff;padding:6px 14px;' +
+                     'display:flex;gap:10px;align-items:center;z-index:9999}' +
+      '.btn-p{padding:5px 16px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-size:12px}' +
+      '@media print{' +
+        '.btn-print-bar{display:none!important}' +
+        '.page,.photo-page{margin:0;padding:5mm 6mm 4mm 6mm}' +
+      '}' +
       '</style>';
 
-    // ── 헤더 정보 테이블 (이미지 양식 일치: 4행 4열, rowspan 없음) ──
-    // 이미지 구조:
-    //  1행: 협력업체명 | (값) | 점검일자    | (값)
-    //  2행: 작업번호   | (값) | 점검자      | (값)
-    //  3행: 점검주소   | (값) | 현장책임자  | (값)
-    //  4행: 구분       | (값) | 작업자      | (값)
+    // ── 헤더 테이블 (4행 4열, 이미지 양식 일치) ──
+    // 1행: 협력업체명 | 값 | 점검일자 | 값
+    // 2행: 작업번호   | 값 | 점검자   | 값 + 서명란
+    // 3행: 점검주소   | 값(colspan=3) colspan 없이 현장책임자
+    // 4행: 구분       | 값 | 작업자   | 값
     function makeHeaderTable() {
-      return '<table style="margin-bottom:6px">' +
+      return '<table style="margin-bottom:4px;flex-shrink:0">' +
         '<tr>' +
-          '<td class="lbl" style="width:60px">협력업체명</td>' +
-          '<td class="val" style="width:180px">' + _esc(companyName) + '</td>' +
-          '<td class="lbl" style="width:60px">점&nbsp;검&nbsp;일자</td>' +
+          '<td class="lbl">협력업체명</td>' +
+          '<td class="val" style="width:50mm">' + _esc(companyName) + '</td>' +
+          '<td class="lbl">점&nbsp;검&nbsp;일자</td>' +
           '<td class="val">' + _esc(insDate) + '</td>' +
         '</tr>' +
         '<tr>' +
           '<td class="lbl">작&nbsp;업&nbsp;번호</td>' +
           '<td class="val">' + _esc(workNum) + '</td>' +
-          '<td class="lbl">점&nbsp;&nbsp;&nbsp;검&nbsp;&nbsp;&nbsp;자</td>' +
-          '<td class="val">' + _esc(inspectorName) + '</td>' +
+          '<td class="lbl">점&nbsp;&nbsp;검&nbsp;&nbsp;자</td>' +
+          '<td class="val" style="padding:0">' +
+            '<table style="border:none;width:100%"><tr>' +
+              '<td style="border:none;padding:1px 3px;font-size:7pt;width:60%">' + _esc(inspectorName) + '</td>' +
+              '<td class="sign-cell">(서명)</td>' +
+            '</tr></table>' +
+          '</td>' +
         '</tr>' +
         '<tr>' +
           '<td class="lbl">점&nbsp;검&nbsp;주소</td>' +
@@ -16731,9 +16934,9 @@ async function _printInspectionReport(insId) {
           '<td class="val">' + _esc(siteManager) + '</td>' +
         '</tr>' +
         '<tr>' +
-          '<td class="lbl">구&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;분</td>' +
+          '<td class="lbl">구&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;분</td>' +
           '<td class="val">' + _esc(guBun) + '</td>' +
-          '<td class="lbl">작&nbsp;&nbsp;&nbsp;업&nbsp;&nbsp;&nbsp;자</td>' +
+          '<td class="lbl">작&nbsp;&nbsp;업&nbsp;&nbsp;자</td>' +
           '<td class="val">' + _esc(workerStr) + '</td>' +
         '</tr>' +
       '</table>';
@@ -16743,81 +16946,98 @@ async function _printInspectionReport(insId) {
     var checklistRows = '';
     _INS_CHECKLIST.forEach(function(sec) {
       checklistRows += '<tr class="section-hdr"><td colspan="6">' + _esc(sec.group) + '</td></tr>';
-      sec.items.forEach(function(item) {
+      sec.items.forEach(function(item, idx) {
+        var key = sec.group + '::' + idx;
+        var res = savedChkMap[key] || '';
+        var goodMark = res === 'good' ? '✔' : '';
+        var badMark  = res === 'bad'  ? '✔' : '';
+        var naMark   = res === 'na'   ? '✔' : '';
+        var rowBg = res === 'bad' ? 'background:#ffe8f0' : (res === 'good' ? 'background:#f0fff4' : '');
         checklistRows +=
-          '<tr>' +
-            '<td class="item-col">' + _esc(item.text) + '</td>' +
+          '<tr style="height:auto;' + rowBg + '">' +
+            '<td class="item-col" style="padding:1px 2px">' + _esc(item.text) + '</td>' +
             '<td class="basis-col">' + _esc(item.basis) + '</td>' +
-            '<td class="check-col"></td>' +
-            '<td class="check-col"></td>' +
-            '<td class="check-col"></td>' +
-            '<td class="ncr-col">NCR 발행대상</td>' +
+            '<td class="check-col" style="font-size:9pt;font-weight:700;color:#2DB400">' + goodMark + '</td>' +
+            '<td class="check-col" style="font-size:9pt;font-weight:700;color:#D70072">' + badMark + '</td>' +
+            '<td class="check-col" style="font-size:9pt;font-weight:700;color:#888">' + naMark + '</td>' +
+            '<td class="ncr-col" style="font-size:5pt">NCR 발행대상</td>' +
           '</tr>';
       });
     });
 
     var page1 = '<div class="page">' +
-      '<table style="margin-bottom:6px">' +
+      '<table style="margin-bottom:4px;flex-shrink:0">' +
         '<tr class="title-row"><td colspan="4">안전점검일지(' + _esc(insType) + ')</td></tr>' +
       '</table>' +
       makeHeaderTable() +
-      '<table>' +
-        '<tr style="background:#d9d9d9;font-weight:bold;font-size:8pt">' +
+      '<table style="flex:1;table-layout:fixed">' +
+        '<colgroup>' +
+          '<col style="width:auto">' +
+          '<col style="width:42mm">' +
+          '<col style="width:22px">' +
+          '<col style="width:22px">' +
+          '<col style="width:22px">' +
+          '<col style="width:15mm">' +
+        '</colgroup>' +
+        '<tr style="background:#d9d9d9;font-weight:bold">' +
           '<th class="item-col">점검항목</th>' +
-          '<th class="basis-col">시행근거<br><span style="font-size:7pt;font-weight:normal">&lt;산업안전보건기준에 관한 규칙&gt;</span></th>' +
+          '<th class="basis-col">시행근거<br><span style="font-size:5.5pt;font-weight:normal">&lt;산업안전보건기준에 관한 규칙&gt;</span></th>' +
           '<th class="check-col">양호</th>' +
           '<th class="check-col">불량</th>' +
-          '<th class="check-col">해당<br>없음</th>' +
+          '<th class="check-col" style="font-size:5.5pt">해당<br>없음</th>' +
           '<th class="ncr-col">비고</th>' +
         '</tr>' +
         checklistRows +
-        '<tr>' +
-          '<td class="lbl" style="white-space:nowrap;font-size:8pt">추가기록</td>' +
+        '<tr style="height:24px">' +
+          '<td class="lbl" style="white-space:nowrap">추가기록</td>' +
           '<td colspan="5" class="add-note">' + _esc(ins.findings || '') + '</td>' +
         '</tr>' +
       '</table>' +
     '</div>';
 
     // ── 2페이지~: 안전점검 사진대장 ──
-    // 동영상 제외, 이미지만 사용
     var photos = Array.isArray(ins.photos) ? ins.photos.filter(function(p) {
       var fn = (p.file_name || '').toLowerCase();
       return !fn.match(/\.(mp4|mov|avi|webm|mkv)$/) && !(p.mime_type || '').startsWith('video/');
     }) : [];
 
-    // 페이지당 4장(2x2), 최소 1페이지 보장
     var photoPages = '';
     var pageCount = Math.max(1, Math.ceil(photos.length / 4));
 
     for (var pg = 0; pg < pageCount; pg++) {
       var batch = photos.slice(pg * 4, pg * 4 + 4);
-      // 4장 미만이면 빈 슬롯으로 채우기
       while (batch.length < 4) { batch.push(null); }
 
       var slideLabel = (pg === 0) ? '사\n진\n대\n지\n(1)' : '사\n진\n대\n지\n(' + (pg + 1) + ')';
       var pairTop = [batch[0], batch[1]];
       var pairBot = [batch[2], batch[3]];
 
-      photoPages += '<div class="page">' +
-        '<table style="margin-bottom:6px"><tr class="title-row"><td colspan="4">안전점검 사진 대장</td></tr></table>' +
+      // 사진 셀 높이: 헤더(약 40mm) + 제목(12mm) + 여백 ≈ 297-8-8-52 = 229mm → /2 ≈ 109mm
+      photoPages += '<div class="photo-page">' +
+        '<table style="margin-bottom:4px;flex-shrink:0"><tr class="title-row"><td colspan="4">안전점검 사진 대장</td></tr></table>' +
         makeHeaderTable() +
-        '<table style="height:240mm">' +
-          '<tr>' +
+        '<table style="flex:1;table-layout:fixed;border-collapse:collapse">' +
+          '<colgroup>' +
+            '<col style="width:14px">' +
+            '<col style="width:49%">' +
+            '<col style="width:49%">' +
+          '</colgroup>' +
+          '<tr style="height:108px">' +
             '<td class="sida-lbl" rowspan="4" style="white-space:pre-line">' + slideLabel + '</td>' +
-            '<td class="photo-cell" style="width:48%">' + _makePhotoCell(pairTop[0], pg*4+0, _esc) + '</td>' +
-            '<td class="photo-cell" style="width:48%">' + _makePhotoCell(pairTop[1], pg*4+1, _esc) + '</td>' +
+            '<td class="photo-cell" style="height:108px">' + _makePhotoCell(pairTop[0], pg*4+0, _esc) + '</td>' +
+            '<td class="photo-cell" style="height:108px">' + _makePhotoCell(pairTop[1], pg*4+1, _esc) + '</td>' +
           '</tr>' +
           '<tr>' +
-            '<td class="caption-cell">점검사항<br>' + _makePhotoCaption(pairTop[0], pg*4+0, _esc) + '</td>' +
-            '<td class="caption-cell">점검사항<br>' + _makePhotoCaption(pairTop[1], pg*4+1, _esc) + '</td>' +
+            '<td class="caption-cell">점검사항 · ' + _makePhotoCaption(pairTop[0], pg*4+0, _esc) + '</td>' +
+            '<td class="caption-cell">점검사항 · ' + _makePhotoCaption(pairTop[1], pg*4+1, _esc) + '</td>' +
           '</tr>' +
-          '<tr style="border-top:2px solid #888">' +
-            '<td class="photo-cell">' + _makePhotoCell(pairBot[0], pg*4+2, _esc) + '</td>' +
-            '<td class="photo-cell">' + _makePhotoCell(pairBot[1], pg*4+3, _esc) + '</td>' +
+          '<tr style="border-top:2px solid #888;height:108px">' +
+            '<td class="photo-cell" style="height:108px">' + _makePhotoCell(pairBot[0], pg*4+2, _esc) + '</td>' +
+            '<td class="photo-cell" style="height:108px">' + _makePhotoCell(pairBot[1], pg*4+3, _esc) + '</td>' +
           '</tr>' +
           '<tr>' +
-            '<td class="caption-cell">점검사항<br>' + _makePhotoCaption(pairBot[0], pg*4+2, _esc) + '</td>' +
-            '<td class="caption-cell">점검사항<br>' + _makePhotoCaption(pairBot[1], pg*4+3, _esc) + '</td>' +
+            '<td class="caption-cell">점검사항 · ' + _makePhotoCaption(pairBot[0], pg*4+2, _esc) + '</td>' +
+            '<td class="caption-cell">점검사항 · ' + _makePhotoCaption(pairBot[1], pg*4+3, _esc) + '</td>' +
           '</tr>' +
         '</table>' +
       '</div>';
@@ -16831,11 +17051,11 @@ async function _printInspectionReport(insId) {
       CSS_COMMON +
       '</head><body>' +
       '<div class="btn-print-bar">' +
-        '<span style="font-size:14px;font-weight:700">안전점검일지 — ' + _esc(inspectorName) + ' (' + _esc(insDate) + ')</span>' +
+        '<span style="font-size:13px;font-weight:700">안전점검일지 — ' + _esc(inspectorName) + ' (' + _esc(insDate) + ')</span>' +
         '<button class="btn-p" style="background:#D70072" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>' +
         '<button class="btn-p" style="background:#374151" onclick="window.parent.postMessage(\'closePrintOverlay\',\'*\')">✕ 닫기</button>' +
       '</div>' +
-      '<div style="height:42px"></div>' +
+      '<div style="height:38px"></div>' +
       page1 +
       photoPages +
       '</body></html>';

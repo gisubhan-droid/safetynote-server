@@ -17161,73 +17161,85 @@ async function _printInspectionReport(insId) {
     // ── 로컬 esc 별칭 ──
     var _esc = _escHtml;
 
-    // ── CSS (A4 1장 맞춤 — 깔끔한 디자인) ──
+    // ── CSS (A4 1장 맞춤 — 클린 디자인 v155g) ──
     var CSS_COMMON = '<style>' +
       '*{box-sizing:border-box;margin:0;padding:0}' +
-      'body{font-family:"맑은 고딕","Malgun Gothic",sans-serif;font-size:7pt;color:#111;background:#fff}' +
-      '.page{width:210mm;min-height:297mm;height:297mm;padding:7mm 8mm 5mm 8mm;page-break-after:always;overflow:hidden;display:flex;flex-direction:column}' +
+      'body{font-family:"맑은 고딕","Malgun Gothic",sans-serif;font-size:7.5pt;color:#111;background:#fff}' +
+      '.page{width:210mm;min-height:297mm;height:297mm;padding:6mm 7mm 4mm 7mm;page-break-after:always;overflow:hidden;display:flex;flex-direction:column}' +
       'table{width:100%;border-collapse:collapse}' +
-      'td,th{border:1px solid #888;padding:2px 3px;font-size:6.5pt;vertical-align:middle}' +
-      '.title-row td{background:#1E3A5F;color:#fff;font-weight:bold;font-size:10pt;text-align:center;padding:4px 2px;letter-spacing:0.5pt}' +
-      '.section-hdr td{background:#dce6f1;color:#1E3A5F;font-weight:bold;text-align:center;font-size:7pt;padding:2px;border:1px solid #888}' +
-      '.check-col{width:22px;text-align:center;font-size:6pt;background:#fafafa}' +
-      '.basis-col{width:40mm;font-size:5.5pt;line-height:1.2;color:#333}' +
-      '.item-col{font-size:6.5pt;line-height:1.3}' +
-      '.ncr-col{width:14mm;text-align:center;font-size:5.5pt;background:#fafafa}' +
-      '.lbl{background:#dce6f1;color:#1E3A5F;font-weight:bold;text-align:center;width:16mm;font-size:6.5pt;white-space:nowrap}' +
-      '.val{font-size:6.5pt;padding:2px 4px}' +
+      'td,th{border:1px solid #aab;padding:2.5px 4px;font-size:7pt;vertical-align:middle}' +
+      /* 제목 행 */
+      '.title-row td{background:#1E3A5F;color:#fff;font-weight:bold;font-size:11pt;text-align:center;padding:5px 2px;letter-spacing:1.5pt}' +
+      /* 체크리스트 섹션 구분 행 */
+      '.section-hdr td{background:#dce6f1;color:#1E3A5F;font-weight:bold;text-align:center;font-size:7.5pt;padding:3px 4px;border:1px solid #9ab}' +
+      /* 체크(양호/불량/해당없음) 컬럼 */
+      '.check-col{width:14mm;text-align:center;font-size:7pt;background:#fafafa}' +
+      /* 시행근거 컬럼 */
+      '.basis-col{width:38mm;font-size:6pt;line-height:1.35;color:#333;padding:2px 4px}' +
+      /* 점검항목 컬럼 */
+      '.item-col{font-size:7pt;line-height:1.4;padding:2.5px 4px}' +
+      /* 비고 컬럼 */
+      '.ncr-col{width:16mm;text-align:center;font-size:6pt;background:#fafafe;padding:2px}' +
+      /* 헤더 라벨 셀 */
+      '.lbl{background:#dce6f1;color:#1E3A5F;font-weight:bold;text-align:center;font-size:7pt;white-space:nowrap;padding:3px 4px}' +
+      /* 헤더 값 셀 */
+      '.val{font-size:7pt;padding:3px 5px}' +
+      /* 추가기록 라벨 */
+      '.add-lbl{background:#dce6f1;color:#1E3A5F;font-weight:bold;text-align:center;font-size:7pt;white-space:nowrap;padding:3px 4px}' +
+      /* 추가기록 내용 */
+      '.add-note{font-size:7pt;vertical-align:top;padding:3px 5px;color:#333}' +
       // 사진대장
-      '.photo-page{width:210mm;min-height:297mm;height:297mm;padding:7mm 8mm 5mm 8mm;page-break-after:always;overflow:hidden;display:flex;flex-direction:column}' +
+      '.photo-page{width:210mm;min-height:297mm;height:297mm;padding:6mm 7mm 4mm 7mm;page-break-after:always;overflow:hidden;display:flex;flex-direction:column}' +
       '.photo-cell{text-align:center;vertical-align:middle;padding:3px;overflow:hidden;background:#f9f9f9}' +
       '.photo-cell img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:0 auto}' +
-      '.caption-cell{font-size:6pt;text-align:center;padding:2px 3px;background:#eef2f7;color:#1E3A5F;font-weight:600;vertical-align:middle;height:14px}' +
+      '.caption-cell{font-size:6.5pt;text-align:center;padding:2px 4px;background:#eef2f7;color:#1E3A5F;font-weight:600;vertical-align:middle;height:15px}' +
       '.sida-lbl{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;font-weight:bold;font-size:7.5pt;' +
-                'background:#dce6f1;color:#1E3A5F;padding:2px;width:12px}' +
-      '.add-note{font-size:6pt;vertical-align:top;padding:3px}' +
+                'background:#dce6f1;color:#1E3A5F;padding:2px;width:13px}' +
+      /* 인쇄 버튼 바 */
       '.btn-print-bar{position:fixed;top:0;left:0;width:100%;background:#1E3A5F;color:#fff;padding:7px 16px;' +
                      'display:flex;gap:10px;align-items:center;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.3)}' +
       '.btn-p{padding:6px 18px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-size:12px;transition:opacity .15s}' +
       '.btn-p:hover{opacity:.85}' +
       '@media print{' +
         '.btn-print-bar{display:none!important}' +
-        '.page,.photo-page{margin:0;padding:6mm 7mm 4mm 7mm}' +
+        '.page,.photo-page{margin:0;padding:5mm 6mm 3mm 6mm}' +
         'body{-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
       '}' +
       '</style>';
 
-    // ── 헤더 테이블 (4행 4열) ──
+    // ── 헤더 테이블 (5행 4열 — v155g 원본 양식 동일 구조) ──
     function makeHeaderTable() {
-      return '<table style="margin-bottom:5px;flex-shrink:0;border:1.5px solid #1E3A5F">' +
+      return '<table style="margin-bottom:4px;flex-shrink:0;border:1.5px solid #1E3A5F">' +
         '<colgroup>' +
-          '<col style="width:16mm">' +
-          '<col style="width:52mm">' +
-          '<col style="width:16mm">' +
+          '<col style="width:18mm">' +
+          '<col style="width:50mm">' +
+          '<col style="width:18mm">' +
           '<col>' +
         '</colgroup>' +
         '<tr>' +
           '<td class="lbl">협력업체명</td>' +
           '<td class="val">' + _esc(companyName) + '</td>' +
-          '<td class="lbl">점검일자</td>' +
+          '<td class="lbl" style="white-space:nowrap">점&nbsp;검&nbsp;일&nbsp;자</td>' +
           '<td class="val">' + _esc(insDate) + '</td>' +
         '</tr>' +
         '<tr>' +
-          '<td class="lbl">작업번호</td>' +
+          '<td class="lbl">작&nbsp;업&nbsp;번&nbsp;호</td>' +
           '<td class="val">' + _esc(workNum) + '</td>' +
-          '<td class="lbl">점&nbsp;검&nbsp;자</td>' +
+          '<td class="lbl">점&nbsp;&nbsp;검&nbsp;&nbsp;자</td>' +
           '<td class="val">' + _esc(inspectorName) + '</td>' +
         '</tr>' +
         '<tr>' +
-          '<td class="lbl">점검주소</td>' +
+          '<td class="lbl">점&nbsp;검&nbsp;주&nbsp;소</td>' +
           '<td class="val" colspan="3">' + _esc(insAddr) + '</td>' +
         '</tr>' +
         '<tr>' +
           '<td class="lbl">현장책임자</td>' +
           '<td class="val">' + _esc(siteManager) + '</td>' +
-          '<td class="lbl">작&nbsp;업&nbsp;자</td>' +
+          '<td class="lbl">작&nbsp;&nbsp;업&nbsp;&nbsp;자</td>' +
           '<td class="val">' + _esc(workerStr) + '</td>' +
         '</tr>' +
         '<tr>' +
-          '<td class="lbl">구&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;분</td>' +
+          '<td class="lbl">구&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;분</td>' +
           '<td class="val" colspan="3">' + _esc(guBun) + '</td>' +
         '</tr>' +
       '</table>';
@@ -17245,43 +17257,47 @@ async function _printInspectionReport(insId) {
         var naMark   = res === 'na'   ? '✔' : '';
         var rowBg = res === 'bad' ? 'background:#ffe8f0' : (res === 'good' ? 'background:#f0fff4' : '');
         checklistRows +=
-          '<tr style="height:auto;' + rowBg + '">' +
-            '<td class="item-col" style="padding:1px 2px">' + _esc(item.text) + '</td>' +
+          '<tr style="' + rowBg + '">' +
+            '<td class="item-col">' + _esc(item.text) + '</td>' +
             '<td class="basis-col">' + _esc(item.basis) + '</td>' +
-            '<td class="check-col" style="font-size:9pt;font-weight:700;color:#2DB400">' + goodMark + '</td>' +
-            '<td class="check-col" style="font-size:9pt;font-weight:700;color:#D70072">' + badMark + '</td>' +
-            '<td class="check-col" style="font-size:9pt;font-weight:700;color:#888">' + naMark + '</td>' +
-            '<td class="ncr-col" style="font-size:5pt">NCR 발행대상</td>' +
+            '<td class="check-col" style="font-size:10pt;font-weight:700;color:#2DB400;text-align:center">' + goodMark + '</td>' +
+            '<td class="check-col" style="font-size:10pt;font-weight:700;color:#D70072;text-align:center">' + badMark + '</td>' +
+            '<td class="check-col" style="font-size:10pt;font-weight:700;color:#555;text-align:center">' + naMark + '</td>' +
+            '<td class="ncr-col">NCR 발행대상</td>' +
           '</tr>';
       });
     });
 
     var page1 = '<div class="page">' +
-      '<table style="margin-bottom:5px;flex-shrink:0">' +
+      '<table style="margin-bottom:4px;flex-shrink:0">' +
         '<tr class="title-row"><td colspan="4">안&nbsp;전&nbsp;점&nbsp;검&nbsp;일&nbsp;지&nbsp;&nbsp;(' + _esc(insType) + ')</td></tr>' +
       '</table>' +
       makeHeaderTable() +
-      '<table style="flex:1;table-layout:fixed">' +
+      '<table style="flex:1;table-layout:fixed;border:1px solid #9ab">' +
         '<colgroup>' +
           '<col style="width:auto">' +
-          '<col style="width:42mm">' +
-          '<col style="width:22px">' +
-          '<col style="width:22px">' +
-          '<col style="width:22px">' +
-          '<col style="width:15mm">' +
+          '<col style="width:40mm">' +
+          '<col style="width:14mm">' +
+          '<col style="width:14mm">' +
+          '<col style="width:16mm">' +
+          '<col style="width:16mm">' +
         '</colgroup>' +
-        '<tr style="background:#1E3A5F;color:#fff;font-weight:bold">' +
-          '<th class="item-col" style="color:#fff;border-color:#2d5a9e">점검항목</th>' +
-          '<th class="basis-col" style="color:#fff;border-color:#2d5a9e">시행근거<br><span style="font-size:5pt;font-weight:normal;color:#c8d8f0">&lt;산업안전보건기준에 관한 규칙&gt;</span></th>' +
-          '<th class="check-col" style="color:#fff;border-color:#2d5a9e">양호</th>' +
-          '<th class="check-col" style="color:#fff;border-color:#2d5a9e">불량</th>' +
-          '<th class="check-col" style="font-size:5.5pt;color:#fff;border-color:#2d5a9e">해당<br>없음</th>' +
-          '<th class="ncr-col" style="color:#fff;border-color:#2d5a9e">비고</th>' +
+        '<tr style="background:#1E3A5F;color:#fff;font-weight:bold;height:18px">' +
+          '<th style="font-size:7.5pt;color:#fff;border-color:#2d5a9e;text-align:center;padding:3px 4px">' +
+            '점검항목' +
+          '</th>' +
+          '<th style="font-size:6.5pt;color:#fff;border-color:#2d5a9e;text-align:center;padding:2px 3px;line-height:1.3">' +
+            '시행근거<br><span style="font-size:5.5pt;font-weight:400;color:#c8d8f0">&lt;산업안전보건기준에 관한 규칙&gt;</span>' +
+          '</th>' +
+          '<th style="font-size:7.5pt;color:#fff;border-color:#2d5a9e;text-align:center;padding:3px 2px">양호</th>' +
+          '<th style="font-size:7.5pt;color:#fff;border-color:#2d5a9e;text-align:center;padding:3px 2px">불량</th>' +
+          '<th style="font-size:7pt;color:#fff;border-color:#2d5a9e;text-align:center;padding:3px 2px;line-height:1.2">해당<br>없음</th>' +
+          '<th style="font-size:7.5pt;color:#fff;border-color:#2d5a9e;text-align:center;padding:3px 2px">비고</th>' +
         '</tr>' +
         checklistRows +
-        '<tr style="height:22px">' +
-          '<td class="lbl" style="white-space:nowrap;background:#dce6f1;color:#1E3A5F">추가기록</td>' +
-          '<td colspan="5" class="add-note" style="font-size:6.5pt;color:#333">' + _esc(ins.findings || '') + '</td>' +
+        '<tr style="height:24px">' +
+          '<td class="add-lbl" style="white-space:nowrap">추가기록</td>' +
+          '<td colspan="5" class="add-note">' + _esc(ins.findings || '') + '</td>' +
         '</tr>' +
       '</table>' +
     '</div>';

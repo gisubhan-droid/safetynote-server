@@ -4165,7 +4165,7 @@ app.route('/api/tbm', tbmRoutes)
 app.get('/api/stats/worker/me', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const rawDb = getRawDb()
+  // getRawDb()는 nas-routes/*.ts 전용 — node-server.ts에서는 rawDb 직접 사용
   const workerId = user.id
 
   try {

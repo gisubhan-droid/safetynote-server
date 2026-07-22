@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (FEAT-160 — feat: 근로자 my-stats 총 시공물량 → 팀 일보 총금액으로 변경)
-> **GitHub 최신: `6be1bec`** — feat: [FEAT-160] 근로자 my-stats 총 시공물량 → 팀 일보 총금액으로 변경
+> 최종 업데이트: 2026-07-22 (BUG-162 — fix: GET /api/stats/worker/me 500 에러 수정 — getRawDb() 미정의 참조 오류)
+> **GitHub 최신: `a7534f2`** — fix: [BUG-162] GET /api/stats/worker/me 500 에러 수정
+> **이전 커밋: `d12baba`** — docs: [FEAT-160] PROJECT_HISTORY.md 일보 총금액 카드 변경 기록 추가
+> **이전 커밋: `6be1bec`** — feat: [FEAT-160] 근로자 my-stats 총 시공물량 → 팀 일보 총금액으로 변경
 > **이전 커밋: `a243d2e`** — docs: [FEAT-161] PROJECT_HISTORY.md 접속일보 단가 불변 정책 기록 추가
 > **이전 커밋: `4b04bdc`** — feat: [FEAT-161] 접속일보 단가 불변 정책 구현 — splice_work_items 저장 시점 단가 스냅샷 보존
 > **이전 커밋: `fa205d5`** — docs: [FEAT-159] PROJECT_HISTORY.md 근로자 메인화면 변경 기록 추가
@@ -167,6 +169,7 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-162 | 162 | 2026-07-22 | ✅ 수정 | **근로자 my-stats 화면 로드 시 500 에러** — `GET /api/stats/worker/me` NAS 오버라이드(FEAT-160, line 4165)에서 `getRawDb()` 호출 — 이 함수는 `src/nas-db.ts`에서 export되지만 `node-server.ts`에는 import 없음 → `ReferenceError: getRawDb is not defined` → 500 Internal Server Error → "로드 실패" 표시. **해결**: `const rawDb = getRawDb()` 삭제, `node-server.ts` line 161에 직접 선언된 `rawDb` 변수를 스코프 내에서 직접 참조. 검증: `npm run build` OK(283.47 kB) | `a7534f2` |
 | FEAT-160 | 160 | 2026-07-22 | ✅ 적용 | **근로자 my-stats 화면 총 시공 물량 카드 → 총 일보 금액 카드 변경** — 팀 전체(task_assignments) 기준 submitted+confirmed 상태 일보의 실제 시공 금액 합산 표시. ①`src/routes/stats.ts`: /worker/:id Promise.all에 외선일보(work_report_extras.qty x COALESCE(unit_price_snapshot, volume_unit_prices.unit_price)) + 접속일보(splice_work_items.qty x (base + is_night x night + is_aerial x aerial) 스냅샷 우선 폴백) 금액 쿼리 2개 추가 → totalReportAmount 응답. ②`node-server.ts`: NAS GET /api/stats/worker/me 오버라이드 추가(RULE-002: app.route('/api/stats', statsRoutes) 앞 line 4165) — rawDb 동일 쿼리 구현. ③`public/static/app.js`: renderMyStatsPage 내 var _f160Amt/var _f160AmtStr 선언(RULE-001 준수: var 전용, 백틱 중첩 없음), 카드 값·레이블 총 시공 물량→총 일보 금액 변경. 금액 포맷: 100만원 이상→N.N백만원, 그 미만→N,NNN원, 0→0원. 사전조건: FEAT-161 splice_work_items 스냅샷 3컬럼 구현. 검증: node --check OK, npm run build OK(283.47 kB), pm2 restart + HTTP 200 OK | `6be1bec` |
 | FEAT-161 | 159 | 2026-07-22 | ✅ 적용 | **접속일보(splice_work_items) 단가 불변 정책 구현** — 기존에는 접속일보 저장 시 단가를 저장하지 않아 이후 단가 변경 시 과거 금액이 달라지는 구조적 결함 존재. 옵션2(선구현)로 결정. ①`patchSchema v0.163`: `splice_work_items` 테이블에 `unit_price_snapshot / night_price_snapshot / aerial_price_snapshot` (REAL DEFAULT NULL) 3컬럼 추가 — 기존 데이터는 NULL, 계산 시 현재 단가로 자동 폴백(하위호환). ②`src/nas-routes/splice-reports.ts` 저장(POST/PUT) 로직: `splice_unit_prices`에서 `item_label` 기준 단가 맵 구성 후 각 항목 저장 시 기본/야간/신호수 단가 스냅샷 함께 INSERT. ③금액계산 3종 전체 교체(`monthly-amount` / `monthly-amount-by-team` / `monthly-amount-by-category`): SELECT에 스냅샷 컬럼 3개 추가, 계산 시 `snapshot != null ? snapshot : 현재단가` 폴백 로직 적용. 외선일보(`work_report_extras.unit_price_snapshot`, v0.137)와 정책 완전 통일. 검증: `node --check` ✅, `npm run build` ✅(282.10 kB), `pm2 restart` + HTTP 200 ✅ | `4b04bdc` |
 | FEAT-159 | 158 | 2026-07-22 | ✅ 적용 | **근로자 접속 메인화면을 my-stats(내 작업통계)로 변경 + my-tasks 안전점수 배너 제거** — ①`doLogin()` 로그인 경로: `renderApp()` 호출 직전 `if (currentUser.role==='worker') currentPage='my-stats'` 추가. ②`init()` 자동로그인 경로: `currentPage = worker ? 'my-tasks' : 'dashboard'` → `worker ? 'my-stats' : 'dashboard'` 변경. ③`my-tasks` 상단 FEAT-157 안전점수 배너 블록 완전 제거(77줄, `_sbRes/_sbData/_sbScore` 등 `_sb` 계열 변수 전부 삭제). 검증: `node --check` ✅, `npm run build` ✅(282.10 kB), `pm2 restart` + HTTP 200 ✅ | `a15fb0a` |

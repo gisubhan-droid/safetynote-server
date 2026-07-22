@@ -7809,3 +7809,75 @@ return c.json({ success: true, assignedCount })
 - JS 파싱 검사 → ✅ **OK** (`node -e "new Function(...)"`)
 - `npm run build` → ✅ **성공** (`dist/_worker.js 281.45 kB`, 1.34s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `5812529`)
+
+---
+
+## 세션 148 — FEAT-112: 연계 완료작업 사진 조회 (worker 전용)
+
+### 날짜
+2025년 (FEAT-111 이후)
+
+### 요청 내용
+근로자가 작업 상세 화면의 **기본정보 탭**에서, 같은 공사요청번호에 속한 다른 완료 작업의 사진을 **읽기 전용**으로 조회할 수 있도록 구현.
+추가로 worker 계정에서 사진 **업로드 버튼**과 **deleteMedia 버튼**이 노출되던 문제 함께 수정.
+
+### 변경 파일
+- `public/static/app.js` — 6곳 수정 / 신규 함수 2개 추가
+
+### 상세 변경 내역
+
+#### A. `public/static/app.js`
+
+**수정 1 — `renderThumb` #1 (showTaskDetail 내, line 9265~9288)**
+- 동영상/이미지 `deleteMedia` 버튼에 `${!isWorker ? ... : ''}` 조건 추가
+- isWorker는 showTaskDetail 클로저 내 `const isWorker = currentUser.role === 'worker'` 재사용
+
+**수정 2 — 사진 업로드 버튼 (line 9335~9337)**
+- `${!isWorker ? <button>... : ''}` 조건으로 worker 화면에서 숨김
+
+**수정 3 — `renderThumb` #2 (refreshPhotoTab 내, line 10161~10190)**
+- `const _canDelete = currentUser && currentUser.role !== 'worker'` 추가
+- deleteMedia 버튼에 `${_canDelete ? ... : ''}` 조건 적용
+
+**수정 4 — 연계 완료작업 사진 섹션 HTML 삽입 (line 8961~8972)**
+- 작업중지 이력 섹션 종료 직후, 작업진행 버튼 직전에 삽입
+- `${(isWorker && task.construction_id) ? ... : ''}` 조건 — worker이고 공사요청번호 있을 때만 렌더
+- DOM ID: `linked-photos-section-${task.id}`, `linked-photos-content-${task.id}`
+
+**수정 5 — `_loadLinkedCompletedPhotos` 비동기 호출 (line 9405~9408)**
+- `loadAttachments(task.id)` 직후에 추가
+- `if (isWorker && task.construction_id) { _loadLinkedCompletedPhotos(task.id, task.construction_id); }`
+
+**신규 전역함수 1 — `_loadLinkedCompletedPhotos(currentTaskId, constructionId)`**
+- `GET /tasks?construction_id=X&status=completed` 호출 (기존 파라미터 재사용)
+- 현재 작업 ID 제외 후 버튼 목록 렌더
+- 완료 작업 없으면 안내 메시지 표시
+
+**신규 전역함수 2 — `_toggleLinkedTaskPhotos(linkedTaskId, currentTaskId, btn)`**
+- 버튼 클릭 시 `GET /photos?task_id=X` 호출
+- 같은 버튼 재클릭 시 닫기 (토글)
+- 읽기 전용: deleteMedia 버튼 없음, showPhotoData/showVideoData 확대보기만 가능
+- 순수 JS (`var`, `function(){}`, String concatenation) 사용 — TS 구문 0건
+
+### 백엔드 수정 여부
+없음. 기존 API 100% 재사용:
+- `GET /tasks?construction_id=&status=completed` — tasks.ts line 131~134 기존 파라미터
+- `GET /photos?task_id=X` — photos.ts 권한 체크: 로그인만 확인 (role 미체크)
+
+### 2차 재검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| `_loadLinkedCompletedPhotos` 함수명 충돌 | ✅ 0건 |
+| `_toggleLinkedTaskPhotos` 함수명 충돌 | ✅ 0건 |
+| `linked-photos-content-` DOM ID 충돌 | ✅ 0건 |
+| `linked-task-photos-` DOM ID 충돌 | ✅ 0건 |
+| optional chaining `?.` 없음 (신규 함수) | ✅ 0건 |
+| TypeScript 구문 없음 (신규 함수) | ✅ 0건 |
+| isWorker 변수 접근 범위 (renderThumb #1) | ✅ showTaskDetail 클로저 내 선언 확인 |
+| currentUser.role 직접 체크 (renderThumb #2) | ✅ `_canDelete` 변수로 처리 |
+| JS 파싱 검사 | ✅ **OK** (`node -e "new Function(...)"`) |
+
+### 빌드/배포 상태
+- JS 파싱 검사 → ✅ **OK**
+- `npm run build` → ✅ **성공** (`dist/_worker.js 281.45 kB`, 3.04s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `a7c9488`)

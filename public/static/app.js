@@ -16450,41 +16450,174 @@ function previewInsPhotos(input) {
   });
 }
 
+// ── 현장점검 등록 검증 실패 팝업 ─────────────────────────────────────────────
+function _showInsValidationPopup(issues) {
+  // 기존 팝업 제거
+  var old = document.getElementById('insValidationPopup');
+  if (old) old.remove();
+
+  var itemsHtml = '';
+  for (var ii = 0; ii < issues.length; ii++) {
+    var iss = issues[ii];
+    var iconMap = {
+      checklist: 'fa-clipboard-list',
+      photo:     'fa-camera',
+      result:    'fa-clipboard-check',
+      worker:    'fa-users'
+    };
+    var colorMap = {
+      checklist: '#D97706',
+      photo:     '#2563EB',
+      result:    '#DC2626',
+      worker:    '#7C3AED'
+    };
+    var icon  = iconMap[iss.type]  || 'fa-exclamation-circle';
+    var color = colorMap[iss.type] || '#555';
+    itemsHtml +=
+      '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:#fff;border-radius:8px;border:1px solid ' + color + '33;margin-bottom:8px">' +
+        '<i class="fas ' + icon + '" style="color:' + color + ';font-size:16px;margin-top:2px;flex-shrink:0"></i>' +
+        '<div>' +
+          '<div style="font-size:12px;font-weight:700;color:#1E3A5F;margin-bottom:3px">' + iss.title + '</div>' +
+          '<div style="font-size:11px;color:#555;line-height:1.5">' + iss.desc + '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  var overlay = document.createElement('div');
+  overlay.id = 'insValidationPopup';
+  overlay.style.cssText =
+    'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);padding:16px';
+
+  var popupHtml =
+    '<div style="background:#fff;border-radius:14px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,0.25);overflow:hidden">' +
+      '<div style="background:linear-gradient(135deg,#1E3A5F,#2d5a9e);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:8px">' +
+        '<i class="fas fa-exclamation-triangle" style="font-size:18px;color:#FCD34D"></i>' +
+        '<div>' +
+          '<div style="font-size:14px;font-weight:700">저장 전 확인 필요</div>' +
+          '<div style="font-size:10px;opacity:.8;margin-top:1px">아래 항목을 확인하고 다시 저장해 주세요</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="padding:14px 14px 6px">' +
+        itemsHtml +
+      '</div>' +
+      '<div style="padding:6px 14px 14px;display:flex;justify-content:flex-end">' +
+        '<button onclick="document.getElementById(\"insValidationPopup\").remove()"' +
+             ' style="padding:8px 24px;background:#1E3A5F;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">' +
+          '<i class="fas fa-check" style="margin-right:6px"></i>확인' +
+        '</button>' +
+      '</div>' +
+    '</div>';
+
+  overlay.innerHTML = popupHtml;
+  // 배경 클릭 시 닫기
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) overlay.remove();
+  });
+  document.body.appendChild(overlay);
+}
+
 async function submitInspection() {
   const location = document.getElementById('insLocation').value;
   if (!location) { toast('점검 위치를 입력하세요.', 'error'); return; }
 
-  // 체크리스트 사진 최소 4건 검증
-  const _photoMapForValidate = window._insRegChkPhotoMap || {};
-  const _photoCount = Object.keys(_photoMapForValidate).filter(function(k) {
-    return _photoMapForValidate[k] && _photoMapForValidate[k].file;
+  // ── 통합 검증 블록 (4개 항목) ──────────────────────────────────────────
+  var _valIssues = [];
+
+  // [검증1] 체크리스트 미체크 항목 확인
+  var _chkMap = window._insRegChkMap || {};
+  var _uncheckList = [];
+  if (typeof _INS_CHECKLIST !== 'undefined' && _INS_CHECKLIST) {
+    _INS_CHECKLIST.forEach(function(sec) {
+      sec.items.forEach(function(item, i) {
+        var key = sec.group + '::' + i;
+        if (!_chkMap[key]) _uncheckList.push(item.text);
+      });
+    });
+  }
+  if (_uncheckList.length > 0) {
+    var _maxShow = 3;
+    var _shown = _uncheckList.slice(0, _maxShow);
+    var _moreCount = _uncheckList.length - _maxShow;
+    var _descItems = _shown.map(function(t) {
+      return '&bull; ' + (t.length > 22 ? t.slice(0, 22) + '…' : t);
+    }).join('<br>');
+    if (_moreCount > 0) _descItems += '<br><span style="color:#aaa">외 ' + _moreCount + '개 항목</span>';
+    _valIssues.push({
+      type: 'checklist',
+      title: '체크리스트 미완료 (' + _uncheckList.length + '개 항목)',
+      desc: _descItems
+    });
+  }
+
+  // [검증2] 사진 최소 4장 (체크된 good/bad 항목이 있을 때)
+  var _photoMapV = window._insRegChkPhotoMap || {};
+  var _photoCount = Object.keys(_photoMapV).filter(function(k) {
+    return _photoMapV[k] && _photoMapV[k].file;
   }).length;
-  const _checkedCount = Object.keys(window._insRegChkMap || {}).filter(function(k) {
-    return (window._insRegChkMap || {})[k] !== 'na';
+  var _checkedCount = Object.keys(_chkMap).filter(function(k) {
+    return _chkMap[k] !== 'na';
   }).length;
   if (_checkedCount > 0 && _photoCount < 4) {
-    toast('체크된 항목에 사진을 최소 4개 이상 첨부해 주세요. (현재: ' + _photoCount + '개)', 'error', 4000);
+    _valIssues.push({
+      type: 'photo',
+      title: '체크리스트 사진 부족 (최소 4장 필요)',
+      desc: '현재 <strong>' + _photoCount + '장</strong> 첨부됨 &mdash; ' +
+            '<strong>' + (4 - _photoCount) + '장</strong> 더 추가해 주세요.<br>' +
+            '양호/불량 항목 옆 <i class="fas fa-camera" style="color:#2563EB"></i> 버튼으로 첨부하세요.'
+    });
+  }
+
+  // [검증3] 최종점검결과 미선택
+  var _valInsResult = document.getElementById('insResult');
+  var _valResultVal = _valInsResult ? _valInsResult.value : '';
+  if (!_valResultVal) {
+    _valIssues.push({
+      type: 'result',
+      title: '최종 점검 결과 미선택',
+      desc: '하단 <strong>불량 / 적정 / 양호 / 우수</strong> 중 하나를 선택해 주세요.'
+    });
+  }
+
+  // [검증4] 우수/불량 선택 시 작업자 미선택
+  if (_valResultVal === '불량' || _valResultVal === '우수') {
+    var _workerChecked = document.querySelectorAll('.ins-worker-check:checked');
+    if (!_workerChecked || _workerChecked.length === 0) {
+      var _resultLabel = _valResultVal === '불량' ? '불량 해당' : '우수 해당';
+      _valIssues.push({
+        type: 'worker',
+        title: _valResultVal + ' 결과 — 작업자 미선택',
+        desc: '<strong>' + _resultLabel + ' 작업자</strong>를 1명 이상 선택해 주세요.<br>' +
+              '최종 점검 결과 아래 작업자 목록에서 선택하세요.'
+      });
+    }
+  }
+
+  // 검증 실패 시 팝업 표시 후 중단
+  if (_valIssues.length > 0) {
+    _showInsValidationPopup(_valIssues);
     return;
   }
 
-  const taskIdEl = document.getElementById('insTaskId');
-  const taskId = taskIdEl ? (taskIdEl.value ? parseInt(taskIdEl.value) : null) : null;
-  const insResult = document.getElementById('insResult')?.value || '';
-  const insReason = document.getElementById('insReason')?.value || '';
-  const insDateOnly = document.getElementById('insDateOnly')?.value || getKSTDate();
+  var _taskIdEl = document.getElementById('insTaskId');
+  var taskId = _taskIdEl ? (_taskIdEl.value ? parseInt(_taskIdEl.value) : null) : null;
+  var insResult = _valResultVal;
+  var _insReasonEl = document.getElementById('insReason');
+  var insReason = _insReasonEl ? (_insReasonEl.value || '') : '';
+  var _insDateEl = document.getElementById('insDateOnly');
+  var insDateOnly = _insDateEl ? (_insDateEl.value || getKSTDate()) : getKSTDate();
 
   // 1단계: 점검 데이터를 JSON으로 wrangler API에 저장 (사진 제외)
-  const input = document.getElementById('insPhotoInput');
-  const photoFiles = Array.from(input.files).filter(f => {
-    const isVideo = f.type.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv)$/i.test(f.name);
+  var _photoInput = document.getElementById('insPhotoInput');
+  var photoFiles = Array.from(_photoInput.files).filter(function(f) {
+    var isVideo = f.type.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv)$/i.test(f.name);
     return f.size <= (isVideo ? 500 : 50) * 1024 * 1024;
   });
 
   // 불량/우수 선택된 작업자 수집
-  const selectedWorkerIds = [];
+  var selectedWorkerIds = [];
   if (insResult === '불량' || insResult === '우수') {
-    document.querySelectorAll('.ins-worker-check:checked').forEach(cb => {
-      const wid = parseInt(cb.value);
+    document.querySelectorAll('.ins-worker-check:checked').forEach(function(cb) {
+      var wid = parseInt(cb.value);
       if (wid) selectedWorkerIds.push(wid);
     });
   }

@@ -1,6 +1,6 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-22 (세션 155l — feat: [FEAT-155l] 체크리스트 섹션 헤더 전체 해당없음 체크박스 추가)
+> 최종 업데이트: 2026-07-22 (세션 155m — feat: [FEAT-155m] 현장점검 등록 저장 시 4개 검증 팝업 추가)
 > **GitHub 최신: `ce7a8ae`** — fix: [FEAT-155d] 현장점검 출력 추가 수정 4종 + 디자인 개선
 > **이전 커밋: `2778cc9`** — docs: [FEAT-155c] PROJECT_HISTORY.md 세션155c 기록 추가
 > **이전 커밋: `f804cac`** — fix: [FEAT-155c] 현장점검 출력 버그 수정 3종
@@ -36,6 +36,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-155m | 155m | 2026-07-22 | ✅ 적용 | **현장점검 등록 저장 시 4개 검증 팝업** — ①체크리스트 미체크: _INS_CHECKLIST 순회 → _insRegChkMap 키 없는 항목 수집 → 최대 3개 + "외 N개" 표시. ②사진 4장 미만: 체크된(good/bad) 항목 있을 때 _insRegChkPhotoMap 카운트 < 4 → 부족 장수 안내. ③최종점검결과 미선택: insResult 빈값 → 버튼 선택 안내. ④우수/불량 작업자 미선택: selectedWorkerIds 0명 → 작업자 목록 선택 안내. _showInsValidationPopup(issues) 신규 함수 — 네이비 헤더+카드형 항목+배경클릭닫기. 기존 toast 검증 블록 완전 교체. submitInspection 내 const→var 전환(insResult, taskId, insReason, photoFiles 등) | `미커밋` |
 | FEAT-155l | 155l | 2026-07-22 | ✅ 적용 | **체크리스트 섹션 헤더 전체 해당없음 체크박스** — ①등록 모달(`_insRegChkHtml` 빌더) 섹션 헤더 우측에 "전체 해당없음" 체크박스 추가(flex layout, accent-color:#fff, data-secgrp=encodeURIComponent(sec.group)). ②수정 탭(`_renderInsChkTab`) 섹션 헤더 동일 패턴 적용(accent-color:#685182, data-ins=insId 추가). ③신규 함수 `_setInsRegSecAllNa(cb)`: 등록 모달용 — secgrp decode 후 _INS_CHECKLIST 순회 → 해당 섹션 나 버튼 querySelector → _setInsRegChk 일괄 호출. ④신규 함수 `_setInsSecAllNa(cb)`: 수정 탭용 — secgrp+insId decode → _setInsChk 일괄 호출. ⑤모두 var 전용, 백틱 중첩 없음 | 미커밋 |
 | FEAT-155k | 155k | 2026-07-22 | ✅ 적용 | **사진대장 점검사항 헤더 높이/정렬/페이지번호/구분선** — ①점검사항 헤더 높이 = title-row(font-size:11pt, padding:5px 2px, letter-spacing:1.5pt). ②양쪽 모두 text-align:center(float:left 제거). ③페이지번호 최하단 별도 행 중앙정렬(colspan=2, background:#1E3A5F). ④구분선 5mm → 8mm | `8f4b127` |
 | FEAT-155j | 155j | 2026-07-22 | ✅ 적용 | **사진대장 sida-lbl 완전 제거 + 2열 레이아웃** — CSS .sida-lbl 삭제, .photo-sec-hdr/.photo-divider 신규, photoPages 3열→2열 재구성 | `882cddc` |
@@ -8527,6 +8528,53 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 | `var` 전용 (const/let/?.  없음) | ✅ |
 | 백틱 중첩 없음 | ✅ |
 | `data-key` 셀렉터 방식 — 기존 `_setInsRegChkByEl`과 동일 | ✅ |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ `dist/_worker.js 282.10 kB`
+- PM2 재시작 → HTTP 200
+
+---
+
+## 세션155m — 현장점검 등록 저장 시 4개 검증 팝업 (2026-07-22)
+
+### 변경 파일
+- `public/static/app.js`
+- `patch_155m.py` (신규)
+
+### 수정 내용
+
+#### 1. 신규 함수 `_showInsValidationPopup(issues)` (line ~16454)
+- `issues` 배열 각 항목: `{ type, title, desc }`
+- type별 아이콘/색상 매핑 (`checklist:amber`, `photo:blue`, `result:red`, `worker:violet`)
+- 팝업 구조: 네이비 그라디언트 헤더 + 카드형 항목 리스트 + 확인 버튼
+- 배경 클릭 시 닫기 (`overlay.addEventListener('click', ...)`)
+- `id="insValidationPopup"` — 중복 팝업 방지 (`old.remove()`)
+
+#### 2. `submitInspection()` 통합 검증 블록 (기존 toast 검증 교체)
+
+| 검증 | 조건 | 메시지 |
+|------|------|--------|
+| ①체크리스트 미체크 | `_INS_CHECKLIST` 순회 → `_insRegChkMap[key]` 없는 항목 | 미완료 항목명 최대 3개 + "외 N개" |
+| ②사진 4장 미만 | `_checkedCount > 0 && _photoCount < 4` | 현재 N장, M장 더 필요 |
+| ③최종점검결과 미선택 | `insResult === ''` | 불량/적정/양호/우수 선택 안내 |
+| ④작업자 미선택 | 결과=불량/우수 && `.ins-worker-check:checked` 0개 | 작업자 1명 이상 선택 안내 |
+
+#### 3. `submitInspection()` 내 `const` → `var` 전환
+- `taskIdEl`, `taskId`, `insResult`, `insReason`, `insDateOnly`
+- `photoFiles` (Array.from + filter), `isVideo` (filter 내부)
+- `selectedWorkerIds`, `.forEach(cb => ...)` → `.forEach(function(cb) { ... })`
+- `insResult = _valResultVal` 재사용 (중복 getElementById 제거)
+
+#### 충돌 확인
+| 항목 | 결과 |
+|------|------|
+| 기존 location 검증(toast) 유지 | ✅ |
+| `_setInsRegChk`/`_setInsChk` 무변경 | ✅ |
+| `renderInsWorkerList` 무변경 | ✅ |
+| `var` 전용, 백틱 중첩 없음 | ✅ |
+| `node --check` | ✅ OK |
+| `npm run build` | ✅ 282.10 kB |
 
 ### 빌드/배포 상태
 - `node --check` → ✅ OK

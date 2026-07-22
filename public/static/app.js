@@ -16450,6 +16450,12 @@ function previewInsPhotos(input) {
   });
 }
 
+// ── 현장점검 등록 검증 팝업 닫기 (onclick 속성에서 따옴표 중첩 방지용) ─────────
+function _closeInsValidationPopup() {
+  var el = document.getElementById('insValidationPopup');
+  if (el) el.remove();
+}
+
 // ── 현장점검 등록 검증 실패 팝업 ─────────────────────────────────────────────
 function _showInsValidationPopup(issues) {
   // 기존 팝업 제거
@@ -16501,7 +16507,7 @@ function _showInsValidationPopup(issues) {
         itemsHtml +
       '</div>' +
       '<div style="padding:6px 14px 14px;display:flex;justify-content:flex-end">' +
-        '<button onclick="document.getElementById(\"insValidationPopup\").remove()"' +
+        '<button onclick="_closeInsValidationPopup()"' +
              ' style="padding:8px 24px;background:#1E3A5F;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">' +
           '<i class="fas fa-check" style="margin-right:6px"></i>확인' +
         '</button>' +

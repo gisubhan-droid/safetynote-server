@@ -8277,3 +8277,50 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 ### 빌드/배포 상태
 - `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.78s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `825caed`)
+
+---
+
+## 세션155g — 안전점검일지 출력 디자인 개선 (2025-07)
+
+### 변경 파일
+- `public/static/app.js`
+- `patch_155g.py` (신규)
+
+### 수정 내용
+
+#### 1. CSS 전면 정비 (v155g)
+- `body` 폰트 6.5pt → 7.5pt (가독성 향상)
+- `td,th` 패딩 2px → 2.5px/4px, 테두리 #888 → #aab (부드러운 톤)
+- `.lbl` / `.val` 폰트 6.5pt → 7pt, 패딩 확대
+- `.add-lbl` 신규 클래스 추가 (추가기록 라벨 전용)
+- 제목행 padding 4px → 5px, letter-spacing 1.5pt
+- 인쇄 여백 균등 조정
+
+#### 2. 헤더 테이블 구조 수정 (원본 양식 동일)
+| 이전(4행) | 이후(5행) |
+|-----------|-----------|
+| 협력업체명·점검일자 | 협력업체명·점검일자 |
+| 작업번호·점검자 | 작업번호·점검자 |
+| 점검주소(colspan3) | 점검주소(colspan3) |
+| 현장책임자·작업자 | 현장책임자·작업자 ← 위치 동일 |
+| 구분(colspan3) | 구분(colspan3) |
+- 라벨 한자 간격(`&nbsp;`) 원본 양식에 맞게 정비
+- `col width:18mm` (라벨셀) / `50mm` (값셀) 조정
+
+#### 3. 체크리스트 테이블 개선
+- `border:1px solid #9ab` 전체 테두리 추가
+- 컬럼 너비: 양호/불량 14mm, 해당없음 16mm (균등)
+- 헤더행 `height:18px` + 각 th 개별 스타일 (`font-size:7.5pt`)
+- 체크마크 `font-size:9pt → 10pt` (더 선명)
+- `추가기록` 라벨 `.add-lbl` 클래스 적용
+
+### 2차 검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| `node --check` 구문 검사 | ✅ OK |
+| 16개 패턴 검증 | ✅ 통과 (⑫⑬ regex 줄넘김 이슈 — 코드 실존 확인) |
+| `npm run build` | ✅ 282.10 kB |
+
+### 빌드/배포 상태
+- `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.45s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `976a595`)

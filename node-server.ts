@@ -4178,6 +4178,20 @@ app.get('/api/inspections/:id', async (c) => {
     } catch (_) {
       ins.workers = []
     }
+    // 작업자 없으면 해당 task의 배정 작업자(task_assignments)로 폴백
+    if ((!ins.workers || ins.workers.length === 0) && ins.task_id) {
+      try {
+        const taRows = rawDb.prepare(`
+          SELECT u.name AS worker_name, u.position,
+                 COALESCE(u.is_leader, 0) AS is_leader
+          FROM task_assignments ta
+          JOIN users u ON u.id = ta.worker_id
+          WHERE ta.task_id = ?
+          ORDER BY COALESCE(u.is_leader, 0) DESC, u.name ASC
+        `).all(ins.task_id) as any[]
+        if (taRows && taRows.length > 0) ins.workers = taRows
+      } catch (_) {}
+    }
     return c.json(ins)
   } catch (e: any) {
     console.error('[GET /api/inspections/:id NAS] 오류:', e.message)

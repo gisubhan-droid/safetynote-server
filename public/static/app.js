@@ -16854,9 +16854,25 @@ async function _printInspectionReport(insId) {
       : (ins.task_number || '');
     var insDate     = (ins.inspection_date_only || (ins.inspection_date || '').substring(0, 10) || '').replace(/-/g, '.') || '';
     var insAddr     = ins.task_confirmed_address || ins.location || '';
-    var WC_MAP      = { cable_install: '광케이블 시설', cable_splice: '광케이블 접속', equipment_other: '장비 시설및 기타', conduit: '관로시설' };
-    var conType     = ins.construction_type || '';
-    var workClass   = WC_MAP[ins.work_class] || ins.work_class || '';
+    // 작업종류(work_class) 영문키 → 한글 변환 (WORK_CLASS_DEF 기반 + 추가 매핑)
+    var WC_MAP = {
+      cable_install:   '광케이블 시설',
+      cable_splice:    '광케이블 접속',
+      equipment_other: '장비 시설및 기타',
+      conduit:         '관로시설',
+      line:            '선로공사',
+      inside:          '구내공사',
+      other:           '기타'
+    };
+    // 공사종류(construction_type): 한글이면 그대로, 영문키면 CON_TYPE_DEF 변환
+    var CON_TYPE_KR = {
+      relocation: '지장이설', subscription: '청약개통', conduit: '관로공사',
+      environment: '환경공사', separate: '별도사업', other: '기타'
+    };
+    var rawConType  = ins.construction_type || '';
+    var conType     = CON_TYPE_KR[rawConType] || rawConType;
+    var rawWc       = ins.work_class || '';
+    var workClass   = WC_MAP[rawWc] || (rawWc ? rawWc : '');
     var guBun       = [conType, workClass].filter(Boolean).join(' / ');
     var siteManager = ins.supervisor_name || ins.con_manager_name || '';
     var inspectorName = ins.inspector_name || '';
@@ -16869,72 +16885,74 @@ async function _printInspectionReport(insId) {
     // ── 로컬 esc 별칭 ──
     var _esc = _escHtml;
 
-    // ── CSS (A4 1장 맞춤 — 체크리스트 22항목 + 헤더 + 추가기록) ──
+    // ── CSS (A4 1장 맞춤 — 깔끔한 디자인) ──
     var CSS_COMMON = '<style>' +
       '*{box-sizing:border-box;margin:0;padding:0}' +
-      'body{font-family:"맑은 고딕","Malgun Gothic",sans-serif;font-size:7pt;color:#000;background:#fff}' +
-      // A4: 210x297mm, padding 6mm 사방 — 22항목 체크리스트가 1페이지에 들어오도록 축소
-      '.page{width:210mm;min-height:297mm;height:297mm;padding:6mm 7mm 5mm 7mm;page-break-after:always;overflow:hidden;' +
-             'display:flex;flex-direction:column}' +
+      'body{font-family:"맑은 고딕","Malgun Gothic",sans-serif;font-size:7pt;color:#111;background:#fff}' +
+      '.page{width:210mm;min-height:297mm;height:297mm;padding:7mm 8mm 5mm 8mm;page-break-after:always;overflow:hidden;display:flex;flex-direction:column}' +
       'table{width:100%;border-collapse:collapse}' +
-      'td,th{border:1px solid #555;padding:1px 2px;font-size:6.5pt;vertical-align:middle}' +
-      '.title-row td{background:#d9d9d9;font-weight:bold;font-size:9pt;text-align:center;padding:3px 2px}' +
-      '.section-hdr td{background:#d9d9d9;font-weight:bold;text-align:center;font-size:7pt;padding:1.5px 2px}' +
-      '.check-col{width:20px;text-align:center;font-size:6pt}' +
-      '.basis-col{width:38mm;font-size:5.5pt;line-height:1.15}' +
-      '.item-col{font-size:6pt;line-height:1.15}' +
-      '.ncr-col{width:13mm;text-align:center;font-size:5.5pt}' +
-      '.lbl{background:#e8e8e8;font-weight:bold;text-align:center;width:15mm;font-size:6.5pt;white-space:nowrap}' +
-      '.val{font-size:6.5pt}' +
-      '.sign-cell{font-size:6pt;text-align:center;color:#888;vertical-align:bottom;padding-bottom:2px;width:20mm;border-left:1px solid #555}' +
+      'td,th{border:1px solid #888;padding:2px 3px;font-size:6.5pt;vertical-align:middle}' +
+      '.title-row td{background:#1E3A5F;color:#fff;font-weight:bold;font-size:10pt;text-align:center;padding:4px 2px;letter-spacing:0.5pt}' +
+      '.section-hdr td{background:#dce6f1;color:#1E3A5F;font-weight:bold;text-align:center;font-size:7pt;padding:2px;border:1px solid #888}' +
+      '.check-col{width:22px;text-align:center;font-size:6pt;background:#fafafa}' +
+      '.basis-col{width:40mm;font-size:5.5pt;line-height:1.2;color:#333}' +
+      '.item-col{font-size:6.5pt;line-height:1.3}' +
+      '.ncr-col{width:14mm;text-align:center;font-size:5.5pt;background:#fafafa}' +
+      '.lbl{background:#dce6f1;color:#1E3A5F;font-weight:bold;text-align:center;width:16mm;font-size:6.5pt;white-space:nowrap}' +
+      '.val{font-size:6.5pt;padding:2px 4px}' +
       // 사진대장
-      '.photo-page{width:210mm;min-height:297mm;height:297mm;padding:6mm 7mm 5mm 7mm;page-break-after:always;overflow:hidden;' +
-                  'display:flex;flex-direction:column}' +
-      '.photo-cell{text-align:center;vertical-align:middle;padding:2px;overflow:hidden}' +
+      '.photo-page{width:210mm;min-height:297mm;height:297mm;padding:7mm 8mm 5mm 8mm;page-break-after:always;overflow:hidden;display:flex;flex-direction:column}' +
+      '.photo-cell{text-align:center;vertical-align:middle;padding:3px;overflow:hidden;background:#f9f9f9}' +
       '.photo-cell img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:0 auto}' +
-      '.caption-cell{font-size:6pt;text-align:center;padding:1px 2px;background:#f5f5f5;vertical-align:middle;height:13px}' +
+      '.caption-cell{font-size:6pt;text-align:center;padding:2px 3px;background:#eef2f7;color:#1E3A5F;font-weight:600;vertical-align:middle;height:14px}' +
       '.sida-lbl{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;font-weight:bold;font-size:7.5pt;' +
-                'background:#e8e8e8;padding:2px;width:12px}' +
-      '.add-note{font-size:6pt;vertical-align:top;padding:2px}' +
-      '.btn-print-bar{position:fixed;top:0;left:0;width:100%;background:#1E3A5F;color:#fff;padding:6px 14px;' +
-                     'display:flex;gap:10px;align-items:center;z-index:9999}' +
-      '.btn-p{padding:5px 16px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-size:12px}' +
+                'background:#dce6f1;color:#1E3A5F;padding:2px;width:12px}' +
+      '.add-note{font-size:6pt;vertical-align:top;padding:3px}' +
+      '.btn-print-bar{position:fixed;top:0;left:0;width:100%;background:#1E3A5F;color:#fff;padding:7px 16px;' +
+                     'display:flex;gap:10px;align-items:center;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.3)}' +
+      '.btn-p{padding:6px 18px;border-radius:6px;border:none;cursor:pointer;font-weight:700;font-size:12px;transition:opacity .15s}' +
+      '.btn-p:hover{opacity:.85}' +
       '@media print{' +
         '.btn-print-bar{display:none!important}' +
-        '.page,.photo-page{margin:0;padding:5mm 6mm 4mm 6mm}' +
+        '.page,.photo-page{margin:0;padding:6mm 7mm 4mm 7mm}' +
+        'body{-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
       '}' +
       '</style>';
 
-    // ── 헤더 테이블 (4행 4열, 이미지 양식 일치) ──
-    // 1행: 협력업체명 | 값 | 점검일자 | 값
-    // 2행: 작업번호   | 값 | 점검자   | 값 + 서명란
-    // 3행: 점검주소   | 값(colspan=3) colspan 없이 현장책임자
-    // 4행: 구분       | 값 | 작업자   | 값
+    // ── 헤더 테이블 (4행 4열) ──
     function makeHeaderTable() {
-      return '<table style="margin-bottom:4px;flex-shrink:0">' +
+      return '<table style="margin-bottom:5px;flex-shrink:0;border:1.5px solid #1E3A5F">' +
+        '<colgroup>' +
+          '<col style="width:16mm">' +
+          '<col style="width:52mm">' +
+          '<col style="width:16mm">' +
+          '<col>' +
+        '</colgroup>' +
         '<tr>' +
           '<td class="lbl">협력업체명</td>' +
-          '<td class="val" style="width:50mm">' + _esc(companyName) + '</td>' +
-          '<td class="lbl">점&nbsp;검&nbsp;일자</td>' +
+          '<td class="val">' + _esc(companyName) + '</td>' +
+          '<td class="lbl">점검일자</td>' +
           '<td class="val">' + _esc(insDate) + '</td>' +
         '</tr>' +
         '<tr>' +
-          '<td class="lbl">작&nbsp;업&nbsp;번호</td>' +
+          '<td class="lbl">작업번호</td>' +
           '<td class="val">' + _esc(workNum) + '</td>' +
-          '<td class="lbl">점&nbsp;&nbsp;검&nbsp;&nbsp;자</td>' +
+          '<td class="lbl">점&nbsp;검&nbsp;자</td>' +
           '<td class="val">' + _esc(inspectorName) + '</td>' +
         '</tr>' +
         '<tr>' +
-          '<td class="lbl">점&nbsp;검&nbsp;주소</td>' +
-          '<td class="val">' + _esc(insAddr) + '</td>' +
-          '<td class="lbl">현장책임자</td>' +
-          '<td class="val">' + _esc(siteManager) + '</td>' +
+          '<td class="lbl">점검주소</td>' +
+          '<td class="val" colspan="3">' + _esc(insAddr) + '</td>' +
         '</tr>' +
         '<tr>' +
-          '<td class="lbl">구&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;분</td>' +
-          '<td class="val">' + _esc(guBun) + '</td>' +
-          '<td class="lbl">작&nbsp;&nbsp;업&nbsp;&nbsp;자</td>' +
+          '<td class="lbl">현장책임자</td>' +
+          '<td class="val">' + _esc(siteManager) + '</td>' +
+          '<td class="lbl">작&nbsp;업&nbsp;자</td>' +
           '<td class="val">' + _esc(workerStr) + '</td>' +
+        '</tr>' +
+        '<tr>' +
+          '<td class="lbl">구&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;분</td>' +
+          '<td class="val" colspan="3">' + _esc(guBun) + '</td>' +
         '</tr>' +
       '</table>';
     }
@@ -16963,8 +16981,8 @@ async function _printInspectionReport(insId) {
     });
 
     var page1 = '<div class="page">' +
-      '<table style="margin-bottom:4px;flex-shrink:0">' +
-        '<tr class="title-row"><td colspan="4">안전점검일지(' + _esc(insType) + ')</td></tr>' +
+      '<table style="margin-bottom:5px;flex-shrink:0">' +
+        '<tr class="title-row"><td colspan="4">안&nbsp;전&nbsp;점&nbsp;검&nbsp;일&nbsp;지&nbsp;&nbsp;(' + _esc(insType) + ')</td></tr>' +
       '</table>' +
       makeHeaderTable() +
       '<table style="flex:1;table-layout:fixed">' +
@@ -16976,18 +16994,18 @@ async function _printInspectionReport(insId) {
           '<col style="width:22px">' +
           '<col style="width:15mm">' +
         '</colgroup>' +
-        '<tr style="background:#d9d9d9;font-weight:bold">' +
-          '<th class="item-col">점검항목</th>' +
-          '<th class="basis-col">시행근거<br><span style="font-size:5.5pt;font-weight:normal">&lt;산업안전보건기준에 관한 규칙&gt;</span></th>' +
-          '<th class="check-col">양호</th>' +
-          '<th class="check-col">불량</th>' +
-          '<th class="check-col" style="font-size:5.5pt">해당<br>없음</th>' +
-          '<th class="ncr-col">비고</th>' +
+        '<tr style="background:#1E3A5F;color:#fff;font-weight:bold">' +
+          '<th class="item-col" style="color:#fff;border-color:#2d5a9e">점검항목</th>' +
+          '<th class="basis-col" style="color:#fff;border-color:#2d5a9e">시행근거<br><span style="font-size:5pt;font-weight:normal;color:#c8d8f0">&lt;산업안전보건기준에 관한 규칙&gt;</span></th>' +
+          '<th class="check-col" style="color:#fff;border-color:#2d5a9e">양호</th>' +
+          '<th class="check-col" style="color:#fff;border-color:#2d5a9e">불량</th>' +
+          '<th class="check-col" style="font-size:5.5pt;color:#fff;border-color:#2d5a9e">해당<br>없음</th>' +
+          '<th class="ncr-col" style="color:#fff;border-color:#2d5a9e">비고</th>' +
         '</tr>' +
         checklistRows +
-        '<tr style="height:24px">' +
-          '<td class="lbl" style="white-space:nowrap">추가기록</td>' +
-          '<td colspan="5" class="add-note">' + _esc(ins.findings || '') + '</td>' +
+        '<tr style="height:22px">' +
+          '<td class="lbl" style="white-space:nowrap;background:#dce6f1;color:#1E3A5F">추가기록</td>' +
+          '<td colspan="5" class="add-note" style="font-size:6.5pt;color:#333">' + _esc(ins.findings || '') + '</td>' +
         '</tr>' +
       '</table>' +
     '</div>';
@@ -17011,7 +17029,7 @@ async function _printInspectionReport(insId) {
 
       // 사진 셀 높이: 헤더(약 40mm) + 제목(12mm) + 여백 ≈ 297-8-8-52 = 229mm → /2 ≈ 109mm
       photoPages += '<div class="photo-page">' +
-        '<table style="margin-bottom:4px;flex-shrink:0"><tr class="title-row"><td colspan="4">안전점검 사진 대장</td></tr></table>' +
+        '<table style="margin-bottom:5px;flex-shrink:0"><tr class="title-row"><td colspan="4">안&nbsp;전&nbsp;점&nbsp;검&nbsp;&nbsp;사&nbsp;진&nbsp;&nbsp;대&nbsp;장</td></tr></table>' +
         makeHeaderTable() +
         '<table style="flex:1;table-layout:fixed;border-collapse:collapse">' +
           '<colgroup>' +
@@ -17048,16 +17066,25 @@ async function _printInspectionReport(insId) {
       CSS_COMMON +
       '</head><body>' +
       '<div class="btn-print-bar">' +
-        '<span style="font-size:13px;font-weight:700">안전점검일지 — ' + _esc(inspectorName) + ' (' + _esc(insDate) + ')</span>' +
+        '<span style="font-size:13px;font-weight:700;flex:1">📋 안전점검일지 — ' + _esc(inspectorName) + ' (' + _esc(insDate) + ')</span>' +
         '<button class="btn-p" style="background:#D70072" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>' +
-        '<button class="btn-p" style="background:#374151" onclick="window.parent.postMessage(\'closePrintOverlay\',\'*\')">✕ 닫기</button>' +
+        '<button class="btn-p" style="background:#374151" onclick="window.close()">✕ 닫기</button>' +
       '</div>' +
       '<div style="height:38px"></div>' +
       page1 +
       photoPages +
       '</body></html>';
 
-    _openPrintOverlay(fullHtml);
+    // 새 팝업 창에서 출력 (기존 작업화면 유지)
+    var _pw = window.open('', '_blank', 'width=920,height=1080,scrollbars=yes,resizable=yes');
+    if (!_pw) {
+      toast('팝업 차단 해제 후 다시 시도해 주세요.', 'error');
+      return;
+    }
+    _pw.document.open();
+    _pw.document.write(fullHtml);
+    _pw.document.close();
+    _pw.focus();
   } catch(e) {
     toast('출력 준비 실패: ' + (e.message || e), 'error');
   }

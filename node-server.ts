@@ -2705,6 +2705,18 @@ function patchSchema() {
     else console.log('[patchSchema v0.161] inspection_checklist_results 이미 존재 — 스킵')
   }
 
+  // ─── patchSchema v0.162: inspection_checklist_results 에 photo_path 컬럼 추가 ──
+  // 체크리스트 항목별 사진 1장 저장 (등록 모달에서 업로드)
+  try {
+    rawDb.exec(`ALTER TABLE inspection_checklist_results ADD COLUMN photo_path TEXT`)
+    rawDb.exec(`ALTER TABLE inspection_checklist_results ADD COLUMN photo_name TEXT`)
+    rawDb.exec(`ALTER TABLE inspection_checklist_results ADD COLUMN photo_mime TEXT`)
+    console.log('[patchSchema v0.162] ✅ inspection_checklist_results photo 컬럼 추가 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.162]', e.message)
+    else console.log('[patchSchema v0.162] photo 컬럼 이미 존재 — 스킵')
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -4615,6 +4627,122 @@ app.post('/api/inspections/:id/checklist-results', async (c) => {
   } catch (e: any) {
     console.error('[POST /api/inspections/:id/checklist-results]', e.message)
     return c.json({ error: `저장 실패: ${e.message}` }, 500)
+  }
+})
+
+// ─── [RULE-002] NAS 전용: POST /api/inspections/:id/checklist-photos ─────────
+// 체크리스트 항목별 사진 업로드 (등록 모달 전용)
+// FormData: items = JSON array of { item_key, item_group, item_text, item_basis, result }
+//           각 item_key에 대응하는 파일: photo_<item_key_encoded>
+app.post('/api/inspections/:id/checklist-photos', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+
+  const insId = Number(c.req.param('id'))
+  if (!insId) return c.json({ error: '잘못된 ID' }, 400)
+
+  // 점검 존재 확인
+  const ins = rawDb.prepare('SELECT id, task_id FROM site_inspections WHERE id = ?').get(insId) as any
+  if (!ins) return c.json({ error: '점검 없음' }, 404)
+
+  try {
+    const formData = await c.req.formData()
+    const itemsJson = formData.get('items') as string
+    if (!itemsJson) return c.json({ error: 'items 필드 없음' }, 400)
+
+    const items: any[] = JSON.parse(itemsJson)
+
+    // task 폴더 결정
+    const uploaderTeam = rawDb.prepare(
+      `SELECT tm.name AS team_name FROM users u LEFT JOIN teams tm ON tm.id = u.team_id WHERE u.id = ?`
+    ).get(user.id) as any
+    let task: any = null
+    if (ins.task_id) {
+      task = rawDb.prepare(
+        `SELECT t.task_number, t.sub_task_number, t.work_date, t.planned_date,
+                t.construction_type, t.construction_id,
+                c.request_no AS con_request_no, c.title AS con_title,
+                c.created_at AS con_created_at
+         FROM tasks t LEFT JOIN constructions c ON c.id = t.construction_id
+         WHERE t.id = ?`
+      ).get(Number(ins.task_id)) as any
+      if (task) task.team_name = uploaderTeam?.team_name || null
+    }
+    const uploadDir = getUploadDir(task || '점검', 'inspection')
+
+    const savedCount = { total: 0, photos: 0 }
+
+    for (const item of items) {
+      const key: string = item.item_key
+      if (!key) continue
+
+      // 파일 키: photo_<base64 of key> 또는 photo_<idx>
+      // app.js에서 field name을 "chk_photo_<idx>" 로 전송
+      const fileFieldName = 'chk_photo_' + item._idx
+      const file = formData.get(fileFieldName) as File | null
+
+      // UPSERT checklist result (사진 있든 없든)
+      const upsertStmt = rawDb.prepare(`
+        INSERT INTO inspection_checklist_results
+          (inspection_id, item_key, item_group, item_text, item_basis, result, memo)
+        VALUES (?,?,?,?,?,?,NULL)
+        ON CONFLICT(inspection_id, item_key) DO UPDATE SET
+          item_group  = excluded.item_group,
+          item_text   = excluded.item_text,
+          item_basis  = excluded.item_basis,
+          result      = excluded.result,
+          updated_at  = CURRENT_TIMESTAMP
+      `)
+      upsertStmt.run(insId, key, item.item_group||'', item.item_text||'', item.item_basis||'', item.result||'na')
+      savedCount.total++
+
+      if (file && typeof file !== 'string' && file.size > 0) {
+        const fileName = generateFileName(file.name || 'chk_photo.jpg')
+        const filePath = join(uploadDir, fileName)
+        const buf = await file.arrayBuffer()
+        writeFileSync(filePath, Buffer.from(buf))
+
+        // photo 컬럼 업데이트
+        rawDb.prepare(`
+          UPDATE inspection_checklist_results
+          SET photo_path = ?, photo_name = ?, photo_mime = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE inspection_id = ? AND item_key = ?
+        `).run(filePath, file.name || fileName, file.type || 'image/jpeg', insId, key)
+        savedCount.photos++
+      }
+    }
+
+    return c.json({ success: true, saved: savedCount.total, photos: savedCount.photos })
+  } catch(e: any) {
+    console.error('[POST /api/inspections/:id/checklist-photos]', e.message)
+    return c.json({ error: `저장 실패: ${e.message}` }, 500)
+  }
+})
+
+// ─── [RULE-002] NAS 전용: GET /api/inspections/:id/checklist-photo/:key ───────
+// 체크리스트 항목별 사진 이미지 반환
+app.get('/api/inspections/:id/checklist-photo/:key', async (c) => {
+  const insId = Number(c.req.param('id'))
+  const key   = decodeURIComponent(c.req.param('key'))
+  if (!insId || !key) return c.json({ error: '잘못된 파라미터' }, 400)
+
+  const row = rawDb.prepare(
+    `SELECT photo_path, photo_mime FROM inspection_checklist_results WHERE inspection_id = ? AND item_key = ?`
+  ).get(insId, key) as any
+
+  if (!row || !row.photo_path) return c.notFound()
+
+  try {
+    const { readFileSync: rfs } = await import('fs')
+    const buf = rfs(row.photo_path)
+    return new Response(buf, {
+      headers: {
+        'Content-Type': row.photo_mime || 'image/jpeg',
+        'Cache-Control': 'max-age=86400',
+      }
+    })
+  } catch(_e) {
+    return c.json({ error: '파일 없음' }, 404)
   }
 })
 

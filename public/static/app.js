@@ -8963,8 +8963,8 @@ async function showTaskDetail(id, openTbmTab) {
         <div id="linked-photos-section-${task.id}" class="mt-4 p-3 rounded-xl" style="background:#F0FDF4;border:1px solid #BBF7D0">
           <div class="flex items-center gap-2 mb-2">
             <i class="fas fa-images" style="color:#059669"></i>
-            <span class="text-sm font-bold" style="color:#065F46">같은 공사의 완료작업 사진</span>
-            <span class="text-xs text-gray-400">(읽기 전용)</span>
+            <span class="text-sm font-bold" style="color:#065F46">같은 공사의 연계작업 사진</span>
+            <span class="text-xs text-gray-400">(읽기 전용 · 위험성평가 이후 단계)</span>
           </div>
           <div id="linked-photos-content-${task.id}">
             <div class="text-xs text-gray-400 py-2"><i class="fas fa-spinner fa-spin mr-1"></i>불러오는 중...</div>
@@ -10351,36 +10351,62 @@ async function openAttachment(id, fileName, mimeType) {
   }
 }
 
-// ─── [FEAT-112] 연계 완료작업 사진 로드 (worker 전용) ────────────────────────
+// ─── [FEAT-112 v2] 연계 작업 사진 로드 (worker 전용) ────────────────────────
+// [BUG-FIX] GET /tasks?construction_id= 는 worker INNER JOIN 제약으로 본인 배정 작업만 반환됨
+// → GET /photos?construction_id=&exclude_task_id= 로 변경 (photos.ts는 role 체크 없음)
+// [BUG-FIX] status=completed 만 조회 → in_progress(위험성평가) 이후 전 단계로 확장 (photos.ts 서버측 필터)
+// 사진이 있는 작업만 버튼으로 표시 (task_id 기준 그룹핑)
 async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
   var container = document.getElementById('linked-photos-content-' + currentTaskId);
   if (!container) return;
   try {
-    var res = await API.get('/tasks', { params: { construction_id: constructionId, status: 'completed' } });
-    var completedTasks = (res.data && (res.data.tasks || res.data)) || [];
-    // 현재 작업 자신 제외
-    completedTasks = completedTasks.filter(function(t) { return t.id !== currentTaskId; });
-    if (completedTasks.length === 0) {
-      container.innerHTML = '<p class="text-xs text-gray-400 italic py-2">완료된 연계 작업이 없습니다.</p>';
+    // photos.ts의 construction_id 파라미터 사용:
+    //   - tasks JOIN으로 in_progress 이후 단계 작업 사진만 반환 (서버 필터)
+    //   - exclude_task_id: 현재 작업 본인 사진 제외
+    var res = await API.get('/photos', { params: { construction_id: constructionId, exclude_task_id: currentTaskId } });
+    var allPhotos = res.data || [];
+
+    if (allPhotos.length === 0) {
+      container.innerHTML = '<p class="text-xs text-gray-400 italic py-2">연계된 작업의 사진이 없습니다.</p>';
       return;
     }
-    var html = '<div class="flex flex-wrap gap-2 mb-3">';
-    completedTasks.forEach(function(t) {
-      var label = t.sub_task_number ? (t.sub_task_number + '번') : (t.title || ('작업 #' + t.id));
-      html += '<button onclick="_toggleLinkedTaskPhotos(' + t.id + ',' + currentTaskId + ',this)"'
+
+    // task_id 기준으로 그룹핑 (사진이 있는 작업만 자동 포함)
+    var taskMap = {};    // { taskId: { label, photos[] } }
+    var taskOrder = [];  // 순서 유지
+    allPhotos.forEach(function(p) {
+      var tid = p.task_id;
+      if (!taskMap[tid]) {
+        var label = p.sub_task_number ? (p.sub_task_number + '번') : (p.task_title || ('작업 #' + tid));
+        taskMap[tid] = { label: label, photos: [] };
+        taskOrder.push(tid);
+      }
+      taskMap[tid].photos.push(p);
+    });
+
+    var html = '<div class="flex flex-wrap gap-2 mb-2">';
+    taskOrder.forEach(function(tid) {
+      var info = taskMap[tid];
+      var cnt = info.photos.length;
+      html += '<button onclick="_toggleLinkedTaskPhotos(' + tid + ',' + currentTaskId + ',this)"'
         + ' class="text-xs px-3 py-1.5 rounded-lg font-semibold border"'
         + ' style="background:#ffffff;color:#059669;border-color:#BBF7D0">'
-        + '<i class="fas fa-clipboard-check mr-1"></i>' + label + '</button>';
+        + '<i class="fas fa-clipboard-check mr-1"></i>' + info.label
+        + ' <span style="color:#6B7280;font-weight:400">(' + cnt + ')</span></button>';
     });
     html += '</div>';
     html += '<div id="linked-task-photos-' + currentTaskId + '" class="photo-grid"></div>';
     container.innerHTML = html;
+
+    // 캐시: 그룹핑된 데이터를 DOM에 저장 (버튼 클릭 시 재사용, API 재호출 없음)
+    container.dataset.taskMap = JSON.stringify(taskMap);
+
   } catch(e) {
     container.innerHTML = '<p class="text-xs text-red-400 py-2">불러오기 실패</p>';
   }
 }
 
-async function _toggleLinkedTaskPhotos(linkedTaskId, currentTaskId, btn) {
+function _toggleLinkedTaskPhotos(linkedTaskId, currentTaskId, btn) {
   var grid = document.getElementById('linked-task-photos-' + currentTaskId);
   if (!grid) return;
   // 이미 같은 작업 열려있으면 닫기
@@ -10397,10 +10423,12 @@ async function _toggleLinkedTaskPhotos(linkedTaskId, currentTaskId, btn) {
   }
   btn.style.background = '#BBF7D0';
   grid.dataset.openTaskId = String(linkedTaskId);
-  grid.innerHTML = '<div class="text-xs text-gray-400 py-2"><i class="fas fa-spinner fa-spin mr-1"></i>사진 불러오는 중...</div>';
+
+  // 캐시에서 해당 작업 사진 조회 (API 재호출 없음)
   try {
-    var res = await API.get('/photos', { params: { task_id: linkedTaskId } });
-    var photos = res.data || [];
+    var taskMap = section && section.dataset.taskMap ? JSON.parse(section.dataset.taskMap) : {};
+    var info = taskMap[String(linkedTaskId)];
+    var photos = info ? info.photos : [];
     if (photos.length === 0) {
       grid.innerHTML = '<p class="text-xs text-gray-400 italic py-2">등록된 사진이 없습니다.</p>';
       return;
@@ -10425,7 +10453,7 @@ async function _toggleLinkedTaskPhotos(linkedTaskId, currentTaskId, btn) {
     });
     grid.innerHTML = thumbs.join('');
   } catch(e) {
-    grid.innerHTML = '<p class="text-xs text-red-400 py-2">사진 불러오기 실패</p>';
+    grid.innerHTML = '<p class="text-xs text-red-400 py-2">표시 오류</p>';
   }
 }
 

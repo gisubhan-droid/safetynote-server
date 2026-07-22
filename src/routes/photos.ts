@@ -68,17 +68,44 @@ async function fetchTaskWithCon(db: D1Database, taskId: number) {
 app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { task_id, photo_type } = c.req.query()
+  const { task_id, photo_type, construction_id, exclude_task_id } = c.req.query()
 
-  let q = `SELECT p.id, p.task_id, p.photo_type, p.file_name, p.file_path, p.file_size, p.mime_type,
-    p.caption, p.taken_at, p.created_at, u.name as uploader_name
-    FROM task_photos p LEFT JOIN users u ON u.id = p.uploader_id`
+  // [FEAT-112] construction_id 조회 시 tasks JOIN 필요
+  // 대상 상태: in_progress(위험성평가) 이후 단계 (in_progress, tbm_done, working, work_completed, completed)
+  const LINKED_STATUSES = ['in_progress', 'tbm_done', 'working', 'work_completed', 'completed']
+
+  let q: string
   const params: any[] = []
   const wheres: string[] = []
-  if (task_id) { wheres.push('p.task_id = ?'); params.push(task_id) }
+
+  if (construction_id) {
+    // construction_id 기반: tasks 테이블 JOIN하여 해당 공사의 작업 사진 일괄 조회
+    q = `SELECT p.id, p.task_id, p.photo_type, p.file_name, p.file_path, p.file_size, p.mime_type,
+      p.caption, p.taken_at, p.created_at, u.name as uploader_name,
+      t.sub_task_number, t.title as task_title, t.status as task_status
+      FROM task_photos p
+      LEFT JOIN users u ON u.id = p.uploader_id
+      INNER JOIN tasks t ON t.id = p.task_id`
+    wheres.push('t.construction_id = ?')
+    params.push(parseInt(construction_id, 10))
+    // 위험성평가(in_progress) 이후 단계만 포함
+    wheres.push(`t.status IN (${LINKED_STATUSES.map(() => '?').join(',')})`)
+    params.push(...LINKED_STATUSES)
+    // 현재 작업 제외 (본인 작업 사진은 이미 사진탭에서 확인 가능)
+    if (exclude_task_id) {
+      wheres.push('p.task_id != ?')
+      params.push(parseInt(exclude_task_id, 10))
+    }
+  } else {
+    q = `SELECT p.id, p.task_id, p.photo_type, p.file_name, p.file_path, p.file_size, p.mime_type,
+      p.caption, p.taken_at, p.created_at, u.name as uploader_name
+      FROM task_photos p LEFT JOIN users u ON u.id = p.uploader_id`
+    if (task_id) { wheres.push('p.task_id = ?'); params.push(task_id) }
+  }
+
   if (photo_type) { wheres.push('p.photo_type = ?'); params.push(photo_type) }
   if (wheres.length) q += ' WHERE ' + wheres.join(' AND ')
-  q += ' ORDER BY p.created_at DESC'
+  q += ' ORDER BY p.task_id ASC, p.created_at ASC'
 
   const result = await c.env.DB.prepare(q).bind(...params).all<any>()
   return c.json(result.results || [])

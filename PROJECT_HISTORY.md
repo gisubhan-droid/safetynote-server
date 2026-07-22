@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-21 (세션 147 — feat: [FEAT-111] 내 작업 가져오기 시 소속 팀 전원 자동 배정)
-> **GitHub 최신: `5812529`** — feat(tasks): [FEAT-111] 내 작업 가져오기 시 소속 팀 전원 자동 배정 (세션147)
+> 최종 업데이트: 2026-07-22 (세션 151 — fix: [FEAT-112 세션151] _showLinkedPhotoModal 전면 재작성)
+> **GitHub 최신: `9354335`** — fix: [FEAT-112 세션151] _showLinkedPhotoModal 전면 재작성 (세션151)
+> **이전 커밋: `e035c01`** — docs: [FEAT-112 UX] PROJECT_HISTORY.md 세션150 기록 추가
+> **이전 커밋: `5812529`** — feat(tasks): [FEAT-111] 내 작업 가져오기 시 소속 팀 전원 자동 배정 (세션147)
 > **이전 커밋: `06dd159`** — feat(my-tasks): [FEAT-108] 내 작업목록 진행단계 다중선택 드롭다운 필터 추가 (세션143-3)
 > **이전 커밋: `bcbcc9f`** — fix(site-map): [BUG-105] 지도앱 열기 PC 콘솔 오류 수정 + 카드 상세 버튼 별도 분리 (세션143-2)
 > **이전 커밋: `999e9ad`** — feat(site-map): 지도 마커 팝업 지도앱 연결 + 하단 리스트 카드 작업상세 이동 (세션143)
@@ -110,6 +112,7 @@
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-112 | 148~151 | 2026-07-21~22 | ✅ 구현 | **근로자 작업 상세 — 같은 공사 연계작업 사진 조회 (읽기 전용)** — **세션148**: ①renderThumb deleteMedia/업로드 버튼 worker 차단 ②기본정보 탭 `linked-photos-section` 섹션 HTML 추가 ③`_loadLinkedCompletedPhotos`+`_toggleLinkedTaskPhotos` 전역 함수 추가. **세션149 BUG-FIX**: `photos.ts GET /photos`에 `construction_id`+`exclude_task_id` 파라미터 추가 — worker INNER JOIN 제약 우회+상태범위(in_progress~completed) 확장. **세션150 UX**: 인라인 그리드→팝업 모달 전환+`_showLinkedPhotoView` 읽기전용 뷰어 추가(zIndex:10100). **세션151 BUG-FIX**: `_showLinkedPhotoModal` 전면 재작성 — ①taskMap 저장: `dataset`→`window.__linkedTaskMap_\${currentTaskId}` 전역변수(JSON파싱 신뢰성 문제 해결) ②onclick: `JSON.stringify(tid)`→숫자형 task_id 직접사용 ③모달스타일: `modal-overlay` CSS의존→`position:fixed`+`z-index:9500` 직접지정(CSS미적용시 팝업미표시 해결) ④사이드바 제거→단순 스크롤 모달 ⑤`_linkedModalSelectTask` 동적할당+중첩inner function 제거 ⑥photo_type 컬러배지+4열 그리드+캡션 오버레이(관리자 사진탭 UI 기준) | `a7c9488`→`9354335` |
 | FEAT-063 | 129 | 2026-07-13 | ✅ 구현 | **공사통계 메뉴 추가** — 공사현황 그룹 최상단에 '공사통계' 서브메뉴 신규 추가. ①년간/월간/주간 기간 탭 필터 ②요약 카드 4종(전체공사·완료·시공통보금액·정산완료) ③작업 종류별 현황 표(지장이설·청약개통·관로·환경·별도·기타 / 건수·완료율·시공통보금액·정산완료·합계행) ④담당자별 현황 Chart.js 수평 막대 그래프(최대 15명 시각화) + 상세 표 ⑤금액 억/만 단위 자동 포맷. 백엔드: `GET /api/constructions/stats` 신규 엔드포인트(period/year/month/week_start) — `/api/constructions/:id` 동적 라우트보다 먼저 등록하여 충돌 방지 | `0de543f` |
 | FEAT-062 | 126 | 2026-07-12 | ✅ 구현 | **근로자 QR 프로필 UI 통합 개편** — ①프로필 화면 + 점검이력 팝업을 하나의 통합 화면으로 병합 ②현장배정작업 섹션: 항목 있으면 클릭 시 확장되는 accordion 형태, 없으면 "배정된 작업 없음" 표시 ③"근로자 점검 이력" → "근로자 안전 점수" 이름 변경 ④우수기록/불량기록 각각 클릭 시 확장 accordion ⑤최상단 근로자 이름/헤더에 안전점수 배지 표시 (점수 없으면 미표시) ⑥`src/routes/users.ts` qr-profile API: `current_task(단일)` → `assigned_tasks(복수)` 로 확장, `current_task` 하위호환 유지 | `0337ee3` |
 | FEAT-061 | 125 | 2026-07-12 | ✅ 구현 | **공사현황 메뉴 이름변경 + 작업통계 하위 이동** — ①`volume` 그룹 label `현장공량` → `공사현황` 변경 ②`edu` 그룹 stats 서브메뉴에서 `stats-task` 제거 ③`volume` 그룹 items 맨 앞에 `stats-task`(작업통계) 추가. **배포방식 기록 추가**: `BUGFIX_LOG.md` 맨 앞에 배포방식 최우선 섹션 추가 — 방식1(업데이트 버튼=표준), 방식2(NAS 직접=긴급우회) 명확히 문서화 | `685dd29` / `a3a01c2` |

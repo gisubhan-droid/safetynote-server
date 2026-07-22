@@ -7881,3 +7881,59 @@ return c.json({ success: true, assignedCount })
 - JS 파싱 검사 → ✅ **OK**
 - `npm run build` → ✅ **성공** (`dist/_worker.js 281.45 kB`, 3.04s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `a7c9488`)
+
+---
+
+## 세션 149 — FEAT-112 BUG-FIX: 연계작업 사진 조회 버그 수정
+
+### 날짜
+2025년 (세션148 직후)
+
+### 문제 증상
+- 같은 공사요청번호에 완료된 연계 작업이 있음에도 "완료된 연계 작업이 없습니다" 표시
+- worker 화면에서 연계 사진 섹션이 항상 비어있음
+
+### 근본 원인 분석
+
+#### 원인 1 — worker role의 INNER JOIN 제약 (주원인)
+`GET /tasks?construction_id=X&status=completed` 호출 시,
+tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = t.id AND ta.worker_id = ?` 조건이 자동 추가됨.
+→ **본인이 배정된 작업만 반환** — 다른 작업자의 연계 작업 조회 불가
+
+#### 원인 2 — 상태 필터 범위 부족
+`status=completed`만 조회 → 사용자 요청: **위험성평가(`in_progress`) 이후 전 단계** 작업 사진 조회 필요
+(`in_progress`, `tbm_done`, `working`, `work_completed`, `completed` 포함)
+
+### 해결 방법
+
+#### A. `src/routes/photos.ts` (백엔드 수정)
+`GET /photos`에 `construction_id`, `exclude_task_id` 파라미터 추가:
+- `construction_id` 지정 시: `task_photos INNER JOIN tasks` 쿼리로 전환
+- 서버측에서 `in_progress` 이후 5개 상태 필터 적용
+- `exclude_task_id`: 현재 작업 본인 사진 제외
+- role 체크 없음 (기존 동일) — 로그인 인증만 필요
+
+#### B. `public/static/app.js` (프론트 수정)
+`_loadLinkedCompletedPhotos`:
+- 기존: `GET /tasks?construction_id=&status=completed` → `GET /photos?construction_id=&exclude_task_id=`로 전환
+- 응답 photos를 `task_id` 기준으로 그룹핑
+- **사진이 있는 작업만** 버튼 자동 표시 (빈 작업 버튼 미표시)
+- `taskMap`을 `container.dataset`에 JSON 캐시 → 버튼 클릭 시 API 재호출 없음
+
+`_toggleLinkedTaskPhotos`:
+- `async` 제거 (캐시 참조로 비동기 불필요)
+- `dataset.taskMap` 파싱 후 해당 작업 사진 즉시 렌더
+
+### 2차 재검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| photos.ts TypeScript 문법 | ✅ 정상 |
+| app.js optional chaining `?.` 없음 | ✅ 0건 |
+| app.js TypeScript 구문 없음 | ✅ 0건 |
+| `_toggleLinkedTaskPhotos` async 제거 | ✅ 일반 함수 |
+| 기존 `task_id` 단독 조회 경로 보존 | ✅ `else` 분기 유지 |
+| JS 파싱 검사 | ✅ **OK** |
+
+### 빌드/배포 상태
+- `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.36s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `61f49ff`)

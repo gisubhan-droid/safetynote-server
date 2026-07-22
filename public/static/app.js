@@ -15201,8 +15201,85 @@ async function renderMyTasksPage(container) {
 
     const fm = activeFilter ? FILTER_META[activeFilter] : null;
 
+    // ── [FEAT-157] 안전점수 배너: worker 역할만 표시 ───────────────────────────
+    // API 호출을 작업목록 로드와 병렬(Promise.all)이 아닌 별도 후속 호출로 처리.
+    // 실패해도 작업목록에 영향 없도록 try/catch로 완전 격리.
+    // RULE-001: var 전용, 백틱 중첩 없음(배너 HTML을 문자열 연결로 구성)
+    // KST-001 : 배너에 DB datetime 직접 표시 없음 → 해당 없음
+    var _safetyBannerHtml = '';
+    if (currentUser && currentUser.role === 'worker') {
+      try {
+        var _sbRes = await API.get('/inspections/stats/my-safety').catch(function() { return { data: null }; });
+        var _sbData = (_sbRes && _sbRes.data) ? _sbRes.data : null;
+        if (_sbData) {
+          var _sbScore     = Number(_sbData.score) || 0;
+          var _sbTotal     = _sbData.total || {};
+          var _sbExcel     = Number(_sbTotal.excel_count) || 0;
+          var _sbPoor      = Number(_sbTotal.poor_count)  || 0;
+          var _sbHasRecord = Number(_sbTotal.total_records) > 0;
+          // 등급 산정
+          var _sbGrade = '-';
+          if (_sbHasRecord) {
+            _sbGrade = _sbScore >= 20 ? 'S' : _sbScore >= 10 ? 'A' : _sbScore >= 0 ? 'B' : _sbScore >= -10 ? 'C' : 'D';
+          }
+          // 등급·점수 색상
+          var _sbGradeColorMap = { 'S':'#685182','A':'#059669','B':'#2563EB','C':'#F59E0B','D':'#D70072','-':'rgba(255,255,255,0.6)' };
+          var _sbGradeColor    = _sbGradeColorMap[_sbGrade] || 'rgba(255,255,255,0.6)';
+          var _sbScoreLabel    = !_sbHasRecord ? '기록없음' : (_sbScore > 0 ? '+' + _sbScore + '점' : _sbScore + '점');
+          var _sbScoreTxtColor = !_sbHasRecord ? 'rgba(255,255,255,0.5)' : '#fff';
+          // 진행 바 계산 (0~100%, 최대 30점 기준)
+          var _sbBarPct = 0;
+          if (_sbHasRecord) {
+            _sbBarPct = Math.min(100, Math.max(0, Math.round((_sbScore + 30) / 60 * 100)));
+          }
+          var _sbBarColor = !_sbHasRecord ? 'rgba(255,255,255,0.2)'
+            : _sbScore >= 10 ? 'rgba(255,255,255,0.85)' : _sbScore >= 0 ? 'rgba(255,220,80,0.85)' : 'rgba(255,100,140,0.85)';
+          // 배너 HTML 구성 (문자열 연결 — 백틱 중첩 없음, RULE-001 준수)
+          _safetyBannerHtml = '<div onclick="navigateTo(\'my-stats\')" style="'
+            + 'background:linear-gradient(135deg,#685182 0%,#D70072 100%);'
+            + 'border-radius:16px;margin-bottom:12px;padding:13px 16px;cursor:pointer;'
+            + 'box-shadow:0 2px 8px rgba(104,81,130,0.25);user-select:none;-webkit-tap-highlight-color:transparent">'
+            + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'
+              // 왼쪽: 아이콘 + 레이블
+              + '<div style="display:flex;align-items:center;gap:10px;min-width:0">'
+                + '<div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,0.15);'
+                + 'display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+                  + '<i class="fas fa-shield-halved" style="font-size:17px;color:#fff"></i>'
+                + '</div>'
+                + '<div style="min-width:0">'
+                  + '<div style="color:rgba(255,255,255,0.75);font-size:10px;font-weight:600;margin-bottom:1px">'
+                    + '<i class="fas fa-shield-halved" style="font-size:9px;margin-right:3px"></i>나의 안전점수'
+                  + '</div>'
+                  // 진행 바
+                  + '<div style="width:110px;height:5px;background:rgba(255,255,255,0.2);border-radius:3px;overflow:hidden">'
+                    + '<div style="width:' + _sbBarPct + '%;height:100%;background:' + _sbBarColor + ';border-radius:3px;transition:width .4s"></div>'
+                  + '</div>'
+                  + '<div style="color:rgba(255,255,255,0.55);font-size:10px;margin-top:3px">'
+                    + '우수 ' + _sbExcel + '건 · 불량 ' + _sbPoor + '건'
+                  + '</div>'
+                + '</div>'
+              + '</div>'
+              // 오른쪽: 점수 + 등급 + 화살표
+              + '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'
+                + '<div style="text-align:right">'
+                  + '<div style="font-size:20px;font-weight:900;color:' + _sbScoreTxtColor + ';line-height:1.1">' + _sbScoreLabel + '</div>'
+                  + '<div style="font-size:11px;font-weight:800;color:' + _sbGradeColor + ';background:rgba(255,255,255,0.18);'
+                  + 'border-radius:6px;padding:1px 7px;margin-top:2px;display:inline-block">' + _sbGrade + '등급</div>'
+                + '</div>'
+                + '<i class="fas fa-chevron-right" style="color:rgba(255,255,255,0.45);font-size:13px"></i>'
+              + '</div>'
+            + '</div>'
+          + '</div>';
+        }
+      } catch(_sbErr) { /* 안전점수 배너 로드 실패 시 조용히 무시 */ }
+    }
+    // ── [FEAT-157] 끝 ──────────────────────────────────────────────────────────
+
     container.innerHTML = `
     <div class="page-container">
+
+      <!-- ── [FEAT-157] 안전점수 배너 (근로자만) ── -->
+      ${_safetyBannerHtml}
 
       <!-- ── 검색 바 ── -->
       <div class="mb-2" style="position:relative">

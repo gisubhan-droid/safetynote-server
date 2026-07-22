@@ -17084,6 +17084,17 @@ function _makePhotoCell(photo, idx, escFn, origin) {
     : '<div style="width:100%;height:100%;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:9pt">사진 없음</div>';
 }
 
+// ── 체크리스트 항목별 사진 셀 생성 (item_key 기반 API URL) ──
+function _makeChkPhotoCell(itemKey, escFn, origin) {
+  var _o = origin || '';
+  if (!itemKey) {
+    return '<div style="width:100%;height:100%;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:9pt">사진 없음</div>';
+  }
+  var encodedKey = encodeURIComponent(itemKey);
+  return '<img src="' + _o + '/api/inspections/' + _chkPhotoInsId + '/checklist-photo/' + encodedKey + '" alt="" style="max-width:100%;max-height:100%;object-fit:contain;display:block;margin:0 auto" onerror="this.parentNode.innerHTML=\'<div style=\'\''+'width:100%;height:100%;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:8pt\'>사진 없음</div>\'">';
+}
+var _chkPhotoInsId = 0; // _printInspectionReport 내에서 설정
+
 // ── 캡션 생성 (for 루프 밖 독립 함수) ──
 function _makePhotoCaption(photo, idx, escFn) {
   if (!photo) return '&nbsp;';
@@ -17107,8 +17118,10 @@ async function _printInspectionReport(insId) {
     if (!res.ok) throw new Error('점검 데이터 로드 실패');
     var ins = await res.json();
 
-    // ── 저장된 체크리스트 결과 로드 ──
-    var savedChkMap = {};
+    // ── 저장된 체크리스트 결과 + 항목별 사진 로드 ──
+    var savedChkMap = {};       // item_key → result
+    var savedChkTextMap = {};   // item_key → item_text
+    var savedChkPhotoList = []; // 사진 있는 항목: [{ item_key, item_text, result }]
     try {
       var chkToken = localStorage.getItem('token');
       var chkRes = await fetch('/api/inspections/' + insId + '/checklist-results', {
@@ -17116,7 +17129,18 @@ async function _printInspectionReport(insId) {
       });
       if (chkRes.ok) {
         var chkData = await chkRes.json();
-        (chkData.results || []).forEach(function(r) { savedChkMap[r.item_key] = r.result; });
+        (chkData.results || []).forEach(function(r) {
+          savedChkMap[r.item_key] = r.result;
+          savedChkTextMap[r.item_key] = r.item_text || '';
+          // photo_path 컬럼이 있으면 사진 목록에 추가
+          if (r.photo_path) {
+            savedChkPhotoList.push({
+              item_key:  r.item_key,
+              item_text: r.item_text || '',
+              result:    r.result || 'na'
+            });
+          }
+        });
       }
     } catch(_) {}
 
@@ -17158,8 +17182,9 @@ async function _printInspectionReport(insId) {
     var leaders  = workers.filter(function(w) { return w.is_leader === 1 || w.is_leader === '1'; });
     var workerStr = (leaders.length > 0 ? leaders : workers).map(function(w) { return w.worker_name; }).join(', ') || '';
 
-    // ── 로컬 esc 별칭 ──
+    // ── 로컬 esc 별칭 + 체크리스트 사진 전역 설정 ──
     var _esc = _escHtml;
+    _chkPhotoInsId = insId; // _makeChkPhotoCell 에서 사용
 
     // ── CSS (A4 1장 맞춤 — 클린 디자인 v155g) ──
     var CSS_COMMON = '<style>' +
@@ -17193,8 +17218,8 @@ async function _printInspectionReport(insId) {
       '.photo-cell{text-align:center;vertical-align:middle;padding:3px;overflow:hidden;background:#f9f9f9}' +
       '.photo-cell img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:0 auto}' +
       '.caption-cell{font-size:6.5pt;text-align:center;padding:2px 4px;background:#eef2f7;color:#1E3A5F;font-weight:600;vertical-align:middle;height:15px}' +
-      '.sida-lbl{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;font-weight:bold;font-size:7.5pt;' +
-                'background:#dce6f1;color:#1E3A5F;padding:2px;width:13px}' +
+      '.sida-lbl{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;font-weight:bold;font-size:7pt;' +
+                'background:#dce6f1;color:#1E3A5F;padding:2px 1px;width:20px;vertical-align:middle}' +
       /* 인쇄 버튼 바 */
       '.btn-print-bar{position:fixed;top:0;left:0;width:100%;background:#1E3A5F;color:#fff;padding:7px 16px;' +
                      'display:flex;gap:10px;align-items:center;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.3)}' +
@@ -17302,49 +17327,130 @@ async function _printInspectionReport(insId) {
       '</table>' +
     '</div>';
 
-    // ── 2페이지~: 안전점검 사진대장 ──
-    var photos = Array.isArray(ins.photos) ? ins.photos.filter(function(p) {
+    // ── 2페이지~: 안전점검 사진대장 (v155h — 원본 양식 비율 + 체크리스트 사진 통합) ──
+    // 1) 전체사진 (ins.photos) — 동영상 제외
+    var _genPhotos = Array.isArray(ins.photos) ? ins.photos.filter(function(p) {
       var fn = (p.file_name || '').toLowerCase();
       return !fn.match(/\.(mp4|mov|avi|webm|mkv)$/) && !(p.mime_type || '').startsWith('video/');
     }) : [];
 
+    // 2) 통합 슬롯 배열 구성
+    //    각 슬롯: { type:'gen'|'chk', photo?:object, item_key?:string, caption:string }
+    var _allSlots = [];
+
+    // 체크리스트 사진 (양호/불량 항목에 사진 있는 것)
+    savedChkPhotoList.forEach(function(r) {
+      _allSlots.push({
+        type:     'chk',
+        item_key: r.item_key,
+        caption:  r.item_text || r.item_key
+      });
+    });
+
+    // 전체사진 (점검 사진)
+    _genPhotos.forEach(function(p, i) {
+      _allSlots.push({
+        type:    'gen',
+        photo:   p,
+        photoIdx: i,
+        caption: p.caption || ('점검사진 #' + (i + 1))
+      });
+    });
+
+    // 슬롯이 하나도 없으면 빈 슬롯 1개라도 만들어서 빈 페이지 출력
+    if (_allSlots.length === 0) {
+      _allSlots.push({ type:'empty', caption:'' });
+      _allSlots.push({ type:'empty', caption:'' });
+      _allSlots.push({ type:'empty', caption:'' });
+      _allSlots.push({ type:'empty', caption:'' });
+    }
+
+    // 빈 슬롯 헬퍼
+    function _makeSlotCell(slot) {
+      if (!slot || slot.type === 'empty') {
+        return '<div style="width:100%;height:100%;background:#f0f2f5;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:9pt">사진 없음</div>';
+      }
+      if (slot.type === 'chk') {
+        return _makeChkPhotoCell(slot.item_key, _esc, _origin);
+      }
+      // gen
+      return _makePhotoCell(slot.photo || null, slot.photoIdx || 0, _esc, _origin);
+    }
+
+    function _makeSlotCaption(slot) {
+      if (!slot || slot.type === 'empty') return '&nbsp;';
+      return _esc(slot.caption || '');
+    }
+
     var photoPages = '';
-    var pageCount = Math.max(1, Math.ceil(photos.length / 4));
+    var _pgCount = Math.max(1, Math.ceil(_allSlots.length / 4));
 
-    for (var pg = 0; pg < pageCount; pg++) {
-      var batch = photos.slice(pg * 4, pg * 4 + 4);
-      while (batch.length < 4) { batch.push(null); }
+    for (var pg = 0; pg < _pgCount; pg++) {
+      var batch = _allSlots.slice(pg * 4, pg * 4 + 4);
+      while (batch.length < 4) { batch.push({ type:'empty', caption:'' }); }
 
-      var slideLabel = (pg === 0) ? '사\n진\n대\n지\n(1)' : '사\n진\n대\n지\n(' + (pg + 1) + ')';
+      var slideLabel = '사\n진\n대\n지\n(' + (pg + 1) + ')';
       var pairTop = [batch[0], batch[1]];
       var pairBot = [batch[2], batch[3]];
 
-      // 사진 셀 높이: 헤더(약 40mm) + 제목(12mm) + 여백 ≈ 297-8-8-52 = 229mm → /2 ≈ 109mm
+      // ── CSS 클래스: .sida-lbl 너비 확대, photo-cell 비율 원본 양식 기준
+      // A4(297mm) - 패딩(12mm) - 헤더(약52mm) - 타이틀(11mm) - 캡션행2개(약12mm) - 구분선 = 약210mm → /2 ≈ 105mm
       photoPages += '<div class="photo-page">' +
-        '<table style="margin-bottom:5px;flex-shrink:0"><tr class="title-row"><td colspan="4">안&nbsp;전&nbsp;점&nbsp;검&nbsp;&nbsp;사&nbsp;진&nbsp;&nbsp;대&nbsp;장</td></tr></table>' +
+        '<table style="margin-bottom:4px;flex-shrink:0"><tr class="title-row"><td>안&nbsp;전&nbsp;점&nbsp;검&nbsp;&nbsp;사&nbsp;진&nbsp;&nbsp;대&nbsp;장</td></tr></table>' +
         makeHeaderTable() +
-        '<table style="flex:1;table-layout:fixed;border-collapse:collapse">' +
+        '<table style="flex:1;table-layout:fixed;border:1px solid #9ab;border-collapse:collapse">' +
           '<colgroup>' +
-            '<col style="width:14px">' +
-            '<col style="width:49%">' +
-            '<col style="width:49%">' +
+            '<col style="width:20px">' +
+            '<col style="width:calc(50% - 10px)">' +
+            '<col style="width:calc(50% - 10px)">' +
           '</colgroup>' +
-          '<tr style="height:108px">' +
-            '<td class="sida-lbl" rowspan="4" style="white-space:pre-line">' + slideLabel + '</td>' +
-            '<td class="photo-cell" style="height:108px">' + _makePhotoCell(pairTop[0], pg*4+0, _esc, _origin) + '</td>' +
-            '<td class="photo-cell" style="height:108px">' + _makePhotoCell(pairTop[1], pg*4+1, _esc, _origin) + '</td>' +
+          // ── 상단 캡션 헤더행 ──
+          '<tr style="height:18px;background:#dce6f1">' +
+            '<td rowspan="4" class="sida-lbl" style="white-space:pre-line;width:20px">' + slideLabel + '</td>' +
+            '<td style="text-align:center;font-size:7.5pt;font-weight:700;color:#1E3A5F;border-color:#9ab;padding:2px 4px">점검사항</td>' +
+            '<td style="text-align:center;font-size:7.5pt;font-weight:700;color:#1E3A5F;border-color:#9ab;padding:2px 4px">점검사항</td>' +
           '</tr>' +
+          // ── 상단 사진 2장 ──
           '<tr>' +
-            '<td class="caption-cell">점검사항 · ' + _makePhotoCaption(pairTop[0], pg*4+0, _esc) + '</td>' +
-            '<td class="caption-cell">점검사항 · ' + _makePhotoCaption(pairTop[1], pg*4+1, _esc) + '</td>' +
+            '<td class="photo-cell" style="height:105px;border-color:#9ab">' + _makeSlotCell(pairTop[0]) + '</td>' +
+            '<td class="photo-cell" style="height:105px;border-color:#9ab">' + _makeSlotCell(pairTop[1]) + '</td>' +
           '</tr>' +
-          '<tr style="border-top:2px solid #888;height:108px">' +
-            '<td class="photo-cell" style="height:108px">' + _makePhotoCell(pairBot[0], pg*4+2, _esc, _origin) + '</td>' +
-            '<td class="photo-cell" style="height:108px">' + _makePhotoCell(pairBot[1], pg*4+3, _esc, _origin) + '</td>' +
+          // ── 상단 사진 캡션 ──
+          '<tr style="height:20px;background:#eef2f7">' +
+            '<td class="caption-cell" style="font-size:7pt;border-color:#9ab;padding:3px 5px;text-align:left">' +
+              '<span style="color:#888;font-weight:400">▶ </span>' + _makeSlotCaption(pairTop[0]) + '</td>' +
+            '<td class="caption-cell" style="font-size:7pt;border-color:#9ab;padding:3px 5px;text-align:left">' +
+              '<span style="color:#888;font-weight:400">▶ </span>' + _makeSlotCaption(pairTop[1]) + '</td>' +
           '</tr>' +
+          // ── 구분선 (사진대지 상/하 사이) ──
+          '<tr style="height:4px;background:#dce6f1">' +
+            '<td colspan="2" style="border-color:#9ab;padding:0;background:#dce6f1"></td>' +
+          '</tr>' +
+        '</table>' +
+        // ── 하단 2장 별도 테이블 (구분선 분리) ──
+        '<table style="flex:none;table-layout:fixed;border:1px solid #9ab;border-collapse:collapse;border-top:none">' +
+          '<colgroup>' +
+            '<col style="width:20px">' +
+            '<col style="width:calc(50% - 10px)">' +
+            '<col style="width:calc(50% - 10px)">' +
+          '</colgroup>' +
+          // ── 하단 캡션 헤더행 ──
+          '<tr style="height:18px;background:#dce6f1">' +
+            '<td rowspan="3" class="sida-lbl" style="white-space:pre-line;width:20px;color:transparent">' + slideLabel + '</td>' +
+            '<td style="text-align:center;font-size:7.5pt;font-weight:700;color:#1E3A5F;border-color:#9ab;padding:2px 4px">점검사항</td>' +
+            '<td style="text-align:center;font-size:7.5pt;font-weight:700;color:#1E3A5F;border-color:#9ab;padding:2px 4px">점검사항</td>' +
+          '</tr>' +
+          // ── 하단 사진 2장 ──
           '<tr>' +
-            '<td class="caption-cell">점검사항 · ' + _makePhotoCaption(pairBot[0], pg*4+2, _esc) + '</td>' +
-            '<td class="caption-cell">점검사항 · ' + _makePhotoCaption(pairBot[1], pg*4+3, _esc) + '</td>' +
+            '<td class="photo-cell" style="height:105px;border-color:#9ab">' + _makeSlotCell(pairBot[0]) + '</td>' +
+            '<td class="photo-cell" style="height:105px;border-color:#9ab">' + _makeSlotCell(pairBot[1]) + '</td>' +
+          '</tr>' +
+          // ── 하단 사진 캡션 ──
+          '<tr style="height:20px;background:#eef2f7">' +
+            '<td class="caption-cell" style="font-size:7pt;border-color:#9ab;padding:3px 5px;text-align:left">' +
+              '<span style="color:#888;font-weight:400">▶ </span>' + _makeSlotCaption(pairBot[0]) + '</td>' +
+            '<td class="caption-cell" style="font-size:7pt;border-color:#9ab;padding:3px 5px;text-align:left">' +
+              '<span style="color:#888;font-weight:400">▶ </span>' + _makeSlotCaption(pairBot[1]) + '</td>' +
           '</tr>' +
         '</table>' +
       '</div>';

@@ -8222,3 +8222,58 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 ### 빌드/배포 상태
 - `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.58s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `8715c22`)
+
+---
+
+## 세션155f — 현장점검 등록 체크리스트 항목별 사진 첨부 + 순서 재편 (2025-07)
+
+### 변경 파일
+- `public/static/app.js`
+- `node-server.ts`
+- `patch_155f.py` (신규)
+
+### 수정 내용
+
+#### 1. 체크리스트 항목별 사진 첨부 UI
+- 양호/불량 버튼 클릭 시 해당 항목 행 아래 **사진 업로드 슬롯 자동 노출**
+- 해당없음 선택 시 슬롯 자동 숨김 + 기존 파일 제거
+- 사진 미리보기 인라인 표시 (56×56px 썸네일)
+- `_insRegChkPhotoChange(input, key)` — 파일 선택 + 미리보기 + 메모리 저장
+- `_insRegChkPhotoRemove(btn)` — 삭제 버튼 + 메모리 제거
+- `window._insRegChkPhotoMap[key]` — 등록 전용 독립 사진 메모리
+
+#### 2. 모달 섹션 순서 재편
+| 순서 | 섹션 |
+|------|------|
+| ① | 기본 정보 (날짜/위치/유형/위험도) |
+| ② | 점검 체크리스트 (항목별 사진 슬롯 포함) |
+| ③ | 전체 사진/동영상 첨부 |
+| ④ | 점검 내용 / 조치 사항 ← **사진 다음으로 이동** |
+| ⑤ | 최종 점검 결과 |
+
+#### 3. submitInspection 사진 최소 4건 검증
+- 체크 항목이 1개 이상이고 사진 < 4개면 저장 차단 + 토스트 알림
+
+#### 4. submitInspection 3단계 개선 (checklist-photos)
+- 사진 있으면: `multipart/form-data` → `POST /api/inspections/:id/checklist-photos`
+- 사진 없으면: `JSON` → `POST /api/inspections/:id/checklist-results` (기존 방식 유지)
+- FormData 필드: `items`(JSON), `chk_photo_0` ~ `chk_photo_N`
+
+#### 5. node-server.ts: patchSchema v0.162
+- `inspection_checklist_results` 테이블에 `photo_path`, `photo_name`, `photo_mime` 컬럼 추가
+
+#### 6. node-server.ts: 신규 API 2개
+- `POST /api/inspections/:id/checklist-photos` — 사진 + 결과 동시 업로드
+- `GET /api/inspections/:id/checklist-photo/:key` — 항목별 사진 이미지 반환
+
+### 2차 재검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| `node --check` 구문 검사 | ✅ OK |
+| 신규 함수 `var` 전용 사용 | ✅ |
+| 따옴표 중첩 없음 | ✅ |
+| 모든 필수 패턴 14개 확인 | ✅ |
+
+### 빌드/배포 상태
+- `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.78s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `825caed`)

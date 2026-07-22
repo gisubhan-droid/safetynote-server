@@ -10351,18 +10351,14 @@ async function openAttachment(id, fileName, mimeType) {
   }
 }
 
-// ─── [FEAT-112 v2] 연계 작업 사진 로드 (worker 전용) ────────────────────────
-// [BUG-FIX] GET /tasks?construction_id= 는 worker INNER JOIN 제약으로 본인 배정 작업만 반환됨
-// → GET /photos?construction_id=&exclude_task_id= 로 변경 (photos.ts는 role 체크 없음)
-// [BUG-FIX] status=completed 만 조회 → in_progress(위험성평가) 이후 전 단계로 확장 (photos.ts 서버측 필터)
-// 사진이 있는 작업만 버튼으로 표시 (task_id 기준 그룹핑)
+// ─── [FEAT-112 v3] 연계 작업 사진 로드 (worker 전용) ────────────────────────
+// [BUG-FIX] GET /tasks?construction_id= → worker INNER JOIN 제약 우회
+// [BUG-FIX] 사진 클릭 시 showPhotoData/showVideoData → 삭제 버튼 노출 → 읽기전용 뷰어로 교체
+// [UX] 인라인 photo-grid 제거 → 버튼 클릭 시 전용 팝업 모달로 전환
 async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
   var container = document.getElementById('linked-photos-content-' + currentTaskId);
   if (!container) return;
   try {
-    // photos.ts의 construction_id 파라미터 사용:
-    //   - tasks JOIN으로 in_progress 이후 단계 작업 사진만 반환 (서버 필터)
-    //   - exclude_task_id: 현재 작업 본인 사진 제외
     var res = await API.get('/photos', { params: { construction_id: constructionId, exclude_task_id: currentTaskId } });
     var allPhotos = res.data || [];
 
@@ -10372,89 +10368,326 @@ async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
     }
 
     // task_id 기준으로 그룹핑 (사진이 있는 작업만 자동 포함)
-    var taskMap = {};    // { taskId: { label, photos[] } }
+    var taskMap = {};    // { taskId: { label, status, photos[] } }
     var taskOrder = [];  // 순서 유지
+    var STATUS_LABEL = { in_progress: '위험성평가', tbm_done: 'TBM완료', working: '작업중', work_completed: '작업완료', completed: '완료' };
     allPhotos.forEach(function(p) {
-      var tid = p.task_id;
+      var tid = String(p.task_id);
       if (!taskMap[tid]) {
-        var label = p.sub_task_number ? (p.sub_task_number + '번') : (p.task_title || ('작업 #' + tid));
-        taskMap[tid] = { label: label, photos: [] };
+        var label = p.sub_task_number ? ('작업 ' + p.sub_task_number + '번') : (p.task_title || ('작업 #' + p.task_id));
+        taskMap[tid] = { label: label, status: p.task_status || '', photos: [] };
         taskOrder.push(tid);
       }
       taskMap[tid].photos.push(p);
     });
 
-    var html = '<div class="flex flex-wrap gap-2 mb-2">';
+    // 버튼 목록 (작업 선택) — 클릭 시 팝업 모달 오픈
+    var html = '<div class="flex flex-wrap gap-2">';
     taskOrder.forEach(function(tid) {
       var info = taskMap[tid];
       var cnt = info.photos.length;
-      html += '<button onclick="_toggleLinkedTaskPhotos(' + tid + ',' + currentTaskId + ',this)"'
-        + ' class="text-xs px-3 py-1.5 rounded-lg font-semibold border"'
-        + ' style="background:#ffffff;color:#059669;border-color:#BBF7D0">'
-        + '<i class="fas fa-clipboard-check mr-1"></i>' + info.label
-        + ' <span style="color:#6B7280;font-weight:400">(' + cnt + ')</span></button>';
+      var stLabel = STATUS_LABEL[info.status] || info.status || '';
+      html += '<button onclick="_showLinkedPhotoModal(' + JSON.stringify(tid) + ',' + currentTaskId + ')"'
+        + ' class="text-xs px-3 py-1.5 rounded-lg font-semibold border flex items-center gap-1"'
+        + ' style="background:#ffffff;color:#059669;border-color:#BBF7D0;transition:background 0.15s"'
+        + ' onmouseover="this.style.background=\'#F0FDF4\'" onmouseout="this.style.background=\'#ffffff\'">'
+        + '<i class="fas fa-images" style="font-size:11px"></i>'
+        + '<span>' + info.label + '</span>'
+        + (stLabel ? '<span style="color:#6B7280;font-weight:400;font-size:10px">[' + stLabel + ']</span>' : '')
+        + '<span style="color:#059669;font-weight:700">(' + cnt + ')</span></button>';
     });
     html += '</div>';
-    html += '<div id="linked-task-photos-' + currentTaskId + '" class="photo-grid"></div>';
     container.innerHTML = html;
 
-    // 캐시: 그룹핑된 데이터를 DOM에 저장 (버튼 클릭 시 재사용, API 재호출 없음)
+    // 캐시: taskMap을 DOM에 저장 (팝업 오픈 시 재사용, API 재호출 없음)
     container.dataset.taskMap = JSON.stringify(taskMap);
+    container.dataset.taskOrder = JSON.stringify(taskOrder);
 
   } catch(e) {
     container.innerHTML = '<p class="text-xs text-red-400 py-2">불러오기 실패</p>';
   }
 }
 
-function _toggleLinkedTaskPhotos(linkedTaskId, currentTaskId, btn) {
-  var grid = document.getElementById('linked-task-photos-' + currentTaskId);
-  if (!grid) return;
-  // 이미 같은 작업 열려있으면 닫기
-  if (grid.dataset.openTaskId === String(linkedTaskId)) {
-    grid.innerHTML = '';
-    grid.dataset.openTaskId = '';
-    btn.style.background = '#ffffff';
-    return;
-  }
-  // 다른 버튼 스타일 초기화
-  var section = document.getElementById('linked-photos-content-' + currentTaskId);
-  if (section) {
-    section.querySelectorAll('button').forEach(function(b) { b.style.background = '#ffffff'; });
-  }
-  btn.style.background = '#BBF7D0';
-  grid.dataset.openTaskId = String(linkedTaskId);
-
-  // 캐시에서 해당 작업 사진 조회 (API 재호출 없음)
+// ─── 연계 작업 사진 팝업 모달 (읽기 전용) ────────────────────────────────────
+// [BUG-FIX] showPhotoData/showVideoData 내 deleteMedia 버튼 노출 → 전용 뷰어(_showLinkedPhotoView) 사용
+function _showLinkedPhotoModal(linkedTaskId, currentTaskId) {
+  var container = document.getElementById('linked-photos-content-' + currentTaskId);
+  if (!container) return;
+  var taskMap = {};
+  var taskOrder = [];
   try {
-    var taskMap = section && section.dataset.taskMap ? JSON.parse(section.dataset.taskMap) : {};
-    var info = taskMap[String(linkedTaskId)];
-    var photos = info ? info.photos : [];
-    if (photos.length === 0) {
-      grid.innerHTML = '<p class="text-xs text-gray-400 italic py-2">등록된 사진이 없습니다.</p>';
-      return;
-    }
-    var thumbs = photos.map(function(p) {
-      var cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      var isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
-      if (isVideo) {
-        return '<div class="photo-thumb relative cursor-pointer" onclick="showVideoData(' + p.id + ',\'' + cap + '\')">'
-          + '<video src="' + photoImgSrc(p.id) + '" class="w-full h-full object-cover" muted preload="metadata"></video>'
-          + '<div class="overlay"><i class="fas fa-play text-2xl"></i></div>'
-          + '<div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>'
-          + '<div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1">'
-          + '<span class="truncate block">' + (cap || '-') + '</span></div></div>';
-      } else {
-        return '<div class="photo-thumb" onclick="showPhotoData(' + p.id + ',\'' + cap + '\')">'
-          + '<img src="' + photoImgSrc(p.id) + '" alt="' + (p.caption || p.file_name || '') + '" onerror="this.style.opacity=\'0.3\'">'
-          + '<div class="overlay"><i class="fas fa-expand text-lg"></i></div>'
-          + '<div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1">'
-          + '<span class="truncate block">' + (cap || '-') + '</span></div></div>';
-      }
+    taskMap = JSON.parse(container.dataset.taskMap || '{}');
+    taskOrder = JSON.parse(container.dataset.taskOrder || '[]');
+  } catch(e) { return; }
+
+  var info = taskMap[String(linkedTaskId)];
+  if (!info) return;
+
+  var TYPE_ORDER = { before: 0, progress: 1, after: 2, hazard: 3, tbm: 4, completion: 5 };
+  var TYPE_LABEL = { before: '작업 전', progress: '작업 중', after: '작업 후', hazard: '위험 상황', tbm: 'TBM', completion: '완료' };
+  var TYPE_COLOR = { before: '#2563EB', progress: '#D97706', after: '#059669', hazard: '#DC2626', tbm: '#7C3AED', completion: '#0891B2' };
+  var STATUS_LABEL = { in_progress: '위험성평가', tbm_done: 'TBM완료', working: '작업중', work_completed: '작업완료', completed: '완료' };
+
+  // 사이드바: 작업 목록 (현재 작업 선택 표시)
+  function renderSidebar(activeTaskId) {
+    var html = '';
+    taskOrder.forEach(function(tid) {
+      var tm = taskMap[tid];
+      var cnt = tm.photos.length;
+      var isActive = String(tid) === String(activeTaskId);
+      var stLabel = STATUS_LABEL[tm.status] || '';
+      html += '<button onclick="_linkedModalSelectTask(\'' + tid + '\',' + currentTaskId + ')"'
+        + ' class="w-full text-left px-3 py-2.5 rounded-lg mb-1 transition-all"'
+        + ' style="background:' + (isActive ? '#059669' : '#F0FDF4') + ';color:' + (isActive ? '#fff' : '#065F46') + ';border:1px solid ' + (isActive ? '#059669' : '#BBF7D0') + '">'
+        + '<div class="flex items-center justify-between gap-1">'
+        + '<span class="font-semibold text-xs truncate"><i class="fas fa-clipboard-check mr-1" style="font-size:10px"></i>' + tm.label + '</span>'
+        + '<span class="text-xs font-bold flex-shrink-0" style="color:' + (isActive ? '#BBF7D0' : '#059669') + '">(' + cnt + ')</span>'
+        + '</div>'
+        + (stLabel ? '<div class="text-xs mt-0.5" style="color:' + (isActive ? 'rgba(255,255,255,0.75)' : '#6B7280') + '">' + stLabel + '</div>' : '')
+        + '</button>';
     });
-    grid.innerHTML = thumbs.join('');
-  } catch(e) {
-    grid.innerHTML = '<p class="text-xs text-red-400 py-2">표시 오류</p>';
+    return html;
   }
+
+  // 사진 그리드: photo_type별 그룹 렌더 (읽기 전용 — 삭제 버튼 없음)
+  function renderPhotoGrid(photos) {
+    if (!photos || photos.length === 0) {
+      return '<div class="flex flex-col items-center justify-center py-10 text-gray-400">'
+        + '<i class="fas fa-image text-3xl mb-2 opacity-30"></i>'
+        + '<p class="text-sm">등록된 사진이 없습니다.</p></div>';
+    }
+    // photo_type 그룹핑
+    var typeGroups = {};
+    photos.forEach(function(p) {
+      var t = p.photo_type || 'progress';
+      if (!typeGroups[t]) typeGroups[t] = [];
+      typeGroups[t].push(p);
+    });
+    var sortedTypes = Object.keys(typeGroups).sort(function(a, b) {
+      var oa = TYPE_ORDER[a] !== undefined ? TYPE_ORDER[a] : 99;
+      var ob = TYPE_ORDER[b] !== undefined ? TYPE_ORDER[b] : 99;
+      return oa !== ob ? oa - ob : a.localeCompare(b);
+    });
+    var html = '';
+    sortedTypes.forEach(function(type) {
+      var list = typeGroups[type];
+      var typeLabel = TYPE_LABEL[type] || type;
+      var typeColor = TYPE_COLOR[type] || '#6B7280';
+      html += '<div class="mb-4">';
+      html += '<div class="flex items-center gap-2 mb-2">'
+        + '<span class="text-xs font-bold text-white px-2 py-0.5 rounded-full" style="background:' + typeColor + '">' + typeLabel + '</span>'
+        + '<span class="text-xs text-gray-400">(' + list.length + '장)</span>'
+        + '</div>';
+      html += '<div class="grid gap-2" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">';
+      list.forEach(function(p) {
+        var cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        var isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
+        html += '<div class="relative rounded-lg overflow-hidden cursor-pointer group" style="aspect-ratio:4/3;background:#f3f4f6;border:1px solid #E5E7EB"'
+          + ' onclick="_showLinkedPhotoView(' + p.id + ',\'' + cap + '\',' + (isVideo ? 'true' : 'false') + ')">';
+        if (isVideo) {
+          html += '<video src="' + photoImgSrc(p.id) + '" style="width:100%;height:100%;object-fit:cover" muted preload="metadata"></video>'
+            + '<div style="position:absolute;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center">'
+            + '<i class="fas fa-play text-white text-2xl"></i></div>'
+            + '<div style="position:absolute;top:4px;left:4px;background:#2563EB;color:white;font-size:9px;padding:1px 5px;border-radius:4px"><i class="fas fa-video"></i></div>';
+        } else {
+          html += '<img src="' + photoImgSrc(p.id) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=\'0.3\'">'
+            + '<div style="position:absolute;inset:0;background:rgba(0,0,0,0);display:flex;align-items:center;justify-content:center;transition:background 0.15s" '
+            + 'onmouseover="this.style.background=\'rgba(0,0,0,0.25)\'" onmouseout="this.style.background=\'rgba(0,0,0,0)\'">'
+            + '<i class="fas fa-expand text-white text-lg opacity-0 group-hover:opacity-100"></i></div>';
+        }
+        if (cap) {
+          html += '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:white;font-size:10px;padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+            + cap + '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div></div>';
+    });
+    return html;
+  }
+
+  // 모달 생성
+  var modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'linked-photo-modal-' + currentTaskId;
+
+  var initialInfo = taskMap[String(linkedTaskId)];
+  var totalPhotos = 0;
+  taskOrder.forEach(function(tid) { totalPhotos += taskMap[tid].photos.length; });
+
+  modal.innerHTML = ''
+    + '<div class="modal" style="max-width:700px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;padding:0">'
+    // 헤더
+    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(135deg,#059669,#10B981);flex-shrink:0">'
+    + '<div>'
+    + '<div style="font-weight:700;color:white;font-size:15px"><i class="fas fa-images mr-2"></i>연계작업 사진 보기</div>'
+    + '<div style="color:rgba(255,255,255,0.8);font-size:11px;margin-top:2px">'
+    + taskOrder.length + '개 작업 · 총 ' + totalPhotos + '장 · <i class="fas fa-lock mr-1" style="font-size:9px"></i>읽기 전용</div>'
+    + '</div>'
+    + '<button onclick="this.closest(\'.modal-overlay\').remove()" style="background:rgba(255,255,255,0.2);border:none;color:white;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">'
+    + '<i class="fas fa-times"></i></button>'
+    + '</div>'
+    // 바디: 사이드바 + 사진 영역
+    + '<div style="display:flex;flex:1;overflow:hidden">'
+    // 사이드바 (작업 선택)
+    + '<div id="linked-modal-sidebar-' + currentTaskId + '" style="width:160px;flex-shrink:0;overflow-y:auto;padding:10px 8px;background:#F8FAFC;border-right:1px solid #E5E7EB">'
+    + '<div style="font-size:10px;font-weight:700;color:#6B7280;margin-bottom:6px;padding:0 4px">작업 선택</div>'
+    + renderSidebar(linkedTaskId)
+    + '</div>'
+    // 사진 그리드 영역
+    + '<div id="linked-modal-photos-' + currentTaskId + '" style="flex:1;overflow-y:auto;padding:14px">'
+    + '<div style="font-size:12px;font-weight:700;color:#065F46;margin-bottom:10px">'
+    + '<i class="fas fa-clipboard-check mr-1"></i>' + initialInfo.label
+    + (STATUS_LABEL[initialInfo.status] ? ' <span style="font-size:10px;color:#6B7280;font-weight:400">[' + STATUS_LABEL[initialInfo.status] + ']</span>' : '')
+    + '</div>'
+    + renderPhotoGrid(initialInfo.photos)
+    + '</div>'
+    + '</div>'
+    + '</div>';
+
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+
+  // 사이드바 작업 선택 함수 (전역) — 모달 내 클릭으로 사진 영역 갱신
+  window._linkedModalSelectTask = function(taskId, ctId) {
+    var mod = document.getElementById('linked-photo-modal-' + ctId);
+    if (!mod) return;
+    var cont = document.getElementById('linked-photos-content-' + ctId);
+    var tMap = {};
+    var tOrder = [];
+    try {
+      tMap = JSON.parse(cont.dataset.taskMap || '{}');
+      tOrder = JSON.parse(cont.dataset.taskOrder || '[]');
+    } catch(e) {}
+    var tInfo = tMap[String(taskId)];
+    if (!tInfo) return;
+
+    // 사이드바 갱신
+    var sidebar = mod.querySelector('#linked-modal-sidebar-' + ctId);
+    if (sidebar) {
+      var sbHtml = '<div style="font-size:10px;font-weight:700;color:#6B7280;margin-bottom:6px;padding:0 4px">작업 선택</div>';
+      var STATUS_LBL = { in_progress: '위험성평가', tbm_done: 'TBM완료', working: '작업중', work_completed: '작업완료', completed: '완료' };
+      tOrder.forEach(function(tid) {
+        var tm = tMap[tid];
+        var cnt = tm.photos.length;
+        var isActive = String(tid) === String(taskId);
+        var stLabel = STATUS_LBL[tm.status] || '';
+        sbHtml += '<button onclick="_linkedModalSelectTask(\'' + tid + '\',' + ctId + ')"'
+          + ' class="w-full text-left px-3 py-2.5 rounded-lg mb-1 transition-all"'
+          + ' style="background:' + (isActive ? '#059669' : '#F0FDF4') + ';color:' + (isActive ? '#fff' : '#065F46') + ';border:1px solid ' + (isActive ? '#059669' : '#BBF7D0') + '">'
+          + '<div class="flex items-center justify-between gap-1">'
+          + '<span class="font-semibold text-xs truncate"><i class="fas fa-clipboard-check mr-1" style="font-size:10px"></i>' + tm.label + '</span>'
+          + '<span class="text-xs font-bold flex-shrink-0" style="color:' + (isActive ? '#BBF7D0' : '#059669') + '">(' + cnt + ')</span>'
+          + '</div>'
+          + (stLabel ? '<div class="text-xs mt-0.5" style="color:' + (isActive ? 'rgba(255,255,255,0.75)' : '#6B7280') + '">' + stLabel + '</div>' : '')
+          + '</button>';
+      });
+      sidebar.innerHTML = sbHtml;
+    }
+
+    // 사진 영역 갱신
+    var photoArea = mod.querySelector('#linked-modal-photos-' + ctId);
+    if (photoArea) {
+      var TYPE_ORD = { before: 0, progress: 1, after: 2, hazard: 3, tbm: 4, completion: 5 };
+      var TYPE_LBL = { before: '작업 전', progress: '작업 중', after: '작업 후', hazard: '위험 상황', tbm: 'TBM', completion: '완료' };
+      var TYPE_CLR = { before: '#2563EB', progress: '#D97706', after: '#059669', hazard: '#DC2626', tbm: '#7C3AED', completion: '#0891B2' };
+      var STATUS_LBL2 = { in_progress: '위험성평가', tbm_done: 'TBM완료', working: '작업중', work_completed: '작업완료', completed: '완료' };
+
+      var paHtml = '<div style="font-size:12px;font-weight:700;color:#065F46;margin-bottom:10px">'
+        + '<i class="fas fa-clipboard-check mr-1"></i>' + tInfo.label
+        + (STATUS_LBL2[tInfo.status] ? ' <span style="font-size:10px;color:#6B7280;font-weight:400">[' + STATUS_LBL2[tInfo.status] + ']</span>' : '')
+        + '</div>';
+
+      var photos = tInfo.photos || [];
+      if (photos.length === 0) {
+        paHtml += '<div class="flex flex-col items-center justify-center py-10 text-gray-400">'
+          + '<i class="fas fa-image text-3xl mb-2 opacity-30"></i>'
+          + '<p class="text-sm">등록된 사진이 없습니다.</p></div>';
+      } else {
+        var tGroups = {};
+        photos.forEach(function(p) {
+          var t = p.photo_type || 'progress';
+          if (!tGroups[t]) tGroups[t] = [];
+          tGroups[t].push(p);
+        });
+        var sTTypes = Object.keys(tGroups).sort(function(a, b) {
+          var oa = TYPE_ORD[a] !== undefined ? TYPE_ORD[a] : 99;
+          var ob = TYPE_ORD[b] !== undefined ? TYPE_ORD[b] : 99;
+          return oa !== ob ? oa - ob : a.localeCompare(b);
+        });
+        sTTypes.forEach(function(type) {
+          var list = tGroups[type];
+          var tLbl = TYPE_LBL[type] || type;
+          var tClr = TYPE_CLR[type] || '#6B7280';
+          paHtml += '<div class="mb-4">';
+          paHtml += '<div class="flex items-center gap-2 mb-2">'
+            + '<span class="text-xs font-bold text-white px-2 py-0.5 rounded-full" style="background:' + tClr + '">' + tLbl + '</span>'
+            + '<span class="text-xs text-gray-400">(' + list.length + '장)</span>'
+            + '</div>';
+          paHtml += '<div class="grid gap-2" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">';
+          list.forEach(function(p) {
+            var cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            var isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
+            paHtml += '<div class="relative rounded-lg overflow-hidden cursor-pointer group" style="aspect-ratio:4/3;background:#f3f4f6;border:1px solid #E5E7EB"'
+              + ' onclick="_showLinkedPhotoView(' + p.id + ',\'' + cap + '\',' + (isVideo ? 'true' : 'false') + ')">';
+            if (isVideo) {
+              paHtml += '<video src="' + photoImgSrc(p.id) + '" style="width:100%;height:100%;object-fit:cover" muted preload="metadata"></video>'
+                + '<div style="position:absolute;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center">'
+                + '<i class="fas fa-play text-white text-2xl"></i></div>'
+                + '<div style="position:absolute;top:4px;left:4px;background:#2563EB;color:white;font-size:9px;padding:1px 5px;border-radius:4px"><i class="fas fa-video"></i></div>';
+            } else {
+              paHtml += '<img src="' + photoImgSrc(p.id) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=\'0.3\'">'
+                + '<div style="position:absolute;inset:0;background:rgba(0,0,0,0);display:flex;align-items:center;justify-content:center;transition:background 0.15s" '
+                + 'onmouseover="this.style.background=\'rgba(0,0,0,0.25)\'" onmouseout="this.style.background=\'rgba(0,0,0,0)\'">'
+                + '<i class="fas fa-expand text-white text-lg opacity-0"></i></div>';
+            }
+            if (cap) {
+              paHtml += '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:white;font-size:10px;padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+                + cap + '</div>';
+            }
+            paHtml += '</div>';
+          });
+          paHtml += '</div></div>';
+        });
+      }
+      photoArea.innerHTML = paHtml;
+      photoArea.scrollTop = 0;
+    }
+  };
+}
+
+// ─── 연계 작업 사진 읽기 전용 뷰어 (삭제 버튼 없음) ─────────────────────────
+// [BUG-FIX] 기존 showPhotoData/showVideoData → deleteMedia 버튼 노출 → 전용 뷰어로 교체
+function _showLinkedPhotoView(photoId, caption, isVideo) {
+  var modal = document.createElement('div');
+  modal.className = 'modal-overlay modal-sm';
+  modal.style.zIndex = '10100'; // 연계사진 모달보다 위
+  if (isVideo) {
+    modal.innerHTML = ''
+      + '<div class="bg-black rounded-2xl max-w-2xl w-full mx-4" style="overflow:hidden;display:flex;flex-direction:column;max-height:92vh">'
+      + '<div class="flex justify-between items-center p-4 border-b border-gray-700" style="flex-shrink:0">'
+      + '<span class="font-medium text-white text-sm truncate pr-4">' + (caption || '동영상') + '</span>'
+      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-gray-300 text-xl flex-shrink-0"><i class="fas fa-times"></i></button>'
+      + '</div>'
+      + '<div style="overflow-y:auto;flex:1">'
+      + '<video src="' + photoImgSrc(photoId) + '" class="w-full" controls autoplay style="max-height:75vh;display:block"></video>'
+      + '</div></div>';
+  } else {
+    modal.innerHTML = ''
+      + '<div class="bg-white rounded-2xl max-w-2xl w-full mx-4" style="overflow:hidden;display:flex;flex-direction:column;max-height:92vh">'
+      + '<div class="flex justify-between items-center p-4 border-b" style="flex-shrink:0">'
+      + '<div>'
+      + '<span class="font-medium text-sm">' + (caption || '사진') + '</span>'
+      + '<span class="ml-2 text-xs text-gray-400"><i class="fas fa-lock mr-1" style="font-size:9px"></i>읽기 전용</span>'
+      + '</div>'
+      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-gray-400 text-xl ml-2 flex-shrink-0"><i class="fas fa-times"></i></button>'
+      + '</div>'
+      + '<div style="overflow-y:auto;flex:1">'
+      + '<img src="' + photoImgSrc(photoId) + '" class="w-full" style="max-height:80vh;object-fit:contain;display:block" onerror="this.alt=\'사진 로드 실패\'">'
+      + '</div></div>';
+  }
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
 }
 
 // ─── 첨부파일 목록 로드 및 렌더링 ─────────────────────────────────────────────

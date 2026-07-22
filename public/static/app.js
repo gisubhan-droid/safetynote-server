@@ -17393,11 +17393,10 @@ async function _printInspectionReport(insId) {
       var pairTop = [batch[0], batch[1]];
       var pairBot = [batch[2], batch[3]];
 
-      // ── v155j: sida-lbl 완전 제거 — 깔끔한 2열 구조
-      // A4(297mm) - 패딩(10mm) - 제목(10mm) - 헤더(38mm) = 239mm 사진구역
-      // 상단구역: 헤더(8mm)+사진(95mm)+캡션(12mm) = 115mm
-      // 구분선: 5mm
-      // 하단구역: 헤더(8mm)+사진(95mm)+캡션(12mm) = 115mm  합: 235mm
+      // ── v155k: 헤더 높이=title-row, 점검사항 중앙정렬, 페이지번호 하단중앙, 구분선 확대
+      // A4(297mm) - 패딩(10mm) - 제목(11mm) - 헤더(38mm) = 238mm 사진구역
+      // 상단: 헤더(11mm)+사진(90mm)+캡션(11mm) = 112mm
+      // 구분선: 8mm  하단: 헤더(11mm)+사진(90mm)+캡션(11mm) = 112mm  페이지행(6mm) 합:238mm
       var pgLabel = (pg + 1) + ' / ' + _pgCount;
       photoPages += '<div class="photo-page">' +
         '<table style="margin-bottom:3px;flex-shrink:0"><tr class="title-row"><td>안&nbsp;전&nbsp;점&nbsp;검&nbsp;&nbsp;사&nbsp;진&nbsp;&nbsp;대&nbsp;장</td></tr></table>' +
@@ -17405,52 +17404,69 @@ async function _printInspectionReport(insId) {
         '<table style="flex:1;width:100%;table-layout:fixed;border-collapse:collapse;border:1.5px solid #1E3A5F">' +
           '<colgroup><col style="width:50%"><col style="width:50%"></colgroup>' +
 
-          // ── 상단 헤더행 ──
+          // ── 상단 헤더행 (title-row와 동일 높이·스타일) ──
           '<tr>' +
-            '<th class="photo-sec-hdr" style="border-right:1px solid #4a6fa5;border-bottom:1px solid #4a6fa5">점검사항</th>' +
-            '<th class="photo-sec-hdr" style="border-bottom:1px solid #4a6fa5;text-align:right;padding-right:8px">' +
-              '<span style="float:left;font-weight:700">점검사항</span>' +
-              '<span style="font-size:6pt;font-weight:400;opacity:.8">' + pgLabel + '쪽</span>' +
+            '<th style="background:#1E3A5F;color:#fff;font-size:11pt;font-weight:700;text-align:center;' +
+                'padding:5px 2px;letter-spacing:1.5pt;border-right:1.5px solid #4a6fa5;border-bottom:1px solid #4a6fa5">' +
+              '점검사항' +
+            '</th>' +
+            '<th style="background:#1E3A5F;color:#fff;font-size:11pt;font-weight:700;text-align:center;' +
+                'padding:5px 2px;letter-spacing:1.5pt;border-bottom:1px solid #4a6fa5">' +
+              '점검사항' +
             '</th>' +
           '</tr>' +
 
           // ── 상단 사진 2장 ──
           '<tr>' +
-            '<td class="photo-cell" style="height:95mm;border-right:1px solid #9ab;border-bottom:none">' + _makeSlotCell(pairTop[0]) + '</td>' +
-            '<td class="photo-cell" style="height:95mm;border-bottom:none">' + _makeSlotCell(pairTop[1]) + '</td>' +
+            '<td class="photo-cell" style="height:90mm;border-right:1.5px solid #9ab;border-bottom:none">' + _makeSlotCell(pairTop[0]) + '</td>' +
+            '<td class="photo-cell" style="height:90mm;border-bottom:none">' + _makeSlotCell(pairTop[1]) + '</td>' +
           '</tr>' +
 
           // ── 상단 캡션 ──
           '<tr>' +
-            '<td class="caption-cell" style="height:12mm;border-right:1px solid #9ab;border-top:1px solid #c5d0e0">' +
+            '<td class="caption-cell" style="height:11mm;border-right:1.5px solid #9ab;border-top:1px solid #c5d0e0">' +
               '<span style="color:#1E3A5F;font-weight:700;margin-right:4px">▶</span>' + _makeSlotCaption(pairTop[0]) + '</td>' +
-            '<td class="caption-cell" style="height:12mm;border-top:1px solid #c5d0e0">' +
+            '<td class="caption-cell" style="height:11mm;border-top:1px solid #c5d0e0">' +
               '<span style="color:#1E3A5F;font-weight:700;margin-right:4px">▶</span>' + _makeSlotCaption(pairTop[1]) + '</td>' +
           '</tr>' +
 
-          // ── 구분선 ──
+          // ── 구분선 (확대: 8mm) ──
           '<tr>' +
-            '<td colspan="2" class="photo-divider"></td>' +
+            '<td colspan="2" style="height:8mm;background:#dce6f1;border-top:1.5px solid #9ab;border-bottom:1.5px solid #9ab;padding:0"></td>' +
           '</tr>' +
 
           // ── 하단 헤더행 ──
           '<tr>' +
-            '<th class="photo-sec-hdr" style="border-right:1px solid #4a6fa5;border-bottom:1px solid #4a6fa5">점검사항</th>' +
-            '<th class="photo-sec-hdr" style="border-bottom:1px solid #4a6fa5">점검사항</th>' +
+            '<th style="background:#1E3A5F;color:#fff;font-size:11pt;font-weight:700;text-align:center;' +
+                'padding:5px 2px;letter-spacing:1.5pt;border-right:1.5px solid #4a6fa5;border-bottom:1px solid #4a6fa5">' +
+              '점검사항' +
+            '</th>' +
+            '<th style="background:#1E3A5F;color:#fff;font-size:11pt;font-weight:700;text-align:center;' +
+                'padding:5px 2px;letter-spacing:1.5pt;border-bottom:1px solid #4a6fa5">' +
+              '점검사항' +
+            '</th>' +
           '</tr>' +
 
           // ── 하단 사진 2장 ──
           '<tr>' +
-            '<td class="photo-cell" style="height:95mm;border-right:1px solid #9ab;border-bottom:none">' + _makeSlotCell(pairBot[0]) + '</td>' +
-            '<td class="photo-cell" style="height:95mm;border-bottom:none">' + _makeSlotCell(pairBot[1]) + '</td>' +
+            '<td class="photo-cell" style="height:90mm;border-right:1.5px solid #9ab;border-bottom:none">' + _makeSlotCell(pairBot[0]) + '</td>' +
+            '<td class="photo-cell" style="height:90mm;border-bottom:none">' + _makeSlotCell(pairBot[1]) + '</td>' +
           '</tr>' +
 
           // ── 하단 캡션 ──
           '<tr>' +
-            '<td class="caption-cell" style="height:12mm;border-right:1px solid #9ab;border-top:1px solid #c5d0e0">' +
+            '<td class="caption-cell" style="height:11mm;border-right:1.5px solid #9ab;border-top:1px solid #c5d0e0">' +
               '<span style="color:#1E3A5F;font-weight:700;margin-right:4px">▶</span>' + _makeSlotCaption(pairBot[0]) + '</td>' +
-            '<td class="caption-cell" style="height:12mm;border-top:1px solid #c5d0e0">' +
+            '<td class="caption-cell" style="height:11mm;border-top:1px solid #c5d0e0">' +
               '<span style="color:#1E3A5F;font-weight:700;margin-right:4px">▶</span>' + _makeSlotCaption(pairBot[1]) + '</td>' +
+          '</tr>' +
+
+          // ── 페이지 번호 행 (하단 중앙정렬) ──
+          '<tr>' +
+            '<td colspan="2" style="height:6mm;background:#1E3A5F;text-align:center;vertical-align:middle;' +
+                'font-size:7pt;color:rgba(255,255,255,.75);font-weight:400;letter-spacing:0.5pt;border-top:1px solid #4a6fa5">' +
+              pgLabel + ' 쪽' +
+            '</td>' +
           '</tr>' +
 
         '</table>' +

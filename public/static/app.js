@@ -8958,6 +8958,19 @@ async function showTaskDetail(id, openTbmTab) {
           </div>
         </div>` : ''}
 
+        <!-- [FEAT-112] 연계 완료작업 사진 (worker 전용, 같은 공사요청번호 내 completed 작업) -->
+        ${(isWorker && task.construction_id) ? `
+        <div id="linked-photos-section-${task.id}" class="mt-4 p-3 rounded-xl" style="background:#F0FDF4;border:1px solid #BBF7D0">
+          <div class="flex items-center gap-2 mb-2">
+            <i class="fas fa-images" style="color:#059669"></i>
+            <span class="text-sm font-bold" style="color:#065F46">같은 공사의 완료작업 사진</span>
+            <span class="text-xs text-gray-400">(읽기 전용)</span>
+          </div>
+          <div id="linked-photos-content-${task.id}">
+            <div class="text-xs text-gray-400 py-2"><i class="fas fa-spinner fa-spin mr-1"></i>불러오는 중...</div>
+          </div>
+        </div>` : ''}
+
         <!-- 작업 진행 버튼 -->
         <div class="mt-4">
           <!-- [FEAT-053/FEAT-060] 삭제 버튼: sysadmin(완료/취소) 또는 등록자(unassigned/assigned) -->
@@ -9259,7 +9272,7 @@ async function showTaskDetail(id, openTbmTab) {
                 <div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>
                 <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
                   <span class="truncate">${cap || '-'}</span>
-                  <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>
+                  ${!isWorker ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>` : ''}
                 </div>
               </div>`;
             } else {
@@ -9268,7 +9281,7 @@ async function showTaskDetail(id, openTbmTab) {
                 <div class="overlay"><i class="fas fa-expand text-lg"></i></div>
                 <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
                   <span class="truncate">${cap || '-'}</span>
-                  <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>
+                  ${!isWorker ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>` : ''}
                 </div>
               </div>`;
             }
@@ -9319,9 +9332,9 @@ async function showTaskDetail(id, openTbmTab) {
           }
           return html;
         })()}
-        <button onclick="showPhotoUpload(${task.id})" class="btn btn-primary w-full mt-2">
+        ${!isWorker ? `<button onclick="showPhotoUpload(${task.id})" class="btn btn-primary w-full mt-2">
           <i class="fas fa-camera"></i> 사진/동영상 등록
-        </button>
+        </button>` : ''}
       </div>
 
       <!-- 현장점검 탭 -->
@@ -9388,6 +9401,11 @@ async function showTaskDetail(id, openTbmTab) {
 
     // 첨부파일 목록 비동기 로드 (HTML 렌더 후 즉시 호출)
     loadAttachments(task.id);
+
+    // [FEAT-112] worker 전용: 같은 공사요청번호의 완료작업 사진 비동기 로드
+    if (isWorker && task.construction_id) {
+      _loadLinkedCompletedPhotos(task.id, task.construction_id);
+    }
 
     // tbm_done 상태: 관리자 상세화면 공유 버튼 비동기 토글 (서명완료 시 표시)
     if (task.status === 'tbm_done') {
@@ -10148,6 +10166,7 @@ async function _refreshPhotoTab(taskId) {
     function renderThumb(p) {
       const cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       const isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
+      const _canDelete = currentUser && currentUser.role !== 'worker';
       if (isVideo) {
         return `<div class="photo-thumb relative cursor-pointer" onclick="showVideoData(${p.id},'${cap}')">
           <video src="${photoImgSrc(p.id)}" class="w-full h-full object-cover" muted preload="metadata"></video>
@@ -10155,7 +10174,7 @@ async function _refreshPhotoTab(taskId) {
           <div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>
           <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
             <span class="truncate">${cap || '-'}</span>
-            <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>
+            ${_canDelete ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>` : ''}
           </div>
         </div>`;
       } else {
@@ -10164,7 +10183,7 @@ async function _refreshPhotoTab(taskId) {
           <div class="overlay"><i class="fas fa-expand text-lg"></i></div>
           <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
             <span class="truncate">${cap || '-'}</span>
-            <button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>
+            ${_canDelete ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>` : ''}
           </div>
         </div>`;
       }
@@ -10329,6 +10348,84 @@ async function openAttachment(id, fileName, mimeType) {
     }
   } catch(e) {
     toast('파일 열기 실패: ' + e.message, 'error');
+  }
+}
+
+// ─── [FEAT-112] 연계 완료작업 사진 로드 (worker 전용) ────────────────────────
+async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
+  var container = document.getElementById('linked-photos-content-' + currentTaskId);
+  if (!container) return;
+  try {
+    var res = await API.get('/tasks', { params: { construction_id: constructionId, status: 'completed' } });
+    var completedTasks = (res.data && (res.data.tasks || res.data)) || [];
+    // 현재 작업 자신 제외
+    completedTasks = completedTasks.filter(function(t) { return t.id !== currentTaskId; });
+    if (completedTasks.length === 0) {
+      container.innerHTML = '<p class="text-xs text-gray-400 italic py-2">완료된 연계 작업이 없습니다.</p>';
+      return;
+    }
+    var html = '<div class="flex flex-wrap gap-2 mb-3">';
+    completedTasks.forEach(function(t) {
+      var label = t.sub_task_number ? (t.sub_task_number + '번') : (t.title || ('작업 #' + t.id));
+      html += '<button onclick="_toggleLinkedTaskPhotos(' + t.id + ',' + currentTaskId + ',this)"'
+        + ' class="text-xs px-3 py-1.5 rounded-lg font-semibold border"'
+        + ' style="background:#ffffff;color:#059669;border-color:#BBF7D0">'
+        + '<i class="fas fa-clipboard-check mr-1"></i>' + label + '</button>';
+    });
+    html += '</div>';
+    html += '<div id="linked-task-photos-' + currentTaskId + '" class="photo-grid"></div>';
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<p class="text-xs text-red-400 py-2">불러오기 실패</p>';
+  }
+}
+
+async function _toggleLinkedTaskPhotos(linkedTaskId, currentTaskId, btn) {
+  var grid = document.getElementById('linked-task-photos-' + currentTaskId);
+  if (!grid) return;
+  // 이미 같은 작업 열려있으면 닫기
+  if (grid.dataset.openTaskId === String(linkedTaskId)) {
+    grid.innerHTML = '';
+    grid.dataset.openTaskId = '';
+    btn.style.background = '#ffffff';
+    return;
+  }
+  // 다른 버튼 스타일 초기화
+  var section = document.getElementById('linked-photos-content-' + currentTaskId);
+  if (section) {
+    section.querySelectorAll('button').forEach(function(b) { b.style.background = '#ffffff'; });
+  }
+  btn.style.background = '#BBF7D0';
+  grid.dataset.openTaskId = String(linkedTaskId);
+  grid.innerHTML = '<div class="text-xs text-gray-400 py-2"><i class="fas fa-spinner fa-spin mr-1"></i>사진 불러오는 중...</div>';
+  try {
+    var res = await API.get('/photos', { params: { task_id: linkedTaskId } });
+    var photos = res.data || [];
+    if (photos.length === 0) {
+      grid.innerHTML = '<p class="text-xs text-gray-400 italic py-2">등록된 사진이 없습니다.</p>';
+      return;
+    }
+    var thumbs = photos.map(function(p) {
+      var cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
+      if (isVideo) {
+        return '<div class="photo-thumb relative cursor-pointer" onclick="showVideoData(' + p.id + ',\'' + cap + '\')">'
+          + '<video src="' + photoImgSrc(p.id) + '" class="w-full h-full object-cover" muted preload="metadata"></video>'
+          + '<div class="overlay"><i class="fas fa-play text-2xl"></i></div>'
+          + '<div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>'
+          + '<div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1">'
+          + '<span class="truncate block">' + (cap || '-') + '</span></div></div>';
+      } else {
+        return '<div class="photo-thumb" onclick="showPhotoData(' + p.id + ',\'' + cap + '\')">'
+          + '<img src="' + photoImgSrc(p.id) + '" alt="' + (p.caption || p.file_name || '') + '" onerror="this.style.opacity=\'0.3\'">'
+          + '<div class="overlay"><i class="fas fa-expand text-lg"></i></div>'
+          + '<div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1">'
+          + '<span class="truncate block">' + (cap || '-') + '</span></div></div>';
+      }
+    });
+    grid.innerHTML = thumbs.join('');
+  } catch(e) {
+    grid.innerHTML = '<p class="text-xs text-red-400 py-2">사진 불러오기 실패</p>';
   }
 }
 

@@ -8324,3 +8324,51 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 ### 빌드/배포 상태
 - `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.45s)
 - GitHub push → ✅ (`main` 브랜치, 커밋 `976a595`)
+
+---
+
+## 세션155h — 안전점검 사진대장 전면 재설계 (2025-07)
+
+### 변경 파일
+- `public/static/app.js`
+- `patch_155h.py` (신규)
+
+### 수정 내용
+
+#### 1. 체크리스트 결과 API 응답 확장 로드
+- `savedChkTextMap`: item_key → item_text 매핑
+- `savedChkPhotoList`: photo_path 존재하는 항목 목록 수집
+- GET `/api/inspections/:id/checklist-results` 동일 API 재사용 (추가 API 불필요)
+
+#### 2. 사진 슬롯 통합 배열 구성
+| 우선순위 | 소스 | 캡션 |
+|---------|------|------|
+| 1 | 체크리스트 항목별 사진 (savedChkPhotoList) | item_text(점검항목 내용) |
+| 2 | 전체사진 (ins.photos, 동영상 제외) | photo.caption |
+
+#### 3. 사진대장 레이아웃 원본 양식 비율 맞춤
+- 세로 라벨(사진대지): `width:13px` → **`width:20px`** (선명하게)
+- 사진 셀 높이: `108px` → **`105px`** (상하 균형)
+- 캡션행 높이: `14px` → **`20px`** (내용 표시 공간 확보)
+- 점검사항 헤더행: **`height:18px`, `background:#dce6f1`** 추가 (원본 양식 동일)
+- 테이블 테두리: `border:1px solid #9ab` 통일
+- 캡션 텍스트: `▶ 항목내용` 형식, `text-align:left` (이전: 가운데 정렬)
+- 상/하 구역 구분선: `height:4px, background:#dce6f1` 분리선
+
+#### 4. 신규 헬퍼 함수 (var 전용)
+- `_makeChkPhotoCell(itemKey, escFn, origin)`: checklist-photo API URL 기반 이미지
+- `_makeSlotCell(slot)`: 슬롯 타입(chk/gen/empty) 분기 렌더링
+- `_makeSlotCaption(slot)`: 슬롯별 캡션 텍스트 반환
+- `_chkPhotoInsId`: 전역 변수 — _printInspectionReport 진입 시 insId 설정
+
+### 2차 검증 체크리스트
+| 항목 | 결과 |
+|------|------|
+| `node --check` 구문 검사 | ✅ OK |
+| 13개 핵심 패턴 확인 | ✅ 전체 실존 |
+| 신규 함수 `var` 전용 | ✅ (3개 함수) |
+| `npm run build` | ✅ 282.10 kB |
+
+### 빌드/배포 상태
+- `npm run build` → ✅ **성공** (`dist/_worker.js 282.10 kB`, 1.55s)
+- GitHub push → ✅ (`main` 브랜치, 커밋 `01a8674`)

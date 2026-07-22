@@ -32243,6 +32243,90 @@ async function renderMyStatsPage(container) {
       '적정': { bg:'#D1FAE5', color:'#059669', icon:'fa-check-circle' },
     };
 
+    // ── [FEAT-158] 안전 순위 카드: 이번 달 기준 ─────────────────────────────
+    var _rkHtml = '';
+    if (hasRecord && currentUser && currentUser.id) {
+      try {
+        var _rkYear  = getKSTYear();
+        var _rkMonth = getKSTMonth();
+        var _rkRes   = await API.get('/inspections/stats/worker-safety', {
+          params: { period_type: 'monthly', year: _rkYear, month: _rkMonth }
+        }).catch(function() { return { data: null }; });
+        var _rkData    = (_rkRes && _rkRes.data) ? _rkRes.data : null;
+        var _rkWorkers = (_rkData && Array.isArray(_rkData.workers)) ? _rkData.workers : [];
+        if (_rkWorkers.length > 0) {
+          var _rkIdx   = -1;
+          var _rkMyId  = Number(currentUser.id);
+          for (var _rkI = 0; _rkI < _rkWorkers.length; _rkI++) {
+            if (Number(_rkWorkers[_rkI].worker_id) === _rkMyId) { _rkIdx = _rkI; break; }
+          }
+          if (_rkIdx >= 0) {
+            var _rkRank    = _rkIdx + 1;
+            var _rkTotal   = _rkWorkers.length;
+            var _rkPct     = Math.round(_rkRank / _rkTotal * 100);
+            var _rkBarFill = Math.round((1 - (_rkRank - 1) / _rkTotal) * 100); // 높을수록 좋음
+            // 순위 구간별 색상
+            var _rkTierColor;
+            if (_rkRank === 1)        { _rkTierColor = '#B45309'; }      // 금색 (1위)
+            else if (_rkPct <= 25)    { _rkTierColor = '#685182'; }      // 보라 (상위25%)
+            else if (_rkPct <= 50)    { _rkTierColor = '#2563EB'; }      // 파랑 (상위50%)
+            else                      { _rkTierColor = '#6B7280'; }      // 회색 (하위)
+            var _rkBgColor;
+            if (_rkRank === 1)        { _rkBgColor = '#FEF3C7'; }
+            else if (_rkPct <= 25)    { _rkBgColor = '#EDE7F6'; }
+            else if (_rkPct <= 50)    { _rkBgColor = '#DBEAFE'; }
+            else                      { _rkBgColor = '#F3F4F6'; }
+            // 격려 멘트
+            var _rkComment;
+            if (_rkRank === 1)        { _rkComment = '🥇 이번 달 1위! 최고의 안전 기록입니다'; }
+            else if (_rkPct <= 10)    { _rkComment = '🏅 상위 10% 이내 · 탁월한 안전 의식'; }
+            else if (_rkPct <= 25)    { _rkComment = '👍 상위 25% · 우수한 안전 기록 유지 중'; }
+            else if (_rkPct <= 50)    { _rkComment = '📈 평균 이상 · 조금 더 노력하면 TOP 25%'; }
+            else                      { _rkComment = '💪 우수 점검을 늘려 순위를 올려보세요'; }
+            // 공동 순위 여부 (같은 인덱스의 앞 사람과 점수 동일 시)
+            var _rkIsTie = false;
+            if (_rkIdx > 0) {
+              var _rkPrev = _rkWorkers[_rkIdx - 1];
+              var _rkMe   = _rkWorkers[_rkIdx];
+              if (Number(_rkPrev.poor_count)  === Number(_rkMe.poor_count) &&
+                  Number(_rkPrev.excel_count) === Number(_rkMe.excel_count)) { _rkIsTie = true; }
+            }
+            var _rkRankLabel = _rkIsTie ? (_rkRank + '위 (공동)') : (_rkRank + '위');
+            // HTML 구성 (문자열 연결 — RULE-001 백틱 중첩 없음)
+            _rkHtml = '<div class="rounded-2xl mb-4 overflow-hidden" style="background:' + _rkBgColor + ';border:2px solid ' + _rkTierColor + '33">'
+              + '<div style="padding:14px 16px 12px">'
+              +   '<div class="flex items-center justify-between mb-2">'
+              +     '<div>'
+              +       '<div class="text-xs font-bold" style="color:' + _rkTierColor + '">'
+              +         '<i class="fas fa-trophy mr-1"></i>이번 달 나의 순위'
+              +       '</div>'
+              +       '<div class="text-xs mt-0.5" style="color:' + _rkTierColor + ';opacity:0.7">'
+              +         _rkYear + '년 ' + _rkMonth + '월 기준'
+              +       '</div>'
+              +     '</div>'
+              +     '<div class="text-right">'
+              +       '<div class="font-black" style="font-size:28px;line-height:1;color:' + _rkTierColor + '">' + _rkRankLabel + '</div>'
+              +       '<div class="text-xs mt-0.5" style="color:' + _rkTierColor + ';opacity:0.7">전체 ' + _rkTotal + '명 중</div>'
+              +     '</div>'
+              +   '</div>'
+              +   '<div class="mb-2">'
+              +     '<div style="background:rgba(0,0,0,0.08);border-radius:99px;height:8px;overflow:hidden">'
+              +       '<div style="height:100%;width:' + _rkBarFill + '%;background:' + _rkTierColor + ';border-radius:99px;transition:width 0.4s ease"></div>'
+              +     '</div>'
+              +     '<div class="flex justify-between mt-1">'
+              +       '<div class="text-xs" style="color:' + _rkTierColor + ';opacity:0.8">상위 ' + _rkPct + '%</div>'
+              +       '<div class="text-xs" style="color:' + _rkTierColor + ';opacity:0.6">전체 ' + _rkTotal + '명</div>'
+              +     '</div>'
+              +   '</div>'
+              +   '<div class="text-xs font-semibold" style="color:' + _rkTierColor + ';opacity:0.85">' + _rkComment + '</div>'
+              + '</div>'
+              + '</div>';
+          }
+        }
+      } catch(_rkErr) { /* 순위 카드 로드 실패 시 조용히 무시 — 기존 화면 무영향 */ }
+    }
+    // ── [FEAT-158] 끝 ────────────────────────────────────────────────────────
+
     container.innerHTML = `
     <div class="page-container">
 
@@ -32283,6 +32367,9 @@ async function renderMyStatsPage(container) {
           </div>
         </div>
       </div>
+
+      <!-- ── [FEAT-158] 안전 순위 카드 (이번 달 기준, 기록 있을 때만 표시) ── -->
+      ${_rkHtml}
 
       <!-- ② 요약 카드 3개 -->
       <div class="grid grid-cols-3 gap-3 mb-4">

@@ -382,7 +382,8 @@ app.get('/volume-stats', async (c) => {
     SELECT rc.report_id, rc.lot_no, rc.spec, rc.maker, rc.mfg_year,
            rc.cable_type, rc.proc, rc.start_point, rc.end_point,
            rc.usage_m, rc.cable_kind, rc.special_note,
-           r3.work_date, r3.worker_team, t3.request_no,
+           rc.asset_type,
+           r3.work_date, r3.worker_team, r3.status, t3.request_no,
            t3.construction_type AS work_class
     FROM work_report_cables rc
     JOIN work_reports r3 ON r3.id = rc.report_id

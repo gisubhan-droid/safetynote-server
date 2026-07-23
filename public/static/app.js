@@ -40546,18 +40546,24 @@ async function renderCableDetailPage(container) {
     const totalMove   = cables.filter(c=>c.proc==='이설').reduce((s,c)=>s+(c.usage_m||0),0);
     const totalAll    = cables.reduce((s,c)=>s+(c.usage_m||0),0);
 
-    // 제조사 + 케이블종류 + 규격 기준 집계
+    // 제조사 + 케이블종류 + 규격 + 자산구분 기준 집계
     const byType = {};
     cables.forEach(c => {
-      const maker = c.maker      || '-';
-      const type  = c.cable_type || '-';
-      const spec  = c.spec       || '-';
-      const key   = `${maker}__${type}__${spec}`;
-      if (!byType[key]) byType[key] = { maker, type, spec, new:0, remove:0, move:0 };
+      const maker  = c.maker      || '-';
+      const type   = c.cable_type || '-';
+      const spec   = c.spec       || '-';
+      const asset  = c.asset_type || '-';
+      const key    = maker + '__' + type + '__' + spec + '__' + asset;
+      if (!byType[key]) byType[key] = { maker: maker, type: type, spec: spec, asset: asset, new:0, remove:0, move:0 };
       if (c.proc==='신설') byType[key].new    += (c.usage_m||0);
       if (c.proc==='철거') byType[key].remove += (c.usage_m||0);
       if (c.proc==='이설') byType[key].move   += (c.usage_m||0);
     });
+
+    // 자산구분별 집계 (N-1 / N-2 / 미지정)
+    const totalN1       = cables.filter(function(c){ return c.asset_type === 'N-1'; }).reduce(function(s,c){ return s+(c.usage_m||0); }, 0);
+    const totalN2       = cables.filter(function(c){ return c.asset_type === 'N-2'; }).reduce(function(s,c){ return s+(c.usage_m||0); }, 0);
+    const totalNoAsset  = cables.filter(function(c){ return !c.asset_type; }).reduce(function(s,c){ return s+(c.usage_m||0); }, 0);
 
     container.innerHTML = `
     <div class="page-container">
@@ -40607,10 +40613,13 @@ async function renderCableDetailPage(container) {
       <!-- 요약 카드 -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         ${[
-          { label:'전체 사용량', val: fmtMZ(totalAll)+'M',    icon:'fas fa-ruler-horizontal', color:'gray'   },
-          { label:'신설 합계',   val: fmtMZ(totalNew)+'M',    icon:'fas fa-plus-circle',      color:'blue'   },
-          { label:'철거 합계',   val: fmtMZ(totalRemove)+'M', icon:'fas fa-minus-circle',     color:'red'    },
-          { label:'이설 합계',   val: fmtMZ(totalMove)+'M',   icon:'fas fa-exchange-alt',     color:'purple' },
+          { label:'전체 사용량', val: fmtMZ(totalAll)+'M',       icon:'fas fa-ruler-horizontal', color:'gray'   },
+          { label:'신설 합계',   val: fmtMZ(totalNew)+'M',       icon:'fas fa-plus-circle',      color:'blue'   },
+          { label:'철거 합계',   val: fmtMZ(totalRemove)+'M',    icon:'fas fa-minus-circle',     color:'red'    },
+          { label:'이설 합계',   val: fmtMZ(totalMove)+'M',      icon:'fas fa-exchange-alt',     color:'purple' },
+          { label:'N-1 합계',    val: fmtMZ(totalN1)+'M',        icon:'fas fa-tag',              color:'teal'   },
+          { label:'N-2 합계',    val: fmtMZ(totalN2)+'M',        icon:'fas fa-tag',              color:'orange' },
+          { label:'자산미지정',  val: fmtMZ(totalNoAsset)+'M',   icon:'fas fa-question-circle',  color:'yellow' },
         ].map(c=>`
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
           <div class="flex items-center gap-2 mb-1">
@@ -40654,6 +40663,7 @@ async function renderCableDetailPage(container) {
                 <th class="border border-gray-200 px-3 py-2 text-center">제조사</th>
                 <th class="border border-gray-200 px-3 py-2 text-center">케이블종류</th>
                 <th class="border border-gray-200 px-3 py-2 text-center">규격</th>
+                <th class="border border-gray-200 px-3 py-2 text-center bg-teal-50">자산구분</th>
                 <th class="border border-gray-200 px-3 py-2 text-center cd-col-proc">공정</th>
                 <th class="border border-gray-200 px-3 py-2 text-right cd-col-m">사용량(M)</th>
               </tr>
@@ -40661,10 +40671,14 @@ async function renderCableDetailPage(container) {
             <tbody id="cd-summary-tbody">
               ${Object.entries(byType).flatMap(([, v]) => {
                 const rows = [];
+                const assetBadge = v.asset === '-'
+                  ? '<span class="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 text-xs">-</span>'
+                  : '<span class="px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs">' + v.asset + '</span>';
                 if (v.new    > 0) rows.push(`<tr class="hover:bg-gray-50 cd-row-new">
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center bg-teal-50">${assetBadge}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs">신설</span></td>
                   <td class="border border-gray-100 px-3 py-1.5 text-right bg-blue-50 font-semibold">${fmtMZ(v.new)}</td>
                 </tr>`);
@@ -40672,6 +40686,7 @@ async function renderCableDetailPage(container) {
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center bg-teal-50">${assetBadge}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs">철거</span></td>
                   <td class="border border-gray-100 px-3 py-1.5 text-right bg-red-50 font-semibold">${fmtMZ(v.remove)}</td>
                 </tr>`);
@@ -40679,6 +40694,7 @@ async function renderCableDetailPage(container) {
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.maker}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.type}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center">${v.spec}</td>
+                  <td class="border border-gray-100 px-3 py-1.5 text-center bg-teal-50">${assetBadge}</td>
                   <td class="border border-gray-100 px-3 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs">이설</span></td>
                   <td class="border border-gray-100 px-3 py-1.5 text-right bg-purple-50 font-semibold">${fmtMZ(v.move)}</td>
                 </tr>`);
@@ -40714,17 +40730,31 @@ async function renderCableDetailPage(container) {
                 <th class="border border-gray-200 px-2 py-2 text-center bg-blue-50">공정</th>
                 <th class="border border-gray-200 px-2 py-2 text-center">시작점(M)</th>
                 <th class="border border-gray-200 px-2 py-2 text-center">종단점(M)</th>
+                <th class="border border-gray-200 px-2 py-2 text-center bg-teal-50">자산구분</th>
                 <th class="border border-gray-200 px-2 py-2 text-center bg-yellow-50">사용량(M)</th>
                 <th class="border border-gray-200 px-2 py-2 text-center">특이사항</th>
+                <th class="border border-gray-200 px-2 py-2 text-center">일보상태</th>
               </tr>
             </thead>
             <tbody>
               ${cables.length === 0
-                ? `<tr><td colspan="14" class="text-center py-8 text-gray-400">데이터 없음</td></tr>`
+                ? `<tr><td colspan="16" class="text-center py-8 text-gray-400">데이터 없음</td></tr>`
                 : cables.map(cb => {
                     const procColor = cb.proc==='신설' ? 'bg-blue-50 text-blue-700'
                                     : cb.proc==='철거' ? 'bg-red-50 text-red-700'
                                     : cb.proc==='이설' ? 'bg-purple-50 text-purple-700' : '';
+                    const assetLabel = cb.asset_type || '-';
+                    const assetCls   = cb.asset_type === 'N-1' ? 'bg-teal-100 text-teal-700'
+                                     : cb.asset_type === 'N-2' ? 'bg-orange-100 text-orange-700'
+                                     : 'bg-gray-100 text-gray-400';
+                    const statusLabel = cb.status === 'confirmed' ? '확정'
+                                      : cb.status === 'submitted' ? '제출'
+                                      : cb.status === 'draft'     ? '임시'
+                                      : (cb.status || '-');
+                    const statusCls   = cb.status === 'confirmed' ? 'bg-green-100 text-green-700'
+                                      : cb.status === 'submitted' ? 'bg-blue-100 text-blue-700'
+                                      : cb.status === 'draft'     ? 'bg-gray-100 text-gray-500'
+                                      : '';
                     return `
                     <tr class="hover:bg-gray-50 border-b border-gray-100">
                       <td class="border border-gray-100 px-2 py-1.5 text-center">${(cb.work_date||'').slice(0,10)||'-'}</td>
@@ -40739,8 +40769,10 @@ async function renderCableDetailPage(container) {
                       <td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded text-xs ${procColor}">${cb.proc||'-'}</span></td>
                       <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.start_point||'-'}</td>
                       <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.end_point||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center bg-teal-50"><span class="px-1.5 py-0.5 rounded-full text-xs ${assetCls}">${assetLabel}</span></td>
                       <td class="border border-gray-100 px-2 py-1.5 text-right bg-yellow-50 font-semibold">${fmtMZ(cb.usage_m)}</td>
                       <td class="border border-gray-100 px-2 py-1.5 text-center text-gray-400">${cb.special_note||''}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full text-xs ${statusCls}">${statusLabel}</span></td>
                     </tr>`;
                   }).join('')
               }
@@ -40748,8 +40780,9 @@ async function renderCableDetailPage(container) {
             ${cables.length > 0 ? `
             <tfoot>
               <tr class="bg-gray-100 font-bold text-gray-700">
-                <td colspan="12" class="border border-gray-200 px-2 py-2 text-center">합 계</td>
+                <td colspan="13" class="border border-gray-200 px-2 py-2 text-center">합 계</td>
                 <td class="border border-gray-200 px-2 py-2 text-right bg-yellow-100">${fmtMZ(totalAll)}</td>
+                <td class="border border-gray-200 px-2 py-2"></td>
                 <td class="border border-gray-200 px-2 py-2"></td>
               </tr>
             </tfoot>` : ''}
@@ -40808,7 +40841,7 @@ function downloadCableDetailCSV() {
     alert('다운로드할 데이터가 없습니다. 먼저 조회해 주세요.');
     return;
   }
-  const headers = ['완료일','작업자(팀)','요청번호','구분','LOT NO.','규격','제조사','제작년도','케이블종류','공정','시작점(M)','종단점(M)','사용량(M)','특이사항'];
+  const headers = ['완료일','작업자(팀)','요청번호','구분','LOT NO.','규격','제조사','제작년도','케이블종류','공정','시작점(M)','종단점(M)','자산구분','사용량(M)','특이사항','일보상태'];
   const rows = _cableDetailCache.map(cb => [
     (cb.work_date||'').slice(0,10)||'-',
     cb.worker_team||'-',
@@ -40822,8 +40855,10 @@ function downloadCableDetailCSV() {
     cb.proc||'-',
     cb.start_point||'-',
     cb.end_point||'-',
+    cb.asset_type||'-',
     (cb.usage_m||0).toFixed(1),
-    cb.special_note||''
+    cb.special_note||'',
+    cb.status === 'confirmed' ? '확정' : cb.status === 'submitted' ? '제출' : cb.status === 'draft' ? '임시' : (cb.status||'-')
   ]);
   const today = kstDateStr();
   downloadCSV(`광케이블현황_${today}.csv`, headers, rows);

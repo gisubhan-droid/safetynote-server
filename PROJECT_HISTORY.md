@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-23 (세션 59 마무리 — Phase 3/6 사용자 없을 때 진행 예정)
-> **GitHub 최신: `caa7e29`** — fix: [FEAT-025-TAB v4] 탭바 sticky 모바일 수정 — modal-inner 스크롤 컨테이너 분리
+> 최종 업데이트: 2026-07-23 (세션 60 — FEAT-166/167 작업 복사 + 공사요청번호 클릭 이동 구현 완료)
+> **GitHub 최신: `ec11305`** — feat: [FEAT-166/167] 작업 복사 기능 + 공사요청번호 클릭 이동
+> **이전 커밋: `5fa2de7`** — docs: [세션 59] 남은 작업 목록 현행화
+> **이전 커밋: `caa7e29`** — fix: [FEAT-025-TAB v4] 탭바 sticky 모바일 수정 — modal-inner 스크롤 컨테이너 분리
 > **이전 커밋: `95c4674`** — docs: [FEAT-025-TAB v4] PROJECT_HISTORY.md 헤더 갱신 + 세션 58 기록 추가
 > **이전 커밋: `8da8be8`** — docs: [DOCS-002] PROJECT_HISTORY.md 헤더 갱신 + 배포설명서 수정 세션 57 기록 추가
 > **이전 커밋: `1e38f65`** — docs: [DOCS-002] 배포설명서 수정 — Watchdog 등록 절차 + SSH 선택사항 + 브라우저 업데이트 위주 개편
@@ -438,6 +440,8 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 | 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 (사용자 없을 때 진행) | Phase 6 |
 | 🟢 낮음 | **DOCS-001 NAS 설치 매뉴얼** | Phase 3·6 완료 후 신규 담당자용 단계별 문서 작성 | Phase 4 |
 | 🟢 낮음 | **최종 버전 태깅** | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 (Phase 3 완료 후) | — |
+| ✅ 완료 | **FEAT-166 작업 복사** | 완료/취소 작업 복사 버튼 + copyTask() 함수 | `ec11305` |
+| ✅ 완료 | **FEAT-167 공사요청번호 클릭 이동** | 작업 상세 기본정보 탭 공사요청번호 클릭 → 공사 상세 이동 | `ec11305` |
 | ✅ 완료 | **FEAT-025-TAB v4** | 탭바 sticky 모바일 수정 — modal-inner 스크롤 컨테이너 분리 | `caa7e29` |
 | ✅ 완료 | **DOCS-002 배포설명서** | Watchdog 등록 절차 + SSH 선택사항 + 브라우저 업데이트 위주 개편 | `1e38f65` |
 | ✅ 완료 | **NAS 배포** | git pull + pm2 restart 완료 | `5a64403` |
@@ -475,6 +479,45 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 | Watchdog 등록 | 언급만 있음 | 6장 신설: 단계별 스크린샷 기준 절차 |
 | 타 NAS 배포 | pm2 startup 안내 | Watchdog 등록 필수 안내로 교체 |
 | 장애 FAQ | 4개 | 6개 (Watchdog 관련 2건 추가) |
+
+---
+
+## 📄 세션 60 — FEAT-166/167 작업 복사 + 공사요청번호 클릭 이동 (2026-07-23)
+
+### 완료된 작업
+
+#### FEAT-166: 작업 복사 기능
+- ✅ **사전 검증**: copyTask/duplicateTask/cloneTask 함수명 충돌 0건 확인
+- ✅ **`copyTask(taskId)` 함수 신규 추가** (app.js 파일 끝 부분)
+  - `/tasks/:id` API로 작업 데이터 조회
+  - `presetConstruction` 객체 구성 (id, request_no, work_number, work_class, work_order_address, manager_name, supervisor_name, _fromConId:null)
+  - `showCreateTaskModal(null, preset)` 호출 후 작업명/종류/위험도/설명 강제 채움
+  - 고위험 세부유형 체크박스 복원 (high_subtypes JSON 파싱)
+  - 예정일·팀배정은 빈 값 유지
+  - `onRiskLevelChange()` 호출 시 typeof 체크로 안전 처리
+- ✅ **modal-footer 복사 버튼 추가**
+  - 조건: `admin/supervisor` + `completed/cancelled` 상태
+  - 좌측 영역에 보라 계열 outline 버튼 (`color:#685182;border-color:#685182`)
+  - 우측 수정 버튼 기존 유지
+
+#### FEAT-167: 공사요청번호 클릭 → 공사 상세 이동
+- ✅ **작업 상세 기본정보 탭 공사요청번호 셀 클릭 링크화**
+  - `task.construction_id` 있을 때만 클릭 가능 (dotted underline + 외부링크 아이콘)
+  - `onclick`: 현재 modal 닫고 `showConstructionDetail(task.construction_id)` 호출
+  - `construction_id` 없을 때는 기존 정적 span 유지 (하위 호환)
+
+### 검증 결과
+- ✅ **이중 검증 12개 항목** 전체 완료 (이전 세션 인계)
+- ✅ **node --check** → PASSED
+- ✅ **npm run build** → `dist/_worker.js 283.47 kB` ✅
+- ✅ **Git 커밋**: `ec11305` — feat: [FEAT-166/167] 작업 복사 기능 + 공사요청번호 클릭 이동
+- ✅ **GitHub Push**: `5fa2de7..ec11305` → main ✅
+
+### 수정 파일
+
+| 파일 | 변경 내용 |
+|------|-----------| 
+| `public/static/app.js` | ① `copyTask()` 함수 신규 추가 (42행) ② modal-footer 복사 버튼 추가 ③ 공사요청번호 셀 클릭 링크화 |
 
 ---
 

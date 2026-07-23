@@ -1,7 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-23 (FEAT-025-TAB v4 — 탭바 sticky 모바일 수정 modal-inner 스크롤 컨테이너 분리)
+> 최종 업데이트: 2026-07-23 (세션 59 마무리 — Phase 3/6 사용자 없을 때 진행 예정)
 > **GitHub 최신: `caa7e29`** — fix: [FEAT-025-TAB v4] 탭바 sticky 모바일 수정 — modal-inner 스크롤 컨테이너 분리
+> **이전 커밋: `95c4674`** — docs: [FEAT-025-TAB v4] PROJECT_HISTORY.md 헤더 갱신 + 세션 58 기록 추가
 > **이전 커밋: `8da8be8`** — docs: [DOCS-002] PROJECT_HISTORY.md 헤더 갱신 + 배포설명서 수정 세션 57 기록 추가
 > **이전 커밋: `1e38f65`** — docs: [DOCS-002] 배포설명서 수정 — Watchdog 등록 절차 + SSH 선택사항 + 브라우저 업데이트 위주 개편
 > **이전 커밋: `4fbdf3f`** — docs: [BUG-165] PROJECT_HISTORY.md 헤더 갱신 + 버그 기록 추가
@@ -429,18 +430,20 @@ Phase 5 ✅ 완료 (2026-06-21~세션81) — 브라우저 업데이트·롤백·
 Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미완
 ```
 
-### 📌 실질적 남은 작업 (2026-07-06 기준)
+### 📌 실질적 남은 작업 (2026-07-23 기준)
 
 | 우선순위 | 항목 | 내용 | 관련 |
 |---------|------|------|------|
-| 🔴 높음 | **NAS 배포** | `git pull && pm2 restart safetynote` 실행 필요 — 오늘(세션112~115) 전체 포함: BUG-088~091, FEAT-056~059 | `9080b00` |
-| 🔴 높음 | **BUG-078 APK URL NAS 적용** | 관리자 화면 → 시스템설정 → APK URL 입력란에 GitHub Releases URL 직접 입력 (git pull 불필요) | BUG-078 `7cf5d61` |
-| 🔴 높음 | **Option C 실사용 검증** | 모바일 전체 메뉴 탭·플라이아웃·배지 카운트 정상 여부 확인 | BUG-077 |
-| 🟡 중간 | **Phase 3 코드 구조 정리** | node-server.ts 인라인 라우트 → src/routes/ 분리 | Phase 3 |
-| 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 | Phase 6 |
-| ✅ 완료 | **배포설명서 수정** | SSH/Watchdog/브라우저업데이트/도메인 내용 현행화 — DOCS-002 `1e38f65` | — |
-| ✅ 완료 | **FCM 추가 트리거** | TBM 서명 완료 알림(FEAT-056), 사진 첨부 알림(FEAT-057) 세션 112 완료 | `1a13c16` |
-| 🟢 낮음 | **Phase 4 NAS 설치 매뉴얼** | Phase 3·6 완료 후 작성 | — |
+| 🟡 중간 | **Phase 3 코드 구조 정리** | node-server.ts 인라인 라우트 → src/routes/ 분리 (사용자 없을 때 진행) | Phase 3 |
+| 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 (사용자 없을 때 진행) | Phase 6 |
+| 🟢 낮음 | **DOCS-001 NAS 설치 매뉴얼** | Phase 3·6 완료 후 신규 담당자용 단계별 문서 작성 | Phase 4 |
+| 🟢 낮음 | **최종 버전 태깅** | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 (Phase 3 완료 후) | — |
+| ✅ 완료 | **FEAT-025-TAB v4** | 탭바 sticky 모바일 수정 — modal-inner 스크롤 컨테이너 분리 | `caa7e29` |
+| ✅ 완료 | **DOCS-002 배포설명서** | Watchdog 등록 절차 + SSH 선택사항 + 브라우저 업데이트 위주 개편 | `1e38f65` |
+| ✅ 완료 | **NAS 배포** | git pull + pm2 restart 완료 | `5a64403` |
+| ✅ 완료 | **BUG-078 APK URL** | 시스템설정 APK URL 적용 완료 | `7cf5d61` |
+| ✅ 완료 | **Option C 실사용 검증** | 모바일 탭·플라이아웃·배지 카운트 정상 확인 | BUG-077 |
+| ✅ 완료 | **FCM 추가 트리거** | TBM 서명 완료 알림(FEAT-056), 사진 첨부 알림(FEAT-057) | `1a13c16` |
 
 ---
 

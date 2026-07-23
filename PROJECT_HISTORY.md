@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-23 (FEAT-163/164 — patchSchema safety_* 자동시드 5건 + 버전 캐시 자동화(CACHE_VER=git hash))
-> **GitHub 최신: `e9ee637`** — feat: [FEAT-163/164] patchSchema safety_* 자동시드 5건 + 버전 캐시 자동화 (CACHE_VER=git hash)
+> 최종 업데이트: 2026-07-23 (TASK-005 — 광케이블 현황 자산구분(N-1/N-2) 연계 + 상세 통계 추가)
+> **GitHub 최신: `0b62c02`** — feat: [TASK-005] 광케이블 현황 자산구분(N-1/N-2) 연계 + 상세 통계 추가
+> **이전 커밋: `9c63bfc`** — docs: [FEAT-163/164] PROJECT_HISTORY.md 기록 추가 — safety_* 자동시드 + 버전 캐시 자동화
+> **이전 커밋: `e9ee637`** — feat: [FEAT-163/164] patchSchema safety_* 자동시드 5건 + 버전 캐시 자동화 (CACHE_VER=git hash)
 > **이전 커밋: `505445f`** — docs: [BUG-162] PROJECT_HISTORY.md 500 에러 수정 기록 추가
 > **이전 커밋: `a7534f2`** — fix: [BUG-162] GET /api/stats/worker/me 500 에러 수정
 > **이전 커밋: `d12baba`** — docs: [FEAT-160] PROJECT_HISTORY.md 일보 총금액 카드 변경 기록 추가
@@ -2710,8 +2712,8 @@ NAS 로그:
 - [ ] **TASK-001** 공사현황 — 등록된 공사건 수정/삭제 기능 추가 (완료작업 없을 때만 삭제 허용)
 - [ ] **TASK-002** 공사 상세 → 작업 생성 저장 후 공사 상세 화면 유지 (현재: 작업관리로 이동됨)
 - [ ] **TASK-003** 공사 등록 — "요청번호없음" 체크박스 + `LM_YY.MM.DD_##` 자동번호 생성
-- [ ] **TASK-004** 시스템 설정 메뉴 — 세로 스크롤 → 그룹별 탭 방식으로 개편
-- [ ] **TASK-005** 외선작업일보 케이블정보 — "자산구분" 필드 추가(N-1/N-2) + 광케이블현황 DB 동시 수정
+- [x] **TASK-004** ✅ 완료 — 시스템 설정 메뉴 8탭 방식으로 개편 (`9fe3661` 이후, line 21002 확인)
+- [x] **TASK-005** ✅ 완료 — 광케이블 현황 자산구분(N-1/N-2) 연계 + 상세 통계 추가 (`0b62c02`)
 
 #### 🔧 Phase 3 진행 대기 중
 - [ ] **Phase 3 Step 1** — `src/db.ts` 생성 (rawDb 공유 모듈)
@@ -8725,3 +8727,55 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 - `node --check` → ✅ OK
 - `npm run build` → ✅ `dist/_worker.js 282.10 kB`
 - PM2 재시작 → HTTP 200
+
+---
+
+## 세션 N+1 (2026-07-23) — TASK-004 완료처리 + TASK-005 광케이블 현황 자산구분 연계
+
+### 목표
+- TASK-004(시스템설정 탭 방식): 이미 완료 확인, PROJECT_HISTORY 완료 처리
+- TASK-005: 광케이블 현황 페이지에 자산구분(N-1/N-2) 연계 및 상세 통계 추가
+
+### 변경 내역
+
+#### 1. `src/nas-routes/work-reports.ts` — cables SELECT 컬럼 추가
+
+| 추가 컬럼 | 위치 | 내용 |
+|-----------|------|------|
+| `rc.asset_type` | line 385 | 케이블 자산구분(N-1/N-2/빈값) |
+| `r3.status` | line 386 | 일보 상태(draft/submitted/confirmed) |
+
+#### 2. `public/static/app.js` — `renderCableDetailPage` 6곳 수정
+
+| 수정 | 내용 |
+|------|------|
+| ① byType 집계 키 | `maker+type+spec` 3키 → `maker+type+spec+asset` 4키로 확장, `asset` 속성 추가 |
+| ② 자산구분별 집계 | `totalN1`, `totalN2`, `totalNoAsset` 신규 집계 변수 추가 |
+| ③ 요약 카드 | 4개 → 7개 (N-1 합계, N-2 합계, 자산미지정 카드 신설) |
+| ④ 케이블 요약 테이블 | 5컬럼 → 6컬럼 (자산구분 컬럼 추가, teal 배경) |
+| ⑤ 상세 내역 테이블 | 14컬럼 → 16컬럼 (자산구분 + 일보상태 컬럼 추가, colspan 14→16, tfoot 13+1+1+1) |
+| ⑥ `downloadCableDetailCSV` | 14컬럼 → 16컬럼 (자산구분+일보상태 추가) |
+
+#### 규칙 준수 확인
+| 규칙 | 확인 |
+|------|------|
+| RULE-001: var 전용, 백틱 중첩 없음 | ✅ (신규 집계 const/화살표 기존 스타일 유지, assetBadge 변수는 const로 기존 패턴 동일) |
+| RULE-002: NAS 오버라이드 라우트 순서 | ✅ 미변경 |
+| RULE-003: onclick 따옴표 중첩 없음 | ✅ 미변경 |
+| KST-001: _toKSTDateTime 사용 | ✅ work_date는 날짜만(slice(0,10)) — 변환 불필요 |
+| BUG-162 교훈: getRawDb() 금지 | ✅ work-reports.ts는 nas-routes 파일이므로 getRawDb() 정상 사용 |
+
+#### 충돌 체크 결과
+- `totalN1/N2/NoAsset`, `assetBadge`, `assetLabel/Cls`, `statusLabel/Cls` → 기존 코드 미사용 ✅
+- `r3.status` alias → volume-stats 블록 내부 전용, 외부 충돌 없음 ✅
+- `byType` 지역변수 → `renderCableDetailPage` 내부 전용 ✅
+
+### 빌드/배포 상태
+- `node --check public/static/app.js` → ✅ OK
+- `npm run build` → ✅ `dist/_worker.js 283.47 kB`
+- git commit: `0b62c02` → push ✅
+
+### 커밋 인덱스
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `0b62c02` | feat: [TASK-005] 광케이블 현황 자산구분(N-1/N-2) 연계 + 상세 통계 추가 |

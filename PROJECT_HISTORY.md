@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-23 (TASK-005 — 광케이블 현황 자산구분(N-1/N-2) 연계 + 상세 통계 추가)
-> **GitHub 최신: `0b62c02`** — feat: [TASK-005] 광케이블 현황 자산구분(N-1/N-2) 연계 + 상세 통계 추가
+> 최종 업데이트: 2026-07-23 (BUG-165 — 근로자 작업 상세 사진탭 업로드 버튼 복원)
+> **GitHub 최신: `3ce2b8f`** — fix: [BUG-165] 근로자 작업 상세 사진탭 업로드 버튼 복원
+> **이전 커밋: `67affda`** — docs: [TASK-004/005] PROJECT_HISTORY.md TASK-004 완료처리 + TASK-005 자산구분 연계 기록 추가
+> **이전 커밋: `0b62c02`** — feat: [TASK-005] 광케이블 현황 자산구분(N-1/N-2) 연계 + 상세 통계 추가
 > **이전 커밋: `9c63bfc`** — docs: [FEAT-163/164] PROJECT_HISTORY.md 기록 추가 — safety_* 자동시드 + 버전 캐시 자동화
 > **이전 커밋: `e9ee637`** — feat: [FEAT-163/164] patchSchema safety_* 자동시드 5건 + 버전 캐시 자동화 (CACHE_VER=git hash)
 > **이전 커밋: `505445f`** — docs: [BUG-162] PROJECT_HISTORY.md 500 에러 수정 기록 추가

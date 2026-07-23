@@ -8724,7 +8724,17 @@ async function showTaskDetail(id, openTbmTab) {
                 <i class="fas fa-file-alt text-xs text-purple-400"></i>
                 <span class="text-gray-500 text-xs font-semibold">공사요청번호</span>
               </div>
-              <span class="font-medium ${(task.request_no||task.con_request_no) ? 'text-purple-700' : 'text-gray-400'}">${task.request_no||task.con_request_no||'-'}</span>
+              ${task.construction_id ? `
+              <span class="font-medium text-purple-700"
+                    style="cursor:pointer;text-decoration:underline dotted"
+                    onclick="this.closest('.modal-overlay').remove();showConstructionDetail(${task.construction_id})"
+                    title="공사 상세 보기">
+                ${task.request_no||task.con_request_no||'-'}
+                <i class="fas fa-external-link-alt" style="font-size:10px;margin-left:2px;opacity:.6"></i>
+              </span>` : `
+              <span class="font-medium ${(task.request_no||task.con_request_no)?'text-purple-700':'text-gray-400'}">
+                ${task.request_no||task.con_request_no||'-'}
+              </span>`}
             </div>
             <div class="bg-indigo-50 rounded-lg p-3 border border-indigo-200">
               <div class="flex items-center gap-1 mb-1">
@@ -9407,8 +9417,15 @@ async function showTaskDetail(id, openTbmTab) {
     </div>
     <!-- 작업 상세 하단 버튼 -->
     <div class="modal-footer flex justify-between">
-      <!-- 좌: 빈 공간 (삭제 버튼은 테이블에서 sysadmin 전용으로만 제공) -->
-      <div></div>
+      <!-- 좌: 복사 버튼 (admin/supervisor + completed/cancelled 상태 전용) -->
+      <div>
+        ${((currentUser.role === 'admin' || currentUser.role === 'supervisor') &&
+           (task.status === 'completed' || task.status === 'cancelled')) ? `
+        <button onclick="this.closest('.modal-overlay').remove();copyTask(${task.id})"
+                class="btn btn-outline" style="color:#685182;border-color:#685182">
+          <i class="fas fa-copy"></i> 복사
+        </button>` : ''}
+      </div>
       <!-- 우: 수정 버튼 (admin/supervisor 전용) -->
       <div class="flex gap-2">
         ${(currentUser.role === 'admin' || currentUser.role === 'supervisor') ? `
@@ -42388,4 +42405,48 @@ async function loadSiteMapMarkers(map) {
 function _moveSiteMapTo(lat, lon) {
   if (!_kakaoMapInstance) return;
   _kakaoMapInstance.setView([lat, lon], 16);
+}
+
+// [FEAT-166] 작업 복사 — 완료/취소 상태 작업 데이터를 신규 등록 모달에 미리 채움
+async function copyTask(taskId) {
+  var res = await API.get('/tasks/' + taskId);
+  var t = res.data;
+  // presetConstruction 형태로 공사 연동 필드 구성
+  var preset = null;
+  if (t.construction_id) {
+    preset = {
+      id:                  t.construction_id,
+      request_no:          t.request_no          || '',
+      work_number:         t.work_number          || t.con_work_number       || '',
+      work_class:          t.work_class           || '',
+      work_order_address:  t.work_order_address   || t.location              || '',
+      manager_name:        t.contractor_name      || '',
+      supervisor_name:     t.lgu_supervisor       || '',
+      _fromConId:          null
+    };
+  }
+  // 신규 등록 모달 오픈 (editId=null, presetConstruction=preset)
+  await showCreateTaskModal(null, preset);
+  // 모달 열린 후 작업명/종류/위험도/설명 강제 채우기
+  var mTitle = document.getElementById('mTitle');
+  if (mTitle) { mTitle.value = t.title || ''; mTitle.dataset.autoFilled = '0'; }
+  var mWorkClass = document.getElementById('mWorkClass');
+  if (mWorkClass) mWorkClass.value = t.work_class || 'cable_install';
+  var mRiskLevel = document.getElementById('mRiskLevel');
+  if (mRiskLevel) {
+    mRiskLevel.value = t.risk_level || 'normal';
+    if (typeof onRiskLevelChange === 'function') onRiskLevelChange(mRiskLevel.value);
+  }
+  var mDesc = document.getElementById('mDesc');
+  if (mDesc) mDesc.value = t.description || '';
+  // 고위험 세부유형 체크박스 복원
+  if (t.risk_level === 'high' && t.high_subtypes) {
+    try {
+      var subtypes = JSON.parse(t.high_subtypes);
+      document.querySelectorAll('.high-subtype-cb').forEach(function(cb) {
+        cb.checked = subtypes.includes(cb.value);
+      });
+    } catch(_) {}
+  }
+  toast('작업 데이터를 복사했습니다. 내용을 확인 후 등록하세요.', 'info');
 }

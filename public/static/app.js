@@ -8635,6 +8635,7 @@ async function showTaskDetail(id, openTbmTab) {
     const _taskCanDelete  = _taskSysAdminCanDelete || _taskCreatorCanDelete;
 
     modal.querySelector('.modal').innerHTML = `
+    <div class="modal-inner">
     <div class="modal-header">
       <div>
         <h3 class="font-bold text-lg">${task.title}</h3>
@@ -9416,6 +9417,7 @@ async function showTaskDetail(id, openTbmTab) {
           <i class="fas fa-edit"></i> 수정
         </button>` : ''}
       </div>
+    </div>
     </div>`;
 
     // 첨부파일 목록 비동기 로드 (HTML 렌더 후 즉시 호출)

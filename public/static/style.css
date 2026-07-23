@@ -1164,7 +1164,34 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
     z-index: 10 !important;
     min-height: 52px;
   }
+  /* [FEAT-025-TAB v4] 작업 상세 모달 전용: scroll 컨테이너 분리 */
+  /* 근본 원인: .modal { overflow-y: auto !important } 가 일부 Android WebView에서           */
+  /* sticky 스크롤 컨텍스트를 올바르게 생성하지 못함 → .modal-inner로 실제 스크롤 위임        */
+  /* 범위 한정: data-task-id 없는 다른 모달(overflow:hidden 인라인 등)에 영향 없음            */
+  .modal[data-task-id] {
+    overflow-y: hidden !important;   /* .modal의 스크롤 해제 — modal-inner가 담당 */
+  }
+  .modal-inner {
+    overflow-y: auto;
+    height: 100%;
+    -webkit-overflow-scrolling: auto;  /* iOS sticky 방해 방지 */
+    overscroll-behavior: contain;
+  }
+  .modal-inner > .modal-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+  }
+  .modal-inner > .tab-bar-wrap {
+    position: sticky !important;
+    top: 52px !important;            /* modal-header min-height(52px) 바로 아래 */
+    z-index: 9 !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
+    margin-bottom: 0 !important;
+    border-radius: 0 !important;
+  }
   /* [FEAT-025-TAB v3] 모바일: tab-bar-wrap → modal 직계 자식 → sticky 정상 동작 */
+  /* (v3 블록 유지 — data-task-id 없는 모달의 PC/fallback 역할)                               */
   /* 핵심: overflow-x:auto를 sticky 요소에 직접 설정하면 모바일 Safari/Chrome에서 sticky 무효 */
   /* 해결: modal 직계 자식(.tab-bar-wrap)에 sticky 적용, overflow는 내부 방향으로만 */
   .modal > .tab-bar-wrap {

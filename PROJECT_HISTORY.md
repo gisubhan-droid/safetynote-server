@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-23 (DOCS-002 — 배포설명서 Watchdog 등록 절차 + SSH 선택사항 + 브라우저 업데이트 위주 개편)
-> **GitHub 최신: `1e38f65`** — docs: [DOCS-002] 배포설명서 수정 — Watchdog 등록 절차 + SSH 선택사항 + 브라우저 업데이트 위주 개편
+> 최종 업데이트: 2026-07-23 (FEAT-025-TAB v4 — 탭바 sticky 모바일 수정 modal-inner 스크롤 컨테이너 분리)
+> **GitHub 최신: `caa7e29`** — fix: [FEAT-025-TAB v4] 탭바 sticky 모바일 수정 — modal-inner 스크롤 컨테이너 분리
+> **이전 커밋: `8da8be8`** — docs: [DOCS-002] PROJECT_HISTORY.md 헤더 갱신 + 배포설명서 수정 세션 57 기록 추가
+> **이전 커밋: `1e38f65`** — docs: [DOCS-002] 배포설명서 수정 — Watchdog 등록 절차 + SSH 선택사항 + 브라우저 업데이트 위주 개편
 > **이전 커밋: `4fbdf3f`** — docs: [BUG-165] PROJECT_HISTORY.md 헤더 갱신 + 버그 기록 추가
 > **이전 커밋: `3ce2b8f`** — fix: [BUG-165] 근로자 작업 상세 사진탭 업로드 버튼 복원
 > **이전 커밋: `67affda`** — docs: [TASK-004/005] PROJECT_HISTORY.md TASK-004 완료처리 + TASK-005 자산구분 연계 기록 추가
@@ -470,6 +472,48 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 | Watchdog 등록 | 언급만 있음 | 6장 신설: 단계별 스크린샷 기준 절차 |
 | 타 NAS 배포 | pm2 startup 안내 | Watchdog 등록 필수 안내로 교체 |
 | 장애 FAQ | 4개 | 6개 (Watchdog 관련 2건 추가) |
+
+---
+
+## 📄 세션 58 — FEAT-025-TAB v4 탭바 sticky 모바일 수정 (2026-07-23)
+
+### 완료된 작업
+
+- ✅ **FEAT-025-TAB v4**: 탭바 sticky 모바일 미작동 근본 해결
+  - **근본 원인 확정**: `.modal { overflow-y: auto !important }` 가 일부 Android WebView에서
+    sticky 스크롤 컨텍스트를 올바르게 생성하지 못함 (v1~v3 모두 실패한 원인)
+  - **전략**: `.modal[data-task-id]` 범위 한정 + `.modal-inner` 내부 스크롤 컨테이너 분리
+  - **style.css 수정** (모바일 미디어쿼리):
+    - `.modal[data-task-id] { overflow-y: hidden !important }` — 작업 상세 모달만 타겟
+    - `.modal-inner { overflow-y: auto; height: 100% }` — 실제 스크롤 컨테이너
+    - `.modal-inner > .modal-header { sticky top:0; z-index:10 }`
+    - `.modal-inner > .tab-bar-wrap { sticky top:52px; z-index:9 }`
+    - v3 블록(`.modal > .tab-bar-wrap`) 유지 — fallback 역할
+  - **app.js 수정** (`showTaskDetail()` line 8637):
+    - `modal.querySelector('.modal').innerHTML` 내부에 `<div class="modal-inner">` wrapper 추가
+    - modal-header, tab-bar-wrap, modal-body, modal-footer 모두 modal-inner 안으로 이동
+    - 에러 처리(catch) innerHTML은 modal-inner 없이 유지 (로드 실패 메시지만)
+  - **충돌 없음 확인**: overflow:hidden 인라인 모달 5개 — data-task-id 없음으로 CSS 범위 분리
+- ✅ **사전 검증**: PROJECT_HISTORY v1~v3 실패 기록, modal-inner 0건, tab-bar-wrap JS 참조 0건, data-task-id 참조 패턴 전수 확인
+- ✅ **빌드 검증**: `node --check` ✅ + `npm run build` → `dist/_worker.js 283.47 kB` ✅
+- ✅ **Git 커밋**: `caa7e29` — fix: [FEAT-025-TAB v4] 탭바 sticky 모바일 수정 — modal-inner 스크롤 컨테이너 분리
+- ✅ **GitHub Push**: `8da8be8..caa7e29` → main ✅
+
+### FEAT-025-TAB 버전 이력
+
+| 버전 | 커밋 | 전략 | 결과 |
+|------|------|------|------|
+| v1 | — | `.tab-bar { position:sticky }` + PC 스타일 그대로 | 모바일 미작동 |
+| v2 | — | `.tab-bar { sticky; top:62px }` | 모바일 미작동 |
+| v3 | `5d3e8d0` | tab-bar-wrap을 modal 직계 자식으로 이동 | 모바일 미작동 (보류) |
+| **v4** | **`caa7e29`** | **modal-inner 스크롤 컨테이너 분리 + data-task-id 범위 한정** | **✅ 적용 완료** |
+
+### 수정 파일
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/style.css` | 모바일 미디어쿼리: v4 CSS 블록 추가 (29행 삽입) |
+| `public/static/app.js` | `showTaskDetail()` innerHTML: modal-inner wrapper 추가 |
 
 ---
 

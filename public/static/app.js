@@ -9351,9 +9351,9 @@ async function showTaskDetail(id, openTbmTab) {
           }
           return html;
         })()}
-        ${!isWorker ? `<button onclick="showPhotoUpload(${task.id})" class="btn btn-primary w-full mt-2">
+        <button onclick="showPhotoUpload(${task.id})" class="btn btn-primary w-full mt-2">
           <i class="fas fa-camera"></i> 사진/동영상 등록
-        </button>` : ''}
+        </button>
       </div>
 
       <!-- 현장점검 탭 -->

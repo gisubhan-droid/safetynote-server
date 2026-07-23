@@ -54,7 +54,7 @@ import {
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomBytes } from 'node:crypto'
-import { spawn } from 'node:child_process'
+import { spawn, execSync } from 'node:child_process'
 import * as https from 'node:https'
 import * as http from 'node:http'
 
@@ -97,6 +97,20 @@ import geocodeRoutes from './src/nas-routes/geocode'
 import photosRoutes from './src/routes/photos'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// ─── [FEAT-164] 캐시 버전 자동화 ─────────────────────────────────────
+// pm2 restart 시마다 현재 git 커밋 해시 7자리를 자동 취득 → ?v= 하드코딩 불필요
+// git 명령 실패(git 미설치 or git 저장소 아닌 환경) 시 폴백값 유지
+const CACHE_VER: string = (() => {
+  try {
+    return execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore','pipe','ignore'] })
+      .toString().trim()
+  } catch (_) {
+    return '20260714a'  // 폴백: git 명령 실패 시 기존 버전 유지
+  }
+})()
+console.log(`[CACHE] 캐시 버전: ?v=${CACHE_VER}`)
+// ─── [FEAT-164] 끝 ───────────────────────────────────────────────────
 
 // ─── .env 파일 로드 (dotenv 없이 직접 파싱) ─────────────────────────
 function loadEnvFile(): void {
@@ -1070,6 +1084,69 @@ function patchSchema() {
     }
     console.log('[patchSchema] 교육 법령기준 시드 완료')
   } catch(e: any) { console.warn('[patchSchema] 교육 법령기준 시드 실패:', e.message) }
+
+  // ─── [FEAT-163] v0.107s: safety_* 법령안내 시드 (신규 NAS 설치 시 자동 삽입) ──
+  // edu_* 5건은 위 v0.107에서 처리, safety_* 5건은 migration 파일에만 존재하여
+  // 신규 DB에서 법령안내 페이지가 빈 상태로 표시되는 문제 방지.
+  // INSERT OR IGNORE: 이미 존재하면 무시 (기존 NAS 수동 삽입 데이터 보호)
+  try {
+    const safetySeeds = [
+      {
+        key: 'safety_general',
+        title: '산업안전보건법 주요 의무사항',
+        law_ref: '산업안전보건법 제5조, 제38조, 제39조',
+        content: JSON.stringify([
+          { target: '사업주', obligation: '안전·보건 조치 의무', fine: '위반 시 5년 이하 징역 또는 5천만원 이하 벌금' },
+          { target: '근로자', obligation: '안전·보건 조치 준수 의무', fine: '위반 시 300만원 이하 과태료' },
+        ])
+      },
+      {
+        key: 'safety_ppe',
+        title: '개인보호구 지급 및 착용 의무',
+        law_ref: '산업안전보건법 제38조, 산업안전보건기준에 관한 규칙 제32조',
+        content: JSON.stringify([
+          { target: '사업주', obligation: '작업 특성에 맞는 보호구 지급 의무', fine: '미지급 시 5백만원 이하 과태료' },
+          { target: '근로자', obligation: '지급된 보호구 착용 의무', fine: '미착용 시 5만원 과태료' },
+        ])
+      },
+      {
+        key: 'safety_stop',
+        title: '중대재해 발생 시 작업중지 의무',
+        law_ref: '산업안전보건법 제54조, 중대재해처벌법 제4조',
+        content: JSON.stringify([
+          { target: '사업주', obligation: '중대재해 발생 즉시 해당 작업 중지 및 근로자 대피', fine: '미조치 시 5년 이하 징역 또는 5천만원 이하 벌금' },
+          { target: '사업주', obligation: '중대산업재해 발생 시 고용노동부 즉시 보고 의무', fine: '미보고·허위보고 시 3천만원 이하 과태료' },
+        ])
+      },
+      {
+        key: 'safety_hazard',
+        title: '위험성 평가 실시 의무',
+        law_ref: '산업안전보건법 제36조, 사업장 위험성평가에 관한 지침',
+        content: JSON.stringify([
+          { target: '사업주', obligation: '최초·정기(연 1회)·수시 위험성평가 실시', fine: '미실시 시 5백만원 이하 과태료' },
+          { target: '사업주', obligation: '근로자 참여 보장 및 평가 결과 게시', fine: '미이행 시 과태료 부과' },
+        ])
+      },
+      {
+        key: 'safety_tbm',
+        title: 'TBM(작업 전 안전점검) 실시',
+        law_ref: '산업안전보건법 제29조, KOSHA GUIDE H-57',
+        content: JSON.stringify([
+          { target: '관리감독자', obligation: '작업 시작 전 TBM 실시 — 위험요인 확인 및 안전수칙 교육', fine: '미실시 시 관리·감독 소홀로 과태료 부과 가능' },
+          { target: '근로자', obligation: 'TBM 참여 및 안전수칙 준수', fine: '미준수 시 시정 조치' },
+        ])
+      },
+    ]
+    const safetyInsStmt = rawDb.prepare(
+      `INSERT OR IGNORE INTO legal_notices (notice_key, title, law_ref, content, is_active)
+       VALUES (?, ?, ?, ?, 1)`
+    )
+    for (const s of safetySeeds) {
+      safetyInsStmt.run(s.key, s.title, s.law_ref, s.content)
+    }
+    console.log('[patchSchema FEAT-163] safety_* 법령안내 시드 완료 (5건)')
+  } catch(e: any) { console.warn('[patchSchema FEAT-163] safety_* 시드 실패:', e.message) }
+  // ─── [FEAT-163] 끝 ──────────────────────────────────────────────────────────
 
   // v0.109: 안전교육 증빙사진 + 결과보고서 테이블
   rawDb.exec(`
@@ -6839,13 +6916,13 @@ app.get('*', (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260714a">
+  <link rel="stylesheet" href="/static/style.css?v=${CACHE_VER}">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260714a"></script>
+  <script src="/static/app.js?v=${CACHE_VER}"></script>
   <!-- PWA 모바일 앱 기능 (Service Worker / 탭바 / 설치 배너) -->
-  <script src="/static/mobile-app.js?v=20260714a"></script>
+  <script src="/static/mobile-app.js?v=${CACHE_VER}"></script>
 </body>
 </html>`)
 })

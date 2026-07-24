@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-24 (세션 62 — FEAT-169 연계사진 팝업 뒤로가기 UX 수정)
-> **GitHub 최신: `93e2f42`** — fix: [FEAT-169] 연계작업 사진 팝업 → 작업상세 모달 내부 오버레이로 변경 (뒤로 가기 복원)
+> 최종 업데이트: 2026-07-24 (세션 63 — BUG-FIX: NAS GET /api/attachments attach_type 필터 누락)
+> **GitHub 최신: `7feff5e`** — fix: [BUG] GET /api/attachments NAS — attach_type 필터 추가 (work_log/order 분리)
+> **이전 커밋: `c1bec87`** — docs: [FEAT-169] PROJECT_HISTORY.md 헤더 갱신 — 연계사진 뒤로가기 UX 수정
+> **이전 커밋: `93e2f42`** — fix: [FEAT-169] 연계작업 사진 팝업 → 작업상세 모달 내부 오버레이로 변경 (뒤로 가기 복원)
 > **이전 커밋: `31fe37e`** — fix: [FEAT-169] photos API 500 에러 수정 — p.media_type 제거 + ORDER BY sub_task_number 추가
 > **이전 커밋: `89abe5e`** — docs: [FEAT-169] PROJECT_HISTORY.md 헤더 갱신 + 세션 62 기록 추가
 > **이전 커밋: `bfc3bbb`** — feat: [FEAT-169] 관리자/감독자 연계작업 사진 조회 확대 + media_type SELECT 추가
@@ -189,6 +191,7 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| BUG-ATTACH-NAS | 63 | 2026-07-24 | ✅ 수정 | **NAS GET /api/attachments — attach_type 필터 무시로 work_log 첨부파일이 작업지시서 섹션에 혼재** — `loadWorkLogAttachments()`는 `attach_type=work_log` 파라미터를 전송하고, Cloudflare `attachments.ts`는 해당 필터를 정상 처리하나, NAS `attachments-nas.ts`의 GET `/` 핸들러가 `task_id`만 받고 `attach_type` 파라미터를 완전 무시하여 전체 첨부파일 반환. **해결**: `attachments-nas.ts` — `attach_type` 파라미터 추출 추가, `attach_type` 지정 시 `WHERE ta.task_id = ? AND ta.attach_type = ?` 조건 분기, 미지정 시 기존 동작(전체 반환) 유지. 하위 호환성 보장. 검증: `node --check` ✅ → `npm run build` ✅(283.54 kB) | `7feff5e` |
 | FEAT-164 | 164 | 2026-07-23 | ✅ 적용 | **버전 캐시 자동화 — CACHE_VER=git 커밋 해시 7자리** — 기존 `?v=20260714a` 하드코딩 방식을 서버 시작 시 `execSync('git rev-parse --short HEAD')` 로 자동 취득하는 `CACHE_VER` 상수로 전환. ①`node-server.ts` line 57: `import { spawn, execSync }` 추가(기존 spawn만 있던 import 확장). ②line ~104(`__dirname` 직후): `CACHE_VER: string = (() => { try { return execSync(...) } catch { return '20260714a' } })()` 선언 + `console.log('[CACHE] 캐시 버전: ?v=...')`. ③HTML 응답 3곳 (`/static/style.css`, `/static/app.js`, `/static/mobile-app.js`) `?v=20260714a` → `?v=${CACHE_VER}` 교체. git 명령 실패(git 미설치 환경) 시 폴백값 `'20260714a'` 유지로 하위호환 보장. 검증: `npm run build` ✅(283.47 kB) | `e9ee637` |
 | FEAT-163 | 163 | 2026-07-23 | ✅ 적용 | **patchSchema safety_* 법령안내 자동시드 5건** — 신규 NAS 설치 시 `legal_notices` 테이블에 `safety_*` 키 5건이 없어 법령안내 페이지가 빈 상태로 표시되는 문제 해결. `edu_*` 시드 블록(line 1072) 직후에 별도 try/catch 블록 추가. 변수명: `insStmt`(line 1078 이미 선언) 충돌 방지 → `safetyInsStmt` 사용. 시드 5건: `safety_general`(산업안전보건법 주요의무), `safety_ppe`(개인보호구 지급착용), `safety_stop`(중대재해 작업중지), `safety_hazard`(위험성 평가), `safety_tbm`(TBM 안전점검). `INSERT OR IGNORE` 사용으로 기존 NAS 수동삽입 데이터 보호(중복삽입 없음). 검증: `npm run build` ✅(283.47 kB) | `e9ee637` |
 | BUG-162 | 162 | 2026-07-22 | ✅ 수정 | **근로자 my-stats 화면 로드 시 500 에러** — `GET /api/stats/worker/me` NAS 오버라이드(FEAT-160, line 4165)에서 `getRawDb()` 호출 — 이 함수는 `src/nas-db.ts`에서 export되지만 `node-server.ts`에는 import 없음 → `ReferenceError: getRawDb is not defined` → 500 Internal Server Error → "로드 실패" 표시. **해결**: `const rawDb = getRawDb()` 삭제, `node-server.ts` line 161에 직접 선언된 `rawDb` 변수를 스코프 내에서 직접 참조. 검증: `npm run build` OK(283.47 kB) | `a7534f2` |

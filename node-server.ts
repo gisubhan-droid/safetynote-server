@@ -5670,8 +5670,8 @@ app.route('/api/signature-requests', signatureRequestsRoutes)
 
 // GET /api/work-type-safety — 전체 목록 조회 (로그인 필요)
 app.get('/api/work-type-safety', async (c) => {
-  const user = c.get('user' as never) as any
-  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
   try {
     const rows = rawDb.prepare(
       `SELECT id, type_key, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels
@@ -5698,8 +5698,8 @@ app.get('/api/work-type-safety', async (c) => {
 
 // GET /api/work-type-safety/:typeKey — 단건 조회
 app.get('/api/work-type-safety/:typeKey', async (c) => {
-  const user = c.get('user' as never) as any
-  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
   const typeKey = decodeURIComponent(c.req.param('typeKey'))
   try {
     const row = rawDb.prepare(
@@ -5722,8 +5722,8 @@ app.get('/api/work-type-safety/:typeKey', async (c) => {
 
 // POST /api/work-type-safety — 신규 추가 (안전관리자/현장대리인/admin/supervisor만)
 app.post('/api/work-type-safety', async (c) => {
-  const user = c.get('user' as never) as any
-  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
   const allowedRoles = ['admin', 'supervisor']
   const allowedPositions = ['안전관리자', '현장대리인']
   const isAllowed = allowedRoles.includes(user.role) || allowedPositions.includes(user.position || '')
@@ -5756,8 +5756,8 @@ app.post('/api/work-type-safety', async (c) => {
 
 // PUT /api/work-type-safety/:typeKey — 수정
 app.put('/api/work-type-safety/:typeKey', async (c) => {
-  const user = c.get('user' as never) as any
-  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
   const allowedRoles = ['admin', 'supervisor']
   const allowedPositions = ['안전관리자', '현장대리인']
   const isAllowed = allowedRoles.includes(user.role) || allowedPositions.includes(user.position || '')
@@ -5789,8 +5789,8 @@ app.put('/api/work-type-safety/:typeKey', async (c) => {
 
 // DELETE /api/work-type-safety/:typeKey — 삭제
 app.delete('/api/work-type-safety/:typeKey', async (c) => {
-  const user = c.get('user' as never) as any
-  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
   const allowedRoles = ['admin', 'supervisor']
   const allowedPositions = ['안전관리자', '현장대리인']
   const isAllowed = allowedRoles.includes(user.role) || allowedPositions.includes(user.position || '')

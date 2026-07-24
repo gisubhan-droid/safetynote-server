@@ -43349,9 +43349,15 @@ function _renderClItemsPage(container) {
         + (isActive ? '' : ' <span class="no-underline text-xs text-red-400 font-medium ml-1" style="text-decoration:none">[비활성/중복]</span>') + '</td>';
       tableHtml += '<td class="px-3 py-2 text-blue-500 italic text-xs">' + (it.note ? (it.note.replace(/</g,'&lt;')) : '') + '</td>';
       tableHtml += '<td class="px-3 py-2 text-center">' + (it.sort_order || 0) + '</td>';
-      tableHtml += '<td class="px-3 py-2 text-center"><span class="px-1.5 py-0.5 rounded text-xs font-medium '
-        + (isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400') + '">'
-        + (isActive ? '활성' : '비활성') + '</span></td>';
+      // 상태 컬럼 — 토글 스위치
+      tableHtml += '<td class="px-3 py-2 text-center">';
+      tableHtml += '<label class="relative inline-flex items-center cursor-pointer" title="' + (isActive ? '클릭하면 비활성화' : '클릭하면 활성화') + '">';
+      tableHtml += '<input type="checkbox" class="sr-only peer" ' + (isActive ? 'checked' : '') + ' onchange="_clItemsToggleActive(' + it.id + ', this.checked)">';
+      tableHtml += '<div class="w-9 h-5 rounded-full peer peer-focus:ring-2 peer-focus:ring-green-300 '
+        + 'after:content-[\'\'] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-all '
+        + (isActive ? 'bg-green-500 after:translate-x-4' : 'bg-gray-300') + '"></div>';
+      tableHtml += '</label>';
+      tableHtml += '</td>';
       tableHtml += '<td class="px-3 py-2 text-center">';
       tableHtml += '<button type="button" class="text-blue-500 hover:text-blue-700 mr-2" title="수정" onclick="_clItemsOpenEdit(\'' + encodeURIComponent(JSON.stringify(it)) + '\')"><i class="fas fa-edit"></i></button>';
       tableHtml += '<button type="button" class="text-red-400 hover:text-red-600" title="삭제" onclick="_clItemsDelete(' + it.id + ',\'' + (it.question || '').replace(/['"]/g,'').substring(0,15) + '...\')"><i class="fas fa-trash"></i></button>';
@@ -43499,6 +43505,34 @@ async function _clItemsSave(itemId) {
     }
   } catch(e) {
     toast('저장 실패: ' + (e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message));
+  }
+}
+
+async function _clItemsToggleActive(itemId, checked) {
+  // 캐시에서 기존 데이터 조회 — PUT API가 work_class/category/question 필수
+  var cached = null;
+  for (var _ti = 0; _ti < _clItemsCache.length; _ti++) {
+    if (_clItemsCache[_ti].id === itemId) { cached = _clItemsCache[_ti]; break; }
+  }
+  if (!cached) { toast('항목 정보를 찾을 수 없습니다.'); return; }
+  try {
+    await API.put('/checklist/items/' + itemId, {
+      work_class: cached.work_class,
+      category:   cached.category,
+      question:   cached.question,
+      note:       cached.note || null,
+      sort_order: cached.sort_order || 0,
+      is_active:  checked ? 1 : 0
+    });
+    toast(checked ? '항목을 활성화했습니다.' : '항목을 비활성화했습니다.');
+    var container = document.getElementById('page-content');
+    if (container) {
+      await _loadClItems();
+      _renderClItemsPage(container);
+    }
+    if (window._checklistTaskId) { setTimeout(function() { loadChecklistItems(window._checklistTaskId); }, 300); }
+  } catch(e) {
+    toast('상태 변경 실패: ' + (e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message));
   }
 }
 

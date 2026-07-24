@@ -506,14 +506,21 @@ async function updateTbmSections(db: D1Database, assessmentId: number, responses
     ).all()
     const heavyIds = new Set((heavyItems.results as any[]).map(r => r.id))
 
+    // TBM 관련 항목 ID
+    const tbmItems = await db.prepare(
+      `SELECT id FROM checklist_items WHERE category = 'TBM' AND is_active = 1`
+    ).all()
+    const tbmIds = new Set((tbmItems.results as any[]).map(r => r.id))
+
     const hasOk = (ids: Set<number>) =>
       responses.some(r => ids.has(r.item_id) && r.response === 'ok')
 
     // ── 섹션 정의 (section_type → labels) ────────────────────────────────────
     const sectionDefs: { type: string; name: string; labels: string[]; needed: boolean }[] = [
-      { type: 'ppe',    name: '개인보호구 점검',      labels: ['안전보호구 착용 상태 확인'],                              needed: hasOk(ppeIds)    },
-      { type: 'bucket', name: '버켓/스카이 안전점검', labels: ['아웃트리거 확장 및 받침목 설치', '고임목 설치', '안전고리 체결'], needed: hasOk(bucketIds) },
-      { type: 'heavy',  name: '중장비 안전점검',      labels: ['작업계획서', '유도원 배치'],                              needed: hasOk(heavyIds)  },
+      { type: 'ppe',         name: '개인보호구 점검',      labels: ['안전보호구 착용 상태 확인'],                                                 needed: hasOk(ppeIds)    },
+      { type: 'bucket',      name: '버켓/스카이 안전점검', labels: ['아웃트리거 확장 및 받침목 설치', '고임목 설치', '안전고리 체결'],             needed: hasOk(bucketIds) },
+      { type: 'heavy',       name: '중장비 안전점검',      labels: ['작업계획서', '유도원 배치'],                                                  needed: hasOk(heavyIds)  },
+      { type: 'tbm_meeting', name: 'TBM 회의',             labels: ['TBM회의 사진', '작업현장 전경', '라바콘 입간판 설치상태'],                    needed: hasOk(tbmIds)    },
     ]
 
     // ── 기존 섹션 조회 (section_type → section_id 매핑) ──────────────────────

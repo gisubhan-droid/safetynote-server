@@ -9417,10 +9417,9 @@ async function showTaskDetail(id, openTbmTab) {
     </div>
     <!-- 작업 상세 하단 버튼 -->
     <div class="modal-footer flex justify-between">
-      <!-- 좌: 복사 버튼 (admin/supervisor + work_completed/completed/cancelled 상태 전용) -->
+      <!-- 좌: 복사 버튼 (admin/supervisor 전용 — 전체 진행단계) -->
       <div>
-        ${((currentUser.role === 'admin' || currentUser.role === 'supervisor') &&
-           (task.status === 'work_completed' || task.status === 'completed' || task.status === 'cancelled')) ? `
+        ${(currentUser.role === 'admin' || currentUser.role === 'supervisor') ? `
         <button onclick="this.closest('.modal-overlay').remove();copyTask(${task.id})"
                 class="btn btn-outline" style="color:#685182;border-color:#685182">
           <i class="fas fa-copy"></i> 복사

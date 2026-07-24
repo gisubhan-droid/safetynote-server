@@ -27830,6 +27830,56 @@ async function submitChecklist(taskId) {
     }
   });
 
+  // 필수 입력 레이블 미입력/부적정 검사
+  var inputFieldErrors = [];
+  document.querySelectorAll('input[data-rule]').forEach(function(inp) {
+    var labelEl = inp.closest('div') ? inp.closest('div').querySelector('label') : null;
+    var labelTxt = labelEl ? labelEl.textContent.trim() : inp.id;
+    var val = (inp.value || '').trim();
+    if (!val) {
+      inputFieldErrors.push({ label: labelTxt, msg: '미입력' });
+    } else {
+      var ruleJson = inp.getAttribute('data-rule') || '{}';
+      var rule = {};
+      try { rule = JSON.parse(ruleJson); } catch(e2) {}
+      var result = _validateInputField(val, rule);
+      if (!result.ok) {
+        inputFieldErrors.push({ label: labelTxt, msg: result.msg });
+      }
+    }
+  });
+
+  if (inputFieldErrors.length > 0) {
+    var ifModal = document.createElement('div');
+    ifModal.className = 'modal-overlay modal-sm';
+    ifModal.style.zIndex = '9999';
+    var ifRows = inputFieldErrors.map(function(e) {
+      return '<div class="flex items-start gap-2 p-2 bg-red-50 border border-red-200 rounded mb-1">'
+        + '<i class="fas fa-exclamation-circle text-red-500 mt-0.5 flex-shrink-0"></i>'
+        + '<div><span class="text-xs font-semibold text-red-700">' + e.label + '</span>'
+        + '<span class="text-xs text-red-500 ml-1">— ' + e.msg + '</span></div>'
+        + '</div>';
+    }).join('');
+    ifModal.innerHTML = '<div class="modal" style="max-width:420px">'
+      + '<div class="modal-header bg-red-600 text-white">'
+      + '<h3 class="font-bold"><i class="fas fa-keyboard mr-2"></i>필수 입력 레이블 미완료</h3>'
+      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-white/80 text-xl"><i class="fas fa-times"></i></button>'
+      + '</div>'
+      + '<div class="modal-body">'
+      + '<div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">'
+      + '<p class="text-sm text-red-700 font-semibold">⚠️ 필수 입력 레이블 항목을 모두 입력하고 적정 기준을 충족해야 합니다.</p>'
+      + '<p class="text-xs text-red-500 mt-1">아래 항목을 확인하고 올바른 측정값을 입력하세요.</p>'
+      + '</div>'
+      + '<div class="max-h-48 overflow-y-auto">' + ifRows + '</div>'
+      + '</div>'
+      + '<div class="modal-footer">'
+      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="btn btn-danger">'
+      + '<i class="fas fa-arrow-left mr-1"></i>입력값 확인하기</button>'
+      + '</div></div>';
+    document.body.appendChild(ifModal);
+    return;
+  }
+
   const problemRows = [...nokRows, ...unselectedRows];
 
   if (problemRows.length > 0) {

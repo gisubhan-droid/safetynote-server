@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-24 (세션 62 — FEAT-169 관리자/감독자 연계작업 사진 조회 확대 + media_type 버그 수정)
-> **GitHub 최신: `bfc3bbb`** — feat: [FEAT-169] 관리자/감독자 연계작업 사진 조회 확대 + media_type SELECT 추가
+> 최종 업데이트: 2026-07-24 (세션 62 — FEAT-169 500 에러 버그픽스: p.media_type 제거 + ORDER BY sub_task_number 추가)
+> **GitHub 최신: `31fe37e`** — fix: [FEAT-169] photos API 500 에러 수정 — p.media_type 제거 + ORDER BY sub_task_number 추가
+> **이전 커밋: `89abe5e`** — docs: [FEAT-169] PROJECT_HISTORY.md 헤더 갱신 + 세션 62 기록 추가
+> **이전 커밋: `bfc3bbb`** — feat: [FEAT-169] 관리자/감독자 연계작업 사진 조회 확대 + media_type SELECT 추가
 > **이전 커밋: `828cc14`** — docs: [FEAT-168] PROJECT_HISTORY.md 헤더 갱신 + 세션 61 기록 추가
 > **이전 커밋: `85d7bcc`** — feat: [FEAT-168] 사진탭 caption 기준 하위 그룹 소제목 헤더 강화
 > **이전 커밋: `252b3cf`** — feat: [FEAT-166] 작업 복사 버튼 전체 진행단계로 확대

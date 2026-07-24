@@ -43264,10 +43264,15 @@ async function copyTask(taskId) {
 var _safetySettingsActiveTab = 'wt-safety';
 
 // 탭 전환 함수 (RULE-003: onclick 속성에서 함수명만 호출)
-function _switchSafetySettingsTab(tab) {
+async function _switchSafetySettingsTab(tab) {
   _safetySettingsActiveTab = tab;
   var content = document.getElementById('page-content');
   if (!content) return;
+  // 체크리스트 탭 전환 시: _wtSafetyCache 최신화 후 렌더링
+  // → 작업유형 추가/삭제가 체크리스트 work_class 목록에 즉시 반영됨
+  if (tab === 'checklist-items') {
+    await _loadWtSafetySettings().catch(function(){});
+  }
   _renderSafetySettingsTabContent(content);
 }
 

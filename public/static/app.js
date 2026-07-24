@@ -43372,7 +43372,11 @@ function _renderClItemsPage(container) {
   html += '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-tasks text-indigo-500 mr-2"></i>체크리스트 항목 관리</h2>';
   html += '<p class="text-xs text-gray-500 mt-0.5">위험성평가 체크리스트의 필수/작업유형별 점검 항목을 추가·수정·삭제합니다.</p>';
   html += '</div>';
+  html += '<div class="flex items-center gap-2">';
+  html += '<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-1" onclick="_clItemsDownloadSample()"><i class="fas fa-file-excel text-green-600"></i> 양식 다운로드</button>';
+  html += '<button type="button" class="text-xs px-3 py-1.5 rounded border border-green-500 text-green-700 bg-green-50 hover:bg-green-100 flex items-center gap-1" onclick="_clItemsShowUploadModal()"><i class="fas fa-upload"></i> 엑셀 업로드</button>';
   html += '<button type="button" class="btn btn-primary text-sm" onclick="_clItemsOpenEdit(null)"><i class="fas fa-plus mr-1"></i>항목 추가</button>';
+  html += '</div>';
   html += '</div>';
   html += '<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">';
   html += '<i class="fas fa-info-circle mr-1"></i>';
@@ -43550,6 +43554,251 @@ async function _clItemsDelete(itemId, preview) {
   } catch(e) {
     toast('삭제 실패: ' + (e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message));
   }
+}
+
+// ─── 체크리스트 항목 엑셀 양식 다운로드 ────────────────────────────────────────
+function _clItemsDownloadSample() {
+  if (typeof XLSX === 'undefined') { toast('엑셀 라이브러리 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
+  var wb = XLSX.utils.book_new();
+  // 안내 시트
+  var guideData = [
+    ['체크리스트 항목 일괄 업로드 양식'],
+    [''],
+    ['※ 작성 규칙'],
+    ['1. 이 시트(안내)는 삭제하거나 수정하지 마세요.'],
+    ['2. [항목목록] 시트에 데이터를 입력하세요.'],
+    ['3. work_class: all / bucket / pole / rooftop / ladder / heavy / confined 중 하나'],
+    ['4. category: 건강상태, 공구상태, 보호구, 작업환경, TBM, 추락, 충돌, 전도, 감전, 중장비 등 자유 입력'],
+    ['5. question: 실제 점검 질문 내용 (필수)'],
+    ['6. note: 비고/설명 (선택)'],
+    ['7. sort_order: 정렬 순서 숫자 (선택, 기본 0)'],
+    ['8. is_active: 1=활성, 0=비활성 (기본 1)'],
+    [''],
+    ['work_class 코드표'],
+    ['코드', '명칭'],
+    ['all',      '필수(모든 작업)'],
+    ['bucket',   '바켓차량작업'],
+    ['pole',     '전주승주작업'],
+    ['rooftop',  '옥상옥탑작업'],
+    ['ladder',   '사다리사용작업'],
+    ['heavy',    '중장비사용작업'],
+    ['confined', '밀폐공간작업'],
+  ];
+  var guideWs = XLSX.utils.aoa_to_sheet(guideData);
+  guideWs['!cols'] = [{wch:60},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, guideWs, '안내');
+
+  // 항목목록 시트
+  var headers = ['work_class','category','question','note','sort_order','is_active'];
+  var sampleRows = [
+    ['all',     '건강상태', '(예시) 작업자 건강상태를 확인하였는가?',       '야간작업 이후 투입 여부 확인', 10, 1],
+    ['bucket',  '작업환경', '(예시) 아웃트리거 최대 전개 및 받침판을 설치하였는가?', '',                40, 1],
+    ['confined','보호구',   '(예시) 송기마스크 또는 공기호흡기를 착용하였는가?',     '방독면 사용 금지',   30, 1],
+  ];
+  var wsData = [headers].concat(sampleRows);
+  var ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{wch:12},{wch:14},{wch:60},{wch:30},{wch:12},{wch:12}];
+  // 헤더 행 굵게 표시 스타일 (SheetJS CE는 스타일 미지원, 서식 없이 내용만)
+  XLSX.utils.book_append_sheet(wb, ws, '항목목록');
+
+  XLSX.writeFile(wb, '체크리스트_항목_업로드양식.xlsx');
+  toast('샘플 양식 다운로드 완료');
+}
+
+// ─── 체크리스트 항목 엑셀 업로드 모달 ──────────────────────────────────────────
+function _clItemsShowUploadModal() {
+  var existing = document.getElementById('clItemsUploadModal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'clItemsUploadModal';
+  modal.innerHTML = ''
+    + '<div class="modal" style="max-width:600px;width:95%;max-height:90vh;overflow-y:auto">'
+    +   '<div class="modal-header">'
+    +     '<h3 class="modal-title"><i class="fas fa-file-excel text-green-500 mr-2"></i>체크리스트 항목 엑셀 업로드</h3>'
+    +     '<button class="modal-close" onclick="document.getElementById(\'clItemsUploadModal\').remove()"><i class="fas fa-times"></i></button>'
+    +   '</div>'
+    +   '<div class="modal-body space-y-4">'
+    +     '<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700 space-y-1">'
+    +       '<div><i class="fas fa-info-circle mr-1"></i><strong>업로드 방법</strong></div>'
+    +       '<div>1. <strong>양식 다운로드</strong> 버튼으로 엑셀 양식을 받아 <strong>[항목목록]</strong> 시트에 입력하세요.</div>'
+    +       '<div>2. 완성된 파일을 아래에 업로드하면 미리보기가 표시됩니다.</div>'
+    +       '<div>3. 내용 확인 후 <strong>일괄 저장</strong> 버튼을 누르세요.</div>'
+    +       '<div class="text-amber-600 mt-1"><i class="fas fa-exclamation-triangle mr-1"></i>기존 항목은 수정하지 않고 <strong>새 항목만 추가</strong>됩니다.</div>'
+    +     '</div>'
+    +     '<div class="flex gap-2">'
+    +       '<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-1" onclick="_clItemsDownloadSample()"><i class="fas fa-file-excel text-green-600"></i> 양식 다운로드</button>'
+    +     '</div>'
+    +     '<div>'
+    +       '<label class="block text-sm font-medium text-gray-700 mb-1">엑셀 파일 선택 (.xlsx / .xls)</label>'
+    +       '<input type="file" id="clItemsExcelFile" accept=".xlsx,.xls" class="block w-full text-sm text-gray-500 border border-gray-300 rounded-lg px-3 py-2 file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-green-50 file:text-green-700 hover:file:bg-green-100 cursor-pointer" onchange="_clItemsPreviewExcel(this)">'
+    +     '</div>'
+    +     '<div id="clItemsUploadPreview"></div>'
+    +   '</div>'
+    +   '<div class="modal-footer">'
+    +     '<button type="button" class="btn btn-secondary" onclick="document.getElementById(\'clItemsUploadModal\').remove()">취소</button>'
+    +     '<button type="button" id="clItemsUploadSaveBtn" class="btn btn-primary" onclick="_clItemsUploadExcel()" disabled style="opacity:0.5;cursor:not-allowed"><i class="fas fa-upload mr-1"></i>일괄 저장</button>'
+    +   '</div>'
+    + '</div>';
+
+  document.body.appendChild(modal);
+}
+
+// ─── 엑셀 파일 미리보기 ─────────────────────────────────────────────────────────
+function _clItemsPreviewExcel(input) {
+  var previewDiv = document.getElementById('clItemsUploadPreview');
+  var saveBtn = document.getElementById('clItemsUploadSaveBtn');
+  if (!input.files || !input.files[0]) {
+    previewDiv.innerHTML = '';
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.5'; saveBtn.style.cursor = 'not-allowed'; }
+    return;
+  }
+  if (typeof XLSX === 'undefined') { toast('엑셀 라이브러리가 로드되지 않았습니다. 새로고침 후 다시 시도하세요.'); return; }
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data = new Uint8Array(e.target.result);
+      var workbook = XLSX.read(data, { type: 'array' });
+
+      // '항목목록' 시트 우선, 없으면 첫 번째 시트
+      var sheetName = workbook.SheetNames.includes('항목목록') ? '항목목록' : workbook.SheetNames[0];
+      var ws = workbook.Sheets[sheetName];
+      var rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      if (!rows || rows.length === 0) {
+        previewDiv.innerHTML = '<div class="text-red-500 text-xs p-3 bg-red-50 rounded">데이터가 없습니다. [항목목록] 시트에 내용을 입력해주세요.</div>';
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.5'; saveBtn.style.cursor = 'not-allowed'; }
+        return;
+      }
+
+      // 유효한 항목 필터링 (work_class + question 필수)
+      var VALID_WC = ['all','bucket','pole','rooftop','ladder','heavy','confined'];
+      var validRows = [];
+      var errorRows = [];
+      rows.forEach(function(r, idx) {
+        var wc = (r['work_class'] || '').toString().trim();
+        var q  = (r['question']   || '').toString().trim();
+        // 예시 행 제외
+        if (q.indexOf('(예시)') === 0) return;
+        if (!wc || !q) {
+          errorRows.push({ row: idx + 2, reason: 'work_class 또는 question 누락', data: r });
+          return;
+        }
+        if (!VALID_WC.includes(wc)) {
+          errorRows.push({ row: idx + 2, reason: 'work_class 값 오류: "' + wc + '"', data: r });
+          return;
+        }
+        validRows.push({
+          work_class: wc,
+          category:   (r['category']   || '').toString().trim() || '기타',
+          question:   q,
+          note:       (r['note']       || '').toString().trim() || null,
+          sort_order: parseInt(r['sort_order'] || '0', 10) || 0,
+          is_active:  parseInt(r['is_active']  || '1', 10) === 0 ? 0 : 1
+        });
+      });
+
+      // 미리보기 테이블
+      var WC_LABEL = { all:'필수(공통)', bucket:'바켓차량', pole:'전주승주', rooftop:'옥상옥탑', ladder:'사다리', heavy:'중장비', confined:'밀폐공간' };
+      var preHtml = '<div class="space-y-3">';
+      preHtml += '<div class="flex items-center gap-3 text-sm">';
+      preHtml += '<span class="text-green-700 font-medium"><i class="fas fa-check-circle mr-1"></i>추가 가능: <strong>' + validRows.length + '개</strong></span>';
+      if (errorRows.length > 0) preHtml += '<span class="text-red-500"><i class="fas fa-times-circle mr-1"></i>오류: <strong>' + errorRows.length + '개</strong></span>';
+      preHtml += '</div>';
+
+      if (validRows.length > 0) {
+        preHtml += '<div class="border rounded-lg overflow-hidden">';
+        preHtml += '<div class="bg-green-50 px-3 py-2 text-xs font-medium text-green-800 border-b">추가될 항목 미리보기</div>';
+        preHtml += '<div class="overflow-x-auto max-h-52 overflow-y-auto"><table class="w-full text-xs">';
+        preHtml += '<thead class="bg-gray-50 sticky top-0"><tr>';
+        preHtml += '<th class="px-2 py-1.5 text-left">#</th><th class="px-2 py-1.5 text-left">분류</th><th class="px-2 py-1.5 text-left">카테고리</th><th class="px-2 py-1.5 text-left">항목 내용</th><th class="px-2 py-1.5 text-center">순서</th>';
+        preHtml += '</tr></thead><tbody>';
+        validRows.forEach(function(r, i) {
+          preHtml += '<tr class="border-t">';
+          preHtml += '<td class="px-2 py-1 text-gray-400">' + (i+1) + '</td>';
+          preHtml += '<td class="px-2 py-1"><span class="px-1.5 py-0.5 rounded text-xs ' + (r.work_class==='all'?'bg-blue-100 text-blue-700':'bg-indigo-100 text-indigo-700') + '">' + (WC_LABEL[r.work_class]||r.work_class) + '</span></td>';
+          preHtml += '<td class="px-2 py-1 text-gray-600">' + (r.category||'') + '</td>';
+          preHtml += '<td class="px-2 py-1 text-gray-700 max-w-xs truncate" title="' + (r.question||'').replace(/"/g,'&quot;') + '">' + (r.question||'').replace(/</g,'&lt;').substring(0,50) + (r.question.length>50?'…':'') + '</td>';
+          preHtml += '<td class="px-2 py-1 text-center text-gray-400">' + r.sort_order + '</td>';
+          preHtml += '</tr>';
+        });
+        preHtml += '</tbody></table></div></div>';
+      }
+
+      if (errorRows.length > 0) {
+        preHtml += '<div class="border border-red-200 rounded-lg overflow-hidden">';
+        preHtml += '<div class="bg-red-50 px-3 py-2 text-xs font-medium text-red-700 border-b">오류 행 (저장 제외)</div>';
+        preHtml += '<div class="p-2 space-y-1">';
+        errorRows.forEach(function(er) {
+          preHtml += '<div class="text-xs text-red-600"><strong>' + er.row + '행:</strong> ' + er.reason + '</div>';
+        });
+        preHtml += '</div></div>';
+      }
+
+      preHtml += '</div>';
+      previewDiv.innerHTML = preHtml;
+
+      // 저장 가능 여부 설정
+      window._clItemsUploadRows = validRows;
+      if (saveBtn && validRows.length > 0) {
+        saveBtn.disabled = false;
+        saveBtn.style.opacity = '1';
+        saveBtn.style.cursor = 'pointer';
+        saveBtn.innerHTML = '<i class="fas fa-upload mr-1"></i>' + validRows.length + '개 일괄 저장';
+      } else if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.style.opacity = '0.5';
+        saveBtn.style.cursor = 'not-allowed';
+      }
+    } catch(err) {
+      previewDiv.innerHTML = '<div class="text-red-500 text-xs p-3 bg-red-50 rounded">파일 파싱 오류: ' + err.message + '</div>';
+    }
+  };
+  reader.readAsArrayBuffer(input.files[0]);
+}
+
+// ─── 엑셀 업로드 일괄 저장 ──────────────────────────────────────────────────────
+async function _clItemsUploadExcel() {
+  var rows = window._clItemsUploadRows;
+  if (!rows || rows.length === 0) { toast('저장할 항목이 없습니다.'); return; }
+
+  var saveBtn = document.getElementById('clItemsUploadSaveBtn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>저장 중...'; }
+
+  var successCnt = 0;
+  var failCnt = 0;
+  var failDetails = [];
+
+  for (var _ui = 0; _ui < rows.length; _ui++) {
+    try {
+      await API.post('/checklist/items', rows[_ui]);
+      successCnt++;
+    } catch(e) {
+      failCnt++;
+      failDetails.push((_ui+1) + '번: ' + rows[_ui].question.substring(0,20) + '...');
+    }
+  }
+
+  // 결과 토스트
+  if (failCnt === 0) {
+    toast(successCnt + '개 항목이 모두 추가되었습니다.');
+  } else {
+    toast(successCnt + '개 추가 완료, ' + failCnt + '개 실패');
+  }
+
+  // 모달 닫기 + 목록 갱신
+  var modal = document.getElementById('clItemsUploadModal');
+  if (modal) modal.remove();
+  window._clItemsUploadRows = [];
+
+  var container = document.getElementById('page-content');
+  if (container) {
+    await _loadClItems();
+    _renderClItemsPage(container);
+  }
+  if (window._checklistTaskId) { setTimeout(function() { loadChecklistItems(window._checklistTaskId); }, 300); }
 }
 
 // ============================================================================

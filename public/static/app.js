@@ -282,8 +282,7 @@ const MENU_DEFINITIONS = [
   { id:'risk-periodic',    label:'정기 위험성평가',   icon:'fas fa-calendar-check',    group:'위험성평가' },
   { id:'risk-adhoc',       label:'수시 위험성평가',   icon:'fas fa-bolt',              group:'위험성평가' },
   { id:'risk-items',       label:'분류별 항목 관리',  icon:'fas fa-list-check',        group:'위험성평가' },
-  { id:'wt-safety',        label:'작업유형 안전내용 관리', icon:'fas fa-hard-hat',      group:'위험성평가' },
-  { id:'checklist-items',   label:'체크리스트 항목 관리',   icon:'fas fa-tasks',          group:'위험성평가' },
+  { id:'safety-settings',  label:'안전설정 관리',      icon:'fas fa-shield-check',      group:'위험성평가' },
   { id:'hazards',          label:'위험(아차사고)신고',    icon:'fas fa-exclamation-triangle',group:'안전' },
   { id:'work-stops',       label:'작업중지현황',         icon:'fas fa-hand-paper',           group:'안전' },
   { id:'stats-task',          label:'작업통계',            icon:'fas fa-tasks',              group:'안전현황' },
@@ -2272,11 +2271,10 @@ function renderApp() {
         { id:'inspections', icon:'fas fa-search',               label:'현장점검' },
         { id:'hazards',     icon:'fas fa-exclamation-triangle', label:'위험신고' },
         { id:'risk', icon:'fas fa-shield-alt', label:'위험성평가', children: [
-          { id:'risk-periodic', icon:'fas fa-calendar-check', label:'정기 위험성평가' },
-          { id:'risk-adhoc',    icon:'fas fa-bolt',           label:'수시 위험성평가' },
-          { id:'risk-items',    icon:'fas fa-list-check',     label:'분류별 항목 관리' },
-          { id:'wt-safety',          icon:'fas fa-hard-hat',       label:'작업유형 안전내용 관리' },
-          { id:'checklist-items',    icon:'fas fa-tasks',          label:'체크리스트 항목 관리' },
+          { id:'risk-periodic',   icon:'fas fa-calendar-check', label:'정기 위험성평가' },
+          { id:'risk-adhoc',      icon:'fas fa-bolt',           label:'수시 위험성평가' },
+          { id:'risk-items',      icon:'fas fa-list-check',     label:'분류별 항목 관리' },
+          { id:'safety-settings', icon:'fas fa-shield-check',   label:'안전설정 관리' },
         ]},
       ]
     },
@@ -3037,6 +3035,7 @@ function getPageTitle(page) {
     'risk': '위험성평가', 'risk-periodic': '정기 위험성평가', 'risk-adhoc': '수시 위험성평가', 'risk-items': '분류별 항목 관리',
     'wt-safety': '작업유형 안전내용 관리',
     'checklist-items': '체크리스트 항목 관리',
+    'safety-settings': '안전설정 관리',
     'periodic-risk': '위험성평가', 'checklist-risk': '작업 위험성평가(체크리스트)',
     'teams': '현장팀관리',
     'sys-user-mgmt': '계정관리',
@@ -3172,8 +3171,9 @@ function navigateTo(page) {
     case 'risk-periodic': renderRiskPeriodicPage(content); break;
     case 'risk-adhoc': renderRiskAdhocPage(content); break;
     case 'risk-items': renderRiskItemsPage(content); break;
-    case 'wt-safety':        renderWtSafetyPage(content);        break;
-    case 'checklist-items':  renderChecklistItemsPage(content);  break;
+    case 'wt-safety':        _safetySettingsActiveTab = 'wt-safety';       navigateTo('safety-settings'); return;
+    case 'checklist-items':  _safetySettingsActiveTab = 'checklist-items'; navigateTo('safety-settings'); return;
+    case 'safety-settings':  renderSafetySettingsPage(content);  break;
     case 'work-stops': renderWorkStopsPage(content); break;
     case 'periodic-risk': renderRiskPeriodicPage(content); break;
     case 'checklist-risk': renderChecklistRiskPage(content); break;
@@ -43253,6 +43253,69 @@ async function copyTask(taskId) {
     } catch(_) {}
   }
   toast('작업 데이터를 복사했습니다. 내용을 확인 후 등록하세요.', 'info');
+}
+
+// ============================================================================
+// [FEAT-SAFETY-SETTINGS-TAB] 안전설정 통합 탭 페이지 (세션 73)
+// "작업유형 안전내용 관리" + "체크리스트 항목 관리" 두 메뉴를 탭으로 통합
+// ============================================================================
+
+// 활성 탭 상태 전역 변수 ('wt-safety' | 'checklist-items')
+var _safetySettingsActiveTab = 'wt-safety';
+
+// 탭 전환 함수 (RULE-003: onclick 속성에서 함수명만 호출)
+function _switchSafetySettingsTab(tab) {
+  _safetySettingsActiveTab = tab;
+  var content = document.getElementById('page-content');
+  if (!content) return;
+  _renderSafetySettingsTabContent(content);
+}
+
+// 탭 UI + 내용 렌더링
+async function renderSafetySettingsPage(container) {
+  _renderSafetySettingsTabContent(container);
+}
+
+function _renderSafetySettingsTabContent(container) {
+  // ── 탭 헤더 HTML ──────────────────────────────────────────────────────────
+  var tabWt  = _safetySettingsActiveTab === 'wt-safety';
+  var tabCl  = _safetySettingsActiveTab === 'checklist-items';
+
+  var tabHeaderHtml = '<div class="border-b border-gray-200 mb-0 bg-white sticky top-0 z-10">'
+    + '<nav class="flex px-4 pt-3 gap-1" aria-label="안전설정 탭">'
+    + '<button type="button"'
+    +   ' class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors'
+    +   (tabWt
+        ? ' border-purple-600 text-purple-700 bg-purple-50'
+        : ' border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300')
+    +   '" onclick="_switchSafetySettingsTab(\'wt-safety\')">'
+    +   '<i class="fas fa-hard-hat mr-1.5"></i>작업유형 안전내용 관리'
+    + '</button>'
+    + '<button type="button"'
+    +   ' class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors'
+    +   (tabCl
+        ? ' border-indigo-600 text-indigo-700 bg-indigo-50'
+        : ' border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300')
+    +   '" onclick="_switchSafetySettingsTab(\'checklist-items\')">'
+    +   '<i class="fas fa-tasks mr-1.5"></i>체크리스트 항목 관리'
+    + '</button>'
+    + '</nav>'
+    + '</div>';
+
+  // ── 탭 내용 컨테이너 ───────────────────────────────────────────────────────
+  var innerDivId = 'safety-settings-tab-body';
+  container.innerHTML = tabHeaderHtml
+    + '<div id="' + innerDivId + '" class="safety-settings-tab-body"></div>';
+
+  var body = document.getElementById(innerDivId);
+  if (!body) return;
+
+  // ── 선택된 탭 렌더링 ───────────────────────────────────────────────────────
+  if (tabWt) {
+    renderWtSafetyPage(body);
+  } else {
+    renderChecklistItemsPage(body);
+  }
 }
 
 // ============================================================================

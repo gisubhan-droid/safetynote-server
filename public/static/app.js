@@ -11973,6 +11973,8 @@ async function _loadWtSafetySettings() {
     _wtSafetyCache = list;
     // 캐시 기반으로 WORK_TYPE_SAFETY 객체 업데이트 (TBM 폼 칩 자동기입 연동)
     _syncWtSafetyConstFromCache(list.filter(function(w) { return w.is_active; }));
+    // 캐시 기반으로 체크리스트 항목 관리 work_class 목록 동기화
+    _syncClWorkClassOptions();
     console.log('[_loadWtSafetySettings] ✅ ' + list.length + '개 로드');
   } catch(e) {
     console.warn('[_loadWtSafetySettings] 실패 (기본값 유지):', e.message);
@@ -27186,7 +27188,10 @@ async function showChecklistAssessment(taskId, taskTitle, taskWorkClass) {
 
   // ── 조건부 항목 체크박스 목록 — DB(_wtSafetyCache) 기반 동적 생성 ──────────
   // type_key → work_class 매핑 (DB type_key를 체크리스트 work_class로 변환)
-  var _WT_TYPE_KEY_TO_CLASS = {
+  // ─── type_key ↔ work_class 매핑: DB 캐시 기반 동적 생성 ───────────────────
+  // 하드코딩 제거 — _wtSafetyCache.work_class 필드를 직접 사용
+  // 폴백: 기존 6개 매핑 (캐시 미로드 시)
+  var _WT_TYPE_KEY_TO_CLASS_FALLBACK = {
     '바켓차량작업':   'bucket',
     '전주승주':       'pole',
     '옥상옥탑작업':   'rooftop',
@@ -27194,6 +27199,16 @@ async function showChecklistAssessment(taskId, taskTitle, taskWorkClass) {
     '중장비사용':     'heavy',
     '밀폐공간작업':   'confined'
   };
+  var _WT_TYPE_KEY_TO_CLASS = {};
+  if (_wtSafetyCache && _wtSafetyCache.length > 0) {
+    _wtSafetyCache.forEach(function(wt) {
+      if (wt.work_class) _WT_TYPE_KEY_TO_CLASS[wt.type_key] = wt.work_class;
+    });
+  }
+  // 폴백 값 보완 (캐시에 work_class 없는 항목 방어)
+  Object.keys(_WT_TYPE_KEY_TO_CLASS_FALLBACK).forEach(function(tk) {
+    if (!_WT_TYPE_KEY_TO_CLASS[tk]) _WT_TYPE_KEY_TO_CLASS[tk] = _WT_TYPE_KEY_TO_CLASS_FALLBACK[tk];
+  });
   // work_class → 아이콘/색상 기본값 (DB icon이 없을 때 폴백)
   var _WT_CLASS_STYLE = {
     bucket:   { icon:'fas fa-truck-monster', color:'text-orange-600' },
@@ -27607,10 +27622,21 @@ async function loadChecklistItems(taskId) {
 
     // ── 작업유형별 안전내용 패널 (안전교육/TBM항목/주의사항/필수사진) ──────────
     if (conditionals.length > 0) {
-      var _tkMap = { '바켓차량작업':'bucket','전주승주':'pole','옥상옥탑작업':'rooftop','사다리사용작업':'ladder','중장비사용':'heavy','밀폐공간작업':'confined' };
-      var _ctMap = { 'bucket':'바켓차량작업','pole':'전주승주','rooftop':'옥상옥탑작업','ladder':'사다리사용작업','heavy':'중장비사용','confined':'밀폐공간작업' };
+      // ─── type_key ↔ work_class 역매핑: DB 캐시 기반 동적 생성 ────────────
+      // work_class → type_key (안전내용 패널에서 WORK_TYPE_SAFETY 조회용)
+      var _tkMap = {};   // type_key → work_class
+      var _ctMap = {};   // work_class → type_key
+      var _tkFallback = { '바켓차량작업':'bucket','전주승주':'pole','옥상옥탑작업':'rooftop','사다리사용작업':'ladder','중장비사용':'heavy','밀폐공간작업':'confined' };
+      var _ctFallback = { 'bucket':'바켓차량작업','pole':'전주승주','rooftop':'옥상옥탑작업','ladder':'사다리사용작업','heavy':'중장비사용','confined':'밀폐공간작업' };
       if (_wtSafetyCache && _wtSafetyCache.length > 0) {
-        _wtSafetyCache.forEach(function(wt) { _ctMap[_tkMap[wt.type_key] || wt.type_key] = wt.type_key; });
+        _wtSafetyCache.forEach(function(wt) {
+          var wc = wt.work_class || _tkFallback[wt.type_key] || wt.type_key;
+          _tkMap[wt.type_key] = wc;
+          _ctMap[wc] = wt.type_key;
+        });
+      } else {
+        _tkMap = Object.assign({}, _tkFallback);
+        _ctMap = Object.assign({}, _ctFallback);
       }
       var spHtml = '';
       for (var _si = 0; _si < conditionals.length; _si++) {
@@ -43245,12 +43271,36 @@ var _CL_WORK_CLASS_OPTIONS = [
   { value:'confined', label:'밀폐공간작업' }
 ];
 
+// _wtSafetyCache 로드 후 _CL_WORK_CLASS_OPTIONS 동적 동기화
+// work_type_safety_settings의 work_class를 체크리스트 항목 관리 목록에 반영
+function _syncClWorkClassOptions() {
+  if (!_wtSafetyCache || _wtSafetyCache.length === 0) return;
+  // 기본 'all' 항목은 항상 첫 번째 유지
+  var newOpts = [{ value:'all', label:'필수 (모든 작업)' }];
+  var seen = { all: true };
+  _wtSafetyCache.forEach(function(wt) {
+    if (!wt.is_active) return;                    // 비활성 제외
+    if (wt.type_key === 'TBM회의') return;         // TBM회의 제외
+    var wc = wt.work_class || wt.type_key;        // work_class 없으면 type_key 사용
+    if (seen[wc]) return;
+    seen[wc] = true;
+    newOpts.push({ value: wc, label: wt.label || wt.type_key });
+  });
+  // 기존 옵션 중 캐시에 없는 항목도 보존 (DB 항목이 남아있을 수 있으므로)
+  _CL_WORK_CLASS_OPTIONS.forEach(function(o) {
+    if (!seen[o.value]) { seen[o.value] = true; newOpts.push(o); }
+  });
+  _CL_WORK_CLASS_OPTIONS = newOpts;
+}
+
 // 현재 조회 필터 상태 (null = 전체)
 var _clItemsFilterClass = null;
 var _clItemsCache = [];
 
 async function renderChecklistItemsPage(container) {
   container.innerHTML = '<div class="p-4 text-center text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>로딩 중...</div>';
+  // work_type_safety_settings 캐시 기반으로 work_class 목록 동기화
+  _syncClWorkClassOptions();
   await _loadClItems();
   _renderClItemsPage(container);
 }
@@ -43560,49 +43610,61 @@ async function _clItemsDelete(itemId, preview) {
 function _clItemsDownloadSample() {
   if (typeof XLSX === 'undefined') { toast('엑셀 라이브러리 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
   var wb = XLSX.utils.book_new();
-  // 안내 시트
+
+  // ── work_class 코드표: _CL_WORK_CLASS_OPTIONS 기반 동적 생성 ──────────────
+  var wcTableRows = [['코드', '명칭']];
+  _CL_WORK_CLASS_OPTIONS.forEach(function(o) {
+    wcTableRows.push([o.value, o.label]);
+  });
+  // _wtSafetyCache에 있지만 _CL_WORK_CLASS_OPTIONS에 없는 항목 추가
+  if (_wtSafetyCache && _wtSafetyCache.length > 0) {
+    var existVals = _CL_WORK_CLASS_OPTIONS.map(function(o){ return o.value; });
+    _wtSafetyCache.forEach(function(wt) {
+      if (!wt.is_active || wt.type_key === 'TBM회의') return;
+      var wc = wt.work_class || wt.type_key;
+      if (!existVals.includes(wc)) wcTableRows.push([wc, wt.label || wt.type_key]);
+    });
+  }
+
+  var wcClassList = wcTableRows.slice(1).map(function(r){ return r[0]; }).filter(function(v){ return v !== 'all'; });
+  var wcDesc = 'all / ' + wcClassList.join(' / ');
+
   var guideData = [
     ['체크리스트 항목 일괄 업로드 양식'],
     [''],
     ['※ 작성 규칙'],
     ['1. 이 시트(안내)는 삭제하거나 수정하지 마세요.'],
     ['2. [항목목록] 시트에 데이터를 입력하세요.'],
-    ['3. work_class: all / bucket / pole / rooftop / ladder / heavy / confined 중 하나'],
+    ['3. work_class: ' + wcDesc + ' 중 하나'],
     ['4. category: 건강상태, 공구상태, 보호구, 작업환경, TBM, 추락, 충돌, 전도, 감전, 중장비 등 자유 입력'],
     ['5. question: 실제 점검 질문 내용 (필수)'],
     ['6. note: 비고/설명 (선택)'],
     ['7. sort_order: 정렬 순서 숫자 (선택, 기본 0)'],
     ['8. is_active: 1=활성, 0=비활성 (기본 1)'],
     [''],
-    ['work_class 코드표'],
-    ['코드', '명칭'],
-    ['all',      '필수(모든 작업)'],
-    ['bucket',   '바켓차량작업'],
-    ['pole',     '전주승주작업'],
-    ['rooftop',  '옥상옥탑작업'],
-    ['ladder',   '사다리사용작업'],
-    ['heavy',    '중장비사용작업'],
-    ['confined', '밀폐공간작업'],
-  ];
+    ['work_class 코드표 (작업유형별 안전내용 관리에서 추가/수정 가능)'],
+  ].concat(wcTableRows);
+
   var guideWs = XLSX.utils.aoa_to_sheet(guideData);
   guideWs['!cols'] = [{wch:60},{wch:20}];
   XLSX.utils.book_append_sheet(wb, guideWs, '안내');
 
   // 항목목록 시트
   var headers = ['work_class','category','question','note','sort_order','is_active'];
+  var firstWc = wcClassList[0] || 'bucket';
+  var lastWc  = wcClassList[wcClassList.length-1] || 'confined';
   var sampleRows = [
-    ['all',     '건강상태', '(예시) 작업자 건강상태를 확인하였는가?',       '야간작업 이후 투입 여부 확인', 10, 1],
-    ['bucket',  '작업환경', '(예시) 아웃트리거 최대 전개 및 받침판을 설치하였는가?', '',                40, 1],
-    ['confined','보호구',   '(예시) 송기마스크 또는 공기호흡기를 착용하였는가?',     '방독면 사용 금지',   30, 1],
+    ['all',    '건강상태', '(예시) 작업자 건강상태를 확인하였는가?',                   '야간작업 이후 투입 여부 확인', 10, 1],
+    [firstWc,  '작업환경', '(예시) 아웃트리거 최대 전개 및 받침판을 설치하였는가?',    '',                             40, 1],
+    [lastWc,   '보호구',   '(예시) 송기마스크 또는 공기호흡기를 착용하였는가?',         '방독면 사용 금지',              30, 1],
   ];
   var wsData = [headers].concat(sampleRows);
   var ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols'] = [{wch:12},{wch:14},{wch:60},{wch:30},{wch:12},{wch:12}];
-  // 헤더 행 굵게 표시 스타일 (SheetJS CE는 스타일 미지원, 서식 없이 내용만)
+  ws['!cols'] = [{wch:14},{wch:14},{wch:60},{wch:30},{wch:12},{wch:12}];
   XLSX.utils.book_append_sheet(wb, ws, '항목목록');
 
   XLSX.writeFile(wb, '체크리스트_항목_업로드양식.xlsx');
-  toast('샘플 양식 다운로드 완료');
+  toast('샘플 양식 다운로드 완료 (' + (wcTableRows.length - 1) + '개 work_class)');
 }
 
 // ─── 체크리스트 항목 엑셀 업로드 모달 ──────────────────────────────────────────
@@ -43674,7 +43736,15 @@ function _clItemsPreviewExcel(input) {
       }
 
       // 유효한 항목 필터링 (work_class + question 필수)
-      var VALID_WC = ['all','bucket','pole','rooftop','ladder','heavy','confined'];
+      // _CL_WORK_CLASS_OPTIONS 기반 동적 허용 목록
+      var VALID_WC = _CL_WORK_CLASS_OPTIONS.map(function(o){ return o.value; });
+      // _wtSafetyCache에 추가된 work_class도 허용
+      if (_wtSafetyCache && _wtSafetyCache.length > 0) {
+        _wtSafetyCache.forEach(function(wt) {
+          var wc = wt.work_class || wt.type_key;
+          if (wc && !VALID_WC.includes(wc)) VALID_WC.push(wc);
+        });
+      }
       var validRows = [];
       var errorRows = [];
       rows.forEach(function(r, idx) {
@@ -43842,7 +43912,10 @@ function _buildWtSafetyListHtml(list) {
       +     '<i class="fas ' + (wt.icon || 'fa-hard-hat') + ' text-purple-500 text-sm"></i>'
       +     '<span class="font-semibold text-gray-800 text-sm">' + wt.label + '</span>'
       +   '</div>'
-      +   '<div class="text-xs text-gray-400 mt-0.5">키: ' + wt.type_key + '</div>'
+      +   '<div class="text-xs text-gray-400 mt-0.5 flex items-center gap-2">'
+      +     '<span>키: ' + wt.type_key + '</span>'
+      +     (wt.work_class ? '<span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-mono">' + wt.work_class + '</span>' : '<span class="text-red-400"><i class="fas fa-exclamation-triangle mr-0.5"></i>work_class 미설정</span>')
+      +   '</div>'
       + '</td>'
       + '<td class="px-4 py-3 text-center">' + activeBadge + '</td>'
       + '<td class="px-4 py-3 text-center text-sm text-gray-600">'
@@ -43884,7 +43957,8 @@ function _buildWtSafetyListHtml(list) {
     + '</div>'
     + '<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-xs text-blue-700">'
     +   '<i class="fas fa-info-circle mr-1"></i>'
-    +   '여기서 수정한 내용은 <strong>TBM 작성 폼의 작업유형 칩</strong>과 <strong>체크리스트 위험성평가의 안전내용 패널</strong>과 <strong>체크리스트 사진 섹션의 필수 사진 항목</strong>에 자동 반영됩니다.'
+    +   '여기서 수정한 내용은 <strong>TBM 작성 폼의 작업유형 칩</strong>과 <strong>체크리스트 위험성평가의 안전내용 패널</strong>과 <strong>체크리스트 사진 섹션의 필수 사진 항목</strong>에 자동 반영됩니다. '
+    +   '<strong>work_class 코드</strong>를 <strong>체크리스트 항목 관리의 work_class</strong>와 동일하게 설정해야 체크박스 항목이 연동됩니다.'
     + '</div>'
     + '<div class="bg-white rounded-xl shadow-sm overflow-hidden">'
     +   '<div class="overflow-x-auto">'
@@ -43892,7 +43966,7 @@ function _buildWtSafetyListHtml(list) {
     +       '<thead class="bg-gray-50 border-b">'
     +         '<tr>'
     +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500 w-10">#</th>'
-    +           '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500">작업유형명</th>'
+    +           '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500">작업유형명 / work_class 코드</th>'
     +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500">상태</th>'
     +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500">안전교육</th>'
     +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500">TBM항목</th>'
@@ -43945,7 +44019,7 @@ function _showWtSafetyEditModal(wtEncoded) {
   var isNew = false;
   if (!wtEncoded || wtEncoded === 'null') {
     isNew = true;
-    wt = { type_key:'', label:'', icon:'fa-hard-hat', is_active:true, sort_order:0, safety_items:[], tbm_items:[], precaution_items:[], photo_labels:[] };
+    wt = { type_key:'', work_class:'', label:'', icon:'fa-hard-hat', is_active:true, sort_order:0, safety_items:[], tbm_items:[], precaution_items:[], photo_labels:[] };
   } else {
     try { wt = JSON.parse(decodeURIComponent(wtEncoded)); } catch(e) { wt = {}; }
   }
@@ -43978,16 +44052,21 @@ function _showWtSafetyEditModal(wtEncoded) {
     // 기본 정보
     + '<div class="grid grid-cols-2 gap-3">'
     +   '<div class="form-group">'
-    +     '<label class="form-label text-xs font-semibold">유형 키 (영문/한글 고유값) *</label>'
-    +     '<input type="text" id="wtEdit_typeKey" class="form-control text-sm" value="' + (wt.type_key||'').replace(/"/g,'&quot;') + '" ' + (!isNew ? 'readonly style="background:#f3f4f6"' : '') + ' placeholder="예: 바켓차량작업">'
-    +     (!isNew ? '<p class="text-xs text-gray-400 mt-1">기존 유형 키는 변경 불가</p>' : '')
+    +     '<label class="form-label text-xs font-semibold">유형 키 (한글 고유값) *</label>'
+    +     '<input type="text" id="wtEdit_typeKey" class="form-control text-sm" value="' + (wt.type_key||'').replace(/"/g,'&quot;') + '" ' + (!isNew ? 'readonly style="background:#f3f4f6"' : '') + ' placeholder="예: 고소작업대">'
+    +     (!isNew ? '<p class="text-xs text-gray-400 mt-1">기존 유형 키는 변경 불가</p>' : '<p class="text-xs text-gray-400 mt-1">체크리스트/TBM에 표시될 작업유형 이름</p>')
     +   '</div>'
     +   '<div class="form-group">'
-    +     '<label class="form-label text-xs font-semibold">표시명 *</label>'
-    +     '<input type="text" id="wtEdit_label" class="form-control text-sm" value="' + (wt.label||'').replace(/"/g,'&quot;') + '" placeholder="예: 바켓차량작업">'
+    +     '<label class="form-label text-xs font-semibold">work_class 코드 (영문) *</label>'
+    +     '<input type="text" id="wtEdit_workClass" class="form-control text-sm" value="' + (wt.work_class||'').replace(/"/g,'&quot;') + '" ' + (!isNew ? 'readonly style="background:#f3f4f6"' : '') + ' placeholder="예: highrise" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9_]/g,\'\')">' 
+    +     (!isNew ? '<p class="text-xs text-gray-400 mt-1">변경 불가 — 체크리스트 항목과 연결된 키</p>' : '<p class="text-xs text-blue-500 mt-1"><i class="fas fa-link mr-1"></i>체크리스트 항목의 work_class와 일치해야 연동됩니다</p>')
     +   '</div>'
     + '</div>'
     + '<div class="grid grid-cols-2 gap-3">'
+    +   '<div class="form-group">'
+    +     '<label class="form-label text-xs font-semibold">표시명 *</label>'
+    +     '<input type="text" id="wtEdit_label" class="form-control text-sm" value="' + (wt.label||'').replace(/"/g,'&quot;') + '" placeholder="예: 고소작업대">'
+    +   '</div>'
     +   '<div class="form-group">'
     +     '<label class="form-label text-xs font-semibold">아이콘 (FontAwesome 클래스)</label>'
     +     '<div class="flex items-center gap-2">'
@@ -44085,23 +44164,26 @@ function _wtCollectItems(fieldId) {
 // ─── 저장 (POST 신규 / PUT 수정) ─────────────────────────────────────────────
 async function _saveWtSafetyItem(encodedOriginalKey) {
   var typeKey = (document.getElementById('wtEdit_typeKey') || {}).value;
+  var workClass = (document.getElementById('wtEdit_workClass') || {}).value;
   var label = (document.getElementById('wtEdit_label') || {}).value;
   var icon = (document.getElementById('wtEdit_icon') || {}).value || 'fa-hard-hat';
   var isActive = !!(document.getElementById('wtEdit_isActive') || {}).checked;
   var sortOrder = parseInt((document.getElementById('wtEdit_sortOrder') || {}).value) || 0;
 
   typeKey = (typeKey || '').trim();
+  workClass = (workClass || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
   label = (label || '').trim();
 
-  if (!typeKey) { toast('유형 키를 입력하세요.', 'error'); return; }
-  if (!label)   { toast('표시명을 입력하세요.', 'error'); return; }
+  if (!typeKey)    { toast('유형 키를 입력하세요.', 'error'); return; }
+  if (!workClass)  { toast('work_class 코드를 입력하세요. (영문 소문자/숫자/언더바)', 'error'); return; }
+  if (!label)      { toast('표시명을 입력하세요.', 'error'); return; }
 
   var safetyItems = _wtCollectItems('wtEdit_safety');
   var tbmItems = _wtCollectItems('wtEdit_tbm');
   var precautionItems = _wtCollectItems('wtEdit_prec');
   var photoLabels = _wtCollectItems('wtEdit_photo');
 
-  var payload = { type_key: typeKey, label: label, icon: icon.trim(), is_active: isActive, sort_order: sortOrder,
+  var payload = { type_key: typeKey, work_class: workClass, label: label, icon: icon.trim(), is_active: isActive, sort_order: sortOrder,
     safety_items: safetyItems, tbm_items: tbmItems, precaution_items: precautionItems, photo_labels: photoLabels };
 
   try {

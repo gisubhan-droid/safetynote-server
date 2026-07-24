@@ -2936,6 +2936,29 @@ function patchSchema() {
     console.warn('[patchSchema v0.166] 밀폐공간 시드 실패 (무시):', e.message)
   }
 
+  // ─── patchSchema v0.167: work_type_safety_settings에 밀폐공간작업 시드 추가 ──
+  // v0.164에서 5종(바켓/전주/옥상/사다리/중장비)만 시드 → 밀폐공간작업 누락
+  // _wtSafetyCache가 이 테이블 기반 → 없으면 체크박스에 표시 안 됨
+  try {
+    rawDb.prepare(`
+      INSERT OR IGNORE INTO work_type_safety_settings
+        (type_key, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels)
+      VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+    `).run(
+      '밀폐공간작업',
+      '밀폐공간작업',
+      'fa-door-closed',
+      7,
+      JSON.stringify(['밀폐공간 진입 전 산소(18% 이상) 및 유해가스 농도 측정 확인','강제환기 장치 설치 및 지속 운전 확인','송기마스크 또는 SCBA 착용 및 이상 여부 확인','외부 감시인 배치 및 비상연락체계(무전기·호루라기) 확인','비상구조 장비(구명줄·안전대·구급약품) 현장 비치 확인']),
+      JSON.stringify(['밀폐공간 작업허가서 발급 및 내용 공유','작업 전 산소·가스 측정값 및 합격 기준 공유','감시인 역할·권한(작업중단 명령권) 교육','비상 시 대피 경로 및 연락처 확인','공기호흡기(SCBA) 착용·해제 방법 교육']),
+      JSON.stringify(['작업허가서 없는 밀폐공간 진입 절대 금지','방독면 착용 후 밀폐공간 진입 금지 (산소결핍 환경 무효)','환기 불량 시 작업 즉시 중단','감시인 자리 이탈 금지 (감시인의 내부 진입도 금지)','이상 징후 발생 즉시 대피 및 119 신고']),
+      JSON.stringify(['산소·가스 측정 결과표','환기장치 설치 상태','감시인 배치 확인'])
+    )
+    console.log('[patchSchema v0.167] ✅ work_type_safety_settings 밀폐공간작업 시드 완료')
+  } catch(e: any) {
+    console.warn('[patchSchema v0.167] 밀폐공간작업 시드 실패 (무시):', e.message)
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }

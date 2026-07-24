@@ -2888,6 +2888,30 @@ function patchSchema() {
   }
   console.log('[patchSchema v0.164] ✅ work_type_safety_settings 기본 시드 완료')
 
+  // ─── patchSchema v0.165: TBM회의 섹션 시드 추가 ─────────────────────────────
+  // tbm_meeting(TBM 회의) 사진 항목을 work_type_safety_settings DB로 관리
+  // checklist.ts updateTbmSections()에서 type_key='TBM회의'를 조회하여 photo_labels 동적 사용
+  // INSERT OR IGNORE: 이미 존재하면 기존 데이터 보호 (사용자 수정 내용 유지)
+  try {
+    rawDb.prepare(`
+      INSERT OR IGNORE INTO work_type_safety_settings
+        (type_key, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels)
+      VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+    `).run(
+      'TBM회의',
+      'TBM 회의',
+      'fa-shield-alt',
+      6,
+      JSON.stringify([]),
+      JSON.stringify([]),
+      JSON.stringify([]),
+      JSON.stringify(['TBM회의 사진', '작업현장 전경', '라바콘 입간판 설치상태'])
+    )
+    console.log('[patchSchema v0.165] ✅ TBM회의 시드 추가 완료')
+  } catch(e: any) {
+    console.warn('[patchSchema v0.165] TBM회의 시드 실패 (무시):', e.message)
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }

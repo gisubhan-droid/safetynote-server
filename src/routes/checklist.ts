@@ -515,12 +515,13 @@ async function updateTbmSections(db: D1Database, assessmentId: number, responses
       responses.some(r => ids.has(r.item_id) && r.response === 'ok')
 
     // ── work_type_safety_settings DB에서 photo_labels 조회 ────────────────────
-    // bucket 섹션 → '바켓차량작업', heavy 섹션 → '중장비사용' type_key 매핑
+    // bucket 섹션 → '바켓차량작업', heavy 섹션 → '중장비사용', tbm_meeting 섹션 → 'TBM회의' type_key 매핑
     let bucketPhotoLabels: string[] = ['아웃트리거 확장 및 받침목 설치', '고임목 설치', '안전고리 체결']
     let heavyPhotoLabels: string[] = ['작업계획서', '유도원 배치']
+    let tbmMeetingPhotoLabels: string[] = ['TBM회의 사진', '작업현장 전경', '라바콘 입간판 설치상태']
     try {
       const wtRows = await db.prepare(
-        `SELECT type_key, photo_labels FROM work_type_safety_settings WHERE type_key IN ('바켓차량작업','중장비사용') AND is_active = 1`
+        `SELECT type_key, photo_labels FROM work_type_safety_settings WHERE type_key IN ('바켓차량작업','중장비사용','TBM회의') AND is_active = 1`
       ).all()
       for (const wt of wtRows.results as any[]) {
         try {
@@ -528,6 +529,7 @@ async function updateTbmSections(db: D1Database, assessmentId: number, responses
           if (Array.isArray(labels) && labels.length > 0) {
             if (wt.type_key === '바켓차량작업') bucketPhotoLabels = labels
             else if (wt.type_key === '중장비사용') heavyPhotoLabels = labels
+            else if (wt.type_key === 'TBM회의') tbmMeetingPhotoLabels = labels
           }
         } catch { /* JSON 파싱 실패 시 기본값 유지 */ }
       }
@@ -538,7 +540,7 @@ async function updateTbmSections(db: D1Database, assessmentId: number, responses
       { type: 'ppe',         name: '개인보호구 점검',      labels: ['안전보호구 착용 상태 확인'],                                                 needed: hasOk(ppeIds)    },
       { type: 'bucket',      name: '버켓/스카이 안전점검', labels: bucketPhotoLabels,                                                             needed: hasOk(bucketIds) },
       { type: 'heavy',       name: '중장비 안전점검',      labels: heavyPhotoLabels,                                                              needed: hasOk(heavyIds)  },
-      { type: 'tbm_meeting', name: 'TBM 회의',             labels: ['TBM회의 사진', '작업현장 전경', '라바콘 입간판 설치상태'],                    needed: hasOk(tbmIds)    },
+      { type: 'tbm_meeting', name: 'TBM 회의',             labels: tbmMeetingPhotoLabels,                                                         needed: hasOk(tbmIds)    },
     ]
 
     // ── 기존 섹션 조회 (section_type → section_id 매핑) ──────────────────────

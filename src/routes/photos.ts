@@ -105,7 +105,12 @@ app.get('/', async (c) => {
 
   if (photo_type) { wheres.push('p.photo_type = ?'); params.push(photo_type) }
   if (wheres.length) q += ' WHERE ' + wheres.join(' AND ')
-  q += ' ORDER BY p.task_id ASC, p.created_at ASC'
+  // construction_id 조회 시 sub_task_number 오름차순 정렬 (연계사진 칩 순서 일치)
+  if (construction_id) {
+    q += ' ORDER BY t.sub_task_number ASC, p.task_id ASC, p.created_at ASC'
+  } else {
+    q += ' ORDER BY p.task_id ASC, p.created_at ASC'
+  }
 
   const result = await c.env.DB.prepare(q).bind(...params).all<any>()
   return c.json(result.results || [])

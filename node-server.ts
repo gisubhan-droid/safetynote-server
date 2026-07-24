@@ -5639,7 +5639,7 @@ app.get('/api/photos', async (c) => {
   if (construction_id) {
     // construction_id 기반: tasks JOIN으로 해당 공사 작업 사진 조회
     q = `SELECT p.id, p.task_id, p.photo_type, p.file_name, p.file_path, p.file_size, p.mime_type,
-      p.caption, p.taken_at, p.created_at, p.media_type, u.name as uploader_name,
+      p.caption, p.taken_at, p.created_at, u.name as uploader_name,
       t.sub_task_number, t.title as task_title, t.status as task_status
       FROM task_photos p
       LEFT JOIN users u ON u.id = p.uploader_id

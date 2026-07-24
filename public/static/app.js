@@ -27380,17 +27380,57 @@ function selectChecklistWorkClass(btn, cls) {
 
 // 조건부 체크박스 변경 핸들러
 function onConditionalChange() {
-  const checked = new Set();
-  document.querySelectorAll('.conditional-cb:checked').forEach(cb => checked.add(cb.value));
+  var checked = new Set();
+  document.querySelectorAll('.conditional-cb:checked').forEach(function(cb) { checked.add(cb.value); });
+  var prev = window._checklistConditionals || new Set();
   window._checklistConditionals = checked;
 
   // 체크된 라벨 스타일 업데이트
-  document.querySelectorAll('.conditional-check-label').forEach(lbl => {
-    const val = lbl.dataset.cval;
-    const isChecked = checked.has(val);
+  document.querySelectorAll('.conditional-check-label').forEach(function(lbl) {
+    var val = lbl.dataset.cval;
+    var isChecked = checked.has(val);
     lbl.className = lbl.className
       .replace('border-amber-500 bg-amber-50', 'border-gray-200 bg-white')
       .replace('border-gray-200 bg-white', isChecked ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white');
+  });
+
+  // work_class → type_key 역변환 맵 (동적 연동: _wtSafetyCache 기반)
+  // _WT_TYPE_KEY_TO_CLASS의 역방향 + 임의 항목(매핑 없는 경우 value 자체가 type_key)
+  var _classToTypeKey = {};
+  if (window._wtSafetyCache && window._wtSafetyCache.length > 0) {
+    window._wtSafetyCache.forEach(function(wt) {
+      var wClass = _WT_TYPE_KEY_TO_CLASS[wt.type_key] || wt.type_key;
+      _classToTypeKey[wClass] = wt.type_key;
+    });
+  } else {
+    // 폴백: 하드코딩 역방향 매핑
+    _classToTypeKey = {
+      bucket:   '바켓차량작업',
+      pole:     '전주승주',
+      rooftop:  '옥상옥탑작업',
+      ladder:   '사다리사용작업',
+      heavy:    '중장비사용',
+      confined: '밀폐공간작업'
+    };
+  }
+
+  // 새로 체크된 항목 → _applyWorkTypeSafety 호출
+  checked.forEach(function(wClass) {
+    if (!prev.has(wClass)) {
+      var typeKey = _classToTypeKey[wClass] || wClass;
+      if (window.WORK_TYPE_SAFETY && window.WORK_TYPE_SAFETY[typeKey]) {
+        _applyWorkTypeSafety(typeKey);
+      }
+    }
+  });
+  // 체크 해제된 항목 → _removeWorkTypeSafety 호출
+  prev.forEach(function(wClass) {
+    if (!checked.has(wClass)) {
+      var typeKey = _classToTypeKey[wClass] || wClass;
+      if (window.WORK_TYPE_SAFETY && window.WORK_TYPE_SAFETY[typeKey]) {
+        _removeWorkTypeSafety(typeKey);
+      }
+    }
   });
 
   loadChecklistItems(window._checklistTaskId);

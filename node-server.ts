@@ -2959,6 +2959,36 @@ function patchSchema() {
     console.warn('[patchSchema v0.167] 밀폐공간작업 시드 실패 (무시):', e.message)
   }
 
+  // ─── patchSchema v0.168: checklist_items 중복 항목 정리 ──────────────────────
+  // 원인: 0011 plain INSERT → 0016 INSERT OR IGNORE(id미지정) → 0017 일부 미지정
+  //       + v0.166 confined 시드(id미지정) → UNIQUE 제약 없어 동일 question 중복 행 발생
+  // 해결:
+  //   ① (work_class, question) 기준 MIN(id)만 남기고 응답기록 없는 중복행 삭제
+  //   ② 응답기록 있는 중복행은 is_active=0 비활성화
+  //   ③ 서버 재시작 마다 실행(멱등) — 중복 없으면 0행 삭제로 무해
+  // ─────────────────────────────────────────────────────────────────────────────
+  try {
+    // [1] 중복 중 응답 기록 없는 행 하드 삭제
+    rawDb.exec(`
+      DELETE FROM checklist_items
+      WHERE id NOT IN (
+        SELECT MIN(id) FROM checklist_items GROUP BY work_class, question
+      )
+      AND id NOT IN (SELECT DISTINCT item_id FROM checklist_responses)
+    `)
+    // [2] 중복 중 응답 기록 있는 행 비활성화 (보존)
+    rawDb.exec(`
+      UPDATE checklist_items SET is_active = 0
+      WHERE id NOT IN (
+        SELECT MIN(id) FROM checklist_items GROUP BY work_class, question
+      )
+      AND id IN (SELECT DISTINCT item_id FROM checklist_responses)
+    `)
+    console.log('[patchSchema v0.168] ✅ checklist_items 중복 항목 정리 완료')
+  } catch(e: any) {
+    console.warn('[patchSchema v0.168] 중복 정리 실패 (무시):', e.message)
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }

@@ -43283,6 +43283,10 @@ function _renderClItemsPage(container) {
   var wcLabel = {};
   _CL_WORK_CLASS_OPTIONS.forEach(function(o) { wcLabel[o.value] = o.label; });
 
+  // 활성/비활성 통계
+  var totalActive = items.filter(function(it){ return it.is_active == 1 || it.is_active === true; }).length;
+  var totalInactive = items.length - totalActive;
+
   // 필터 탭 HTML (전체 + 각 work_class)
   var presentClasses = Object.keys(grouped);
   var tabOrder = classOrder.filter(function(c) { return presentClasses.includes(c); });
@@ -43290,13 +43294,19 @@ function _renderClItemsPage(container) {
 
   var tabsHtml = '<button type="button" class="tab-btn px-3 py-1.5 text-xs rounded-full border font-medium mr-1 mb-1 '
     + (_clItemsFilterClass === null ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600 hover:border-blue-400')
-    + '" onclick="_clItemsSetFilter(null)">전체 (' + items.length + ')</button>';
+    + '" onclick="_clItemsSetFilter(null)">전체 (' + totalActive + '활성'
+    + (totalInactive > 0 ? ' / <span class="text-red-400">' + totalInactive + '비활성</span>' : '')
+    + ')</button>';
   tabOrder.forEach(function(wc) {
     var active = _clItemsFilterClass === wc;
     var lbl = wcLabel[wc] || wc;
+    var grpActive = (grouped[wc] || []).filter(function(it){ return it.is_active == 1 || it.is_active === true; }).length;
+    var grpInactive = (grouped[wc] || []).length - grpActive;
     tabsHtml += '<button type="button" class="tab-btn px-3 py-1.5 text-xs rounded-full border font-medium mr-1 mb-1 '
       + (active ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600 hover:border-indigo-400')
-      + '" onclick="_clItemsSetFilter(\'' + wc + '\')">' + lbl + ' (' + (grouped[wc] || []).length + ')</button>';
+      + '" onclick="_clItemsSetFilter(\'' + wc + '\')">' + lbl + ' (' + grpActive
+      + (grpInactive > 0 ? '+<span style="color:#f87171">' + grpInactive + '↓</span>' : '')
+      + ')</button>';
   });
 
   // 항목 테이블 빌드
@@ -43312,7 +43322,11 @@ function _renderClItemsPage(container) {
     tableHtml += '<div class="px-4 py-2.5 ' + hdrColor + ' flex items-center gap-2 border-b">';
     tableHtml += '<i class="fas fa-' + (wc === 'all' ? 'shield-check text-blue-500' : 'tag text-indigo-500') + '"></i>';
     tableHtml += '<span class="font-bold text-sm ' + hdrTextColor + '">' + lbl + '</span>';
-    tableHtml += '<span class="ml-2 text-xs text-gray-400">' + grpItems.length + '개</span>';
+    var grpActiveCount = grpItems.filter(function(it){ return it.is_active == 1 || it.is_active === true; }).length;
+    var grpInactiveCount = grpItems.length - grpActiveCount;
+    tableHtml += '<span class="ml-2 text-xs text-gray-400">' + grpActiveCount + '개 활성';
+    if (grpInactiveCount > 0) tableHtml += ' <span class="text-red-400 font-medium">(비활성 ' + grpInactiveCount + '개 포함)</span>';
+    tableHtml += '</span>';
     tableHtml += '</div>';
     tableHtml += '<div class="overflow-x-auto"><table class="w-full text-xs">';
     tableHtml += '<thead class="bg-gray-50 border-b">';
@@ -43327,10 +43341,12 @@ function _renderClItemsPage(container) {
     tableHtml += '</tr></thead><tbody>';
     grpItems.forEach(function(it, idx) {
       var isActive = it.is_active == 1 || it.is_active === true;
-      tableHtml += '<tr class="border-b last:border-b-0 hover:bg-gray-50 ' + (isActive ? '' : 'opacity-50') + '">';
+      tableHtml += '<tr class="border-b last:border-b-0 hover:bg-gray-50 ' + (isActive ? '' : 'bg-red-50 opacity-60') + '">';
       tableHtml += '<td class="px-3 py-2 text-center text-gray-400">' + (idx + 1) + '</td>';
       tableHtml += '<td class="px-3 py-2"><span class="px-2 py-0.5 rounded bg-gray-100 text-gray-600">' + (it.category || '') + '</span></td>';
-      tableHtml += '<td class="px-3 py-2 text-gray-700 max-w-xs">' + (it.question || '').replace(/</g,'&lt;') + '</td>';
+      var qText = (it.question || '').replace(/</g,'&lt;');
+      tableHtml += '<td class="px-3 py-2 text-gray-700 max-w-xs ' + (isActive ? '' : 'line-through text-gray-400') + '">' + qText
+        + (isActive ? '' : ' <span class="no-underline text-xs text-red-400 font-medium ml-1" style="text-decoration:none">[비활성/중복]</span>') + '</td>';
       tableHtml += '<td class="px-3 py-2 text-blue-500 italic text-xs">' + (it.note ? (it.note.replace(/</g,'&lt;')) : '') + '</td>';
       tableHtml += '<td class="px-3 py-2 text-center">' + (it.sort_order || 0) + '</td>';
       tableHtml += '<td class="px-3 py-2 text-center"><span class="px-1.5 py-0.5 rounded text-xs font-medium '
@@ -43356,6 +43372,14 @@ function _renderClItemsPage(container) {
   html += '<i class="fas fa-info-circle mr-1"></i>';
   html += '여기서 수정한 내용은 <strong>위험성평가 체크리스트 작성 화면</strong>의 <strong>필수/추가 안전 항목</strong>에 즉시 반영됩니다.';
   html += '</div>';
+  if (totalInactive > 0) {
+    html += '<div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-xs text-red-700 flex items-start gap-2">';
+    html += '<i class="fas fa-exclamation-triangle mt-0.5"></i>';
+    html += '<div><strong>비활성 항목 ' + totalInactive + '개</strong>가 있습니다. ';
+    html += '서버 재시작 시 자동 중복 정리가 실행되어 비활성 항목이 삭제됩니다. ';
+    html += '응답 기록이 있는 항목은 비활성 상태로 보존됩니다.</div>';
+    html += '</div>';
+  }
   html += '<div class="flex flex-wrap gap-1 mb-2">' + tabsHtml + '</div>';
   html += tableHtml;
   html += '</div>';

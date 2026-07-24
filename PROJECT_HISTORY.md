@@ -1,7 +1,12 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-24 (세션 71 — TBM회의 사진 항목 DB 연동 + BUG-WT-SAFETY 수정)
-> **GitHub 최신: `526c292`** — feat: [세션 71] FEAT-TBM-MEETING-DB — TBM회의 사진 항목 DB 연동
+> 최종 업데이트: 2026-07-24 (세션 72-B — FEAT-CONFINED 밀폐공간작업 체크박스 + FEAT-WT-DYNAMIC conditionalList DB 동적 연동)
+> **GitHub 최신: `dbf77c6`** — fix: [세션 72] 캐시 버스팅 ?v=a607358 갱신 (FEAT-WT-DYNAMIC 반영)
+> **이전 커밋: `a607358`** — feat: [세션 72] FEAT-WT-DYNAMIC — conditionalList DB 동적 연동 (_wtSafetyCache 기반, is_active 필터)
+> **이전 커밋: `42e2e6c`** — fix: [세션 72] 캐시 버스팅 ?v=69c86db 갱신 (밀폐공간작업 체크박스 반영)
+> **이전 커밋: `69c86db`** — feat: [세션 72] FEAT-CONFINED — 밀폐공간작업 체크박스 추가 (patchSchema v0.166)
+> **이전 커밋: `7c72ebe`** — docs: [세션 71] PROJECT_HISTORY.md 헤더 갱신 + FEAT-TBM-MEETING-DB/BUG-WT-SAFETY-401-FRONT 기록 추가
+> **이전 커밋: `526c292`** — feat: [세션 71] FEAT-TBM-MEETING-DB — TBM회의 사진 항목 DB 연동
 > **이전 커밋: `b39eeba`** — fix: [세션 71] renderWtSafetyPage res.data.data 참조 수정 + 캐시 버스팅
 > **이전 커밋: `e146c4a`** — fix: [세션 71] app.js 캐시 버스팅 갱신
 > **이전 커밋: `5463d04`** — fix: [세션 71] _loadWtSafetySettings Authorization 헤더 추가
@@ -9031,3 +9036,86 @@ tasks.ts의 worker 분기에서 `INNER JOIN task_assignments ta ON ta.task_id = 
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | `0b62c02` | feat: [TASK-005] 광케이블 현황 자산구분(N-1/N-2) 연계 + 상세 통계 추가 |
+
+---
+
+## 세션 72-B (2026-07-24) — FEAT-CONFINED + FEAT-WT-DYNAMIC
+
+### 목표
+1. **FEAT-CONFINED**: `밀폐공간작업`이 작업유형 관리 테이블에는 있으나 위험성 체크리스트 체크박스에 미표시 → 수정
+2. **FEAT-WT-DYNAMIC**: 작업유형 관리 ↔ 체크리스트 체크박스 동적 연동 (근본 원인 수정)
+
+---
+
+### FEAT-CONFINED (커밋 `69c86db`, `42e2e6c`)
+
+#### 원인
+- `conditionalList` 하드코딩에 `confined` 누락 (5종만 존재)
+- DB `checklist_items`에 `work_class='confined'` 항목 미존재
+
+#### 수정 내용
+
+**`public/static/app.js`**:
+- `conditionalList`: 5종 → 6종 (`confined: 밀폐공간작업` 추가)
+- `CONDITIONAL_META`: `confined` 메타 (`fas fa-door-closed`, `text-red-700`) 추가
+- `CONDITIONAL_TO_WTSAFETY`: `'confined': '밀폐공간작업'` 매핑 추가
+- `conditionalClasses`: `confined` 포함
+
+**`node-server.ts`** — patchSchema v0.166:
+- `work_class='confined'` 체크리스트 항목 5종 `INSERT OR IGNORE` 시드
+  - 산소·유해가스 농도 측정 (sort_order 610)
+  - 충분한 환기 실시 (620)
+  - 송기마스크/SCBA 착용 확인 (630)
+  - 외부 감시인 배치 및 비상연락체계 확인 (640)
+  - 비상구조 장비 비치 (650)
+
+**`src/index.tsx`**: 캐시 버스팅 `?v=e146c4b` → `?v=69c86db`
+
+---
+
+### FEAT-WT-DYNAMIC (커밋 `a607358`, `dbf77c6`)
+
+#### 근본 원인
+`showChecklistAssessment()` 내부 `conditionalList`가 함수 내부 `const` 지역 상수로 하드코딩되어
+`_wtSafetyCache` (DB 데이터)와 완전히 단절 → 관리 메뉴에서 항목 삭제/비활성화/추가해도 체크박스에 반영 불가
+
+#### 수정 내용
+
+**`public/static/app.js`** — `showChecklistAssessment()` 내부 `conditionalList` 교체:
+
+| 추가 구성 | 내용 |
+|-----------|------|
+| `_WT_TYPE_KEY_TO_CLASS` | DB `type_key` → 체크리스트 `work_class` 역방향 매핑 (6종) |
+| `_WT_CLASS_STYLE` | `work_class`별 기본 아이콘/색상 폴백 정의 |
+| `_defaultConditionalList` | DB 미로드 시 폴백 하드코딩 목록 (6종) |
+| `conditionalList` 동적 생성 | `_wtSafetyCache` 순회 → `is_active` 필터 → 매핑 없는 항목(TBM회의 등) 제외 → DB 기반 목록 생성 |
+
+**동작 로직**:
+```
+_wtSafetyCache 존재 및 길이 > 0
+  → is_active=true 항목만 필터
+  → _WT_TYPE_KEY_TO_CLASS로 type_key → work_class 변환 (없으면 제외)
+  → DB icon 우선, 없으면 _WT_CLASS_STYLE 폴백
+  → _dbConditional 배열 생성
+  → _dbConditional.length > 0 ? DB목록 사용 : 폴백목록 사용
+_wtSafetyCache 없음 → _defaultConditionalList 사용
+```
+
+**`src/index.tsx`**: 캐시 버스팅 `?v=69c86db` → `?v=a607358`
+
+---
+
+### 커밋 인덱스
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `69c86db` | feat: [세션 72] FEAT-CONFINED — 밀폐공간작업 체크박스 추가 (patchSchema v0.166 + conditionalList/CONDITIONAL_META/CONDITIONAL_TO_WTSAFETY 확장) |
+| safetynote-server | `42e2e6c` | fix: [세션 72] 캐시 버스팅 ?v=69c86db 갱신 (밀폐공간작업 체크박스 반영) |
+| safetynote-server | `a607358` | feat: [세션 72] FEAT-WT-DYNAMIC — conditionalList DB 동적 연동 (_wtSafetyCache 기반, is_active 필터) |
+| safetynote-server | `dbf77c6` | fix: [세션 72] 캐시 버스팅 ?v=a607358 갱신 (FEAT-WT-DYNAMIC 반영) |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ `dist/_worker.js 284.13 kB`
+- GitHub push → ✅ `42e2e6c..dbf77c6`
+- NAS 반영 필요 → `git pull && pm2 delete safetynote && pm2 start ecosystem.config.cjs`

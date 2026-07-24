@@ -13728,6 +13728,10 @@ async function showTbmDetail(tbmId) {
       </div>
       <div class="modal-footer" style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid #E5E7EB;background:white;border-radius:0 0 12px 12px">
         <button onclick="_tbmPrint(${tbmId})"
+          style="padding:6px 14px;background:#059669;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
+          <i class="fas fa-file-alt"></i> 미리보기
+        </button>
+        <button onclick="_tbmPrint(${tbmId})"
           style="padding:6px 14px;background:#4E3A63;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
           <i class="fas fa-print"></i> 인쇄
         </button>
@@ -14258,10 +14262,11 @@ async function _loadTaskShareBtn(taskId) {
 }
 
 async function _tbmSign(tbmId, role) {
-  const roleLabel = role === 'conductor' ? '진행자' : '참석자';
-  const signData = await showSignaturePad({
-    title: `TBM ${roleLabel} 서명`,
-    subtitle: '서명 후 [서명 완료] 버튼을 눌러주세요',
+  var roleLabel = role === 'conductor' ? '진행자' : '참석자';
+  var myName = currentUser && currentUser.name ? currentUser.name : '';
+  var signData = await showSignaturePad({
+    title: 'TBM ' + roleLabel + ' 서명',
+    subtitle: myName ? myName + ' 님 — 서명 후 [서명 완료] 버튼을 눌러주세요' : '서명 후 [서명 완료] 버튼을 눌러주세요',
     penColor: '#1a1a1a'
   });
   if (signData === null) return; // 취소
@@ -34651,6 +34656,10 @@ async function showEduDetailModal(sessionId, eduType) {
 
     <!-- 출력 버튼 바 -->
     <div class="flex items-center gap-2 px-6 py-3 bg-gray-50 border-b border-gray-100 flex-wrap">
+      <button onclick="printEduSign(${sessionId})"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white" style="background:#059669">
+        <i class="fas fa-file-alt"></i> 결재 미리보기
+      </button>
       <button onclick="printEduLog(${sessionId})"
         class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white" style="background:#685182">
         <i class="fas fa-print"></i> 교육일지 출력

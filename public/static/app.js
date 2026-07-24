@@ -10370,15 +10370,11 @@ async function openAttachment(id, fileName, mimeType) {
     const url  = URL.createObjectURL(blob);
     const isViewable = (mimeType||'').startsWith('image/') || mimeType === 'application/pdf';
     if (isViewable) {
-      // 새 탭에서 바로 보기
-      const tab = window.open('', '_blank');
-      if (tab) {
-        if ((mimeType||'').startsWith('image/')) {
-          tab.document.write(`<!DOCTYPE html><html><head><title>${fileName}</title><style>body{margin:0;background:#4E3A63;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh;object-fit:contain}</style></head><body><img src="${url}" onload="URL.revokeObjectURL(this.src)" alt="${fileName}"></body></html>`);
-        } else {
-          tab.location.href = url;
-          setTimeout(() => URL.revokeObjectURL(url), 10000);
-        }
+      // [FEAT-170] 인앱 뷰어 — 새 탭 대신 앱 내부 모달에서 바로 보기
+      if (mimeType === 'application/pdf') {
+        _openPdfViewer(url, fileName);
+      } else {
+        _openImageViewer(url, fileName);
       }
     } else {
       // 다운로드
@@ -10656,6 +10652,170 @@ function _showLinkedPhotoView(photoId, caption, isVideo) {
   }
   modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
+}
+
+// ─── [FEAT-170] 인앱 PDF/이미지 뷰어 ──────────────────────────────────────────
+// RULE-001: var 전용, function 키워드, 문자열 연결(백틱 중첩 금지)
+// RULE-003: onclick 내 복잡 인자 → _snPdfOpen / _snImgOpen 전역함수 분리
+// z-index: 99000 사용 (출력 오버레이 999999보다 낮고, linked-photo-modal 9500보다 높음)
+
+// PDF.js CDN 동적 로드 (최초 1회)
+var _snPdfJsLoaded = false;
+var _snPdfJsLoading = false;
+var _snPdfJsQueue = [];
+
+function _snLoadPdfJs(callback) {
+  if (_snPdfJsLoaded) { callback(); return; }
+  _snPdfJsQueue.push(callback);
+  if (_snPdfJsLoading) return;
+  _snPdfJsLoading = true;
+  var s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+  s.onload = function() {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    _snPdfJsLoaded = true;
+    _snPdfJsLoading = false;
+    for (var i = 0; i < _snPdfJsQueue.length; i++) { _snPdfJsQueue[i](); }
+    _snPdfJsQueue = [];
+  };
+  s.onerror = function() {
+    _snPdfJsLoading = false;
+    _snPdfJsQueue = [];
+    toast('PDF 뷰어 로드 실패 — 다운로드로 대체합니다.', 'error');
+  };
+  document.head.appendChild(s);
+}
+
+// 현재 PDF 뷰어 상태 (전역 — 페이지 이동용)
+var _snPdfDoc = null;
+var _snPdfPage = 1;
+var _snPdfTotal = 0;
+var _snPdfScale = 1.5;
+var _snPdfRendering = false;
+
+// PDF 특정 페이지 렌더링
+function _snPdfRenderPage(num) {
+  if (!_snPdfDoc || _snPdfRendering) return;
+  _snPdfRendering = true;
+  _snPdfDoc.getPage(num).then(function(page) {
+    var canvas = document.getElementById('sn-pdf-canvas');
+    if (!canvas) { _snPdfRendering = false; return; }
+    var ctx = canvas.getContext('2d');
+    var vp = page.getViewport({ scale: _snPdfScale });
+    canvas.width = vp.width;
+    canvas.height = vp.height;
+    page.render({ canvasContext: ctx, viewport: vp }).promise.then(function() {
+      _snPdfRendering = false;
+      var info = document.getElementById('sn-pdf-pageinfo');
+      if (info) info.textContent = num + ' / ' + _snPdfTotal;
+    });
+  });
+}
+
+// 페이지 이동 전역함수 (RULE-003: onclick에서 직접 호출)
+function _snPdfPrev() {
+  if (!_snPdfDoc || _snPdfPage <= 1) return;
+  _snPdfPage--;
+  _snPdfRenderPage(_snPdfPage);
+}
+function _snPdfNext() {
+  if (!_snPdfDoc || _snPdfPage >= _snPdfTotal) return;
+  _snPdfPage++;
+  _snPdfRenderPage(_snPdfPage);
+}
+function _snPdfZoomIn() {
+  _snPdfScale = Math.min(_snPdfScale + 0.25, 3.0);
+  _snPdfRenderPage(_snPdfPage);
+}
+function _snPdfZoomOut() {
+  _snPdfScale = Math.max(_snPdfScale - 0.25, 0.5);
+  _snPdfRenderPage(_snPdfPage);
+}
+function _snPdfClose() {
+  var v = document.getElementById('sn-pdf-viewer');
+  if (v) v.remove();
+  _snPdfDoc = null;
+  _snPdfPage = 1;
+  _snPdfTotal = 0;
+  _snPdfScale = 1.5;
+}
+
+// 인앱 PDF 뷰어 열기
+function _openPdfViewer(blobUrl, fileName) {
+  // 기존 뷰어 제거
+  var old = document.getElementById('sn-pdf-viewer');
+  if (old) old.remove();
+
+  // 뷰어 오버레이 생성
+  var viewer = document.createElement('div');
+  viewer.id = 'sn-pdf-viewer';
+  viewer.style.cssText = 'position:fixed;inset:0;z-index:99000;background:#1a1a2e;display:flex;flex-direction:column;overflow:hidden';
+
+  // 헤더
+  var header = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#4E3A63;color:#fff;flex-shrink:0;min-height:48px">'
+    + '<button onclick="_snPdfClose()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:5px 12px;border-radius:18px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:4px">'
+    + '<i class="fas fa-arrow-left" style="font-size:11px"></i> 닫기</button>'
+    + '<span style="flex:1;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+    + (fileName || 'PDF') + '</span>'
+    + '<button onclick="_snPdfZoomOut()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px">-</button>'
+    + '<button onclick="_snPdfZoomIn()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px">+</button>'
+    + '</div>';
+
+  // 캔버스 영역
+  var body = '<div style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:16px">'
+    + '<canvas id="sn-pdf-canvas" style="box-shadow:0 4px 24px rgba(0,0,0,0.5);max-width:100%"></canvas>'
+    + '</div>';
+
+  // 하단 페이지 컨트롤
+  var footer = '<div style="display:flex;align-items:center;justify-content:center;gap:16px;padding:10px;background:#2d1b4e;flex-shrink:0">'
+    + '<button onclick="_snPdfPrev()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:6px 18px;border-radius:18px;cursor:pointer;font-size:13px;font-weight:600">'
+    + '<i class="fas fa-chevron-left"></i> 이전</button>'
+    + '<span id="sn-pdf-pageinfo" style="color:#ccc;font-size:13px;min-width:80px;text-align:center">로딩 중...</span>'
+    + '<button onclick="_snPdfNext()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:6px 18px;border-radius:18px;cursor:pointer;font-size:13px;font-weight:600">'
+    + '다음 <i class="fas fa-chevron-right"></i></button>'
+    + '</div>';
+
+  viewer.innerHTML = header + body + footer;
+  document.body.appendChild(viewer);
+
+  // PDF.js 로드 후 문서 열기
+  _snLoadPdfJs(function() {
+    pdfjsLib.getDocument(blobUrl).promise.then(function(doc) {
+      _snPdfDoc = doc;
+      _snPdfTotal = doc.numPages;
+      _snPdfPage = 1;
+      _snPdfRenderPage(1);
+    }).catch(function(err) {
+      toast('PDF 열기 실패: ' + err.message, 'error');
+      _snPdfClose();
+    });
+  });
+}
+
+// 인앱 이미지 뷰어 열기
+function _openImageViewer(blobUrl, fileName) {
+  var old = document.getElementById('sn-img-viewer');
+  if (old) old.remove();
+
+  var viewer = document.createElement('div');
+  viewer.id = 'sn-img-viewer';
+  viewer.style.cssText = 'position:fixed;inset:0;z-index:99000;background:#1a1a2e;display:flex;flex-direction:column;overflow:hidden';
+
+  var header = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#4E3A63;color:#fff;flex-shrink:0;min-height:48px">'
+    + '<button onclick="var v=document.getElementById(\'sn-img-viewer\');if(v)v.remove();" '
+    + 'style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:5px 12px;border-radius:18px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:4px">'
+    + '<i class="fas fa-arrow-left" style="font-size:11px"></i> 닫기</button>'
+    + '<span style="flex:1;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+    + (fileName || '이미지') + '</span>'
+    + '</div>';
+
+  var body = '<div style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:center;padding:16px">'
+    + '<img src="' + blobUrl + '" style="max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 4px 24px rgba(0,0,0,0.5)" alt="' + (fileName || '') + '">'
+    + '</div>';
+
+  viewer.innerHTML = header + body;
+  document.body.appendChild(viewer);
 }
 
 // ─── 첨부파일 목록 로드 및 렌더링 ─────────────────────────────────────────────

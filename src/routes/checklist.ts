@@ -5,7 +5,8 @@ type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
 
 // 조건부 작업 유형 work_class 값 목록
-const CONDITIONAL_CLASSES = ['bucket', 'pole', 'rooftop', 'ladder', 'heavy']
+// confined: 밀폐공간작업 (patchSchema v0.166에서 시드 추가됨)
+const CONDITIONAL_CLASSES = ['bucket', 'pole', 'rooftop', 'ladder', 'heavy', 'confined']
 
 // ─── 체크리스트 항목 조회 ─────────────────────────────────────────────────────
 // work_class=all → 필수 항목만
@@ -40,6 +41,124 @@ app.get('/items', async (c) => {
   } catch (e: any) {
     console.error('[checklist GET /items]', e.message)
     return c.json({ error: e.message || '항목 조회 실패' }, 500)
+  }
+})
+
+// ─── 체크리스트 항목 전체 조회 (관리 화면용: is_active 필터 없음) ─────────────
+app.get('/items/all', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (!['admin', 'supervisor', '안전관리자', '현장대리인'].includes(user.role)) {
+    return c.json({ error: '권한 없음' }, 403)
+  }
+  try {
+    const workClass = c.req.query('work_class') || ''
+    let sql = 'SELECT * FROM checklist_items'
+    const params: string[] = []
+    if (workClass) {
+      sql += ' WHERE work_class = ?'
+      params.push(workClass)
+    }
+    sql += ' ORDER BY work_class, sort_order, id'
+    const items = await c.env.DB.prepare(sql).bind(...params).all()
+    return c.json({ items: items.results || [] })
+  } catch (e: any) {
+    console.error('[checklist GET /items/all]', e.message)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// ─── 체크리스트 항목 신규 추가 ────────────────────────────────────────────────
+app.post('/items', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (!['admin', 'supervisor', '안전관리자', '현장대리인'].includes(user.role)) {
+    return c.json({ error: '권한 없음' }, 403)
+  }
+  try {
+    const body = await c.req.json() as any
+    const { work_class, category, question, note, sort_order, is_active } = body
+    if (!work_class || !category || !question) {
+      return c.json({ error: 'work_class, category, question 필수' }, 400)
+    }
+    const result = await c.env.DB.prepare(
+      `INSERT INTO checklist_items (work_class, category, question, note, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).bind(
+      work_class, category, question,
+      note || null,
+      sort_order != null ? Number(sort_order) : 0,
+      is_active != null ? (is_active ? 1 : 0) : 1
+    ).run()
+    return c.json({ id: result.meta?.last_row_id, success: true })
+  } catch (e: any) {
+    console.error('[checklist POST /items]', e.message)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// ─── 체크리스트 항목 수정 ─────────────────────────────────────────────────────
+app.put('/items/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (!['admin', 'supervisor', '안전관리자', '현장대리인'].includes(user.role)) {
+    return c.json({ error: '권한 없음' }, 403)
+  }
+  try {
+    const itemId = Number(c.req.param('id'))
+    const body = await c.req.json() as any
+    const { work_class, category, question, note, sort_order, is_active } = body
+    if (!work_class || !category || !question) {
+      return c.json({ error: 'work_class, category, question 필수' }, 400)
+    }
+    await c.env.DB.prepare(
+      `UPDATE checklist_items
+       SET work_class=?, category=?, question=?, note=?, sort_order=?, is_active=?
+       WHERE id=?`
+    ).bind(
+      work_class, category, question,
+      note || null,
+      sort_order != null ? Number(sort_order) : 0,
+      is_active != null ? (is_active ? 1 : 0) : 1,
+      itemId
+    ).run()
+    return c.json({ success: true })
+  } catch (e: any) {
+    console.error('[checklist PUT /items/:id]', e.message)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// ─── 체크리스트 항목 삭제(비활성화) ──────────────────────────────────────────
+app.delete('/items/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (!['admin', 'supervisor', '안전관리자', '현장대리인'].includes(user.role)) {
+    return c.json({ error: '권한 없음' }, 403)
+  }
+  try {
+    const itemId = Number(c.req.param('id'))
+    const hard = c.req.query('hard') === '1'
+    if (hard) {
+      // 실제 삭제 (응답 기록이 없는 항목만)
+      const used = await c.env.DB.prepare(
+        `SELECT COUNT(*) as cnt FROM checklist_responses WHERE item_id = ?`
+      ).bind(itemId).first() as any
+      if (used?.cnt > 0) {
+        // 사용 기록 있으면 비활성화만
+        await c.env.DB.prepare(`UPDATE checklist_items SET is_active = 0 WHERE id = ?`).bind(itemId).run()
+        return c.json({ success: true, deleted: false, deactivated: true })
+      }
+      await c.env.DB.prepare(`DELETE FROM checklist_items WHERE id = ?`).bind(itemId).run()
+      return c.json({ success: true, deleted: true })
+    } else {
+      // 소프트 삭제(비활성화)
+      await c.env.DB.prepare(`UPDATE checklist_items SET is_active = 0 WHERE id = ?`).bind(itemId).run()
+      return c.json({ success: true, deleted: false, deactivated: true })
+    }
+  } catch (e: any) {
+    console.error('[checklist DELETE /items/:id]', e.message)
+    return c.json({ error: e.message }, 500)
   }
 })
 

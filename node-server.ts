@@ -5401,6 +5401,134 @@ app.patch('/api/checklist/:id/complete-lgu-notify', async (c) => {
   }
 })
 
+// ─── [RULE-002] NAS 전용: 체크리스트 항목 관리 CRUD ──────────────────────────
+// GET  /api/checklist/items/all   — 관리 화면용 전체 조회 (is_active 무관)
+// POST /api/checklist/items       — 항목 추가
+// PUT  /api/checklist/items/:id   — 항목 수정
+// DELETE /api/checklist/items/:id — 항목 삭제(소프트) or 하드삭제(?hard=1)
+// GET  /api/checklist/items       — 기존 필수/조건부 조회 (confined 추가 허용)
+// RULE-002: checklistRoutes 마운트보다 반드시 앞에 등록
+app.get('/api/checklist/items/all', async (c) => {
+  var user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  var allowedRoles = ['admin', 'supervisor', '안전관리자', '현장대리인']
+  if (!allowedRoles.includes(user.role)) return c.json({ error: '권한 없음' }, 403)
+  try {
+    var wc = c.req.query('work_class') || ''
+    var rows: any[]
+    if (wc) {
+      rows = rawDb.prepare('SELECT * FROM checklist_items WHERE work_class = ? ORDER BY sort_order, id').all(wc) as any[]
+    } else {
+      rows = rawDb.prepare('SELECT * FROM checklist_items ORDER BY work_class, sort_order, id').all() as any[]
+    }
+    return c.json({ items: rows })
+  } catch(e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+app.post('/api/checklist/items', async (c) => {
+  var user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  var allowedRoles = ['admin', 'supervisor', '안전관리자', '현장대리인']
+  if (!allowedRoles.includes(user.role)) return c.json({ error: '권한 없음' }, 403)
+  try {
+    var body = await c.req.json() as any
+    var { work_class, category, question, note, sort_order, is_active } = body
+    if (!work_class || !category || !question) return c.json({ error: 'work_class, category, question 필수' }, 400)
+    var stmt = rawDb.prepare(
+      'INSERT INTO checklist_items (work_class, category, question, note, sort_order, is_active) VALUES (?,?,?,?,?,?)'
+    )
+    var result = stmt.run(
+      work_class, category, question,
+      note || null,
+      sort_order != null ? Number(sort_order) : 0,
+      is_active != null ? (is_active ? 1 : 0) : 1
+    )
+    return c.json({ id: result.lastInsertRowid, success: true })
+  } catch(e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+app.put('/api/checklist/items/:id', async (c) => {
+  var user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  var allowedRoles = ['admin', 'supervisor', '안전관리자', '현장대리인']
+  if (!allowedRoles.includes(user.role)) return c.json({ error: '권한 없음' }, 403)
+  try {
+    var itemId = Number(c.req.param('id'))
+    var body = await c.req.json() as any
+    var { work_class, category, question, note, sort_order, is_active } = body
+    if (!work_class || !category || !question) return c.json({ error: 'work_class, category, question 필수' }, 400)
+    rawDb.prepare(
+      'UPDATE checklist_items SET work_class=?, category=?, question=?, note=?, sort_order=?, is_active=? WHERE id=?'
+    ).run(
+      work_class, category, question,
+      note || null,
+      sort_order != null ? Number(sort_order) : 0,
+      is_active != null ? (is_active ? 1 : 0) : 1,
+      itemId
+    )
+    return c.json({ success: true })
+  } catch(e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+app.delete('/api/checklist/items/:id', async (c) => {
+  var user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  var allowedRoles = ['admin', 'supervisor', '안전관리자', '현장대리인']
+  if (!allowedRoles.includes(user.role)) return c.json({ error: '권한 없음' }, 403)
+  try {
+    var itemId = Number(c.req.param('id'))
+    var hard = c.req.query('hard') === '1'
+    if (hard) {
+      var used: any = rawDb.prepare('SELECT COUNT(*) as cnt FROM checklist_responses WHERE item_id = ?').get(itemId)
+      if (used && used.cnt > 0) {
+        rawDb.prepare('UPDATE checklist_items SET is_active = 0 WHERE id = ?').run(itemId)
+        return c.json({ success: true, deleted: false, deactivated: true })
+      }
+      rawDb.prepare('DELETE FROM checklist_items WHERE id = ?').run(itemId)
+      return c.json({ success: true, deleted: true })
+    } else {
+      rawDb.prepare('UPDATE checklist_items SET is_active = 0 WHERE id = ?').run(itemId)
+      return c.json({ success: true, deleted: false, deactivated: true })
+    }
+  } catch(e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// NAS 전용: GET /api/checklist/items — confined 포함 모든 클래스 허용
+app.get('/api/checklist/items', async (c) => {
+  var user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  try {
+    var workClassParam = c.req.query('work_class') || 'all'
+    var requestedClasses = workClassParam.split(',').map(function(s: string) { return s.trim(); }).filter(Boolean)
+    var queryClasses: string[] = []
+    if (requestedClasses.includes('all') || requestedClasses.length === 0) {
+      queryClasses.push('all')
+    }
+    var _allClasses = ['bucket','pole','rooftop','ladder','heavy','confined']
+    for (var _ri = 0; _ri < requestedClasses.length; _ri++) {
+      var _rc = requestedClasses[_ri]
+      if (_allClasses.includes(_rc) || _rc !== 'all') {
+        if (!queryClasses.includes(_rc)) queryClasses.push(_rc)
+      }
+    }
+    var placeholders = queryClasses.map(function() { return '?'; }).join(',')
+    var rows = rawDb.prepare(
+      'SELECT * FROM checklist_items WHERE work_class IN (' + placeholders + ') AND is_active = 1 ORDER BY sort_order'
+    ).all(...queryClasses) as any[]
+    return c.json({ items: rows })
+  } catch(e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
 app.route('/api/checklist', checklistRoutes)
 app.route('/api/teams', teamRoutes)
 // ─── 교육 사진/리포트 → nas-routes/education-extra.ts (RULE-002: educationRoutes 앞) ─

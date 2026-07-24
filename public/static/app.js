@@ -283,6 +283,7 @@ const MENU_DEFINITIONS = [
   { id:'risk-adhoc',       label:'수시 위험성평가',   icon:'fas fa-bolt',              group:'위험성평가' },
   { id:'risk-items',       label:'분류별 항목 관리',  icon:'fas fa-list-check',        group:'위험성평가' },
   { id:'wt-safety',        label:'작업유형 안전내용 관리', icon:'fas fa-hard-hat',      group:'위험성평가' },
+  { id:'checklist-items',   label:'체크리스트 항목 관리',   icon:'fas fa-tasks',          group:'위험성평가' },
   { id:'hazards',          label:'위험(아차사고)신고',    icon:'fas fa-exclamation-triangle',group:'안전' },
   { id:'work-stops',       label:'작업중지현황',         icon:'fas fa-hand-paper',           group:'안전' },
   { id:'stats-task',          label:'작업통계',            icon:'fas fa-tasks',              group:'안전현황' },
@@ -2274,7 +2275,8 @@ function renderApp() {
           { id:'risk-periodic', icon:'fas fa-calendar-check', label:'정기 위험성평가' },
           { id:'risk-adhoc',    icon:'fas fa-bolt',           label:'수시 위험성평가' },
           { id:'risk-items',    icon:'fas fa-list-check',     label:'분류별 항목 관리' },
-          { id:'wt-safety',     icon:'fas fa-hard-hat',       label:'작업유형 안전내용 관리' },
+          { id:'wt-safety',          icon:'fas fa-hard-hat',       label:'작업유형 안전내용 관리' },
+          { id:'checklist-items',    icon:'fas fa-tasks',          label:'체크리스트 항목 관리' },
         ]},
       ]
     },
@@ -3034,6 +3036,7 @@ function getPageTitle(page) {
     'legal-notices': '법령안내 관리',
     'risk': '위험성평가', 'risk-periodic': '정기 위험성평가', 'risk-adhoc': '수시 위험성평가', 'risk-items': '분류별 항목 관리',
     'wt-safety': '작업유형 안전내용 관리',
+    'checklist-items': '체크리스트 항목 관리',
     'periodic-risk': '위험성평가', 'checklist-risk': '작업 위험성평가(체크리스트)',
     'teams': '현장팀관리',
     'sys-user-mgmt': '계정관리',
@@ -3169,7 +3172,8 @@ function navigateTo(page) {
     case 'risk-periodic': renderRiskPeriodicPage(content); break;
     case 'risk-adhoc': renderRiskAdhocPage(content); break;
     case 'risk-items': renderRiskItemsPage(content); break;
-    case 'wt-safety':  renderWtSafetyPage(content);  break;
+    case 'wt-safety':        renderWtSafetyPage(content);        break;
+    case 'checklist-items':  renderChecklistItemsPage(content);  break;
     case 'work-stops': renderWorkStopsPage(content); break;
     case 'periodic-risk': renderRiskPeriodicPage(content); break;
     case 'checklist-risk': renderChecklistRiskPage(content); break;
@@ -43226,6 +43230,271 @@ async function copyTask(taskId) {
 }
 
 // ============================================================================
+// [FEAT-CL-ITEMS] 체크리스트 항목 관리 페이지 (세션 72-C)
+// work_class별 체크리스트 항목 추가/수정/삭제(비활성화)
+// 필수(all) / 작업유형별(bucket,pole,rooftop,ladder,heavy,confined,임의) 분류
+// ============================================================================
+
+var _CL_WORK_CLASS_OPTIONS = [
+  { value:'all',      label:'필수 (모든 작업)' },
+  { value:'bucket',   label:'바켓차량작업' },
+  { value:'pole',     label:'전주승주' },
+  { value:'rooftop',  label:'옥상옥탑작업' },
+  { value:'ladder',   label:'사다리사용작업' },
+  { value:'heavy',    label:'중장비사용' },
+  { value:'confined', label:'밀폐공간작업' }
+];
+
+// 현재 조회 필터 상태 (null = 전체)
+var _clItemsFilterClass = null;
+var _clItemsCache = [];
+
+async function renderChecklistItemsPage(container) {
+  container.innerHTML = '<div class="p-4 text-center text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>로딩 중...</div>';
+  await _loadClItems();
+  _renderClItemsPage(container);
+}
+
+async function _loadClItems() {
+  try {
+    var url = '/checklist/items/all';
+    if (_clItemsFilterClass) url += '?work_class=' + encodeURIComponent(_clItemsFilterClass);
+    var res = await API.get(url);
+    _clItemsCache = (res.data.items || []);
+  } catch(e) {
+    _clItemsCache = [];
+    toast('체크리스트 항목 로드 실패: ' + e.message);
+  }
+}
+
+function _renderClItemsPage(container) {
+  var items = _clItemsCache;
+
+  // work_class별 그룹핑
+  var grouped = {};
+  var classOrder = ['all','bucket','pole','rooftop','ladder','heavy','confined'];
+  items.forEach(function(it) {
+    var wc = it.work_class || 'all';
+    if (!grouped[wc]) grouped[wc] = [];
+    grouped[wc].push(it);
+  });
+
+  // work_class 레이블 맵
+  var wcLabel = {};
+  _CL_WORK_CLASS_OPTIONS.forEach(function(o) { wcLabel[o.value] = o.label; });
+
+  // 필터 탭 HTML (전체 + 각 work_class)
+  var presentClasses = Object.keys(grouped);
+  var tabOrder = classOrder.filter(function(c) { return presentClasses.includes(c); });
+  presentClasses.forEach(function(c) { if (!tabOrder.includes(c)) tabOrder.push(c); });
+
+  var tabsHtml = '<button type="button" class="tab-btn px-3 py-1.5 text-xs rounded-full border font-medium mr-1 mb-1 '
+    + (_clItemsFilterClass === null ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600 hover:border-blue-400')
+    + '" onclick="_clItemsSetFilter(null)">전체 (' + items.length + ')</button>';
+  tabOrder.forEach(function(wc) {
+    var active = _clItemsFilterClass === wc;
+    var lbl = wcLabel[wc] || wc;
+    tabsHtml += '<button type="button" class="tab-btn px-3 py-1.5 text-xs rounded-full border font-medium mr-1 mb-1 '
+      + (active ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600 hover:border-indigo-400')
+      + '" onclick="_clItemsSetFilter(\'' + wc + '\')">' + lbl + ' (' + (grouped[wc] || []).length + ')</button>';
+  });
+
+  // 항목 테이블 빌드
+  var displayGroups = _clItemsFilterClass ? [_clItemsFilterClass] : tabOrder;
+  var tableHtml = '';
+  displayGroups.forEach(function(wc) {
+    var grpItems = grouped[wc] || [];
+    if (!grpItems.length) return;
+    var lbl = wcLabel[wc] || wc;
+    var hdrColor = wc === 'all' ? 'bg-blue-50 border-blue-200' : 'bg-indigo-50 border-indigo-200';
+    var hdrTextColor = wc === 'all' ? 'text-blue-800' : 'text-indigo-800';
+    tableHtml += '<div class="mb-4 border rounded-xl overflow-hidden">';
+    tableHtml += '<div class="px-4 py-2.5 ' + hdrColor + ' flex items-center gap-2 border-b">';
+    tableHtml += '<i class="fas fa-' + (wc === 'all' ? 'shield-check text-blue-500' : 'tag text-indigo-500') + '"></i>';
+    tableHtml += '<span class="font-bold text-sm ' + hdrTextColor + '">' + lbl + '</span>';
+    tableHtml += '<span class="ml-2 text-xs text-gray-400">' + grpItems.length + '개</span>';
+    tableHtml += '</div>';
+    tableHtml += '<div class="overflow-x-auto"><table class="w-full text-xs">';
+    tableHtml += '<thead class="bg-gray-50 border-b">';
+    tableHtml += '<tr>';
+    tableHtml += '<th class="px-3 py-2 text-center w-8">#</th>';
+    tableHtml += '<th class="px-3 py-2 text-left">카테고리</th>';
+    tableHtml += '<th class="px-3 py-2 text-left">항목 내용</th>';
+    tableHtml += '<th class="px-3 py-2 text-left">비고</th>';
+    tableHtml += '<th class="px-3 py-2 text-center w-12">순서</th>';
+    tableHtml += '<th class="px-3 py-2 text-center w-12">상태</th>';
+    tableHtml += '<th class="px-3 py-2 text-center w-16">관리</th>';
+    tableHtml += '</tr></thead><tbody>';
+    grpItems.forEach(function(it, idx) {
+      var isActive = it.is_active == 1 || it.is_active === true;
+      tableHtml += '<tr class="border-b last:border-b-0 hover:bg-gray-50 ' + (isActive ? '' : 'opacity-50') + '">';
+      tableHtml += '<td class="px-3 py-2 text-center text-gray-400">' + (idx + 1) + '</td>';
+      tableHtml += '<td class="px-3 py-2"><span class="px-2 py-0.5 rounded bg-gray-100 text-gray-600">' + (it.category || '') + '</span></td>';
+      tableHtml += '<td class="px-3 py-2 text-gray-700 max-w-xs">' + (it.question || '').replace(/</g,'&lt;') + '</td>';
+      tableHtml += '<td class="px-3 py-2 text-blue-500 italic text-xs">' + (it.note ? (it.note.replace(/</g,'&lt;')) : '') + '</td>';
+      tableHtml += '<td class="px-3 py-2 text-center">' + (it.sort_order || 0) + '</td>';
+      tableHtml += '<td class="px-3 py-2 text-center"><span class="px-1.5 py-0.5 rounded text-xs font-medium '
+        + (isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400') + '">'
+        + (isActive ? '활성' : '비활성') + '</span></td>';
+      tableHtml += '<td class="px-3 py-2 text-center">';
+      tableHtml += '<button type="button" class="text-blue-500 hover:text-blue-700 mr-2" title="수정" onclick="_clItemsOpenEdit(' + JSON.stringify(JSON.stringify(it)) + ')"><i class="fas fa-edit"></i></button>';
+      tableHtml += '<button type="button" class="text-red-400 hover:text-red-600" title="삭제" onclick="_clItemsDelete(' + it.id + ',\'' + (it.question || '').replace(/'/g,'').substring(0,15) + '...\')"><i class="fas fa-trash"></i></button>';
+      tableHtml += '</td></tr>';
+    });
+    tableHtml += '</tbody></table></div></div>';
+  });
+
+  var html = '<div class="p-4 space-y-4">';
+  html += '<div class="flex items-center justify-between">';
+  html += '<div>';
+  html += '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-tasks text-indigo-500 mr-2"></i>체크리스트 항목 관리</h2>';
+  html += '<p class="text-xs text-gray-500 mt-0.5">위험성평가 체크리스트의 필수/작업유형별 점검 항목을 추가·수정·삭제합니다.</p>';
+  html += '</div>';
+  html += '<button type="button" class="btn btn-primary text-sm" onclick="_clItemsOpenEdit(null)"><i class="fas fa-plus mr-1"></i>항목 추가</button>';
+  html += '</div>';
+  html += '<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">';
+  html += '<i class="fas fa-info-circle mr-1"></i>';
+  html += '여기서 수정한 내용은 <strong>위험성평가 체크리스트 작성 화면</strong>의 <strong>필수/추가 안전 항목</strong>에 즉시 반영됩니다.';
+  html += '</div>';
+  html += '<div class="flex flex-wrap gap-1 mb-2">' + tabsHtml + '</div>';
+  html += tableHtml;
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+async function _clItemsSetFilter(wc) {
+  _clItemsFilterClass = wc;
+  var container = document.getElementById('pageContent');
+  if (!container) return;
+  container.innerHTML = '<div class="p-4 text-center text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>로딩 중...</div>';
+  await _loadClItems();
+  _renderClItemsPage(container);
+}
+
+function _clItemsOpenEdit(itemJsonStr) {
+  var item = null;
+  var isNew = false;
+  if (!itemJsonStr || itemJsonStr === 'null') {
+    isNew = true;
+    item = { id: null, work_class: 'all', category: '', question: '', note: '', sort_order: 0, is_active: true };
+  } else {
+    try { item = JSON.parse(itemJsonStr); } catch(e) { item = {}; }
+  }
+
+  // work_class 옵션 HTML
+  var wcOpts = _CL_WORK_CLASS_OPTIONS.map(function(o) {
+    return '<option value="' + o.value + '"' + (item.work_class === o.value ? ' selected' : '') + '>' + o.label + '</option>';
+  }).join('');
+  // 임의 work_class 처리
+  var isCustomWc = item.work_class && !_CL_WORK_CLASS_OPTIONS.map(function(o){ return o.value; }).includes(item.work_class);
+  if (isCustomWc) wcOpts += '<option value="' + item.work_class + '" selected>' + item.work_class + ' (임의)</option>';
+
+  var modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'clItemEditModal';
+  modal.innerHTML = '<div class="modal" style="max-width:560px;width:95%;max-height:90vh;overflow-y:auto">'
+    + '<div class="modal-header">'
+    +   '<h3 class="modal-title"><i class="fas fa-tasks text-indigo-500 mr-2"></i>' + (isNew ? '체크리스트 항목 추가' : '체크리스트 항목 수정') + '</h3>'
+    +   '<button class="modal-close" onclick="document.getElementById(\'clItemEditModal\').remove()"><i class="fas fa-times"></i></button>'
+    + '</div>'
+    + '<div class="modal-body space-y-4 pb-4">'
+    + '<div class="grid grid-cols-2 gap-3">'
+    +   '<div class="form-group">'
+    +     '<label class="form-label text-xs font-semibold">작업유형 (work_class) *</label>'
+    +     '<select id="clEdit_workClass" class="form-control text-sm">' + wcOpts + '</select>'
+    +   '</div>'
+    +   '<div class="form-group">'
+    +     '<label class="form-label text-xs font-semibold">카테고리 *</label>'
+    +     '<input type="text" id="clEdit_category" class="form-control text-sm" value="' + (item.category || '').replace(/"/g,'&quot;') + '" placeholder="예: 작업환경, 보호구, 추락...">'
+    +   '</div>'
+    + '</div>'
+    + '<div class="form-group">'
+    +   '<label class="form-label text-xs font-semibold">항목 내용 (질문) *</label>'
+    +   '<textarea id="clEdit_question" class="form-control text-sm" rows="3" placeholder="점검 항목을 입력하세요...">' + (item.question || '').replace(/</g,'&lt;') + '</textarea>'
+    + '</div>'
+    + '<div class="form-group">'
+    +   '<label class="form-label text-xs font-semibold">비고 <span class="text-gray-400 font-normal">(하단 보라색 안내 문구)</span></label>'
+    +   '<input type="text" id="clEdit_note" class="form-control text-sm" value="' + (item.note || '').replace(/"/g,'&quot;') + '" placeholder="예: 산소 18% 이상 확인">'
+    + '</div>'
+    + '<div class="grid grid-cols-2 gap-3">'
+    +   '<div class="form-group">'
+    +     '<label class="form-label text-xs font-semibold">정렬 순서</label>'
+    +     '<input type="number" id="clEdit_sortOrder" class="form-control text-sm" value="' + (item.sort_order || 0) + '" min="0" step="10">'
+    +   '</div>'
+    +   '<div class="form-group">'
+    +     '<label class="form-label text-xs font-semibold">활성 상태</label>'
+    +     '<select id="clEdit_isActive" class="form-control text-sm">'
+    +       '<option value="1"' + ((item.is_active == 1 || item.is_active === true) ? ' selected' : '') + '>활성</option>'
+    +       '<option value="0"' + ((item.is_active == 0 || item.is_active === false) ? ' selected' : '') + '>비활성</option>'
+    +     '</select>'
+    +   '</div>'
+    + '</div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+    +   '<button type="button" class="btn btn-outline mr-2" onclick="document.getElementById(\'clItemEditModal\').remove()">취소</button>'
+    +   '<button type="button" class="btn btn-primary" onclick="_clItemsSave(' + (isNew ? 'null' : item.id) + ')"><i class="fas fa-save mr-1"></i>저장</button>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+}
+
+async function _clItemsSave(itemId) {
+  var wc  = document.getElementById('clEdit_workClass') ? document.getElementById('clEdit_workClass').value.trim() : '';
+  var cat = document.getElementById('clEdit_category') ? document.getElementById('clEdit_category').value.trim() : '';
+  var q   = document.getElementById('clEdit_question') ? document.getElementById('clEdit_question').value.trim() : '';
+  var nt  = document.getElementById('clEdit_note') ? document.getElementById('clEdit_note').value.trim() : '';
+  var so  = document.getElementById('clEdit_sortOrder') ? parseInt(document.getElementById('clEdit_sortOrder').value, 10) : 0;
+  var ia  = document.getElementById('clEdit_isActive') ? (document.getElementById('clEdit_isActive').value === '1') : true;
+
+  if (!wc) { toast('작업유형을 선택하세요.'); return; }
+  if (!cat) { toast('카테고리를 입력하세요.'); return; }
+  if (!q)   { toast('항목 내용을 입력하세요.'); return; }
+
+  var payload = { work_class: wc, category: cat, question: q, note: nt || null, sort_order: isNaN(so) ? 0 : so, is_active: ia };
+  try {
+    if (!itemId) {
+      await API.post('/checklist/items', payload);
+      toast('항목이 추가되었습니다.');
+    } else {
+      await API.put('/checklist/items/' + itemId, payload);
+      toast('항목이 수정되었습니다.');
+    }
+    var m = document.getElementById('clItemEditModal');
+    if (m) m.remove();
+    // 목록 갱신
+    var container = document.getElementById('pageContent');
+    if (container) {
+      container.innerHTML = '<div class="p-4 text-center text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>갱신 중...</div>';
+      await _loadClItems();
+      _renderClItemsPage(container);
+    }
+    // 열린 체크리스트 모달이 있으면 갱신
+    if (window._checklistTaskId) {
+      loadChecklistItems(window._checklistTaskId);
+    }
+  } catch(e) {
+    toast('저장 실패: ' + (e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message));
+  }
+}
+
+async function _clItemsDelete(itemId, preview) {
+  if (!confirm('[' + preview + ']\n\n이 항목을 비활성화(삭제)하시겠습니까?\n\n응답 기록이 없는 항목은 완전 삭제됩니다.')) return;
+  try {
+    await API.delete('/checklist/items/' + itemId + '?hard=1');
+    toast('항목이 삭제(비활성화)되었습니다.');
+    var container = document.getElementById('pageContent');
+    if (container) {
+      await _loadClItems();
+      _renderClItemsPage(container);
+    }
+    if (window._checklistTaskId) loadChecklistItems(window._checklistTaskId);
+  } catch(e) {
+    toast('삭제 실패: ' + (e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message));
+  }
+}
+
+// ============================================================================
 // [FEAT-WT-SAFETY] 작업유형별 안전내용 관리 페이지 (세션 70)
 // 안전관리자·현장대리인·admin·supervisor 전용
 // ============================================================================
@@ -43544,6 +43813,10 @@ async function _saveWtSafetyItem(encodedOriginalKey) {
     if (content) renderWtSafetyPage(content);
     // DB 캐시 갱신
     _loadWtSafetySettings().catch(function(){});
+    // 열린 체크리스트 모달 안전내용 패널 갱신
+    if (window._checklistTaskId) {
+      setTimeout(function() { loadChecklistItems(window._checklistTaskId); }, 500);
+    }
   } catch(e) {
     var msg = (e.response && e.response.data && e.response.data.error) ? e.response.data.error : e.message;
     toast('저장 실패: ' + msg, 'error');

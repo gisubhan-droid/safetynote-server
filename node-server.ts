@@ -2912,6 +2912,30 @@ function patchSchema() {
     console.warn('[patchSchema v0.165] TBM회의 시드 실패 (무시):', e.message)
   }
 
+  // ─── patchSchema v0.166: 밀폐공간작업 체크리스트 항목 시드 추가 ──────────────
+  // app.js conditionalList에 confined(밀폐공간작업) 추가 대응
+  // work_class='confined' 항목이 없으면 체크해도 빈 목록 → 항목 시드 추가
+  // INSERT OR IGNORE: 이미 존재하면 기존 데이터 보호
+  try {
+    const confinedItems = [
+      { category: '작업환경', question: '밀폐공간(맨홀, 지하피트 등) 진입 전 산소 및 유해가스 농도를 측정하였는가?',          sort_order: 610, note: '산소 18% 이상, 황화수소 10ppm 이하, 일산화탄소 30ppm 이하' },
+      { category: '작업환경', question: '밀폐공간 진입 전 충분한 환기(자연환기 또는 강제환기)를 실시하였는가?',                 sort_order: 620, note: '작업 중에도 지속적 환기 유지' },
+      { category: '보호구',   question: '송기마스크 또는 공기호흡기(SCBA)를 착용하고 이상 여부를 확인하였는가?',               sort_order: 630, note: '방독면은 밀폐공간에서 사용 금지' },
+      { category: '작업환경', question: '밀폐공간 외부에 감시인(감독자)을 배치하고 비상연락체계를 확인하였는가?',               sort_order: 640, note: '감시인은 공간 내부 진입 금지' },
+      { category: '작업환경', question: '비상구조 장비(구명줄, 안전대, 구급약품 등)를 현장에 비치하였는가?',                   sort_order: 650, note: '구조 장비 위치 전 작업자 공유' },
+    ]
+    const confinedStmt = rawDb.prepare(`
+      INSERT OR IGNORE INTO checklist_items (work_class, category, question, sort_order, note)
+      VALUES ('confined', ?, ?, ?, ?)
+    `)
+    for (const item of confinedItems) {
+      confinedStmt.run(item.category, item.question, item.sort_order, item.note)
+    }
+    console.log('[patchSchema v0.166] ✅ 밀폐공간작업(confined) 체크리스트 항목 시드 완료')
+  } catch(e: any) {
+    console.warn('[patchSchema v0.166] 밀폐공간 시드 실패 (무시):', e.message)
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }

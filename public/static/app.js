@@ -12426,15 +12426,16 @@ async function showTbmForm(taskId) {
   document.body.appendChild(modal);
 
   // ── [FEAT-051-AUTO] 체크리스트 조건부 작업유형 → TBM 작업유형 칩 자동 선택 ──
-  // item_work_class (bucket/pole/rooftop/ladder/heavy) → WORK_TYPE_SAFETY 키 매핑
+  // item_work_class (bucket/pole/rooftop/ladder/heavy/confined) → WORK_TYPE_SAFETY 키 매핑
   const CONDITIONAL_TO_WTSAFETY = {
-    bucket:  '바켓차량작업',
-    pole:    '전주승주',
-    rooftop: '옥상옥탑작업',
-    ladder:  '사다리사용작업',
-    heavy:   '중장비사용',
+    bucket:   '바켓차량작업',
+    pole:     '전주승주',
+    rooftop:  '옥상옥탑작업',
+    ladder:   '사다리사용작업',
+    heavy:    '중장비사용',
+    confined: '밀폐공간작업',
   };
-  const conditionalClasses = new Set(['bucket', 'pole', 'rooftop', 'ladder', 'heavy']);
+  const conditionalClasses = new Set(['bucket', 'pole', 'rooftop', 'ladder', 'heavy', 'confined']);
   const responses = Array.isArray(clData.responses) ? clData.responses : [];
   // 응답 중 조건부 항목에 해당하는 work_class 수집 (중복 제거)
   const detectedTypes = new Set(
@@ -27179,13 +27180,14 @@ async function showChecklistAssessment(taskId, taskTitle, taskWorkClass) {
     { value:'conduit',         label:'관로시설',         icon:'fas fa-circle-nodes'   }
   ];
 
-  // 조건부 항목 체크박스 목록 (5종)
+  // 조건부 항목 체크박스 목록 (6종)
   const conditionalList = [
-    { value:'bucket',  label:'바켓차량작업',    icon:'fas fa-truck-monster',   color:'text-orange-600' },
-    { value:'pole',    label:'전주승주',         icon:'fas fa-bolt',            color:'text-yellow-600' },
-    { value:'rooftop', label:'옥상옥탑작업',    icon:'fas fa-building',        color:'text-purple-600' },
-    { value:'ladder',  label:'사다리사용작업',  icon:'fas fa-stairs',          color:'text-blue-600'   },
-    { value:'heavy',   label:'중장비사용',       icon:'fas fa-tractor',         color:'text-green-700'  }
+    { value:'bucket',   label:'바켓차량작업',    icon:'fas fa-truck-monster',   color:'text-orange-600' },
+    { value:'pole',     label:'전주승주',         icon:'fas fa-bolt',            color:'text-yellow-600' },
+    { value:'rooftop',  label:'옥상옥탑작업',    icon:'fas fa-building',        color:'text-purple-600' },
+    { value:'ladder',   label:'사다리사용작업',  icon:'fas fa-stairs',          color:'text-blue-600'   },
+    { value:'heavy',    label:'중장비사용',       icon:'fas fa-tractor',         color:'text-green-700'  },
+    { value:'confined', label:'밀폐공간작업',     icon:'fas fa-door-closed',     color:'text-red-700'    }
   ];
 
   const modal = document.createElement('div');
@@ -27358,11 +27360,12 @@ const CATEGORY_ICONS = {
 
 // 조건부 그룹 헤더 색상/아이콘
 const CONDITIONAL_META = {
-  bucket:  { label:'바켓차량작업',   color:'bg-orange-50 border-orange-300', hdrBg:'bg-orange-100', hdrText:'text-orange-800', icon:'fas fa-truck-monster text-orange-600' },
-  pole:    { label:'전주승주',        color:'bg-yellow-50 border-yellow-300', hdrBg:'bg-yellow-100', hdrText:'text-yellow-800', icon:'fas fa-bolt text-yellow-600' },
-  rooftop: { label:'옥상옥탑작업',   color:'bg-purple-50 border-purple-300', hdrBg:'bg-purple-100', hdrText:'text-purple-800', icon:'fas fa-building text-purple-600' },
-  ladder:  { label:'사다리사용작업', color:'bg-blue-50 border-blue-300',     hdrBg:'bg-blue-100',   hdrText:'text-blue-800',   icon:'fas fa-stairs text-blue-600'   },
-  heavy:   { label:'중장비사용',      color:'bg-green-50 border-green-300',   hdrBg:'bg-green-100',  hdrText:'text-green-800',  icon:'fas fa-tractor text-green-700'  }
+  bucket:   { label:'바켓차량작업',  color:'bg-orange-50 border-orange-300', hdrBg:'bg-orange-100', hdrText:'text-orange-800', icon:'fas fa-truck-monster text-orange-600' },
+  pole:     { label:'전주승주',       color:'bg-yellow-50 border-yellow-300', hdrBg:'bg-yellow-100', hdrText:'text-yellow-800', icon:'fas fa-bolt text-yellow-600' },
+  rooftop:  { label:'옥상옥탑작업',  color:'bg-purple-50 border-purple-300', hdrBg:'bg-purple-100', hdrText:'text-purple-800', icon:'fas fa-building text-purple-600' },
+  ladder:   { label:'사다리사용작업',color:'bg-blue-50 border-blue-300',     hdrBg:'bg-blue-100',   hdrText:'text-blue-800',   icon:'fas fa-stairs text-blue-600'   },
+  heavy:    { label:'중장비사용',     color:'bg-green-50 border-green-300',   hdrBg:'bg-green-100',  hdrText:'text-green-800',  icon:'fas fa-tractor text-green-700'  },
+  confined: { label:'밀폐공간작업',  color:'bg-red-50 border-red-300',       hdrBg:'bg-red-100',    hdrText:'text-red-800',    icon:'fas fa-door-closed text-red-700'   }
 };
 
 async function loadChecklistItems(taskId) {

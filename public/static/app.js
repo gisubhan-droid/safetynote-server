@@ -11996,6 +11996,7 @@ function _syncWtSafetyConstFromCache(activeList) {
       tbm: Array.isArray(wt.tbm_items) ? wt.tbm_items : [],
       precautions: Array.isArray(wt.precaution_items) ? wt.precaution_items : [],
       photo_labels: Array.isArray(wt.photo_labels) ? wt.photo_labels : [],
+      input_fields: Array.isArray(wt.input_fields) ? wt.input_fields : [],
     };
   });
   // WORK_TYPE_SAFETY 기존 키를 DB 기반으로 교체 (프로토타입 유지 방식)
@@ -27675,6 +27676,31 @@ async function loadChecklistItems(taskId) {
         if (_hasPh) {
           spHtml += '<div><div class="text-xs font-bold text-purple-700 mb-1"><i class="fas fa-camera mr-1"></i>필수 사진 항목</div><div class="flex flex-wrap gap-1">';
           for (var _j = 0; _j < _wt.photo_labels.length; _j++) { spHtml += '<span class="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">'+_wt.photo_labels[_j]+'</span>'; }
+          spHtml += '</div></div>';
+        }
+        // ── 필수 입력 레이블 (가스측정값 등 실시간 유효성) ─────────────────────
+        var _hasIf = _wt.input_fields && _wt.input_fields.length > 0;
+        if (_hasIf) {
+          spHtml += '<div>';
+          spHtml += '<div class="text-xs font-bold text-teal-700 mb-2"><i class="fas fa-keyboard mr-1"></i>필수 입력 레이블</div>';
+          spHtml += '<div class="space-y-2">';
+          for (var _fi = 0; _fi < _wt.input_fields.length; _fi++) {
+            var _fd = _wt.input_fields[_fi];
+            var _fid = 'if_' + _tkey.replace(/[^a-zA-Z0-9]/g,'_') + '_' + _fi;
+            var _ridEl = 'ifrow_' + _fid;
+            var _unitTxt = _fd.unit ? ' (' + _fd.unit + ')' : '';
+            // RULE-003: onclick 내 따옴표 중첩 금지 → data-rule 속성에 JSON 저장, 함수 내에서 읽기
+            var _ruleJson = JSON.stringify(_fd).replace(/"/g, '&quot;');
+            spHtml += '<div class="flex items-center gap-2" id="' + _ridEl + '">';
+            spHtml += '<label class="text-xs text-gray-700 flex-shrink-0 w-28 truncate" title="' + _fd.label + '">' + _fd.label + _unitTxt + '</label>';
+            spHtml += '<input type="number" step="any" id="' + _fid + '"'
+              + ' class="form-control text-sm px-2 py-1 w-28"'
+              + ' placeholder="측정값 입력"'
+              + ' data-rule="' + _ruleJson + '"'
+              + ' oninput="_onInputFieldChange(\'' + _fid + '\')">';
+            spHtml += '<span id="' + _fid + '_status" class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">미입력</span>';
+            spHtml += '</div>';
+          }
           spHtml += '</div></div>';
         }
         spHtml += '</div></div>';
@@ -44072,7 +44098,8 @@ function _openWtSafetyEditByTypeKey(typeKey) {
         safety_items: _ws.safety || [],
         tbm_items: _ws.tbm || [],
         precaution_items: _ws.precautions || [],
-        photo_labels: _ws.photo_labels || []
+        photo_labels: _ws.photo_labels || [],
+        input_fields: _ws.input_fields || []
       };
     }
   }
@@ -44087,7 +44114,7 @@ function _showWtSafetyEditModal(wtEncoded) {
   var isNew = false;
   if (!wtEncoded || wtEncoded === 'null') {
     isNew = true;
-    wt = { type_key:'', work_class:'', label:'', icon:'fa-hard-hat', is_active:true, sort_order:0, safety_items:[], tbm_items:[], precaution_items:[], photo_labels:[] };
+    wt = { type_key:'', work_class:'', label:'', icon:'fa-hard-hat', is_active:true, sort_order:0, safety_items:[], tbm_items:[], precaution_items:[], photo_labels:[], input_fields:[] };
   } else {
     try { wt = JSON.parse(decodeURIComponent(wtEncoded)); } catch(e) { wt = {}; }
   }
@@ -44104,6 +44131,42 @@ function _showWtSafetyEditModal(wtEncoded) {
     });
     html += '</div>';
     html += '<button type="button" class="text-xs text-purple-600 hover:text-purple-800 border border-purple-300 rounded px-2 py-1" onclick="_wtRowAdd(\'' + listId + '\',\'' + fieldId + '\')">'
+      + '<i class="fas fa-plus mr-1"></i>항목 추가</button>';
+    return html;
+  };
+
+  // 필수 입력 레이블 행(행별: 항목명/단위/검증유형/min/max) HTML 빌더
+  var buildInputFieldsHtml = function(fields) {
+    var listId = 'wtEdit_input_list';
+    var arr = Array.isArray(fields) ? fields : [];
+    var html = '<div id="' + listId + '" class="space-y-2 mb-2">';
+    // 헤더 행
+    if (arr.length > 0) {
+      html += '<div class="grid gap-1 text-xs font-semibold text-teal-700 px-1 mb-1" style="grid-template-columns:2fr 1fr 1.6fr 0.8fr 0.8fr 1.5rem">'
+        + '<span>항목명</span><span>단위</span><span>검증유형</span><span>최솟값</span><span>최댓값</span><span></span>'
+        + '</div>';
+    }
+    arr.forEach(function(f, i) {
+      var rowId = listId + '_' + i;
+      var vtype = f.validate_type || 'range';
+      var selRange = (vtype === 'range' ? ' selected' : '');
+      var selMax = (vtype === 'max' ? ' selected' : '');
+      var selLel = (vtype === 'lel' ? ' selected' : '');
+      html += '<div class="grid gap-1 items-center" id="' + rowId + '" style="grid-template-columns:2fr 1fr 1.6fr 0.8fr 0.8fr 1.5rem">'
+        + '<input type="text" class="form-control text-xs px-1 py-1" placeholder="항목명(예:산소)" data-if-field="label" data-if-idx="' + i + '" value="' + (f.label||'').replace(/"/g,'&quot;') + '">'
+        + '<input type="text" class="form-control text-xs px-1 py-1" placeholder="단위" data-if-field="unit" data-if-idx="' + i + '" value="' + (f.unit||'').replace(/"/g,'&quot;') + '">'
+        + '<select class="form-control text-xs px-1 py-1" data-if-field="validate_type" data-if-idx="' + i + '">'
+        +   '<option value="range"' + selRange + '>범위(min~max)</option>'
+        +   '<option value="max"' + selMax + '>최대값 미만</option>'
+        +   '<option value="lel"' + selLel + '>LEL% 이하</option>'
+        + '</select>'
+        + '<input type="number" step="any" class="form-control text-xs px-1 py-1" placeholder="최솟값" data-if-field="min" data-if-idx="' + i + '" value="' + (f.min !== undefined && f.min !== null && f.min !== '' ? f.min : '') + '">'
+        + '<input type="number" step="any" class="form-control text-xs px-1 py-1" placeholder="최댓값" data-if-field="max" data-if-idx="' + i + '" value="' + (f.max !== undefined && f.max !== null && f.max !== '' ? f.max : '') + '">'
+        + '<button type="button" class="text-red-400 hover:text-red-600 text-center" onclick="_wtInputFieldRemove(\'' + rowId + '\')"><i class="fas fa-times text-xs"></i></button>'
+        + '</div>';
+    });
+    html += '</div>';
+    html += '<button type="button" class="text-xs text-teal-600 hover:text-teal-800 border border-teal-300 rounded px-2 py-1" onclick="_wtInputFieldAdd()">'
       + '<i class="fas fa-plus mr-1"></i>항목 추가</button>';
     return html;
   };
@@ -44175,6 +44238,12 @@ function _showWtSafetyEditModal(wtEncoded) {
     +   '<p class="text-xs text-pink-600 mb-2">체크리스트 완료 시 자동 생성되는 사진 섹션의 레이블입니다.</p>'
     +   '<div id="wtEdit_photo_area">' + buildItemsHtml(wt.photo_labels, 'wtEdit_photo') + '</div>'
     + '</div>'
+    // 필수 입력 레이블
+    + '<div class="border rounded-lg p-3 bg-teal-50 border-teal-200">'
+    +   '<label class="form-label text-xs font-bold text-teal-700 mb-2"><i class="fas fa-keyboard mr-1"></i>필수 입력 레이블</label>'
+    +   '<p class="text-xs text-teal-600 mb-2">체크리스트 작성 시 사용자가 직접 수치를 입력하고 적정 여부를 실시간 판단합니다. (예: 가스측정값)</p>'
+    +   '<div id="wtEdit_input_area">' + buildInputFieldsHtml(wt.input_fields) + '</div>'
+    + '</div>'
     + '</div>'
     + '<div class="modal-footer">'
     +   '<button type="button" class="btn btn-outline" onclick="document.getElementById(\'wtSafetyEditModal\').remove()">취소</button>'
@@ -44229,6 +44298,143 @@ function _wtCollectItems(fieldId) {
   return arr;
 }
 
+// 필수 입력 레이블 행 수집 ([{label, unit, validate_type, min, max}] 배열)
+function _wtCollectInputFields() {
+  var listEl = document.getElementById('wtEdit_input_list');
+  if (!listEl) return [];
+  var rows = listEl.querySelectorAll('[data-if-idx]');
+  // 인덱스별로 그룹핑
+  var map = {};
+  rows.forEach(function(el) {
+    var idx = el.getAttribute('data-if-idx');
+    if (!map[idx]) map[idx] = {};
+    map[idx][el.getAttribute('data-if-field')] = (el.value || '').trim();
+  });
+  var arr = [];
+  Object.keys(map).sort(function(a,b){ return Number(a)-Number(b); }).forEach(function(idx) {
+    var f = map[idx];
+    if (!f.label) return; // 항목명 없으면 무시
+    var obj = { label: f.label, unit: f.unit || '' , validate_type: f.validate_type || 'range' };
+    if (f.min !== '' && f.min !== undefined) obj.min = Number(f.min);
+    if (f.max !== '' && f.max !== undefined) obj.max = Number(f.max);
+    arr.push(obj);
+  });
+  return arr;
+}
+
+// 필수 입력 레이블 행 추가
+function _wtInputFieldAdd() {
+  var listEl = document.getElementById('wtEdit_input_list');
+  if (!listEl) return;
+  var existingRows = listEl.querySelectorAll('[data-if-idx]');
+  // 최대 인덱스 계산
+  var maxIdx = -1;
+  existingRows.forEach(function(el) {
+    var idx = Number(el.getAttribute('data-if-idx'));
+    if (idx > maxIdx) maxIdx = idx;
+  });
+  var newIdx = maxIdx + 1;
+  var rowId = 'wtEdit_input_list_' + newIdx;
+  // 헤더 없으면 추가
+  if (!listEl.querySelector('.if-header')) {
+    var hdr = document.createElement('div');
+    hdr.className = 'grid gap-1 text-xs font-semibold text-teal-700 px-1 mb-1 if-header';
+    hdr.style.gridTemplateColumns = '2fr 1fr 1.6fr 0.8fr 0.8fr 1.5rem';
+    hdr.innerHTML = '<span>항목명</span><span>단위</span><span>검증유형</span><span>최솟값</span><span>최댓값</span><span></span>';
+    listEl.insertBefore(hdr, listEl.firstChild);
+  }
+  var div = document.createElement('div');
+  div.className = 'grid gap-1 items-center';
+  div.id = rowId;
+  div.style.gridTemplateColumns = '2fr 1fr 1.6fr 0.8fr 0.8fr 1.5rem';
+  div.innerHTML = '<input type="text" class="form-control text-xs px-1 py-1" placeholder="항목명(예:산소)" data-if-field="label" data-if-idx="' + newIdx + '" value="">'
+    + '<input type="text" class="form-control text-xs px-1 py-1" placeholder="단위" data-if-field="unit" data-if-idx="' + newIdx + '" value="">'
+    + '<select class="form-control text-xs px-1 py-1" data-if-field="validate_type" data-if-idx="' + newIdx + '">'
+    +   '<option value="range">범위(min~max)</option>'
+    +   '<option value="max">최대값 미만</option>'
+    +   '<option value="lel">LEL% 이하</option>'
+    + '</select>'
+    + '<input type="number" step="any" class="form-control text-xs px-1 py-1" placeholder="최솟값" data-if-field="min" data-if-idx="' + newIdx + '" value="">'
+    + '<input type="number" step="any" class="form-control text-xs px-1 py-1" placeholder="최댓값" data-if-field="max" data-if-idx="' + newIdx + '" value="">'
+    + '<button type="button" class="text-red-400 hover:text-red-600 text-center" onclick="_wtInputFieldRemove(\'' + rowId + '\')"><i class="fas fa-times text-xs"></i></button>';
+  listEl.appendChild(div);
+  var firstInput = div.querySelector('input');
+  if (firstInput) firstInput.focus();
+}
+
+// 필수 입력 레이블 행 삭제
+function _wtInputFieldRemove(rowId) {
+  var el = document.getElementById(rowId);
+  if (el) el.remove();
+}
+
+// 입력값 적정 여부 판단 (밀폐공간작업 가스측정 기준)
+// rule: { validate_type: 'range'|'max'|'lel', min, max }
+// 반환: { ok: true/false, msg: '적정'|'부적정 (기준: ...)' }
+function _validateInputField(value, rule) {
+  var v = parseFloat(value);
+  if (isNaN(v)) return { ok: false, msg: '숫자를 입력하세요' };
+  var vtype = rule.validate_type || 'range';
+  var ok = false;
+  var msg = '';
+  if (vtype === 'range') {
+    var hasMin = rule.min !== undefined && rule.min !== null && rule.min !== '';
+    var hasMax = rule.max !== undefined && rule.max !== null && rule.max !== '';
+    var mn = Number(rule.min);
+    var mx = Number(rule.max);
+    if (hasMin && hasMax) {
+      ok = (v >= mn && v < mx);
+      msg = ok ? '적정' : ('부적정 (기준: ' + mn + ' ~ ' + mx + ' 미만)');
+    } else if (hasMin) {
+      ok = (v >= mn);
+      msg = ok ? '적정' : ('부적정 (기준: ' + mn + ' 이상)');
+    } else if (hasMax) {
+      ok = (v < mx);
+      msg = ok ? '적정' : ('부적정 (기준: ' + mx + ' 미만)');
+    } else {
+      return { ok: true, msg: '확인 불가(기준 미설정)' };
+    }
+  } else if (vtype === 'max') {
+    var mx2 = Number(rule.max);
+    ok = (v < mx2);
+    msg = ok ? '적정' : ('부적정 (기준: ' + mx2 + ' 미만)');
+  } else if (vtype === 'lel') {
+    // LEL%: 최댓값 이하
+    var mx3 = Number(rule.max);
+    ok = (v <= mx3);
+    msg = ok ? '적정' : ('부적정 (기준: LEL ' + mx3 + '% 이하)');
+  }
+  return { ok: ok, msg: msg };
+}
+
+// 체크리스트 작성 화면 — 입력값 변경 시 실시간 적정 여부 표시
+function _onInputFieldChange(inputId) {
+  var inp = document.getElementById(inputId);
+  var statusEl = document.getElementById(inputId + '_status');
+  if (!inp || !statusEl) return;
+  var val = inp.value;
+  if (val === '' || val === null || val === undefined) {
+    statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500';
+    statusEl.textContent = '미입력';
+    inp.style.borderColor = '';
+    return;
+  }
+  // data-rule 속성에서 검증 기준 읽기 (RULE-003 준수)
+  var ruleJson = inp.getAttribute('data-rule') || '{}';
+  var rule = {};
+  try { rule = JSON.parse(ruleJson); } catch(e) {}
+  var result = _validateInputField(val, rule);
+  if (result.ok) {
+    statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold';
+    statusEl.textContent = '✅ ' + result.msg;
+    inp.style.borderColor = '#16a34a';
+  } else {
+    statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold';
+    statusEl.textContent = '⚠️ ' + result.msg;
+    inp.style.borderColor = '#dc2626';
+  }
+}
+
 // ─── 저장 (POST 신규 / PUT 수정) ─────────────────────────────────────────────
 async function _saveWtSafetyItem(encodedOriginalKey) {
   var typeKey = (document.getElementById('wtEdit_typeKey') || {}).value;
@@ -44250,9 +44456,10 @@ async function _saveWtSafetyItem(encodedOriginalKey) {
   var tbmItems = _wtCollectItems('wtEdit_tbm');
   var precautionItems = _wtCollectItems('wtEdit_prec');
   var photoLabels = _wtCollectItems('wtEdit_photo');
+  var inputFields = _wtCollectInputFields();
 
   var payload = { type_key: typeKey, work_class: workClass, label: label, icon: icon.trim(), is_active: isActive, sort_order: sortOrder,
-    safety_items: safetyItems, tbm_items: tbmItems, precaution_items: precautionItems, photo_labels: photoLabels };
+    safety_items: safetyItems, tbm_items: tbmItems, precaution_items: precautionItems, photo_labels: photoLabels, input_fields: inputFields };
 
   try {
     var isNew = !encodedOriginalKey;

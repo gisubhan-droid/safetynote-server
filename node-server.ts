@@ -3024,6 +3024,20 @@ function patchSchema() {
     console.warn('[patchSchema v0.169] work_class 매핑 실패 (무시):', e.message)
   }
 
+  // ─── patchSchema v0.170: work_type_safety_settings에 input_fields 컬럼 추가 ────
+  // 목적: 작업유형별 필수 입력 레이블(가스측정값 등) 정의 — JSON 배열로 저장
+  //       각 항목: { label, unit, validate_type, min, max }
+  try {
+    rawDb.exec(`ALTER TABLE work_type_safety_settings ADD COLUMN input_fields TEXT DEFAULT '[]'`)
+    console.log('[patchSchema v0.170] ✅ input_fields 컬럼 추가 완료')
+  } catch(e: any) {
+    if (e.message?.includes('duplicate column')) {
+      console.log('[patchSchema v0.170] input_fields 컬럼 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.170] input_fields 컬럼 추가 실패 (무시):', e.message)
+    }
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -5938,7 +5952,7 @@ app.get('/api/work-type-safety', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   try {
     const rows = rawDb.prepare(
-      `SELECT id, type_key, work_class, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels
+      `SELECT id, type_key, work_class, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, input_fields
        FROM work_type_safety_settings ORDER BY sort_order ASC, id ASC`
     ).all()
     const list = rows.map((r: any) => ({
@@ -5953,6 +5967,7 @@ app.get('/api/work-type-safety', async (c) => {
       tbm_items: (() => { try { return JSON.parse(r.tbm_items || '[]') } catch { return [] } })(),
       precaution_items: (() => { try { return JSON.parse(r.precaution_items || '[]') } catch { return [] } })(),
       photo_labels: (() => { try { return JSON.parse(r.photo_labels || '[]') } catch { return [] } })(),
+      input_fields: (() => { try { return JSON.parse(r.input_fields || '[]') } catch { return [] } })(),
     }))
     return c.json({ data: list })
   } catch (e: any) {
@@ -5968,7 +5983,7 @@ app.get('/api/work-type-safety/:typeKey', async (c) => {
   const typeKey = decodeURIComponent(c.req.param('typeKey'))
   try {
     const row = rawDb.prepare(
-      `SELECT id, type_key, work_class, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels
+      `SELECT id, type_key, work_class, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, input_fields
        FROM work_type_safety_settings WHERE type_key = ?`
     ).get(typeKey) as any
     if (!row) return c.json({ error: 'Not found' }, 404)
@@ -5980,6 +5995,7 @@ app.get('/api/work-type-safety/:typeKey', async (c) => {
       tbm_items: (() => { try { return JSON.parse(row.tbm_items || '[]') } catch { return [] } })(),
       precaution_items: (() => { try { return JSON.parse(row.precaution_items || '[]') } catch { return [] } })(),
       photo_labels: (() => { try { return JSON.parse(row.photo_labels || '[]') } catch { return [] } })(),
+      input_fields: (() => { try { return JSON.parse(row.input_fields || '[]') } catch { return [] } })(),
     }})
   } catch (e: any) {
     return c.json({ error: e.message }, 500)
@@ -6008,12 +6024,13 @@ app.post('/api/work-type-safety', async (c) => {
     const tbmItems = JSON.stringify(Array.isArray(body.tbm_items) ? body.tbm_items : [])
     const precautionItems = JSON.stringify(Array.isArray(body.precaution_items) ? body.precaution_items : [])
     const photoLabels = JSON.stringify(Array.isArray(body.photo_labels) ? body.photo_labels : [])
+    const inputFields = JSON.stringify(Array.isArray(body.input_fields) ? body.input_fields : [])
     const now = new Date().toISOString()
     const result = rawDb.prepare(`
       INSERT INTO work_type_safety_settings
-        (type_key, work_class, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(typeKey, workClass, label, icon, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, now, now)
+        (type_key, work_class, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, input_fields, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(typeKey, workClass, label, icon, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, inputFields, now, now)
     return c.json({ ok: true, id: result.lastInsertRowid })
   } catch (e: any) {
     if (e.message?.includes('UNIQUE')) return c.json({ error: '이미 존재하는 type_key입니다.' }, 409)
@@ -6042,12 +6059,13 @@ app.put('/api/work-type-safety/:typeKey', async (c) => {
     const tbmItems = JSON.stringify(Array.isArray(body.tbm_items) ? body.tbm_items : [])
     const precautionItems = JSON.stringify(Array.isArray(body.precaution_items) ? body.precaution_items : [])
     const photoLabels = JSON.stringify(Array.isArray(body.photo_labels) ? body.photo_labels : [])
+    const inputFields = JSON.stringify(Array.isArray(body.input_fields) ? body.input_fields : [])
     const now = new Date().toISOString()
     const result = rawDb.prepare(`
       UPDATE work_type_safety_settings
-      SET work_class=?, label=?, icon=?, is_active=?, sort_order=?, safety_items=?, tbm_items=?, precaution_items=?, photo_labels=?, updated_at=?
+      SET work_class=?, label=?, icon=?, is_active=?, sort_order=?, safety_items=?, tbm_items=?, precaution_items=?, photo_labels=?, input_fields=?, updated_at=?
       WHERE type_key=?
-    `).run(workClass || null, label, icon, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, now, typeKey)
+    `).run(workClass || null, label, icon, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, inputFields, now, typeKey)
     if (result.changes === 0) return c.json({ error: 'Not found' }, 404)
     return c.json({ ok: true })
   } catch (e: any) {

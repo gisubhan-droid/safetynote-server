@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-23 (세션 61 — FEAT-168 사진탭 caption 하위 그룹 소제목 헤더 구현 완료)
-> **GitHub 최신: `85d7bcc`** — feat: [FEAT-168] 사진탭 caption 기준 하위 그룹 소제목 헤더 강화
+> 최종 업데이트: 2026-07-24 (세션 62 — FEAT-169 관리자/감독자 연계작업 사진 조회 확대 + media_type 버그 수정)
+> **GitHub 최신: `bfc3bbb`** — feat: [FEAT-169] 관리자/감독자 연계작업 사진 조회 확대 + media_type SELECT 추가
+> **이전 커밋: `828cc14`** — docs: [FEAT-168] PROJECT_HISTORY.md 헤더 갱신 + 세션 61 기록 추가
+> **이전 커밋: `85d7bcc`** — feat: [FEAT-168] 사진탭 caption 기준 하위 그룹 소제목 헤더 강화
 > **이전 커밋: `252b3cf`** — feat: [FEAT-166] 작업 복사 버튼 전체 진행단계로 확대
 > **이전 커밋: `ec11305`** — feat: [FEAT-166/167] 작업 복사 기능 + 공사요청번호 클릭 이동
 > **이전 커밋: `5fa2de7`** — docs: [세션 59] 남은 작업 목록 현행화
@@ -434,7 +436,7 @@ Phase 5 ✅ 완료 (2026-06-21~세션81) — 브라우저 업데이트·롤백·
 Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미완
 ```
 
-### 📌 실질적 남은 작업 (2026-07-23 기준)
+### 📌 실질적 남은 작업 (2026-07-24 기준)
 
 | 우선순위 | 항목 | 내용 | 관련 |
 |---------|------|------|------|
@@ -442,6 +444,7 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 | 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 (사용자 없을 때 진행) | Phase 6 |
 | 🟢 낮음 | **DOCS-001 NAS 설치 매뉴얼** | Phase 3·6 완료 후 신규 담당자용 단계별 문서 작성 | Phase 4 |
 | 🟢 낮음 | **최종 버전 태깅** | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 (Phase 3 완료 후) | — |
+| ✅ 완료 | **FEAT-169 관리자/감독자 연계작업 사진** | PC 접속 admin/supervisor도 연계작업 사진 조회 가능 + media_type 버그 수정 | `bfc3bbb` |
 | ✅ 완료 | **FEAT-168 사진탭 caption 하위 그룹** | 사진유형 하위 caption 기준 폴더 소제목 헤더 (3곳 동시 적용) | `85d7bcc` |
 | ✅ 완료 | **FEAT-166 작업 복사** | 전체 진행단계 복사 버튼 + copyTask() 함수 | `252b3cf` |
 | ✅ 완료 | **FEAT-167 공사요청번호 클릭 이동** | 작업 상세 기본정보 탭 공사요청번호 클릭 → 공사 상세 이동 | `ec11305` |
@@ -482,6 +485,53 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 | Watchdog 등록 | 언급만 있음 | 6장 신설: 단계별 스크린샷 기준 절차 |
 | 타 NAS 배포 | pm2 startup 안내 | Watchdog 등록 필수 안내로 교체 |
 | 장애 FAQ | 4개 | 6개 (Watchdog 관련 2건 추가) |
+
+---
+
+## 📄 세션 62 — FEAT-169 관리자/감독자 연계작업 사진 조회 확대 + media_type 버그 수정 (2026-07-24)
+
+### 완료된 작업
+
+#### FEAT-169: 관리자/감독자 PC 접속 시 연계작업 사진 조회 기능 확대
+
+**이중 검증 항목:**
+| 검증 항목 | 결과 |
+|-----------|------|
+| Git 상태 (`828cc14`, working tree clean) | ✅ |
+| PROJECT_HISTORY 헤더 최신 커밋 `828cc14` 확인 | ✅ |
+| GitHub token + remote URL 확인 | ✅ |
+| RULE-001/002/003 규칙 재확인 | ✅ |
+| FEAT-112 버그 이력 확인 (세션148~153) | ✅ |
+| `linked-photos-section` 실제 코드 (line 8992) `isWorker && task.construction_id` | ✅ |
+| `_loadLinkedCompletedPhotos` 호출 조건 (line 9446) `if (isWorker && task.construction_id)` | ✅ |
+| `showPhotoUpload` 버튼 isWorker 조건 없음 — 현재도 전체 역할 업로드 가능 확인 | ✅ |
+| `node-server.ts` construction_id 쿼리 `media_type` 누락 발견 | ✅ |
+| 작업 진행 버튼 isWorker 분기 — `unassigned` 단계만 해당, 이후 단계 역할 무관 | ✅ |
+| 충돌 위험 없음 — 조건 확대만으로 기존 코드와 충돌 0건 | ✅ |
+
+**수정 내용:**
+- ✅ **`app.js` line ~8992** — `linked-photos-section` HTML 조건 확대
+  - 변경 전: `${(isWorker && task.construction_id) ? \``
+  - 변경 후: `${((isWorker || currentUser.role === 'admin' || currentUser.role === 'supervisor') && task.construction_id) ? \``
+- ✅ **`app.js` line ~9446** — `_loadLinkedCompletedPhotos` 호출 조건 확대
+  - 변경 전: `if (isWorker && task.construction_id) {`
+  - 변경 후: `if ((isWorker || currentUser.role === 'admin' || currentUser.role === 'supervisor') && task.construction_id) {`
+- ✅ **`node-server.ts` line ~5642** — `construction_id` 쿼리 SELECT에 `p.media_type` 추가
+  - 변경 전: `p.caption, p.taken_at, p.created_at, u.name as uploader_name,`
+  - 변경 후: `p.caption, p.taken_at, p.created_at, p.media_type, u.name as uploader_name,`
+  - **효과**: 연계작업 사진 조회 시 동영상(`media_type='video'`) 판별 정상화
+
+### 검증 결과
+- ✅ **node --check** → PASSED
+- ✅ **npm run build** → `dist/_worker.js 283.47 kB` ✅
+- ✅ **Git 커밋**: `bfc3bbb` — feat: [FEAT-169] 관리자/감독자 연계작업 사진 조회 확대 + media_type SELECT 추가
+- ✅ **GitHub Push**: `828cc14..bfc3bbb` → main ✅
+
+### 수정 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | ① linked-photos-section 조건 확대 ② _loadLinkedCompletedPhotos 호출 조건 확대 |
+| `node-server.ts` | construction_id 쿼리 SELECT에 p.media_type 추가 |
 
 ---
 

@@ -27209,17 +27209,30 @@ async function showChecklistAssessment(taskId, taskTitle, taskWorkClass) {
     { value:'confined', label:'밀폐공간작업',     icon:'fas fa-door-closed',   color:'text-red-700'    }
   ];
   // DB 캐시에서 is_active 항목만 필터링 → conditionalList 동적 생성
-  // TBM회의는 체크박스 대상 아님 (자동 생성 방식) → type_key 매핑에 없으면 제외
+  // 제외 대상: TBM회의 (체크박스 아닌 자동생성 섹션), is_active=false
+  // 나머지 모든 항목 표시 — 매핑 있으면 work_class 사용, 없으면 type_key 자체를 value로 사용
+  var _WT_EXCLUDE_KEYS = { 'TBM회의': true }; // 체크박스에서 제외할 type_key 목록
   var conditionalList;
   if (_wtSafetyCache && _wtSafetyCache.length > 0) {
     var _dbConditional = [];
     _wtSafetyCache.forEach(function(wt) {
-      if (!wt.is_active) return; // 비활성 제외
-      var wClass = _WT_TYPE_KEY_TO_CLASS[wt.type_key];
-      if (!wClass) return; // 매핑 없는 항목(TBM회의 등) 제외
-      var style = _WT_CLASS_STYLE[wClass] || { icon:'fas fa-hard-hat', color:'text-gray-600' };
+      if (!wt.is_active) return;                  // 비활성 제외
+      if (_WT_EXCLUDE_KEYS[wt.type_key]) return;  // TBM회의 등 명시적 제외 항목
+      // work_class 결정: 매핑 있으면 변환, 없으면 type_key 자체를 value로 사용
+      var wClass = _WT_TYPE_KEY_TO_CLASS[wt.type_key] || wt.type_key;
+      var style = _WT_CLASS_STYLE[wClass] || { icon:'fas fa-hard-hat', color:'text-gray-500' };
       var faIcon = (wt.icon && wt.icon !== 'fa-hard-hat') ? ('fas ' + wt.icon) : style.icon;
       _dbConditional.push({ value: wClass, label: wt.label || wt.type_key, icon: faIcon, color: style.color });
+      // CONDITIONAL_META에 없는 항목은 동적으로 등록 (섹션 헤더 렌더링 보장)
+      if (!CONDITIONAL_META[wClass]) {
+        CONDITIONAL_META[wClass] = {
+          label: wt.label || wt.type_key,
+          color: 'bg-gray-50 border-gray-300',
+          hdrBg: 'bg-gray-100',
+          hdrText: 'text-gray-800',
+          icon: faIcon + ' text-gray-600'
+        };
+      }
     });
     // DB에 항목이 있으면 DB 기반 목록 사용, 없으면 폴백
     conditionalList = _dbConditional.length > 0 ? _dbConditional : _defaultConditionalList;
@@ -27514,8 +27527,14 @@ async function loadChecklistItems(taskId) {
         </div>`;
 
       for (const cls of conditionals) {
-        const meta = CONDITIONAL_META[cls];
-        if (!meta || !conditionalGrouped[cls]) continue;
+        const meta = CONDITIONAL_META[cls] || {
+          label: cls,
+          color: 'bg-gray-50 border-gray-300',
+          hdrBg: 'bg-gray-100',
+          hdrText: 'text-gray-800',
+          icon: 'fas fa-hard-hat text-gray-600'
+        };
+        if (!conditionalGrouped[cls]) continue;
         html += `
         <div class="mb-4 border-2 ${meta.color} rounded-xl overflow-hidden">
           <div class="px-3 py-2 ${meta.hdrBg} flex items-center gap-2 border-b border-current/20">

@@ -11958,7 +11958,10 @@ var _wtSafetyCache = null; // null: 미로드, []: 빈 목록, [...]: 로드 완
 
 async function _loadWtSafetySettings() {
   try {
-    var res = await fetch('/api/work-type-safety');
+    var token = localStorage.getItem('token') || '';
+    var res = await fetch('/api/work-type-safety', {
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+    });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     var json = await res.json();
     var list = Array.isArray(json.data) ? json.data : [];

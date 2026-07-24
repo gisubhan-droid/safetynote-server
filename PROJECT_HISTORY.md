@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-23 (세션 60 — FEAT-166/167 작업 복사 + 공사요청번호 클릭 이동 구현 완료)
-> **GitHub 최신: `ec11305`** — feat: [FEAT-166/167] 작업 복사 기능 + 공사요청번호 클릭 이동
+> 최종 업데이트: 2026-07-23 (세션 61 — FEAT-168 사진탭 caption 하위 그룹 소제목 헤더 구현 완료)
+> **GitHub 최신: `85d7bcc`** — feat: [FEAT-168] 사진탭 caption 기준 하위 그룹 소제목 헤더 강화
+> **이전 커밋: `252b3cf`** — feat: [FEAT-166] 작업 복사 버튼 전체 진행단계로 확대
+> **이전 커밋: `ec11305`** — feat: [FEAT-166/167] 작업 복사 기능 + 공사요청번호 클릭 이동
 > **이전 커밋: `5fa2de7`** — docs: [세션 59] 남은 작업 목록 현행화
 > **이전 커밋: `caa7e29`** — fix: [FEAT-025-TAB v4] 탭바 sticky 모바일 수정 — modal-inner 스크롤 컨테이너 분리
 > **이전 커밋: `95c4674`** — docs: [FEAT-025-TAB v4] PROJECT_HISTORY.md 헤더 갱신 + 세션 58 기록 추가
@@ -440,7 +442,8 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 | 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 (사용자 없을 때 진행) | Phase 6 |
 | 🟢 낮음 | **DOCS-001 NAS 설치 매뉴얼** | Phase 3·6 완료 후 신규 담당자용 단계별 문서 작성 | Phase 4 |
 | 🟢 낮음 | **최종 버전 태깅** | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 (Phase 3 완료 후) | — |
-| ✅ 완료 | **FEAT-166 작업 복사** | 완료/취소 작업 복사 버튼 + copyTask() 함수 | `ec11305` |
+| ✅ 완료 | **FEAT-168 사진탭 caption 하위 그룹** | 사진유형 하위 caption 기준 폴더 소제목 헤더 (3곳 동시 적용) | `85d7bcc` |
+| ✅ 완료 | **FEAT-166 작업 복사** | 전체 진행단계 복사 버튼 + copyTask() 함수 | `252b3cf` |
 | ✅ 완료 | **FEAT-167 공사요청번호 클릭 이동** | 작업 상세 기본정보 탭 공사요청번호 클릭 → 공사 상세 이동 | `ec11305` |
 | ✅ 완료 | **FEAT-025-TAB v4** | 탭바 sticky 모바일 수정 — modal-inner 스크롤 컨테이너 분리 | `caa7e29` |
 | ✅ 완료 | **DOCS-002 배포설명서** | Watchdog 등록 절차 + SSH 선택사항 + 브라우저 업데이트 위주 개편 | `1e38f65` |
@@ -479,6 +482,42 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 | Watchdog 등록 | 언급만 있음 | 6장 신설: 단계별 스크린샷 기준 절차 |
 | 타 NAS 배포 | pm2 startup 안내 | Watchdog 등록 필수 안내로 교체 |
 | 장애 FAQ | 4개 | 6개 (Watchdog 관련 2건 추가) |
+
+---
+
+## 📄 세션 61 — FEAT-168 사진탭 caption 하위 그룹 소제목 헤더 (2026-07-23)
+
+### 완료된 작업
+
+#### FEAT-168: 사진탭 caption 기준 하위 그룹 소제목 헤더 강화
+- ✅ **이중 검증**: 수정 대상 3곳 코드 위치·내용 확인, 충돌 클래스명 0건, `hasMultipleCaps` 미사용 변수 확인
+- ✅ **수정 ① `showTaskDetail` 사진탭** — caption 소제목 헤더 디자인 강화 + `hasMultipleCaps` 미사용 변수 제거
+- ✅ **수정 ② `_refreshPhotoTab`** — 동일 디자인 적용 (부분 갱신 시 일관성 유지)
+- ✅ **수정 ③ `_showLinkedPhotoModal`** — caption 2차 그룹핑 신규 추가 + 소제목 헤더 (`var` + 문자열 연결, RULE-001 준수)
+
+**표시 구조:**
+```
+🟡 작업 중  6장
+  사진1 / 사진2         ← caption 없는 사진 (소제목 없이 바로 표시)
+  📁 성단  2장          ← 보라 배경 + 폴더 아이콘 소제목 헤더
+    사진3 / 사진4
+🟢 작업 후  2장
+  📁 랙시설  2장
+    사진5 / 사진6
+```
+
+**소제목 헤더 디자인:** `background:#F3EFF8; border-left:3px solid #685182` + `fas fa-folder` 아이콘 + 장수 뱃지
+
+### 검증 결과
+- ✅ **node --check** → PASSED
+- ✅ **npm run build** → `dist/_worker.js 283.47 kB` ✅
+- ✅ **Git 커밋**: `85d7bcc` — feat: [FEAT-168] 사진탭 caption 기준 하위 그룹 소제목 헤더 강화
+- ✅ **GitHub Push**: `252b3cf..85d7bcc` → main ✅
+
+### 수정 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | ① showTaskDetail 사진탭 ② _refreshPhotoTab ③ _showLinkedPhotoModal — 3곳 caption 그룹 헤더 강화 |
 
 ---
 

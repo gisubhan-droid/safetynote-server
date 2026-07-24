@@ -10337,27 +10337,57 @@ async function openAttachment(id, fileName, mimeType) {
       + `/api/attachments/${id}/download`
       + `?token=${encodeURIComponent(token||'')}&filename=${safeFileName}`;
 
-    // ✅ 1순위: SafetyNoteApp 브릿지 직접 호출 (isCapacitor 감지 결과와 무관하게 항상 시도)
-    if (isAppBridge && typeof window.SafetyNoteApp.openAttachment === 'function') {
-      try {
-        window.SafetyNoteApp.openAttachment(absoluteUrl, fileName || 'attachment');
-        toast(`"${fileName}" 파일을 여는 중...`, 'info');
-        return;
-      } catch(e) { /* 폴백으로 계속 */ }
+    // ✅ 1순위: SafetyNoteApp 브릿지 (Android 앱 환경)
+    // [FEAT-170b] PDF·이미지는 인앱 뷰어로, 나머지(Word·HWP 등)는 기존 외부앱 유지
+    if (isAppBridge) {
+      var isAppPdf   = mimeType === 'application/pdf';
+      var isAppImage = !!(mimeType||'').startsWith('image/');
+      if (isAppPdf || isAppImage) {
+        // PDF·이미지 → fetch → blob → 인앱 뷰어
+        try {
+          var appRes = await fetch('/api/attachments/' + id + '/download', {
+            headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+          });
+          if (!appRes.ok) {
+            var appErr = await appRes.json().catch(function() { return {}; });
+            toast(appErr.error || '파일 로드 실패 (' + appRes.status + ')', 'error');
+            return;
+          }
+          var appBlob = await appRes.blob();
+          var appUrl  = URL.createObjectURL(appBlob);
+          if (isAppPdf) {
+            _openPdfViewer(appUrl, fileName);
+          } else {
+            _openImageViewer(appUrl, fileName);
+          }
+          return;
+        } catch(fetchErr) {
+          // fetch 실패 시 기존 외부앱 방식으로 폴백
+          toast('"' + fileName + '" 불러오기 실패 — 외부 앱으로 엽니다.', 'info');
+        }
+      }
+      // Word·HWP·Excel 등 기타 → 기존 SafetyNoteApp 브릿지 방식 유지
+      if (typeof window.SafetyNoteApp.openAttachment === 'function') {
+        try {
+          window.SafetyNoteApp.openAttachment(absoluteUrl, fileName || 'attachment');
+          toast('"' + fileName + '" 파일을 여는 중...', 'info');
+          return;
+        } catch(e) { /* 폴백으로 계속 */ }
+      }
     }
 
     if (isCapacitor) {
       // ✅ 2순위: _system 방식 (shouldOverrideUrlLoading 인터셉트)
       try {
         window.open(absoluteUrl, '_system');
-        toast(`"${fileName}" 파일을 여는 중...`, 'info');
+        toast('"' + fileName + '" 파일을 여는 중...', 'info');
       } catch(e) {
         window.open(absoluteUrl, '_blank');
       }
       return;
     }
 
-    // ── 일반 브라우저 (PC / 일반 모바일 브라우저) ────────────────────────────
+    // ── 일반 브라우저 (PC / 일반 모바일 브라우저) — 새 탭 방식 ──────────────
     const res = await fetch(`/api/attachments/${id}/download`, {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {}
     });
@@ -10370,11 +10400,18 @@ async function openAttachment(id, fileName, mimeType) {
     const url  = URL.createObjectURL(blob);
     const isViewable = (mimeType||'').startsWith('image/') || mimeType === 'application/pdf';
     if (isViewable) {
-      // [FEAT-170] 인앱 뷰어 — 새 탭 대신 앱 내부 모달에서 바로 보기
-      if (mimeType === 'application/pdf') {
-        _openPdfViewer(url, fileName);
-      } else {
-        _openImageViewer(url, fileName);
+      // PC: 새 탭에서 바로 보기 (기존 방식 복원)
+      const tab = window.open('', '_blank');
+      if (tab) {
+        if ((mimeType||'').startsWith('image/')) {
+          tab.document.write('<!DOCTYPE html><html><head><title>' + fileName + '</title>'
+            + '<style>body{margin:0;background:#4E3A63;display:flex;align-items:center;justify-content:center;min-height:100vh}'
+            + 'img{max-width:100%;max-height:100vh;object-fit:contain}</style></head>'
+            + '<body><img src="' + url + '" alt="' + fileName + '"></body></html>');
+        } else {
+          tab.location.href = url;
+          setTimeout(function() { URL.revokeObjectURL(url); }, 10000);
+        }
       }
     } else {
       // 다운로드

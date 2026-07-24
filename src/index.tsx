@@ -350,7 +350,7 @@ app.get('*', (c) => {
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=69c86db"></script>
+  <script src="/static/app.js?v=a607358"></script>
 </body>
 </html>`)
 })

@@ -9331,13 +9331,12 @@ async function showTaskDetail(id, openTbmTab) {
               if (!capGroups[capKey]) capGroups[capKey] = [];
               capGroups[capKey].push(p);
             }
-            // caption 없는 것 먼저, 있는 것은 입력순(첫 번째 사진 created_at 기준)
+            // caption 없는 것 먼저, 있는 것은 입력순
             const sortedCaps = Object.keys(capGroups).sort((a, b) => {
               if (a === '__none__') return -1;
               if (b === '__none__') return 1;
               return 0;
             });
-            const hasMultipleCaps = sortedCaps.length > 1 || (sortedCaps.length === 1 && sortedCaps[0] !== '__none__');
 
             // photo_type 섹션 헤더
             html += `<div class="mb-5">
@@ -9352,9 +9351,13 @@ async function showTaskDetail(id, openTbmTab) {
               const capList = capGroups[capKey];
               const capLabel = capKey === '__none__' ? '' : capKey;
 
-              // caption 소제목 (caption 있는 그룹이 여럿이거나 caption이 있을 때만 표시)
+              // caption 소제목 헤더 — 강화된 시각 구분
               if (capLabel) {
-                html += `<div class="text-xs text-gray-500 font-medium mb-1 pl-1 border-l-2 border-gray-300">${capLabel} <span class="text-gray-400">(${capList.length})</span></div>`;
+                html += `<div class="flex items-center gap-1.5 mb-1.5 mt-2 px-2 py-1 rounded-md" style="background:#F3EFF8;border-left:3px solid #685182">
+                  <i class="fas fa-folder text-xs" style="color:#685182"></i>
+                  <span class="text-xs font-semibold" style="color:#685182">${capLabel}</span>
+                  <span class="text-xs text-gray-400 ml-auto">${capList.length}장</span>
+                </div>`;
               }
               html += `<div class="photo-grid mb-3">${capList.map(renderThumb).join('')}</div>`;
             }
@@ -10266,7 +10269,11 @@ async function _refreshPhotoTab(taskId) {
           const capList = capGroups[capKey];
           const capLabel = capKey === '__none__' ? '' : capKey;
           if (capLabel) {
-            html += `<div class="text-xs text-gray-500 font-medium mb-1 pl-1 border-l-2 border-gray-300">${capLabel} <span class="text-gray-400">(${capList.length})</span></div>`;
+            html += `<div class="flex items-center gap-1.5 mb-1.5 mt-2 px-2 py-1 rounded-md" style="background:#F3EFF8;border-left:3px solid #685182">
+              <i class="fas fa-folder text-xs" style="color:#685182"></i>
+              <span class="text-xs font-semibold" style="color:#685182">${capLabel}</span>
+              <span class="text-xs text-gray-400 ml-auto">${capList.length}장</span>
+            </div>`;
           }
           html += `<div class="photo-grid mb-3">${capList.map(renderThumb).join('')}</div>`;
         }
@@ -10515,32 +10522,57 @@ function _showLinkedPhotoModal(linkedTaskId, currentTaskId) {
         + '<span style="background:' + typeColor + ';color:white;font-size:11px;font-weight:700;padding:3px 12px;border-radius:12px">' + typeLabel + '</span>'
         + '<span style="color:#9CA3AF;font-size:12px">' + list.length + '장</span>'
         + '</div>';
-      // 그리드: 4열 기본 (모바일 2열)
-      bodyHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
+      // caption 기준 2차 그룹핑
+      var capGroups = {};
       list.forEach(function(p) {
-        var rawCap = p.caption || p.file_name || '';
-        var escapedCap = rawCap.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        var isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
-        bodyHtml += '<div onclick="_showLinkedPhotoView(' + p.id + ',\'' + escapedCap + '\',' + (isVideo ? 'true' : 'false') + ')"'
-          + ' style="position:relative;aspect-ratio:4/3;background:#F3F4F6;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;cursor:pointer">';
-        if (isVideo) {
-          bodyHtml += '<video src="' + photoImgSrc(p.id) + '" style="width:100%;height:100%;object-fit:cover" muted preload="metadata"></video>'
-            + '<div style="position:absolute;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center">'
-            + '<i class="fas fa-play" style="color:white;font-size:1.5rem"></i></div>'
-            + '<div style="position:absolute;top:3px;left:3px;background:#2563EB;color:white;font-size:9px;padding:1px 4px;border-radius:3px"><i class="fas fa-video"></i></div>';
-        } else {
-          bodyHtml += '<img src="' + photoImgSrc(p.id) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=\'0.3\'">'
-            + '<div style="position:absolute;inset:0;background:rgba(0,0,0,0);display:flex;align-items:center;justify-content:center;transition:background 0.15s"'
-            + ' onmouseover="this.style.background=\'rgba(0,0,0,0.25)\'" onmouseout="this.style.background=\'rgba(0,0,0,0)\'">'
-            + '<i class="fas fa-expand" style="color:white;font-size:1rem;opacity:0.8"></i></div>';
+        var capKey = (p.caption || '').trim() || '__none__';
+        if (!capGroups[capKey]) capGroups[capKey] = [];
+        capGroups[capKey].push(p);
+      });
+      var sortedCaps = Object.keys(capGroups).sort(function(a, b) {
+        if (a === '__none__') return -1;
+        if (b === '__none__') return 1;
+        return 0;
+      });
+      sortedCaps.forEach(function(capKey) {
+        var capList = capGroups[capKey];
+        var capLabel = capKey === '__none__' ? '' : capKey;
+        // caption 소제목 헤더
+        if (capLabel) {
+          bodyHtml += '<div style="display:flex;align-items:center;gap:6px;margin-top:10px;margin-bottom:6px;padding:4px 8px;border-radius:6px;background:#F3EFF8;border-left:3px solid #685182">'
+            + '<i class="fas fa-folder" style="color:#685182;font-size:11px"></i>'
+            + '<span style="font-size:12px;font-weight:600;color:#685182">' + capLabel + '</span>'
+            + '<span style="font-size:11px;color:#9CA3AF;margin-left:auto">' + capList.length + '장</span>'
+            + '</div>';
         }
-        if (rawCap) {
-          bodyHtml += '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:white;font-size:9px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
-            + rawCap + '</div>';
-        }
+        // 그리드: 4열 기본
+        bodyHtml += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">';
+        capList.forEach(function(p) {
+          var rawCap = p.caption || p.file_name || '';
+          var escapedCap = rawCap.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+          var isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
+          bodyHtml += '<div onclick="_showLinkedPhotoView(' + p.id + ',\'' + escapedCap + '\',' + (isVideo ? 'true' : 'false') + ')"'
+            + ' style="position:relative;aspect-ratio:4/3;background:#F3F4F6;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;cursor:pointer">';
+          if (isVideo) {
+            bodyHtml += '<video src="' + photoImgSrc(p.id) + '" style="width:100%;height:100%;object-fit:cover" muted preload="metadata"></video>'
+              + '<div style="position:absolute;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center">'
+              + '<i class="fas fa-play" style="color:white;font-size:1.5rem"></i></div>'
+              + '<div style="position:absolute;top:3px;left:3px;background:#2563EB;color:white;font-size:9px;padding:1px 4px;border-radius:3px"><i class="fas fa-video"></i></div>';
+          } else {
+            bodyHtml += '<img src="' + photoImgSrc(p.id) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=\'0.3\'">'
+              + '<div style="position:absolute;inset:0;background:rgba(0,0,0,0);display:flex;align-items:center;justify-content:center;transition:background 0.15s"'
+              + ' onmouseover="this.style.background=\'rgba(0,0,0,0.25)\'" onmouseout="this.style.background=\'rgba(0,0,0,0)\'">'
+              + '<i class="fas fa-expand" style="color:white;font-size:1rem;opacity:0.8"></i></div>';
+          }
+          if (rawCap) {
+            bodyHtml += '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:white;font-size:9px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+              + rawCap + '</div>';
+          }
+          bodyHtml += '</div>';
+        });
         bodyHtml += '</div>';
       });
-      bodyHtml += '</div></div>';
+      bodyHtml += '</div>';
     });
   }
 

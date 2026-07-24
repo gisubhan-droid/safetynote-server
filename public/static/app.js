@@ -10817,9 +10817,9 @@ function _openPdfViewer(blobUrl, fileName) {
     + '<button onclick="_snPdfZoomIn()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px">+</button>'
     + '</div>';
 
-  // 캔버스 영역 — max-width 제거: 줌 시 캔버스가 실제 크기로 커지고 overflow:auto로 스크롤
-  var body = '<div id="sn-pdf-body" style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:16px;touch-action:none">'
-    + '<canvas id="sn-pdf-canvas" style="box-shadow:0 4px 24px rgba(0,0,0,0.5);display:block"></canvas>'
+  // 캔버스 영역 — overflow:auto + touch-action:pan-x pan-y: 1손가락 스크롤 허용, 2손가락 핀치는 JS에서 e.preventDefault()로 제어
+  var body = '<div id="sn-pdf-body" style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:16px;touch-action:pan-x pan-y">'
+    + '<canvas id="sn-pdf-canvas" style="box-shadow:0 4px 24px rgba(0,0,0,0.5);display:block;flex-shrink:0"></canvas>'
     + '</div>';
 
   // 하단 페이지 컨트롤
@@ -10835,9 +10835,14 @@ function _openPdfViewer(blobUrl, fileName) {
   document.body.appendChild(viewer);
 
   // ── PDF 뷰어 핀치 줌 이벤트 리스너 ──────────────────────────────────────
+  // 설계 원칙:
+  //  - touch-action:pan-x pan-y → 1손가락 스크롤은 브라우저 기본동작(허용)
+  //  - 2손가락 감지 시에만 e.preventDefault() → 핀치만 JS로 처리
+  //  - 1손가락 터치는 이벤트 핸들러가 아무것도 하지 않음(스크롤 그대로)
   var pdfBody = document.getElementById('sn-pdf-body');
   var _snPinchStartDist = 0;
   var _snPinchStartScale = 1.5;
+  var _snPinchActive = false;  // 핀치 진행 중 플래그
   var _snPinchTimer = null;
 
   function _snGetPinchDist(touches) {
@@ -10847,41 +10852,52 @@ function _openPdfViewer(blobUrl, fileName) {
   }
 
   pdfBody.addEventListener('touchstart', function(e) {
+    // 2손가락 시작 → 핀치 모드 진입, 스크롤 차단
     if (e.touches.length === 2) {
       e.preventDefault();
+      _snPinchActive = true;
       _snPinchStartDist = _snGetPinchDist(e.touches);
       _snPinchStartScale = _snPdfScale;
+    } else {
+      // 1손가락 → 핀치 모드 해제, 스크롤 허용(preventDefault 미호출)
+      _snPinchActive = false;
     }
   }, { passive: false });
 
   pdfBody.addEventListener('touchmove', function(e) {
-    if (e.touches.length === 2) {
+    // 2손가락 핀치 중에만 스크롤 차단 + scale 계산
+    if (e.touches.length === 2 && _snPinchActive) {
       e.preventDefault();
       var dist = _snGetPinchDist(e.touches);
+      if (_snPinchStartDist === 0) return;
       var ratio = dist / _snPinchStartDist;
       // scale 범위: 0.5 ~ 3.0
       _snPdfScale = Math.min(Math.max(_snPinchStartScale * ratio, 0.5), 3.0);
-      // 실시간 canvas transform 미리보기 (렌더링은 touchend 후)
+      // 실시간 canvas CSS transform 미리보기 (렌더링은 touchend 후)
       var c = document.getElementById('sn-pdf-canvas');
-      if (c) c.style.transform = 'scale(' + (_snPdfScale / _snPinchStartScale) + ')';
-      if (c) c.style.transformOrigin = 'top center';
+      if (c) {
+        c.style.transform = 'scale(' + (_snPdfScale / _snPinchStartScale) + ')';
+        c.style.transformOrigin = 'top center';
+      }
     }
+    // 1손가락 move → preventDefault 미호출 → 브라우저 기본 스크롤 동작
   }, { passive: false });
 
   pdfBody.addEventListener('touchend', function(e) {
-    if (e.touches.length < 2 && _snPinchStartDist > 0) {
-      // transform 초기화 후 실제 재렌더링
+    // 핀치 종료 처리: 손가락이 2개 미만이 되는 순간
+    if (_snPinchActive && e.touches.length < 2) {
+      _snPinchActive = false;
       var c = document.getElementById('sn-pdf-canvas');
       if (c) { c.style.transform = ''; c.style.transformOrigin = ''; }
       _snPinchStartDist = 0;
-      // 디바운스: 핀치 끝나고 200ms 후 렌더 (연속 핀치 중 중복 렌더 방지)
+      // 디바운스 200ms 후 실제 재렌더 (연속 핀치 중 중복 방지)
       if (_snPinchTimer) clearTimeout(_snPinchTimer);
       _snPinchTimer = setTimeout(function() {
-        _snPdfRendering = false;  // stuck 방지 후 재렌더
+        _snPdfRendering = false;  // stuck 방지
         _snPdfRenderPage(_snPdfPage);
       }, 200);
     }
-  }, { passive: false });
+  }, { passive: true });  // touchend는 passive:true 가능 (preventDefault 불필요)
   // ────────────────────────────────────────────────────────────────────────
 
   // PDF.js 로드 후 문서 열기
@@ -10921,20 +10937,30 @@ function _openImageViewer(blobUrl, fileName) {
     + (fileName || '이미지') + '</span>'
     + '</div>';
 
-  // touch-action:none → 핀치 이벤트 브라우저 기본동작 방지
-  var body = '<div id="sn-img-body" style="flex:1;overflow:hidden;display:flex;justify-content:center;align-items:center;padding:16px;touch-action:none">'
-    + '<img id="sn-img-el" src="' + blobUrl + '" style="max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 4px 24px rgba(0,0,0,0.5);transform-origin:center center;user-select:none" alt="' + (fileName || '') + '">'
+  // overflow:auto + touch-action:pan-x pan-y: 1손가락 스크롤 허용, 2손가락 핀치는 JS로 제어
+  // img 초기 max-width/height는 JS(_imgApplyScale)가 로드 후 재설정하므로 여기선 최소 스타일만
+  var body = '<div id="sn-img-body" style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:center;touch-action:pan-x pan-y">'
+    + '<img id="sn-img-el" src="' + blobUrl + '" style="display:block;box-shadow:0 4px 24px rgba(0,0,0,0.5);user-select:none;flex-shrink:0;max-width:100%;max-height:100%;object-fit:contain" alt="' + (fileName || '') + '">'
     + '</div>';
 
   viewer.innerHTML = header + body;
   document.body.appendChild(viewer);
 
-  // ── 이미지 뷰어 핀치 줌 이벤트 리스너 ────────────────────────────────────
+  // ── 이미지 뷰어 핀치 줌 + 스크롤 이동 이벤트 리스너 ─────────────────────
+  // 설계 원칙:
+  //  - overflow:auto + touch-action:pan-x pan-y: 1손가락은 브라우저 기본 스크롤
+  //  - 확대 시 img 자체 width/height를 scale 비례로 키움 → overflow:auto 스크롤로 이동
+  //  - CSS transform:scale() 미사용 → transform이 overflow 영역을 벗어나 스크롤 안 되는 문제 방지
+  //  - 2손가락 핀치 시에만 e.preventDefault() + 이미지 크기 조정
   var imgBody = document.getElementById('sn-img-body');
   var imgEl   = document.getElementById('sn-img-el');
   var _imgPinchStartDist  = 0;
   var _imgPinchStartScale = 1.0;
   var _imgCurrentScale    = 1.0;
+  var _imgPinchActive     = false;
+  // 이미지 원본 자연 크기 (로드 후 기준값)
+  var _imgNaturalW = 0;
+  var _imgNaturalH = 0;
 
   function _imgGetPinchDist(touches) {
     var dx = touches[0].clientX - touches[1].clientX;
@@ -10942,44 +10968,90 @@ function _openImageViewer(blobUrl, fileName) {
     return Math.sqrt(dx * dx + dy * dy);
   }
 
+  // 이미지 로드 완료 후 원본 크기 저장 + 초기 표시 크기 설정
+  function _imgApplyScale(scale) {
+    if (!_imgNaturalW) return;
+    var bodyW = imgBody.clientWidth;
+    var bodyH = imgBody.clientHeight;
+    // 1배 기준 크기: 컨테이너에 맞게 fit
+    var fitW = Math.min(_imgNaturalW, bodyW);
+    var fitH = fitW * (_imgNaturalH / _imgNaturalW);
+    if (fitH > bodyH) {
+      fitH = Math.min(_imgNaturalH, bodyH);
+      fitW = fitH * (_imgNaturalW / _imgNaturalH);
+    }
+    // scale 적용 크기 (1배 미만 최소 제한)
+    var newW = Math.max(fitW * scale, fitW * 0.5);
+    var newH = Math.max(fitH * scale, fitH * 0.5);
+    imgEl.style.width  = Math.round(newW) + 'px';
+    imgEl.style.height = Math.round(newH) + 'px';
+    imgEl.style.maxWidth  = 'none';
+    imgEl.style.maxHeight = 'none';
+    imgEl.style.objectFit = 'fill';
+  }
+
+  imgEl.onload = function() {
+    _imgNaturalW = imgEl.naturalWidth  || imgEl.width  || 800;
+    _imgNaturalH = imgEl.naturalHeight || imgEl.height || 600;
+    _imgApplyScale(1.0);
+  };
+  // 이미 로드된 경우 즉시 처리
+  if (imgEl.complete && imgEl.naturalWidth) {
+    _imgNaturalW = imgEl.naturalWidth;
+    _imgNaturalH = imgEl.naturalHeight;
+    _imgApplyScale(1.0);
+  }
+
   imgBody.addEventListener('touchstart', function(e) {
     if (e.touches.length === 2) {
+      // 2손가락 → 핀치 모드, 스크롤 차단
       e.preventDefault();
-      _imgPinchStartDist  = _imgGetPinchDist(e.touches);
+      _imgPinchActive    = true;
+      _imgPinchStartDist = _imgGetPinchDist(e.touches);
       _imgPinchStartScale = _imgCurrentScale;
+    } else {
+      // 1손가락 → 스크롤 모드(preventDefault 미호출)
+      _imgPinchActive = false;
     }
   }, { passive: false });
 
   imgBody.addEventListener('touchmove', function(e) {
-    if (e.touches.length === 2) {
+    if (e.touches.length === 2 && _imgPinchActive) {
+      // 2손가락 핀치 → 스크롤 차단 + scale 계산
       e.preventDefault();
+      if (_imgPinchStartDist === 0) return;
       var dist  = _imgGetPinchDist(e.touches);
       var ratio = dist / _imgPinchStartDist;
       // scale 범위: 0.5 ~ 5.0
       _imgCurrentScale = Math.min(Math.max(_imgPinchStartScale * ratio, 0.5), 5.0);
-      imgEl.style.transform = 'scale(' + _imgCurrentScale + ')';
+      _imgApplyScale(_imgCurrentScale);
     }
+    // 1손가락 move → preventDefault 미호출 → 브라우저 기본 스크롤 동작
   }, { passive: false });
 
   imgBody.addEventListener('touchend', function(e) {
-    if (e.touches.length < 2) {
+    if (_imgPinchActive && e.touches.length < 2) {
+      _imgPinchActive    = false;
       _imgPinchStartDist = 0;
-      // 1배 미만으로 줄인 경우 1배로 복원
-      if (_imgCurrentScale < 1.0) {
+      // 0.5배 미만이면 1배로 복원
+      if (_imgCurrentScale < 0.5) {
         _imgCurrentScale = 1.0;
-        imgEl.style.transform = 'scale(1)';
+        _imgApplyScale(1.0);
       }
     }
-  }, { passive: false });
+  }, { passive: true });
 
-  // 더블탭으로 원래 크기(1배) 복원
+  // 더블탭으로 1배 복원
   var _imgLastTap = 0;
   imgBody.addEventListener('touchend', function(e) {
     if (e.touches.length > 0) return;
     var now = Date.now();
     if (now - _imgLastTap < 300) {
       _imgCurrentScale = 1.0;
-      imgEl.style.transform = 'scale(1)';
+      _imgApplyScale(1.0);
+      // 스크롤 위치도 중앙으로 복원
+      imgBody.scrollLeft = 0;
+      imgBody.scrollTop  = 0;
     }
     _imgLastTap = now;
   }, { passive: true });

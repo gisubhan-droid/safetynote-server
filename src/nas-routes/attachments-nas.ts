@@ -119,20 +119,33 @@ function getUploadDir(
   return dir
 }
 
-// ─── GET /api/attachments?task_id=X ─────────────────────────────────────────
+// ─── GET /api/attachments?task_id=X[&attach_type=Y] ─────────────────────────
+// attach_type 파라미터: 지정 시 해당 타입만 반환 (work_log / order 등)
+// 미지정 시 전체 반환 (하위 호환)
 app.get('/', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const { task_id } = c.req.query()
+  const { task_id, attach_type } = c.req.query()
   if (!task_id) return c.json({ error: 'task_id 필요' }, 400)
-  const DB     = getDB()
-  const result = await DB.prepare(
-    `SELECT ta.*, u.name as uploader_name
-     FROM task_attachments ta
-     LEFT JOIN users u ON u.id = ta.uploader_id
-     WHERE ta.task_id = ?
-     ORDER BY ta.created_at DESC`
-  ).bind(task_id).all()
+  const DB = getDB()
+  let result
+  if (attach_type) {
+    result = await DB.prepare(
+      `SELECT ta.*, u.name as uploader_name
+       FROM task_attachments ta
+       LEFT JOIN users u ON u.id = ta.uploader_id
+       WHERE ta.task_id = ? AND ta.attach_type = ?
+       ORDER BY ta.created_at DESC`
+    ).bind(task_id, attach_type).all()
+  } else {
+    result = await DB.prepare(
+      `SELECT ta.*, u.name as uploader_name
+       FROM task_attachments ta
+       LEFT JOIN users u ON u.id = ta.uploader_id
+       WHERE ta.task_id = ?
+       ORDER BY ta.created_at DESC`
+    ).bind(task_id).all()
+  }
   return c.json(result.results || [])
 })
 

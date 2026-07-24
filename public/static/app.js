@@ -10659,11 +10659,15 @@ function _showLinkedPhotoView(photoId, caption, isVideo) {
 }
 
 // ─── 첨부파일 목록 로드 및 렌더링 ─────────────────────────────────────────────
-async function loadAttachments(taskId) {
-  const container = document.getElementById(`attachList-${taskId}`);
+// attachType: 'order'(작업지시서, 기본값) / 'work_log'(작업일지) / ''(전체)
+async function loadAttachments(taskId, attachType) {
+  if (attachType === undefined) { attachType = 'order'; }
+  var container = document.getElementById('attachList-' + taskId);
   if (!container) return;
   try {
-    const res = await API.get(`/attachments?task_id=${taskId}`);
+    var attachUrl = '/attachments?task_id=' + taskId;
+    if (attachType) { attachUrl += '&attach_type=' + attachType; }
+    const res = await API.get(attachUrl);
     const atts = res.data || [];
     if (atts.length === 0) {
       container.innerHTML = '<div class="text-xs text-gray-400 italic py-1">첨부파일 없음</div>';

@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-24 (세션 64 — FEAT-170 인앱 PDF/이미지 뷰어)
-> **GitHub 최신: `d22fc37`** — feat: [FEAT-170] 인앱 PDF/이미지 뷰어 — 외부 앱 없이 앱 내부에서 직접 보기
+> 최종 업데이트: 2026-07-24 (세션 65 — FEAT-170b Android 앱 인앱 PDF/이미지 뷰어 + PC 새 탭 복원)
+> **GitHub 최신: `e3f518e`** — feat: [FEAT-170b] Android 앱 인앱 PDF/이미지 뷰어 + PC 새 탭 방식 복원
+> **이전 커밋: `4484683`** — docs: [세션 64] PROJECT_HISTORY.md 헤더 갱신 + FEAT-170 기록 추가
+> **이전 커밋: `d22fc37`** — feat: [FEAT-170] 인앱 PDF/이미지 뷰어 — 외부 앱 없이 앱 내부에서 직접 보기
 > **이전 커밋: `f458808`** — docs: [세션 63] PROJECT_HISTORY.md 갱신 — BUG-ATTACH-FRONT 기록 추가
 > **이전 커밋: `c701c98`** — fix: [BUG] loadAttachments — attach_type=order 기본 필터 추가 (작업지시서/작업일지 첨부파일 분리)
 > **이전 커밋: `7aeb8ec`** — docs: [세션 63] PROJECT_HISTORY.md 헤더 갱신 + BUG-ATTACH-NAS 수정 기록 추가
@@ -297,6 +299,7 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-170b | 65 | 2026-07-24 | ✅ 구현 | **Android 앱 인앱 PDF/이미지 뷰어 + PC 새 탭 방식 복원** — `isAppBridge`(SafetyNoteApp) 환경에서 PDF·이미지 파일 "보기" 클릭 시 `fetch → blob → _openPdfViewer/_openImageViewer` 인앱 전체화면 뷰어로 전환. fetch 실패 시 기존 `SafetyNoteApp.openAttachment()` 외부앱으로 자동 폴백. Word·HWP·Excel 등 기타 파일은 기존 외부앱 방식 유지. `isCapacitor`(브릿지 없는 WebView) 기존 `_system` 방식 그대로 유지. PC/일반 브라우저는 FEAT-170에서 인앱으로 바꿨던 것을 새 탭 방식으로 복원(PDF→blob URL 새 탭, 이미지→보라 배경 새 탭). RULE-001 준수: 신규 `isAppBridge` 분기 전부 `var` 전용. 검증: `node --check` ✅ + `npm run build` ✅(283.54 kB) | `e3f518e` |
 | FEAT-170 | 64 | 2026-07-24 | ✅ 구현 | **인앱 PDF/이미지 뷰어 — 외부 앱 없이 앱 내부에서 직접 보기** — 기존 `openAttachment()` PC/브라우저 분기에서 PDF·이미지를 새 탭으로 열던 방식을 인앱 전체화면 모달로 교체. **PDF 뷰어(`_openPdfViewer`)**: PDF.js(cdnjs 3.11.174) CDN 동적 로드(최초 1회) → `position:fixed;z-index:99000` 전체화면 오버레이 → 페이지 이전/다음 버튼 + N/전체 페이지 표시 + 확대(+)/축소(-)(0.5x~3.0x, 0.25 단위) + 닫기(← 닫기). **이미지 뷰어(`_openImageViewer`)**: 동일한 인앱 모달 패턴으로 이미지도 통일. **충돌 방지**: 앱 브릿지(SafetyNoteApp)/Capacitor 분기는 완전 유지(건드리지 않음). **RULE-001 준수**: 신규 코드 전부 `var`+`function` 키워드. **RULE-003 준수**: onclick → `_snPdfClose/_snPdfPrev/_snPdfNext/_snPdfZoomIn/_snPdfZoomOut` 전역함수 분리. 검증: `node --check` ✅ + `npm run build` ✅(283.54 kB) | `d22fc37` |
 | FEAT-112 | 148~151 | 2026-07-21~22 | ✅ 구현 | **근로자 작업 상세 — 같은 공사 연계작업 사진 조회 (읽기 전용)** — **세션148**: ①renderThumb deleteMedia/업로드 버튼 worker 차단 ②기본정보 탭 `linked-photos-section` 섹션 HTML 추가 ③`_loadLinkedCompletedPhotos`+`_toggleLinkedTaskPhotos` 전역 함수 추가. **세션149 BUG-FIX**: `photos.ts GET /photos`에 `construction_id`+`exclude_task_id` 파라미터 추가 — worker INNER JOIN 제약 우회+상태범위(in_progress~completed) 확장. **세션150 UX**: 인라인 그리드→팝업 모달 전환+`_showLinkedPhotoView` 읽기전용 뷰어 추가(zIndex:10100). **세션151 BUG-FIX**: `_showLinkedPhotoModal` 전면 재작성 — ①taskMap 저장: `dataset`→`window.__linkedTaskMap_\${currentTaskId}` 전역변수(JSON파싱 신뢰성 문제 해결) ②onclick: `JSON.stringify(tid)`→숫자형 task_id 직접사용 ③모달스타일: `modal-overlay` CSS의존→`position:fixed`+`z-index:9500` 직접지정(CSS미적용시 팝업미표시 해결) ④사이드바 제거→단순 스크롤 모달 ⑤`_linkedModalSelectTask` 동적할당+중첩inner function 제거 ⑥photo_type 컬러배지+4열 그리드+캡션 오버레이(관리자 사진탭 UI 기준) | `a7c9488`→`9354335` |
 | FEAT-063 | 129 | 2026-07-13 | ✅ 구현 | **공사통계 메뉴 추가** — 공사현황 그룹 최상단에 '공사통계' 서브메뉴 신규 추가. ①년간/월간/주간 기간 탭 필터 ②요약 카드 4종(전체공사·완료·시공통보금액·정산완료) ③작업 종류별 현황 표(지장이설·청약개통·관로·환경·별도·기타 / 건수·완료율·시공통보금액·정산완료·합계행) ④담당자별 현황 Chart.js 수평 막대 그래프(최대 15명 시각화) + 상세 표 ⑤금액 억/만 단위 자동 포맷. 백엔드: `GET /api/constructions/stats` 신규 엔드포인트(period/year/month/week_start) — `/api/constructions/:id` 동적 라우트보다 먼저 등록하여 충돌 방지 | `0de543f` |

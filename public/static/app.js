@@ -8988,8 +8988,8 @@ async function showTaskDetail(id, openTbmTab) {
           </div>
         </div>` : ''}
 
-        <!-- [FEAT-112] 연계 완료작업 사진 (worker 전용, 같은 공사요청번호 내 completed 작업) -->
-        ${(isWorker && task.construction_id) ? `
+        <!-- [FEAT-112] 연계 완료작업 사진 (worker + admin/supervisor, 같은 공사요청번호 내 completed 작업) -->
+        ${((isWorker || currentUser.role === 'admin' || currentUser.role === 'supervisor') && task.construction_id) ? `
         <div id="linked-photos-section-${task.id}" class="mt-4 p-3 rounded-xl" style="background:#F0FDF4;border:1px solid #BBF7D0">
           <div class="flex items-center gap-2 mb-2">
             <i class="fas fa-camera" style="color:#059669"></i>
@@ -9442,8 +9442,8 @@ async function showTaskDetail(id, openTbmTab) {
     // 첨부파일 목록 비동기 로드 (HTML 렌더 후 즉시 호출)
     loadAttachments(task.id);
 
-    // [FEAT-112] worker 전용: 같은 공사요청번호의 완료작업 사진 비동기 로드
-    if (isWorker && task.construction_id) {
+    // [FEAT-112/169] worker + admin/supervisor: 같은 공사요청번호의 완료작업 사진 비동기 로드
+    if ((isWorker || currentUser.role === 'admin' || currentUser.role === 'supervisor') && task.construction_id) {
       _loadLinkedCompletedPhotos(task.id, task.construction_id);
     }
 

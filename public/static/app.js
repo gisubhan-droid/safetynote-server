@@ -282,6 +282,7 @@ const MENU_DEFINITIONS = [
   { id:'risk-periodic',    label:'정기 위험성평가',   icon:'fas fa-calendar-check',    group:'위험성평가' },
   { id:'risk-adhoc',       label:'수시 위험성평가',   icon:'fas fa-bolt',              group:'위험성평가' },
   { id:'risk-items',       label:'분류별 항목 관리',  icon:'fas fa-list-check',        group:'위험성평가' },
+  { id:'wt-safety',        label:'작업유형 안전내용 관리', icon:'fas fa-hard-hat',      group:'위험성평가' },
   { id:'hazards',          label:'위험(아차사고)신고',    icon:'fas fa-exclamation-triangle',group:'안전' },
   { id:'work-stops',       label:'작업중지현황',         icon:'fas fa-hand-paper',           group:'안전' },
   { id:'stats-task',          label:'작업통계',            icon:'fas fa-tasks',              group:'안전현황' },
@@ -2273,6 +2274,7 @@ function renderApp() {
           { id:'risk-periodic', icon:'fas fa-calendar-check', label:'정기 위험성평가' },
           { id:'risk-adhoc',    icon:'fas fa-bolt',           label:'수시 위험성평가' },
           { id:'risk-items',    icon:'fas fa-list-check',     label:'분류별 항목 관리' },
+          { id:'wt-safety',     icon:'fas fa-hard-hat',       label:'작업유형 안전내용 관리' },
         ]},
       ]
     },
@@ -3031,6 +3033,7 @@ function getPageTitle(page) {
     'admin-settings': '시스템 설정',
     'legal-notices': '법령안내 관리',
     'risk': '위험성평가', 'risk-periodic': '정기 위험성평가', 'risk-adhoc': '수시 위험성평가', 'risk-items': '분류별 항목 관리',
+    'wt-safety': '작업유형 안전내용 관리',
     'periodic-risk': '위험성평가', 'checklist-risk': '작업 위험성평가(체크리스트)',
     'teams': '현장팀관리',
     'sys-user-mgmt': '계정관리',
@@ -3166,6 +3169,7 @@ function navigateTo(page) {
     case 'risk-periodic': renderRiskPeriodicPage(content); break;
     case 'risk-adhoc': renderRiskAdhocPage(content); break;
     case 'risk-items': renderRiskItemsPage(content); break;
+    case 'wt-safety':  renderWtSafetyPage(content);  break;
     case 'work-stops': renderWorkStopsPage(content); break;
     case 'periodic-risk': renderRiskPeriodicPage(content); break;
     case 'checklist-risk': renderChecklistRiskPage(content); break;
@@ -11946,6 +11950,49 @@ const WORK_TYPE_SAFETY = {
     ],
   },
 };
+
+// ─── [FEAT-WT-SAFETY] DB 캐시 전역 변수 + 로드 함수 ─────────────────────────
+// _wtSafetyCache: DB에서 읽어온 작업유형 설정 배열 (null이면 미로드)
+// 앱 초기화(initApp) 시 _loadWtSafetySettings() 로 채워짐
+var _wtSafetyCache = null; // null: 미로드, []: 빈 목록, [...]: 로드 완료
+
+async function _loadWtSafetySettings() {
+  try {
+    var res = await fetch('/api/work-type-safety');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var json = await res.json();
+    var list = Array.isArray(json.data) ? json.data : [];
+    // is_active=true인 항목만 WORK_TYPE_SAFETY 동기화 (칩 렌더링용)
+    _wtSafetyCache = list;
+    // 캐시 기반으로 WORK_TYPE_SAFETY 객체 업데이트 (TBM 폼 칩 자동기입 연동)
+    _syncWtSafetyConstFromCache(list.filter(function(w) { return w.is_active; }));
+    console.log('[_loadWtSafetySettings] ✅ ' + list.length + '개 로드');
+  } catch(e) {
+    console.warn('[_loadWtSafetySettings] 실패 (기본값 유지):', e.message);
+    // 실패 시 기존 WORK_TYPE_SAFETY 하드코딩 유지 — _wtSafetyCache는 null 유지
+    _wtSafetyCache = null;
+  }
+}
+
+// DB 캐시 → WORK_TYPE_SAFETY 상수 동기화 (TBM 칩 자동기입 연동)
+function _syncWtSafetyConstFromCache(activeList) {
+  if (!Array.isArray(activeList) || activeList.length === 0) return;
+  // WORK_TYPE_SAFETY 키를 DB 기반으로 재구성
+  var newObj = {};
+  activeList.forEach(function(wt) {
+    newObj[wt.type_key] = {
+      label: wt.label,
+      icon: wt.icon || 'fa-hard-hat',
+      safety: Array.isArray(wt.safety_items) ? wt.safety_items : [],
+      tbm: Array.isArray(wt.tbm_items) ? wt.tbm_items : [],
+      precautions: Array.isArray(wt.precaution_items) ? wt.precaution_items : [],
+      photo_labels: Array.isArray(wt.photo_labels) ? wt.photo_labels : [],
+    };
+  });
+  // WORK_TYPE_SAFETY 기존 키를 DB 기반으로 교체 (프로토타입 유지 방식)
+  Object.keys(WORK_TYPE_SAFETY).forEach(function(k) { delete WORK_TYPE_SAFETY[k]; });
+  Object.assign(WORK_TYPE_SAFETY, newObj);
+}
 
 // [FEAT-051] 선택된 작업유형의 안전내용을 tbmTopics/tbmPrecautions textarea에 추가
 function _applyWorkTypeSafety(typeKey) {
@@ -36262,6 +36309,8 @@ async function init() {
     if (meUiRole === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu') { // [FEAT-048]
       await loadLguSettings().catch(function(){});
     }
+    // [FEAT-WT-SAFETY] 작업유형별 안전내용 DB 캐시 로드 (비동기 — 실패해도 하드코딩 폴백 유지)
+    _loadWtSafetySettings().catch(function(){});
     renderApp();
   } catch(e) {
     localStorage.removeItem('token');
@@ -43007,3 +43056,317 @@ async function copyTask(taskId) {
   }
   toast('작업 데이터를 복사했습니다. 내용을 확인 후 등록하세요.', 'info');
 }
+
+// ============================================================================
+// [FEAT-WT-SAFETY] 작업유형별 안전내용 관리 페이지 (세션 70)
+// 안전관리자·현장대리인·admin·supervisor 전용
+// ============================================================================
+
+// ─── 목록 페이지 렌더링 ──────────────────────────────────────────────────────
+async function renderWtSafetyPage(container) {
+  var isAllowed = currentUser.role === 'admin' || currentUser.role === 'supervisor'
+    || currentUser.position === '안전관리자' || currentUser.position === '현장대리인';
+  if (!isAllowed) {
+    container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-lock text-2xl mb-2"></i><p>접근 권한이 없습니다.</p></div>';
+    return;
+  }
+  container.innerHTML = '<div class="flex justify-center items-center py-12"><div class="spinner"></div></div>';
+  try {
+    var res = await API.get('/work-type-safety');
+    var list = Array.isArray(res.data) ? res.data : [];
+    container.innerHTML = _buildWtSafetyListHtml(list);
+  } catch(e) {
+    container.innerHTML = '<div class="p-6 text-center text-red-500"><i class="fas fa-exclamation-circle mr-1"></i>불러오기 실패: ' + e.message + '</div>';
+  }
+}
+
+// ─── 목록 HTML 생성 ──────────────────────────────────────────────────────────
+function _buildWtSafetyListHtml(list) {
+  var rows = list.map(function(wt, idx) {
+    var safetyCount = Array.isArray(wt.safety_items) ? wt.safety_items.length : 0;
+    var tbmCount = Array.isArray(wt.tbm_items) ? wt.tbm_items.length : 0;
+    var precCount = Array.isArray(wt.precaution_items) ? wt.precaution_items.length : 0;
+    var photoCount = Array.isArray(wt.photo_labels) ? wt.photo_labels.length : 0;
+    var activeBadge = wt.is_active
+      ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">활성</span>'
+      : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">비활성</span>';
+    return '<tr class="border-b hover:bg-gray-50 transition-colors">'
+      + '<td class="px-4 py-3 text-center text-sm text-gray-400">' + (idx + 1) + '</td>'
+      + '<td class="px-4 py-3">'
+      +   '<div class="flex items-center gap-2">'
+      +     '<i class="fas ' + (wt.icon || 'fa-hard-hat') + ' text-purple-500 text-sm"></i>'
+      +     '<span class="font-semibold text-gray-800 text-sm">' + wt.label + '</span>'
+      +   '</div>'
+      +   '<div class="text-xs text-gray-400 mt-0.5">키: ' + wt.type_key + '</div>'
+      + '</td>'
+      + '<td class="px-4 py-3 text-center">' + activeBadge + '</td>'
+      + '<td class="px-4 py-3 text-center text-sm text-gray-600">'
+      +   '<span class="inline-flex items-center gap-1"><i class="fas fa-shield-alt text-blue-400 text-xs"></i>' + safetyCount + '건</span>'
+      + '</td>'
+      + '<td class="px-4 py-3 text-center text-sm text-gray-600">'
+      +   '<span class="inline-flex items-center gap-1"><i class="fas fa-clipboard-list text-green-400 text-xs"></i>' + tbmCount + '건</span>'
+      + '</td>'
+      + '<td class="px-4 py-3 text-center text-sm text-gray-600">'
+      +   '<span class="inline-flex items-center gap-1"><i class="fas fa-exclamation-triangle text-orange-400 text-xs"></i>' + precCount + '건</span>'
+      + '</td>'
+      + '<td class="px-4 py-3 text-center text-sm text-gray-600">'
+      +   '<span class="inline-flex items-center gap-1"><i class="fas fa-camera text-pink-400 text-xs"></i>' + photoCount + '건</span>'
+      + '</td>'
+      + '<td class="px-4 py-3 text-center">'
+      +   '<button class="btn btn-sm btn-outline mr-1" onclick="_showWtSafetyEditModal(\'' + encodeURIComponent(JSON.stringify(wt)) + '\')">'
+      +     '<i class="fas fa-edit mr-1"></i>수정'
+      +   '</button>'
+      +   '<button class="btn btn-sm text-red-500 border border-red-300 hover:bg-red-50" onclick="_deleteWtSafetyItem(\'' + encodeURIComponent(wt.type_key) + '\')">'
+      +     '<i class="fas fa-trash mr-1"></i>삭제'
+      +   '</button>'
+      + '</td>'
+      + '</tr>';
+  }).join('');
+
+  if (list.length === 0) {
+    rows = '<tr><td colspan="8" class="px-4 py-10 text-center text-gray-400"><i class="fas fa-inbox text-2xl mb-2 block"></i>등록된 작업유형이 없습니다.</td></tr>';
+  }
+
+  return '<div class="p-4 space-y-4">'
+    + '<div class="flex items-center justify-between">'
+    +   '<div>'
+    +     '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-hard-hat text-purple-500 mr-2"></i>작업유형별 안전내용 관리</h2>'
+    +     '<p class="text-xs text-gray-500 mt-0.5">위험성평가 체크리스트 작업유형의 안전교육·TBM항목·주의사항·필수사진을 관리합니다.</p>'
+    +   '</div>'
+    +   '<button class="btn btn-primary text-sm" onclick="_showWtSafetyEditModal(null)">'
+    +     '<i class="fas fa-plus mr-1"></i>작업유형 추가'
+    +   '</button>'
+    + '</div>'
+    + '<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-xs text-blue-700">'
+    +   '<i class="fas fa-info-circle mr-1"></i>'
+    +   '여기서 수정한 내용은 <strong>TBM 작성 폼의 작업유형 칩</strong>과 <strong>체크리스트 사진 섹션의 필수 사진 항목</strong>에 자동 반영됩니다.'
+    + '</div>'
+    + '<div class="bg-white rounded-xl shadow-sm overflow-hidden">'
+    +   '<div class="overflow-x-auto">'
+    +     '<table class="w-full text-sm">'
+    +       '<thead class="bg-gray-50 border-b">'
+    +         '<tr>'
+    +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500 w-10">#</th>'
+    +           '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500">작업유형명</th>'
+    +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500">상태</th>'
+    +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500">안전교육</th>'
+    +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500">TBM항목</th>'
+    +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500">주의사항</th>'
+    +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500">필수사진</th>'
+    +           '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500">관리</th>'
+    +         '</tr>'
+    +       '</thead>'
+    +       '<tbody>' + rows + '</tbody>'
+    +     '</table>'
+    +   '</div>'
+    + '</div>'
+    + '</div>';
+}
+
+// ─── 수정/추가 모달 표시 ──────────────────────────────────────────────────────
+// RULE-003: onclick 속성 내 따옴표 중첩 금지 → wt 객체를 encodeURIComponent(JSON.stringify()) 로 전달
+function _showWtSafetyEditModal(wtEncoded) {
+  var wt = null;
+  var isNew = false;
+  if (!wtEncoded || wtEncoded === 'null') {
+    isNew = true;
+    wt = { type_key:'', label:'', icon:'fa-hard-hat', is_active:true, sort_order:0, safety_items:[], tbm_items:[], precaution_items:[], photo_labels:[] };
+  } else {
+    try { wt = JSON.parse(decodeURIComponent(wtEncoded)); } catch(e) { wt = {}; }
+  }
+
+  var buildItemsHtml = function(items, fieldId) {
+    var listId = fieldId + '_list';
+    var html = '<div id="' + listId + '" class="space-y-1 mb-2">';
+    var arr = Array.isArray(items) ? items : [];
+    arr.forEach(function(item, i) {
+      html += '<div class="flex items-center gap-1" id="' + listId + '_' + i + '">'
+        + '<input type="text" class="form-control text-sm flex-1" value="' + item.replace(/"/g,'&quot;') + '" data-field="' + fieldId + '" data-idx="' + i + '">'
+        + '<button type="button" class="text-red-400 hover:text-red-600 px-1" onclick="_wtRowRemove(\'' + listId + '_' + i + '\')"><i class="fas fa-times"></i></button>'
+        + '</div>';
+    });
+    html += '</div>';
+    html += '<button type="button" class="text-xs text-purple-600 hover:text-purple-800 border border-purple-300 rounded px-2 py-1" onclick="_wtRowAdd(\'' + listId + '\',\'' + fieldId + '\')">'
+      + '<i class="fas fa-plus mr-1"></i>항목 추가</button>';
+    return html;
+  };
+
+  var modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'wtSafetyEditModal';
+  modal.innerHTML = '<div class="modal" style="max-width:600px;width:95%;max-height:90vh;overflow-y:auto">'
+    + '<div class="modal-header">'
+    +   '<h3 class="modal-title"><i class="fas fa-hard-hat text-purple-500 mr-2"></i>' + (isNew ? '작업유형 추가' : '작업유형 수정: ' + wt.label) + '</h3>'
+    +   '<button class="modal-close" onclick="document.getElementById(\'wtSafetyEditModal\').remove()"><i class="fas fa-times"></i></button>'
+    + '</div>'
+    + '<div class="modal-body space-y-4 pb-4">'
+    // 기본 정보
+    + '<div class="grid grid-cols-2 gap-3">'
+    +   '<div class="form-group">'
+    +     '<label class="form-label text-xs font-semibold">유형 키 (영문/한글 고유값) *</label>'
+    +     '<input type="text" id="wtEdit_typeKey" class="form-control text-sm" value="' + (wt.type_key||'').replace(/"/g,'&quot;') + '" ' + (!isNew ? 'readonly style="background:#f3f4f6"' : '') + ' placeholder="예: 바켓차량작업">'
+    +     (!isNew ? '<p class="text-xs text-gray-400 mt-1">기존 유형 키는 변경 불가</p>' : '')
+    +   '</div>'
+    +   '<div class="form-group">'
+    +     '<label class="form-label text-xs font-semibold">표시명 *</label>'
+    +     '<input type="text" id="wtEdit_label" class="form-control text-sm" value="' + (wt.label||'').replace(/"/g,'&quot;') + '" placeholder="예: 바켓차량작업">'
+    +   '</div>'
+    + '</div>'
+    + '<div class="grid grid-cols-2 gap-3">'
+    +   '<div class="form-group">'
+    +     '<label class="form-label text-xs font-semibold">아이콘 (FontAwesome 클래스)</label>'
+    +     '<div class="flex items-center gap-2">'
+    +       '<i id="wtEdit_iconPreview" class="fas ' + (wt.icon||'fa-hard-hat') + ' text-purple-500 text-lg"></i>'
+    +       '<input type="text" id="wtEdit_icon" class="form-control text-sm" value="' + (wt.icon||'fa-hard-hat') + '" placeholder="fa-hard-hat" oninput="_wtIconPreview()">'
+    +     '</div>'
+    +   '</div>'
+    +   '<div class="form-group">'
+    +     '<label class="form-label text-xs font-semibold">정렬순서</label>'
+    +     '<input type="number" id="wtEdit_sortOrder" class="form-control text-sm" value="' + (wt.sort_order||0) + '" min="0">'
+    +   '</div>'
+    + '</div>'
+    + '<div class="form-group">'
+    +   '<label class="form-label text-xs font-semibold">활성 상태</label>'
+    +   '<div class="flex items-center gap-2">'
+    +     '<input type="checkbox" id="wtEdit_isActive" class="mr-1" ' + (wt.is_active ? 'checked' : '') + '>'
+    +     '<span class="text-sm text-gray-600">활성화 (비활성 시 TBM 폼에 표시 안 됨)</span>'
+    +   '</div>'
+    + '</div>'
+    // 안전교육 항목
+    + '<div class="border rounded-lg p-3 bg-blue-50 border-blue-200">'
+    +   '<label class="form-label text-xs font-bold text-blue-700 mb-2"><i class="fas fa-shield-alt mr-1"></i>안전교육 사항</label>'
+    +   '<div id="wtEdit_safety_area">' + buildItemsHtml(wt.safety_items, 'wtEdit_safety') + '</div>'
+    + '</div>'
+    // TBM 항목
+    + '<div class="border rounded-lg p-3 bg-green-50 border-green-200">'
+    +   '<label class="form-label text-xs font-bold text-green-700 mb-2"><i class="fas fa-clipboard-list mr-1"></i>TBM 교육 항목</label>'
+    +   '<div id="wtEdit_tbm_area">' + buildItemsHtml(wt.tbm_items, 'wtEdit_tbm') + '</div>'
+    + '</div>'
+    // 주의사항
+    + '<div class="border rounded-lg p-3 bg-orange-50 border-orange-200">'
+    +   '<label class="form-label text-xs font-bold text-orange-700 mb-2"><i class="fas fa-exclamation-triangle mr-1"></i>주의사항</label>'
+    +   '<div id="wtEdit_prec_area">' + buildItemsHtml(wt.precaution_items, 'wtEdit_prec') + '</div>'
+    + '</div>'
+    // 필수 사진 레이블
+    + '<div class="border rounded-lg p-3 bg-pink-50 border-pink-200">'
+    +   '<label class="form-label text-xs font-bold text-pink-700 mb-2"><i class="fas fa-camera mr-1"></i>필수 사진 항목 레이블</label>'
+    +   '<p class="text-xs text-pink-600 mb-2">체크리스트 완료 시 자동 생성되는 사진 섹션의 레이블입니다.</p>'
+    +   '<div id="wtEdit_photo_area">' + buildItemsHtml(wt.photo_labels, 'wtEdit_photo') + '</div>'
+    + '</div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+    +   '<button type="button" class="btn btn-outline" onclick="document.getElementById(\'wtSafetyEditModal\').remove()">취소</button>'
+    +   '<button type="button" class="btn btn-primary" onclick="_saveWtSafetyItem(\'' + (isNew ? '' : encodeURIComponent(wt.type_key)) + '\')">'
+    +     '<i class="fas fa-save mr-1"></i>저장'
+    +   '</button>'
+    + '</div>'
+    + '</div>';
+
+  document.body.appendChild(modal);
+}
+
+// 아이콘 미리보기
+function _wtIconPreview() {
+  var iconVal = (document.getElementById('wtEdit_icon') || {}).value || 'fa-hard-hat';
+  var prev = document.getElementById('wtEdit_iconPreview');
+  if (prev) {
+    prev.className = 'fas ' + iconVal.trim() + ' text-purple-500 text-lg';
+  }
+}
+
+// 항목 행 추가 (RULE-003)
+function _wtRowAdd(listId, fieldId) {
+  var listEl = document.getElementById(listId);
+  if (!listEl) return;
+  var idx = listEl.querySelectorAll('[data-field]').length;
+  var div = document.createElement('div');
+  div.className = 'flex items-center gap-1';
+  div.id = listId + '_' + idx;
+  div.innerHTML = '<input type="text" class="form-control text-sm flex-1" value="" data-field="' + fieldId + '" data-idx="' + idx + '" placeholder="새 항목 입력">'
+    + '<button type="button" class="text-red-400 hover:text-red-600 px-1" onclick="_wtRowRemove(\'' + listId + '_' + idx + '\')"><i class="fas fa-times"></i></button>';
+  listEl.appendChild(div);
+  // 새로 추가된 input에 포커스
+  var newInput = div.querySelector('input');
+  if (newInput) newInput.focus();
+}
+
+// 항목 행 삭제
+function _wtRowRemove(rowId) {
+  var el = document.getElementById(rowId);
+  if (el) el.remove();
+}
+
+// 항목 목록 수집 (fieldId 기준 input value 배열)
+function _wtCollectItems(fieldId) {
+  var inputs = document.querySelectorAll('[data-field="' + fieldId + '"]');
+  var arr = [];
+  inputs.forEach(function(inp) {
+    var v = (inp.value || '').trim();
+    if (v) arr.push(v);
+  });
+  return arr;
+}
+
+// ─── 저장 (POST 신규 / PUT 수정) ─────────────────────────────────────────────
+async function _saveWtSafetyItem(encodedOriginalKey) {
+  var typeKey = (document.getElementById('wtEdit_typeKey') || {}).value;
+  var label = (document.getElementById('wtEdit_label') || {}).value;
+  var icon = (document.getElementById('wtEdit_icon') || {}).value || 'fa-hard-hat';
+  var isActive = !!(document.getElementById('wtEdit_isActive') || {}).checked;
+  var sortOrder = parseInt((document.getElementById('wtEdit_sortOrder') || {}).value) || 0;
+
+  typeKey = (typeKey || '').trim();
+  label = (label || '').trim();
+
+  if (!typeKey) { toast('유형 키를 입력하세요.', 'error'); return; }
+  if (!label)   { toast('표시명을 입력하세요.', 'error'); return; }
+
+  var safetyItems = _wtCollectItems('wtEdit_safety');
+  var tbmItems = _wtCollectItems('wtEdit_tbm');
+  var precautionItems = _wtCollectItems('wtEdit_prec');
+  var photoLabels = _wtCollectItems('wtEdit_photo');
+
+  var payload = { type_key: typeKey, label: label, icon: icon.trim(), is_active: isActive, sort_order: sortOrder,
+    safety_items: safetyItems, tbm_items: tbmItems, precaution_items: precautionItems, photo_labels: photoLabels };
+
+  try {
+    var isNew = !encodedOriginalKey;
+    if (isNew) {
+      await API.post('/work-type-safety', payload);
+      toast('작업유형이 추가되었습니다.', 'success');
+    } else {
+      var origKey = decodeURIComponent(encodedOriginalKey);
+      await API.put('/work-type-safety/' + encodeURIComponent(origKey), payload);
+      toast('수정되었습니다.', 'success');
+    }
+    document.getElementById('wtSafetyEditModal').remove();
+    // 목록 새로고침
+    var content = document.getElementById('page-content');
+    if (content) renderWtSafetyPage(content);
+    // DB 캐시 갱신
+    _loadWtSafetySettings().catch(function(){});
+  } catch(e) {
+    var msg = (e.response && e.response.data && e.response.data.error) ? e.response.data.error : e.message;
+    toast('저장 실패: ' + msg, 'error');
+  }
+}
+
+// ─── 삭제 ─────────────────────────────────────────────────────────────────────
+async function _deleteWtSafetyItem(encodedKey) {
+  var typeKey = decodeURIComponent(encodedKey);
+  if (!confirm('"' + typeKey + '" 작업유형을 삭제하시겠습니까?\n삭제 후 TBM 폼에서 해당 유형이 제거됩니다.')) return;
+  try {
+    await API.delete('/work-type-safety/' + encodeURIComponent(typeKey));
+    toast('삭제되었습니다.', 'success');
+    var content = document.getElementById('page-content');
+    if (content) renderWtSafetyPage(content);
+    // DB 캐시 갱신
+    _loadWtSafetySettings().catch(function(){});
+  } catch(e) {
+    var msg = (e.response && e.response.data && e.response.data.error) ? e.response.data.error : e.message;
+    toast('삭제 실패: ' + msg, 'error');
+  }
+}
+// ============================================================================
+// [FEAT-WT-SAFETY] END
+// ============================================================================

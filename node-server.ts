@@ -2809,6 +2809,85 @@ function patchSchema() {
     else console.log('[patchSchema v0.163] splice_work_items 단가 스냅샷 컬럼 이미 존재 — 스킵')
   }
 
+  // ─── patchSchema v0.164: work_type_safety_settings 테이블 생성 + 5개 기본 시드 ──
+  // 작업유형별 안전내용 관리 메뉴 (FEAT-WT-SAFETY):
+  //   안전관리자·현장대리인이 UI에서 직접 작업유형/안전내용/사진레이블 관리
+  //   type_key: 고유 키 (바켓차량작업/전주승주/옥상옥탑작업/사다리사용작업/중장비사용)
+  //   safety_items/tbm_items/precaution_items/photo_labels: JSON 배열 문자열
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS work_type_safety_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type_key TEXT UNIQUE NOT NULL,
+        label TEXT NOT NULL,
+        icon TEXT DEFAULT 'fa-hard-hat',
+        is_active INTEGER DEFAULT 1,
+        sort_order INTEGER DEFAULT 0,
+        safety_items TEXT DEFAULT '[]',
+        tbm_items TEXT DEFAULT '[]',
+        precaution_items TEXT DEFAULT '[]',
+        photo_labels TEXT DEFAULT '[]',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    console.log('[patchSchema v0.164] ✅ work_type_safety_settings 테이블 생성 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('already exists')) console.warn('[patchSchema v0.164] 테이블 생성 실패 (무시):', e.message)
+    else console.log('[patchSchema v0.164] work_type_safety_settings 이미 존재 — 스킵')
+  }
+
+  // 기본 5개 시드 데이터 (INSERT OR IGNORE — 중복 시 무시)
+  const _wtSeeds = [
+    {
+      type_key: '바켓차량작업', label: '바켓차량작업', icon: 'fa-truck', sort_order: 1,
+      safety_items: JSON.stringify(['바켓차량 작업 반경(5m) 내 출입 통제','고소작업 안전대 착용 및 안전고리 체결 확인','차량 아웃트리거 완전 전개 및 지반 침하 여부 확인','작업 전 차량 점검 및 이상 없음 확인','2인 1조 작업 원칙 준수 (1인 지상 감시)']),
+      tbm_items: JSON.stringify(['바켓 탑승 전 안전대 착용 상태 상호 확인','지상 감시자 배치 및 신호 체계 확인','차량 안전거리 확보 및 도로 점용 안전시설 설치','작업 중 고압선 접근 금지 확인','돌풍·강풍 시 즉시 작업 중단 기준 확인']),
+      precaution_items: JSON.stringify(['바켓 탑승 중 신체 외부 이탈 절대 금지','아웃트리거 미전개 상태 작업 금지','운전자 이탈 시 바켓 비워두고 안전핀 체결','강풍(풍속 10m/s 초과) 시 작업 중단','인근 고압선(LV/HV) 안전거리(충전부 2m↑) 유지']),
+      photo_labels: JSON.stringify(['아웃트리거 확장 및 받침목 설치','고임목 설치','안전고리 체결']),
+    },
+    {
+      type_key: '전주승주', label: '전주승주', icon: 'fa-person-arrow-up-from-line', sort_order: 2,
+      safety_items: JSON.stringify(['승주 전 전주 상태(균열·부식·매설깊이) 육안 점검','안전대 착용 및 안전고리 전주 결속 확인','승주용 발판볼트·슈라우드 체결 상태 확인','지상 감시자 1인 배치 및 통신 방법 확인','낙하물 위험 구역(반경 3m) 출입 통제']),
+      tbm_items: JSON.stringify(['전주 승주 전 전주 흔들림·기울기 측정 확인','안전대 D링·로프 마모 상태 확인','공구 및 자재 추락 방지(공구낙하방지끈) 확인','활선(充電) 여부 확인 및 충전부 접촉 금지 교육','우천·결빙 시 승주 금지 기준 확인']),
+      precaution_items: JSON.stringify(['안전대 미착용 승주 절대 금지','전주 균열·기울기 이상 시 작업 중단 및 보고','전주 정상부 작업 시 2중 안전고리 체결','강풍·우천·결빙 시 작업 즉시 중단','활선 작업 금지 — 정전 확인 후 작업']),
+      photo_labels: JSON.stringify(['전주 상태 점검 사진','안전대 착용 확인','지상 감시자 배치']),
+    },
+    {
+      type_key: '옥상옥탑작업', label: '옥상옥탑작업', icon: 'fa-building', sort_order: 3,
+      safety_items: JSON.stringify(['옥상 개구부·외곽 안전난간 설치 및 덮개 확인','개인보호구(안전모·안전대·안전화) 착용 확인','안전대 부착설비(로프·D링·앵커) 사전 설치 확인','출입구 잠금장치 확인 및 관계자 외 출입 통제','바닥 미끄럼 방지 및 낙하물 방지망 설치']),
+      tbm_items: JSON.stringify(['옥상 외곽부 1.5m 이내 작업 시 안전대 체결 의무','낙하물 위험 구역 지상 출입 통제 조치 확인','야간·우천 시 미끄럼 위험 강화 안전조치 확인','헬기 착륙장·방수 구조물 손상 금지 교육','긴급 대피 경로 및 연락체계 확인']),
+      precaution_items: JSON.stringify(['안전대 미체결 상태 외곽부 접근 금지','슬레이트·패널 지붕 직접 올라서기 금지','강풍·낙뢰·우천 시 즉시 작업 중단','지반 취약부(채광창·환기구 덮개) 하중 집중 금지','작업 완료 후 개구부 복구 및 난간 원상태 확인']),
+      photo_labels: JSON.stringify(['안전난간 설치 상태','안전대 체결 확인','낙하물 방지망 설치']),
+    },
+    {
+      type_key: '사다리사용작업', label: '사다리사용작업', icon: 'fa-stairs', sort_order: 4,
+      safety_items: JSON.stringify(['사다리 상단 2단(30cm 이상) 작업 금지 확인','사다리 기울기 각도(75°±5°) 준수 확인','사다리 미끄럼방지 장치 및 지반 안정성 확인','2인 1조 — 1인 하부 고정 지지 의무','사다리 위에서 공구·자재 직접 전달 금지']),
+      tbm_items: JSON.stringify(['사다리 사용 전 발판·지주 결함 육안 점검','사다리 상부 결속 또는 하부 고정 방법 확인','양 발 동시 딛기 원칙 및 신체 외측 이탈 금지 교육','자재 운반 시 등짐·손잡이 장비 사용 교육','설치 각도 불량 시 즉시 재설치 기준 확인']),
+      precaution_items: JSON.stringify(['사다리 최상단 2개 발판 탑승 절대 금지','1인 탑승 원칙 — 동시 다인 사용 금지','강풍(풍속 7m/s 초과) 시 사다리 작업 중단','알루미늄 사다리 활선 근접 사용 금지','젖은 손·발 사다리 접촉 금지']),
+      photo_labels: JSON.stringify(['사다리 설치 상태','하부 고정 확인']),
+    },
+    {
+      type_key: '중장비사용', label: '중장비사용', icon: 'fa-truck-monster', sort_order: 5,
+      safety_items: JSON.stringify(['중장비 작업 반경(선회 반경+2m) 내 출입 통제','신호수 배치 및 신호 방법 사전 교육·확인','지반 지내력 확인 및 아웃트리거 패드 사용','장비 점검 일지 확인 및 이상 없음 서명','야간 작업 시 조명 및 반사형 안전조끼 착용']),
+      tbm_items: JSON.stringify(['운전원 자격증 및 특수건강검진 유효 기간 확인','인양·굴착 전 지하 매설물 위치 확인','줄걸이 와이어로프 상태(킹크·단선) 점검','장비 최대 허용 하중 초과 작업 금지 교육','작업 중단 시 붐·버켓 지상 안착 및 키 보관 교육']),
+      precaution_items: JSON.stringify(['장비 운전반경 내 작업자 절대 접근 금지','신호수 없는 단독 작업 금지','연약지반·경사면 장비 전도 위험 확인 후 진입','인양물 아래 작업자 통과 금지','강풍(풍속 10m/s 초과) 인양 작업 중단']),
+      photo_labels: JSON.stringify(['작업계획서','유도원 배치']),
+    },
+  ]
+  for (const s of _wtSeeds) {
+    try {
+      rawDb.prepare(`
+        INSERT OR IGNORE INTO work_type_safety_settings
+          (type_key, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels)
+        VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+      `).run(s.type_key, s.label, s.icon, s.sort_order, s.safety_items, s.tbm_items, s.precaution_items, s.photo_labels)
+    } catch(e: any) {
+      console.warn('[patchSchema v0.164] 시드 삽입 실패 (무시):', s.type_key, e.message)
+    }
+  }
+  console.log('[patchSchema v0.164] ✅ work_type_safety_settings 기본 시드 완료')
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -5586,6 +5665,146 @@ registerTbmAttendeesRoute(app)
 // 내 서명 요청 목록 조회 (pending/signed 분리)
 // ─── 서명요청 API → nas-routes/signature-requests.ts ───────────────────────────
 app.route('/api/signature-requests', signatureRequestsRoutes)
+// ─── 작업유형별 안전내용 관리 API (FEAT-WT-SAFETY) ────────────────────────────
+// [RULE-002] NAS 오버라이드 라우트는 Cloudflare 라우트 앞에 등록
+
+// GET /api/work-type-safety — 전체 목록 조회 (로그인 필요)
+app.get('/api/work-type-safety', async (c) => {
+  const user = c.get('user' as never) as any
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  try {
+    const rows = rawDb.prepare(
+      `SELECT id, type_key, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels
+       FROM work_type_safety_settings ORDER BY sort_order ASC, id ASC`
+    ).all()
+    const list = rows.map((r: any) => ({
+      id: r.id,
+      type_key: r.type_key,
+      label: r.label,
+      icon: r.icon || 'fa-hard-hat',
+      is_active: r.is_active === 1,
+      sort_order: r.sort_order || 0,
+      safety_items: (() => { try { return JSON.parse(r.safety_items || '[]') } catch { return [] } })(),
+      tbm_items: (() => { try { return JSON.parse(r.tbm_items || '[]') } catch { return [] } })(),
+      precaution_items: (() => { try { return JSON.parse(r.precaution_items || '[]') } catch { return [] } })(),
+      photo_labels: (() => { try { return JSON.parse(r.photo_labels || '[]') } catch { return [] } })(),
+    }))
+    return c.json({ data: list })
+  } catch (e: any) {
+    console.error('[GET /api/work-type-safety] 오류:', e.message)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// GET /api/work-type-safety/:typeKey — 단건 조회
+app.get('/api/work-type-safety/:typeKey', async (c) => {
+  const user = c.get('user' as never) as any
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const typeKey = decodeURIComponent(c.req.param('typeKey'))
+  try {
+    const row = rawDb.prepare(
+      `SELECT id, type_key, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels
+       FROM work_type_safety_settings WHERE type_key = ?`
+    ).get(typeKey) as any
+    if (!row) return c.json({ error: 'Not found' }, 404)
+    return c.json({ data: {
+      id: row.id, type_key: row.type_key, label: row.label,
+      icon: row.icon || 'fa-hard-hat', is_active: row.is_active === 1, sort_order: row.sort_order || 0,
+      safety_items: (() => { try { return JSON.parse(row.safety_items || '[]') } catch { return [] } })(),
+      tbm_items: (() => { try { return JSON.parse(row.tbm_items || '[]') } catch { return [] } })(),
+      precaution_items: (() => { try { return JSON.parse(row.precaution_items || '[]') } catch { return [] } })(),
+      photo_labels: (() => { try { return JSON.parse(row.photo_labels || '[]') } catch { return [] } })(),
+    }})
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// POST /api/work-type-safety — 신규 추가 (안전관리자/현장대리인/admin/supervisor만)
+app.post('/api/work-type-safety', async (c) => {
+  const user = c.get('user' as never) as any
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const allowedRoles = ['admin', 'supervisor']
+  const allowedPositions = ['안전관리자', '현장대리인']
+  const isAllowed = allowedRoles.includes(user.role) || allowedPositions.includes(user.position || '')
+  if (!isAllowed) return c.json({ error: '권한이 없습니다.' }, 403)
+  try {
+    const body = await c.req.json()
+    const typeKey = (body.type_key || '').trim()
+    if (!typeKey) return c.json({ error: 'type_key 필수' }, 400)
+    const label = (body.label || typeKey).trim()
+    const icon = (body.icon || 'fa-hard-hat').trim()
+    const isActive = body.is_active !== false ? 1 : 0
+    const sortOrder = Number(body.sort_order) || 0
+    const safetyItems = JSON.stringify(Array.isArray(body.safety_items) ? body.safety_items : [])
+    const tbmItems = JSON.stringify(Array.isArray(body.tbm_items) ? body.tbm_items : [])
+    const precautionItems = JSON.stringify(Array.isArray(body.precaution_items) ? body.precaution_items : [])
+    const photoLabels = JSON.stringify(Array.isArray(body.photo_labels) ? body.photo_labels : [])
+    const now = new Date().toISOString()
+    const result = rawDb.prepare(`
+      INSERT INTO work_type_safety_settings
+        (type_key, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(typeKey, label, icon, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, now, now)
+    return c.json({ ok: true, id: result.lastInsertRowid })
+  } catch (e: any) {
+    if (e.message?.includes('UNIQUE')) return c.json({ error: '이미 존재하는 type_key입니다.' }, 409)
+    console.error('[POST /api/work-type-safety] 오류:', e.message)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// PUT /api/work-type-safety/:typeKey — 수정
+app.put('/api/work-type-safety/:typeKey', async (c) => {
+  const user = c.get('user' as never) as any
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const allowedRoles = ['admin', 'supervisor']
+  const allowedPositions = ['안전관리자', '현장대리인']
+  const isAllowed = allowedRoles.includes(user.role) || allowedPositions.includes(user.position || '')
+  if (!isAllowed) return c.json({ error: '권한이 없습니다.' }, 403)
+  const typeKey = decodeURIComponent(c.req.param('typeKey'))
+  try {
+    const body = await c.req.json()
+    const label = (body.label || typeKey).trim()
+    const icon = (body.icon || 'fa-hard-hat').trim()
+    const isActive = body.is_active !== false ? 1 : 0
+    const sortOrder = Number(body.sort_order) || 0
+    const safetyItems = JSON.stringify(Array.isArray(body.safety_items) ? body.safety_items : [])
+    const tbmItems = JSON.stringify(Array.isArray(body.tbm_items) ? body.tbm_items : [])
+    const precautionItems = JSON.stringify(Array.isArray(body.precaution_items) ? body.precaution_items : [])
+    const photoLabels = JSON.stringify(Array.isArray(body.photo_labels) ? body.photo_labels : [])
+    const now = new Date().toISOString()
+    const result = rawDb.prepare(`
+      UPDATE work_type_safety_settings
+      SET label=?, icon=?, is_active=?, sort_order=?, safety_items=?, tbm_items=?, precaution_items=?, photo_labels=?, updated_at=?
+      WHERE type_key=?
+    `).run(label, icon, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, now, typeKey)
+    if (result.changes === 0) return c.json({ error: 'Not found' }, 404)
+    return c.json({ ok: true })
+  } catch (e: any) {
+    console.error('[PUT /api/work-type-safety] 오류:', e.message)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// DELETE /api/work-type-safety/:typeKey — 삭제
+app.delete('/api/work-type-safety/:typeKey', async (c) => {
+  const user = c.get('user' as never) as any
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const allowedRoles = ['admin', 'supervisor']
+  const allowedPositions = ['안전관리자', '현장대리인']
+  const isAllowed = allowedRoles.includes(user.role) || allowedPositions.includes(user.position || '')
+  if (!isAllowed) return c.json({ error: '권한이 없습니다.' }, 403)
+  const typeKey = decodeURIComponent(c.req.param('typeKey'))
+  try {
+    const result = rawDb.prepare(`DELETE FROM work_type_safety_settings WHERE type_key=?`).run(typeKey)
+    if (result.changes === 0) return c.json({ error: 'Not found' }, 404)
+    return c.json({ ok: true })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
 // ─── 법령안내 API ──────────────────────────────────────────────────────────────
 // 법령안내 전체 조회
 // ─── 법령안내 API → nas-routes/legal-notices.ts ────────────────────────────────

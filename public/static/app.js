@@ -27607,6 +27607,36 @@ async function submitChecklist(taskId) {
 
 async function forceCompleteChecklist(taskId) {
   try {
+    // 전체 na(비대상) 선택 여부 확인 — 모든 응답이 na이면 경고
+    var allRows = document.querySelectorAll('.checklist-row');
+    var totalRows = 0, naRows = 0;
+    allRows.forEach(function(row) {
+      var activeBtn = row.querySelector('.cl-btn.bg-green-500, .cl-btn.bg-red-500, .cl-btn.bg-gray-500');
+      if (activeBtn) {
+        totalRows++;
+        if (activeBtn.dataset.val === 'na') naRows++;
+      }
+    });
+    if (totalRows > 0 && naRows === totalRows) {
+      var naWarnM = document.createElement('div');
+      naWarnM.className = 'modal-overlay modal-sm';
+      naWarnM.style.zIndex = '9999';
+      naWarnM.innerHTML = '<div class="modal" style="max-width:420px">'
+        + '<div class="modal-header bg-orange-600 text-white">'
+        + '<h3 class="font-bold"><i class="fas fa-exclamation-triangle mr-2"></i>전체 비대상 선택 확인</h3>'
+        + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-white/80 text-xl"><i class="fas fa-times"></i></button></div>'
+        + '<div class="modal-body">'
+        + '<div class="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">'
+        + '<p class="text-sm text-orange-700 font-semibold">⚠️ 모든 항목이 비대상(N/A)으로 선택되었습니다.</p>'
+        + '<p class="text-xs text-orange-500 mt-1">실제 작업 환경을 다시 확인하고, 해당하는 항목은 OK 또는 NOK로 선택해 주세요.</p></div></div>'
+        + '<div class="modal-footer">'
+        + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="btn btn-danger">'
+        + '<i class="fas fa-arrow-left mr-1"></i>다시 확인하기</button>'
+        + '<button onclick="this.closest(\'.modal-overlay\').remove();_forceCompleteChecklistConfirmed(' + taskId + ')" class="btn btn-outline text-gray-500 text-sm">이대로 완료</button>'
+        + '</div></div>';
+      document.body.appendChild(naWarnM);
+      return;
+    }
     const assId = await saveChecklistToServer(taskId);
     await API.patch(`/checklist/${assId}/complete`);
     toast('위험성(체크리스트)평가 완료! 다음 단계: TBM 실시', 'success');
@@ -27620,10 +27650,45 @@ async function forceCompleteChecklist(taskId) {
 
     // TBM 섹션 확인 및 사진 등록 안내 모달
     try {
-      const tbmSections = await API.get(`/checklist/${assId}`);
-      const sections = tbmSections.data.tbm_sections || [];
+      var tbmSectionsRes = await API.get('/checklist/' + assId);
+      var sections = tbmSectionsRes.data.tbm_sections || [];
       if (sections.length > 0) {
-        setTimeout(() => showTbmPhotoModal(assId, taskId, sections), 300);
+        // 미등록 사진 수 계산
+        var totalRequired = 0, totalDone = 0;
+        sections.forEach(function(sec) {
+          var photos = [];
+          try { photos = typeof sec.photos === 'string' ? JSON.parse(sec.photos) : (sec.photos || []); } catch(e) { photos = []; }
+          totalRequired += photos.length;
+          totalDone += photos.filter(function(p) { return p.file_path; }).length;
+        });
+        var missingCount = totalRequired - totalDone;
+        if (missingCount > 0) {
+          // 미등록 사진 있으면 강화 안내 모달 (사진 등록 강조)
+          setTimeout(function() {
+            var alertM = document.createElement('div');
+            alertM.className = 'modal-overlay modal-sm';
+            alertM.style.zIndex = '10025';
+            alertM.innerHTML = '<div class="modal" style="max-width:400px">'
+              + '<div class="modal-header" style="background:linear-gradient(135deg,#D97706,#F59E0B);color:white">'
+              + '<div class="flex items-center gap-2"><i class="fas fa-camera text-lg"></i>'
+              + '<h3 class="font-bold">TBM 전 필수 사진 등록</h3></div></div>'
+              + '<div class="modal-body">'
+              + '<div style="background:#FFFBEB;border:1.5px solid #FCD34D;border-radius:12px;padding:14px 16px;margin-bottom:12px">'
+              + '<p style="font-size:13px;font-weight:700;color:#92400E;margin-bottom:6px">'
+              + '<i class="fas fa-exclamation-triangle mr-2" style="color:#D97706"></i>'
+              + 'TBM 시작 전 필수 사진 ' + missingCount + '장 미등록 상태입니다.</p>'
+              + '<p style="font-size:12px;color:#78350F">지금 등록하지 않으면 TBM 진입 시 차단됩니다.<br>'
+              + '아래 버튼을 눌러 지금 바로 등록하세요.</p></div></div>'
+              + '<div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">'
+              + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="btn btn-outline text-gray-500">나중에</button>'
+              + '<button onclick="this.closest(\'.modal-overlay\').remove();_openTbmPhotoModal(' + assId + ',' + taskId + ')" '
+              + 'class="btn btn-primary font-bold" style="background:linear-gradient(135deg,#D97706,#B45309)">'
+              + '<i class="fas fa-camera mr-1"></i>지금 등록하기 (' + missingCount + '장)</button></div></div>';
+            document.body.appendChild(alertM);
+          }, 300);
+        } else {
+          setTimeout(function() { showTbmPhotoModal(assId, taskId, sections); }, 300);
+        }
       }
     } catch(_) {}
 
@@ -27649,6 +27714,27 @@ async function forceCompleteChecklist(taskId) {
   } catch(e) { toast(e.message || '처리 실패', 'error'); }
 }
 
+// 전체 na 경고 확인 후 강제 완료 진행 (RULE-003: onclick 내 따옴표 중첩 방지용 분리)
+async function _forceCompleteChecklistConfirmed(taskId) {
+  try {
+    var assId = await saveChecklistToServer(taskId);
+    await API.patch('/checklist/' + assId + '/complete');
+    toast('위험성(체크리스트)평가 완료! 다음 단계: TBM 실시', 'success');
+    document.getElementById('checklistModal')?.remove();
+    document.querySelectorAll('.modal-overlay').forEach(function(el) {
+      if (!el.querySelector('.modal[data-task-id]')) el.remove();
+    });
+    var content = document.getElementById('page-content');
+    if (content) {
+      if (currentPage === 'checklist-risk')      renderChecklistRiskPage(content);
+      else if (currentPage === 'tasks')          renderTasksPage(content);
+      else if (currentPage === 'my-tasks')       renderMyTasksPage(content);
+      else if (currentPage === 'dashboard')      renderDashboard(content);
+    }
+    setTimeout(function() { showTaskDetail(taskId); }, 400);
+  } catch(e) { toast(e.message || '처리 실패', 'error'); }
+}
+
 // TBM 사진 등록 모달 열기 헬퍼 (assId로 섹션 재조회 후 모달 오픈)
 async function _openTbmPhotoModal(assId, taskId) {
   try {
@@ -27656,6 +27742,20 @@ async function _openTbmPhotoModal(assId, taskId) {
     const sections = res.data.tbm_sections || [];
     showTbmPhotoModal(assId, taskId, sections);
   } catch(e) { toast('사진 섹션 로드 실패', 'error'); }
+}
+
+// 사진 모달 × 닫기 버튼 핸들러 — 미등록 사진 있으면 confirm 경고 (RULE-003: onclick 따옴표 중첩 방지)
+function _tbmPhotoCloseBtn(btn) {
+  var modalOverlay = btn.closest('.modal-overlay');
+  if (!modalOverlay) return;
+  // 미등록 항목 수 확인
+  var unregCount = modalOverlay.querySelectorAll('[id^="tbmph-"]').length;
+  var regCount   = modalOverlay.querySelectorAll('[id^="tbmph-"] img').length;
+  var missing = unregCount - regCount;
+  if (missing > 0) {
+    if (!confirm('필수 사진 ' + missing + '장이 아직 미등록 상태입니다.\nTBM 진입 시 차단됩니다. 그래도 닫으시겠습니까?')) return;
+  }
+  modalOverlay.remove();
 }
 
 // TBM 안전조치 사진 등록 모달 (다중 사진 지원)
@@ -27683,7 +27783,7 @@ function showTbmPhotoModal(assId, taskId, sections) {
             : `${donePhotos}/${totalPhotos} 등록 완료 — 미등록 ${totalPhotos - donePhotos}개 · 각 항목에 사진을 1장 이상 등록하세요`}
         </div>
       </div>
-      <button onclick="this.closest('.modal-overlay').remove()" class="text-white/80 text-xl"><i class="fas fa-times"></i></button>
+      <button onclick="_tbmPhotoCloseBtn(this)" class="text-white/80 text-xl"><i class="fas fa-times"></i></button>
     </div>
     <div class="modal-body" style="padding-bottom:8px">
       <!-- BUG-089: 필수/추가 등록 안내 배너 -->

@@ -492,11 +492,10 @@ async function updateTbmSections(db: D1Database, assessmentId: number, responses
     ).all()
     const ppeIds = new Set((ppeItems.results as any[]).map(r => r.id))
 
-    // 버켓/스카이 관련 항목 ID
+    // 버켓/스카이 관련 항목 ID — work_class='bucket' 기준으로 정밀 조회
+    // (이전: category IN ('충돌','전도','감전') 포함 → '감전'이 pole 항목이라 오분류 발생)
     const bucketItems = await db.prepare(
-      `SELECT id FROM checklist_items WHERE 
-       (question LIKE '%버켓차량%' OR question LIKE '%스카이 차량%' OR category IN ('충돌','전도','감전'))
-       AND is_active = 1`
+      `SELECT id FROM checklist_items WHERE work_class = 'bucket' AND is_active = 1`
     ).all()
     const bucketIds = new Set((bucketItems.results as any[]).map(r => r.id))
 

@@ -27621,7 +27621,11 @@ async function loadChecklistItems(taskId) {
         if (!_hasSf && !_hasTb && !_hasPr && !_hasPh) continue;
         var _m2 = CONDITIONAL_META[_cls] || { label:_tkey, hdrBg:'bg-gray-100', hdrText:'text-gray-800', color:'bg-gray-50 border-gray-300', icon:'fas fa-hard-hat text-gray-600' };
         spHtml += '<div class="mb-3 border-2 ' + _m2.color + ' rounded-xl overflow-hidden">';
-        spHtml += '<div class="px-3 py-2 ' + _m2.hdrBg + ' flex items-center gap-2"><i class="' + _m2.icon + '"></i><span class="font-bold text-sm ' + _m2.hdrText + '">' + _m2.label + ' 안전내용</span></div>';
+        spHtml += '<div class="px-3 py-2 ' + _m2.hdrBg + ' flex items-center gap-2">';
+        spHtml += '<i class="' + _m2.icon + '"></i>';
+        spHtml += '<span class="font-bold text-sm ' + _m2.hdrText + '">' + _m2.label + ' 안전내용</span>';
+        spHtml += '<button type="button" class="ml-auto text-xs px-2 py-0.5 rounded border border-purple-300 bg-white text-purple-600 hover:bg-purple-50 flex items-center gap-1" onclick="_openWtSafetyEditByTypeKey(\'' + _tkey + '\')"><i class="fas fa-edit"></i> 내용 수정</button>';
+        spHtml += '</div>';
         spHtml += '<div class="p-3 space-y-3">';
         if (_hasSf) {
           spHtml += '<div><div class="text-xs font-bold text-blue-700 mb-1"><i class="fas fa-book mr-1"></i>안전교육 사항</div><ul class="text-xs text-gray-700 space-y-1">';
@@ -43304,7 +43308,7 @@ function _buildWtSafetyListHtml(list) {
     + '</div>'
     + '<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-xs text-blue-700">'
     +   '<i class="fas fa-info-circle mr-1"></i>'
-    +   '여기서 수정한 내용은 <strong>TBM 작성 폼의 작업유형 칩</strong>과 <strong>체크리스트 사진 섹션의 필수 사진 항목</strong>에 자동 반영됩니다.'
+    +   '여기서 수정한 내용은 <strong>TBM 작성 폼의 작업유형 칩</strong>과 <strong>체크리스트 위험성평가의 안전내용 패널</strong>과 <strong>체크리스트 사진 섹션의 필수 사진 항목</strong>에 자동 반영됩니다.'
     + '</div>'
     + '<div class="bg-white rounded-xl shadow-sm overflow-hidden">'
     +   '<div class="overflow-x-auto">'
@@ -43326,6 +43330,36 @@ function _buildWtSafetyListHtml(list) {
     +   '</div>'
     + '</div>'
     + '</div>';
+}
+
+// ─── 체크리스트 안전내용 패널 → 수정 모달 브릿지 ────────────────────────────────
+// 체크리스트 모달 내 "내용 수정" 버튼 클릭 시 type_key로 _wtSafetyCache를 조회해 수정 모달 오픈
+function _openWtSafetyEditByTypeKey(typeKey) {
+  var wt = null;
+  if (_wtSafetyCache && _wtSafetyCache.length > 0) {
+    for (var _i = 0; _i < _wtSafetyCache.length; _i++) {
+      if (_wtSafetyCache[_i].type_key === typeKey) { wt = _wtSafetyCache[_i]; break; }
+    }
+  }
+  if (!wt) {
+    // WORK_TYPE_SAFETY 폴백
+    var _ws = WORK_TYPE_SAFETY[typeKey];
+    if (_ws) {
+      wt = {
+        type_key: typeKey,
+        label: _ws.label || typeKey,
+        icon: 'fa-hard-hat',
+        is_active: true,
+        sort_order: 0,
+        safety_items: _ws.safety || [],
+        tbm_items: _ws.tbm || [],
+        precaution_items: _ws.precautions || [],
+        photo_labels: _ws.photo_labels || []
+      };
+    }
+  }
+  if (!wt) { toast('해당 작업유형 정보를 찾을 수 없습니다.'); return; }
+  _showWtSafetyEditModal(encodeURIComponent(JSON.stringify(wt)));
 }
 
 // ─── 수정/추가 모달 표시 ──────────────────────────────────────────────────────

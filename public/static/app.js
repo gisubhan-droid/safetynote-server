@@ -43337,8 +43337,8 @@ function _renderClItemsPage(container) {
         + (isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400') + '">'
         + (isActive ? '활성' : '비활성') + '</span></td>';
       tableHtml += '<td class="px-3 py-2 text-center">';
-      tableHtml += '<button type="button" class="text-blue-500 hover:text-blue-700 mr-2" title="수정" onclick="_clItemsOpenEdit(' + JSON.stringify(JSON.stringify(it)) + ')"><i class="fas fa-edit"></i></button>';
-      tableHtml += '<button type="button" class="text-red-400 hover:text-red-600" title="삭제" onclick="_clItemsDelete(' + it.id + ',\'' + (it.question || '').replace(/'/g,'').substring(0,15) + '...\')"><i class="fas fa-trash"></i></button>';
+      tableHtml += '<button type="button" class="text-blue-500 hover:text-blue-700 mr-2" title="수정" onclick="_clItemsOpenEdit(\'' + encodeURIComponent(JSON.stringify(it)) + '\')"><i class="fas fa-edit"></i></button>';
+      tableHtml += '<button type="button" class="text-red-400 hover:text-red-600" title="삭제" onclick="_clItemsDelete(' + it.id + ',\'' + (it.question || '').replace(/['"]/g,'').substring(0,15) + '...\')"><i class="fas fa-trash"></i></button>';
       tableHtml += '</td></tr>';
     });
     tableHtml += '</tbody></table></div></div>';
@@ -43365,7 +43365,7 @@ function _renderClItemsPage(container) {
 
 async function _clItemsSetFilter(wc) {
   _clItemsFilterClass = wc;
-  var container = document.getElementById('pageContent');
+  var container = document.getElementById('page-content');
   if (!container) return;
   container.innerHTML = '<div class="p-4 text-center text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>로딩 중...</div>';
   await _loadClItems();
@@ -43379,7 +43379,7 @@ function _clItemsOpenEdit(itemJsonStr) {
     isNew = true;
     item = { id: null, work_class: 'all', category: '', question: '', note: '', sort_order: 0, is_active: true };
   } else {
-    try { item = JSON.parse(itemJsonStr); } catch(e) { item = {}; }
+    try { item = JSON.parse(decodeURIComponent(itemJsonStr)); } catch(e) { item = {}; }
   }
 
   // work_class 옵션 HTML
@@ -43463,7 +43463,7 @@ async function _clItemsSave(itemId) {
     var m = document.getElementById('clItemEditModal');
     if (m) m.remove();
     // 목록 갱신
-    var container = document.getElementById('pageContent');
+    var container = document.getElementById('page-content');
     if (container) {
       container.innerHTML = '<div class="p-4 text-center text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>갱신 중...</div>';
       await _loadClItems();
@@ -43483,7 +43483,7 @@ async function _clItemsDelete(itemId, preview) {
   try {
     await API.delete('/checklist/items/' + itemId + '?hard=1');
     toast('항목이 삭제(비활성화)되었습니다.');
-    var container = document.getElementById('pageContent');
+    var container = document.getElementById('page-content');
     if (container) {
       await _loadClItems();
       _renderClItemsPage(container);

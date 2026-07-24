@@ -27180,15 +27180,54 @@ async function showChecklistAssessment(taskId, taskTitle, taskWorkClass) {
     { value:'conduit',         label:'관로시설',         icon:'fas fa-circle-nodes'   }
   ];
 
-  // 조건부 항목 체크박스 목록 (6종)
-  const conditionalList = [
-    { value:'bucket',   label:'바켓차량작업',    icon:'fas fa-truck-monster',   color:'text-orange-600' },
-    { value:'pole',     label:'전주승주',         icon:'fas fa-bolt',            color:'text-yellow-600' },
-    { value:'rooftop',  label:'옥상옥탑작업',    icon:'fas fa-building',        color:'text-purple-600' },
-    { value:'ladder',   label:'사다리사용작업',  icon:'fas fa-stairs',          color:'text-blue-600'   },
-    { value:'heavy',    label:'중장비사용',       icon:'fas fa-tractor',         color:'text-green-700'  },
-    { value:'confined', label:'밀폐공간작업',     icon:'fas fa-door-closed',     color:'text-red-700'    }
+  // ── 조건부 항목 체크박스 목록 — DB(_wtSafetyCache) 기반 동적 생성 ──────────
+  // type_key → work_class 매핑 (DB type_key를 체크리스트 work_class로 변환)
+  var _WT_TYPE_KEY_TO_CLASS = {
+    '바켓차량작업':   'bucket',
+    '전주승주':       'pole',
+    '옥상옥탑작업':   'rooftop',
+    '사다리사용작업': 'ladder',
+    '중장비사용':     'heavy',
+    '밀폐공간작업':   'confined'
+  };
+  // work_class → 아이콘/색상 기본값 (DB icon이 없을 때 폴백)
+  var _WT_CLASS_STYLE = {
+    bucket:   { icon:'fas fa-truck-monster', color:'text-orange-600' },
+    pole:     { icon:'fas fa-bolt',          color:'text-yellow-600' },
+    rooftop:  { icon:'fas fa-building',      color:'text-purple-600' },
+    ladder:   { icon:'fas fa-stairs',        color:'text-blue-600'   },
+    heavy:    { icon:'fas fa-tractor',       color:'text-green-700'  },
+    confined: { icon:'fas fa-door-closed',   color:'text-red-700'    }
+  };
+  // 기본 폴백 목록 (DB 로드 실패 시 사용)
+  var _defaultConditionalList = [
+    { value:'bucket',   label:'바켓차량작업',    icon:'fas fa-truck-monster', color:'text-orange-600' },
+    { value:'pole',     label:'전주승주',         icon:'fas fa-bolt',          color:'text-yellow-600' },
+    { value:'rooftop',  label:'옥상옥탑작업',    icon:'fas fa-building',      color:'text-purple-600' },
+    { value:'ladder',   label:'사다리사용작업',  icon:'fas fa-stairs',        color:'text-blue-600'   },
+    { value:'heavy',    label:'중장비사용',       icon:'fas fa-tractor',       color:'text-green-700'  },
+    { value:'confined', label:'밀폐공간작업',     icon:'fas fa-door-closed',   color:'text-red-700'    }
   ];
+  // DB 캐시에서 is_active 항목만 필터링 → conditionalList 동적 생성
+  // TBM회의는 체크박스 대상 아님 (자동 생성 방식) → type_key 매핑에 없으면 제외
+  var conditionalList;
+  if (_wtSafetyCache && _wtSafetyCache.length > 0) {
+    var _dbConditional = [];
+    _wtSafetyCache.forEach(function(wt) {
+      if (!wt.is_active) return; // 비활성 제외
+      var wClass = _WT_TYPE_KEY_TO_CLASS[wt.type_key];
+      if (!wClass) return; // 매핑 없는 항목(TBM회의 등) 제외
+      var style = _WT_CLASS_STYLE[wClass] || { icon:'fas fa-hard-hat', color:'text-gray-600' };
+      var faIcon = (wt.icon && wt.icon !== 'fa-hard-hat') ? ('fas ' + wt.icon) : style.icon;
+      _dbConditional.push({ value: wClass, label: wt.label || wt.type_key, icon: faIcon, color: style.color });
+    });
+    // DB에 항목이 있으면 DB 기반 목록 사용, 없으면 폴백
+    conditionalList = _dbConditional.length > 0 ? _dbConditional : _defaultConditionalList;
+  } else {
+    // DB 미로드 시 폴백 (기존 하드코딩과 동일)
+    conditionalList = _defaultConditionalList;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';

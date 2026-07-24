@@ -44260,9 +44260,9 @@ async function _saveWtSafetyItem(encodedOriginalKey) {
       toast('수정되었습니다.', 'success');
     }
     document.getElementById('wtSafetyEditModal').remove();
-    // 목록 새로고침
+    // 목록 새로고침 — 탭 래퍼(_renderSafetySettingsTabContent)로 재렌더링해야 탭 헤더가 유지됨
     var content = document.getElementById('page-content');
-    if (content) renderWtSafetyPage(content);
+    if (content) _renderSafetySettingsTabContent(content);
     // DB 캐시 갱신
     _loadWtSafetySettings().catch(function(){});
     // 열린 체크리스트 모달 안전내용 패널 갱신
@@ -44283,7 +44283,7 @@ async function _deleteWtSafetyItem(encodedKey) {
     await API.delete('/work-type-safety/' + encodeURIComponent(typeKey));
     toast('삭제되었습니다.', 'success');
     var content = document.getElementById('page-content');
-    if (content) renderWtSafetyPage(content);
+    if (content) _renderSafetySettingsTabContent(content);
     // DB 캐시 갱신
     _loadWtSafetySettings().catch(function(){});
   } catch(e) {

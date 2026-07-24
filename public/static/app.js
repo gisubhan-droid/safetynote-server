@@ -10581,34 +10581,47 @@ function _showLinkedPhotoModal(linkedTaskId, currentTaskId) {
   var headerTitle = info.subNum ? ('연계작업(#' + info.subNum + ')') : ('연계작업');
   var headerSub = info.title || '';
 
-  // 모달 생성 — 전체화면(inset:0), padding 없음
+  // [FEAT-169 UX] 작업상세 모달 내부 오버레이 방식 — 전체화면 교체 대신 modal-inner 위에 겹침
+  // 기존 작업상세 모달(.modal-inner)을 기준으로 absolute 오버레이 → 닫으면 작업상세로 복귀
+  var targetInner = document.querySelector('.modal-inner');
   var modal = document.createElement('div');
   modal.id = 'linked-photo-modal';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:9500;background:#fff;display:flex;flex-direction:column;overflow:hidden';
+  if (targetInner) {
+    // 작업상세 모달 내부에 절대위치 오버레이 (modal-inner 기준)
+    targetInner.style.position = 'relative'; // 부모에 relative 보장
+    modal.style.cssText = 'position:absolute;inset:0;z-index:200;background:#fff;display:flex;flex-direction:column;overflow:hidden;border-radius:inherit';
+  } else {
+    // fallback: 전체화면
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9500;background:#fff;display:flex;flex-direction:column;overflow:hidden';
+  }
 
   modal.innerHTML = ''
-    // ── 헤더 (상단 고정)
-    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(135deg,#059669,#10B981);flex-shrink:0">'
+    // ── 헤더: ← 뒤로 버튼 + 제목 + 총 장수
+    + '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:linear-gradient(135deg,#059669,#10B981);flex-shrink:0">'
+    + '<button onclick="document.getElementById(\'linked-photo-modal\').remove()"'
+    + ' style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.2);border:none;color:white;padding:5px 12px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:600;flex-shrink:0">'
+    + '<i class="fas fa-arrow-left" style="font-size:11px"></i> 뒤로</button>'
     + '<div style="min-width:0;flex:1">'
-    + '<div style="font-weight:700;color:white;font-size:16px;display:flex;align-items:center;gap:8px">'
-    + '<i class="fas fa-camera" style="opacity:0.9"></i>'
+    + '<div style="font-weight:700;color:white;font-size:15px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
+    + '<i class="fas fa-camera" style="opacity:0.9;font-size:13px"></i>'
     + '<span>' + headerTitle + '</span>'
     + (stLabel ? '<span style="font-size:11px;font-weight:400;opacity:0.8;padding:1px 8px;border-radius:8px;background:rgba(255,255,255,0.2)">' + stLabel + '</span>' : '')
     + '</div>'
-    + (headerSub ? '<div style="color:rgba(255,255,255,0.82);font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + headerSub + '</div>' : '')
-    + '<div style="color:rgba(255,255,255,0.7);font-size:11px;margin-top:2px">'
-    + '총 ' + totalCnt + '장 &nbsp;·&nbsp; <i class="fas fa-lock" style="font-size:9px;margin-right:2px"></i>읽기 전용</div>'
+    + (headerSub ? '<div style="color:rgba(255,255,255,0.82);font-size:12px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + headerSub + '</div>' : '')
     + '</div>'
-    + '<button onclick="document.getElementById(\'linked-photo-modal\').remove()"'
-    + ' style="background:rgba(255,255,255,0.2);border:none;color:white;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:12px">'
-    + '<i class="fas fa-times"></i></button>'
+    + '<span style="color:rgba(255,255,255,0.75);font-size:11px;flex-shrink:0">총&nbsp;' + totalCnt + '장</span>'
     + '</div>'
     // ── 스크롤 바디
     + '<div style="flex:1;overflow-y:auto;padding:16px 16px 24px">'
     + bodyHtml
     + '</div>';
 
-  document.body.appendChild(modal);
+  // 작업상세 modal-inner에 붙이거나 fallback으로 body에 붙임
+  if (targetInner) {
+    targetInner.appendChild(modal);
+  } else {
+    document.body.appendChild(modal);
+  }
 }
 
 // ─── 연계 작업 사진 읽기 전용 뷰어 (삭제 버튼 없음) ─────────────────────────

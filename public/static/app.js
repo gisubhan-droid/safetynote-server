@@ -27394,31 +27394,39 @@ function onConditionalChange() {
       .replace('border-gray-200 bg-white', isChecked ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white');
   });
 
-  // work_class → type_key 역변환 맵 (동적 연동: _wtSafetyCache 기반)
-  // _WT_TYPE_KEY_TO_CLASS의 역방향 + 임의 항목(매핑 없는 경우 value 자체가 type_key)
-  var _classToTypeKey = {};
-  if (window._wtSafetyCache && window._wtSafetyCache.length > 0) {
-    window._wtSafetyCache.forEach(function(wt) {
-      var wClass = _WT_TYPE_KEY_TO_CLASS[wt.type_key] || wt.type_key;
+  // work_class → type_key 역변환 맵
+  // 주의: _WT_TYPE_KEY_TO_CLASS는 showChecklistAssessment() 내부 지역변수라 여기서 접근 불가
+  // → 하드코딩 매핑을 직접 정의 + _wtSafetyCache로 임의항목 보완
+  var _typeKeyToClass = {
+    '바켓차량작업':   'bucket',
+    '전주승주':       'pole',
+    '옥상옥탑작업':   'rooftop',
+    '사다리사용작업': 'ladder',
+    '중장비사용':     'heavy',
+    '밀폐공간작업':   'confined'
+  };
+  // 역방향: work_class → type_key
+  var _classToTypeKey = {
+    'bucket':   '바켓차량작업',
+    'pole':     '전주승주',
+    'rooftop':  '옥상옥탑작업',
+    'ladder':   '사다리사용작업',
+    'heavy':    '중장비사용',
+    'confined': '밀폐공간작업'
+  };
+  // _wtSafetyCache 기반으로 임의 항목(매핑 없는 항목) 추가
+  if (_wtSafetyCache && _wtSafetyCache.length > 0) {
+    _wtSafetyCache.forEach(function(wt) {
+      var wClass = _typeKeyToClass[wt.type_key] || wt.type_key; // 매핑 없으면 type_key 자체가 class
       _classToTypeKey[wClass] = wt.type_key;
     });
-  } else {
-    // 폴백: 하드코딩 역방향 매핑
-    _classToTypeKey = {
-      bucket:   '바켓차량작업',
-      pole:     '전주승주',
-      rooftop:  '옥상옥탑작업',
-      ladder:   '사다리사용작업',
-      heavy:    '중장비사용',
-      confined: '밀폐공간작업'
-    };
   }
 
   // 새로 체크된 항목 → _applyWorkTypeSafety 호출
   checked.forEach(function(wClass) {
     if (!prev.has(wClass)) {
       var typeKey = _classToTypeKey[wClass] || wClass;
-      if (window.WORK_TYPE_SAFETY && window.WORK_TYPE_SAFETY[typeKey]) {
+      if (WORK_TYPE_SAFETY && WORK_TYPE_SAFETY[typeKey]) {
         _applyWorkTypeSafety(typeKey);
       }
     }
@@ -27427,7 +27435,7 @@ function onConditionalChange() {
   prev.forEach(function(wClass) {
     if (!checked.has(wClass)) {
       var typeKey = _classToTypeKey[wClass] || wClass;
-      if (window.WORK_TYPE_SAFETY && window.WORK_TYPE_SAFETY[typeKey]) {
+      if (WORK_TYPE_SAFETY && WORK_TYPE_SAFETY[typeKey]) {
         _removeWorkTypeSafety(typeKey);
       }
     }
@@ -27592,6 +27600,58 @@ async function loadChecklistItems(taskId) {
 
       html += `</div>`;
     }
+
+    // ── 작업유형별 안전내용 패널 (안전교육/TBM항목/주의사항/필수사진) ──────────
+    if (conditionals.length > 0) {
+      var _tkMap = { '바켓차량작업':'bucket','전주승주':'pole','옥상옥탑작업':'rooftop','사다리사용작업':'ladder','중장비사용':'heavy','밀폐공간작업':'confined' };
+      var _ctMap = { 'bucket':'바켓차량작업','pole':'전주승주','rooftop':'옥상옥탑작업','ladder':'사다리사용작업','heavy':'중장비사용','confined':'밀폐공간작업' };
+      if (_wtSafetyCache && _wtSafetyCache.length > 0) {
+        _wtSafetyCache.forEach(function(wt) { _ctMap[_tkMap[wt.type_key] || wt.type_key] = wt.type_key; });
+      }
+      var spHtml = '';
+      for (var _si = 0; _si < conditionals.length; _si++) {
+        var _cls = conditionals[_si];
+        var _tkey = _ctMap[_cls] || _cls;
+        var _wt = WORK_TYPE_SAFETY[_tkey];
+        if (!_wt) continue;
+        var _hasSf = _wt.safety && _wt.safety.length > 0;
+        var _hasTb = _wt.tbm && _wt.tbm.length > 0;
+        var _hasPr = _wt.precautions && _wt.precautions.length > 0;
+        var _hasPh = _wt.photo_labels && _wt.photo_labels.length > 0;
+        if (!_hasSf && !_hasTb && !_hasPr && !_hasPh) continue;
+        var _m2 = CONDITIONAL_META[_cls] || { label:_tkey, hdrBg:'bg-gray-100', hdrText:'text-gray-800', color:'bg-gray-50 border-gray-300', icon:'fas fa-hard-hat text-gray-600' };
+        spHtml += '<div class="mb-3 border-2 ' + _m2.color + ' rounded-xl overflow-hidden">';
+        spHtml += '<div class="px-3 py-2 ' + _m2.hdrBg + ' flex items-center gap-2"><i class="' + _m2.icon + '"></i><span class="font-bold text-sm ' + _m2.hdrText + '">' + _m2.label + ' 안전내용</span></div>';
+        spHtml += '<div class="p-3 space-y-3">';
+        if (_hasSf) {
+          spHtml += '<div><div class="text-xs font-bold text-blue-700 mb-1"><i class="fas fa-book mr-1"></i>안전교육 사항</div><ul class="text-xs text-gray-700 space-y-1">';
+          for (var _j = 0; _j < _wt.safety.length; _j++) { spHtml += '<li class="flex gap-1"><span class="text-blue-400 flex-shrink-0">'+(_j+1)+'.</span>'+_wt.safety[_j]+'</li>'; }
+          spHtml += '</ul></div>';
+        }
+        if (_hasTb) {
+          spHtml += '<div><div class="text-xs font-bold text-teal-700 mb-1"><i class="fas fa-users mr-1"></i>TBM 항목</div><ul class="text-xs text-gray-700 space-y-1">';
+          for (var _j = 0; _j < _wt.tbm.length; _j++) { spHtml += '<li class="flex gap-1"><span class="text-teal-400 flex-shrink-0">'+(_j+1)+'.</span>'+_wt.tbm[_j]+'</li>'; }
+          spHtml += '</ul></div>';
+        }
+        if (_hasPr) {
+          spHtml += '<div><div class="text-xs font-bold text-orange-700 mb-1"><i class="fas fa-exclamation-triangle mr-1"></i>주의사항</div><ul class="text-xs text-gray-700 space-y-1">';
+          for (var _j = 0; _j < _wt.precautions.length; _j++) { spHtml += '<li class="flex gap-1"><span class="text-orange-400 flex-shrink-0">'+(_j+1)+'.</span>'+_wt.precautions[_j]+'</li>'; }
+          spHtml += '</ul></div>';
+        }
+        if (_hasPh) {
+          spHtml += '<div><div class="text-xs font-bold text-purple-700 mb-1"><i class="fas fa-camera mr-1"></i>필수 사진 항목</div><div class="flex flex-wrap gap-1">';
+          for (var _j = 0; _j < _wt.photo_labels.length; _j++) { spHtml += '<span class="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">'+_wt.photo_labels[_j]+'</span>'; }
+          spHtml += '</div></div>';
+        }
+        spHtml += '</div></div>';
+      }
+      if (spHtml) {
+        html += '<div class="mb-2 border-t-2 border-dashed border-blue-300 pt-4">';
+        html += '<div class="flex items-center gap-2 mb-3 px-1"><i class="fas fa-shield-alt text-blue-500"></i><span class="text-sm font-bold text-blue-700">작업유형별 안전내용</span></div>';
+        html += spHtml + '</div>';
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     content.innerHTML = html;
   } catch(e) {

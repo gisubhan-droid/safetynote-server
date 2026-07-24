@@ -10742,11 +10742,28 @@ function _snPdfRenderPage(num) {
     var vp = page.getViewport({ scale: _snPdfScale });
     canvas.width = vp.width;
     canvas.height = vp.height;
-    page.render({ canvasContext: ctx, viewport: vp }).promise.then(function() {
+    // 이전 렌더링 작업 취소 후 새 렌더링
+    if (canvas._snRenderTask) {
+      try { canvas._snRenderTask.cancel(); } catch(e) {}
+    }
+    var renderTask = page.render({ canvasContext: ctx, viewport: vp });
+    canvas._snRenderTask = renderTask;
+    renderTask.promise.then(function() {
       _snPdfRendering = false;
+      canvas._snRenderTask = null;
       var info = document.getElementById('sn-pdf-pageinfo');
       if (info) info.textContent = num + ' / ' + _snPdfTotal;
+    }).catch(function(err) {
+      _snPdfRendering = false;  // ← stuck 방지: 실패해도 반드시 해제
+      canvas._snRenderTask = null;
+      // RenderingCancelledException은 정상 취소이므로 무시
+      if (err && err.name !== 'RenderingCancelledException') {
+        console.error('[PDF] render 실패:', err);
+      }
     });
+  }).catch(function(err) {
+    _snPdfRendering = false;  // ← getPage 실패 시에도 해제
+    console.error('[PDF] getPage 실패:', err);
   });
 }
 
@@ -10776,6 +10793,7 @@ function _snPdfClose() {
   _snPdfPage = 1;
   _snPdfTotal = 0;
   _snPdfScale = 1.5;
+  _snPdfRendering = false;  // ← 뷰어 닫힐 때 반드시 stuck 해제
 }
 
 // 인앱 PDF 뷰어 열기
@@ -10799,9 +10817,9 @@ function _openPdfViewer(blobUrl, fileName) {
     + '<button onclick="_snPdfZoomIn()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px">+</button>'
     + '</div>';
 
-  // 캔버스 영역
-  var body = '<div style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:16px">'
-    + '<canvas id="sn-pdf-canvas" style="box-shadow:0 4px 24px rgba(0,0,0,0.5);max-width:100%"></canvas>'
+  // 캔버스 영역 — max-width 제거: 줌 시 캔버스가 실제 크기로 커지고 overflow:auto로 스크롤
+  var body = '<div id="sn-pdf-body" style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:16px;touch-action:none">'
+    + '<canvas id="sn-pdf-canvas" style="box-shadow:0 4px 24px rgba(0,0,0,0.5);display:block"></canvas>'
     + '</div>';
 
   // 하단 페이지 컨트롤
@@ -10815,6 +10833,56 @@ function _openPdfViewer(blobUrl, fileName) {
 
   viewer.innerHTML = header + body + footer;
   document.body.appendChild(viewer);
+
+  // ── PDF 뷰어 핀치 줌 이벤트 리스너 ──────────────────────────────────────
+  var pdfBody = document.getElementById('sn-pdf-body');
+  var _snPinchStartDist = 0;
+  var _snPinchStartScale = 1.5;
+  var _snPinchTimer = null;
+
+  function _snGetPinchDist(touches) {
+    var dx = touches[0].clientX - touches[1].clientX;
+    var dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  pdfBody.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      _snPinchStartDist = _snGetPinchDist(e.touches);
+      _snPinchStartScale = _snPdfScale;
+    }
+  }, { passive: false });
+
+  pdfBody.addEventListener('touchmove', function(e) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      var dist = _snGetPinchDist(e.touches);
+      var ratio = dist / _snPinchStartDist;
+      // scale 범위: 0.5 ~ 3.0
+      _snPdfScale = Math.min(Math.max(_snPinchStartScale * ratio, 0.5), 3.0);
+      // 실시간 canvas transform 미리보기 (렌더링은 touchend 후)
+      var c = document.getElementById('sn-pdf-canvas');
+      if (c) c.style.transform = 'scale(' + (_snPdfScale / _snPinchStartScale) + ')';
+      if (c) c.style.transformOrigin = 'top center';
+    }
+  }, { passive: false });
+
+  pdfBody.addEventListener('touchend', function(e) {
+    if (e.touches.length < 2 && _snPinchStartDist > 0) {
+      // transform 초기화 후 실제 재렌더링
+      var c = document.getElementById('sn-pdf-canvas');
+      if (c) { c.style.transform = ''; c.style.transformOrigin = ''; }
+      _snPinchStartDist = 0;
+      // 디바운스: 핀치 끝나고 200ms 후 렌더 (연속 핀치 중 중복 렌더 방지)
+      if (_snPinchTimer) clearTimeout(_snPinchTimer);
+      _snPinchTimer = setTimeout(function() {
+        _snPdfRendering = false;  // stuck 방지 후 재렌더
+        _snPdfRenderPage(_snPdfPage);
+      }, 200);
+    }
+  }, { passive: false });
+  // ────────────────────────────────────────────────────────────────────────
 
   // PDF.js 로드 후 문서 열기
   _snLoadPdfJs(function() {
@@ -10830,6 +10898,12 @@ function _openPdfViewer(blobUrl, fileName) {
   });
 }
 
+// 이미지 뷰어 닫기 전역함수 (RULE-003: onclick 내 따옴표 중첩 금지)
+function _snImgClose() {
+  var v = document.getElementById('sn-img-viewer');
+  if (v) v.remove();
+}
+
 // 인앱 이미지 뷰어 열기
 function _openImageViewer(blobUrl, fileName) {
   var old = document.getElementById('sn-img-viewer');
@@ -10840,19 +10914,76 @@ function _openImageViewer(blobUrl, fileName) {
   viewer.style.cssText = 'position:fixed;inset:0;z-index:99000;background:#1a1a2e;display:flex;flex-direction:column;overflow:hidden';
 
   var header = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#4E3A63;color:#fff;flex-shrink:0;min-height:48px">'
-    + '<button onclick="var v=document.getElementById(\'sn-img-viewer\');if(v)v.remove();" '
+    + '<button onclick="_snImgClose()" '
     + 'style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:5px 12px;border-radius:18px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:4px">'
     + '<i class="fas fa-arrow-left" style="font-size:11px"></i> 닫기</button>'
     + '<span style="flex:1;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
     + (fileName || '이미지') + '</span>'
     + '</div>';
 
-  var body = '<div style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:center;padding:16px">'
-    + '<img src="' + blobUrl + '" style="max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 4px 24px rgba(0,0,0,0.5)" alt="' + (fileName || '') + '">'
+  // touch-action:none → 핀치 이벤트 브라우저 기본동작 방지
+  var body = '<div id="sn-img-body" style="flex:1;overflow:hidden;display:flex;justify-content:center;align-items:center;padding:16px;touch-action:none">'
+    + '<img id="sn-img-el" src="' + blobUrl + '" style="max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 4px 24px rgba(0,0,0,0.5);transform-origin:center center;user-select:none" alt="' + (fileName || '') + '">'
     + '</div>';
 
   viewer.innerHTML = header + body;
   document.body.appendChild(viewer);
+
+  // ── 이미지 뷰어 핀치 줌 이벤트 리스너 ────────────────────────────────────
+  var imgBody = document.getElementById('sn-img-body');
+  var imgEl   = document.getElementById('sn-img-el');
+  var _imgPinchStartDist  = 0;
+  var _imgPinchStartScale = 1.0;
+  var _imgCurrentScale    = 1.0;
+
+  function _imgGetPinchDist(touches) {
+    var dx = touches[0].clientX - touches[1].clientX;
+    var dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  imgBody.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      _imgPinchStartDist  = _imgGetPinchDist(e.touches);
+      _imgPinchStartScale = _imgCurrentScale;
+    }
+  }, { passive: false });
+
+  imgBody.addEventListener('touchmove', function(e) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      var dist  = _imgGetPinchDist(e.touches);
+      var ratio = dist / _imgPinchStartDist;
+      // scale 범위: 0.5 ~ 5.0
+      _imgCurrentScale = Math.min(Math.max(_imgPinchStartScale * ratio, 0.5), 5.0);
+      imgEl.style.transform = 'scale(' + _imgCurrentScale + ')';
+    }
+  }, { passive: false });
+
+  imgBody.addEventListener('touchend', function(e) {
+    if (e.touches.length < 2) {
+      _imgPinchStartDist = 0;
+      // 1배 미만으로 줄인 경우 1배로 복원
+      if (_imgCurrentScale < 1.0) {
+        _imgCurrentScale = 1.0;
+        imgEl.style.transform = 'scale(1)';
+      }
+    }
+  }, { passive: false });
+
+  // 더블탭으로 원래 크기(1배) 복원
+  var _imgLastTap = 0;
+  imgBody.addEventListener('touchend', function(e) {
+    if (e.touches.length > 0) return;
+    var now = Date.now();
+    if (now - _imgLastTap < 300) {
+      _imgCurrentScale = 1.0;
+      imgEl.style.transform = 'scale(1)';
+    }
+    _imgLastTap = now;
+  }, { passive: true });
+  // ────────────────────────────────────────────────────────────────────────
 }
 
 // ─── 첨부파일 목록 로드 및 렌더링 ─────────────────────────────────────────────

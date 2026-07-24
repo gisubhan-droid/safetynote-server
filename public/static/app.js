@@ -43076,7 +43076,8 @@ async function renderWtSafetyPage(container) {
   container.innerHTML = '<div class="flex justify-center items-center py-12"><div class="spinner"></div></div>';
   try {
     var res = await API.get('/work-type-safety');
-    var list = Array.isArray(res.data) ? res.data : [];
+    // 서버 응답: { data: [...] } → axios res.data = { data: [...] } → res.data.data = [...]
+    var list = Array.isArray(res.data.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
     container.innerHTML = _buildWtSafetyListHtml(list);
   } catch(e) {
     container.innerHTML = '<div class="p-6 text-center text-red-500"><i class="fas fa-exclamation-circle mr-1"></i>불러오기 실패: ' + e.message + '</div>';

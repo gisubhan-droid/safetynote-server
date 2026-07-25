@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-25 (세션 81 — Phase 4 문서 내용 보강 완료)
-> **GitHub 최신: (세션81 커밋 예정)** — docs: [세션81] Phase 4 NAS_INSTALL_GUIDE.md + USER_GUIDE.md v2.0 보강 완료
+> **GitHub 최신: `27790c5`** — docs: [세션81] Phase 4 문서 내용 보강 완료 — NAS_INSTALL_GUIDE.md + USER_GUIDE.md v2.0
 > **이전 커밋: `6a2eb2d`** — release: [세션80] 최종 버전 태깅 완료 — 서버 V2.0.0 + APK v2.0.0 동시 릴리즈
 > **이전 커밋: `ed2e7bf`** — fix: [세션 77-C] 공사 상세 화면 작업 등록 시 화면 유지
 > **이전 커밋: `99d0e7e`** — fix: [세션 77-B] updateTask/doCreate querySelector 오제거 버그 수정

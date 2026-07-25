@@ -502,7 +502,7 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 | 우선순위 | 항목 | 내용 | 관련 |
 |---------|------|------|------|
 | 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 (사용자 없을 때 진행) | Phase 6 |
-| 🟡 중간 | **build-apk.yml 기본값 확인** | `workflow_dispatch` default 버전이 현재 앱 v1.4.14와 일치하는지 GitHub 웹 UI에서 확인 | — |
+| ⚠️ 수동 | **build-apk.yml default 버전 수정 필요** | 현재 `default: '1.4.7'` → `'1.4.14'`로 수정 필요. PAT `workflow` 스코프 부족으로 API push 불가 — GitHub 웹 UI에서 직접 수정: [build-apk.yml 편집](https://github.com/gisubhan-droid/safetynote-android/edit/main/.github/workflows/build-apk.yml) | — |
 | 🟢 낮음 | **DOCS-001 NAS 설치 매뉴얼** | Phase 6 완료 후 신규 담당자용 단계별 문서 작성 | Phase 4 |
 | 🟢 낮음 | **최종 버전 태깅** | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 | — |
 | ✅ 완료 | **FEAT-169 관리자/감독자 연계작업 사진** | PC 접속 admin/supervisor도 연계작업 사진 조회 가능 + media_type 버그 수정 | `bfc3bbb` |

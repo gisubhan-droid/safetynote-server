@@ -5451,8 +5451,14 @@ async function showCreateTaskFromConstruction(con) {
     con._forceCreate = true;
   }
 
-  document.getElementById('conDetailOverlay')?.remove();
   // [TASK-002] 공사 상세에서 작업 생성 시 완료 후 공사 상세로 복귀하도록 con._fromConId 전달
+  // [FIX-CON-BACK] 작업 등록 완료 or 모달 닫기 시 공사 상세로 돌아올 수 있도록
+  //   remove() → display='none' 으로 변경 (fromConId 보존)
+  var _conOv = document.getElementById('conDetailOverlay');
+  if (_conOv) {
+    _conOv.style.display = 'none';
+    _conOv.dataset.fromConId = String(con.id);
+  }
   con._fromConId = con.id;
   await showCreateTaskModal(null, con);
 }
@@ -7098,6 +7104,24 @@ function _syncContractorInput(selectVal) {
   }
 }
 
+// [FIX-CON-BACK] 작업 등록/수정 모달 X버튼 — 닫을 때 공사 상세 배경이 있으면 복원
+// RULE-003: onclick 속성 내 로직 분리 → 전역 함수로 정의
+function _closeTaskModalAndRestoreCon(btnEl) {
+  var _ov = document.getElementById('conDetailOverlay');
+  if (_ov && _ov.dataset.fromConId) {
+    // 공사 상세가 숨겨진 상태 → 제거 후 재오픈
+    var _cId = _ov.dataset.fromConId;
+    _ov.remove();
+    var _taskMo = btnEl && btnEl.closest('.modal-overlay');
+    if (_taskMo) _taskMo.remove();
+    showConstructionDetail(_cId);
+  } else {
+    // 일반 작업관리에서 열린 모달 → 그냥 닫기
+    var _mo = btnEl && btnEl.closest('.modal-overlay');
+    if (_mo) _mo.remove();
+  }
+}
+
 async function showCreateTaskModal(editId = null, presetConstruction = null) {
   // [FEAT-NEW] 중복 최종 검증을 위해 현재 editId를 전역에 저장
   window.__editingTaskId = editId || null;
@@ -7166,7 +7190,7 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
   <div class="modal" style="max-width:620px">
     <div class="modal-header" style="background:linear-gradient(135deg,#D70072,#685182);border-radius:20px 20px 0 0;border-bottom:none;padding:18px 24px">
       <h3 class="font-black text-white text-base"><i class="fas fa-${editId?'edit':'plus-circle'} mr-2"></i>${editId ? '작업 수정' : '신규 작업 등록'}</h3>
-      <button onclick="this.closest('.modal-overlay').remove()" class="text-white opacity-70 hover:opacity-100 text-xl"><i class="fas fa-times"></i></button>
+      <button onclick="_closeTaskModalAndRestoreCon(this)" class="text-white opacity-70 hover:opacity-100 text-xl"><i class="fas fa-times"></i></button>
     </div>
     <div class="modal-body" style="max-height:75vh;overflow-y:auto">
 
@@ -7653,9 +7677,18 @@ async function createTask() {
     // BUG-093: 페이지 이동 오류가 외부 catch('생성 실패')로 전파되지 않도록 try/catch 분리
     try {
       // [TASK-002] 공사 상세에서 작업 생성한 경우 → 공사 상세로 복귀
+      // [FIX-CON-BACK] conDetailOverlay.dataset.fromConId 도 체크 (숨김 상태 보존 방식)
       // 일반 작업관리에서 생성한 경우 → 작업관리 목록으로 이동
-      if (data.construction_id && presetConstruction?._fromConId) {
-        showConstructionDetail(presetConstruction._fromConId);
+      var _fromConIdVal = (presetConstruction && presetConstruction._fromConId)
+        ? presetConstruction._fromConId
+        : (function() {
+            var _ov = document.getElementById('conDetailOverlay');
+            return (_ov && _ov.dataset.fromConId) ? _ov.dataset.fromConId : null;
+          })();
+      if (_fromConIdVal) {
+        var _ovEl = document.getElementById('conDetailOverlay');
+        if (_ovEl) _ovEl.remove();
+        showConstructionDetail(_fromConIdVal);
       } else {
         const pageEl = document.getElementById('page-content');
         if (pageEl) renderTasksPage(pageEl);
@@ -7893,15 +7926,22 @@ async function updateTask(id) {
   };
   if (!data.title) { toast('작업명을 입력하세요.', 'error'); return; }
   try {
-    await API.put(`/tasks/${id}`, data);
+    await API.put('/tasks/' + id, data);
     toast('작업이 수정되었습니다.');
     // 수정 모달 닫기 후 작업 상세 모달 재오픈 (창 상태 유지)
-    document.querySelector('.modal-overlay')?.remove();
-    setTimeout(() => showTaskDetail(id), 200);
-    // 배경 목록도 조용히 갱신 (필터 유지)
-    renderTasksPage(document.getElementById('page-content'));
+    document.querySelector('.modal-overlay') && document.querySelector('.modal-overlay').remove();
+    setTimeout(function() { showTaskDetail(id); }, 200);
+    // [FIX-CON-BACK] 공사 상세에서 수정한 경우 → conDetailOverlay 가 숨겨져 있으면 배경을 공사 상세로 갱신
+    // 일반 작업관리에서 수정한 경우 → 작업관리 목록 조용히 갱신
+    var _conOvUpdate = document.getElementById('conDetailOverlay');
+    if (_conOvUpdate && _conOvUpdate.dataset.fromConId) {
+      // 공사 상세 오버레이가 백그라운드에 숨겨진 상태 — 그대로 유지 (showTaskDetail이 최상위로 열림)
+      // showTaskDetail 닫으면 공사 상세가 자동 복원됨 (display='none' → 복귀 로직에서 처리)
+    } else {
+      renderTasksPage(document.getElementById('page-content'));
+    }
   } catch(e) {
-    toast(e.response?.data?.error || '수정 실패', 'error');
+    toast((e.response && e.response.data && e.response.data.error) || '수정 실패', 'error');
   }
 }
 
@@ -8606,6 +8646,19 @@ async function changeWorkClass(taskId, workClass, modalEl) {
   }
 }
 
+// [FIX-CON-BACK] 작업 상세 모달 X버튼 — 닫을 때 공사 상세 배경이 있으면 복원
+// RULE-003: onclick 속성 내 로직 분리 → 전역 함수로 정의
+function _closeTaskDetailAndRestoreCon(btnEl) {
+  var _taskMo = btnEl && btnEl.closest('.modal-overlay');
+  if (_taskMo) _taskMo.remove();
+  var _ov = document.getElementById('conDetailOverlay');
+  if (_ov && _ov.dataset.fromConId) {
+    // 공사 상세가 백그라운드에 숨겨진 상태 → 보이도록 복원
+    _ov.style.display = '';
+    delete _ov.dataset.fromConId;
+  }
+}
+
 // ======= 작업 상세 모달 =======
 async function showTaskDetail(id, openTbmTab) {
   const modal = document.createElement('div');
@@ -8656,7 +8709,7 @@ async function showTaskDetail(id, openTbmTab) {
           <span class="text-xs text-gray-400">${task.task_number}</span>
         </div>
       </div>
-      <button onclick="this.closest('.modal-overlay').remove()" class="text-gray-400 hover:text-gray-600 text-xl"><i class="fas fa-times"></i></button>
+      <button onclick="_closeTaskDetailAndRestoreCon(this)" class="text-gray-400 hover:text-gray-600 text-xl"><i class="fas fa-times"></i></button>
     </div>
     <!-- [FEAT-025-TAB v3] tab-bar를 modal 직계 자식으로 이동 → sticky top:52px 모바일 정상 동작 -->
     <div class="tab-bar-wrap">

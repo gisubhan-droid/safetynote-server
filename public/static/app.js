@@ -12038,6 +12038,7 @@ function _syncWtSafetyConstFromCache(activeList) {
     newObj[wt.type_key] = {
       label: wt.label,
       icon: wt.icon || 'fa-hard-hat',
+      icon_color: wt.icon_color || '',
       safety: Array.isArray(wt.safety_items) ? wt.safety_items : [],
       tbm: Array.isArray(wt.tbm_items) ? wt.tbm_items : [],
       precautions: Array.isArray(wt.precaution_items) ? wt.precaution_items : [],
@@ -44144,7 +44145,7 @@ function _buildWtSafetyListHtml(list) {
       + '<td class="px-4 py-3 text-center text-sm text-gray-400">' + (idx + 1) + '</td>'
       + '<td class="px-4 py-3">'
       +   '<div class="flex items-center gap-2">'
-      +     '<i class="fas ' + (wt.icon || 'fa-hard-hat') + ' text-purple-500 text-sm"></i>'
+      +     '<i class="fas ' + (wt.icon || 'fa-hard-hat') + '" style="font-size:14px;color:' + (wt.icon_color || '#7C3AED') + '"></i>'
       +     '<span class="font-semibold text-gray-800 text-sm">' + wt.label + '</span>'
       +   '</div>'
       +   '<div class="text-xs text-gray-400 mt-0.5 flex items-center gap-2">'
@@ -44348,10 +44349,31 @@ function _showWtSafetyEditModal(wtEncoded) {
     +     '<input type="text" id="wtEdit_label" class="form-control text-sm" value="' + (wt.label||'').replace(/"/g,'&quot;') + '" placeholder="예: 고소작업대">'
     +   '</div>'
     +   '<div class="form-group">'
-    +     '<label class="form-label text-xs font-semibold">아이콘 (FontAwesome 클래스)</label>'
-    +     '<div class="flex items-center gap-2">'
-    +       '<i id="wtEdit_iconPreview" class="fas ' + (wt.icon||'fa-hard-hat') + ' text-purple-500 text-lg"></i>'
+    +     '<label class="form-label text-xs font-semibold">아이콘 <span style="color:#6b7280;font-weight:400">(코드 직접 입력 또는 아래 선택 버튼 클릭)</span></label>'
+    +     '<div class="flex items-center gap-2" style="margin-bottom:6px">'
+    +       '<i id="wtEdit_iconPreview" class="fas ' + (wt.icon||'fa-hard-hat') + '" style="font-size:22px;color:' + (wt.icon_color||'#7C3AED') + ';min-width:24px"></i>'
     +       '<input type="text" id="wtEdit_icon" class="form-control text-sm" value="' + (wt.icon||'fa-hard-hat') + '" placeholder="fa-hard-hat" oninput="_wtIconPreview()">'
+    +       '<button type="button" onclick="_showIconPickerPopup()" style="white-space:nowrap;padding:5px 12px;background:#7C3AED;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">'
+    +         '<i class="fas fa-icons" style="margin-right:5px"></i>아이콘 선택'
+    +       '</button>'
+    +     '</div>'
+    +     '<input type="hidden" id="wtEdit_iconColor" value="' + (wt.icon_color||'#7C3AED') + '">'
+    +     '<div style="font-size:11px;color:#6b7280;margin-bottom:5px">아이콘 색상 (클릭으로 변경)</div>'
+    +     '<div style="display:flex;flex-wrap:wrap;gap:5px" id="wtEdit_colorPalette">'
+    +     (function() {
+            var swHtml = '';
+            for (var _ci = 0; _ci < WT_COLOR_PRESETS.length; _ci++) {
+              var _cp = WT_COLOR_PRESETS[_ci];
+              var _isSel = (_cp.color === (wt.icon_color||'#7C3AED'));
+              swHtml += '<button type="button"'
+                + ' data-color="' + _cp.color + '"'
+                + ' title="' + _cp.label + '"'
+                + ' onclick="_wtEditColorSelect(this)"'
+                + ' style="width:24px;height:24px;border-radius:50%;background:' + _cp.color + ';border:' + (_isSel ? '3px solid #1e293b' : '2px solid #e5e7eb') + ';cursor:pointer;flex-shrink:0">'
+                + '</button>';
+            }
+            return swHtml;
+          })()
     +     '</div>'
     +   '</div>'
     +   '<div class="form-group">'
@@ -44408,10 +44430,33 @@ function _showWtSafetyEditModal(wtEncoded) {
 // 아이콘 미리보기
 function _wtIconPreview() {
   var iconVal = (document.getElementById('wtEdit_icon') || {}).value || 'fa-hard-hat';
+  var colorVal = (document.getElementById('wtEdit_iconColor') || {}).value || '#7C3AED';
   var prev = document.getElementById('wtEdit_iconPreview');
   if (prev) {
-    prev.className = 'fas ' + iconVal.trim() + ' text-purple-500 text-lg';
+    prev.className = 'fas ' + iconVal.trim();
+    prev.style.color = colorVal;
   }
+}
+
+// 작업유형 수정 모달 내 색상 팔레트 스와치 선택 (RULE-003: 전역 함수)
+function _wtEditColorSelect(btn) {
+  if (!btn) return;
+  var color = btn.getAttribute('data-color') || '#7C3AED';
+  var colorInput = document.getElementById('wtEdit_iconColor');
+  if (colorInput) colorInput.value = color;
+  _wtIconPreview();
+  // 스와치 테두리 갱신
+  var palette = document.getElementById('wtEdit_colorPalette');
+  if (palette) {
+    var swatches = palette.querySelectorAll('button[data-color]');
+    for (var i = 0; i < swatches.length; i++) {
+      var isThis = swatches[i].getAttribute('data-color') === color;
+      swatches[i].style.border = isThis ? '3px solid #1e293b' : '2px solid #e5e7eb';
+    }
+  }
+  // 피커 팝업이 열려있으면 피커 미리보기도 동기화
+  var pickerPreview = document.getElementById('wtPickerPreviewIcon');
+  if (pickerPreview) pickerPreview.style.color = color;
 }
 
 // 항목 행 추가 (RULE-003)
@@ -44635,6 +44680,7 @@ async function _saveWtSafetyItem(encodedOriginalKey) {
   var workClass = (document.getElementById('wtEdit_workClass') || {}).value;
   var label = (document.getElementById('wtEdit_label') || {}).value;
   var icon = (document.getElementById('wtEdit_icon') || {}).value || 'fa-hard-hat';
+  var iconColor = (document.getElementById('wtEdit_iconColor') || {}).value || '';
   var isActive = !!(document.getElementById('wtEdit_isActive') || {}).checked;
   var sortOrder = parseInt((document.getElementById('wtEdit_sortOrder') || {}).value) || 0;
 
@@ -44652,7 +44698,7 @@ async function _saveWtSafetyItem(encodedOriginalKey) {
   var photoLabels = _wtCollectItems('wtEdit_photo');
   var inputFields = _wtCollectInputFields();
 
-  var payload = { type_key: typeKey, work_class: workClass, label: label, icon: icon.trim(), is_active: isActive, sort_order: sortOrder,
+  var payload = { type_key: typeKey, work_class: workClass, label: label, icon: icon.trim(), icon_color: iconColor.trim(), is_active: isActive, sort_order: sortOrder,
     safety_items: safetyItems, tbm_items: tbmItems, precaution_items: precautionItems, photo_labels: photoLabels, input_fields: inputFields };
 
   try {
@@ -44696,6 +44742,352 @@ async function _deleteWtSafetyItem(encodedKey) {
   } catch(e) {
     var msg = (e.response && e.response.data && e.response.data.error) ? e.response.data.error : e.message;
     toast('삭제 실패: ' + msg, 'error');
+  }
+}
+// ─── 아이콘 피커: 프리셋 상수 (공사/작업 특화 — 카테고리별) ─────────────────
+// RULE-001: var 전용, 배열·객체 리터럴
+var WT_ICON_PRESETS = [
+  { cat: '작업/공사', items: [
+    { icon: 'fa-hard-hat',            label: '안전모' },
+    { icon: 'fa-helmet-safety',       label: '헬멧' },
+    { icon: 'fa-person-digging',      label: '굴착' },
+    { icon: 'fa-wrench',              label: '렌치' },
+    { icon: 'fa-hammer',              label: '망치' },
+    { icon: 'fa-screwdriver-wrench',  label: '공구' },
+    { icon: 'fa-trowel',              label: '흙손' },
+    { icon: 'fa-axe',                 label: '도끼' },
+    { icon: 'fa-drill',               label: '드릴' },
+    { icon: 'fa-toolbox',             label: '공구함' },
+    { icon: 'fa-tools',               label: '작업도구' },
+    { icon: 'fa-ruler-combined',      label: '측량' },
+    { icon: 'fa-tape',                label: '줄자' },
+    { icon: 'fa-industry',            label: '공장' },
+    { icon: 'fa-building',            label: '건물' },
+    { icon: 'fa-house-chimney',       label: '현장' }
+  ]},
+  { cat: '전기/설비', items: [
+    { icon: 'fa-bolt',                label: '번개/전기' },
+    { icon: 'fa-plug',                label: '플러그' },
+    { icon: 'fa-tower-broadcast',     label: '송전탑' },
+    { icon: 'fa-power-off',           label: '전원' },
+    { icon: 'fa-solar-panel',         label: '태양광' },
+    { icon: 'fa-cable-car',           label: '케이블' },
+    { icon: 'fa-charging-station',    label: '충전소' },
+    { icon: 'fa-lightbulb',           label: '전구' },
+    { icon: 'fa-toggle-on',           label: '스위치' },
+    { icon: 'fa-microchip',           label: '장치' }
+  ]},
+  { cat: '고소/밀폐', items: [
+    { icon: 'fa-mountain',            label: '고소' },
+    { icon: 'fa-ladder',              label: '사다리' },
+    { icon: 'fa-person-falling',      label: '추락' },
+    { icon: 'fa-wind',                label: '바람' },
+    { icon: 'fa-smog',                label: '연무' },
+    { icon: 'fa-mask',                label: '마스크' },
+    { icon: 'fa-lungs',               label: '호흡' },
+    { icon: 'fa-elevator',            label: '승강기' },
+    { icon: 'fa-stairs',              label: '계단' },
+    { icon: 'fa-warehouse',           label: '창고/밀폐' }
+  ]},
+  { cat: '위험/화학', items: [
+    { icon: 'fa-fire',                label: '화재' },
+    { icon: 'fa-fire-extinguisher',   label: '소화기' },
+    { icon: 'fa-skull-crossbones',    label: '독성' },
+    { icon: 'fa-radiation',           label: '방사선' },
+    { icon: 'fa-biohazard',           label: '생물위험' },
+    { icon: 'fa-temperature-high',    label: '고온' },
+    { icon: 'fa-explosion',           label: '폭발' },
+    { icon: 'fa-triangle-exclamation',label: '주의' },
+    { icon: 'fa-circle-radiation',    label: '방사능' },
+    { icon: 'fa-flask',               label: '화학물질' }
+  ]},
+  { cat: '중장비/운반', items: [
+    { icon: 'fa-truck',               label: '트럭' },
+    { icon: 'fa-truck-moving',        label: '이동트럭' },
+    { icon: 'fa-forklift',            label: '지게차' },
+    { icon: 'fa-tractor',             label: '트랙터' },
+    { icon: 'fa-bulldozer',           label: '불도저' },
+    { icon: 'fa-crane',               label: '크레인' },
+    { icon: 'fa-truck-pickup',        label: '픽업트럭' },
+    { icon: 'fa-trailer',             label: '트레일러' },
+    { icon: 'fa-car-burst',           label: '충돌위험' },
+    { icon: 'fa-road-barrier',        label: '도로통제' }
+  ]},
+  { cat: '인력/안전', items: [
+    { icon: 'fa-people-group',        label: '팀' },
+    { icon: 'fa-user-helmet-safety',  label: '작업자' },
+    { icon: 'fa-person-walking',      label: '보행' },
+    { icon: 'fa-id-badge',            label: '신분증' },
+    { icon: 'fa-shield-halved',       label: '보호' },
+    { icon: 'fa-shield-check',        label: '안전확인' },
+    { icon: 'fa-user-shield',         label: '안전관리' },
+    { icon: 'fa-vest-patches',        label: '안전조끼' },
+    { icon: 'fa-glasses',             label: '보안경' },
+    { icon: 'fa-gloves',              label: '장갑' }
+  ]},
+  { cat: '문서/관리', items: [
+    { icon: 'fa-clipboard-list',      label: '체크리스트' },
+    { icon: 'fa-clipboard-check',     label: '점검완료' },
+    { icon: 'fa-file-shield',         label: '안전문서' },
+    { icon: 'fa-calendar-check',      label: '일정' },
+    { icon: 'fa-magnifying-glass',    label: '점검' },
+    { icon: 'fa-chart-bar',           label: '통계' },
+    { icon: 'fa-camera',              label: '사진' },
+    { icon: 'fa-map-marked-alt',      label: '지도' },
+    { icon: 'fa-qrcode',              label: 'QR코드' },
+    { icon: 'fa-bell',                label: '알림' }
+  ]}
+];
+
+// 아이콘 피커: 색상 팔레트 (12색 — HEX + 한글명)
+var WT_COLOR_PRESETS = [
+  { color: '#7C3AED', label: '보라' },
+  { color: '#0D9488', label: '청록' },
+  { color: '#2563EB', label: '파랑' },
+  { color: '#DC2626', label: '빨강' },
+  { color: '#D97706', label: '주황' },
+  { color: '#CA8A04', label: '노랑' },
+  { color: '#16A34A', label: '초록' },
+  { color: '#D70072', label: '핑크' },
+  { color: '#0369A1', label: '남색' },
+  { color: '#9A3412', label: '갈색' },
+  { color: '#374151', label: '어두운회' },
+  { color: '#6B7280', label: '회색' }
+];
+
+// ─── 아이콘 피커 팝업 (RULE-001/003 준수) ─────────────────────────────────
+// - 호출: _showIconPickerPopup()
+// - 선택 시: wtEdit_icon 값 설정 + _wtIconPreview() 호출 → 실시간 반영
+function _showIconPickerPopup() {
+  // 기존 팝업 중복 방지
+  var existing = document.getElementById('wtIconPickerPopup');
+  if (existing) { existing.remove(); return; }
+
+  var currentIcon = (document.getElementById('wtEdit_icon') || {}).value || 'fa-hard-hat';
+  var currentColor = (document.getElementById('wtEdit_iconColor') || {}).value || '#7C3AED';
+
+  // 팝업 컨테이너 — 모달 위에 fixed 오버레이
+  var popup = document.createElement('div');
+  popup.id = 'wtIconPickerPopup';
+  popup.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45)';
+
+  // 탭 버튼 HTML
+  var tabBtns = '';
+  for (var ti = 0; ti < WT_ICON_PRESETS.length; ti++) {
+    tabBtns += '<button type="button"'
+      + ' id="wtIconTab_' + ti + '"'
+      + ' data-tabidx="' + ti + '"'
+      + ' onclick="_wtIconTabSwitch(' + ti + ')"'
+      + ' style="padding:4px 10px;border-radius:6px;font-size:12px;border:1px solid #e5e7eb;background:' + (ti === 0 ? '#7C3AED' : '#f9fafb') + ';color:' + (ti === 0 ? '#fff' : '#374151') + ';cursor:pointer;white-space:nowrap">'
+      + WT_ICON_PRESETS[ti].cat
+      + '</button>';
+  }
+
+  // 색상 스와치 HTML
+  var colorSwatches = '';
+  for (var ci = 0; ci < WT_COLOR_PRESETS.length; ci++) {
+    var cp = WT_COLOR_PRESETS[ci];
+    var isSelected = cp.color === currentColor;
+    colorSwatches += '<button type="button"'
+      + ' data-color="' + cp.color + '"'
+      + ' title="' + cp.label + '"'
+      + ' onclick="_wtPickerSelectColor(this)"'
+      + ' style="width:28px;height:28px;border-radius:50%;background:' + cp.color + ';border:' + (isSelected ? '3px solid #1e293b' : '2px solid #e5e7eb') + ';cursor:pointer;flex-shrink:0">'
+      + '</button>';
+  }
+
+  popup.innerHTML = '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.25);width:min(560px,96vw);max-height:90vh;overflow:hidden;display:flex;flex-direction:column">'
+    // 헤더
+    + '<div style="padding:14px 18px 10px;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between">'
+    +   '<div style="font-size:15px;font-weight:700;color:#374151"><i class="fas fa-icons" style="color:#7C3AED;margin-right:7px"></i>아이콘 선택</div>'
+    +   '<button type="button" onclick="_closeIconPicker()" style="background:none;border:none;font-size:18px;color:#9ca3af;cursor:pointer;padding:0 4px">&times;</button>'
+    + '</div>'
+    // 검색창
+    + '<div style="padding:10px 18px 6px">'
+    +   '<input type="text" id="wtIconSearch" placeholder="아이콘 검색 (예: 전기, 안전모, 트럭...)"'
+    +     ' style="width:100%;border:1.5px solid #e5e7eb;border-radius:8px;padding:7px 12px;font-size:13px;outline:none;box-sizing:border-box"'
+    +     ' oninput="_wtIconSearchFilter()">'
+    + '</div>'
+    // 카테고리 탭 (가로 스크롤)
+    + '<div id="wtIconTabBar" style="padding:0 18px 8px;display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap">'
+    +   tabBtns
+    + '</div>'
+    // 아이콘 그리드 (스크롤 영역)
+    + '<div id="wtIconGrid" style="padding:8px 18px 12px;overflow-y:auto;flex:1;min-height:160px">'
+    + '</div>'
+    // 색상 선택 영역
+    + '<div style="padding:10px 18px 8px;border-top:1px solid #f3f4f6">'
+    +   '<div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:7px"><i class="fas fa-palette" style="color:#7C3AED;margin-right:5px"></i>아이콘 색상</div>'
+    +   '<div style="display:flex;flex-wrap:wrap;gap:6px">' + colorSwatches + '</div>'
+    + '</div>'
+    // 하단 미리보기 + 닫기
+    + '<div style="padding:10px 18px 14px;border-top:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between">'
+    +   '<div style="display:flex;align-items:center;gap:10px">'
+    +     '<span style="font-size:12px;color:#6b7280">선택된 아이콘:</span>'
+    +     '<i id="wtPickerPreviewIcon" class="fas ' + currentIcon + '" style="font-size:22px;color:' + currentColor + '"></i>'
+    +     '<span id="wtPickerPreviewLabel" style="font-size:12px;color:#374151">' + currentIcon + '</span>'
+    +   '</div>'
+    +   '<button type="button" onclick="_closeIconPicker()" style="padding:7px 18px;background:#7C3AED;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer">적용</button>'
+    + '</div>'
+    + '</div>';
+
+  document.body.appendChild(popup);
+  // 배경 클릭 닫기
+  popup.addEventListener('click', function(e) {
+    if (e.target === popup) _closeIconPicker();
+  });
+  // 첫 번째 탭 그리드 렌더링
+  _wtIconTabSwitch(0);
+  // 검색창 포커스
+  setTimeout(function() {
+    var s = document.getElementById('wtIconSearch');
+    if (s) s.focus();
+  }, 80);
+}
+
+// 아이콘 피커 닫기
+function _closeIconPicker() {
+  var popup = document.getElementById('wtIconPickerPopup');
+  if (popup) popup.remove();
+}
+
+// 탭 전환 — 해당 카테고리 아이콘 그리드 렌더링
+function _wtIconTabSwitch(tabIdx) {
+  // 탭 버튼 활성화 스타일
+  for (var i = 0; i < WT_ICON_PRESETS.length; i++) {
+    var btn = document.getElementById('wtIconTab_' + i);
+    if (!btn) continue;
+    if (i === tabIdx) {
+      btn.style.background = '#7C3AED';
+      btn.style.color = '#fff';
+    } else {
+      btn.style.background = '#f9fafb';
+      btn.style.color = '#374151';
+    }
+  }
+  // 검색창 초기화
+  var searchEl = document.getElementById('wtIconSearch');
+  if (searchEl) searchEl.value = '';
+  // 그리드 렌더링
+  var grid = document.getElementById('wtIconGrid');
+  if (!grid) return;
+  var preset = WT_ICON_PRESETS[tabIdx];
+  if (!preset) return;
+  grid.innerHTML = _buildIconGrid(preset.items);
+}
+
+// 아이콘 그리드 HTML 생성 (RULE-003: data-icon 속성에 클래스 저장)
+function _buildIconGrid(items) {
+  if (!items || items.length === 0) {
+    return '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px">검색 결과가 없습니다.</div>';
+  }
+  var currentColor = (document.getElementById('wtEdit_iconColor') || {}).value || '#7C3AED';
+  var currentIcon = (document.getElementById('wtEdit_icon') || {}).value || '';
+  var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:6px">';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var isSelected = item.icon === currentIcon;
+    html += '<button type="button"'
+      + ' data-icon="' + item.icon + '"'
+      + ' onclick="_wtPickerSelectIcon(this)"'
+      + ' title="' + item.icon + '"'
+      + ' style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 4px;border-radius:8px;border:' + (isSelected ? '2px solid #7C3AED' : '1.5px solid #e5e7eb') + ';background:' + (isSelected ? '#EDE9F8' : '#fff') + ';cursor:pointer;gap:5px;min-height:64px">'
+      + '<i class="fas ' + item.icon + '" style="font-size:20px;color:' + currentColor + '"></i>'
+      + '<span style="font-size:10px;color:#6b7280;text-align:center;line-height:1.2;word-break:keep-all">' + item.label + '</span>'
+      + '</button>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// 아이콘 검색 필터
+function _wtIconSearchFilter() {
+  var searchEl = document.getElementById('wtIconSearch');
+  var q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  var grid = document.getElementById('wtIconGrid');
+  if (!grid) return;
+  if (!q) {
+    // 검색어 없으면 현재 활성 탭 재렌더
+    var activeTab = 0;
+    for (var i = 0; i < WT_ICON_PRESETS.length; i++) {
+      var btn = document.getElementById('wtIconTab_' + i);
+      if (btn && btn.style.background === 'rgb(124, 58, 237)') { activeTab = i; break; }
+    }
+    grid.innerHTML = _buildIconGrid(WT_ICON_PRESETS[activeTab].items);
+    return;
+  }
+  // 전체 카테고리에서 label/icon 일치 필터
+  var filtered = [];
+  for (var ci = 0; ci < WT_ICON_PRESETS.length; ci++) {
+    var catItems = WT_ICON_PRESETS[ci].items;
+    for (var ii = 0; ii < catItems.length; ii++) {
+      var it = catItems[ii];
+      if (it.label.indexOf(q) !== -1 || it.icon.indexOf(q) !== -1) {
+        filtered.push(it);
+      }
+    }
+  }
+  grid.innerHTML = _buildIconGrid(filtered);
+}
+
+// 아이콘 클릭 선택 — wtEdit_icon 값 설정 + 미리보기 갱신
+function _wtPickerSelectIcon(btn) {
+  if (!btn) return;
+  var iconCls = btn.getAttribute('data-icon') || '';
+  // wtEdit_icon 값 갱신
+  var iconInput = document.getElementById('wtEdit_icon');
+  if (iconInput) {
+    iconInput.value = iconCls;
+    _wtIconPreview();
+  }
+  // 피커 미리보기 갱신
+  var previewIcon = document.getElementById('wtPickerPreviewIcon');
+  if (previewIcon) {
+    var color = (document.getElementById('wtEdit_iconColor') || {}).value || '#7C3AED';
+    previewIcon.className = 'fas ' + iconCls;
+    previewIcon.style.color = color;
+  }
+  var previewLabel = document.getElementById('wtPickerPreviewLabel');
+  if (previewLabel) previewLabel.textContent = iconCls;
+  // 그리드 내 선택 상태 갱신 (테두리 강조)
+  var grid = document.getElementById('wtIconGrid');
+  if (grid) {
+    var allBtns = grid.querySelectorAll('button[data-icon]');
+    for (var i = 0; i < allBtns.length; i++) {
+      var isThis = allBtns[i].getAttribute('data-icon') === iconCls;
+      allBtns[i].style.border = isThis ? '2px solid #7C3AED' : '1.5px solid #e5e7eb';
+      allBtns[i].style.background = isThis ? '#EDE9F8' : '#fff';
+    }
+  }
+}
+
+// 색상 스와치 선택 — wtEdit_iconColor 값 설정 + 미리보기 갱신
+function _wtPickerSelectColor(btn) {
+  if (!btn) return;
+  var color = btn.getAttribute('data-color') || '#7C3AED';
+  // wtEdit_iconColor 값 갱신
+  var colorInput = document.getElementById('wtEdit_iconColor');
+  if (colorInput) {
+    colorInput.value = color;
+    _wtIconPreview();
+  }
+  // 피커 미리보기 갱신
+  var previewIcon = document.getElementById('wtPickerPreviewIcon');
+  if (previewIcon) previewIcon.style.color = color;
+  // 그리드 내 아이콘 색상 일괄 갱신
+  var grid = document.getElementById('wtIconGrid');
+  if (grid) {
+    var icons = grid.querySelectorAll('i.fas');
+    for (var i = 0; i < icons.length; i++) { icons[i].style.color = color; }
+  }
+  // 스와치 선택 테두리 갱신
+  var popup = document.getElementById('wtIconPickerPopup');
+  if (popup) {
+    var swatches = popup.querySelectorAll('button[data-color]');
+    for (var si = 0; si < swatches.length; si++) {
+      var isThis = swatches[si].getAttribute('data-color') === color;
+      swatches[si].style.border = isThis ? '3px solid #1e293b' : '2px solid #e5e7eb';
+    }
   }
 }
 // ============================================================================

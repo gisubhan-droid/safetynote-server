@@ -3038,6 +3038,19 @@ function patchSchema() {
     }
   }
 
+  // ─── patchSchema v0.171: work_type_safety_settings에 icon_color 컬럼 추가 ────
+  // 목적: 아이콘 피커에서 선택한 색상 저장 — 기본값 '' (빈값 = 기존 text-purple-500 유지)
+  try {
+    rawDb.exec(`ALTER TABLE work_type_safety_settings ADD COLUMN icon_color TEXT DEFAULT ''`)
+    console.log('[patchSchema v0.171] ✅ icon_color 컬럼 추가 완료')
+  } catch(e: any) {
+    if (e.message?.includes('duplicate column')) {
+      console.log('[patchSchema v0.171] icon_color 컬럼 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.171] icon_color 컬럼 추가 실패 (무시):', e.message)
+    }
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -5952,7 +5965,7 @@ app.get('/api/work-type-safety', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
   try {
     const rows = rawDb.prepare(
-      `SELECT id, type_key, work_class, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, input_fields
+      `SELECT id, type_key, work_class, label, icon, icon_color, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, input_fields
        FROM work_type_safety_settings ORDER BY sort_order ASC, id ASC`
     ).all()
     const list = rows.map((r: any) => ({
@@ -5961,6 +5974,7 @@ app.get('/api/work-type-safety', async (c) => {
       work_class: r.work_class || '',
       label: r.label,
       icon: r.icon || 'fa-hard-hat',
+      icon_color: r.icon_color || '',
       is_active: r.is_active === 1,
       sort_order: r.sort_order || 0,
       safety_items: (() => { try { return JSON.parse(r.safety_items || '[]') } catch { return [] } })(),
@@ -5983,13 +5997,13 @@ app.get('/api/work-type-safety/:typeKey', async (c) => {
   const typeKey = decodeURIComponent(c.req.param('typeKey'))
   try {
     const row = rawDb.prepare(
-      `SELECT id, type_key, work_class, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, input_fields
+      `SELECT id, type_key, work_class, label, icon, icon_color, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, input_fields
        FROM work_type_safety_settings WHERE type_key = ?`
     ).get(typeKey) as any
     if (!row) return c.json({ error: 'Not found' }, 404)
     return c.json({ data: {
       id: row.id, type_key: row.type_key, work_class: row.work_class || '',
-      label: row.label, icon: row.icon || 'fa-hard-hat',
+      label: row.label, icon: row.icon || 'fa-hard-hat', icon_color: row.icon_color || '',
       is_active: row.is_active === 1, sort_order: row.sort_order || 0,
       safety_items: (() => { try { return JSON.parse(row.safety_items || '[]') } catch { return [] } })(),
       tbm_items: (() => { try { return JSON.parse(row.tbm_items || '[]') } catch { return [] } })(),
@@ -6018,6 +6032,7 @@ app.post('/api/work-type-safety', async (c) => {
     if (!workClass) return c.json({ error: 'work_class 필수 (영문 소문자/숫자/언더바)' }, 400)
     const label = (body.label || typeKey).trim()
     const icon = (body.icon || 'fa-hard-hat').trim()
+    const iconColor = (body.icon_color || '').trim()
     const isActive = body.is_active !== false ? 1 : 0
     const sortOrder = Number(body.sort_order) || 0
     const safetyItems = JSON.stringify(Array.isArray(body.safety_items) ? body.safety_items : [])
@@ -6028,9 +6043,9 @@ app.post('/api/work-type-safety', async (c) => {
     const now = new Date().toISOString()
     const result = rawDb.prepare(`
       INSERT INTO work_type_safety_settings
-        (type_key, work_class, label, icon, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, input_fields, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(typeKey, workClass, label, icon, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, inputFields, now, now)
+        (type_key, work_class, label, icon, icon_color, is_active, sort_order, safety_items, tbm_items, precaution_items, photo_labels, input_fields, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(typeKey, workClass, label, icon, iconColor, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, inputFields, now, now)
     return c.json({ ok: true, id: result.lastInsertRowid })
   } catch (e: any) {
     if (e.message?.includes('UNIQUE')) return c.json({ error: '이미 존재하는 type_key입니다.' }, 409)
@@ -6053,6 +6068,7 @@ app.put('/api/work-type-safety/:typeKey', async (c) => {
     const workClass = (body.work_class || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
     const label = (body.label || typeKey).trim()
     const icon = (body.icon || 'fa-hard-hat').trim()
+    const iconColor = (body.icon_color || '').trim()
     const isActive = body.is_active !== false ? 1 : 0
     const sortOrder = Number(body.sort_order) || 0
     const safetyItems = JSON.stringify(Array.isArray(body.safety_items) ? body.safety_items : [])
@@ -6063,9 +6079,9 @@ app.put('/api/work-type-safety/:typeKey', async (c) => {
     const now = new Date().toISOString()
     const result = rawDb.prepare(`
       UPDATE work_type_safety_settings
-      SET work_class=?, label=?, icon=?, is_active=?, sort_order=?, safety_items=?, tbm_items=?, precaution_items=?, photo_labels=?, input_fields=?, updated_at=?
+      SET work_class=?, label=?, icon=?, icon_color=?, is_active=?, sort_order=?, safety_items=?, tbm_items=?, precaution_items=?, photo_labels=?, input_fields=?, updated_at=?
       WHERE type_key=?
-    `).run(workClass || null, label, icon, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, inputFields, now, typeKey)
+    `).run(workClass || null, label, icon, iconColor, isActive, sortOrder, safetyItems, tbmItems, precautionItems, photoLabels, inputFields, now, typeKey)
     if (result.changes === 0) return c.json({ error: 'Not found' }, 404)
     return c.json({ ok: true })
   } catch (e: any) {

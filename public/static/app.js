@@ -5451,14 +5451,9 @@ async function showCreateTaskFromConstruction(con) {
     con._forceCreate = true;
   }
 
-  // [TASK-002] 공사 상세에서 작업 생성 시 완료 후 공사 상세로 복귀하도록 con._fromConId 전달
-  // [FIX-CON-BACK] 작업 등록 완료 or 모달 닫기 시 공사 상세로 돌아올 수 있도록
-  //   remove() → display='none' 으로 변경 (fromConId 보존)
-  var _conOv = document.getElementById('conDetailOverlay');
-  if (_conOv) {
-    _conOv.style.display = 'none';
-    _conOv.dataset.fromConId = String(con.id);
-  }
+  // [FIX-CON-STAY] 공사 상세를 숨기지 않고 그대로 유지 — 작업 등록 모달만 위에 쌓음
+  // 등록 완료/취소 후 conDetailOverlay는 그 자리에 남아있음
+  // _fromConId 는 등록 완료 후 공사 상세를 새로고침하기 위해 전달
   con._fromConId = con.id;
   await showCreateTaskModal(null, con);
 }
@@ -7104,22 +7099,13 @@ function _syncContractorInput(selectVal) {
   }
 }
 
-// [FIX-CON-BACK] 작업 등록/수정 모달 X버튼 — 닫을 때 공사 상세 배경이 있으면 복원
+// [FIX-CON-STAY] 작업 등록/수정 모달 X버튼 — 그냥 모달만 닫기
+// 공사 상세(conDetailOverlay)는 숨기지 않으므로 별도 복원 불필요
+// 공사 상세에서 열었으면 conDetailOverlay가 뒤에 그대로 남아있음
 // RULE-003: onclick 속성 내 로직 분리 → 전역 함수로 정의
 function _closeTaskModalAndRestoreCon(btnEl) {
-  var _ov = document.getElementById('conDetailOverlay');
-  if (_ov && _ov.dataset.fromConId) {
-    // 공사 상세가 숨겨진 상태 → 제거 후 재오픈
-    var _cId = _ov.dataset.fromConId;
-    _ov.remove();
-    var _taskMo = btnEl && btnEl.closest('.modal-overlay');
-    if (_taskMo) _taskMo.remove();
-    showConstructionDetail(_cId);
-  } else {
-    // 일반 작업관리에서 열린 모달 → 그냥 닫기
-    var _mo = btnEl && btnEl.closest('.modal-overlay');
-    if (_mo) _mo.remove();
-  }
+  var _mo = btnEl && btnEl.closest('.modal-overlay');
+  if (_mo) _mo.remove();
 }
 
 async function showCreateTaskModal(editId = null, presetConstruction = null) {
@@ -7679,16 +7665,13 @@ async function createTask() {
 
     // BUG-093: 페이지 이동 오류가 외부 catch('생성 실패')로 전파되지 않도록 try/catch 분리
     try {
-      // [TASK-002] 공사 상세에서 작업 생성한 경우 → 공사 상세로 복귀
-      // [FIX-CON-BACK] conDetailOverlay.dataset.fromConId 도 체크 (숨김 상태 보존 방식)
+      // [TASK-002] 공사 상세에서 작업 생성한 경우 → 공사 상세 새로고침 (내용 반영)
+      // [FIX-CON-STAY] conDetailOverlay 는 숨기지 않으므로 _fromConId 만 체크
       // 일반 작업관리에서 생성한 경우 → 작업관리 목록으로 이동
       var _fromConIdVal = (presetConstruction && presetConstruction._fromConId)
-        ? presetConstruction._fromConId
-        : (function() {
-            var _ov = document.getElementById('conDetailOverlay');
-            return (_ov && _ov.dataset.fromConId) ? _ov.dataset.fromConId : null;
-          })();
+        ? presetConstruction._fromConId : null;
       if (_fromConIdVal) {
+        // 공사 상세 overlay 제거 후 재오픈 — 새로 등록된 작업이 목록에 반영됨
         var _ovEl = document.getElementById('conDetailOverlay');
         if (_ovEl) _ovEl.remove();
         showConstructionDetail(_fromConIdVal);

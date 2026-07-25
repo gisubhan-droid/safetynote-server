@@ -300,6 +300,7 @@ info "PM2 프로세스 등록 중..."
 PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
   --name "$APP_NAME" \
   --interpreter "$NODE_EXEC" \
+  --cwd "$INSTALL_DIR" \
   -- node-server.ts
 
 sleep 4

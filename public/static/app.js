@@ -7141,9 +7141,10 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
 
   const wc = task.work_class || 'cable_install';
   // 공사종류(ct): 기존 task값 → presetConstruction.work_class 변환 → 빈값 순으로 결정
-  // 공사종류(ct): task 직접값 → presetConstruction.work_class(영문키→한글) → 빈값 순
+  // 공사종류(ct): task 직접값 → presetConstruction.construction_type(한글 직접값) → presetConstruction.work_class(영문키→한글) → 빈값 순
   // conKeyToLabel()은 CON_TYPE_DEF 기반 → 항목 추가 시 자동 반영
   const ct = task.construction_type
+    || (presetConstruction ? presetConstruction.construction_type : '')
     || (presetConstruction?.work_class ? conKeyToLabel(presetConstruction.work_class) : '')
     || '';
   // presetConstruction 이 있으면 공사종류 select 를 읽기전용으로 처리
@@ -43391,6 +43392,7 @@ async function copyTask(taskId) {
       request_no:          t.request_no          || '',
       work_number:         t.work_number          || t.con_work_number       || '',
       work_class:          t.work_class           || '',
+      construction_type:   t.construction_type    || '',
       work_order_address:  t.work_order_address   || t.location              || '',
       manager_name:        t.contractor_name      || '',
       supervisor_name:     t.lgu_supervisor       || '',

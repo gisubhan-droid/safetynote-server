@@ -10109,6 +10109,52 @@ async function changeTaskStatus(taskId, newStatus) {
         }
       }
     } catch(_) { /* TBM 조회 실패 시 차단하지 않고 진행 */ }
+
+    // ── 필수 입력 레이블 검증 (TBM 사진 모달에서 입력한 값) ────────────────
+    var _ifErrors = [];
+    document.querySelectorAll('input[data-rule][data-taskid="' + taskId + '"]').forEach(function(inp) {
+      var labelEl = inp.closest('div') ? inp.closest('div').querySelector('label') : null;
+      var labelTxt = labelEl ? labelEl.textContent.trim() : (inp.id || '항목');
+      var val = (inp.value || '').trim();
+      if (!val) {
+        _ifErrors.push({ label: labelTxt, msg: '미입력' });
+      } else {
+        var ruleJson = inp.getAttribute('data-rule') || '{}';
+        var rule = {};
+        try { rule = JSON.parse(ruleJson); } catch(e2) {}
+        var result = _validateInputField(val, rule);
+        if (!result.ok) _ifErrors.push({ label: labelTxt, msg: result.msg });
+      }
+    });
+    if (_ifErrors.length > 0) {
+      var _ifErrModal = document.createElement('div');
+      _ifErrModal.className = 'modal-overlay modal-sm';
+      _ifErrModal.style.zIndex = '10025';
+      var _ifErrRows = _ifErrors.map(function(e) {
+        return '<div class="flex items-start gap-2 p-2 bg-red-50 border border-red-200 rounded mb-1">'
+          + '<i class="fas fa-exclamation-circle text-red-500 mt-0.5 flex-shrink-0"></i>'
+          + '<div><span class="text-xs font-semibold text-red-700">' + e.label + '</span>'
+          + '<span class="text-xs text-red-500 ml-1">— ' + e.msg + '</span></div>'
+          + '</div>';
+      }).join('');
+      _ifErrModal.innerHTML = '<div class="modal" style="max-width:420px">'
+        + '<div class="modal-header bg-red-600 text-white">'
+        + '<h3 class="font-bold"><i class="fas fa-keyboard mr-2"></i>필수 입력 레이블 미완료</h3>'
+        + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-white/80 text-xl"><i class="fas fa-times"></i></button>'
+        + '</div>'
+        + '<div class="modal-body">'
+        + '<div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">'
+        + '<p class="text-sm text-red-700 font-semibold">⚠️ 사진등록 화면에서 필수 입력 레이블 항목을 입력 후 작업 개시하세요.</p>'
+        + '<p class="text-xs text-red-500 mt-1">TBM 안전조치 사진 등록 모달을 열어 측정값을 입력하세요.</p>'
+        + '</div>'
+        + '<div class="max-h-48 overflow-y-auto">' + _ifErrRows + '</div>'
+        + '</div>'
+        + '<div class="modal-footer">'
+        + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="btn btn-danger"><i class="fas fa-arrow-left mr-1"></i>확인</button>'
+        + '</div></div>';
+      document.body.appendChild(_ifErrModal);
+      return; // 작업 개시 차단
+    }
   }
 
   const m = document.createElement('div');
@@ -27679,13 +27725,14 @@ async function loadChecklistItems(taskId) {
           spHtml += '</div></div>';
         }
         // ── 필수 입력 레이블 (가스측정값 등 실시간 유효성) ─────────────────────
-        var _hasIf = _wt.input_fields && _wt.input_fields.length > 0;
+        var _activeInputFields = (_wt.input_fields || []).filter(function(f) { return f.is_enabled !== false; });
+        var _hasIf = _activeInputFields.length > 0;
         if (_hasIf) {
           spHtml += '<div>';
           spHtml += '<div class="text-xs font-bold text-teal-700 mb-2"><i class="fas fa-keyboard mr-1"></i>필수 입력 레이블</div>';
           spHtml += '<div class="space-y-2">';
-          for (var _fi = 0; _fi < _wt.input_fields.length; _fi++) {
-            var _fd = _wt.input_fields[_fi];
+          for (var _fi = 0; _fi < _activeInputFields.length; _fi++) {
+            var _fd = _activeInputFields[_fi];
             var _fid = 'if_' + _tkey.replace(/[^a-zA-Z0-9]/g,'_') + '_' + _fi;
             var _ridEl = 'ifrow_' + _fid;
             var _unitTxt = _fd.unit ? ' (' + _fd.unit + ')' : '';
@@ -27830,9 +27877,11 @@ async function submitChecklist(taskId) {
     }
   });
 
-  // 필수 입력 레이블 미입력/부적정 검사
+  // 필수 입력 레이블 미입력/부적정 검사 (체크리스트 화면의 항목만 — data-taskid 없는 것)
   var inputFieldErrors = [];
   document.querySelectorAll('input[data-rule]').forEach(function(inp) {
+    // TBM 사진 모달 내 입력값(data-taskid 있음)은 여기서 검사 제외 → 작업개시 시점에 검사
+    if (inp.getAttribute('data-taskid')) return;
     var labelEl = inp.closest('div') ? inp.closest('div').querySelector('label') : null;
     var labelTxt = labelEl ? labelEl.textContent.trim() : inp.id;
     var val = (inp.value || '').trim();
@@ -28085,7 +28134,7 @@ function _tbmPhotoCloseBtn(btn) {
 }
 
 // TBM 안전조치 사진 등록 모달 (다중 사진 지원)
-function showTbmPhotoModal(assId, taskId, sections) {
+async function showTbmPhotoModal(assId, taskId, sections) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
 
@@ -28097,6 +28146,47 @@ function showTbmPhotoModal(assId, taskId, sections) {
     totalPhotos += photos.length;
     donePhotos += photos.filter(p => p.file_path).length;
   });
+
+  // ── taskId 기반으로 활성화된 필수 입력 레이블 조회 ──────────────────────
+  var _ifFields = [];  // 활성화된 input_fields
+  try {
+    if (taskId && _wtSafetyCache && _wtSafetyCache.length > 0) {
+      // task → work_class 역매핑: API로 task 조회
+      var _taskRes = await API.get('/tasks/' + taskId);
+      var _task = _taskRes.data || _taskRes;
+      // tasks 테이블의 work_class 컬럼 기반 매칭 (올바른 방식)
+      var _taskWorkClass = _task.work_class || '';
+      var _wt = null;
+      if (_taskWorkClass) {
+        _wt = _wtSafetyCache.find(function(w) { return w.work_class === _taskWorkClass; });
+      }
+      if (_wt && Array.isArray(_wt.input_fields)) {
+        _ifFields = _wt.input_fields.filter(function(f) { return f.is_enabled !== false; });
+      }
+    }
+  } catch(_e) { _ifFields = []; }
+
+  // 필수 입력 레이블 HTML 생성
+  var _ifSectionHtml = '';
+  if (_ifFields.length > 0) {
+    _ifSectionHtml = '<div id="tbmPhotoInputSection" style="margin:12px 0 4px;border:1.5px solid #0D9488;border-radius:10px;padding:12px 14px;background:#F0FDFA">'
+      + '<div style="font-size:13px;font-weight:700;color:#0F766E;margin-bottom:10px"><i class="fas fa-keyboard" style="margin-right:6px"></i>필수 입력 레이블 <span style="font-size:11px;font-weight:400;color:#5EEAD4">(작업개시 전 입력 필수)</span></div>'
+      + '<div style="display:flex;flex-direction:column;gap:8px" id="tbmInputFieldRows">';
+    for (var _fi = 0; _fi < _ifFields.length; _fi++) {
+      var _fd = _ifFields[_fi];
+      var _fid = 'tbm_if_' + taskId + '_' + _fi;
+      var _unitTxt = _fd.unit ? ' (' + _fd.unit + ')' : '';
+      var _ruleJson = JSON.stringify(_fd).replace(/"/g, '&quot;');
+      _ifSectionHtml += '<div style="display:flex;align-items:center;gap:8px">'
+        + '<label style="font-size:12px;color:#374151;min-width:140px;flex-shrink:0">' + _fd.label + _unitTxt + '</label>'
+        + '<input type="number" step="any" id="' + _fid + '" data-rule="' + _ruleJson + '" data-taskid="' + taskId + '"'
+        +   ' style="width:100px;border:1.5px solid #99F6E4;border-radius:6px;padding:4px 8px;font-size:13px;outline:none"'
+        +   ' placeholder="측정값" oninput="_onInputFieldChange(\'' + _fid + '\')">'
+        + '<span id="' + _fid + '_status" style="font-size:11px;padding:2px 8px;border-radius:12px;background:#F3F4F6;color:#6B7280">미입력</span>'
+        + '</div>';
+    }
+    _ifSectionHtml += '</div></div>';
+  }
 
   modal.innerHTML = `
   <div class="modal" style="max-width:620px;max-height:92vh;overflow-y:auto">
@@ -28206,6 +28296,7 @@ function showTbmPhotoModal(assId, taskId, sections) {
         </div>`;
       }).join('')}
     </div>
+    ${_ifSectionHtml}
     <div class="modal-footer">
       <button id="tbmPhotoCompleteBtn" class="btn btn-primary" style="${donePhotos >= totalPhotos && totalPhotos > 0 ? 'background:linear-gradient(135deg,#059669,#10B981)' : ''}">
         <i class="fas fa-check${donePhotos >= totalPhotos && totalPhotos > 0 ? '-circle' : ''} mr-1"></i>
@@ -44185,15 +44276,15 @@ function _showWtSafetyEditModal(wtEncoded) {
     return html;
   };
 
-  // 필수 입력 레이블 행(행별: 항목명/단위/검증유형/min/max) HTML 빌더
+  // 필수 입력 레이블 행(행별: 항목명/단위/검증유형/min/max/is_enabled) HTML 빌더
   var buildInputFieldsHtml = function(fields) {
     var listId = 'wtEdit_input_list';
     var arr = Array.isArray(fields) ? fields : [];
     var html = '<div id="' + listId + '" class="space-y-2 mb-2">';
     // 헤더 행
     if (arr.length > 0) {
-      html += '<div class="grid gap-1 text-xs font-semibold text-teal-700 px-1 mb-1" style="grid-template-columns:2fr 1fr 1.6fr 0.8fr 0.8fr 1.5rem">'
-        + '<span>항목명</span><span>단위</span><span>검증유형</span><span>최솟값</span><span>최댓값</span><span></span>'
+      html += '<div class="grid gap-1 text-xs font-semibold text-teal-700 px-1 mb-1" style="grid-template-columns:2fr 1fr 1.6fr 0.8fr 0.8fr 2rem 1.5rem">'
+        + '<span>항목명</span><span>단위</span><span>검증유형</span><span>최솟값</span><span>최댓값</span><span class="text-center">활성</span><span></span>'
         + '</div>';
     }
     arr.forEach(function(f, i) {
@@ -44202,7 +44293,8 @@ function _showWtSafetyEditModal(wtEncoded) {
       var selRange = (vtype === 'range' ? ' selected' : '');
       var selMax = (vtype === 'max' ? ' selected' : '');
       var selLel = (vtype === 'lel' ? ' selected' : '');
-      html += '<div class="grid gap-1 items-center" id="' + rowId + '" style="grid-template-columns:2fr 1fr 1.6fr 0.8fr 0.8fr 1.5rem">'
+      var isEnabled = f.is_enabled !== false; // 기본값 true
+      html += '<div class="grid gap-1 items-center" id="' + rowId + '" style="grid-template-columns:2fr 1fr 1.6fr 0.8fr 0.8fr 2rem 1.5rem">'
         + '<input type="text" class="form-control text-xs px-1 py-1" placeholder="항목명(예:산소)" data-if-field="label" data-if-idx="' + i + '" value="' + (f.label||'').replace(/"/g,'&quot;') + '">'
         + '<input type="text" class="form-control text-xs px-1 py-1" placeholder="단위" data-if-field="unit" data-if-idx="' + i + '" value="' + (f.unit||'').replace(/"/g,'&quot;') + '">'
         + '<select class="form-control text-xs px-1 py-1" data-if-field="validate_type" data-if-idx="' + i + '">'
@@ -44212,6 +44304,13 @@ function _showWtSafetyEditModal(wtEncoded) {
         + '</select>'
         + '<input type="number" step="any" class="form-control text-xs px-1 py-1" placeholder="최솟값" data-if-field="min" data-if-idx="' + i + '" value="' + (f.min !== undefined && f.min !== null && f.min !== '' ? f.min : '') + '">'
         + '<input type="number" step="any" class="form-control text-xs px-1 py-1" placeholder="최댓값" data-if-field="max" data-if-idx="' + i + '" value="' + (f.max !== undefined && f.max !== null && f.max !== '' ? f.max : '') + '">'
+        // 활성 토글 스위치 (RULE-003: onclick 따옴표 중첩 없이 전역 함수로 분리)
+        + '<div class="flex justify-center items-center">'
+        +   '<label class="relative inline-flex items-center cursor-pointer" title="' + (isEnabled ? '활성 — 클릭하여 비활성' : '비활성 — 클릭하여 활성') + '">'
+        +     '<input type="checkbox" class="sr-only peer" data-if-field="is_enabled" data-if-idx="' + i + '" ' + (isEnabled ? 'checked' : '') + ' onchange="_wtInputToggle(this)">'
+        +     '<div class="w-8 h-4 rounded-full peer transition-colors ' + (isEnabled ? 'bg-teal-500' : 'bg-gray-300') + ' peer-checked:bg-teal-500 peer-focus:ring-1 peer-focus:ring-teal-300 after:content-[\'\'] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>'
+        +   '</label>'
+        + '</div>'
         + '<button type="button" class="text-red-400 hover:text-red-600 text-center" onclick="_wtInputFieldRemove(\'' + rowId + '\')"><i class="fas fa-times text-xs"></i></button>'
         + '</div>';
     });
@@ -44348,7 +44447,7 @@ function _wtCollectItems(fieldId) {
   return arr;
 }
 
-// 필수 입력 레이블 행 수집 ([{label, unit, validate_type, min, max}] 배열)
+// 필수 입력 레이블 행 수집 ([{label, unit, validate_type, min, max, is_enabled}] 배열)
 function _wtCollectInputFields() {
   var listEl = document.getElementById('wtEdit_input_list');
   if (!listEl) return [];
@@ -44358,13 +44457,24 @@ function _wtCollectInputFields() {
   rows.forEach(function(el) {
     var idx = el.getAttribute('data-if-idx');
     if (!map[idx]) map[idx] = {};
-    map[idx][el.getAttribute('data-if-field')] = (el.value || '').trim();
+    var field = el.getAttribute('data-if-field');
+    if (field === 'is_enabled') {
+      // checkbox — checked 여부로 저장
+      map[idx]['is_enabled'] = el.checked;
+    } else {
+      map[idx][field] = (el.value || '').trim();
+    }
   });
   var arr = [];
   Object.keys(map).sort(function(a,b){ return Number(a)-Number(b); }).forEach(function(idx) {
     var f = map[idx];
     if (!f.label) return; // 항목명 없으면 무시
-    var obj = { label: f.label, unit: f.unit || '' , validate_type: f.validate_type || 'range' };
+    var obj = {
+      label: f.label,
+      unit: f.unit || '',
+      validate_type: f.validate_type || 'range',
+      is_enabled: f.is_enabled !== false // checkbox 미수집 시 기본 true
+    };
     if (f.min !== '' && f.min !== undefined) obj.min = Number(f.min);
     if (f.max !== '' && f.max !== undefined) obj.max = Number(f.max);
     arr.push(obj);
@@ -44389,14 +44499,14 @@ function _wtInputFieldAdd() {
   if (!listEl.querySelector('.if-header')) {
     var hdr = document.createElement('div');
     hdr.className = 'grid gap-1 text-xs font-semibold text-teal-700 px-1 mb-1 if-header';
-    hdr.style.gridTemplateColumns = '2fr 1fr 1.6fr 0.8fr 0.8fr 1.5rem';
-    hdr.innerHTML = '<span>항목명</span><span>단위</span><span>검증유형</span><span>최솟값</span><span>최댓값</span><span></span>';
+    hdr.style.gridTemplateColumns = '2fr 1fr 1.6fr 0.8fr 0.8fr 2rem 1.5rem';
+    hdr.innerHTML = '<span>항목명</span><span>단위</span><span>검증유형</span><span>최솟값</span><span>최댓값</span><span class="text-center">활성</span><span></span>';
     listEl.insertBefore(hdr, listEl.firstChild);
   }
   var div = document.createElement('div');
   div.className = 'grid gap-1 items-center';
   div.id = rowId;
-  div.style.gridTemplateColumns = '2fr 1fr 1.6fr 0.8fr 0.8fr 1.5rem';
+  div.style.gridTemplateColumns = '2fr 1fr 1.6fr 0.8fr 0.8fr 2rem 1.5rem';
   div.innerHTML = '<input type="text" class="form-control text-xs px-1 py-1" placeholder="항목명(예:산소)" data-if-field="label" data-if-idx="' + newIdx + '" value="">'
     + '<input type="text" class="form-control text-xs px-1 py-1" placeholder="단위" data-if-field="unit" data-if-idx="' + newIdx + '" value="">'
     + '<select class="form-control text-xs px-1 py-1" data-if-field="validate_type" data-if-idx="' + newIdx + '">'
@@ -44406,6 +44516,7 @@ function _wtInputFieldAdd() {
     + '</select>'
     + '<input type="number" step="any" class="form-control text-xs px-1 py-1" placeholder="최솟값" data-if-field="min" data-if-idx="' + newIdx + '" value="">'
     + '<input type="number" step="any" class="form-control text-xs px-1 py-1" placeholder="최댓값" data-if-field="max" data-if-idx="' + newIdx + '" value="">'
+    + '<div class="flex justify-center items-center"><label class="relative inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" data-if-field="is_enabled" data-if-idx="' + newIdx + '" checked onchange="_wtInputToggle(this)"><div class="w-8 h-4 rounded-full bg-teal-500 peer-checked:bg-teal-500 peer-focus:ring-1 peer-focus:ring-teal-300 after:content-[\'\'] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div></label></div>'
     + '<button type="button" class="text-red-400 hover:text-red-600 text-center" onclick="_wtInputFieldRemove(\'' + rowId + '\')"><i class="fas fa-times text-xs"></i></button>';
   listEl.appendChild(div);
   var firstInput = div.querySelector('input');
@@ -44416,6 +44527,20 @@ function _wtInputFieldAdd() {
 function _wtInputFieldRemove(rowId) {
   var el = document.getElementById(rowId);
   if (el) el.remove();
+}
+
+// 필수 입력 레이블 토글 스위치 색상 동기화
+function _wtInputToggle(cb) {
+  var toggleDiv = cb ? cb.nextElementSibling : null;
+  if (toggleDiv) {
+    if (cb.checked) {
+      toggleDiv.classList.remove('bg-gray-300');
+      toggleDiv.classList.add('bg-teal-500');
+    } else {
+      toggleDiv.classList.remove('bg-teal-500');
+      toggleDiv.classList.add('bg-gray-300');
+    }
+  }
 }
 
 // 입력값 적정 여부 판단 (밀폐공간작업 가스측정 기준)
@@ -44457,15 +44582,22 @@ function _validateInputField(value, rule) {
   return { ok: ok, msg: msg };
 }
 
-// 체크리스트 작성 화면 — 입력값 변경 시 실시간 적정 여부 표시
+// 체크리스트/TBM사진 모달 — 입력값 변경 시 실시간 적정 여부 표시
 function _onInputFieldChange(inputId) {
   var inp = document.getElementById(inputId);
   var statusEl = document.getElementById(inputId + '_status');
-  if (!inp || !statusEl) return;
+  if (!inp) return;
   var val = inp.value;
   if (val === '' || val === null || val === undefined) {
-    statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500';
-    statusEl.textContent = '미입력';
+    if (statusEl) {
+      // TBM 모달(인라인 스타일) vs 체크리스트 화면(클래스 기반) 구분
+      if (statusEl.hasAttribute('style')) {
+        statusEl.style.background = '#F3F4F6'; statusEl.style.color = '#6B7280';
+      } else {
+        statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500';
+      }
+      statusEl.textContent = '미입력';
+    }
     inp.style.borderColor = '';
     return;
   }
@@ -44475,12 +44607,24 @@ function _onInputFieldChange(inputId) {
   try { rule = JSON.parse(ruleJson); } catch(e) {}
   var result = _validateInputField(val, rule);
   if (result.ok) {
-    statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold';
-    statusEl.textContent = '✅ ' + result.msg;
+    if (statusEl) {
+      if (statusEl.hasAttribute('style')) {
+        statusEl.style.background = '#DCFCE7'; statusEl.style.color = '#166534'; statusEl.style.fontWeight = '600';
+      } else {
+        statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold';
+      }
+      statusEl.textContent = '✅ ' + result.msg;
+    }
     inp.style.borderColor = '#16a34a';
   } else {
-    statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold';
-    statusEl.textContent = '⚠️ ' + result.msg;
+    if (statusEl) {
+      if (statusEl.hasAttribute('style')) {
+        statusEl.style.background = '#FEE2E2'; statusEl.style.color = '#991B1B'; statusEl.style.fontWeight = '600';
+      } else {
+        statusEl.className = 'text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold';
+      }
+      statusEl.textContent = '⚠️ ' + result.msg;
+    }
     inp.style.borderColor = '#dc2626';
   }
 }

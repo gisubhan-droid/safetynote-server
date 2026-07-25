@@ -1,10 +1,30 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-24 (세션 72-B — FEAT-CONFINED 밀폐공간작업 체크박스 + FEAT-WT-DYNAMIC conditionalList DB 동적 연동)
-> **GitHub 최신: `dbf77c6`** — fix: [세션 72] 캐시 버스팅 ?v=a607358 갱신 (FEAT-WT-DYNAMIC 반영)
-> **이전 커밋: `a607358`** — feat: [세션 72] FEAT-WT-DYNAMIC — conditionalList DB 동적 연동 (_wtSafetyCache 기반, is_active 필터)
-> **이전 커밋: `42e2e6c`** — fix: [세션 72] 캐시 버스팅 ?v=69c86db 갱신 (밀폐공간작업 체크박스 반영)
-> **이전 커밋: `69c86db`** — feat: [세션 72] FEAT-CONFINED — 밀폐공간작업 체크박스 추가 (patchSchema v0.166)
+> 최종 업데이트: 2026-07-25 (세션 78 — 연계작업 사진 섹션 접기/펼치기 토글 구현)
+> **GitHub 최신: `6da57b0`** — feat: [세션78] 연계작업 사진 섹션 접기/펼치기 토글 구현
+> **이전 커밋: `ed2e7bf`** — fix: [세션 77-C] 공사 상세 화면 작업 등록 시 화면 유지
+> **이전 커밋: `99d0e7e`** — fix: [세션 77-B] updateTask/doCreate querySelector 오제거 버그 수정
+> **이전 커밋: `3e1921a`** — fix: [세션 77] 공사 상세 화면에서 작업 등록/수정 후 공사 상세 유지
+> **이전 커밋: `a437526`** — fix: [세션 76] copyTask() 공사종류(construction_type) 미전달 버그 수정
+> **이전 커밋: `af38b07`** — feat: [세션 75] 아이콘 피커 팝업 + 색상 선택 구현 (Icon Picker)
+> **이전 커밋: `083394b`** — fix: [세션 74-C] showTbmPhotoModal work_class 매칭 버그 수정 + 캐시 버스팅 v=db85a70d
+> **이전 커밋: `b6268f7`** — fix: [세션 74-B] 필수 입력 레이블 미입력/부적정 시 평가완료 차단
+> **이전 커밋: `c5aa9cd`** — feat: [세션 74] 필수 입력 레이블 기능 추가 (가스측정값 실시간 적정 판단)
+> **이전 커밋: `289c3f7`** — fix: [세션 73] 체크리스트 탭 전환 시 작업유형 목록 즉시 새로고침
+> **이전 커밋: `2401c81`** — fix: [세션 73] 작업유형 추가/삭제 후 체크리스트 탭 work_class 목록 즉시 미반영 수정
+> **이전 커밋: `2d5cef0`** — fix: [세션 73] 안전설정 탭 — 저장/삭제 후 탭 헤더 사라짐 버그 수정
+> **이전 커밋: `f9b110c`** — feat: [세션 73] 안전설정 탭 통합 — wt-safety + checklist-items → safety-settings
+> **이전 커밋: `f285e94`** — feat: [세션 72-D] work_type_safety_settings ↔ checklist_items DB 연동 구현
+> **이전 커밋: `689ec21`** — feat: [세션 72-D] 체크리스트 항목 엑셀 일괄 업로드 기능 추가
+> **이전 커밋: `deb2c76`** — feat: [세션 72-D] 체크리스트 항목 상태 컬럼 → 토글 스위치로 변경
+> **이전 커밋: `43fa28d`** — fix: [세션 72-D] checklist_items 중복 항목 정리 + 관리 화면 비활성 표시 개선
+> **이전 커밋: `0b16e03`** — fix: [세션 72-C] 체크리스트 항목 관리 버그 3종 수정
+> **이전 커밋: `7b5b5a8`** — feat: [세션 72-C] 체크리스트 항목 관리 CRUD 기능 구현
+> **이전 커밋: `9ce23d1`** — feat: [세션 72-C] 체크리스트 안전내용 패널 수정/추가/삭제 연결
+> **이전 커밋: `dbf77c6`** — fix: [세션 72-B] 캐시 버스팅 ?v=a607358 갱신 (FEAT-WT-DYNAMIC 반영)
+> **이전 커밋: `a607358`** — feat: [세션 72-B] FEAT-WT-DYNAMIC — conditionalList DB 동적 연동 (_wtSafetyCache 기반, is_active 필터)
+> **이전 커밋: `42e2e6c`** — fix: [세션 72-B] 캐시 버스팅 ?v=69c86db 갱신 (밀폐공간작업 체크박스 반영)
+> **이전 커밋: `69c86db`** — feat: [세션 72-B] FEAT-CONFINED — 밀폐공간작업 체크박스 추가 (patchSchema v0.166)
 > **이전 커밋: `7c72ebe`** — docs: [세션 71] PROJECT_HISTORY.md 헤더 갱신 + FEAT-TBM-MEETING-DB/BUG-WT-SAFETY-401-FRONT 기록 추가
 > **이전 커밋: `526c292`** — feat: [세션 71] FEAT-TBM-MEETING-DB — TBM회의 사진 항목 DB 연동
 > **이전 커밋: `b39eeba`** — fix: [세션 71] renderWtSafetyPage res.data.data 참조 수정 + 캐시 버스팅
@@ -319,6 +339,14 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-LINKED-TOGGLE | 78 | 2026-07-25 | ✅ 구현 | **연계작업 사진 섹션 접기/펼치기 토글** — 칩 버튼 과다 노출 문제 해결. `_toggleLinkedPhotos(taskId)` 전역 함수 신규 추가(RULE-001/003 준수). `linked-photos-section` HTML 헤더에 토글 버튼(`linked-photos-toggle-{taskId}`, 초기 `display:none`) + count span(`linked-photos-count-{taskId}`) 추가. `linked-photos-content` 초기 `display:none`(기본 접힘). `_loadLinkedCompletedPhotos()`: 로드 후 토글 버튼 `inline-flex` 표시 + count span `N건` 업데이트. 사진 0건 시 container `display:''` + 버튼 숨김 유지. 캐시 버스팅 `v=0c096141` → `v=1276a6f2`. 검증: `node --check` ✅ + `npm run build` ✅(287.31 kB) | `6da57b0` |
+| BUG-CON-TASK-NAV | 77~77-C | 2026-07-25 | ✅ 수정 | **공사 상세 화면에서 작업 등록/수정 후 화면 이동 버그 3종** — ①[세션77] `showCreateTaskFromConstruction()` `conDetailOverlay.remove()` → `display='none'+dataset.fromConId 보존`으로 교체. `_doCreate()/_closeTaskModalAndRestoreCon()` 공사 상세 복귀 로직 추가. ②[세션77-B] `conDetailOverlay`도 `modal-overlay` 클래스 보유 → `querySelector('.modal-overlay').remove()`가 `conDetailOverlay`를 제거하는 버그. `showCreateTaskModal` 생성 modal에 `id='taskCreateEditOverlay'` 부여. `_doCreate()/updateTask()` 성공 후 `getElementById('taskCreateEditOverlay').remove()`로 교체. ③[세션77-C] `display='none'` 숨김 로직 완전 제거 → `conDetailOverlay` 그대로 유지한 채 작업 등록 모달만 위에 쌓음. 검증: `node --check` ✅ + `npm run build` ✅ | `3e1921a`, `99d0e7e`, `ed2e7bf` |
+| BUG-COPY-TASK-CTYPE | 76 | 2026-07-25 | ✅ 수정 | **작업 복사 시 공사종류(construction_type) 미전달 버그** — `copyTask()` preset 객체에 `construction_type` 누락. `showCreateTaskModal()` ct 계산 시 `preset.work_class`를 `conKeyToLabel()`로 변환 → `CON_TYPE_DEF`에 없어 빈값 반환. **해결**: ①`copyTask()` preset에 `construction_type: t.construction_type||''` 추가. ②`showCreateTaskModal()` ct 결정 순서: `task.construction_type` → `presetConstruction.construction_type` → `conKeyToLabel(preset.work_class)` → 빈값. 캐시 버스팅 `v=d444f291` → `v=30300e9e`. 검증: `node --check` ✅ + `npm run build` ✅ | `a437526` |
+| FEAT-ICON-PICKER | 75 | 2026-07-25 | ✅ 구현 | **작업유형 아이콘 피커 팝업 + 색상 선택** — patchSchema v0.171: `work_type_safety_settings.icon_color TEXT` 컬럼 추가. GET/POST/PUT API `icon_color` 반영. `WT_ICON_PRESETS` 7카테고리 80개 프리셋 + `WT_COLOR_PRESETS` 12색 팔레트. `_showIconPickerPopup()`: 검색+카테고리탭+그리드+색상 팝업. `_closeIconPicker()` / `_wtIconTabSwitch()` / `_buildIconGrid()` / `_wtIconSearchFilter()` / `_wtPickerSelectIcon()` / `_wtPickerSelectColor()` 추가. `_showWtSafetyEditModal`: 미리보기+코드입력+[아이콘 선택] 버튼+색상 팔레트 재구성. `_wtEditColorSelect()` 전역 함수(RULE-003). 아이콘 리스트 화면 `text-purple-500` → `style.color=icon_color` 적용. 캐시 버스팅 `v=db85a70d` → `v=d444f291`. 검증: `node --check` ✅ + `npm run build` ✅ | `af38b07` |
+| FEAT-INPUT-FIELDS | 74~74-C | 2026-07-25 | ✅ 구현 | **필수 입력 레이블 기능 + 평가완료 차단 + work_class 매칭 버그** — **[74]** patchSchema v0.170: `work_type_safety_settings.input_fields TEXT` 컬럼 추가. GET/POST/PUT API `input_fields` 반영. `_showWtSafetyEditModal` 필수 입력 레이블 섹션 추가. `_validateInputField()`: 범위/최대값/LEL% 적정 판단. `_onInputFieldChange()`: 체크리스트 실시간 유효성 표시. RULE-003: `data-rule` 속성으로 JSON 중첩 없이 처리. **[74-B]** `submitChecklist()` 필수 입력 레이블 전수 검사: 미입력/'부적정' 오류 모달 표시 → 평가완료 차단. **[74-C]** `showTbmPhotoModal` `_task.work_type||_task.type_key` 기반 매칭 → `_wtSafetyCache.find(w => w.work_class === _taskWorkClass)` 교체. 불필요한 conditionals 역매핑 제거. 검증: `node --check` ✅ + `npm run build` ✅ | `c5aa9cd`, `b6268f7`, `083394b` |
+| FEAT-SAFETY-SETTINGS | 73 | 2026-07-25 | ✅ 구현 | **안전설정 탭 통합 (wt-safety + checklist-items → safety-settings) + 버그 3종** — **[통합]** `renderSafetySettingsPage()` 두 페이지 탭 통합 신규 추가. `_safetySettingsActiveTab` 전역 변수. `_switchSafetySettingsTab()` RULE-003 준수 탭 전환. `navigateTo` switch: `wt-safety/checklist-items` → `safety-settings` 리다이렉트. `MENU_DEFINITIONS/allManagerGroups` 통합. **[버그1]** `_saveWtSafetyItem/_deleteWtSafetyItem`: `renderWtSafetyPage(content)` → `_renderSafetySettingsTabContent(content)` — 탭 헤더 사라짐 수정. **[버그2]** `await _loadWtSafetySettings()` 선행 보장 → `_wtSafetyCache+_syncClWorkClassOptions()` 완료 후 화면 갱신. **[버그3]** `_switchSafetySettingsTab()` async 전환 + 체크리스트 탭 클릭 시 `_loadWtSafetySettings()` 선행. 검증: `node --check` ✅ + `npm run build` ✅ | `f9b110c`, `2d5cef0`, `2401c81`, `289c3f7` |
+| FEAT-CHECKLIST-CRUD-2 | 72-D | 2026-07-25 | ✅ 구현 | **체크리스트 항목 중복 정리 + 토글 스위치 + 엑셀 업로드 + DB 연동** — **[72-D-1]** patchSchema v0.168: `(work_class, question)` 기준 중복 행 자동 정리(응답 없는 중복 하드 삭제, 응답 있는 중복 비활성화). 관리 화면: 탭 카운트 활성/비활성 분리 + 비활성 행 bg-red-50+취소선+배지. **[72-D-2]** 상태 텍스트 배지 → 토글 스위치(checkbox+Tailwind peer). `_clItemsToggleActive()`: 클릭 즉시 PUT → DB 반영 + 목록/체크리스트 자동 갱신. **[72-D-3]** `src/index.tsx` SheetJS CDN 추가. `_clItemsDownloadSample()`: .xlsx 업로드 양식 생성(안내+항목목록 2시트). `_clItemsShowUploadModal()` + `_clItemsPreviewExcel()` + `_clItemsUploadExcel()`. **[72-D-4]** patchSchema v0.169: `work_type_safety_settings.work_class TEXT` 컬럼 추가. GET/POST/PUT API `work_class` 반영. `_showWtSafetyEditModal` work_class 필드 추가. `_WT_TYPE_KEY_TO_CLASS`: 하드코딩 → `_wtSafetyCache` 동적 매핑. `_syncClWorkClassOptions()`. 검증: `node --check` ✅ + `npm run build` ✅ | `43fa28d`, `deb2c76`, `689ec21`, `f285e94` |
+| FEAT-CHECKLIST-CRUD | 72-C | 2026-07-25 | ✅ 구현 | **체크리스트 항목 관리 CRUD + 안전내용 패널 연결** — **[72-C-1]** `loadChecklistItems()` 안전내용 패널 유형 헤더에 '내용 수정' 버튼 추가(`_openWtSafetyEditByTypeKey(typeKey)`). `_buildWtSafetyListHtml()` 안내 문구 갱신. **[72-C-2]** `src/routes/checklist.ts`: `CONDITIONAL_CLASSES`에 `confined` 추가. CRUD API 4종 추가(GET /items/all, POST/PUT/DELETE /items). `node-server.ts` RULE-002: checklistRoutes 앞에 NAS CRUD 오버라이드 등록. `app.js`: `renderChecklistItemsPage()` 신규(work_class 탭 필터+테이블). `_clItemsOpenEdit/_clItemsSave/_clItemsDelete` 추가. `MENU_DEFINITIONS/allManagerGroups/navigateTo` 등록. **[72-C-3]** 버그 3종 수정: ①`pageContent` → `page-content` ID 오타 3곳. ②`JSON.stringify` 이중직렬화 → `encodeURIComponent` 패턴. ③`_clItemsOpenEdit` `decodeURIComponent` 추가. 검증: `node --check` ✅ + `npm run build` ✅ | `9ce23d1`, `7b5b5a8`, `0b16e03` |
 | FEAT-TBM-MEETING-DB | 71 | 2026-07-24 | ✅ 구현 | **TBM 회의 사진 항목 DB 연동 (방법 A)** — 기존 `sectionDefs`의 `tbm_meeting` labels가 `checklist.ts`에 하드코딩(`['TBM회의 사진','작업현장 전경','라바콘 입간판 설치상태']`)되어 관리 메뉴에서 수정 불가했던 문제 해결. **[1] node-server.ts patchSchema v0.165**: `work_type_safety_settings`에 `type_key='TBM회의'` 시드 `INSERT OR IGNORE` 추가 — `photo_labels=['TBM회의 사진','작업현장 전경','라바콘 입간판 설치상태']`, `icon='fa-shield-alt'`, `sort_order=6`. 기존 DB에 이미 있으면 무시(사용자 수정 내용 보호). **[2] src/routes/checklist.ts `updateTbmSections()`**: DB 조회 `WHERE type_key IN ('바켓차량작업','중장비사용')` → `IN ('바켓차량작업','중장비사용','TBM회의')`로 확장. `tbmMeetingPhotoLabels` 변수 추가 — 기본값 하드코딩 폴백 유지(테이블 미존재/비활성 시 안전). `sectionDefs` `tbm_meeting` labels를 `tbmMeetingPhotoLabels`로 교체. **결과**: 작업유형 안전내용 관리 메뉴에서 TBM회의 항목의 필수 사진 항목명을 직접 수정 가능. 수정 즉시 체크리스트 TBM 사진 등록 화면에 반영. 검증: `node --check` ✅ + `npm run build` ✅(284.13 kB) | `526c292` |
 | BUG-WT-SAFETY-401-FRONT | 71 | 2026-07-24 | ✅ 수정 | **작업유형 관리 페이지 데이터 미표시 3종 연속 버그** — ①`_loadWtSafetySettings()` fetch 호출 시 Authorization 헤더 누락 → 401 Unauthorized → 캐시 null 유지. 수정: `localStorage.getItem('token')` 읽어 `Bearer` 헤더 추가(`5463d04`). ②브라우저 캐시로 수정 전 app.js 계속 실행 → `src/index.tsx` `?v=` 쿼리 갱신으로 강제 재로드(`e146c4a`). ③`renderWtSafetyPage()`에서 `API.get()` axios 응답 구조 오해 — 서버가 `{data:[...]}` 반환 시 axios `res.data={data:[...]}` → `Array.isArray(res.data)=false` → 빈 목록 표시. 수정: `res.data.data` 참조로 변경(`b39eeba`). **근본 원인**: fetch 직접 호출(`json.data`)과 axios 호출(`res.data.data`) 응답 참조 방식 차이. | `b39eeba` |
 | FEAT-WT-SAFETY | 70 | 2026-07-24 | ✅ 구현 | **작업유형별 안전내용 관리 메뉴 + DB 연동** — **[1] node-server.ts patchSchema v0.164**: `work_type_safety_settings` 테이블 신규 생성 (`type_key/label/icon/is_active/sort_order/safety_items/tbm_items/precaution_items/photo_labels` 컬럼, JSON 배열 저장). 기존 5개 유형(바켓차량작업/전주승주/옥상옥탑작업/사다리사용작업/중장비사용) 기본 시드 데이터 INSERT OR IGNORE 자동 삽입. **[2] API 5종 추가** (RULE-002 순서 준수 — Cloudflare 라우트 앞 등록): `GET /api/work-type-safety` 전체조회, `GET /api/work-type-safety/:typeKey` 단건조회, `POST` 신규추가, `PUT` 수정, `DELETE` 삭제 — 권한 체크: admin/supervisor/안전관리자/현장대리인만 CUD 허용. **[3] src/routes/checklist.ts `updateTbmSections()` 수정**: `sectionDefs`의 bucket/heavy 섹션 `photo_labels`를 DB(`work_type_safety_settings`)에서 동적으로 읽도록 변경 — `바켓차량작업`/`중장비사용` type_key 매핑. DB 조회 실패 시 기존 하드코딩 기본값 폴백(안전한 try/catch). **[4] app.js 4종 수정**: ①`MENU_DEFINITIONS`에 `wt-safety` 항목 추가. ②`getPageTitle`에 `'wt-safety':'작업유형 안전내용 관리'` 추가. ③`allManagerGroups` 위험성평가 서브메뉴에 `wt-safety` 추가. ④`navigateTo()` switch에 `case 'wt-safety': renderWtSafetyPage(content)` 추가. **[5] 전역 캐시 변수/함수**: `_wtSafetyCache` 전역 null 초기화, `_loadWtSafetySettings()` 비동기 API 호출 후 `WORK_TYPE_SAFETY` 상수 동기화(`_syncWtSafetyConstFromCache()`). 앱 init() 시 비동기 병렬 로드. 실패 시 하드코딩 폴백 유지. **[6] `renderWtSafetyPage()`**: 목록 테이블(8컬럼: #/유형명/상태/안전교육건수/TBM건수/주의사항건수/필수사진건수/관리버튼). **[7] `_showWtSafetyEditModal()`**: 수정/추가 모달 — 유형키/표시명/아이콘(실시간미리보기)/정렬순서/활성상태 + 4개 섹션(안전교육/TBM/주의사항/필수사진) 각 항목 동적 추가/삭제 UI. RULE-003 준수: encodeURIComponent(JSON.stringify()) 패턴으로 onclick 따옴표 중첩 회피. **[8] `_saveWtSafetyItem()`**: POST/PUT 분기 저장, 저장 후 목록 새로고침+캐시 갱신. **[9] `_deleteWtSafetyItem()`**: confirm 후 DELETE, 삭제 후 목록+캐시 갱신. **[10] 보조함수**: `_wtIconPreview()`, `_wtRowAdd()`, `_wtRowRemove()`, `_wtCollectItems()`. 모든 새 함수 RULE-001 준수(`var`/`function`). 변경 파일: `node-server.ts`, `src/routes/checklist.ts`, `public/static/app.js`. 검증: `node --check` ✅ + `npm run build` ✅(284.09 kB) | `3f1e4bf` |
@@ -414,25 +442,15 @@ onclick="_closePopup()"
 
 ---
 
-### Phase 3 — 🔲 미착수  코드 구조 최적화 (FEAT-026)
+### Phase 3 — ~~🔲 미착수  코드 구조 최적화 (FEAT-026)~~ ❌ 작업 계획에서 제거됨
 
-> **목표**: `node-server.ts` 인라인 라우트 → `src/routes/` 분리, 코드 유지보수성 향상
-> **우선순위**: 기능 개발에 영향 없음 — 필요 시 착수 (긴급하지 않음)
-
-| Step | 상태 | 내용 |
-|------|------|------|
-| Step 1 | 🔲 미착수 | `src/db.ts` 생성 — rawDb 공유 모듈 단일화 |
-| Step 2 | 🔲 미착수 | 신규 라우트 파일 9개 생성 + 인라인 라우트 이동 (`push`, `signature-requests`, `legal-notices`, `geocode`, `admin`, `dist`, `splice-reports`, `unit-prices`, `events`) |
-| Step 3 | 🔲 미착수 | 기존 라우트 파일 7개에 인라인 라우트 병합 (`tbm`, `tasks`, `education`, `risk`, `inspections`, `work-reports`, `attachments`) |
-| Step 4 | 🔲 미착수 | `node-server.ts` 정리 + 빌드 검증 + 커밋 |
-
-> ※ DB 물리적 분리(현장코드별 .db 파일)는 위험도 ⭐⭐⭐⭐⭐ — **운영 중 절대 금지**, 별도 계획 필요
+> **제거 사유**: `node-server.ts` 리팩토링은 기능 개발에 직접 영향 없고, 7,771줄/59개 인라인 라우트 규모를 감안할 때 리스크 대비 효과가 낮아 작업 계획에서 공식 제거. Phase 6 install.sh 검증은 Phase 3와 무관하게 독립 진행 가능.
 
 ---
 
 ### Phase 4 — 🔲 미착수  NAS 설치 매뉴얼 (DOCS-001)
 
-> **⚠️ 시작 조건**: Phase 3·6 완료 후 작성 (최종 단계)
+> **⚠️ 시작 조건**: Phase 6 완료 후 작성 (최종 단계)
 
 | 항목 | 상태 | 내용 |
 |------|------|------|
@@ -457,7 +475,7 @@ onclick="_closePopup()"
 
 ### Phase 6 — 🔲 미착수  배포 버전 생성 (RELEASE-1.0)
 
-> **⚠️ 시작 조건**: Phase 3 완료 후 진행 권장
+> **⚠️ 시작 조건**: Phase 3 없이 독립 진행 가능
 
 | 항목 | 상태 | 내용 |
 |------|------|------|
@@ -473,8 +491,8 @@ onclick="_closePopup()"
 ```
 Phase 1 ✅ 완료 (2026-06-17)
 Phase 2 ✅ 완료 (2026-06-18~36세션) — FCM 추가 트리거만 선택적 보류
-Phase 3 🔲 미착수 — 코드 구조 정리 (긴급하지 않음)
-Phase 4 🔲 미착수 — Phase 3·6 완료 후 착수
+Phase 3 ❌ 제거됨 — node-server.ts 리팩토링 (작업 계획에서 공식 제거)
+Phase 4 🔲 미착수 — Phase 6 완료 후 착수
 Phase 5 ✅ 완료 (2026-06-21~세션81) — 브라우저 업데이트·롤백·Watchdog 모두 완성
 Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미완
 ```
@@ -483,10 +501,10 @@ Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미
 
 | 우선순위 | 항목 | 내용 | 관련 |
 |---------|------|------|------|
-| 🟡 중간 | **Phase 3 코드 구조 정리** | node-server.ts 인라인 라우트 → src/routes/ 분리 (사용자 없을 때 진행) | Phase 3 |
 | 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 (사용자 없을 때 진행) | Phase 6 |
-| 🟢 낮음 | **DOCS-001 NAS 설치 매뉴얼** | Phase 3·6 완료 후 신규 담당자용 단계별 문서 작성 | Phase 4 |
-| 🟢 낮음 | **최종 버전 태깅** | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 (Phase 3 완료 후) | — |
+| 🟡 중간 | **build-apk.yml 기본값 확인** | `workflow_dispatch` default 버전이 현재 앱 v1.4.14와 일치하는지 GitHub 웹 UI에서 확인 | — |
+| 🟢 낮음 | **DOCS-001 NAS 설치 매뉴얼** | Phase 6 완료 후 신규 담당자용 단계별 문서 작성 | Phase 4 |
+| 🟢 낮음 | **최종 버전 태깅** | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 | — |
 | ✅ 완료 | **FEAT-169 관리자/감독자 연계작업 사진** | PC 접속 admin/supervisor도 연계작업 사진 조회 가능 + media_type 버그 수정 | `bfc3bbb` |
 | ✅ 완료 | **FEAT-168 사진탭 caption 하위 그룹** | 사진유형 하위 caption 기준 폴더 소제목 헤더 (3곳 동시 적용) | `85d7bcc` |
 | ✅ 완료 | **FEAT-166 작업 복사** | 전체 진행단계 복사 버튼 + copyTask() 함수 | `252b3cf` |
@@ -9119,3 +9137,511 @@ _wtSafetyCache 없음 → _defaultConditionalList 사용
 - `npm run build` → ✅ `dist/_worker.js 284.13 kB`
 - GitHub push → ✅ `42e2e6c..dbf77c6`
 - NAS 반영 필요 → `git pull && pm2 delete safetynote && pm2 start ecosystem.config.cjs`
+
+---
+
+## 세션 72-C (2026-07-25) — 체크리스트 항목 관리 CRUD + 안전내용 패널 연결
+
+### 목표
+1. **FEAT-CHECKLIST-CRUD-1**: 안전내용 패널 헤더에 직접 수정 버튼 연결
+2. **FEAT-CHECKLIST-CRUD-2**: 체크리스트 항목(checklist_items) CRUD 관리 화면 구현
+3. **BUG-FIX**: 구현 후 버그 3종 수정
+
+---
+
+### 수정 내용
+
+#### [수정 1] 안전내용 패널 헤더 '내용 수정' 버튼 연결 (커밋 `9ce23d1`)
+
+**`public/static/app.js`**:
+- `loadChecklistItems()` 안전내용 패널 각 유형 헤더에 `[내용 수정]` 버튼 추가
+  - `onclick="_openWtSafetyEditByTypeKey(typeKey)"` → `_showWtSafetyEditModal()` 호출
+- `_openWtSafetyEditByTypeKey(typeKey)` 헬퍼 함수 신규 추가
+  - `_wtSafetyCache`에서 `type_key`로 wt 객체 검색, 캐시 미히트 시 `WORK_TYPE_SAFETY` 폴백
+- `_buildWtSafetyListHtml()` 안내 문구에 "체크리스트 위험성평가의 안전내용 패널" 문구 추가
+
+**`src/index.tsx`**: 캐시 버스팅 `?v=da2a29f` → `?v=ce07c5a`
+
+#### [수정 2] 체크리스트 항목 관리 CRUD 기능 구현 (커밋 `7b5b5a8`)
+
+**`src/routes/checklist.ts`**:
+- `CONDITIONAL_CLASSES`에 `confined`(밀폐공간작업) 추가 → GET /api/checklist/items 조회 시 confined 포함
+- API 4종 추가:
+  - `GET /items/all`: 관리 화면용 전체 조회 (is_active 무관, 권한 필요)
+  - `POST /items`: 항목 추가 (admin/supervisor/안전관리자/현장대리인)
+  - `PUT /items/:id`: 항목 수정
+  - `DELETE /items/:id`: 소프트삭제(비활성화) or `?hard=1` 하드삭제
+
+**`node-server.ts`** — RULE-002: checklistRoutes 마운트 앞에 NAS 전용 CRUD 오버라이드 등록:
+- `GET /api/checklist/items/all`, `POST/PUT/DELETE /api/checklist/items[/:id]`
+- `GET /api/checklist/items`: confined 포함 모든 클래스 허용 오버라이드
+
+**`public/static/app.js`**:
+- `renderChecklistItemsPage()` 신규 구현: work_class별 탭 필터 + 항목 테이블(카테고리/내용/비고/순서/상태/관리)
+- `_clItemsOpenEdit()`: 추가/수정 모달 (work_class 드롭다운 + 카테고리/질문/비고/순서/활성)
+- `_clItemsSave()`: 저장 후 목록 + 열린 체크리스트 모달 자동 갱신
+- `_clItemsDelete()`: 삭제(비활성화) 확인 후 처리
+- `MENU_DEFINITIONS/allManagerGroups/getPageTitle/navigateTo` 등록
+
+**`src/index.tsx`**: 캐시 버스팅 `?v=ce07c5a` → `?v=12bf554`
+
+#### [수정 3] 버그 3종 수정 (커밋 `0b16e03`)
+
+| # | 원인 | 수정 |
+|---|------|------|
+| ① | `pageContent` → `page-content` ID 오타 (3곳) | `document.getElementById('page-content')` 교체 |
+| ② | `onclick` JSON.stringify 이중직렬화 | `encodeURIComponent(JSON.stringify(it))` 패턴 교체 |
+| ③ | `_clItemsOpenEdit` 디코딩 누락 | `JSON.parse(decodeURIComponent(itemJsonStr))` 추가 |
+
+**`src/index.tsx`**: 캐시 버스팅 `?v=12bf554` → `?v=20f0426`
+
+---
+
+### 커밋 인덱스
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `9ce23d1` | feat: [세션 72-C] 체크리스트 안전내용 패널 수정/추가/삭제 연결 |
+| safetynote-server | `7b5b5a8` | feat: [세션 72-C] 체크리스트 항목 관리 CRUD 기능 구현 |
+| safetynote-server | `0b16e03` | fix: [세션 72-C] 체크리스트 항목 관리 버그 3종 수정 |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ OK
+- GitHub push → ✅ `dbf77c6..0b16e03`
+
+---
+
+## 세션 72-D (2026-07-25) — checklist_items 중복 정리 + 토글스위치 + 엑셀 업로드 + DB 연동
+
+### 목표
+1. **patchSchema v0.168**: checklist_items 중복 항목 자동 정리
+2. **UX 개선**: 상태 컬럼 텍스트 배지 → 토글 스위치
+3. **엑셀 업로드**: 항목 일괄 등록 기능
+4. **DB 연동**: work_type_safety_settings ↔ checklist_items 연결 (patchSchema v0.169)
+
+---
+
+### 수정 내용
+
+#### [수정 1] checklist_items 중복 항목 정리 + 비활성 표시 개선 (커밋 `43fa28d`)
+
+**`node-server.ts`** — patchSchema v0.168:
+- `(work_class, question)` 기준 중복 행 자동 정리 (서버 재시작마다 실행, 멱등)
+  - 응답 기록 없는 중복 행 → 하드 삭제
+  - 응답 기록 있는 중복 행 → `is_active=0` 비활성화(보존)
+
+**`public/static/app.js`**:
+- 탭 카운트에 활성/비활성 수 분리 표시 (예: `'10활성 / 3비활성'`)
+- 비활성 행: `bg-red-50` + `line-through` + `[비활성/중복]` 배지
+- 비활성 항목 있을 때 빨간 경고 배너 표시
+
+**`src/index.tsx`**: 캐시 버스팅 `v20f0426` → `vb7c3e91`
+
+#### [수정 2] 상태 컬럼 → 토글 스위치 (커밋 `deb2c76`)
+
+**`public/static/app.js`**:
+- 상태 텍스트 배지(활성/비활성) 제거 → 토글 스위치(checkbox + Tailwind peer)로 교체
+- `_clItemsToggleActive(itemId, checked)` 함수 추가:
+  - 클릭 즉시 `PUT /checklist/items/:id` 호출 → DB 반영
+  - 성공 후 목록 갱신 + 체크리스트 모달 자동 갱신
+
+**`src/index.tsx`**: 캐시 버스팅 `vb7c3e91` → `vf4a8d12`
+
+#### [수정 3] 엑셀 일괄 업로드 기능 추가 (커밋 `689ec21`)
+
+**`src/index.tsx`**: SheetJS CDN 추가 (`xlsx-0.20.3`)
+
+**`public/static/app.js`**:
+- 헤더 버튼 2개 추가: `[양식 다운로드]` / `[엑셀 업로드]`
+- `_clItemsDownloadSample()`: SheetJS로 .xlsx 업로드 양식 생성 (안내+항목목록 2시트)
+- `_clItemsShowUploadModal()`: 업로드 모달 UI
+- `_clItemsPreviewExcel(input)`: 파일 선택 시 미리보기 (유효성 검사 + 유효/오류 분리)
+- `_clItemsUploadExcel()`: 유효 항목 순차 POST + 결과 토스트
+
+**`src/index.tsx`**: 캐시 버스팅 `vf4a8d12` → `ve9b1c53`
+
+#### [수정 4] work_type_safety_settings ↔ checklist_items DB 연동 (커밋 `f285e94`)
+
+**`node-server.ts`** — patchSchema v0.169:
+- `work_type_safety_settings`에 `work_class TEXT` 컬럼 추가
+- 기존 6개 `type_key` → `work_class` 매핑값 자동 채우기
+
+**API 수정** (GET/POST/PUT): `work_class` 필드 반영
+
+**`public/static/app.js`**:
+- `_showWtSafetyEditModal`: `work_class` 입력 필드 추가 (신규: 편집 가능, 기존: readonly)
+- `_WT_TYPE_KEY_TO_CLASS`: 하드코딩 → `_wtSafetyCache` 기반 동적 매핑 (폴백 유지)
+- `_syncClWorkClassOptions()`: `_wtSafetyCache` → `_CL_WORK_CLASS_OPTIONS` 동적 재구성
+- `_clItemsDownloadSample`: work_class 코드표 시트 동적 생성
+- 업로드 미리보기 `VALID_WC` 동적화
+
+**`src/index.tsx`**: 캐시 버스팅 `v=e9b1c53` → `v=f6a664f`
+
+---
+
+### 커밋 인덱스
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `43fa28d` | fix: [세션 72-D] checklist_items 중복 항목 정리 + 관리 화면 비활성 표시 개선 |
+| safetynote-server | `deb2c76` | feat: [세션 72-D] 체크리스트 항목 상태 컬럼 → 토글 스위치로 변경 |
+| safetynote-server | `689ec21` | feat: [세션 72-D] 체크리스트 항목 엑셀 일괄 업로드 기능 추가 |
+| safetynote-server | `f285e94` | feat: [세션 72-D] work_type_safety_settings ↔ checklist_items DB 연동 구현 |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ OK
+- GitHub push → ✅ `0b16e03..f285e94`
+
+---
+
+## 세션 73 (2026-07-25) — 안전설정 탭 통합 + 버그 3종 수정
+
+### 목표
+1. **FEAT-SAFETY-SETTINGS**: `wt-safety` + `checklist-items` → `safety-settings` 통합 탭
+2. **BUG-1**: 저장/삭제 후 탭 헤더 사라짐 버그 수정
+3. **BUG-2**: 작업유형 추가/삭제 후 체크리스트 탭 work_class 목록 미반영 수정
+4. **BUG-3**: 체크리스트 탭 전환 시 작업유형 목록 즉시 새로고침
+
+---
+
+### 수정 내용
+
+#### [수정 1] 안전설정 탭 통합 (커밋 `f9b110c`)
+
+**`public/static/app.js`**:
+
+| 신규/변경 | 내용 |
+|-----------|------|
+| `renderSafetySettingsPage()` 신규 | 두 페이지를 탭으로 묶는 통합 함수 |
+| `_safetySettingsActiveTab` 전역 변수 | 활성 탭 상태 관리 (`'wt-safety'` \| `'checklist-items'`) |
+| `_switchSafetySettingsTab(tab)` 신규 | RULE-003 준수 탭 전환 함수 (onclick 중첩 금지) |
+| `_renderSafetySettingsTabContent()` 신규 | 탭 헤더 + 내용 컨테이너 렌더링 |
+| `navigateTo` switch 수정 | `wt-safety/checklist-items` → `safety-settings` 리다이렉트 |
+| `MENU_DEFINITIONS` | `wt-safety + checklist-items` → `safety-settings` 단일 항목 통합 |
+| `allManagerGroups` | risk.children 동일 통합 (`fa-shield-check` 아이콘) |
+| `getPageTitle` | `safety-settings: '안전설정 관리'` 추가 (하위호환 유지) |
+
+**`src/index.tsx`**: 캐시 버스팅 `v=f6a664f` → `v=59d52f6`
+
+#### [수정 2] 저장/삭제 후 탭 헤더 사라짐 버그 수정 (커밋 `2d5cef0`)
+
+- **원인**: `_saveWtSafetyItem/_deleteWtSafetyItem`에서 `renderWtSafetyPage(content)` 호출 → page-content 전체 덮어씀 → 탭 래퍼 소멸
+- **수정**: `_renderSafetySettingsTabContent(content)` 호출로 교체 → 탭 헤더+내용 함께 재렌더링
+
+**`src/index.tsx`**: 캐시 버스팅 `v=59d52f6` → `v=2962423`
+
+#### [수정 3] 작업유형 추가/삭제 후 체크리스트 탭 미반영 수정 (커밋 `2401c81`)
+
+- **원인**: `_renderSafetySettingsTabContent()` 먼저 호출 → 화면 갱신 시점에 `_wtSafetyCache` 구(舊) 데이터 → `_CL_WORK_CLASS_OPTIONS` 미갱신
+- **수정**: `await _loadWtSafetySettings()` 선행 실행 → 캐시+`_syncClWorkClassOptions()` 완료 보장 → 화면 갱신
+
+**`src/index.tsx`**: 캐시 버스팅 `v=2962423` → `v=53b4890`
+
+#### [수정 4] 체크리스트 탭 전환 시 즉시 새로고침 (커밋 `289c3f7`)
+
+- `_switchSafetySettingsTab()` async로 변경
+- 체크리스트 탭 클릭 시 `await _loadWtSafetySettings()` 선행 → `_wtSafetyCache` 최신화 + `_syncClWorkClassOptions()` 보장
+
+**`src/index.tsx`**: 캐시 버스팅 `v=53b4890` → `v=111ff13`
+
+---
+
+### 커밋 인덱스
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `f9b110c` | feat: [세션 73] 안전설정 탭 통합 — wt-safety + checklist-items → safety-settings |
+| safetynote-server | `2d5cef0` | fix: [세션 73] 안전설정 탭 — 저장/삭제 후 탭 헤더 사라짐 버그 수정 |
+| safetynote-server | `2401c81` | fix: [세션 73] 작업유형 추가/삭제 후 체크리스트 탭 work_class 목록 즉시 미반영 수정 |
+| safetynote-server | `289c3f7` | fix: [세션 73] 체크리스트 탭 전환 시 작업유형 목록 즉시 새로고침 |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ OK
+- GitHub push → ✅ `f285e94..289c3f7`
+
+---
+
+## 세션 74 / 74-B / 74-C (2026-07-25) — 필수 입력 레이블 + 평가완료 차단 + work_class 버그
+
+### 목표
+1. **FEAT-INPUT-FIELDS [74]**: 가스측정값 등 필수 입력 레이블 기능 추가 (patchSchema v0.170)
+2. **BUG-INPUT-FIELDS [74-B]**: 미입력/부적정 시 평가완료 차단
+3. **BUG-WORK-CLASS-MATCH [74-C]**: `showTbmPhotoModal` work_class 매칭 버그 수정
+
+---
+
+### 수정 내용
+
+#### [수정 1] 필수 입력 레이블 기능 추가 (커밋 `c5aa9cd`)
+
+**`node-server.ts`** — patchSchema v0.170:
+- `work_type_safety_settings`에 `input_fields TEXT DEFAULT '[]'` 컬럼 추가
+- GET/POST/PUT API: `input_fields` 필드 반영
+
+**`public/static/app.js`**:
+- `_showWtSafetyEditModal`: 필수 입력 레이블 섹션 추가 (항목명/단위/검증유형/min/max)
+- `_wtCollectInputFields()`: 모달 행 수집 함수
+- `_wtInputFieldAdd()` / `_wtInputFieldRemove()`: 행 추가/삭제
+- `_validateInputField()`: 범위/최대값/LEL% 기준 적정 여부 판단
+- `_onInputFieldChange()`: 체크리스트 작성 화면 실시간 유효성 표시
+- **RULE-003**: `data-rule` 속성 방식으로 JSON 중첩 없이 처리
+
+**`src/index.tsx`**: 캐시 버스팅 `v=111ff13` → `v=63c7f1ff`
+
+#### [수정 2] 필수 입력 레이블 미입력/부적정 시 평가완료 차단 (커밋 `b6268f7`)
+
+**`public/static/app.js`**:
+- `submitChecklist()`: `input[data-rule]` 전수 검사 → 미입력/'부적정' 오류 수집
+- 1개 이상 오류 시 평가완료 차단 + 오류 목록 모달 표시
+
+**`src/index.tsx`**: 캐시 버스팅 `v=63c7f1ff` → `v=528503d0`
+
+#### [수정 3] showTbmPhotoModal work_class 매칭 버그 수정 (커밋 `083394b`)
+
+- **원인**: `_task.work_type || _task.type_key` 기반 `_wtSafetyCache` 매칭 → 실제 DB 컬럼명과 불일치
+- **수정**: `tasks.work_class` 컬럼 기반 → `_wtSafetyCache.find(w => w.work_class === _taskWorkClass)` 교체
+- 불필요한 conditionals 역매핑 fallback 제거
+
+**`src/index.tsx`**: 캐시 버스팅 `v=528503d0` → `v=db85a70d`
+
+---
+
+### 커밋 인덱스
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `c5aa9cd` | feat: [세션 74] 필수 입력 레이블 기능 추가 (가스측정값 실시간 적정 판단) |
+| safetynote-server | `b6268f7` | fix: [세션 74-B] 필수 입력 레이블 미입력/부적정 시 평가완료 차단 |
+| safetynote-server | `083394b` | fix: [세션 74-C] showTbmPhotoModal work_class 매칭 버그 수정 + 캐시 버스팅 v=db85a70d |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ OK
+- GitHub push → ✅ `289c3f7..083394b`
+
+---
+
+## 세션 75 (2026-07-25) — 아이콘 피커 팝업 + 색상 선택 (patchSchema v0.171)
+
+### 목표
+- **FEAT-ICON-PICKER**: 작업유형 편집 모달에 아이콘 선택 팝업 + 색상 팔레트 추가
+
+---
+
+### 수정 내용 (커밋 `af38b07`)
+
+**`node-server.ts`** — patchSchema v0.171:
+- `work_type_safety_settings`에 `icon_color TEXT` 컬럼 추가 (duplicate column 감지 → 스킵, 기존 DB 완전 호환)
+- GET/POST/PUT API: `icon_color` 필드 반영
+
+**`public/static/app.js`**:
+
+| 신규 상수/함수 | 내용 |
+|---------------|------|
+| `WT_ICON_PRESETS` | 7카테고리 80개 아이콘 프리셋 (공사/전기/고소/위험/장비/인력/문서) |
+| `WT_COLOR_PRESETS` | 12색 색상 팔레트 |
+| `_showIconPickerPopup()` | 아이콘 선택 팝업 (검색+카테고리탭+그리드+색상) |
+| `_closeIconPicker()` | 팝업 닫기 |
+| `_wtIconTabSwitch(tabIdx)` | 카테고리 탭 전환 |
+| `_buildIconGrid(items)` | 아이콘 그리드 HTML 생성 (RULE-003: data-icon 속성) |
+| `_wtIconSearchFilter()` | 한글/영문 실시간 검색 |
+| `_wtPickerSelectIcon(btn)` | 아이콘 클릭 선택 |
+| `_wtPickerSelectColor(btn)` | 피커 색상 스와치 선택 |
+| `_wtEditColorSelect(btn)` | 모달 내 색상 스와치 선택 (전역 함수, RULE-003) |
+
+- `_showWtSafetyEditModal`: 미리보기+코드입력+[아이콘 선택] 버튼+색상 팔레트로 재구성 + `wtEdit_iconColor` hidden input 추가
+- `_wtIconPreview()`: `icon_color` 반영 확장 (`style.color` 직접 적용)
+- `_saveWtSafetyItem()`: `icon_color` 수집 + payload 포함
+- `_syncWtSafetyConstFromCache()`: `icon_color` 캐시에 포함
+- 아이콘 리스트 화면: `text-purple-500` → `style.color=icon_color` 적용
+
+**`src/index.tsx`**: 캐시 버스팅 `v=db85a70d` → `v=d444f291`
+
+---
+
+### 커밋 인덱스
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `af38b07` | feat: [세션 75] 아이콘 피커 팝업 + 색상 선택 구현 (Icon Picker) |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ OK
+- GitHub push → ✅ `083394b..af38b07`
+
+---
+
+## 세션 76 (2026-07-25) — copyTask() 공사종류 미전달 버그 수정
+
+### 목표
+- **BUG-COPY-TASK-CTYPE**: 작업 복사 시 공사종류(construction_type)가 전달되지 않는 버그 수정
+
+---
+
+### 원인 분석
+
+| 원인 | 내용 |
+|------|------|
+| ① | `copyTask()` preset 객체에 `construction_type` 필드 누락 |
+| ② | `showCreateTaskModal()` ct 계산 시 `preset.work_class`(tasks 작업종류 영문키)를 `conKeyToLabel()`로 변환 → `CON_TYPE_DEF`에 없어 빈값 반환 |
+
+### 수정 내용 (커밋 `a437526`)
+
+**`public/static/app.js`**:
+- `copyTask()`: preset에 `construction_type: t.construction_type || ''` 추가
+- `showCreateTaskModal()` ct 결정 순서 변경:
+  ```
+  task.construction_type
+  → presetConstruction.construction_type (한글 직접값) ← 신규
+  → conKeyToLabel(preset.work_class) (영문키→한글)
+  → 빈값
+  ```
+
+**`src/index.tsx`**: 캐시 버스팅 `v=d444f291` → `v=30300e9e`
+
+---
+
+### 커밋 인덱스
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `a437526` | fix: [세션 76] copyTask() 공사종류(construction_type) 미전달 버그 수정 |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ OK
+- GitHub push → ✅ `af38b07..a437526`
+
+---
+
+## 세션 77 / 77-B / 77-C (2026-07-25) — 공사 상세 화면 작업 등록/수정 후 화면 유지
+
+### 목표
+- **BUG-CON-TASK-NAV**: 공사 상세 화면에서 작업 등록/수정 완료 후 작업관리 목록으로 이동하는 버그 수정
+
+---
+
+### 버그 분석
+
+| 증상 | 원인 |
+|------|------|
+| 공사 상세에서 작업 등록 완료 시 작업관리 목록으로 이동 | `_doCreate()` 성공 콜백에서 `conDetailOverlay` context 미확인 |
+| 공사 상세에서 작업 수정 완료 시 작업관리 목록으로 이동 | `updateTask()` 성공 콜백 동일 문제 |
+| 작업 등록/수정 모달 X버튼 → 공사 상세 미복귀 | 닫기 버튼 복귀 로직 없음 |
+| [77-B] 위 수정 후에도 `querySelector('.modal-overlay').remove()`가 conDetailOverlay 제거 | `conDetailOverlay`도 `modal-overlay` 클래스 보유 → DOM 순서상 먼저 등록된 쪽이 제거됨 |
+
+### 수정 내용
+
+#### 세션 77 (커밋 `3e1921a`)
+
+**`public/static/app.js`**:
+- `showCreateTaskFromConstruction()`: `conDetailOverlay.remove()` → `display='none' + dataset.fromConId 보존`
+- `_doCreate()` 성공 콜백: `_fromConId` 확인 후 `remove + showConstructionDetail()` 복귀
+- `_closeTaskModalAndRestoreCon()` 전역 함수 신규 추가 (RULE-003): 등록/수정 모달 X버튼 → 공사 상세 복귀
+- `_closeTaskDetailAndRestoreCon()` 전역 함수 신규 추가 (RULE-003): 작업 상세 모달 X버튼 → `conDetailOverlay` 복원
+
+#### 세션 77-B (커밋 `99d0e7e`) — 근본 원인 수정
+
+- **근본 원인**: `conDetailOverlay`도 `modal-overlay` 클래스 보유 → `querySelector('.modal-overlay').remove()` 호출 시 DOM 순서상 먼저 등록된 `conDetailOverlay`가 제거됨
+- `showCreateTaskModal()` 생성 modal에 `id='taskCreateEditOverlay'` 부여
+- `_doCreate()` 성공 후: `getElementById('taskCreateEditOverlay').remove()`
+- `updateTask()` 성공 후: `getElementById('taskCreateEditOverlay').remove()`
+- `querySelector('.modal-overlay')` 방식 완전 제거
+
+캐시 버스팅 `v=081f291a` → `v=5fd19b9b`
+
+#### 세션 77-C (커밋 `ed2e7bf`) — UX 개선
+
+- **문제**: 공사 상세에서 작업 등록 클릭 시 `conDetailOverlay`가 `display='none'`으로 숨겨져 사용자 눈에 화면이 즉시 닫히는 것처럼 보임
+- `showCreateTaskFromConstruction()`: `display='none'` 숨김 로직 완전 제거 → `conDetailOverlay` 그대로 유지한 채 작업 등록 모달만 위에 쌓음
+- `_doCreate()` 성공 콜백 단순화: `_fromConId` 기반으로만 공사 상세 새로고침
+
+캐시 버스팅 `v=5fd19b9b` → `v=0c096141`
+
+---
+
+### 커밋 인덱스
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `3e1921a` | fix: [세션 77] 공사 상세 화면에서 작업 등록/수정 후 공사 상세 유지 |
+| safetynote-server | `99d0e7e` | fix: [세션 77-B] updateTask/doCreate querySelector 오제거 버그 수정 |
+| safetynote-server | `ed2e7bf` | fix: [세션 77-C] 공사 상세 화면 작업 등록 시 화면 유지 |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ OK
+- GitHub push → ✅ `a437526..ed2e7bf`
+
+---
+
+## 세션 78 (2026-07-25) — 연계작업 사진 섹션 접기/펼치기 토글 구현
+
+### 목표
+- **FEAT-LINKED-TOGGLE**: 연계작업 사진 칩 버튼 과다 노출 문제 해결 → 접기/펼치기 토글로 개선
+
+---
+
+### 배경
+FEAT-112c(세션153)에서 칩 버튼 UX로 개선했으나, 같은 공사에 연계작업이 많을 경우 칩 버튼이 대량으로 노출되어 작업 상세 모달이 지나치게 길어지는 문제 발생.
+
+### 수정 내용 (커밋 `6da57b0`)
+
+**`public/static/app.js`**:
+
+#### [수정 1] `linked-photos-section` HTML 헤더 재구성
+
+```
+기존: flex items-center gap-2 mb-2 (단순 타이틀)
+변경: flex items-center justify-content:space-between
+      좌측: 카메라 아이콘 + "연계작업 사진" + "(읽기 전용)"
+      우측: 토글 버튼 (초기 display:none)
+             - id: linked-photos-toggle-{taskId}
+             - onclick: _toggleLinkedPhotos(taskId)
+             - 접힌 상태: "연계작업 보기 ▼ N건"
+             - count span: linked-photos-count-{taskId}
+linked-photos-content: 초기 display:none (기본 접힘)
+```
+
+#### [수정 2] `_toggleLinkedPhotos(taskId)` 전역 함수 신규 추가 (RULE-001/003 준수)
+
+```javascript
+// 접힌 상태 → 펼침: chevron-down → chevron-up, "연계작업 보기" → "연계작업 닫기"
+// 펼친 상태 → 접힘: chevron-up → chevron-down, "연계작업 닫기" → "연계작업 보기"
+function _toggleLinkedPhotos(taskId) { ... }
+```
+
+#### [수정 3] `_loadLinkedCompletedPhotos()` 수정
+
+| 조건 | 변경 내용 |
+|------|-----------|
+| 사진 있을 때 | 토글 버튼 `display:inline-flex` 표시 + count span `N건` 업데이트 |
+| 사진 0건 | `container.style.display = ''` (container는 표시) + 토글 버튼 숨김 유지 |
+
+**`src/index.tsx`**: 캐시 버스팅 `v=0c096141` → `v=1276a6f2`
+
+---
+
+### 완료 체크리스트
+
+- [x] RULE-001 준수: `var` 전용, 백틱 중첩 없음, `function` 키워드
+- [x] RULE-003 준수: `onclick` 속성에 `_toggleLinkedPhotos(taskId)` 전역 함수만 호출
+- [x] `node --check` → ✅ PASSED
+- [x] `npm run build` → ✅ `dist/_worker.js 287.31 kB`
+- [x] git commit `6da57b0` + push ✅
+
+### 커밋 인덱스
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `6da57b0` | feat: [세션78] 연계작업 사진 섹션 접기/펼치기 토글 구현 |
+
+### 빌드/배포 상태
+- `node --check` → ✅ OK
+- `npm run build` → ✅ `dist/_worker.js 287.31 kB`
+- GitHub push → ✅ `ed2e7bf..6da57b0`
+- NAS 반영 필요 → `git pull && pm2 restart safetynote`

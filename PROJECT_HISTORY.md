@@ -474,7 +474,7 @@ onclick="_closePopup()"
 
 ---
 
-### Phase 6 — 🔲 미착수  배포 버전 생성 (RELEASE-1.0)
+### Phase 6 — ✅ 완료 (2026-07-25)  배포 버전 생성 (RELEASE-2.0)
 
 > **⚠️ 시작 조건**: Phase 3 없이 독립 진행 가능
 
@@ -483,7 +483,7 @@ onclick="_closePopup()"
 | install.sh 원클릭 설치 스크립트 | ✅ 검증완료 | v2.1 — 정적 분석 이중 검증 완료 (`01a5d3d`); Step 8 `--cwd` 수정 포함 |
 | 서명된 Release APK | ✅ 완료 | FEAT-035 GitHub Actions `build-apk.yml` + Keystore Secrets 등록 완료 |
 | 설치 매뉴얼 + 운영 가이드 | ✅ 초안완성 | `e4a74510` — `docs/NAS_INSTALL_GUIDE.md` 초안 완료 (25,063 bytes, 11섹션); PDF 변환은 Phase 4 최종 작업 시 진행 |
-| 최종 버전 태깅 | 🔲 미착수 | 서버 V2.0.0 + APK v2.0.0 동시 릴리즈 |
+| 최종 버전 태깅 | ✅ 완료 | 서버 `v2.0.0` + APK `v2.0.0` 동시 릴리즈 완료 (2026-07-25) |
 
 ---
 
@@ -495,7 +495,7 @@ Phase 2 ✅ 완료 (2026-06-18~36세션) — FCM 추가 트리거만 선택적 �
 Phase 3 ❌ 제거됨 — node-server.ts 리팩토링 (작업 계획에서 공식 제거)
 Phase 4 🔧 진행중 — DOCS-001 설치 가이드 초안 완성, PDF 변환 및 권한별 설명서 대기
 Phase 5 ✅ 완료 (2026-06-21~세션81) — 브라우저 업데이트·롤백·Watchdog 모두 완성
-Phase 6 🔧 진행중 — install.sh 검증 완료, 매뉴얼 미완
+Phase 6 ✅ 완료 (2026-07-25) — install.sh 검증·매뉴얼·버전 태깅 모두 완료
 ```
 
 ### 📌 실질적 남은 작업 (2026-07-24 기준)
@@ -506,7 +506,7 @@ Phase 6 🔧 진행중 — install.sh 검증 완료, 매뉴얼 미완
 | ✅ 완료 | **build-apk.yml default 버전 수정** | `default: '1.4.7'` → `'1.4.14'` — GitHub 웹 UI에서 직접 수정 완료 | — |
 | ✅ 완료 | **DOCS-001 NAS 설치 매뉴얼 초안** | `docs/NAS_INSTALL_GUIDE.md` 작성 완료 (`e4a74510`) — 11섹션, 원클릭·수동·Watchdog·FAQ 포함 | Phase 4 |
 | ✅ 완료 | **DOCS-001 사용자 설명서 (권한별)** | `docs/USER_GUIDE.md` 작성 완료 (`b75293e8`) — 관리자·감독자·근로자 3권한, 부록 비교표 포함 | Phase 4 |
-| 🟢 낮음 | **최종 버전 태깅** | 서버 V2.0.0 + APK v2.0.0 동시 릴리즈 | — |
+| ✅ 완료 | **최종 버전 태깅** | 서버 `v2.0.0` (`v2.0.0` tag) + APK `v2.0.0` (`v2.0.0` tag) 동시 릴리즈 완료 (2026-07-25) | — |
 
 ---
 
@@ -9815,3 +9815,64 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 - `node --check` → ✅ (세션 78 기준)
 - `npm run build` → ✅ (세션 78 기준)
 - GitHub push → ✅ `b75293e8` (USER_GUIDE.md 신규)
+
+---
+
+## 세션 80 (2026-07-25) — 최종 버전 태깅 + 사용자 설명서 완성
+
+### 작업 내용
+
+#### 1. 버전 태깅 수정
+- PROJECT_HISTORY.md 전체: `서버 v1.0.0` → `서버 V2.0.0` (3개소 일괄 수정)
+
+#### 2. DOCS-001 사용자 설명서 (권한별) 작성
+
+**파일**: `docs/USER_GUIDE.md` (26,338 bytes, 682줄)  
+**분석 기반**: `public/static/app.js` 45,189줄 실제 코드 분석 (권한 로직, 메뉴 그룹, 시스템설정 탭)
+
+**문서 구조:**
+
+| 섹션 | 내용 |
+|------|------|
+| 1. 권한 구조 한눈에 보기 | 3단계 권한 비교표 (CEO/시스템관리자/안전관리자/공무/현장대리인/근로자/LGU+) |
+| 2. 공통 — 앱 설치 및 첫 로그인 | APK 설치, 브라우저 접속, 로그인 화면 구성 |
+| 3. 공통 — 화면 구성 | 레일/플라이아웃 구조, 권한별 메뉴 그룹 비교표 |
+| 4. 관리자 전용 가이드 | 계정관리, 팀관리, 단가관리, 시스템설정 8탭 상세, 위험성평가, 교육관리 |
+| 5. 감독자 가이드 | 현장점검, 위험신고 처리, 서명요청 발송, 작업관리, 통계 |
+| 6. 근로자 가이드 | 내 작업/상태변경/작업일보/위험신고/서명처리/내 계정 |
+| 7. 공통 FAQ | 로그인 오류 8종, GPS/사진/알림/비밀번호 문제 해결 |
+| 부록 A | 전체 기능 권한 비교표 (관리자/감독자/근로자 3열) |
+| 부록 B | 포트 및 접속 주소 정리 (3443/3444/3445) |
+
+#### 3. 최종 버전 태깅 — 서버 V2.0.0 + APK v2.0.0 동시 릴리즈
+
+| 리포 | 태그 | Release ID | Release URL |
+|------|------|-----------|-------------|
+| safetynote-server | `v2.0.0` | 359747074 | https://github.com/gisubhan-droid/safetynote-server/releases/tag/v2.0.0 |
+| safetynote-android | `v2.0.0` | 359747191 | https://github.com/gisubhan-droid/safetynote-android/releases/tag/v2.0.0 |
+
+**서버 V2.0.0 Release 주요 내용:**
+- Phase 5: 브라우저 원클릭 업데이트, DB 자동 백업, 웹 기반 롤백, PM2 Watchdog
+- Phase 6: install.sh v2.1, pm2-watchdog.sh v2.0, 서명된 APK 자동빌드
+- 신규 FEAT: 인앱 PDF/이미지 뷰어, 공사통계, LGU+ 단일화, 분류별 항목 CRUD, 안전설정 탭 통합 등
+- 문서: NAS_INSTALL_GUIDE.md + USER_GUIDE.md + DEPLOY_AND_UPDATE_GUIDE.md
+
+### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `e163f8a` (tag: v2.0.0) | Release 태그 기준 커밋 |
+| safetynote-android | `23670a4` (tag: v2.0.0) | Release 태그 기준 커밋 |
+
+### Phase 6 최종 상태
+
+| 항목 | 상태 | 내용 |
+|------|------|------|
+| install.sh 원클릭 설치 스크립트 | ✅ 검증완료 | v2.1 이중 정적 분석 통과, --cwd 수정 완료 |
+| pm2-watchdog.sh 자동복구 | ✅ 검증완료 | v2.0 FIX-052 완전 반영 |
+| 서명된 Release APK | ✅ 완료 | build-apk.yml + Keystore Secrets, default v1.4.14 |
+| 설치 매뉴얼 + 운영 가이드 | ✅ 초안완성 | NAS_INSTALL_GUIDE.md + USER_GUIDE.md |
+| **최종 버전 태깅** | ✅ **완료** | 서버 v2.0.0 + APK v2.0.0 동시 릴리즈 |
+
+### 빌드/배포 상태
+- GitHub Release → ✅ safetynote-server `v2.0.0` + safetynote-android `v2.0.0`

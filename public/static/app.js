@@ -9040,12 +9040,26 @@ async function showTaskDetail(id, openTbmTab) {
         <!-- [FEAT-112] 연계 완료작업 사진 (worker + admin/supervisor, 같은 공사요청번호 내 completed 작업) -->
         ${((isWorker || currentUser.role === 'admin' || currentUser.role === 'supervisor') && task.construction_id) ? `
         <div id="linked-photos-section-${task.id}" class="mt-4 p-3 rounded-xl" style="background:#F0FDF4;border:1px solid #BBF7D0">
-          <div class="flex items-center gap-2 mb-2">
-            <i class="fas fa-camera" style="color:#059669"></i>
-            <span class="text-sm font-bold" style="color:#065F46">연계작업 사진</span>
-            <span class="text-xs text-gray-400">(읽기 전용 · 작업번호 클릭 시 사진 보기)</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <i class="fas fa-camera" style="color:#059669"></i>
+              <span class="text-sm font-bold" style="color:#065F46">연계작업 사진</span>
+              <span class="text-xs text-gray-400">(읽기 전용)</span>
+            </div>
+            <button id="linked-photos-toggle-${task.id}"
+              type="button"
+              data-task-id="${task.id}"
+              onclick="_toggleLinkedPhotos(${task.id})"
+              style="display:none;align-items:center;gap:4px;padding:4px 10px;border-radius:14px;
+                border:1px solid #6EE7B7;background:#ffffff;cursor:pointer;font-size:12px;
+                color:#065F46;font-weight:600;white-space:nowrap">
+              <i class="fas fa-chevron-down" style="font-size:10px"></i>
+              <span>연계작업 보기</span>
+              <span id="linked-photos-count-${task.id}" style="font-size:11px;font-weight:700;color:#059669;
+                background:#D1FAE5;padding:1px 6px;border-radius:10px;margin-left:2px">...</span>
+            </button>
           </div>
-          <div id="linked-photos-content-${task.id}">
+          <div id="linked-photos-content-${task.id}" style="display:none">
             <div class="text-xs text-gray-400 py-2"><i class="fas fa-spinner fa-spin mr-1"></i>불러오는 중...</div>
           </div>
         </div>` : ''}
@@ -10524,6 +10538,31 @@ async function openAttachment(id, fileName, mimeType) {
 }
 
 // ─── [FEAT-112 v3] 연계 작업 사진 로드 (worker 전용) ────────────────────────
+// ─── [세션78] 연계작업 사진 접기/펼치기 토글 ──────────────────────────────────
+// RULE-003: onclick에서 직접 호출하는 전역 함수
+function _toggleLinkedPhotos(taskId) {
+  var content = document.getElementById('linked-photos-content-' + taskId);
+  var btn = document.getElementById('linked-photos-toggle-' + taskId);
+  var icon = btn ? btn.querySelector('i') : null;
+  if (!content || !btn) return;
+  var isOpen = content.style.display !== 'none';
+  if (isOpen) {
+    content.style.display = 'none';
+    if (icon) {
+      icon.className = 'fas fa-chevron-down';
+      icon.style.fontSize = '10px';
+    }
+    btn.querySelector('span') && (btn.querySelectorAll('span')[0].textContent = '연계작업 보기');
+  } else {
+    content.style.display = '';
+    if (icon) {
+      icon.className = 'fas fa-chevron-up';
+      icon.style.fontSize = '10px';
+    }
+    btn.querySelector('span') && (btn.querySelectorAll('span')[0].textContent = '연계작업 닫기');
+  }
+}
+
 // ─── 연계작업 사진 로드 (세션148~153) ────────────────────────────────────────
 // [세션153 UX] 행 목록 → 칩(chip) 버튼 가로 나열로 교체
 //              형식: [연계작업 사진 #0042  7장] [연계작업 사진 #0043  3장]
@@ -10537,6 +10576,7 @@ async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
 
     if (allPhotos.length === 0) {
       container.innerHTML = '<p class="text-xs text-gray-400 italic py-2">연계된 작업의 사진이 없습니다.</p>';
+      container.style.display = '';
       return;
     }
 
@@ -10588,6 +10628,18 @@ async function _loadLinkedCompletedPhotos(currentTaskId, constructionId) {
     });
     html += '</div>';
     container.innerHTML = html;
+    // container는 초기 display:none — 토글 버튼 클릭 시 열림
+
+    // [세션78] 토글 버튼 표시 + 건수 업데이트
+    var totalPhotos = allPhotos.length;
+    var toggleBtn = document.getElementById('linked-photos-toggle-' + currentTaskId);
+    var countSpan = document.getElementById('linked-photos-count-' + currentTaskId);
+    if (toggleBtn) {
+      toggleBtn.style.display = 'inline-flex';
+    }
+    if (countSpan) {
+      countSpan.textContent = taskOrder.length + '건';
+    }
 
   } catch(e) {
     container.innerHTML = '<p class="text-xs text-red-400 py-2">불러오기 실패</p>';

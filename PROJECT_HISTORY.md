@@ -448,15 +448,15 @@ onclick="_closePopup()"
 
 ---
 
-### Phase 4 — 🔲 미착수  NAS 설치 매뉴얼 (DOCS-001)
+### Phase 4 — 🔧 진행중  NAS 설치 매뉴얼 (DOCS-001)
 
 > **⚠️ 시작 조건**: Phase 6 완료 후 작성 (최종 단계)
 
 | 항목 | 상태 | 내용 |
 |------|------|------|
-| 설치 가이드 | 🔲 미착수 | Node.js 설치 → git clone → .env 설정 → PM2 등록 → HTTPS 인증서 |
+| 설치 가이드 | ✅ 초안완성 | `e4a74510` — `docs/NAS_INSTALL_GUIDE.md` (25,063 bytes, 11섹션) 작성 완료. 원클릭·수동 병행, Watchdog 등록, 포트포워딩, FAQ 포함 |
 | 배포설명서 수정 | ✅ 완료 | `1e38f65` | SSH 선택사항 안내, Watchdog 등록 단계, 브라우저 업데이트 방법, SSH 포트 변경 섹션 추가 (DOCS-002) |
-| **형식** | — | PDF + 스크린샷 포함 문서 |
+| **형식** | 🔲 미착수 | PDF + 스크린샷 포함 문서 (차기 작업 예정) |
 
 ---
 
@@ -481,7 +481,7 @@ onclick="_closePopup()"
 |------|------|------|
 | install.sh 원클릭 설치 스크립트 | ✅ 검증완료 | v2.1 — 정적 분석 이중 검증 완료 (`01a5d3d`); Step 8 `--cwd` 수정 포함 |
 | 서명된 Release APK | ✅ 완료 | FEAT-035 GitHub Actions `build-apk.yml` + Keystore Secrets 등록 완료 |
-| 설치 매뉴얼 + 운영 가이드 | 🔲 미착수 | Phase 4와 통합 작성 예정 |
+| 설치 매뉴얼 + 운영 가이드 | ✅ 초안완성 | `e4a74510` — `docs/NAS_INSTALL_GUIDE.md` 초안 완료 (25,063 bytes, 11섹션); PDF 변환은 Phase 4 최종 작업 시 진행 |
 | 최종 버전 태깅 | 🔲 미착수 | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 |
 
 ---
@@ -492,7 +492,7 @@ onclick="_closePopup()"
 Phase 1 ✅ 완료 (2026-06-17)
 Phase 2 ✅ 완료 (2026-06-18~36세션) — FCM 추가 트리거만 선택적 보류
 Phase 3 ❌ 제거됨 — node-server.ts 리팩토링 (작업 계획에서 공식 제거)
-Phase 4 🔲 미착수 — Phase 6 완료 후 착수
+Phase 4 🔧 진행중 — DOCS-001 설치 가이드 초안 완성, PDF 변환 및 권한별 설명서 대기
 Phase 5 ✅ 완료 (2026-06-21~세션81) — 브라우저 업데이트·롤백·Watchdog 모두 완성
 Phase 6 🔧 진행중 — install.sh 검증 완료, 매뉴얼 미완
 ```
@@ -503,7 +503,7 @@ Phase 6 🔧 진행중 — install.sh 검증 완료, 매뉴얼 미완
 |---------|------|------|------|
 | ✅ 완료 | **Phase 6 install.sh 정적 검증** | 이중 분석 통과, Step 8 --cwd 누락 수정 (`01a5d3d`) | Phase 6 |
 | ✅ 완료 | **build-apk.yml default 버전 수정** | `default: '1.4.7'` → `'1.4.14'` — GitHub 웹 UI에서 직접 수정 완료 | — |
-| 🟢 낮음 | **DOCS-001 NAS 설치 매뉴얼** | Phase 6 완료 후 신규 담당자용 단계별 문서 작성 | Phase 4 |
+| ✅ 완료 | **DOCS-001 NAS 설치 매뉴얼 초안** | `docs/NAS_INSTALL_GUIDE.md` 작성 완료 (`e4a74510`) — 11섹션, 원클릭·수동·Watchdog·FAQ 포함 | Phase 4 |
 | 🟢 낮음 | **최종 버전 태깅** | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 | — |
 | ✅ 완료 | **FEAT-169 관리자/감독자 연계작업 사진** | PC 접속 admin/supervisor도 연계작업 사진 조회 가능 + media_type 버그 수정 | `bfc3bbb` |
 | ✅ 완료 | **FEAT-168 사진탭 caption 하위 그룹** | 사진유형 하위 caption 기준 폴더 소제목 헤더 (3곳 동시 적용) | `85d7bcc` |
@@ -9648,7 +9648,7 @@ function _toggleLinkedPhotos(taskId) { ... }
 
 ---
 
-## 세션 79 (2026-07-25) — Phase 6 install.sh 최종 검증 + FIX-052 반영
+## 세션 79 (2026-07-25) — Phase 6 install.sh 최종 검증 + FIX-052 반영 + DOCS-001 NAS 설치 매뉴얼 초안 작성
 
 ### 작업 내용
 
@@ -9717,12 +9717,39 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 - `default: '1.4.7'` → `default: '1.4.14'` — 사용자 직접 수정 완료 ✅
 - 확인: GitHub API로 line 9 `default: '1.4.14'` 검증 완료
 
+#### DOCS-001 NAS 설치 매뉴얼 초안 작성
+
+**작업 내용**: `docs/NAS_INSTALL_GUIDE.md` 신규 작성 (25,063 bytes, 736줄, 11개 섹션)
+
+**문서 구조:**
+
+| 섹션 | 내용 |
+|------|------|
+| 1. 설치 전 체크리스트 | DSM 패키지 확인 표 (Node.js v18, Git, PM2) |
+| 2. 설치 방법 선택 | 원클릭 vs 수동 비교 |
+| 3. 방법 A — 원클릭 자동 설치 | Step A-1~A-5, 화면 출력 예시 포함 |
+| 4. 방법 B — 수동 설치 | Step B-1~B-7, 직접 명령어 |
+| 5. 설치 후 초기 설정 | 비밀번호 변경, APK 등록, 기본 데이터 |
+| 6. HTTPS 인증서 설정 | Let's Encrypt / 자체서명 |
+| 7. PM2 Watchdog 등록 (필수) | Step 7-1~7-6 상세, synoscheduler 등록 |
+| 8. 외부 접속 설정 | 포트포워딩, DDNS, 접속 주소 표 |
+| 9. 설치 완료 최종 확인 | 체크리스트 표 |
+| 10. 문제 해결 FAQ | 6개 오류 케이스 + 비상복구 방법 |
+| 11. 설치 후 일상 운영 요약 | 브라우저 작업 표, SSH 명령어 표 |
+
+**참조 파일:**
+- `docs/DEPLOY_AND_UPDATE_GUIDE.md` (16,462 bytes) — 전체 검토
+- `docs/OPERATIONS_GUIDE.md` (23,158 bytes) — 구조 참고
+- `scripts/install.sh` v2.1 — 원클릭 설치 Step A 기반
+- `scripts/pm2-watchdog.sh` v2.0 — Section 7 Watchdog 등록 기반
+
 ### 커밋
 
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | `01a5d3d` | fix: install.sh Step 8 PM2 start --cwd 옵션 추가 (FIX-052 반영) |
 | safetynote-android | (웹 UI) | ci: build-apk.yml default 버전 1.4.7 → 1.4.14 업데이트 |
+| safetynote-server | `e4a74510` | docs: [DOCS-001] NAS 설치 매뉴얼 초안 작성 (NAS_INSTALL_GUIDE.md, 11섹션) |
 
 ### Phase 6 현재 상태
 
@@ -9731,10 +9758,10 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 | install.sh 원클릭 설치 스크립트 | ✅ 검증완료 | v2.1 이중 정적 분석 통과, --cwd 수정 완료 |
 | pm2-watchdog.sh 자동복구 | ✅ 검증완료 | v2.0 FIX-052 완전 반영, 11개 항목 모두 통과 |
 | 서명된 Release APK | ✅ 완료 | build-apk.yml + Keystore Secrets 등록, default v1.4.14 |
-| 설치 매뉴얼 + 운영 가이드 | 🔲 미착수 | Phase 4 작업 시 통합 작성 예정 |
+| 설치 매뉴얼 + 운영 가이드 | ✅ 초안완성 | `e4a74510` — `docs/NAS_INSTALL_GUIDE.md` (25,063 bytes, 11섹션) 초안 완료 |
 | 최종 버전 태깅 | 🔲 미착수 | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 |
 
 ### 빌드/배포 상태
 - `node --check` → ✅ (세션 78 기준)
 - `npm run build` → ✅ (세션 78 기준)
-- GitHub push → ✅ `f0d3ffc..01a5d3d`
+- GitHub push → ✅ `f0d3ffc..01a5d3d` (install.sh 수정), `e4a74510` (NAS_INSTALL_GUIDE.md 신규)

@@ -479,7 +479,7 @@ onclick="_closePopup()"
 
 | 항목 | 상태 | 내용 |
 |------|------|------|
-| install.sh 원클릭 설치 스크립트 | 🔧 부분완성 | `scripts/install.sh` 존재 (Step 9 Watchdog 등록 포함) — 최종 검증 필요 |
+| install.sh 원클릭 설치 스크립트 | ✅ 검증완료 | v2.1 — 정적 분석 이중 검증 완료 (`01a5d3d`); Step 8 `--cwd` 수정 포함 |
 | 서명된 Release APK | ✅ 완료 | FEAT-035 GitHub Actions `build-apk.yml` + Keystore Secrets 등록 완료 |
 | 설치 매뉴얼 + 운영 가이드 | 🔲 미착수 | Phase 4와 통합 작성 예정 |
 | 최종 버전 태깅 | 🔲 미착수 | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 |
@@ -494,14 +494,14 @@ Phase 2 ✅ 완료 (2026-06-18~36세션) — FCM 추가 트리거만 선택적 �
 Phase 3 ❌ 제거됨 — node-server.ts 리팩토링 (작업 계획에서 공식 제거)
 Phase 4 🔲 미착수 — Phase 6 완료 후 착수
 Phase 5 ✅ 완료 (2026-06-21~세션81) — 브라우저 업데이트·롤백·Watchdog 모두 완성
-Phase 6 🔧 진행중 — install.sh 부분완성, 최종 검증·매뉴얼 미완
+Phase 6 🔧 진행중 — install.sh 검증 완료, 매뉴얼 미완
 ```
 
 ### 📌 실질적 남은 작업 (2026-07-24 기준)
 
 | 우선순위 | 항목 | 내용 | 관련 |
 |---------|------|------|------|
-| 🟡 중간 | **Phase 6 install.sh 최종 검증** | 원클릭 설치 스크립트 신규 NAS 테스트 (사용자 없을 때 진행) | Phase 6 |
+| ✅ 완료 | **Phase 6 install.sh 정적 검증** | 이중 분석 통과, Step 8 --cwd 누락 수정 (`01a5d3d`) | Phase 6 |
 | ✅ 완료 | **build-apk.yml default 버전 수정** | `default: '1.4.7'` → `'1.4.14'` — GitHub 웹 UI에서 직접 수정 완료 | — |
 | 🟢 낮음 | **DOCS-001 NAS 설치 매뉴얼** | Phase 6 완료 후 신규 담당자용 단계별 문서 작성 | Phase 4 |
 | 🟢 낮음 | **최종 버전 태깅** | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 | — |
@@ -9645,3 +9645,96 @@ function _toggleLinkedPhotos(taskId) { ... }
 - `npm run build` → ✅ `dist/_worker.js 287.31 kB`
 - GitHub push → ✅ `ed2e7bf..6da57b0`
 - NAS 반영 필요 → `git pull && pm2 restart safetynote`
+
+---
+
+## 세션 79 (2026-07-25) — Phase 6 install.sh 최종 검증 + FIX-052 반영
+
+### 작업 내용
+
+#### Phase 6 install.sh v2.1 이중 검증
+
+**검증 대상 파일:**
+- `scripts/install.sh` (449줄)
+- `scripts/pm2-watchdog.sh` (394줄)
+- `node-server.ts` (7771줄) — 포트/시작 방식 교차 확인
+
+**1차 정적 분석 결과 (install.sh):**
+
+| 항목 | 결과 |
+|------|------|
+| set -e (에러 시 즉시 종료) | ✅ |
+| APP_PORT=3443 (node-server.ts 일치) | ✅ |
+| CHECK_PORT=3444 (HTTP 내부포트 응답 확인) | ✅ |
+| tsx 절대경로 (`node_modules/.bin/tsx`) | ✅ |
+| --interpreter 절대경로 | ✅ |
+| DB 백업 (설치 전 자동) | ✅ |
+| RECOVERY_PASSWORD .env 생성 | ✅ |
+| safe-recovery.sh + standalone 권한 설정 | ✅ |
+| synoscheduler 자동 등록 + 수동 안내 | ✅ |
+| git clone --depth 1 | ✅ |
+| 재설치 rsync --exclude='.env' | ✅ |
+| 업데이트 ff-only → reset --hard 폴백 | ✅ |
+| **Step 8 --cwd "$INSTALL_DIR"** | ❌ → **수정** |
+
+**2차 정적 분석 결과 (pm2-watchdog.sh):**
+
+| 항목 | 결과 |
+|------|------|
+| --cwd "$INSTALL_DIR" (일반 재시작 + rollback 양쪽) | ✅ (FIX-052 완전 반영) |
+| .env에서 PORT 동적 읽기 | ✅ |
+| Node.js v18 + v20 이중 탐색 | ✅ |
+| CRASH_THRESHOLD=3 (15분 다운 시 롤백) | ✅ |
+| 롤백 전 DB 백업 | ✅ |
+| npm run build 타임아웃 120초 | ✅ |
+| RECOVERY_PORT=3445 (3444 충돌 없음) | ✅ |
+| 정상 복구 시 비상 서버 자동 종료 | ✅ |
+| crash 카운터 /var/run/ (재부팅 시 초기화) | ✅ |
+
+#### FIX: install.sh Step 8 --cwd 누락 수정
+
+**원인**: pm2-watchdog.sh에는 FIX-052가 적용되어 `--cwd "$INSTALL_DIR"` 지정 있으나, install.sh Step 8 PM2 start 명령어에는 동일 옵션이 누락되어 있었음.
+
+**영향**: `cd "$INSTALL_DIR"`가 선행 실행되어 실제 동작에는 문제 없으나, PM2 프로세스 메타데이터에 cwd가 명시되지 않아 watchdog 재시작과 동작 방식이 불일치.
+
+**수정 내용**:
+```bash
+# 수정 전 (line 300~303)
+PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
+  --name "$APP_NAME" \
+  --interpreter "$NODE_EXEC" \
+  -- node-server.ts
+
+# 수정 후 (line 300~304)
+PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
+  --name "$APP_NAME" \
+  --interpreter "$NODE_EXEC" \
+  --cwd "$INSTALL_DIR" \
+  -- node-server.ts
+```
+
+#### build-apk.yml default 버전 수정 (GitHub 웹 UI)
+- `default: '1.4.7'` → `default: '1.4.14'` — 사용자 직접 수정 완료 ✅
+- 확인: GitHub API로 line 9 `default: '1.4.14'` 검증 완료
+
+### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `01a5d3d` | fix: install.sh Step 8 PM2 start --cwd 옵션 추가 (FIX-052 반영) |
+| safetynote-android | (웹 UI) | ci: build-apk.yml default 버전 1.4.7 → 1.4.14 업데이트 |
+
+### Phase 6 현재 상태
+
+| 항목 | 상태 | 내용 |
+|------|------|------|
+| install.sh 원클릭 설치 스크립트 | ✅ 검증완료 | v2.1 이중 정적 분석 통과, --cwd 수정 완료 |
+| pm2-watchdog.sh 자동복구 | ✅ 검증완료 | v2.0 FIX-052 완전 반영, 11개 항목 모두 통과 |
+| 서명된 Release APK | ✅ 완료 | build-apk.yml + Keystore Secrets 등록, default v1.4.14 |
+| 설치 매뉴얼 + 운영 가이드 | 🔲 미착수 | Phase 4 작업 시 통합 작성 예정 |
+| 최종 버전 태깅 | 🔲 미착수 | 서버 v1.0.0 + APK v2.0.0 동시 릴리즈 |
+
+### 빌드/배포 상태
+- `node --check` → ✅ (세션 78 기준)
+- `npm run build` → ✅ (세션 78 기준)
+- GitHub push → ✅ `f0d3ffc..01a5d3d`

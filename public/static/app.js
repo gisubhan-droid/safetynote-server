@@ -7186,6 +7186,7 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
+  modal.id = 'taskCreateEditOverlay';
   modal.innerHTML = `
   <div class="modal" style="max-width:620px">
     <div class="modal-header" style="background:linear-gradient(135deg,#D70072,#685182);border-radius:20px 20px 0 0;border-bottom:none;padding:18px 24px">
@@ -7672,7 +7673,9 @@ async function createTask() {
 
     // ── 여기서부터는 작업 생성 성공 확정 — 페이지 이동 중 오류가 "생성 실패"로 오표시되지 않도록 격리 ──
     toast('작업이 등록되었습니다.');
-    document.querySelector('.modal-overlay')?.remove();
+    // [FIX-CON-BACK v2] id 지정 모달만 정확히 제거 — conDetailOverlay(.modal-overlay)를 오제거하지 않도록
+    var _createMo = document.getElementById('taskCreateEditOverlay');
+    if (_createMo) _createMo.remove();
 
     // BUG-093: 페이지 이동 오류가 외부 catch('생성 실패')로 전파되지 않도록 try/catch 분리
     try {
@@ -7928,8 +7931,9 @@ async function updateTask(id) {
   try {
     await API.put('/tasks/' + id, data);
     toast('작업이 수정되었습니다.');
-    // 수정 모달 닫기 후 작업 상세 모달 재오픈 (창 상태 유지)
-    document.querySelector('.modal-overlay') && document.querySelector('.modal-overlay').remove();
+    // [FIX-CON-BACK v2] id 지정 모달만 정확히 제거 — conDetailOverlay(.modal-overlay)를 오제거하지 않도록
+    var _editMo = document.getElementById('taskCreateEditOverlay');
+    if (_editMo) _editMo.remove();
     setTimeout(function() { showTaskDetail(id); }, 200);
     // [FIX-CON-BACK] 공사 상세에서 수정한 경우 → conDetailOverlay 가 숨겨져 있으면 배경을 공사 상세로 갱신
     // 일반 작업관리에서 수정한 경우 → 작업관리 목록 조용히 갱신

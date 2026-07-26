@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 89 — FEAT-170 서명요청 내용 보기 링크 + 시스템 설정 메뉴 이동 완료)
-> **GitHub 최신 (safetynote-server): `6e18fd7`** — fix: [UI] 시스템 설정 메뉴를 법령안내 관리 아래로 이동
+> 최종 업데이트: 2026-07-26 (세션 90 — FEAT-171 TBM 사진 갤러리 선택 가능하도록 변경 완료)
+> **GitHub 최신 (safetynote-server): `(pending)`** — feat: [FEAT-171] TBM 사진 등록 갤러리 선택 가능하도록 변경
 > **GitHub 최신 (safetynote-android): `a172a6f`** — fix: [BUG-IME] captureInput false — APK v1.4.15 빌드 완료
 > **이전 커밋 (server): `8e523f9`** — docs: [세션88 마무리] PROJECT_HISTORY + PENDING_TASKS 기록 정리
 > **이전 커밋 (server): `b69e80b`** — style: 로그인/프로필 페이지 LG스마트체 Regular 적용

@@ -4774,3 +4774,48 @@ ${(function() {
 
 ### 커밋
 - `b1a539b` — feat: [FEAT-170] 서명요청 내용 보기 링크 추가
+
+---
+
+## [FEAT-171] TBM 사진 등록 시 갤러리 선택 가능하도록 변경 (2026-07-26)
+
+### 증상
+TBM 안전조치 사진 등록(필수·추가) 클릭 시 카메라 앱이 직접 실행되어  
+갤러리에 저장된 기존 사진을 선택할 수 없었음.
+
+### 원인
+`showTbmPhotoModal()` 내 `<input type="file">` 태그에  
+`capture="environment"` 속성이 적용되어 있어 Android에서 카메라 앱 직접 실행.
+
+```html
+<!-- Before — 카메라 직접 실행, 갤러리 선택 불가 -->
+<input type="file" accept="image/*" capture="environment" style="display:none" ...>
+```
+
+### 해결
+TBM 관련 2곳에서 `capture="environment"` 속성 제거.  
+`accept="image/*"` 만 남기면 Android에서 **"갤러리 / 카메라"** 선택 팝업 표시.
+
+```html
+<!-- After — 갤러리 OR 카메라 선택 팝업 -->
+<input type="file" accept="image/*" style="display:none" ...>
+```
+
+### 수정 범위 (TBM 2곳만 수정 — 다른 기능은 유지)
+
+| 라인 | 기능 | 처리 |
+|------|------|------|
+| 28735 | TBM 필수 사진 등록 버튼 | `capture` 속성 제거 ✅ |
+| 28753 | TBM 추가 사진 등록 버튼 | `capture` 속성 제거 ✅ |
+| 9801 | 작업중지 현장 사진 | 변경 없음 (유지) |
+| 16831 | 현장점검 체크리스트 사진 | 변경 없음 (유지) |
+
+### 수정 파일
+- `public/static/app.js` — 28735, 28753라인 `capture="environment"` 제거
+
+### 검증
+- `node --check public/static/app.js` → ✅ 문법 오류 없음
+- `npm run build` → ✅ `dist/_worker.js 288.74 kB` 빌드 성공
+
+### 커밋
+- `(pending)` — feat: [FEAT-171] TBM 사진 등록 갤러리 선택 가능하도록 변경

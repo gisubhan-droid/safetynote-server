@@ -28732,7 +28732,7 @@ async function showTbmPhotoModal(assId, taskId, sections) {
                 </div>
                 <label style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#DC2626;color:white;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">
                   <i class="fas fa-upload"></i>등록 필수
-                  <input type="file" accept="image/*" capture="environment" style="display:none"
+                  <input type="file" accept="image/*" style="display:none"
                     onchange="uploadTbmPhoto(this, ${assId}, ${sec.id}, ${ph.id}, '${ph.label.replace(/'/g,"\\'")}', ${taskId})">
                 </label>
               </div>`).join('')}
@@ -28750,7 +28750,7 @@ async function showTbmPhotoModal(assId, taskId, sections) {
               onmouseout="this.style.borderColor='#D1D5DB';this.style.background='#fff'">
               <i class="fas fa-plus" style="color:#9CA3AF"></i>
               <span>${secLabel} 추가 사진 등록</span>
-              <input type="file" accept="image/*" capture="environment" style="display:none"
+              <input type="file" accept="image/*" style="display:none"
                 onchange="uploadTbmPhotoExtra(this, ${assId}, ${sec.id}, '${secLabel.replace(/'/g,"\\'")}', ${taskId})">
             </label>
           </div>

@@ -10129,6 +10129,10 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 - `cd /volume1/safetynote && git pull origin main && pm2 restart safetynote` 실행 완료
 - 사용자 확인: ✅ **정상 적용**
 
+#### 현장 검증 결과 (2026-07-26)
+- ✅ **시간 표시 현장 검증 통과** — 실제 현장 Android 기기에서 `/tbm-share/:token` TBM 실시 일시 KST 정상 표시 확인
+- ✅ **FCM 알림 수신 테스트 통과** — Android 실기기에서 FCM 알림 정상 수신 확인
+
 ---
 
 ## 📌 현재 남은 작업 (2026-07-26 기준)
@@ -10142,10 +10146,11 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 
 ### 🟡 운영 중 확인 필요
 
-| 우선순위 | 항목 | 내용 | 확인 방법 |
-|---------|------|------|-----------|
-| 권장 | **시간 표시 현장 검증** | Option A 적용 후 실제 현장 기기(Android)에서 TBM 공유 페이지 날짜 확인 | `/tbm-share/:token` 접속 → `TBM 실시 일시` 항목 육안 확인 |
-| 참고 | **캐시 버스팅** | `CACHE_VER`는 `git rev-parse --short HEAD` 자동 생성 — NAS `git pull + pm2 restart` 시 자동 갱신 (`ba9f578`) | 별도 작업 불필요 ✅ |
+| 우선순위 | 항목 | 결과 |
+|---------|------|------|
+| ✅ 완료 | **시간 표시 현장 검증** | 현장 Android 기기 정상 확인 (2026-07-26) |
+| ✅ 완료 | **FCM 알림 수신 테스트** | Android 실기기 정상 수신 확인 (2026-07-26) |
+| 참고 | **캐시 버스팅** | `CACHE_VER`는 `git rev-parse --short HEAD` 자동 생성 — NAS `git pull + pm2 restart` 시 자동 갱신 | 별도 작업 불필요 ✅ |
 
 ### 🔵 장기 보류 (요청 시 진행)
 
@@ -10153,7 +10158,6 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 |----|------|------|
 | Phase 6-5 | **실제 신규 NAS 환경 설치 테스트** | `install.sh` v2.1 실제 신규 NAS에서 설치 검증 (사용자 직접 수행) |
 | — | **APK `nas-auto-deploy.sh` 크론잡 등록** | `safetynote-android/scripts/nas-auto-deploy.sh` NAS 크론잡 설정 |
-| — | **알림 Android 수신 테스트** | FCM 알림 실기기 수신 검증 |
 
 ---
 

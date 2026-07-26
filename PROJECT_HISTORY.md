@@ -1,7 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 86 — BUG-IME 근본 원인 확인 및 APK captureInput false 수정)
-> **GitHub 최신: `ffc0b30`** — fix: [BUG-166] photoCaption 한글 IME 입력 지연 수정
+> 최종 업데이트: 2026-07-26 (세션 87 — APK v1.4.15 빌드 완료 (BUG-IME captureInput false))
+> **GitHub 최신 (safetynote-android): `a172a6f`** — fix: [BUG-IME] captureInput false — APK v1.4.15 빌드 완료
+> **GitHub 최신 (safetynote-server): `ffc0b30`** — fix: [BUG-166] photoCaption 한글 IME 입력 지연 수정
 > **이전 커밋: `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
 > **이전 커밋: `1a0c3b9`** — fix: [세션84-B] tbm-share 서버 버전 진단 API 추가 + tbm_date fallback 강화
 > **이전 커밋: `c87f319`** — docs: [세션84] PROJECT_HISTORY.md 세션83-B + 84 기록 추가, 헤더 해시 갱신
@@ -10211,6 +10212,37 @@ V5.39_2607261226 ← 빌드 태그 (날짜/시각)
 
 ### 미완료 항목
 - DECK-2~5 사용자 설명서 제작 (미착수)
+
+---
+
+## 세션 87 (2026-07-26)
+
+### 주요 작업: APK v1.4.15 빌드 — BUG-IME captureInput false 반영
+
+#### 작업 개요
+세션 86에서 수정된 `captureInput: false` (safetynote-android `a172a6f`)를 반영한 APK를 GitHub Actions로 빌드 및 릴리즈.
+
+#### 빌드 정보
+
+| 항목 | 내용 |
+|------|------|
+| **버전** | v1.4.15 |
+| **빌드 방법** | GitHub Actions `build-apk.yml` workflow_dispatch |
+| **트리거 커밋** | `a172a6f` (captureInput false) |
+| **빌드 결과** | ✅ success |
+| **APK 파일** | `safetynote-v1.4.15.apk` (5.0 MB) |
+| **릴리즈 URL** | https://github.com/gisubhan-droid/safetynote-android/releases/tag/v1.4.15 |
+| **APK 직접 다운로드** | https://github.com/gisubhan-droid/safetynote-android/releases/download/v1.4.15/safetynote-v1.4.15.apk |
+
+#### 릴리즈 노트
+```
+fix: [BUG-IME] captureInput false — Android WebView 한글 IME 조합 입력 지연 근본 수정
+```
+
+#### 수정 내용 요약
+- `capacitor.config.json` → `captureInput: true` → `false` 변경
+- `CapacitorWebView.onCreateInputConnection()` 호출 경로: `BaseInputConnection(this, false)` → `super.onCreateInputConnection()` 복원
+- 결과: Android WebView에서 한글 첫 글자부터 정상 표시
 
 ---
 

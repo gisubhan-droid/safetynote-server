@@ -4447,3 +4447,207 @@ COALESCE(con.is_auto_request_no, -1) as is_auto_request_no
 - 새 알림 발송 로직 추가 시 반드시 `getUsersWithPerm()` 사용
 - `broadcastToRoles(['admin','supervisor'])` 직접 사용 금지 (group_permissions 우회)
 - 수신자 하드코딩(`position IN (...)`) 금지
+
+---
+
+## [BUG-166] 사진 캡션 한글 IME 입력 지연 (2026-07-26)
+
+### 증상
+- 사진 캡션 입력 필드(`photoCaption`)에서 한글 타이핑 시 글자가 늦게 반응하거나
+  입력 중간값(자음/모음 분리)이 그대로 노출됨
+- 특히 느리게 입력할 때 `ㅎ`, `ㅏ`, `ㄴ` 으로 분리되어 표시
+
+### 원인 분석
+- `<input id="photoCaption">` 에 `type` 속성이 없어 브라우저/WebView가 기본값(`text`) 유추 실패
+- Android IME `compositionstart` / `compositionend` 이벤트 리스너가 없어
+  조합 중간값이 `oninput` 핸들러로 즉시 전달됨
+
+### 수정 내용
+```html
+<!-- 수정 전 -->
+<input id="photoCaption" ...>
+
+<!-- 수정 후 -->
+<input id="photoCaption" type="text" autocomplete="off" inputmode="text" ...>
+```
+- `compositionstart` / `compositionend` 이벤트 리스너 추가
+  → 조합 완료 시점에만 최종값 처리
+
+### 수정 파일
+- `public/static/app.js` — `photoCaption` input 속성 추가 + IME 이벤트 리스너
+
+### 커밋
+- `ffc0b30` — fix(BUG-166): photoCaption 한글 IME 입력 지연
+
+### ⚠️ 재발 방지
+- 한글 입력이 필요한 모든 `<input>` 에 `type="text" autocomplete="off" inputmode="text"` 명시
+- 검색/캡션 등 동적 반응 입력 필드에는 반드시 `compositionstart/end` 이벤트 처리 추가
+
+---
+
+## [BUG-167] Android WebView HTTP 캐시 미반영 (2026-07-26)
+
+### 증상
+- 서버 코드 수정 후 APK를 재시작해도 이전 버전 응답이 그대로 표시됨
+- 브라우저(PC)에서는 즉시 반영되지만 Android WebView에서는 구버전 캐시 지속
+
+### 원인 분석
+- `serveStatic` 미들웨어가 정적 파일에 `Cache-Control` 헤더를 설정하지 않음
+- Android WebView는 기본적으로 HTTP 캐시를 적극적으로 활용 →
+  `app.js` 등 정적 파일이 무기한 캐시됨
+- `captureInput: false` 전환 이후 WebView 캐시 동작이 더 적극적으로 관찰됨
+
+### 수정 내용
+`serveStatic` 대신 직접 라우트에 `Cache-Control: no-cache` 헤더를 추가:
+```typescript
+// src/index.tsx
+app.get('/static/app.js', async (c) => {
+  c.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+  c.header('Pragma', 'no-cache');
+  // ...
+});
+```
+- 캐시 버스팅 쿼리 파라미터 전략 병행: `?v=20260726c` 형식으로 버전 갱신
+
+### 수정 파일
+- `src/index.tsx` — Cache-Control 헤더 직접 라우트 추가, 캐시 버스팅 버전 갱신
+
+### 커밋
+- `8fab226` — fix(BUG-167): Android WebView 캐시 미반영, no-cache 헤더 추가
+
+### ⚠️ 재발 방지
+- `app.js` 수정 시 `src/index.tsx` 의 캐시 버스팅 버전(`?v=YYYYMMDD[x]`) 반드시 갱신
+- 버전 형식 규칙: `?v=날짜 + 알파벳 순서` (당일 첫 번째 `a`, 두 번째 `b`, ...)
+- RULE: `app.js` 변경 → `src/index.tsx` 버전 문자열 동시 수정 필수
+
+---
+
+## [BUG-IME] Android WebView 한글 IME 근본 원인 — captureInput: true (2026-07-26)
+
+### 증상
+- APK v1.4.14 이하에서 모든 한글 입력 필드가 IME 조합 모드를 지원하지 않음
+- 한글 타이핑 시 글자가 조합되지 않고 자음/모음이 낱자로 분리 입력됨
+- `compositionstart` / `compositionend` 이벤트 자체가 발생하지 않음
+
+### 원인 분석
+Capacitor 기본값 `captureInput: true` 가 근본 원인:
+
+```
+captureInput: true
+  → Capacitor가 WebView에 CustomInputConnection 주입
+  → BaseInputConnection(this, false) — false = non-composing mode
+  → Android IME가 조합 문자(한글, 중문 등) 처리 불가
+  → compositionstart/end 이벤트 미발생
+  → 낱자 분리 입력 현상
+```
+
+| 설정값 | InputConnection | 조합 지원 | 한글 입력 |
+|--------|----------------|-----------|-----------|
+| `captureInput: true` (기본) | `BaseInputConnection(false)` | ❌ 불가 | ❌ 분리 입력 |
+| `captureInput: false` (수정) | `super.onCreateInputConnection()` | ✅ 정상 | ✅ 조합 입력 |
+
+### 수정 내용
+```json
+// safetynote-android/capacitor.config.json
+{
+  "android": {
+    "captureInput": false
+  }
+}
+```
+- `super.onCreateInputConnection()` 복원 → Android 기본 IME 정상 작동
+- APK v1.4.15에 반영
+
+### 수정 파일
+- `safetynote-android/capacitor.config.json` — `captureInput: true` → `false`
+
+### 커밋
+- `a172a6f` (safetynote-android) — fix(BUG-IME): captureInput false로 한글 IME 활성화
+
+### ⚠️ 재발 방지
+- `captureInput: true` 로 되돌리지 말 것 — 한글 IME 전면 파괴됨
+- Capacitor 업그레이드 시 `capacitor.config.json` `captureInput` 값 반드시 확인
+- 이 수정이 BUG-168 (oninput 중간값) 의 전제 조건임
+
+---
+
+## [BUG-168] 검색 input 한글 자음/모음 분리 입력 (2026-07-26)
+
+### 증상
+APK v1.4.15 설치(`captureInput: false` 적용) 후 검색 input에서 한글을 느리게 입력하면
+`ㅎㅏㄴ` 처럼 자음/모음이 분리되어 검색 결과가 오동작함
+
+예시:
+- `한` 입력 중 → `oninput` 이 `ㅎ` / `하` / `한` 각각에 대해 검색 실행
+- 중간 조합값으로 필터 적용 → 의도치 않은 검색 결과 노출
+
+### 원인 분석
+```
+BUG-IME 수정(captureInput: false)
+  → Android IME가 조합 모드로 활성화
+  → 조합 중 매 자모 입력마다 oninput 이벤트 발생
+  → oninput 핸들러가 중간값(ㅎ, 하, ...)을 즉시 검색 함수에 전달
+  → 검색 결과 오동작
+```
+
+영향 받은 검색 input 8개:
+| 필드 ID | 기능 |
+|---------|------|
+| `conKeyword` | 공사 키워드 검색 |
+| `keywordInput` | 작업 키워드 검색 |
+| `myTasksSearchInput` | 내 작업 검색 |
+| `fcm-user-search` | FCM 사용자 검색 |
+| `rdMemberSearch` | 근로일지 멤버 검색 |
+| `userSearchInput` | 사용자 목록 검색 |
+| `wsSearch` | 작업현황 검색 |
+| `edu-user-search` | 교육 사용자 검색 |
+
+### 수정 내용
+
+#### ① 전역 IME 조합 상태 가드 추가 (app.js 최상단)
+```javascript
+// ── BUG-168: 전역 IME 조합 상태 가드 ──
+var _imeComposing = false;
+document.addEventListener('compositionstart', function() { _imeComposing = true; });
+document.addEventListener('compositionend', function() {
+  _imeComposing = false;
+  var ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+    ae.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+});
+```
+
+#### ② 검색 input 8개 속성 추가
+```html
+type="text" autocomplete="off" inputmode="text"
+```
+
+#### ③ oninput 핸들러 6개 — IME 가드 조건 추가
+```javascript
+oninput="if(!_imeComposing)applyMyTasksSearch(this.value)"
+oninput="if(!_imeComposing)_fcmRenderList()"
+oninput="if(!_imeComposing)_filterRdMembers(this.value)"
+oninput="if(!_imeComposing)filterUserList(this.value)"
+oninput="if(!_imeComposing)_wsOnSearch(this.value)"
+oninput="if(!_imeComposing)_eduFilterUsers(this.value)"
+```
+
+#### ④ onkeydown Enter 핸들러 2개 — isComposing 가드 추가
+```javascript
+onkeydown="if(event.key==='Enter'&&!event.isComposing){_conFilters.keyword=...}"
+onkeydown="if(event.key==='Enter'&&!event.isComposing){ taskFilters.keyword=...}"
+```
+
+### 수정 파일
+- `public/static/app.js` — 전역 `_imeComposing` 가드 + 8개 input 속성 + 6개 oninput + 2개 Enter 핸들러
+
+### 커밋
+- `26fba0f` — fix(BUG-168): 검색 input 한글 IME 조합 중간값 oninput 방지
+
+### ⚠️ 재발 방지
+- **새 검색 input 추가 시**: `type="text" autocomplete="off" inputmode="text"` 3개 속성 필수
+- **새 oninput 핸들러 추가 시**: `if(!_imeComposing)` 가드 필수
+- **새 Enter 핸들러 추가 시**: `&&!event.isComposing` 가드 필수
+- `_imeComposing` 전역 변수는 `var` 선언 (RULE-001 준수, `const`/`let` 금지)
+- `compositionend` 핸들러에서 `input` 이벤트 재발행 → 조합 완료 시 검색 정상 실행 보장

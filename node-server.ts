@@ -95,6 +95,10 @@ import signatureRequestsRoutes from './src/nas-routes/signature-requests'
 import legalNoticesNasRoutes from './src/nas-routes/legal-notices'
 import geocodeRoutes from './src/nas-routes/geocode'
 import photosRoutes from './src/routes/photos'
+import {
+  kstDateStr, kstDateTimeStr, kstYear, kstMonth, kstTimeStr,
+  toKSTDateTime, toKSTDateTimeSec, toKSTDate, toKSTDateOnly, nowForDB,
+} from './src/kst-utils'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -3240,13 +3244,11 @@ function safeFsName(s: string): string {
 }
 
 // KST(UTC+9) 기준 현재 날짜 문자열 (YYYY-MM-DD)
-function kstDateStr(): string {
-  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
-}
+// → kst-utils.ts의 kstDateStr() 사용 (import로 이미 로드됨)
 
 // KST(UTC+9) 기준 현재 datetime 문자열 (YYYY-MM-DD HH:MM:SS)
 function kstNowStr(): string {
-  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+  return kstDateTimeStr(true)
 }
 
 function fmtDateStr(d: string | null | undefined): string {
@@ -3428,15 +3430,8 @@ async function generateTbmApprovalPdf(tbmId: number): Promise<void> {
     const dateStr  = kstDateStr().replace(/-/g, '')
     const filePath = join(saveDir, `TBM결과보고_${dateStr}.pdf`)
 
-    const fmtDt = (v?: string) => {
-      if (!v) return '-'
-      const d = new Date(v)
-      if (isNaN(d.getTime())) return v.slice(0, 16).replace('T', ' ')
-      const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
-      return kst.toLocaleDateString('ko-KR', { timeZone: 'UTC', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })
-    }
-    const fmtD = (v?: string) =>
-      v ? new Date(v).toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' }) : '-'
+    const fmtDt = (v?: string) => toKSTDateTime(v)
+    const fmtD = (v?: string) => toKSTDateOnly(v)
     const esc = (s: any) => String(s ?? '-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     const signCell = (sig: any) => {
       if (!sig) return '<div class="sc empty">미서명</div>'
@@ -3496,7 +3491,7 @@ ${tbm.special_notes ? `<div class="sec"><div class="sec-t">특이사항</div><di
 <div class="ab"><div class="rl">안전관리자</div><div class="sn">${esc(sigMap['approval_safety']?.user_name||'미서명')}</div>${signCell(sigMap['approval_safety'])}<div class="at">${sigMap['approval_safety']?fmtDt(sigMap['approval_safety'].signed_at):''}</div></div>
 <div class="ab"><div class="rl">총괄책임</div><div class="sn">${esc(sigMap['approval_general']?.user_name||'미서명')}</div>${signCell(sigMap['approval_general'])}<div class="at">${sigMap['approval_general']?fmtDt(sigMap['approval_general'].signed_at):''}</div></div>
 </div></div>
-<div class="footer">생성일시: ${new Date().toLocaleString('ko-KR')} | Safety NOTE</div>
+<div class="footer">생성일시: ${kstDateTimeStr(false)} | Safety NOTE</div>
 </div></body></html>`
 
     writeFileSync(tmpHtml, html, 'utf-8')
@@ -4811,9 +4806,7 @@ app.post('/api/inspections', async (c) => {
 
   if (!location) return c.json({ error: '점검 위치를 입력하세요.' }, 400)
 
-  const today = new Date().toLocaleDateString('ko-KR', {
-    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).replace(/\. /g, '-').replace('.', '')
+  const today = kstDateStr()
   const insDateOnly = inspection_date_only || today
 
   // ── 1) site_inspections INSERT (rawDb 동기) ──
@@ -6530,19 +6523,8 @@ app.get('/tbm-share/:token/photo/:photoId', async (c) => {
 function _esc(s: any): string {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
 }
-// UTC 날짜 문자열 → KST(UTC+9) 기준 "YYYY-MM-DD HH:MM" 변환 (공유 페이지용)
-function _toKSTStr(raw?: string): string {
-  if (!raw) return '-'
-  const d = new Date(raw)
-  if (isNaN(d.getTime())) return raw.slice(0, 16).replace('T', ' ')
-  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
-  const yy  = kst.getUTCFullYear()
-  const mo  = String(kst.getUTCMonth() + 1).padStart(2, '0')
-  const dd  = String(kst.getUTCDate()).padStart(2, '0')
-  const hh  = String(kst.getUTCHours()).padStart(2, '0')
-  const mn  = String(kst.getUTCMinutes()).padStart(2, '0')
-  return `${yy}-${mo}-${dd} ${hh}:${mn}`
-}
+// UTC → KST 변환: kst-utils.ts의 toKSTDateTime() 사용
+const _toKSTStr = toKSTDateTime
 app.get('/tbm-share/:token', async (c) => {
   const token = c.req.param('token')
   const shareRow = rawDb.prepare(
@@ -6714,7 +6696,7 @@ app.get('/tbm-share/:token', async (c) => {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div><div class="label">담당자</div><div class="value">${_esc(tbm.supervisor_name || tbm.conductor_name) || '-'}</div></div>
         <div><div class="label">TBM 실시자</div><div class="value">${_esc(tbm.conductor_name) || '-'}</div></div>
-        <div><div class="label">TBM 실시 일시</div><div class="value">${_esc(_toKSTStr(tbm.tbm_date))}</div></div>
+        <div><div class="label">TBM 실시 일시</div><div class="value">${_esc(toKSTDateTime(tbm.tbm_date))}</div></div>
         <div><div class="label">날씨/기온</div><div class="value">${_esc(tbm.weather) || '-'} / ${tbm.temperature != null ? _esc(tbm.temperature) + '°C' : '-'}</div></div>
       </div>
       ${gpsAddr ? `

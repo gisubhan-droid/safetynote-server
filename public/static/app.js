@@ -316,8 +316,8 @@ const MENU_DEFINITIONS = [
   { id:'edu-stats',        label:'교육현황통계',      icon:'fas fa-chart-bar',          group:'안전교육' },
   { id:'teams',            label:'현장팀관리',        icon:'fas fa-people-group',      group:'사용자관리' },
   { id:'site-map',         label:'현장위치 지도',      icon:'fas fa-map-marked-alt',    group:'메인' },
-  { id:'admin-settings',   label:'시스템 설정',       icon:'fas fa-cogs',              group:'시스템' },
   { id:'legal-notices',    label:'법령안내 관리',      icon:'fas fa-balance-scale',     group:'시스템' },
+  { id:'admin-settings',   label:'시스템 설정',       icon:'fas fa-cogs',              group:'시스템' },
 ];
 
 // 권한 체크박스 HTML 생성 (sysadmin 전용)
@@ -2362,8 +2362,8 @@ function renderApp() {
         ]},
         { id:'my-profile',     icon:'fas fa-user-cog',      label:'내 계정' },
         ...(currentUser.role === 'admin' || currentUser.role === 'supervisor' ? [
-          { id:'admin-settings', icon:'fas fa-cogs',          label:'시스템 설정' },
           { id:'legal-notices',  icon:'fas fa-balance-scale', label:'법령안내 관리' },
+          { id:'admin-settings', icon:'fas fa-cogs',          label:'시스템 설정' },
         ] : []),
       ]
     },

@@ -1,6 +1,6 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 86 — BUG-166 Android WebView 미반영 근본 수정 + IME 전체 41개 필드 일괄 수정)
+> 최종 업데이트: 2026-07-26 (세션 86 — BUG-IME 근본 원인 확인 및 APK captureInput false 수정)
 > **GitHub 최신: `ffc0b30`** — fix: [BUG-166] photoCaption 한글 IME 입력 지연 수정
 > **이전 커밋: `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
 > **이전 커밋: `1a0c3b9`** — fix: [세션84-B] tbm-share 서버 버전 진단 API 추가 + tbm_date fallback 강화
@@ -10358,3 +10358,62 @@ app.get('/static/app.js', async (c, next) => {
 
 ### 미완료 항목
 - DECK-2~5 사용자 설명서 제작 (미착수)
+
+---
+
+### 주요 작업 C: BUG-IME 진짜 근본 원인 확인 — APK `captureInput: false` 수정 (세션86 최종)
+
+#### 배경
+- 모바일 웹 접속: 정상 동작
+- **Android 앱(WebView) 접속 시만 한글 IME 버그 지속** → BUG-166/167 모두 미해결
+- APK 수정 필요성 확인 요청
+
+#### 진짜 원인 — `captureInput: true` (Capacitor Android)
+
+**파일**: `safetynote-android/capacitor.config.json`
+
+```
+CapacitorWebView.onCreateInputConnection() 소스:
+
+if (captureInput) {
+    capInputConnection = new BaseInputConnection(this, false);
+    //                                                 ^^^^
+    //                   false = 비합성(non-composing) 모드
+    return capInputConnection;   ← 한글 조합 불가 InputConnection 반환
+}
+return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
+```
+
+| 항목 | 내용 |
+|------|------|
+| **직접 원인** | `BaseInputConnection(this, false)` = IME 조합 중간 상태 WebView 전달 차단 |
+| **증상** | 한글 두 번째 글자 입력 시 첫 글자 확정 표시 (조합 버퍼 미전달) |
+| **모바일 웹 정상 이유** | 브라우저는 `captureInput` 무관, 기본 WebView IME 사용 |
+| **앱 버그 이유** | Capacitor가 `captureInput: true`로 인해 커스텀 InputConnection 반환 |
+
+#### 수정 내용
+
+**`safetynote-android/capacitor.config.json`**
+```json
+// Before (버그)
+"captureInput": true
+
+// After (수정)
+"captureInput": false
+```
+
+→ `captureInput: false` 시 `super.onCreateInputConnection()` 사용 → WebView 기본 IME 복원 → 한글 조합 정상 동작
+
+#### 커밋 (safetynote-android repo)
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-android | `a172a6f` | fix: [BUG-IME] captureInput false — 한글 IME 조합 입력 지연 근본 수정 |
+
+#### APK 재빌드 필요
+- `capacitor.config.json` 변경 → **APK 재빌드 후 배포 필요**
+- `npx cap sync android` → Gradle build → 새 APK 설치
+
+#### 빌드/배포 상태
+- `safetynote-android` GitHub push → ✅ `23670a4..a172a6f main`
+- APK 재빌드 → ⏳ 사용자 로컬 빌드 필요

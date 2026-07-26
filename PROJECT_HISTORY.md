@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 87 — APK v1.4.15 빌드 완료 (BUG-IME captureInput false))
+> 최종 업데이트: 2026-07-26 (세션 87 — BUG-168 검색 input 한글 IME 자음/모음 분리 수정)
+> **GitHub 최신 (safetynote-server): `26fba0f`** — fix: [BUG-168] 검색 input 한글 IME 자음/모음 분리 입력 수정
 > **GitHub 최신 (safetynote-android): `a172a6f`** — fix: [BUG-IME] captureInput false — APK v1.4.15 빌드 완료
-> **GitHub 최신 (safetynote-server): `ffc0b30`** — fix: [BUG-166] photoCaption 한글 IME 입력 지연 수정
 > **이전 커밋: `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
 > **이전 커밋: `1a0c3b9`** — fix: [세션84-B] tbm-share 서버 버전 진단 API 추가 + tbm_date fallback 강화
 > **이전 커밋: `c87f319`** — docs: [세션84] PROJECT_HISTORY.md 세션83-B + 84 기록 추가, 헤더 해시 갱신
@@ -10217,7 +10217,7 @@ V5.39_2607261226 ← 빌드 태그 (날짜/시각)
 
 ## 세션 87 (2026-07-26)
 
-### 주요 작업: APK v1.4.15 빌드 — BUG-IME captureInput false 반영
+### 주요 작업 A: APK v1.4.15 빌드 — BUG-IME captureInput false 반영
 
 #### 작업 개요
 세션 86에서 수정된 `captureInput: false` (safetynote-android `a172a6f`)를 반영한 APK를 GitHub Actions로 빌드 및 릴리즈.
@@ -10234,15 +10234,63 @@ V5.39_2607261226 ← 빌드 태그 (날짜/시각)
 | **릴리즈 URL** | https://github.com/gisubhan-droid/safetynote-android/releases/tag/v1.4.15 |
 | **APK 직접 다운로드** | https://github.com/gisubhan-droid/safetynote-android/releases/download/v1.4.15/safetynote-v1.4.15.apk |
 
-#### 릴리즈 노트
+---
+
+### 주요 작업 B: BUG-168 — 검색 input 한글 IME 자음/모음 분리 입력 수정
+
+#### 버그 정보
+
+| 항목 | 내용 |
+|------|------|
+| **ID** | BUG-168 |
+| **증상** | 검색 input에서 한글을 느리게 입력하면 `ㅎㅏㄴ` 처럼 자음/모음이 분리 표시 |
+| **발생 조건** | captureInput: false 적용(v1.4.15) 후 Android WebView, 느린 타이핑 시 |
+| **미발생 조건** | 빠른 타이핑 시 정상 (조합이 완료되기 전 oninput이 덜 발화) |
+
+#### 근본 원인
+
 ```
-fix: [BUG-IME] captureInput false — Android WebView 한글 IME 조합 입력 지연 근본 수정
+captureInput: false → IME 정상 작동 → compositionstart/compositionend 이벤트 발생
+
+문제: oninput 핸들러가 IME 조합 중(composing)에도 발화
+  → this.value = 'ㅎ' (조합 중간값) 읽힘
+  → 검색/필터 함수에 중간값 전달
+  → input창에 중간 조합 문자가 표시되는 것처럼 보임
+
+원인이 아닌 것:
+  - captureInput: false 자체는 정상 수정
+  - input 속성 문제가 아님
+  - oninput이 composing 상태를 무시하고 즉시 실행되는 것이 문제
 ```
 
-#### 수정 내용 요약
-- `capacitor.config.json` → `captureInput: true` → `false` 변경
-- `CapacitorWebView.onCreateInputConnection()` 호출 경로: `BaseInputConnection(this, false)` → `super.onCreateInputConnection()` 복원
-- 결과: Android WebView에서 한글 첫 글자부터 정상 표시
+#### 수정 내용
+
+**1. 전역 IME 가드 추가 (app.js 최상단)**
+```javascript
+var _imeComposing = false;
+document.addEventListener('compositionstart', function() { _imeComposing = true; });
+document.addEventListener('compositionend', function() {
+  _imeComposing = false;
+  // compositionend 후 input 이벤트 강제 발화 (브라우저 호환)
+  var ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+    ae.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+});
+```
+
+**2. 검색 input 8개 속성 추가** (type/autocomplete/inputmode):
+`conKeyword`, `keywordInput`, `myTasksSearchInput`(search→text), `fcm-user-search`, `rdMemberSearch`, `userSearchInput`, `wsSearch`, `edu-user-search`
+
+**3. oninput 핸들러 6개 IME 가드 추가**:
+`if(!_imeComposing)` 가드 — `applyMyTasksSearch`, `_fcmRenderList`, `_filterRdMembers`, `filterUserList`, `_wsOnSearch`, `_eduFilterUsers`
+
+**4. onkeydown Enter 핸들러 2개 isComposing 체크**:
+`&&!event.isComposing` — `conKeyword`, `keywordInput`
+
+#### 커밋
+- `26fba0f` — fix: [BUG-168] 검색 input 한글 IME 자음/모음 분리 입력 수정
+- 캐시 버스팅: `?v=20260726c`
 
 ---
 

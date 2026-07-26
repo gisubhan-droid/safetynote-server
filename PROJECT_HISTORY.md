@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-26 (세션 90 — FEAT-171 TBM 사진 갤러리 선택 가능하도록 변경 완료)
-> **GitHub 최신 (safetynote-server): `(pending)`** — feat: [FEAT-171] TBM 사진 등록 갤러리 선택 가능하도록 변경
+> **GitHub 최신 (safetynote-server): `7d82184`** — docs: [FEAT-171] 커밋 해시 4029bf4 반영
 > **GitHub 최신 (safetynote-android): `a172a6f`** — fix: [BUG-IME] captureInput false — APK v1.4.15 빌드 완료
 > **이전 커밋 (server): `8e523f9`** — docs: [세션88 마무리] PROJECT_HISTORY + PENDING_TASKS 기록 정리
 > **이전 커밋 (server): `b69e80b`** — style: 로그인/프로필 페이지 LG스마트체 Regular 적용
@@ -10677,3 +10677,54 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 |------|--------|------|
 | safetynote-server | `b1a539b` | feat: [FEAT-170] 서명요청 내용 보기 링크 추가 |
 | safetynote-server | `6e18fd7` | fix: [UI] 시스템 설정 메뉴를 법령안내 관리 아래로 이동 |
+
+---
+
+## 세션 90 (2026-07-26)
+
+### 작업 — FEAT-171 TBM 사진 등록 갤러리·카메라 선택 가능하도록 변경
+
+**배경**: TBM 사진 등록 버튼 클릭 시 Android에서 카메라 앱이 직접 실행되어 저장된 사진을 첨부할 수 없었던 UX 문제.
+
+**원인 분석**:
+- `<input type="file" accept="image/*" capture="environment">` — `capture="environment"` 속성이 Android에서 카메라 앱 직접 실행을 강제
+- 속성을 제거하면 Android 기본 파일 피커(갤러리 OR 카메라 선택 팝업)가 표시됨
+- `capture` 속성이 사용된 위치 4곳 파악: TBM 필수 사진(28735), TBM 추가 사진(28753), 기타 기능 2곳
+- TBM 관련 2곳만 수정 대상 (기타 기능은 카메라 직접 실행이 의도된 동작)
+
+**구현 내용**:
+
+`public/static/app.js` 2곳 수정:
+- **28735라인** (TBM 필수 사진): `capture="environment"` 속성 제거
+- **28753라인** (TBM 추가 사진): `capture="environment"` 속성 제거
+
+```html
+<!-- Before -->
+<input type="file" accept="image/*" capture="environment" style="display:none" ...>
+
+<!-- After -->
+<input type="file" accept="image/*" style="display:none" ...>
+```
+
+**검증**:
+- `node --check public/static/app.js` → ✅ 통과
+- `npm run build` → ✅ `dist/_worker.js 288.74 kB`
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `4029bf4` | feat: [FEAT-171] TBM 사진 등록 갤러리 선택 가능하도록 변경 |
+| safetynote-server | `7d82184` | docs: [FEAT-171] 커밋 해시 4029bf4 반영 |
+
+---
+
+### 참고 — PERF-001 서명 처리 로딩 지연 분석 (세션 89~90)
+
+모니터링 중. 확인된 3중 지연 원인:
+
+1. **PNG Base64 크기**: `toDataURL('image/png')` → 서명 이미지 70~200KB 전송
+2. **FCM 순차 발송**: `sendFcmPushMulti` for-await 루프 → 토큰 수만큼 직렬 HTTP 호출
+3. **API 4회 재호출**: `_signReqSign` 완료 후 count 포함 데이터 중복 조회
+
+→ 사용자 모니터링 후 개선 결정 예정 (PENDING_TASKS.md PERF-001 항목 참고)

@@ -4127,6 +4127,42 @@ app.delete('/api/users/:id/hard-delete', async (c) => {
 app.route('/api/users', userRoutes)
 app.route('/api/risk', riskRoutes)
 
+// ─── NAS 전용: 서버 버전 진단 API ──────────────────────────────────────────
+// GET /api/diagnostics/server-version — git 해시 + tbm_date 샘플 (로그인 불필요, 관리자 확인용)
+app.get('/api/diagnostics/server-version', async (c) => {
+  try {
+    let gitHash = 'unknown'
+    try { gitHash = execSync('git rev-parse HEAD', { cwd: __dirname, stdio: ['ignore','pipe','ignore'] }).toString().trim() } catch(_) {}
+
+    // tbm_records 최신 1건의 tbm_date, created_at 원본값 확인
+    let tbmSample: any = null
+    try {
+      const row = rawDb.prepare(`SELECT id, tbm_date, created_at FROM tbm_records ORDER BY id DESC LIMIT 1`).get() as any
+      if (row) {
+        tbmSample = {
+          id:         row.id,
+          tbm_date:   row.tbm_date,
+          created_at: row.created_at,
+          tbm_date_kst:   toKSTDateTime(row.tbm_date),
+          created_at_kst: toKSTDateTime(row.created_at),
+        }
+      }
+    } catch(_) {}
+
+    return c.json({
+      git_hash:   gitHash,
+      cache_ver:  CACHE_VER,
+      server_tz:  Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
+      node_env:   process.env.TZ || '(not set)',
+      now_utc:    new Date().toISOString(),
+      now_kst:    toKSTDateTime(new Date().toISOString()),
+      tbm_sample: tbmSample,
+    })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
 // ─── NAS 전용: DB 진단 API (BUG-075/076 디버깅용) ───────────────────────────
 // GET /api/diagnostics/risk-db — risk 관련 테이블 상태 + work_type별 항목 수 상세
 app.get('/api/diagnostics/risk-db', async (c) => {
@@ -6718,7 +6754,7 @@ app.get('/tbm-share/:token', async (c) => {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div><div class="label">담당자</div><div class="value">${_esc(tbm.supervisor_name || tbm.conductor_name) || '-'}</div></div>
         <div><div class="label">TBM 실시자</div><div class="value">${_esc(tbm.conductor_name) || '-'}</div></div>
-        <div><div class="label">TBM 실시 일시</div><div class="value">${_esc(toKSTDateTime(tbm.tbm_date))}</div></div>
+        <div><div class="label">TBM 실시 일시</div><div class="value">${_esc(toKSTDateTime(tbm.tbm_date || tbm.created_at))}</div></div>
         <div><div class="label">날씨/기온</div><div class="value">${_esc(tbm.weather) || '-'} / ${tbm.temperature != null ? _esc(tbm.temperature) + '°C' : '-'}</div></div>
       </div>
       ${gpsAddr ? `

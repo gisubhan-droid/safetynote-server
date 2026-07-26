@@ -32800,6 +32800,15 @@ async function loadWsSafetyStats(periodType) {
   }
 }
 
+// ======= 서명요청 내용 보기 헬퍼 (위험성평가 탭 직접 열기) =======
+function _signReqOpenRisk(taskId) {
+  showTaskDetail(taskId);
+  setTimeout(function() {
+    var riskBtn = document.querySelector('[onclick*="switchDetailTab"][onclick*="risk"]');
+    if (riskBtn) riskBtn.click();
+  }, 400);
+}
+
 // ======= 서명 요청 페이지 (모든 역할 공통) =======
 async function renderSignatureRequestsPage(container) {
   showLoading(container);
@@ -32884,6 +32893,21 @@ async function renderSignatureRequestsPage(container) {
           <div style="margin-top:8px;padding:6px 10px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;font-size:11px;color:#DC2626">
             <i class="fas fa-comment-slash mr-1"></i>거부사유: ${req.rejected_reason}
           </div>` : ''}
+
+          <!-- 내용 보기 링크 (ref_type별 분기) -->
+          ${(function() {
+            var _viewBtn = '';
+            var _btnStyle = 'font-size:12px;color:#685182;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:6px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-weight:600';
+            if (req.ref_type === 'tbm') {
+              _viewBtn = '<div style="margin-top:10px"><button onclick="showTaskDetail(' + req.ref_id + ',\'tbm\')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> TBM 내용 보기</button></div>';
+            } else if (req.ref_type === 'risk_assessment') {
+              _viewBtn = '<div style="margin-top:10px"><button onclick="_signReqOpenRisk(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 위험성평가 내용 보기</button></div>';
+            } else if (req.ref_type === 'education') {
+              var _eduSubType = req.ref_sub_type || 'periodic';
+              _viewBtn = '<div style="margin-top:10px"><button onclick="showEduDetailModal(' + req.ref_id + ',\'' + _eduSubType + '\')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 안전교육 내용 보기</button></div>';
+            }
+            return _viewBtn;
+          })()}
         </div>
 
         ${!isDone ? `

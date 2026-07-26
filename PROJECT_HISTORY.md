@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 88 — BUG-169 node-server.ts TS2339 수정 완료)
-> **GitHub 최신 (safetynote-server): `e664b34`** — fix: [BUG-169] node-server.ts app.fetch() TS2339 타입 오류 수정
+> 최종 업데이트: 2026-07-26 (세션 89 — FEAT-170 서명요청 내용 보기 링크 추가 완료)
+> **GitHub 최신 (safetynote-server): `(pending)`** — feat: [FEAT-170] 서명요청 내용 보기 링크 추가
 > **GitHub 최신 (safetynote-android): `a172a6f`** — fix: [BUG-IME] captureInput false — APK v1.4.15 빌드 완료
 > **이전 커밋 (server): `8e523f9`** — docs: [세션88 마무리] PROJECT_HISTORY + PENDING_TASKS 기록 정리
 > **이전 커밋 (server): `b69e80b`** — style: 로그인/프로필 페이지 LG스마트체 Regular 적용
@@ -10640,3 +10640,39 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 #### 빌드/배포 상태
 - `safetynote-android` GitHub push → ✅ `23670a4..a172a6f main`
 - APK 재빌드 → ⏳ 사용자 로컬 빌드 필요
+
+---
+
+## 세션 89 (2026-07-26)
+
+### 작업 — FEAT-170 서명요청 내용 보기 링크 추가
+
+**배경**: 서명요청 페이지에서 해당 건의 원본 내용(TBM·위험성평가·안전교육)을 확인하지 못하고 서명해야 하는 UX 문제.
+
+**분석**:
+- `signature_requests.ref_type` (`tbm`/`risk_assessment`/`education`) + `ref_id`가 API 응답(`sr.*`)에 이미 포함됨 → 백엔드 수정 불필요
+- `showTaskDetail(id, openTbmTab)`: `openTbmTab` truthy 시 TBM 탭 자동 오픈 → `'tbm'` 문자열 그대로 사용 가능
+- 위험성평가 탭은 `switchDetailTab('risk',...)` 패턴 → `showTaskDetail()` 내부에서 미지원, 전역 helper 함수 별도 추가 필요
+- `showEduDetailModal(sessionId, eduType)`: `ref_sub_type` 필드에 eduType 저장됨(`sr.*`로 조회)
+
+**구현 내용**:
+
+1. **전역 `_signReqOpenRisk(taskId)` helper 함수 추가** (32803라인, `renderSignatureRequestsPage` 앞):
+   - `showTaskDetail(taskId)` 호출 후 400ms setTimeout으로 위험성평가 탭 클릭
+
+2. **`renderCard()` 본문에 "내용 보기" 버튼 삽입** (ref_type별 분기):
+   - `tbm` → `showTaskDetail(ref_id, 'tbm')` → TBM 탭 직접 오픈
+   - `risk_assessment` → `_signReqOpenRisk(ref_id)` → 위험성평가 탭 자동 전환
+   - `education` → `showEduDetailModal(ref_id, ref_sub_type || 'periodic')`
+
+3. **RULE-001 준수**: 즉시실행함수(IIFE) 내부 변수 전부 `var` 사용
+
+**검증**:
+- `node --check public/static/app.js` → ✅ 통과
+- `npm run build` → ✅ `dist/_worker.js 288.74 kB`
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `(본 세션)` | feat: [FEAT-170] 서명요청 내용 보기 링크 추가 |

@@ -4709,3 +4709,68 @@ Promise.resolve(
 - Hono `app.fetch()` 직접 호출 시 반드시 `Promise.resolve(app.fetch(...)).then(...)` 패턴 사용
 - `@hono/node-server`의 `serve()` 함수 사용 시에는 이 문제 없음 (내부에서 처리)
 - 향후 node-server.ts에 유사 패턴 추가 시 동일 방식 적용
+
+---
+
+## [FEAT-170] 서명요청 내용 보기 링크 추가 (2026-07-26)
+
+### 증상
+서명요청 페이지에서 해당 건의 원본 내용(TBM, 위험성평가, 안전교육)을 확인하지 못하고 서명해야 했음.
+
+### 원인
+`renderCard()` 함수에 원본 건으로 이동하는 링크가 없었음.  
+`ref_type`·`ref_id` 필드는 API 응답에 이미 포함되어 있었으나 활용되지 않음.
+
+### 해결
+
+#### 1. 전역 helper 함수 추가 (`_signReqOpenRisk`)
+`showTaskDetail()`의 `openTbmTab` 파라미터는 TBM 탭 전환만 지원하므로,  
+위험성평가 탭을 직접 열기 위한 별도 helper 함수를 추가:
+
+```javascript
+function _signReqOpenRisk(taskId) {
+  showTaskDetail(taskId);
+  setTimeout(function() {
+    var riskBtn = document.querySelector('[onclick*="switchDetailTab"][onclick*="risk"]');
+    if (riskBtn) riskBtn.click();
+  }, 400);
+}
+```
+
+#### 2. `renderCard()` 본문 영역에 "내용 보기" 버튼 추가
+`ref_type`별 분기 처리 (RULE-001: `var` 전용 준수):
+
+```javascript
+${(function() {
+  var _viewBtn = '';
+  var _btnStyle = '...';
+  if (req.ref_type === 'tbm') {
+    _viewBtn = '...<button onclick="showTaskDetail(' + req.ref_id + ',\'tbm\')"...> TBM 내용 보기</button>...';
+  } else if (req.ref_type === 'risk_assessment') {
+    _viewBtn = '...<button onclick="_signReqOpenRisk(' + req.ref_id + ')"...> 위험성평가 내용 보기</button>...';
+  } else if (req.ref_type === 'education') {
+    var _eduSubType = req.ref_sub_type || 'periodic';
+    _viewBtn = '...<button onclick="showEduDetailModal(' + req.ref_id + ',\'' + _eduSubType + '\')"...> 안전교육 내용 보기</button>...';
+  }
+  return _viewBtn;
+})()}
+```
+
+#### ref_type별 이동 경로
+| ref_type | 버튼 텍스트 | 이동 대상 |
+|---|---|---|
+| `tbm` | TBM 내용 보기 | `showTaskDetail(ref_id, 'tbm')` → TBM 탭 |
+| `risk_assessment` | 위험성평가 내용 보기 | `_signReqOpenRisk(ref_id)` → 위험성평가 탭 |
+| `education` | 안전교육 내용 보기 | `showEduDetailModal(ref_id, ref_sub_type)` |
+
+### 수정 파일
+- `public/static/app.js`
+  - 32803라인: `_signReqOpenRisk()` 전역 helper 함수 추가
+  - 32898라인: `renderCard()` 본문에 ref_type별 "내용 보기" 버튼 추가
+
+### 검증
+- `node --check public/static/app.js` → ✅ 문법 오류 없음
+- `npm run build` → ✅ `dist/_worker.js 288.74 kB` 빌드 성공
+
+### 커밋
+- `(pending)` — feat: [FEAT-170] 서명요청 내용 보기 링크 추가

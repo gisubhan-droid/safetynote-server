@@ -22333,8 +22333,9 @@ async function renderAdminSettingsPage(container, _activeTab) {
           <div class="grid grid-cols-2 gap-3 mb-3">
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <p class="text-xs text-gray-400 mb-1">현재 버전 (NAS)</p>
-              <p id="upd-cur-commit" class="font-mono font-bold text-gray-800 text-sm">확인 중...</p>
-              <p id="upd-version-tag" class="text-xs text-indigo-500 mt-1 font-mono font-semibold">—</p>
+              <p id="upd-service-version" class="font-mono font-bold text-green-600 text-base">—</p>
+              <p id="upd-cur-commit" class="font-mono text-gray-500 text-xs mt-0.5">확인 중...</p>
+              <p id="upd-version-tag" class="text-xs text-indigo-500 mt-0.5 font-mono font-semibold">—</p>
             </div>
             <div class="bg-teal-50 rounded-xl p-3 text-center">
               <p class="text-xs text-gray-400 mb-1">최신 버전 (GitHub)</p>
@@ -22997,9 +22998,11 @@ async function _updLoadStatus() {
     const curEl = document.getElementById('upd-cur-commit');
     const latEl = document.getElementById('upd-lat-commit');
     const tagEl = document.getElementById('upd-version-tag');
+    const svcEl = document.getElementById('upd-service-version');
     if (curEl) curEl.textContent = s.currentCommit || '—';
     if (latEl) latEl.textContent = s.latestCommit  || '—';
     if (tagEl) tagEl.textContent = s.versionTag    || '—';
+    if (svcEl) svcEl.textContent = s.serviceVersion || '—';
     // 마지막 반영 시각 표시
     const appliedRow = document.getElementById('upd-applied-row');
     const appliedAt  = document.getElementById('upd-applied-at');

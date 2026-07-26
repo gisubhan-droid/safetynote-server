@@ -26,8 +26,17 @@
 
 import { Hono } from 'hono'
 import { spawn, execSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+
+// ─── 공식 서비스 버전 읽기 (package.json) ───────────────────────────────────
+function _getServiceVersion(): string {
+  try {
+    const pkgPath = join(process.cwd(), 'package.json')
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+    return pkg.version ? `v${pkg.version}` : ''
+  } catch (_) { return '' }
+}
 import {
   getRawDb,
   getUser,
@@ -717,7 +726,8 @@ app.get('/update/status', async (c) => {
   // 버전 태그 생성
   const versionTag  = _makeVersionTag(_updateState.currentCommit, _updateState.updatedAt)
   const updateMode  = getSetting('update_mode') || 'manual'
-  return c.json({ ..._updateState, versionTag, updateMode })
+  const serviceVersion = _getServiceVersion()
+  return c.json({ ..._updateState, versionTag, updateMode, serviceVersion })
 })
 
 // ─── POST /api/admin/update/check ───────────────────────────────────────────

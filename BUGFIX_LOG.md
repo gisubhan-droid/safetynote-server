@@ -4773,4 +4773,4 @@ ${(function() {
 - `npm run build` → ✅ `dist/_worker.js 288.74 kB` 빌드 성공
 
 ### 커밋
-- `(pending)` — feat: [FEAT-170] 서명요청 내용 보기 링크 추가
+- `b1a539b` — feat: [FEAT-170] 서명요청 내용 보기 링크 추가

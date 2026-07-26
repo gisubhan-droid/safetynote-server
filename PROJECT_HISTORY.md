@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-26 (세션 83 — APK 슬레이브 NAS 자동 릴레이 기능 추가)
-> **GitHub 최신: `(세션83 커밋 후 갱신)`** — feat: [세션83] APK 릴레이 배포 기능 추가 (슬레이브 NAS 자동 전달)
+> **GitHub 최신: `67a0e42`** — feat: [세션83] APK 릴레이 배포 기능 추가 (슬레이브 NAS 자동 전달)
 > **이전 커밋: `dba60fb`** — refactor: [세션82] src/ 전체 위험 날짜 패턴 kst-utils로 전수 교체 (27곳)
 > **이전 커밋: `27790c5`** — docs: [세션81] Phase 4 문서 내용 보강 완료 — NAS_INSTALL_GUIDE.md + USER_GUIDE.md v2.0
 > **이전 커밋: `6a2eb2d`** — release: [세션80] 최종 버전 태깅 완료 — 서버 V2.0.0 + APK v2.0.0 동시 릴리즈

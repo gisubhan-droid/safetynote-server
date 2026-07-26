@@ -4703,7 +4703,7 @@ Promise.resolve(
   - 7802라인: HTTP 서버(port 3444) 핸들러 — `Promise.resolve()` 래핑 추가
 
 ### 커밋
-- (이 항목과 함께 기록 예정)
+- `e664b34` — fix: [BUG-169] node-server.ts app.fetch() TS2339 타입 오류 수정
 
 ### ⚠️ 재발 방지
 - Hono `app.fetch()` 직접 호출 시 반드시 `Promise.resolve(app.fetch(...)).then(...)` 패턴 사용

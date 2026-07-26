@@ -1,12 +1,12 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 88 — node-server.ts TS2339 오류 분석, LG스마트체 로그인페이지 적용)
-> **GitHub 최신 (safetynote-server): `b69e80b`** — style: 로그인/프로필 페이지 LG스마트체 Regular 적용 (src/index.tsx)
+> 최종 업데이트: 2026-07-26 (세션 88 — BUG-169 node-server.ts TS2339 수정 완료)
+> **GitHub 최신 (safetynote-server): `e664b34`** — fix: [BUG-169] node-server.ts app.fetch() TS2339 타입 오류 수정
 > **GitHub 최신 (safetynote-android): `a172a6f`** — fix: [BUG-IME] captureInput false — APK v1.4.15 빌드 완료
+> **이전 커밋 (server): `8e523f9`** — docs: [세션88 마무리] PROJECT_HISTORY + PENDING_TASKS 기록 정리
+> **이전 커밋 (server): `b69e80b`** — style: 로그인/프로필 페이지 LG스마트체 Regular 적용
 > **이전 커밋 (server): `33e8c30`** — docs: [스킬화] docs/skills/ 3개 스킬 문서 추가
 > **이전 커밋 (server): `24b45e7`** — docs: [세션87 완전마무리] PROJECT_HISTORY + PENDING_TASKS 최종 정리
-> **이전 커밋 (server): `0eb439f`** — docs(BUGFIX_LOG): BUG-166/167/IME/168 기록 추가 (2026-07-26)
-> **이전 커밋 (server): `f5d3d2f`** — docs: [세션87] 서버 빌드/배포 가이드 최초 작성
 > **이전 커밋 (server): `26fba0f`** — fix: [BUG-168] 검색 input 한글 IME 자음/모음 분리 입력 수정
 > **이전 커밋 (server): `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
 > **이전 커밋: `1a0c3b9`** — fix: [세션84-B] tbm-share 서버 버전 진단 API 추가 + tbm_date fallback 강화
@@ -10423,14 +10423,17 @@ Promise.resolve(
 | `33e8c30` | docs: [스킬화] docs/skills/ 3개 스킬 문서 추가 |
 | `24b45e7` | docs: [세션87 완전마무리] PROJECT_HISTORY + PENDING_TASKS 최종 정리 |
 | `b69e80b` | style: 로그인/프로필 페이지 LG스마트체 Regular 적용 |
+| `8e523f9` | docs: [세션88 마무리] PROJECT_HISTORY + PENDING_TASKS 기록 정리 |
+| `e664b34` | fix: [BUG-169] node-server.ts app.fetch() TS2339 타입 오류 수정 |
 
 ### 세션 88 전체 빌드/배포 상태
 
 | 항목 | 결과 |
 |------|------|
+| `npx tsc --noEmit --skipLibCheck` (node-server.ts) | ✅ 오류 0건 (BUG-169 해소) |
 | `npm run build` | ✅ 성공 (`dist/_worker.js 288.74 kB`) |
-| GitHub push (safetynote-server) | ✅ main `b69e80b` |
-| node-server.ts TS2339 수정 | ⏳ 분석 완료, 수정 다음 세션 예정 |
+| GitHub push (safetynote-server) | ✅ main `e664b34` |
+| node-server.ts TS2339 수정 | ✅ 완료 (`Promise.resolve()` 래핑, 2곳) |
 
 ---
 

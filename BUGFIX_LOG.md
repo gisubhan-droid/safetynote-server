@@ -4818,4 +4818,4 @@ TBM 관련 2곳에서 `capture="environment"` 속성 제거.
 - `npm run build` → ✅ `dist/_worker.js 288.74 kB` 빌드 성공
 
 ### 커밋
-- `(pending)` — feat: [FEAT-171] TBM 사진 등록 갤러리 선택 가능하도록 변경
+- `4029bf4` — feat: [FEAT-171] TBM 사진 등록 갤러리 선택 가능하도록 변경

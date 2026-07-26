@@ -1,8 +1,10 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 84 — kst-utils UTC 파싱 버그 수정)
-> **GitHub 최신: `9a97b31`** — fix: [세션84] kst-utils UTC 파싱 버그 수정 — TZ=Asia/Seoul 환경 대응
-> **이전 커밋: `010dcd7`** — feat: [세션83-B] APK 릴레이 배치 전송 + 아코디언 UI 개선
+> 최종 업데이트: 2026-07-26 (세션 85 — Option A 브라우저 로컬TZ 방식 전면 전환)
+> **GitHub 최신: `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
+> **이전 커밋: `1a0c3b9`** — fix: [세션84-B] tbm-share 서버 버전 진단 API 추가 + tbm_date fallback 강화
+> **이전 커밋: `c87f319`** — docs: [세션84] PROJECT_HISTORY.md 세션83-B + 84 기록 추가, 헤더 해시 갱신
+> **이전 커밋: `9a97b31`** — fix: [세션84] kst-utils UTC 파싱 버그 수정 — TZ=Asia/Seoul 환경 대응
 > **이전 커밋: `67a0e42`** — feat: [세션83] APK 릴레이 배포 기능 추가 (슬레이브 NAS 자동 전달)
 > **이전 커밋: `dba60fb`** — refactor: [세션82] src/ 전체 위험 날짜 패턴 kst-utils로 전수 교체 (27곳)
 > **이전 커밋: `27790c5`** — docs: [세션81] Phase 4 문서 내용 보강 완료 — NAS_INSTALL_GUIDE.md + USER_GUIDE.md v2.0
@@ -10068,6 +10070,58 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 
 #### 커밋
 - `fix: [세션84] kst-utils UTC 파싱 버그 수정 — TZ=Asia/Seoul 환경 대응` (`9a97b31`)
+
+---
+
+## 세션 85 (2026-07-26)
+
+### 주요 작업: Option A — 브라우저 로컬TZ 방식 전면 전환
+
+#### 목표
+- DB는 UTC 그대로 유지
+- 서버는 UTC 문자열 그대로 전달 (변환 없음)
+- 화면 표시는 100% 브라우저 JS가 접속 기기의 로컬 TZ로 자동 변환
+
+#### 변경 파일 및 내용
+
+**`public/static/app.js`**
+
+1. **`_toKSTDateTime()` (line 546) — UTC+9 고정 → 브라우저 로컬TZ 교체**
+   - timezone 미명시 문자열 → `'Z'` 추가하여 UTC 강제 파싱 (SQLite `CURRENT_TIMESTAMP` 대응)
+   - `toLocaleString('ko-KR')` + 정규식으로 `YYYY-MM-DD HH:MM` 포맷 정규화
+   - 13곳 사용처 전체 자동 반영 (재사용 함수이므로)
+
+2. **`_KST` 상수 분리 (line 1390~)**
+   - `_KST_FIXED = { timeZone: 'Asia/Seoul' }`: 입력폼 기본값·인쇄·필터용 KST 고정
+   - `_KST = _KST_FIXED`: 하위 호환 alias (10곳 참조, 모두 현재 시각 기반 → KST 고정 적절)
+   - `formatDate/formatDateTime`: `_parseUTCString()` 헬퍼로 UTC 강제 파싱 후 브라우저 로컬TZ 표시
+   - `kstDateStr/kstDateTimeLocal`: 입력폼 기본값 목적 → KST 고정 유지
+
+3. **`_parseUTCString()` 헬퍼 추가**: `formatDate/formatDateTime` 전용 UTC 파싱 함수
+
+**`node-server.ts` — tbm-share (`/tbm-share/:token`)**
+
+4. **`data-utc` 속성 방식 적용 (line 6757)**
+   - 서버: `data-utc="<UTC 원본 문자열>"` 속성으로 전달 + 서버사이드 KST를 fallback 텍스트로 유지
+   - 인라인 JS IIFE: 페이지 로드 즉시 `data-utc` 읽어 브라우저 로컬TZ로 변환 후 `textContent` 교체
+   - 날짜만(10자리) 케이스 안전 처리 추가
+
+5. **PDF 출력 (`fmtDt`, line 3455)**: KST 고정 유지 — **변경 없음**
+
+#### 이중 검증 결과
+| 환경 | 결과 |
+|------|------|
+| `TZ=UTC node test` | **13/13 PASS** |
+| `TZ=Asia/Seoul node test` | **14/14 PASS** |
+
+#### 충돌 체크
+- `_KST` 잔여 참조 10곳 → 모두 `new Date()` 현재 시각 기반 (인쇄/필터/입력폼) → KST 고정 적절, 충돌 없음
+- `kstDateStr/kstDateTimeLocal` → `_KST_FIXED` 사용, 동일 동작 유지
+- `mobile-app.js` → 시간 함수 없음, 수정 불필요 (확인)
+- `kst-utils.ts` → 서버사이드 PDF용 KST 변환 유지 (변경 없음)
+
+#### 커밋
+- `feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환` (`fc33a03`)
 
 ---
 

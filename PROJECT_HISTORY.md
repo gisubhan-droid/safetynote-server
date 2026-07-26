@@ -1,6 +1,6 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 85 — Option A 브라우저 로컬TZ 방식 전면 전환 + NAS 적용 완료)
+> 최종 업데이트: 2026-07-26 (세션 86 — BUG-166 photoCaption 한글 IME 입력 지연 수정)
 > **GitHub 최신: `ba9f578`** — docs: [세션85] PROJECT_HISTORY.md 헤더 갱신 + 세션85 Option A 기록 추가
 > **이전 커밋: `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
 > **이전 커밋: `1a0c3b9`** — fix: [세션84-B] tbm-share 서버 버전 진단 API 추가 + tbm_date fallback 강화
@@ -10208,6 +10208,87 @@ V5.39_2607261226 ← 빌드 태그 (날짜/시각)
 - `npm run build` → ✅ 성공 (`dist/_worker.js 287.31 kB`)
 - GitHub push → ✅ `cfdcbf3..662854d` main
 - GitHub Actions 배치 전송 테스트 → ✅ 성공 (NAS HTTP 403 수신 → 연결 성공)
+
+### 미완료 항목
+- DECK-2~5 사용자 설명서 제작 (미착수)
+
+---
+
+## 세션 86 (2026-07-26)
+
+### 주요 작업: BUG-166 photoCaption 한글 IME 입력 지연 수정
+
+#### 버그 정보
+
+| 항목 | 내용 |
+|------|------|
+| **ID** | BUG-166 |
+| **증상** | 사진 등록 팝업의 "사진 설명" 입력란에서 한글 입력 시 두 번째 글자를 입력해야 첫 번째 글자 표시 |
+| **기기** | Android WebView (IME 조합 입력 타이밍 충돌) |
+| **파일** | `public/static/app.js` |
+| **함수** | `showPhotoUpload(taskId)` (line 13195~) |
+| **원인** | `type` 속성 누락 + `compositionstart`/`compositionend` 이벤트 핸들러 없음 |
+
+#### 수정 내용
+
+**수정 1 — `type="text"` 명시 + IME 속성 추가 (line 13243)**
+
+```javascript
+// Before (버그)
+'<input id="photoCaption" class="form-control" placeholder="사진 설명">'
+
+// After (수정)
+'<input id="photoCaption" type="text" class="form-control" placeholder="사진 설명" autocomplete="off" inputmode="text">'
+```
+
+**수정 2 — compositionstart/compositionend 이벤트 리스너 추가 (line 13266~13278)**
+
+```javascript
+// 모달 DOM 추가 직후 삽입 (RULE-001: var 전용)
+var _photoCaptionEl = document.getElementById('photoCaption');
+var _photoCaptionComposing = false;
+if (_photoCaptionEl) {
+  _photoCaptionEl.addEventListener('compositionstart', function() {
+    _photoCaptionComposing = true;
+  });
+  _photoCaptionEl.addEventListener('compositionend', function() {
+    _photoCaptionComposing = false;
+  });
+}
+```
+
+#### 충돌 체크 결과
+
+| 라인 | 코드 | 충돌 여부 |
+|------|------|-----------|
+| 13243 | `<input id="photoCaption" ...>` | ✅ 수정 대상 (속성 추가) |
+| 13393 | `document.getElementById('photoCaption').value` | ✅ 충돌 없음 (값 읽기만) |
+| 13525 | `const captionEl = document.getElementById('photoCaption')` | ✅ 다른 스코프, 충돌 없음 |
+| 13528 | `captionEl.value = ''` | ✅ 충돌 없음 (초기화만) |
+
+#### 검증 결과
+
+| 검증 | 결과 |
+|------|------|
+| `node --check public/static/app.js` | ✅ 문법 오류 없음 |
+| `npm run build` | ✅ 빌드 성공 (`dist/_worker.js 287.72 kB`) |
+
+#### 캐시 버스팅
+
+| 파일 | 변경 |
+|------|------|
+| `src/index.tsx` | `app.js?v=1276a6f2` → `app.js?v=20260726a` |
+
+### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-android | (세션 86) | fix: [BUG-166] photoCaption 한글 IME 입력 지연 수정 |
+
+### 빌드/배포 상태
+- `node --check` → ✅ 문법 오류 없음
+- `npm run build` → ✅ 성공 (`dist/_worker.js 287.72 kB`)
+- GitHub push → ✅ main
 
 ### 미완료 항목
 - DECK-2~5 사용자 설명서 제작 (미착수)

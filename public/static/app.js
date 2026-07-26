@@ -13240,7 +13240,7 @@ async function showPhotoUpload(taskId) {
       </div>
       <div class="form-group">
         <label class="form-label">설명 (선택)</label>
-        <input id="photoCaption" class="form-control" placeholder="사진 설명">
+        <input id="photoCaption" type="text" class="form-control" placeholder="사진 설명" autocomplete="off" inputmode="text">
       </div>
       <!-- 업로드 진행률 표시 (기본 hidden) -->
       <div id="uploadProgressWrap" class="hidden mt-3">
@@ -13262,6 +13262,19 @@ async function showPhotoUpload(taskId) {
     </div>
   </div>`;
   document.body.appendChild(modal);
+
+  // [BUG-IME] photoCaption 한글 IME 입력 지연 수정
+  // Android WebView에서 compositionstart/compositionend 이벤트로 조합 상태 추적
+  var _photoCaptionEl = document.getElementById('photoCaption');
+  var _photoCaptionComposing = false;
+  if (_photoCaptionEl) {
+    _photoCaptionEl.addEventListener('compositionstart', function() {
+      _photoCaptionComposing = true;
+    });
+    _photoCaptionEl.addEventListener('compositionend', function() {
+      _photoCaptionComposing = false;
+    });
+  }
 
   // 닫기/완료(닫기) 버튼: 업로드 이력 있으면 사진 탭만 부분 갱신
   const closeHandler = async () => {

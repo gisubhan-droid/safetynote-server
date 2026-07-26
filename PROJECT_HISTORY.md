@@ -1,7 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 85 — Option A 브라우저 로컬TZ 방식 전면 전환)
-> **GitHub 최신: `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
+> 최종 업데이트: 2026-07-26 (세션 85 — Option A 브라우저 로컬TZ 방식 전면 전환 + NAS 적용 완료)
+> **GitHub 최신: `ba9f578`** — docs: [세션85] PROJECT_HISTORY.md 헤더 갱신 + 세션85 Option A 기록 추가
+> **이전 커밋: `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
 > **이전 커밋: `1a0c3b9`** — fix: [세션84-B] tbm-share 서버 버전 진단 API 추가 + tbm_date fallback 강화
 > **이전 커밋: `c87f319`** — docs: [세션84] PROJECT_HISTORY.md 세션83-B + 84 기록 추가, 헤더 해시 갱신
 > **이전 커밋: `9a97b31`** — fix: [세션84] kst-utils UTC 파싱 버그 수정 — TZ=Asia/Seoul 환경 대응
@@ -10122,9 +10123,39 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 
 #### 커밋
 - `feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환` (`fc33a03`)
+- `docs: [세션85] PROJECT_HISTORY.md 헤더 갱신 + 세션85 기록 추가` (`ba9f578`)
+
+#### NAS 적용 완료
+- `cd /volume1/safetynote && git pull origin main && pm2 restart safetynote` 실행 완료
+- 사용자 확인: ✅ **정상 적용**
 
 ---
 
+## 📌 현재 남은 작업 (2026-07-26 기준)
+
+### 🟢 즉시 가능 — 기능 개선
+
+| 우선순위 | ID | 항목 | 내용 | 비고 |
+|---------|-----|------|------|------|
+| 선택 | Phase 3 | **node-server.ts 라우트 파일 분리** | 코드 구조 정리 — rawDb 공유 모듈 분리, 라우트 파일 9개 생성 | 기능 변화 없음, 운영 불편 없으면 후순위 |
+| 선택 | DECK-2~5 | **사용자 설명서 슬라이드 제작** | 권한별(관리자·감독자·근로자) 사용 설명서 슬라이드 4세트 | DECK-1(설치 가이드) 완료 후 순서 |
+
+### 🟡 운영 중 확인 필요
+
+| 우선순위 | 항목 | 내용 | 확인 방법 |
+|---------|------|------|-----------|
+| 권장 | **시간 표시 현장 검증** | Option A 적용 후 실제 현장 기기(Android)에서 TBM 공유 페이지 날짜 확인 | `/tbm-share/:token` 접속 → `TBM 실시 일시` 항목 육안 확인 |
+| 참고 | **캐시 버스팅** | `CACHE_VER`는 `git rev-parse --short HEAD` 자동 생성 — NAS `git pull + pm2 restart` 시 자동 갱신 (`ba9f578`) | 별도 작업 불필요 ✅ |
+
+### 🔵 장기 보류 (요청 시 진행)
+
+| ID | 항목 | 내용 |
+|----|------|------|
+| Phase 6-5 | **실제 신규 NAS 환경 설치 테스트** | `install.sh` v2.1 실제 신규 NAS에서 설치 검증 (사용자 직접 수행) |
+| — | **APK `nas-auto-deploy.sh` 크론잡 등록** | `safetynote-android/scripts/nas-auto-deploy.sh` NAS 크론잡 설정 |
+| — | **알림 Android 수신 테스트** | FCM 알림 실기기 수신 검증 |
+
+---
 
 ### 작업 개요
 - DECK-1 슬라이드 최종 완성 (25장)

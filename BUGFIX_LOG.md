@@ -4651,3 +4651,61 @@ onkeydown="if(event.key==='Enter'&&!event.isComposing){ taskFilters.keyword=...}
 - **새 Enter 핸들러 추가 시**: `&&!event.isComposing` 가드 필수
 - `_imeComposing` 전역 변수는 `var` 선언 (RULE-001 준수, `const`/`let` 금지)
 - `compositionend` 핸들러에서 `input` 이벤트 재발행 → 조합 완료 시 검색 정상 실행 보장
+
+---
+
+## [BUG-169] node-server.ts app.fetch() TS2339 타입 오류 (2026-07-26)
+
+### 증상
+`npx tsc --noEmit --skipLibCheck` 실행 시 오류 2건 발생:
+```
+node-server.ts(7756,9): error TS2339: Property 'then' does not exist on type 'Response | Promise<Response>'.
+  Property 'then' does not exist on type 'Response'.
+node-server.ts(7813,7): error TS2339: Property 'then' does not exist on type 'Response | Promise<Response>'.
+  Property 'then' does not exist on type 'Response'.
+```
+- 런타임 동작에는 영향 없음 (서버 정상 실행)
+- TypeScript 타입 검사만 실패
+
+### 원인 분석
+Hono의 `app.fetch()` 반환 타입이 `Response | Promise<Response>` (union 타입).
+- `Promise<Response>` 인 경우 → `.then()` 호출 가능 ✅
+- `Response` 인 경우 → `.then()` 없음 ❌
+
+TypeScript는 union 타입 중 `.then()`이 없는 `Response` 케이스를 감지하여 TS2339 오류 발생.
+
+**발생 위치**:
+- `node-server.ts` 7745~7756: HTTPS 서버(port 3443) 요청 핸들러
+- `node-server.ts` 7802~7813: HTTP 서버(port 3444, Android FCM 전용) 요청 핸들러
+
+### 수정 내용
+`app.fetch()` 반환값을 `Promise.resolve()`로 래핑하여 반환 타입을 항상 `Promise<Response>`로 단일화.
+
+```typescript
+// Before (TS2339 오류)
+app.fetch(
+  new Request(`https://...`, { ... } as any),
+  { incoming: req, outgoing: res } as any
+).then((honoRes: Response) => { ... })
+
+// After (수정)
+Promise.resolve(
+  app.fetch(
+    new Request(`https://...`, { ... } as any),
+    { incoming: req, outgoing: res } as any
+  )
+).then((honoRes: Response) => { ... })
+```
+
+### 수정 파일
+- `node-server.ts`
+  - 7745라인: HTTPS 서버 핸들러 — `Promise.resolve()` 래핑 추가
+  - 7802라인: HTTP 서버(port 3444) 핸들러 — `Promise.resolve()` 래핑 추가
+
+### 커밋
+- (이 항목과 함께 기록 예정)
+
+### ⚠️ 재발 방지
+- Hono `app.fetch()` 직접 호출 시 반드시 `Promise.resolve(app.fetch(...)).then(...)` 패턴 사용
+- `@hono/node-server`의 `serve()` 함수 사용 시에는 이 문제 없음 (내부에서 처리)
+- 향후 node-server.ts에 유사 패턴 추가 시 동일 방식 적용

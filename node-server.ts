@@ -7742,17 +7742,20 @@ if (tlsCert) {
     { key: tlsCert.key, cert: tlsCert.cert },
     (req, res) => {
       // @hono/node-server의 내부 핸들러를 직접 호출
-      app.fetch(
-        new Request(
-          `https://${req.headers.host || `localhost:${PORT}`}${req.url}`,
-          {
-            method: req.method,
-            headers: req.headers as any,
-            body: ['GET','HEAD'].includes(req.method ?? '') ? undefined : req as any,
-            duplex: 'half',
-          } as any
-        ),
-        { incoming: req, outgoing: res } as any
+      // [BUG-169] app.fetch() 반환 타입 Response|Promise<Response> union → Promise.resolve()로 래핑
+      Promise.resolve(
+        app.fetch(
+          new Request(
+            `https://${req.headers.host || `localhost:${PORT}`}${req.url}`,
+            {
+              method: req.method,
+              headers: req.headers as any,
+              body: ['GET','HEAD'].includes(req.method ?? '') ? undefined : req as any,
+              duplex: 'half',
+            } as any
+          ),
+          { incoming: req, outgoing: res } as any
+        )
       ).then((honoRes: Response) => {
         res.writeHead(honoRes.status, Object.fromEntries(honoRes.headers.entries()))
         if (honoRes.body) {
@@ -7799,17 +7802,20 @@ if (tlsCert) {
   // 외부(인터넷)에서는 공유기 포트포워딩에 3444가 없으므로 접근 불가 → 보안 유지.
   const HTTP_PORT = parseInt(process.env.HTTP_PORT || '3444')
   const httpServer = http.createServer((req, res) => {
-    app.fetch(
-      new Request(
-        `http://${req.headers.host || `localhost:${HTTP_PORT}`}${req.url}`,
-        {
-          method: req.method,
-          headers: req.headers as any,
-          body: ['GET','HEAD'].includes(req.method ?? '') ? undefined : req as any,
-          duplex: 'half',
-        } as any
-      ),
-      { incoming: req, outgoing: res } as any
+    // [BUG-169] app.fetch() 반환 타입 Response|Promise<Response> union → Promise.resolve()로 래핑
+    Promise.resolve(
+      app.fetch(
+        new Request(
+          `http://${req.headers.host || `localhost:${HTTP_PORT}`}${req.url}`,
+          {
+            method: req.method,
+            headers: req.headers as any,
+            body: ['GET','HEAD'].includes(req.method ?? '') ? undefined : req as any,
+            duplex: 'half',
+          } as any
+        ),
+        { incoming: req, outgoing: res } as any
+      )
     ).then((honoRes: Response) => {
       res.writeHead(honoRes.status, Object.fromEntries(honoRes.headers.entries()))
       if (honoRes.body) {

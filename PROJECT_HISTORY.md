@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 86 — BUG-166 photoCaption 한글 IME 입력 지연 수정)
-> **GitHub 최신: `ba9f578`** — docs: [세션85] PROJECT_HISTORY.md 헤더 갱신 + 세션85 Option A 기록 추가
+> 최종 업데이트: 2026-07-26 (세션 86 — BUG-166 Android WebView 미반영 근본 수정 + IME 전체 41개 필드 일괄 수정)
+> **GitHub 최신: `ffc0b30`** — fix: [BUG-166] photoCaption 한글 IME 입력 지연 수정
 > **이전 커밋: `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
 > **이전 커밋: `1a0c3b9`** — fix: [세션84-B] tbm-share 서버 버전 진단 API 추가 + tbm_date fallback 강화
 > **이전 커밋: `c87f319`** — docs: [세션84] PROJECT_HISTORY.md 세션83-B + 84 기록 추가, 헤더 해시 갱신
@@ -10216,7 +10216,7 @@ V5.39_2607261226 ← 빌드 태그 (날짜/시각)
 
 ## 세션 86 (2026-07-26)
 
-### 주요 작업: BUG-166 photoCaption 한글 IME 입력 지연 수정
+### 주요 작업 A: BUG-166 photoCaption 한글 IME 입력 지연 수정 (1차 — 세션86 전반부)
 
 #### 버그 정보
 
@@ -10279,15 +10279,81 @@ if (_photoCaptionEl) {
 |------|------|
 | `src/index.tsx` | `app.js?v=1276a6f2` → `app.js?v=20260726a` |
 
-### 커밋
+### 커밋 (1차)
 
 | repo | commit | 내용 |
 |------|--------|------|
-| safetynote-android | (세션 86) | fix: [BUG-166] photoCaption 한글 IME 입력 지연 수정 |
+| safetynote-android | `ffc0b30` | fix: [BUG-166] photoCaption 한글 IME 입력 지연 수정 |
+
+---
+
+### 주요 작업 B: BUG-167 Android WebView 미반영 근본 수정 + IME 전체 41개 필드 일괄 적용 (세션86 후반부)
+
+#### 문제 보고
+- 모바일 웹 접속 시는 정상 동작
+- **Android 앱(WebView) 접속 시만 한글 IME 버그 지속** → BUG-166 미반영
+
+#### 근본 원인 분석
+
+| # | 원인 | 상세 |
+|---|------|------|
+| 1 | `serveStatic`에 Cache-Control 미설정 | Cloudflare 기본 캐시 정책 적용 → app.js 24h 캐시 |
+| 2 | Android WebView(Capacitor)는 Service Worker와 **별개의 HTTP 캐시** 사용 | SW의 Network First 전략이 WebView HTTP 캐시를 bypass하지 못함 |
+| 3 | 캐시 버스팅 `?v=` 쿼리가 WebView 내부 HTTP 캐시에서 무시됨 | 구버전 app.js가 계속 로드됨 |
+
+#### 수정 내용
+
+**수정 1 — `src/index.tsx`: 버전 민감 파일 no-cache 헤더 추가 (BUG-167)**
+
+```typescript
+// app.js, style.css, service-worker.js에 대해 직접 라우트로 no-cache 헤더 삽입
+app.get('/static/app.js', async (c, next) => {
+  await next()
+  c.res.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+  c.res.headers.set('Pragma', 'no-cache')
+})
+// style.css, service-worker.js 동일 패턴
+```
+
+**수정 2 — `public/static/app.js`: IME 취약 input 41개 전체 필드 일괄 수정 (BUG-166 확장)**
+
+- `photoCaption` 외 한글 직접 입력이 필요한 40개 필드에 `type="text" autocomplete="off" inputmode="text"` 추가
+- Python 정규식 일괄 처리, 40개 전부 ✅ 수정 확인
+
+| 화면 | 대상 필드 (id) |
+|------|---------------|
+| 가입신청 | srName, srGrade, srCompany, srDept, srEmergency |
+| 공사 등록/수정 | cSupervisor, cTitle, cAddress |
+| 작업 등록/수정 | mTitle |
+| TBM | tbmLocation |
+| 점검 등록/수정 | insLocation, insEditLocation |
+| 위험요인 | hazLocation |
+| 법령안내 | lnTitle, lnLawRef, elnTitle, elnLawRef |
+| 위험성평가 | rrTitle, rrLocation, rrAssessmentMethod, rrRiskCriteria, rdMeetingPlace |
+| 작업유형/팀 관리 | etName, etDesc, ctName, ctDesc |
+| 사용자 등록 | uName, uGrade, uCompany, uDept, uEmergency |
+| 사용자 수정 | euName, euGrade, euCompany, euDept, euEmergency |
+| 내 프로필 | mpName, mpCompany, mpDept, mpEmergency |
+
+**수정 3 — 캐시 버스팅 갱신**
+- `app.js?v=20260726a` → `app.js?v=20260726b`
+
+#### 검증 결과
+
+| 검증 | 결과 |
+|------|------|
+| `node --check public/static/app.js` | ✅ 문법 오류 없음 |
+| `npm run build` | ✅ 성공 (`dist/_worker.js 288.21 kB`) |
+
+### 커밋 (2차)
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-android | (세션 86) | fix: [BUG-167] Android WebView 캐시 미반영 수정 + IME 취약 input 41개 일괄 수정 |
 
 ### 빌드/배포 상태
 - `node --check` → ✅ 문법 오류 없음
-- `npm run build` → ✅ 성공 (`dist/_worker.js 287.72 kB`)
+- `npm run build` → ✅ 성공 (`dist/_worker.js 288.21 kB`)
 - GitHub push → ✅ main
 
 ### 미완료 항목

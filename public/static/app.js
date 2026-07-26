@@ -1679,10 +1679,10 @@ function showSelfRegisterModal() {
             <input id="srPassword" class="form-control" type="password" placeholder="비밀번호">
           </div>
           <div class="form-group col-span-2"><label class="form-label">이름 *</label>
-            <input id="srName" class="form-control" placeholder="실명">
+            <input id="srName" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="실명">
           </div>
           <div class="form-group col-span-2"><label class="form-label">직급</label>
-            <input id="srGrade" class="form-control" placeholder="예) 대리, 과장, 부장 등 (직접 입력)">
+            <input id="srGrade" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="예) 대리, 과장, 부장 등 (직접 입력)">
           </div>
         </div>
       </div>
@@ -1746,10 +1746,10 @@ function showSelfRegisterModal() {
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="form-group col-span-2"><label class="form-label">소속(회사명)</label>
-            <input id="srCompany" class="form-control" placeholder="소속 회사명">
+            <input id="srCompany" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="소속 회사명">
           </div>
           <div class="form-group"><label class="form-label">부서</label>
-            <input id="srDept" class="form-control" placeholder="부서명">
+            <input id="srDept" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="부서명">
           </div>
           <div class="form-group"><label class="form-label">직책</label>
             <select id="srPosition" class="form-control">
@@ -1767,7 +1767,7 @@ function showSelfRegisterModal() {
             </select>
           </div>
           <div class="form-group col-span-2"><label class="form-label">긴급연락처</label>
-            <input id="srEmergency" class="form-control" placeholder="예) 홍길동 / 배우자 / 010-1234-5678">
+            <input id="srEmergency" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="예) 홍길동 / 배우자 / 010-1234-5678">
           </div>
         </div>
       </div>
@@ -5077,7 +5077,7 @@ async function showCreateConstructionModal(editId = null) {
                 <i class="fas fa-user-tie mr-1" style="color:#685182"></i>
                 공사감독자
               </label>
-              <input id="cSupervisor" class="form-control" placeholder="감독자 이름 입력"
+              <input id="cSupervisor" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="감독자 이름 입력"
                 value="${con.supervisor_name||''}">
             </div>
 
@@ -5090,7 +5090,7 @@ async function showCreateConstructionModal(editId = null) {
             <i class="fas fa-building mr-1" style="color:#685182"></i>
             공사명 <span class="text-red-500">*</span>
           </label>
-          <input id="cTitle" class="form-control" placeholder="공사명을 입력하세요" value="${con.title||''}">
+          <input id="cTitle" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="공사명을 입력하세요" value="${con.title||''}">
         </div>
 
         <!-- ⑦ 작업지시주소 -->
@@ -5099,7 +5099,7 @@ async function showCreateConstructionModal(editId = null) {
             <i class="fas fa-map-marker-alt mr-1" style="color:#D70072"></i>
             작업지시주소
           </label>
-          <input id="cAddress" class="form-control" placeholder="작업지시 주소를 입력하세요" value="${con.work_order_address||''}">
+          <input id="cAddress" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="작업지시 주소를 입력하세요" value="${con.work_order_address||''}">
         </div>
 
         <!-- ⑧ 시공통보일 + 완료예정일 (순서: 시공통보일 좌, 완료예정일 우) -->
@@ -7304,7 +7304,7 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
         <!-- 작업명 -->
         <div class="form-group md:col-span-2">
           <label class="form-label">작업명 <span class="text-red-500">*</span></label>
-          <input id="mTitle" class="form-control" placeholder="작업명 입력"
+          <input id="mTitle" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="작업명 입력"
             value="${task.title || (!editId ? (presetConstruction?.title || '') : '')}"
             data-auto-filled="${(!editId && !task.title && presetConstruction?.title) ? '1' : '0'}"
             oninput="this.dataset.autoFilled='0'">
@@ -12450,7 +12450,7 @@ async function showTbmForm(taskId) {
         <div class="form-group">
           <label class="form-label">실시 위치 <span class="text-xs text-gray-400">(참고용)</span></label>
           <div class="flex gap-2">
-            <input id="tbmLocation" class="form-control" placeholder="작업 위치" value="${task.location||''}">
+            <input id="tbmLocation" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="작업 위치" value="${task.location||''}">
             <button type="button"
               onclick="showMapModal(document.getElementById('tbmLocation').value)"
               title="지도로 찾아가기"
@@ -16868,7 +16868,7 @@ async function showCreateInspectionModal(presetTaskId) {
             <span style="font-size:10px;color:#aaa;font-weight:400;margin-left:4px">(직접 입력 또는 GPS)</span>
           </label>
           <div class="flex gap-2">
-            <input id="insLocation" class="form-control" placeholder="점검 위치를 입력하세요">
+            <input id="insLocation" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="점검 위치를 입력하세요">
             <button type="button" id="insGpsBtn" onclick="refreshGPSInspection()"
               style="padding:6px 10px;background:#685182;color:white;border:none;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0">
               <i class="fas fa-location-arrow mr-1"></i>GPS
@@ -18570,7 +18570,7 @@ async function editInspection(id) {
       </div>
       <div class="form-group">
         <label class="form-label">점검 위치 <span class="text-red-500">*</span></label>
-        <input id="insEditLocation" class="form-control" value="${(ins.location||'').replace(/"/g,'&quot;')}" placeholder="점검 위치를 입력하세요">
+        <input id="insEditLocation" type="text" autocomplete="off" inputmode="text" class="form-control" value="${(ins.location||'').replace(/"/g,'&quot;')}" placeholder="점검 위치를 입력하세요">
       </div>
       <div class="form-group"><label class="form-label">위험도</label>
         <select id="insEditHazard" class="form-control">
@@ -19091,7 +19091,7 @@ function showHazardReportForm(defaultType) {
           <span class="text-xs font-normal ml-1" style="color:#C6C6C6">(직접 입력 또는 현재위치 버튼으로 자동 입력)</span>
         </label>
         <div class="flex gap-2">
-          <input id="hazLocation" class="form-control" placeholder="발생 위치를 입력하세요">
+          <input id="hazLocation" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="발생 위치를 입력하세요">
           <button type="button" id="hazGpsBtn" onclick="refreshGPSHazard()"
             style="padding:6px 12px;background:#685182;color:white;border:none;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;min-width:72px">
             <i class="fas fa-location-arrow mr-1"></i>현재위치
@@ -21273,11 +21273,11 @@ async function _editLegalNotice(key) {
       <div class="modal-body">
         <div style="margin-bottom:10px">
           <label class="form-label">제목</label>
-          <input id="lnTitle" class="form-control" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="법령 안내 제목">
+          <input id="lnTitle" type="text" autocomplete="off" inputmode="text" class="form-control" value="${(n.title||'').replace(/"/g,'&quot;')}" placeholder="법령 안내 제목">
         </div>
         <div style="margin-bottom:10px">
           <label class="form-label">법령 출처 <span style="font-size:10px;color:#9CA3AF">(예: 산업안전보건법 제36조)</span></label>
-          <input id="lnLawRef" class="form-control" value="${(n.law_ref||'').replace(/"/g,'&quot;')}" placeholder="법령 출처">
+          <input id="lnLawRef" type="text" autocomplete="off" inputmode="text" class="form-control" value="${(n.law_ref||'').replace(/"/g,'&quot;')}" placeholder="법령 출처">
         </div>
         <div style="margin-bottom:10px">
           <label class="form-label">내용</label>
@@ -21347,11 +21347,11 @@ async function _editEduLegalNotice(key) {
       <div class="modal-body">
         <div style="margin-bottom:10px">
           <label class="form-label">카드 제목</label>
-          <input id="elnTitle" class="form-control" value="${(notice.title||'').replace(/"/g,'&quot;')}" placeholder="예: 정기교육 법적 기준">
+          <input id="elnTitle" type="text" autocomplete="off" inputmode="text" class="form-control" value="${(notice.title||'').replace(/"/g,'&quot;')}" placeholder="예: 정기교육 법적 기준">
         </div>
         <div style="margin-bottom:12px">
           <label class="form-label">서브타이틀 <span style="font-size:10px;color:#9CA3AF">(교육 페이지 상단 안내문구)</span></label>
-          <input id="elnLawRef" class="form-control" value="${(notice.law_ref||'').replace(/"/g,'&quot;')}" placeholder="예: 매 분기 실시 | 사무직 6h↑ / 그 외 12h↑ (산안법 제29조)">
+          <input id="elnLawRef" type="text" autocomplete="off" inputmode="text" class="form-control" value="${(notice.law_ref||'').replace(/"/g,'&quot;')}" placeholder="예: 매 분기 실시 | 사무직 6h↑ / 그 외 12h↑ (산안법 제29조)">
         </div>
         <div style="margin-bottom:8px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -26011,7 +26011,7 @@ function _renderRiskWorkflow(modal, r, allUsers) {
           <!-- 대책회의 일자/장소 + 수립 시작 버튼 -->
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <input type="date" id="rdMeetingDate" class="form-control" style="font-size:12px;width:145px" value="${kstDateStr()}" placeholder="대책회의 일자">
-            <input id="rdMeetingPlace" class="form-control" style="font-size:12px;flex:1" placeholder="대책회의 장소">
+            <input id="rdMeetingPlace" type="text" autocomplete="off" inputmode="text" class="form-control" style="font-size:12px;flex:1" placeholder="대책회의 장소">
             <button onclick="_startRiskReview(${r.id})"
               style="padding:7px 16px;background:#D70072;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">
               <i class="fas fa-arrow-right" style="margin-right:4px"></i>감소대책 수립 시작
@@ -27004,7 +27004,7 @@ async function showRiskRegisterModal(mode) {
       <div class="grid grid-cols-2 gap-3 mb-4">
         <div class="col-span-2">
           <label class="form-label">제목 <span class="text-red-500">*</span></label>
-          <input id="rrTitle" class="form-control" placeholder="${modeLabel} 위험성평가 제목">
+          <input id="rrTitle" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="${modeLabel} 위험성평가 제목">
         </div>
         <div>
           <label class="form-label">평가일 <span class="text-red-500">*</span></label>
@@ -27012,7 +27012,7 @@ async function showRiskRegisterModal(mode) {
         </div>
         <div>
           <label class="form-label">실시 장소</label>
-          <input id="rrLocation" class="form-control" placeholder="평가 실시 장소 (예: 현장사무소, 회의실)">
+          <input id="rrLocation" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="평가 실시 장소 (예: 현장사무소, 회의실)">
         </div>
         <div class="col-span-2">
           <label class="form-label" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
@@ -27119,13 +27119,13 @@ async function showRiskRegisterModal(mode) {
         <div class="grid grid-cols-1 gap-2">
           <div>
             <label class="form-label" style="font-size:11px">위험성 평가방법</label>
-            <input id="rrAssessmentMethod" class="form-control" style="font-size:12px"
+            <input id="rrAssessmentMethod" type="text" autocomplete="off" inputmode="text" class="form-control" style="font-size:12px"
               value="빈도·강도법(5×5 매트릭스)"
               placeholder="예: 빈도·강도법(5×5 매트릭스)">
           </div>
           <div>
             <label class="form-label" style="font-size:11px">허용 가능한 위험성 기준</label>
-            <input id="rrRiskCriteria" class="form-control" style="font-size:12px"
+            <input id="rrRiskCriteria" type="text" autocomplete="off" inputmode="text" class="form-control" style="font-size:12px"
               value="허용가능: 낮음(4점 이하) / 허용불가: 보통 이상(5점 이상)"
               placeholder="예: 낮음(≤4점) 허용 / 보통(5~9점) 이상 개선조치 필요">
           </div>
@@ -30590,11 +30590,11 @@ async function showEditTeamModal(teamId, currentName, currentDesc) {
     <div class="modal-body">
       <div class="form-group">
         <label class="form-label">팀명 <span class="text-red-500">*</span></label>
-        <input id="etName" class="form-control" value="${currentName}">
+        <input id="etName" type="text" autocomplete="off" inputmode="text" class="form-control" value="${currentName}">
       </div>
       <div class="form-group">
         <label class="form-label">설명</label>
-        <input id="etDesc" class="form-control" value="${currentDesc}">
+        <input id="etDesc" type="text" autocomplete="off" inputmode="text" class="form-control" value="${currentDesc}">
       </div>
     </div>
     <div class="modal-footer">
@@ -30708,11 +30708,11 @@ async function showCreateTeamModal() {
     <div class="modal-body">
       <div class="form-group">
         <label class="form-label">팀명 <span class="text-red-500">*</span></label>
-        <input id="ctName" class="form-control" placeholder="예: 외선2팀, 접속2팀" value="">
+        <input id="ctName" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="예: 외선2팀, 접속2팀" value="">
       </div>
       <div class="form-group">
         <label class="form-label">설명</label>
-        <input id="ctDesc" class="form-control" placeholder="팀 설명 (선택)">
+        <input id="ctDesc" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="팀 설명 (선택)">
       </div>
       <div class="form-group">
         <label class="form-label">팀원 선택 <span class="text-xs text-gray-400">(근로자만 표시)</span></label>
@@ -31542,8 +31542,8 @@ function showCreateUserModal() {
         <div class="grid grid-cols-2 gap-3">
           <div class="form-group"><label class="form-label">아이디 *</label><input id="uUsername" class="form-control" placeholder="로그인 아이디"></div>
           <div class="form-group"><label class="form-label">비밀번호 *</label><input id="uPassword" class="form-control" type="password" placeholder="비밀번호"></div>
-          <div class="form-group"><label class="form-label">이름 *</label><input id="uName" class="form-control" placeholder="실명"></div>
-          <div class="form-group"><label class="form-label">직급</label><input id="uGrade" class="form-control" placeholder="예) 대리, 과장 (직접 입력)"></div>
+          <div class="form-group"><label class="form-label">이름 *</label><input id="uName" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="실명"></div>
+          <div class="form-group"><label class="form-label">직급</label><input id="uGrade" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="예) 대리, 과장 (직접 입력)"></div>
           <div class="form-group col-span-2"><label class="form-label">역할 *</label>
             <select id="uRole" class="form-control" onchange="_onUserRoleChange('uRole','uDept','uPosition',true)">
               ${ROLE_UI_OPTIONS.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
@@ -31558,8 +31558,8 @@ function showCreateUserModal() {
           <i class="fas fa-building"></i> 소속 및 기본 정보
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <div class="form-group col-span-2"><label class="form-label">소속(회사명)</label><input id="uCompany" class="form-control" placeholder="소속 회사명"></div>
-          <div class="form-group"><label class="form-label">부서</label><input id="uDept" class="form-control" placeholder="부서명"></div>
+          <div class="form-group col-span-2"><label class="form-label">소속(회사명)</label><input id="uCompany" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="소속 회사명"></div>
+          <div class="form-group"><label class="form-label">부서</label><input id="uDept" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="부서명"></div>
           <div class="form-group"><label class="form-label">직책</label>
             <select id="uPosition" class="form-control">
               ${buildPositionOptions('worker', '')}
@@ -31576,7 +31576,7 @@ function showCreateUserModal() {
             </select>
           </div>
           <div class="form-group col-span-2"><label class="form-label">긴급연락처 <span class="text-xs text-gray-400">(이름/관계/전화번호)</span></label>
-            <input id="uEmergency" class="form-control" placeholder="예) 홍길동 / 배우자 / 010-1234-5678">
+            <input id="uEmergency" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="예) 홍길동 / 배우자 / 010-1234-5678">
           </div>
           <div class="form-group col-span-2"><label class="form-label">건강정보 <span class="text-xs text-gray-400">(지병, 복용약, 알레르기 등)</span></label>
             <textarea id="uHealthInfo" class="form-control" rows="2" placeholder="예) 고혈압, 아스피린 복용 중"></textarea>
@@ -31738,10 +31738,10 @@ async function showEditUserModal(id) {
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="form-group"><label class="form-label">이름</label>
-            <input id="euName" class="form-control" value="${u.name}">
+            <input id="euName" type="text" autocomplete="off" inputmode="text" class="form-control" value="${u.name}">
           </div>
           <div class="form-group"><label class="form-label">직급</label>
-            <input id="euGrade" class="form-control" value="${u.grade||''}" placeholder="예) 대리, 과장">
+            <input id="euGrade" type="text" autocomplete="off" inputmode="text" class="form-control" value="${u.grade||''}" placeholder="예) 대리, 과장">
           </div>
           <div class="form-group col-span-2"><label class="form-label">역할</label>
             <select id="euRole" class="form-control" onchange="_onUserRoleChange('euRole','euDept','euPosition',false)">
@@ -31763,11 +31763,11 @@ async function showEditUserModal(id) {
         <div class="grid grid-cols-2 gap-3">
           <div class="form-group col-span-2">
             <label class="form-label">소속(회사명)</label>
-            <input id="euCompany" class="form-control" value="${u.company||''}" placeholder="소속 회사명">
+            <input id="euCompany" type="text" autocomplete="off" inputmode="text" class="form-control" value="${u.company||''}" placeholder="소속 회사명">
           </div>
           <div class="form-group">
             <label class="form-label">부서</label>
-            <input id="euDept" class="form-control" value="${u.department||''}">
+            <input id="euDept" type="text" autocomplete="off" inputmode="text" class="form-control" value="${u.department||''}">
           </div>
           <div class="form-group">
             <label class="form-label">직책</label>
@@ -31793,7 +31793,7 @@ async function showEditUserModal(id) {
           </div>
           <div class="form-group col-span-2">
             <label class="form-label">긴급연락처 <span class="text-xs text-gray-400">(이름/관계/전화번호)</span></label>
-            <input id="euEmergency" class="form-control" value="${u.emergency_contact||''}" placeholder="예) 홍길동 / 배우자 / 010-1234-5678">
+            <input id="euEmergency" type="text" autocomplete="off" inputmode="text" class="form-control" value="${u.emergency_contact||''}" placeholder="예) 홍길동 / 배우자 / 010-1234-5678">
           </div>
           <div class="form-group col-span-2">
             <label class="form-label">건강정보 <span class="text-xs text-gray-400">(지병, 복용약, 알레르기 등)</span></label>
@@ -33045,15 +33045,15 @@ async function renderMyProfilePage(container) {
         <div class="grid grid-cols-2 gap-3 mb-3">
           <div class="form-group col-span-2">
             <label class="form-label">이름 <span style="color:#D70072">*</span></label>
-            <input id="mpName" class="form-control" value="${u.name}" placeholder="실명">
+            <input id="mpName" type="text" autocomplete="off" inputmode="text" class="form-control" value="${u.name}" placeholder="실명">
           </div>
           <div class="form-group col-span-2">
             <label class="form-label">소속(회사명)</label>
-            <input id="mpCompany" class="form-control" value="${u.company||''}" placeholder="소속 회사명">
+            <input id="mpCompany" type="text" autocomplete="off" inputmode="text" class="form-control" value="${u.company||''}" placeholder="소속 회사명">
           </div>
           <div class="form-group">
             <label class="form-label">부서</label>
-            <input id="mpDept" class="form-control" value="${u.department||''}" placeholder="부서명">
+            <input id="mpDept" type="text" autocomplete="off" inputmode="text" class="form-control" value="${u.department||''}" placeholder="부서명">
           </div>
           <div class="form-group">
             <label class="form-label">직책</label>
@@ -33071,7 +33071,7 @@ async function renderMyProfilePage(container) {
             <label class="form-label col-span-2">긴급연락처</label>
           </div>
           <div class="form-group col-span-2">
-            <input id="mpEmergency" class="form-control" value="${u.emergency_contact||''}" placeholder="예) 홍길동 / 배우자 / 010-1234-5678">
+            <input id="mpEmergency" type="text" autocomplete="off" inputmode="text" class="form-control" value="${u.emergency_contact||''}" placeholder="예) 홍길동 / 배우자 / 010-1234-5678">
           </div>
           <div class="form-group col-span-2">
             <label class="form-label">건강정보 <span class="text-xs text-gray-400">(지병, 복용약, 알레르기 등)</span></label>

@@ -52,7 +52,23 @@ app.route('/api/notifications', notificationRoutes)
 app.route('/api/legal-notices', legalNoticeRoutes)
 app.route('/api/work-reports', workReportRoutes)
 
-// Static files
+// Static files — 버전 민감 파일(app.js, style.css, service-worker.js)은
+// no-cache 헤더로 WebView/Cloudflare 캐시 우회 (BUG-166 Android WebView 미반영 수정)
+app.get('/static/app.js', async (c, next) => {
+  await next()
+  c.res.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+  c.res.headers.set('Pragma', 'no-cache')
+})
+app.get('/static/style.css', async (c, next) => {
+  await next()
+  c.res.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+  c.res.headers.set('Pragma', 'no-cache')
+})
+app.get('/service-worker.js', async (c, next) => {
+  await next()
+  c.res.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+  c.res.headers.set('Pragma', 'no-cache')
+})
 app.use('/static/*', serveStatic({ root: './' }))
 
 // 업로드된 원본 사진 파일 서빙 (/uploads/파일명)
@@ -351,7 +367,7 @@ app.get('*', (c) => {
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260726a"></script>
+  <script src="/static/app.js?v=20260726b"></script>
 </body>
 </html>`)
 })

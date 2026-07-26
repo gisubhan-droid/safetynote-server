@@ -26,6 +26,7 @@
 
 import { Hono } from 'hono'
 import { getRawDb, getUser } from '../nas-db'
+import { kstDateStr } from '../kst-utils'
 
 const app = new Hono()
 
@@ -732,7 +733,7 @@ export function createVolumeUnitPricesRoutes() {
     const csv = BOM + [header, ...lines].join('\r\n')
 
     c.header('Content-Type', 'text/csv; charset=utf-8')
-    c.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('외선단가_' + new Date().toISOString().slice(0,10) + '.csv')}`)
+    c.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('외선단가_' + kstDateStr() + '.csv')}`)
     return c.body(csv)
   })
 

@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { getUser, buildStoragePath } from '../utils'
+import { kstDateStr } from '../kst-utils'
 
 type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
@@ -206,9 +207,7 @@ app.post('/', async (c) => {
 
   if (!location) return c.json({ error: '점검 위치를 입력하세요.' }, 400)
 
-  const today = new Date().toLocaleDateString('ko-KR', {
-    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).replace(/\. /g, '-').replace('.', '')
+  const today = kstDateStr()
   const insDateOnly = inspection_date_only || today
 
   const result = await c.env.DB.prepare(

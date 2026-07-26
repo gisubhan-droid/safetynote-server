@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { getUser } from '../utils'
+import { kstDateTimeStr } from '../kst-utils'
 
 type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
@@ -393,9 +394,7 @@ app.patch('/:id/complete', async (c) => {
     ).bind(id).run()
 
     // KST 현재 시각
-    const nowTs = new Date()
-    const kstTs = new Date(nowTs.getTime() + 9 * 60 * 60 * 1000)
-    const kstStr = kstTs.toISOString().replace('T', ' ').slice(0, 19)
+    const kstStr = kstDateTimeStr(true)
 
     // ── 체크리스트 시행일시 + 작업 시작 주소 / 시작 일시 자동 기입
     //    + 작업 상태를 in_progress(위험성(체크리스트)평가 완료)로 자동 전환 ──

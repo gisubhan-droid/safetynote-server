@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { getUser } from '../utils'
 import { sendToUser } from '../sse'
+import { kstDateStr } from '../kst-utils'
 
 type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
@@ -166,9 +167,10 @@ app.post('/', async (c) => {
 
   try {
     // completion_date 기본값: 미입력 시 오늘+7일
-    const defaultCompletion = completion_date || new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0,10)
+    const d7 = new Date(Date.now() + 7*24*60*60*1000 + 9*3600*1000)
+    const defaultCompletion = completion_date || `${d7.getUTCFullYear()}-${String(d7.getUTCMonth()+1).padStart(2,'0')}-${String(d7.getUTCDate()).padStart(2,'0')}`
     // notification_date 기본값: 미입력 시 오늘(공사등록일)
-    const defaultNotification = notification_date || new Date().toISOString().slice(0,10)
+    const defaultNotification = notification_date || kstDateStr()
     const result = await c.env.DB.prepare(`
       INSERT INTO constructions
         (request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, created_by, is_auto_request_no, completion_date, notification_date, notification_amount)

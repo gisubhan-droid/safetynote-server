@@ -28,6 +28,7 @@ import { Hono } from 'hono'
 import { spawn, execSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { kstDateTimeStr } from '../kst-utils'
 
 // ─── 공식 서비스 버전 읽기 (package.json) ───────────────────────────────────
 function _getServiceVersion(): string {
@@ -851,8 +852,7 @@ app.post('/update/apply', async (c) => {
       _updateState.currentCommit = newCommit.stdout.trim()
       _updateState.updatedAt     = new Date().toISOString()
       // KST 반영 시각 (UTC+9)
-      const _kstNow = new Date(Date.now() + 9 * 3600 * 1000)
-      _updateState.appliedAt = _kstNow.toISOString().replace('T', ' ').slice(0, 19)
+      _updateState.appliedAt = kstDateTimeStr(false)
 
       // ── 3. npm run build (프론트엔드 dist 재빌드) ──────────────
       // BUG-049: git reset 후 빌드 없이 pm2 restart만 하면 dist/ 가 이전 버전 그대로 유지됨
@@ -1033,9 +1033,8 @@ app.post('/update/rollback', async (c) => {
 
       const newCommit = await runCmd('git', ['rev-parse', '--short', 'HEAD'], cwd, 5000)
       _updateState.currentCommit = newCommit.stdout.trim()
-      _updateState.updatedAt     = new Date().toISOString()
-      const kstNow = new Date(Date.now() + 9 * 3600 * 1000)
-      _updateState.appliedAt = kstNow.toISOString().replace('T', ' ').slice(0, 19)
+      _updateState.updatedAt = new Date().toISOString()
+      _updateState.appliedAt = kstDateTimeStr(false)
 
       // ── 3. npm run build ──────────────────────────────────────
       _updateState.status  = 'restarting'
@@ -1228,8 +1227,7 @@ app.post('/update/webhook', async (c) => {
       const hashRes = await runCmd('git', ['rev-parse', '--short', 'HEAD'], cwd, 5000)
       if (hashRes.code === 0) _updateState.currentCommit = hashRes.stdout.trim()
       _updateState.updatedAt = new Date().toISOString()
-      const _kstNow2 = new Date(Date.now() + 9 * 3600 * 1000)
-      _updateState.appliedAt = _kstNow2.toISOString().replace('T', ' ').slice(0, 19)
+      _updateState.appliedAt = kstDateTimeStr(false)
 
       // ── 3. npm run build ─────────────────────────────────────────
       _updateState.status  = 'restarting'

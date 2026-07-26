@@ -31,9 +31,11 @@ function safeFsName(s: string): string {
   return (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim()
 }
 
+import { kstDateStr } from '../kst-utils'
+
 /** 날짜 문자열 포맷 (YYYY-MM-DD) */
 function fmtDateStr(d: string | null | undefined): string {
-  if (!d) return new Date().toISOString().slice(0, 10)
+  if (!d) return kstDateStr()
   return String(d).slice(0, 10)
 }
 

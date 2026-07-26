@@ -12,6 +12,7 @@
 import { Hono } from 'hono'
 import { getRawDb, getUser } from '../nas-db'
 import { sendFcmPushMulti } from '../fcm'
+import { kstDateTimeStr } from '../kst-utils'
 // sendFcmToUsers는 push.ts 내 수동발송에서 직접 처리하므로 helper 불필요
 
 const app = new Hono()
@@ -229,7 +230,7 @@ app.get('/diagnose', async (c) => {
       const { sendFcmPush } = await import('../fcm')
       const result = await sendFcmPush(testToken, {
         title: '🔔 FCM 진단 테스트',
-        body: `SafetyNOTE FCM 테스트 — ${new Date().toLocaleString('ko-KR')}`,
+        body: `SafetyNOTE FCM 테스트 — ${kstDateTimeStr(false)}`,
         data: { type: 'diagnose_test' },
       })
       report.test_send = result.success

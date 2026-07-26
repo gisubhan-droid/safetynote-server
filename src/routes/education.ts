@@ -4,6 +4,7 @@
  */
 import { Hono } from 'hono'
 import { getUser } from '../utils'
+import { kstYear } from '../kst-utils'
 
 type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
@@ -142,7 +143,7 @@ app.get('/sessions', async (c) => {
   try {
     const { DB } = c.env
     const eduType = c.req.query('edu_type') || ''
-    const year    = c.req.query('year')     || new Date().getFullYear().toString()
+    const year    = c.req.query('year')     || kstYear().toString()
     const quarter = c.req.query('quarter')  || ''
     const page    = parseInt(c.req.query('page')  || '1')
     const limit   = parseInt(c.req.query('limit') || '20')
@@ -689,7 +690,7 @@ app.get('/stats', async (c) => {
 
   try {
     const { DB } = c.env
-    const year = parseInt(c.req.query('year') || new Date().getFullYear().toString())
+    const year = parseInt(c.req.query('year') || kstYear().toString())
 
     // 교육유형별 집계
     const typeSummary = (await DB.prepare(`

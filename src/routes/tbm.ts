@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { getUser } from '../utils'
 import { sendToUser } from '../sse'
+import { kstDateTimeStr } from '../kst-utils'
 
 type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
@@ -149,9 +150,7 @@ app.post('/', async (c) => {
   // ── 작업 시작 주소 / 시작 일시 자동 기입 ──────────────────────────────────
   // TBM GPS 주소가 있고, tasks.work_start_address 가 아직 비어 있으면 기입
   // (체크리스트에서 이미 기입된 경우 덮어쓰지 않음)
-  const tbmNow = new Date()
-  const tbmKst = new Date(tbmNow.getTime() + 9 * 60 * 60 * 1000)
-  const tbmTs = tbmKst.toISOString().replace('T', ' ').slice(0, 19)
+  const tbmTs = kstDateTimeStr(true)
 
   if (gps_address) {
     const taskRowAddr = await c.env.DB.prepare(

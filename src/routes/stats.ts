@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { getUser } from '../utils'
+import { kstDateStr, kstYear, kstMonth } from '../kst-utils'
 
 type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
@@ -36,9 +37,7 @@ app.get('/dashboard', async (c) => {
       ? `AND t.planned_date BETWEEN '${periodStart}' AND '${periodEnd}'`
       : ''
 
-    const today = new Date().toISOString().split('T')[0]
-
-    // [FEAT-048] LGU+ 역할 판별: role='lgu_plus' 단일 + 구버전 호환 (role='lgu', sub_role='lgu_plus')
+    const today = kstDateStr()
     const isLgu = user.role === 'lgu_plus' || user.role === 'lgu' || (user as any).sub_role === 'lgu_plus'
     // [BUG-081] 모든 쿼리를 't' 별칭으로 통일 — constructions.status와 tasks.status 모호성 방지
     // constructions 테이블에도 status 컬럼이 있으므로 반드시 t.컬럼명 형태로 명시 필요
@@ -122,7 +121,7 @@ app.get('/daily', async (c) => {
 
   try {
     const { date } = c.req.query()
-    const targetDate = date || new Date().toISOString().split('T')[0]
+    const targetDate = date || kstDateStr()
 
     const [tasks, logs] = await Promise.all([
       c.env.DB.prepare(

@@ -1,4 +1,4 @@
-// UTF-8 안전한 토큰 디코딩 유틸리티
+import { kstDateStr } from './kst-utils'
 export function decodeToken(token: string): any {
   const binary = atob(token)
   const bytes = new Uint8Array(binary.length)
@@ -71,7 +71,7 @@ function safeName(s: string): string {
 
 /** YYYY-MM-DD 형태로 날짜 반환 (work_date 가 null 이면 오늘) */
 function fmtDate(d: string | null | undefined): string {
-  if (!d) return new Date().toISOString().slice(0, 10)
+  if (!d) return kstDateStr()
   return String(d).slice(0, 10)
 }
 

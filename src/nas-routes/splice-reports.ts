@@ -22,6 +22,7 @@
 
 import { Hono } from 'hono'
 import { getRawDb, getUser, dbRoleToUi } from '../nas-db'
+import { kstDateStr } from '../kst-utils'
 
 // ─── splice-reports 라우트 ────────────────────────────────────────────────────
 const spliceApp = new Hono()
@@ -703,7 +704,7 @@ export function createSpliceUnitPricesRoutes() {
     const csv = BOM + [header, ...lines].join('\r\n')
 
     c.header('Content-Type', 'text/csv; charset=utf-8')
-    c.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('접속단가_' + new Date().toISOString().slice(0,10) + '.csv')}`)
+    c.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('접속단가_' + kstDateStr() + '.csv')}`)
     return c.body(csv)
   })
 

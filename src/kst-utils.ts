@@ -31,9 +31,31 @@
 // ─── 내부 헬퍼 ──────────────────────────────────────────────────────────────
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000  // UTC+9 = 32,400,000ms
 
+/**
+ * UTC 문자열을 UTC로 강제 파싱 (timezone 미명시 문자열 대응)
+ * SQLite CURRENT_TIMESTAMP → "YYYY-MM-DD HH:MM:SS" 형식 (timezone 없음)
+ * Node.js가 Asia/Seoul TZ로 실행될 경우 new Date('2026-07-26 05:20:00')이
+ * KST로 해석되어 +9h 변환 시 원래 UTC 값처럼 보이는 버그 방지
+ */
+function _parseAsUTC(s: string): Date {
+  // 이미 timezone 명시 있음 (ISO Z, +HH:MM, -HH:MM 등)
+  if (s.includes('Z') || s.match(/[+-]\d{2}:?\d{2}$/)) {
+    return new Date(s)
+  }
+  // timezone 없음 → UTC로 강제 해석 ('Z' 추가)
+  return new Date(s.replace(' ', 'T') + 'Z')
+}
+
 /** UTC Date 또는 UTC 문자열을 KST 기준 Date 객체로 반환 */
 function _toKSTDate(v: Date | string | number): Date {
-  const ms = typeof v === 'number' ? v : new Date(v).getTime()
+  let ms: number
+  if (typeof v === 'number') {
+    ms = v
+  } else if (v instanceof Date) {
+    ms = v.getTime()
+  } else {
+    ms = _parseAsUTC(v).getTime()
+  }
   return new Date(ms + KST_OFFSET_MS)
 }
 
@@ -107,7 +129,7 @@ export function nowForDB(): string {
  */
 export function toKST(raw: string | null | undefined): Date | null {
   if (!raw) return null
-  const d = new Date(raw)
+  const d = _parseAsUTC(raw)
   if (isNaN(d.getTime())) return null
   return _toKSTDate(d)
 }
@@ -118,7 +140,7 @@ export function toKST(raw: string | null | undefined): Date | null {
  */
 export function toKSTDateTime(raw: string | null | undefined): string {
   if (!raw) return '-'
-  const d = new Date(raw)
+  const d = _parseAsUTC(raw)
   if (isNaN(d.getTime())) return raw.slice(0, 16).replace('T', ' ')
   return _fmt(_toKSTDate(d), true, false)
 }
@@ -129,7 +151,7 @@ export function toKSTDateTime(raw: string | null | undefined): string {
  */
 export function toKSTDateTimeSec(raw: string | null | undefined): string {
   if (!raw) return '-'
-  const d = new Date(raw)
+  const d = _parseAsUTC(raw)
   if (isNaN(d.getTime())) return raw.slice(0, 19).replace('T', ' ')
   return _fmt(_toKSTDate(d), true, true)
 }
@@ -140,7 +162,7 @@ export function toKSTDateTimeSec(raw: string | null | undefined): string {
  */
 export function toKSTDate(raw: string | null | undefined): string {
   if (!raw) return '-'
-  const d = new Date(raw)
+  const d = _parseAsUTC(raw)
   if (isNaN(d.getTime())) return raw.slice(0, 10)
   return _fmt(_toKSTDate(d), false)
 }
@@ -175,7 +197,12 @@ export function toKSTDateKo(raw: string | null | undefined): string {
 export const KST_JS_HELPER = `
 function _toKSTDateTime(raw) {
   if (!raw) return '-';
-  var d = new Date(raw);
+  // timezone 미명시 문자열은 UTC로 강제 파싱 (브라우저/Node TZ 설정 무관)
+  var s = String(raw);
+  if (!s.includes('Z') && !s.match(/[+\\-]\\d{2}:?\\d{2}$/)) {
+    s = s.replace(' ', 'T') + 'Z';
+  }
+  var d = new Date(s);
   if (isNaN(d.getTime())) return raw.slice(0,16).replace('T',' ');
   var kst = new Date(d.getTime() + 9*60*60*1000);
   var yy=kst.getUTCFullYear(), mo=String(kst.getUTCMonth()+1).padStart(2,'0'),

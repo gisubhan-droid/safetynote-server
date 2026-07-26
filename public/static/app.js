@@ -22286,36 +22286,87 @@ async function renderAdminSettingsPage(container, _activeTab) {
         </div>
 
         <!-- ── 슬레이브 NAS 자동 릴레이 섹션 ────────────────────────────── -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 border border-purple-100 mt-4">
-          <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
-            <i class="fas fa-network-wired text-purple-500"></i> 슬레이브 NAS 자동 릴레이
-          </h3>
-          <p class="text-xs text-gray-400 mb-4">
-            GitHub에서 APK를 수신하면 이 NAS(마스터)가 아래 등록된 NAS들에게 자동으로 APK를 전달합니다.<br>
-            슬레이브 NAS의 <span class="font-mono bg-gray-100 px-1 rounded">외부 주소(DDNS URL)</span>만 등록하면 됩니다.
-          </p>
+        <div class="bg-white rounded-2xl shadow-sm border border-purple-100 mt-4" id="relay-accordion-wrap">
 
-          <!-- URL 입력 + 추가 -->
-          <div class="flex gap-2 mb-4 flex-wrap">
-            <input type="text" id="relay-url-input"
-              class="form-control flex-1 font-mono text-xs"
-              placeholder="https://nas002.myds.me:3443"
-              onkeydown="if(event.key==='Enter') _addRelayTarget()">
-            <input type="text" id="relay-name-input"
-              class="form-control text-xs" style="max-width:140px"
-              placeholder="NAS 이름 (선택)"
-              onkeydown="if(event.key==='Enter') _addRelayTarget()">
-            <button onclick="_addRelayTarget()" id="relay-add-btn"
-              class="flex-shrink-0 flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all"
-              style="background:linear-gradient(135deg,#7c3aed,#4f46e5)">
-              <i class="fas fa-plus"></i> 추가
-            </button>
-          </div>
+          <!-- 아코디언 헤더 (항상 표시) -->
+          <button type="button" onclick="_toggleRelayAccordion()"
+            class="w-full flex items-center justify-between px-5 py-4 text-left rounded-2xl hover:bg-purple-50 transition-colors"
+            id="relay-accordion-btn">
+            <span class="flex items-center gap-2 font-bold text-gray-700">
+              <i class="fas fa-network-wired text-purple-500"></i>
+              슬레이브 NAS 자동 릴레이
+              <span id="relay-count-badge" class="text-xs font-normal text-purple-500 bg-purple-50 border border-purple-200 rounded-full px-2 py-0.5 ml-1 hidden"></span>
+            </span>
+            <i id="relay-accordion-chevron" class="fas fa-chevron-down text-gray-400 transition-transform duration-200"></i>
+          </button>
 
-          <!-- 슬레이브 목록 테이블 -->
-          <div id="relay-targets-table" class="overflow-x-auto">
-            <div class="flex items-center gap-2 text-xs text-gray-400 py-3">
-              <i class="fas fa-spinner fa-spin"></i> 목록 불러오는 중...
+          <!-- 아코디언 바디 (기본 숨김) -->
+          <div id="relay-accordion-body" class="hidden px-5 pb-5">
+            <p class="text-xs text-gray-400 mb-4">
+              GitHub에서 APK를 수신하면 이 NAS(마스터)가 아래 등록된 NAS들에게 자동으로 APK를 전달합니다.<br>
+              슬레이브 NAS의 <span class="font-mono bg-gray-100 px-1 rounded">외부 주소(DDNS URL)</span>만 등록하면 됩니다.
+            </p>
+
+            <!-- 배치 전송 설정 -->
+            <div class="mb-4 p-3 bg-purple-50 border border-purple-100 rounded-xl">
+              <p class="text-xs font-semibold text-purple-700 mb-2 flex items-center gap-1">
+                <i class="fas fa-sliders-h"></i> 배치 전송 설정
+                <span class="text-xs font-normal text-gray-400 ml-1">— NAS 수가 많을 때 마스터 부하 분산</span>
+              </p>
+              <div class="flex gap-3 flex-wrap items-end">
+                <div>
+                  <label class="text-xs text-gray-500 block mb-1">배치당 NAS 수</label>
+                  <div class="flex items-center gap-1">
+                    <input type="number" id="relay-batch-size" min="1" max="50" value="3"
+                      class="form-control text-xs font-mono text-center" style="width:70px">
+                    <span class="text-xs text-gray-400">대</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="text-xs text-gray-500 block mb-1">배치 간 대기</label>
+                  <div class="flex items-center gap-1">
+                    <input type="number" id="relay-batch-delay" min="0" max="300" value="10"
+                      class="form-control text-xs font-mono text-center" style="width:70px">
+                    <span class="text-xs text-gray-400">초</span>
+                  </div>
+                </div>
+                <button onclick="_saveRelaySettings()" id="relay-settings-save-btn"
+                  class="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold text-white transition-all"
+                  style="background:linear-gradient(135deg,#7c3aed,#4f46e5)">
+                  <i class="fas fa-save"></i> 저장
+                </button>
+                <span id="relay-settings-saved" class="text-xs text-green-600 hidden">
+                  <i class="fas fa-check-circle"></i> 저장됨
+                </span>
+              </div>
+              <p class="text-xs text-gray-400 mt-2">
+                <i class="fas fa-info-circle mr-1"></i>
+                예) 3대씩 10초 간격 → 30대 NAS에 배포 시 약 90초 소요 (각 NAS는 30초 타임아웃 내 처리)
+              </p>
+            </div>
+
+            <!-- URL 입력 + 추가 -->
+            <div class="flex gap-2 mb-4 flex-wrap">
+              <input type="text" id="relay-url-input"
+                class="form-control flex-1 font-mono text-xs"
+                placeholder="https://nas002.myds.me:3443"
+                onkeydown="if(event.key==='Enter') _addRelayTarget()">
+              <input type="text" id="relay-name-input"
+                class="form-control text-xs" style="max-width:140px"
+                placeholder="NAS 이름 (선택)"
+                onkeydown="if(event.key==='Enter') _addRelayTarget()">
+              <button onclick="_addRelayTarget()" id="relay-add-btn"
+                class="flex-shrink-0 flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all"
+                style="background:linear-gradient(135deg,#7c3aed,#4f46e5)">
+                <i class="fas fa-plus"></i> 추가
+              </button>
+            </div>
+
+            <!-- 슬레이브 목록 테이블 -->
+            <div id="relay-targets-table" class="overflow-x-auto">
+              <div class="flex items-center gap-2 text-xs text-gray-400 py-3">
+                <i class="fas fa-spinner fa-spin"></i> 목록 불러오는 중...
+              </div>
             </div>
           </div>
         </div>
@@ -22728,7 +22779,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
     if (firstTab === 'push')   _loadFcmStatus();
     if (firstTab === 'info')   _loadDbResetCounts();
     if (firstTab === 'update') _updLoadStatus();
-    if (firstTab === 'apk')    _loadRelayTargets();
+    // APK 탭: 아코디언이 기본 닫힘 — 열기 버튼 클릭 시 로드됨 (_toggleRelayAccordion)
     // push 탭이 아닐 때도 FCM 상태 필요하므로 push 탭 진입 시 로드 (switchSettingsTab에서 처리)
 
   } catch(e) {
@@ -22756,7 +22807,7 @@ function switchSettingsTab(key) {
   if (key === 'push')    _loadFcmStatus();
   if (key === 'info')    _loadDbResetCounts();
   if (key === 'update')  _updLoadStatus();
-  if (key === 'apk')     _loadRelayTargets();
+  // APK 탭: 아코디언이 기본 닫힘 — 열기 버튼 클릭 시 로드됨 (_toggleRelayAccordion)
   // [v0.142 LGU+] lgu 탭 진입 시 최신 설정 리로드
   if (key === 'lgu')     _reloadLguTabSettings();
   // [FEAT-027] 그룹별 권한 탭 진입 시 로드
@@ -23929,16 +23980,50 @@ async function _apkClearSettings() {
 
 // ─── 슬레이브 NAS 릴레이 관리 함수들 ────────────────────────────────────────
 
+/** 릴레이 아코디언 토글 (헤더 클릭) */
+function _toggleRelayAccordion() {
+  const body    = document.getElementById('relay-accordion-body');
+  const chevron = document.getElementById('relay-accordion-chevron');
+  if (!body) return;
+  const isOpen = !body.classList.contains('hidden');
+  if (isOpen) {
+    body.classList.add('hidden');
+    if (chevron) chevron.style.transform = '';
+  } else {
+    body.classList.remove('hidden');
+    if (chevron) chevron.style.transform = 'rotate(180deg)';
+    // 열릴 때 목록 + 설정 로드
+    _loadRelayTargets();
+  }
+}
+
 /**
- * 슬레이브 NAS 목록 조회 후 테이블 렌더링
+ * 슬레이브 NAS 목록 조회 후 테이블 렌더링 + 배지 업데이트 + 배치 설정 로드
  * GET /api/dist/apk/relay/targets
+ * GET /api/dist/apk/relay/settings
  */
 async function _loadRelayTargets() {
   const container = document.getElementById('relay-targets-table');
   if (!container) return;
+
+  // 배치 설정도 함께 로드
+  _loadRelaySettings();
+
   try {
     const res = await API.get('/dist/apk/relay/targets');
     const targets = res.data?.targets || [];
+
+    // 헤더 배지 업데이트
+    const badge = document.getElementById('relay-count-badge');
+    if (badge) {
+      if (targets.length > 0) {
+        const activeCount = targets.filter(t => t.active).length;
+        badge.textContent = `${activeCount}/${targets.length}대 활성`;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
 
     if (targets.length === 0) {
       container.innerHTML = `
@@ -23962,6 +24047,7 @@ async function _loadRelayTargets() {
       const lastAt = t.last_relay_at
         ? `<span class="text-xs text-gray-400">${t.last_relay_at.replace('T',' ').slice(0,16)}</span>`
         : '<span class="text-xs text-gray-300">-</span>';
+      const safeName = (t.name || t.url).replace(/'/g, "\\'").replace(/"/g, '&quot;');
       return `
         <tr class="border-b border-gray-100 hover:bg-purple-50 transition-colors">
           <td class="py-2 px-3 text-xs font-medium text-gray-700">${t.name || '<span class="text-gray-300">-</span>'}</td>
@@ -23974,7 +24060,7 @@ async function _loadRelayTargets() {
           <td class="py-2 px-3 text-center">${statusBadge}</td>
           <td class="py-2 px-3 text-center">${lastAt}</td>
           <td class="py-2 px-3 text-center">
-            <button onclick="_deleteRelayTarget(${t.id}, '${(t.name || t.url).replace(/'/g,"\\'")}'')"
+            <button onclick="_deleteRelayTarget(${t.id}, '${safeName}')"
               class="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded hover:bg-red-50 transition-colors">
               <i class="fas fa-trash-alt"></i>
             </button>
@@ -24001,6 +24087,48 @@ async function _loadRelayTargets() {
     if (container) {
       container.innerHTML = `<div class="text-xs text-red-400 py-2"><i class="fas fa-exclamation-circle mr-1"></i>${errMsg}</div>`;
     }
+  }
+}
+
+/**
+ * 배치 설정 로드 → 입력 필드에 반영
+ * GET /api/dist/apk/relay/settings
+ */
+async function _loadRelaySettings() {
+  try {
+    const res = await API.get('/dist/apk/relay/settings');
+    const batchSizeEl  = document.getElementById('relay-batch-size');
+    const batchDelayEl = document.getElementById('relay-batch-delay');
+    if (batchSizeEl  && res.data?.batch_size  !== undefined) batchSizeEl.value  = res.data.batch_size;
+    if (batchDelayEl && res.data?.batch_delay_sec !== undefined) batchDelayEl.value = res.data.batch_delay_sec;
+  } catch(_) { /* 설정 없으면 기본값 유지 */ }
+}
+
+/**
+ * 배치 설정 저장
+ * PATCH /api/dist/apk/relay/settings  { batch_size, batch_delay_sec }
+ */
+async function _saveRelaySettings() {
+  const batchSizeEl  = document.getElementById('relay-batch-size');
+  const batchDelayEl = document.getElementById('relay-batch-delay');
+  const btn          = document.getElementById('relay-settings-save-btn');
+  const savedMsg     = document.getElementById('relay-settings-saved');
+
+  const batch_size      = parseInt(batchSizeEl?.value  || '3',  10);
+  const batch_delay_sec = parseInt(batchDelayEl?.value || '10', 10);
+
+  if (isNaN(batch_size)  || batch_size  < 1)  { toast('배치당 NAS 수는 1 이상이어야 합니다.', 'error'); return; }
+  if (isNaN(batch_delay_sec) || batch_delay_sec < 0) { toast('대기 시간은 0초 이상이어야 합니다.', 'error'); return; }
+
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+  try {
+    await API.patch('/dist/apk/relay/settings', { batch_size, batch_delay_sec });
+    if (savedMsg) { savedMsg.classList.remove('hidden'); setTimeout(() => savedMsg?.classList.add('hidden'), 2500); }
+    toast(`배치 설정 저장 — ${batch_size}대씩 / ${batch_delay_sec}초 간격`, 'success');
+  } catch(e) {
+    toast(e.response?.data?.error || '설정 저장 실패', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> 저장'; }
   }
 }
 

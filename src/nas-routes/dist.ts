@@ -58,7 +58,14 @@ function apkFilePath(): string {
   return join(getUploadRootNow(), 'apk', 'safetynote.apk')
 }
 
+// ─── sleep 헬퍼 ──────────────────────────────────────────────────────────────
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
 // ─── 슬레이브 NAS 릴레이 헬퍼 (비동기, 실패해도 메인 응답 영향 없음) ────────
+// 배치 전송: relay_batch_size 대씩 묶어 병렬 전송, 배치 간 relay_batch_delay_sec 초 대기
+// system_settings 키:
+//   relay_batch_size      — 배치당 NAS 수 (기본 3)
+//   relay_batch_delay_sec — 배치 간 대기(초) (기본 10)
 async function relayApkToSlaves(payload: {
   version: string
   apk_url: string
@@ -75,7 +82,7 @@ async function relayApkToSlaves(payload: {
   let targets: { id: number; name: string; url: string }[] = []
   try {
     targets = rawDb
-      .prepare(`SELECT id, name, url FROM apk_relay_targets WHERE active = 1`)
+      .prepare(`SELECT id, name, url FROM apk_relay_targets WHERE active = 1 ORDER BY id ASC`)
       .all() as { id: number; name: string; url: string }[]
   } catch (e: any) {
     console.warn('[APK Relay] 슬레이브 목록 조회 실패:', e.message)
@@ -87,7 +94,15 @@ async function relayApkToSlaves(payload: {
     return
   }
 
-  console.log(`[APK Relay] 슬레이브 ${targets.length}대 릴레이 시작 — v${payload.version}`)
+  // 배치 설정값 읽기 (system_settings, 없으면 기본값)
+  const batchSize  = Math.max(1, parseInt(getSetting('relay_batch_size')      || '3',  10))
+  const batchDelay = Math.max(0, parseInt(getSetting('relay_batch_delay_sec') || '10', 10)) * 1000
+
+  const totalBatches = Math.ceil(targets.length / batchSize)
+  console.log(
+    `[APK Relay] 슬레이브 ${targets.length}대 배치 릴레이 시작 — v${payload.version} ` +
+    `| ${batchSize}대씩 ${totalBatches}배치, 배치 간 ${batchDelay / 1000}초 대기`
+  )
 
   const relayPayload = JSON.stringify({
     secret:       secret,
@@ -97,43 +112,52 @@ async function relayApkToSlaves(payload: {
     force_update: payload.force_update,
   })
 
-  // 병렬 전송 (각 슬레이브 독립 처리)
-  const results = await Promise.allSettled(
-    targets.map(async (target) => {
-      const endpoint = `${target.url.replace(/\/+$/, '')}/api/dist/apk/webhook`
-      const startAt = new Date().toISOString()
+  // 단일 NAS 전송 헬퍼
+  const sendOne = async (target: { id: number; name: string; url: string }) => {
+    const endpoint = `${target.url.replace(/\/+$/, '')}/api/dist/apk/webhook`
+    const startAt  = new Date().toISOString()
+    try {
+      const res = await fetch(endpoint, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': 'SafetyNOTE-Relay/1.0' },
+        body:    relayPayload,
+        signal:  AbortSignal.timeout(30_000), // 30초 타임아웃
+      })
+      const statusText = res.ok ? `OK(${res.status})` : `FAIL(${res.status})`
+      console.log(`[APK Relay] ${target.name || target.url} → ${statusText}`)
       try {
-        const res = await fetch(endpoint, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'User-Agent': 'SafetyNOTE-Relay/1.0' },
-          body:    relayPayload,
-          signal:  AbortSignal.timeout(30_000), // 30초 타임아웃
-        })
-        const statusText = res.ok ? `OK(${res.status})` : `FAIL(${res.status})`
-        console.log(`[APK Relay] ${target.name || target.url} → ${statusText}`)
-        // last_relay_at / last_relay_status 업데이트
-        try {
-          rawDb.prepare(
-            `UPDATE apk_relay_targets SET last_relay_at = ?, last_relay_status = ? WHERE id = ?`
-          ).run(startAt, statusText, target.id)
-        } catch (_) { /* DB 업데이트 실패 무시 */ }
-        return { id: target.id, status: statusText }
-      } catch (err: any) {
-        const errMsg = `ERROR: ${err.message}`
-        console.error(`[APK Relay] ${target.name || target.url} → ${errMsg}`)
-        try {
-          rawDb.prepare(
-            `UPDATE apk_relay_targets SET last_relay_at = ?, last_relay_status = ? WHERE id = ?`
-          ).run(startAt, errMsg.slice(0, 100), target.id)
-        } catch (_) { /* DB 업데이트 실패 무시 */ }
-        return { id: target.id, status: errMsg }
-      }
-    })
-  )
+        rawDb.prepare(
+          `UPDATE apk_relay_targets SET last_relay_at = ?, last_relay_status = ? WHERE id = ?`
+        ).run(startAt, statusText, target.id)
+      } catch (_) { /* DB 업데이트 실패 무시 */ }
+      return { id: target.id, ok: res.ok }
+    } catch (err: any) {
+      const errMsg = `ERROR: ${err.message}`
+      console.error(`[APK Relay] ${target.name || target.url} → ${errMsg}`)
+      try {
+        rawDb.prepare(
+          `UPDATE apk_relay_targets SET last_relay_at = ?, last_relay_status = ? WHERE id = ?`
+        ).run(startAt, errMsg.slice(0, 100), target.id)
+      } catch (_) { /* DB 업데이트 실패 무시 */ }
+      return { id: target.id, ok: false }
+    }
+  }
 
-  const okCount   = results.filter(r => r.status === 'fulfilled' && (r.value as any).status?.startsWith('OK')).length
-  const failCount = targets.length - okCount
-  console.log(`[APK Relay] 완료 — 성공 ${okCount}대 / 실패 ${failCount}대`)
+  // 배치 단위 순차 전송 (배치 내부는 병렬)
+  let totalOk = 0
+  for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+    const batch = targets.slice(batchIdx * batchSize, (batchIdx + 1) * batchSize)
+    console.log(`[APK Relay] 배치 ${batchIdx + 1}/${totalBatches} — ${batch.length}대 전송 중...`)
+    const results = await Promise.allSettled(batch.map(sendOne))
+    totalOk += results.filter(r => r.status === 'fulfilled' && (r.value as any).ok).length
+    // 마지막 배치가 아니면 대기
+    if (batchIdx < totalBatches - 1 && batchDelay > 0) {
+      console.log(`[APK Relay] 다음 배치까지 ${batchDelay / 1000}초 대기...`)
+      await sleep(batchDelay)
+    }
+  }
+
+  console.log(`[APK Relay] 전체 완료 — 성공 ${totalOk}대 / 실패 ${targets.length - totalOk}대`)
 }
 
 // ─── GET /apk/version ────────────────────────────────────────────────────────
@@ -446,6 +470,53 @@ app.patch('/apk/relay/targets/:id', async (c) => {
   } catch (e: any) {
     console.error('[APK Relay] 슬레이브 토글 오류:', e.message)
     return c.json({ error: '상태 변경 실패', detail: e.message }, 500)
+  }
+})
+
+// ─── GET /apk/relay/settings ─────────────────────────────────────────────────
+// 배치 릴레이 설정 조회 (관리자 전용)
+// 반환: { batch_size, batch_delay_sec }
+app.get('/apk/relay/settings', (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  return c.json({
+    success: true,
+    batch_size:       parseInt(getSetting('relay_batch_size')      || '3',  10),
+    batch_delay_sec:  parseInt(getSetting('relay_batch_delay_sec') || '10', 10),
+  })
+})
+
+// ─── PATCH /apk/relay/settings ───────────────────────────────────────────────
+// 배치 릴레이 설정 저장 (관리자 전용)
+// Body: { batch_size?: number, batch_delay_sec?: number }
+app.patch('/apk/relay/settings', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const body = await c.req.json() as { batch_size?: number; batch_delay_sec?: number }
+
+  const batchSize  = Math.max(1, Math.min(50, parseInt(String(body.batch_size      ?? 3),  10)))
+  const batchDelay = Math.max(0, Math.min(300, parseInt(String(body.batch_delay_sec ?? 10), 10)))
+
+  const rawDb = getRawDb()
+  const upsert = (key: string, val: string) =>
+    rawDb.prepare(
+      `INSERT INTO system_settings(key,value) VALUES(?,?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`
+    ).run(key, val)
+
+  try {
+    upsert('relay_batch_size',      String(batchSize))
+    upsert('relay_batch_delay_sec', String(batchDelay))
+    await reloadSysSettings()
+    console.log(`[APK Relay] 배치 설정 저장 — ${batchSize}대/${batchDelay}초`)
+    return c.json({ success: true, batch_size: batchSize, batch_delay_sec: batchDelay })
+  } catch (e: any) {
+    console.error('[APK Relay] 배치 설정 저장 오류:', e.message)
+    return c.json({ error: '설정 저장 실패', detail: e.message }, 500)
   }
 })
 

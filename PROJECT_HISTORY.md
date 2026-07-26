@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 83 — APK 슬레이브 NAS 자동 릴레이 기능 추가)
-> **GitHub 최신: `67a0e42`** — feat: [세션83] APK 릴레이 배포 기능 추가 (슬레이브 NAS 자동 전달)
+> 최종 업데이트: 2026-07-26 (세션 84 — kst-utils UTC 파싱 버그 수정)
+> **GitHub 최신: `9a97b31`** — fix: [세션84] kst-utils UTC 파싱 버그 수정 — TZ=Asia/Seoul 환경 대응
+> **이전 커밋: `010dcd7`** — feat: [세션83-B] APK 릴레이 배치 전송 + 아코디언 UI 개선
+> **이전 커밋: `67a0e42`** — feat: [세션83] APK 릴레이 배포 기능 추가 (슬레이브 NAS 자동 전달)
 > **이전 커밋: `dba60fb`** — refactor: [세션82] src/ 전체 위험 날짜 패턴 kst-utils로 전수 교체 (27곳)
 > **이전 커밋: `27790c5`** — docs: [세션81] Phase 4 문서 내용 보강 완료 — NAS_INSTALL_GUIDE.md + USER_GUIDE.md v2.0
 > **이전 커밋: `6a2eb2d`** — release: [세션80] 최종 버전 태깅 완료 — 서버 V2.0.0 + APK v2.0.0 동시 릴리즈
@@ -10004,7 +10006,71 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 
 ---
 
-## 세션 82 (2026-07-26)
+## 세션 83-B (2026-07-26)
+
+### 주요 작업: APK 릴레이 배치 전송 + 아코디언 UI 개선
+
+#### 배경
+- 세션 83에서 구현한 병렬 전송을 배치 순차 전송으로 개선 (마스터 NAS 부하 분산)
+- 슬레이브 NAS 섹션 아코디언 UI 적용 (기본 접힘 → 헤더 클릭 시 펼침)
+
+#### 변경 파일
+
+**`src/nas-routes/dist.ts`**
+- `sleep(ms)` 헬퍼 추가
+- `relayApkToSlaves()` 재작성: 병렬 → 배치 순차 전송
+  - `relay_batch_size` 대씩 병렬, 배치 간 `relay_batch_delay_sec`초 대기
+- `GET  /apk/relay/settings` — 배치 설정 조회 (`relay_batch_size`, `relay_batch_delay_sec`)
+- `PATCH /apk/relay/settings` — 배치 설정 저장 (system_settings 키 사용)
+
+**`public/static/app.js`**
+- 슬레이브 NAS 섹션 아코디언 UI:
+  - 기본 접힘, 헤더 클릭 시 펼침, chevron 회전 애니메이션
+  - 배지(N/M대 활성) 표시
+- 배치 설정 UI: 배치당 NAS 수 + 대기 초 + [저장] 버튼
+- 신규 함수: `_toggleRelayAccordion()`, `_loadRelaySettings()`, `_saveRelaySettings()`
+- `switchSettingsTab` + `renderAdminSettingsPage`: APK 탭 자동 로드 제거 (아코디언 열기 시만 로드)
+
+#### 빌드 결과
+- `npm run build`: ✅ `dist/_worker.js 287.58 kB`
+
+#### 커밋
+- `feat: [세션83-B] APK 릴레이 배치 전송 + 아코디언 UI 개선` (`010dcd7`)
+
+---
+
+## 세션 84 (2026-07-26)
+
+### 주요 작업: kst-utils UTC 파싱 버그 수정 (TBM 공유 페이지 시간 버그 근본 원인 해결)
+
+#### 버그 재현 조건
+- NAS 서버가 `TZ=Asia/Seoul` 환경변수로 실행될 때
+- `new Date('2026-07-26 05:20:00')` — timezone 미명시 문자열을 **로컬 TZ(KST)로 해석**
+- `+9h` 변환 시: `05:20 KST = 2026-07-25 20:20 UTC` + `9h` = `2026-07-26 05:20` → **원래 UTC 값처럼 보임**
+- 결과: TBM 공유 페이지(`/tbm-share/:token`)에서 `2026-07-26 05:20` (UTC) 그대로 표시
+
+#### 수정 내용
+
+**`src/kst-utils.ts`**
+- `_parseAsUTC(s: string): Date` 헬퍼 추가
+  - timezone 미명시 문자열 → `T` + `Z` 붙여 UTC로 강제 파싱
+  - 이미 `Z`, `+HH:MM`, `-HH:MM` 등 명시된 경우 그대로 `new Date(s)`
+- 적용 범위: `_toKSTDate()`, `toKST()`, `toKSTDateTime()`, `toKSTDateTimeSec()`, `toKSTDate()` 전체
+- `KST_JS_HELPER` (브라우저 인라인 JS): 동일 로직 적용
+
+#### 검증
+- `TZ=Asia/Seoul` 환경 node 테스트:
+  - `'2026-07-26 05:20:00'` → `2026-07-26 14:20` ✅
+  - `'2026-07-26T05:20:00'` → `2026-07-26 14:20` ✅
+  - `'2026-07-26T05:20:00Z'` → `2026-07-26 14:20` ✅
+- `npm run build`: ✅ `dist/_worker.js 287.72 kB`
+- `tsc --noEmit`: 신규 오류 0건
+
+#### 커밋
+- `fix: [세션84] kst-utils UTC 파싱 버그 수정 — TZ=Asia/Seoul 환경 대응` (`9a97b31`)
+
+---
+
 
 ### 작업 개요
 - DECK-1 슬라이드 최종 완성 (25장)

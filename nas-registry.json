@@ -11,10 +11,9 @@
   "nas_list": [
     {
       "id": "NAS001",
-      "name": "본사 NAS",
-      "url": "https://example1.myds.me:3443",
-      "active": false,
-      "_note": "등록 예시 - 실제 주소로 변경하세요"
+      "name": "LinkMak 본사",
+      "url": "https://linkmax.myds.me:3443",
+      "active": true
     }
   ]
 }

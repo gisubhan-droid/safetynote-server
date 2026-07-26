@@ -1,7 +1,7 @@
 # SafetyNOTE — 작업 대기 목록
 
 > 최초 작성: 2026-06-19 (세션 37)
-> 마지막 업데이트: 2026-07-26 (세션 87 완전 마무리)
+> 마지막 업데이트: 2026-07-26 (세션 88 마무리)
 >
 > ⚠️ 번호는 우선순위가 아님
 > ⚠️ 완료 항목은 하단 "✅ 완료된 작업"으로 이동
@@ -10,7 +10,11 @@
 
 ## 📋 현재 대기 목록
 
-> 세션 87 완전 마무리 기준 — 긴급/필수 작업 없음. 선택적 개선만 남아있음.
+> 세션 88 기준 — 긴급 버그 수정 1건 대기 중.
+
+| 항목 | 내용 | 상태 | 우선순위 |
+|------|------|------|----------|
+| **TS2339 수정** | `node-server.ts` 7756/7813 — `app.fetch().then()` → `Promise.resolve(app.fetch()).then()` 패턴 2곳 수정 후 `tsc --noEmit` + 빌드 검증 + commit | ⏳ 대기 | **중간** |
 
 ---
 
@@ -75,3 +79,6 @@
 | docs/APK_BUILD_GUIDE.md 최초 작성 | 세션 87 | `bf1be78` |
 | docs/BUILD_AND_DEPLOY_GUIDE.md 최초 작성 | 세션 87 | `f5d3d2f` |
 | BUGFIX_LOG.md BUG-166/167/IME/168 기록 정리 완료 | 세션 87 마무리 | `0eb439f` |
+| docs/skills/ 스킬 3개 작성 (android-ime-guard / kst-datetime-utils / github-actions-dispatch) | 세션 88 | `33e8c30` |
+| node-server.ts TS2339 오류 원인 분석 완료 (수정 미착수 → 다음 세션 예정) | 세션 88 | — |
+| src/index.tsx 로그인/프로필 페이지 LG스마트체 Regular 적용 | 세션 88 | `b69e80b` |

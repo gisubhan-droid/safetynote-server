@@ -1,8 +1,11 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 87 완전 마무리 — BUGFIX_LOG BUG-166/167/IME/168 기록 정리)
-> **GitHub 최신 (safetynote-server): `0eb439f`** — docs(BUGFIX_LOG): BUG-166/167/IME/168 기록 추가 (2026-07-26)
+> 최종 업데이트: 2026-07-26 (세션 88 — node-server.ts TS2339 오류 분석, LG스마트체 로그인페이지 적용)
+> **GitHub 최신 (safetynote-server): `b69e80b`** — style: 로그인/프로필 페이지 LG스마트체 Regular 적용 (src/index.tsx)
 > **GitHub 최신 (safetynote-android): `a172a6f`** — fix: [BUG-IME] captureInput false — APK v1.4.15 빌드 완료
+> **이전 커밋 (server): `33e8c30`** — docs: [스킬화] docs/skills/ 3개 스킬 문서 추가
+> **이전 커밋 (server): `24b45e7`** — docs: [세션87 완전마무리] PROJECT_HISTORY + PENDING_TASKS 최종 정리
+> **이전 커밋 (server): `0eb439f`** — docs(BUGFIX_LOG): BUG-166/167/IME/168 기록 추가 (2026-07-26)
 > **이전 커밋 (server): `f5d3d2f`** — docs: [세션87] 서버 빌드/배포 가이드 최초 작성
 > **이전 커밋 (server): `26fba0f`** — fix: [BUG-168] 검색 input 한글 IME 자음/모음 분리 입력 수정
 > **이전 커밋 (server): `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
@@ -10360,6 +10363,74 @@ curl -X POST \
 | APK v1.4.15 빌드 (GitHub Actions) | ✅ success, 5.0MB |
 | APK v1.4.15 현장 검증 | ✅ 현장 배포 후 정상 확인 |
 | BUG-168 현장 검증 | ✅ 현장 확인 완료 |
+
+---
+
+## 세션 88 (2026-07-26)
+
+### 작업 A — node-server.ts TS2339 오류 분석
+
+**배경**: 이전 세션에서 "node-server.ts 7756/7813 오류가 있다"는 언급이 있었으나 미기록 상태였음.
+
+**분석 과정**:
+1. `npx tsc --noEmit --skipLibCheck` 실행으로 실제 오류 확인
+2. 오류: `TS2339: Property 'then' does not exist on type 'Response | Promise<Response>'`
+3. **원인**: Hono `app.fetch()` 반환 타입이 `Response | Promise<Response>` union — `Response` 타입에는 `.then()` 없음
+4. **위치**: `node-server.ts` 7756라인 (HTTPS 서버), 7813라인 (HTTP port 3444 FCM 전용 서버)
+
+**확인된 오류 코드**:
+```typescript
+// line 7754~7756 (HTTPS 서버)
+app.fetch(
+  new Request(`https://...`, { ... } as any),
+  { incoming: req, outgoing: res } as any
+).then((honoRes: Response) => {   // ← TS2339
+
+// line 7811~7813 (HTTP port 3444)
+app.fetch(
+  new Request(`http://...`, { ... } as any),
+  { incoming: req, outgoing: res } as any
+).then((honoRes: Response) => {   // ← TS2339
+```
+
+**수정 방안 (미적용, 다음 세션 예정)**:
+```typescript
+// Promise.resolve() 래핑으로 해결
+Promise.resolve(
+  app.fetch(new Request(...), { incoming: req, outgoing: res } as any)
+).then((honoRes: Response) => { ... })
+```
+
+**상태**: 원인 분석 완료, 수정 미착수 — 다음 세션에서 진행 예정
+
+---
+
+### 작업 B — 웹 폰트 "LG스마트체 Regular" 전체 적용
+
+**배경**: 폰트 파일(`LGSmartKR-regular/semibold/bold.woff2`)은 `/public/static/fonts/`에 이미 존재하고, `style.css`의 `@font-face` 및 `body { font-family: 'LG Smart KR', ... }` 설정도 완비되어 있었으나, **로그인/프로필 페이지(`src/index.tsx`)만 별도 인라인 스타일에서 `'Apple SD Gothic Neo', 'Noto Sans KR'`을 사용하여 LG스마트체 미적용 상태**였음.
+
+**수정 내용** (`src/index.tsx` line 119):
+- `@font-face` 3종 (regular 400 / semibold 600 / bold 700) 인라인 추가
+- `body font-family`: `'Apple SD Gothic Neo', 'Noto Sans KR'` → `'LG Smart KR', 'Apple SD Gothic Neo', 'Malgun Gothic'`
+
+**수정 파일**: `src/index.tsx`
+**커밋**: `b69e80b` — style: 로그인/프로필 페이지 LG스마트체 Regular 적용 (src/index.tsx)
+
+### 세션 88 전체 커밋 요약 (safetynote-server)
+
+| 커밋 | 내용 |
+|------|------|
+| `33e8c30` | docs: [스킬화] docs/skills/ 3개 스킬 문서 추가 |
+| `24b45e7` | docs: [세션87 완전마무리] PROJECT_HISTORY + PENDING_TASKS 최종 정리 |
+| `b69e80b` | style: 로그인/프로필 페이지 LG스마트체 Regular 적용 |
+
+### 세션 88 전체 빌드/배포 상태
+
+| 항목 | 결과 |
+|------|------|
+| `npm run build` | ✅ 성공 (`dist/_worker.js 288.74 kB`) |
+| GitHub push (safetynote-server) | ✅ main `b69e80b` |
+| node-server.ts TS2339 수정 | ⏳ 분석 완료, 수정 다음 세션 예정 |
 
 ---
 

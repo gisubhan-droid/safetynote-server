@@ -3428,8 +3428,13 @@ async function generateTbmApprovalPdf(tbmId: number): Promise<void> {
     const dateStr  = kstDateStr().replace(/-/g, '')
     const filePath = join(saveDir, `TBM결과보고_${dateStr}.pdf`)
 
-    const fmtDt = (v?: string) =>
-      v ? new Date(v).toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '-'
+    const fmtDt = (v?: string) => {
+      if (!v) return '-'
+      const d = new Date(v)
+      if (isNaN(d.getTime())) return v.slice(0, 16).replace('T', ' ')
+      const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+      return kst.toLocaleDateString('ko-KR', { timeZone: 'UTC', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })
+    }
     const fmtD = (v?: string) =>
       v ? new Date(v).toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' }) : '-'
     const esc = (s: any) => String(s ?? '-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -6525,6 +6530,19 @@ app.get('/tbm-share/:token/photo/:photoId', async (c) => {
 function _esc(s: any): string {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
 }
+// UTC 날짜 문자열 → KST(UTC+9) 기준 "YYYY-MM-DD HH:MM" 변환 (공유 페이지용)
+function _toKSTStr(raw?: string): string {
+  if (!raw) return '-'
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return raw.slice(0, 16).replace('T', ' ')
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  const yy  = kst.getUTCFullYear()
+  const mo  = String(kst.getUTCMonth() + 1).padStart(2, '0')
+  const dd  = String(kst.getUTCDate()).padStart(2, '0')
+  const hh  = String(kst.getUTCHours()).padStart(2, '0')
+  const mn  = String(kst.getUTCMinutes()).padStart(2, '0')
+  return `${yy}-${mo}-${dd} ${hh}:${mn}`
+}
 app.get('/tbm-share/:token', async (c) => {
   const token = c.req.param('token')
   const shareRow = rawDb.prepare(
@@ -6696,7 +6714,7 @@ app.get('/tbm-share/:token', async (c) => {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div><div class="label">담당자</div><div class="value">${_esc(tbm.supervisor_name || tbm.conductor_name) || '-'}</div></div>
         <div><div class="label">TBM 실시자</div><div class="value">${_esc(tbm.conductor_name) || '-'}</div></div>
-        <div><div class="label">TBM 실시 일시</div><div class="value">${_esc((tbm.tbm_date || '').slice(0, 16).replace('T', ' '))}</div></div>
+        <div><div class="label">TBM 실시 일시</div><div class="value">${_esc(_toKSTStr(tbm.tbm_date))}</div></div>
         <div><div class="label">날씨/기온</div><div class="value">${_esc(tbm.weather) || '-'} / ${tbm.temperature != null ? _esc(tbm.temperature) + '°C' : '-'}</div></div>
       </div>
       ${gpsAddr ? `

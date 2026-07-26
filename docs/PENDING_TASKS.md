@@ -10,11 +10,27 @@
 
 ## 📋 현재 대기 목록
 
-> 세션 88 BUG-169 수정 완료 기준 — 긴급/필수 작업 없음. 선택적 개선만 남아있음.
+> 세션 89 완료 기준.
 
 | Phase | 내용 | 상태 | 우선순위 |
 |-------|------|------|----------|
+| PERF-001 | 서명 처리 로딩 개선 — 3중 지연 구조 해소 (모니터링 후 결정) | 🔍 모니터링 중 | 중간 |
 | Phase 3 | node-server.ts 라우트 파일 분리 (코드 구조 정리) | ⏳ 대기 | 낮음 (선택적) |
+
+### 🔍 PERF-001 상세 — 서명 처리 로딩 지연 (세션 89 분석 완료)
+
+| 원인 | 위치 | 내용 | 예상 개선 |
+|------|------|------|-----------|
+| **①** sign_data PNG 크기 | `app.js` `showSignaturePad()` `toDataURL('image/png')` | dpr 반영 고해상도 캔버스 → Base64 약 70~200KB 전송 | **1순위** — JPEG 80% 압축 시 70~80% 감소 |
+| **②** FCM 순차 발송 | `src/fcm.ts` `sendFcmPushMulti()` | 토큰 수만큼 Google API 순차 호출 (for await loop) | 병렬화(`Promise.all`) 또는 FCM batch API 전환 |
+| **③** 서명 완료 후 API 4회 재호출 | `app.js` `_signReqSign()` 완료 후 | PATCH 1 + GET count 1 + GET×3 (pending/signed/rejected) | 낙관적 UI 업데이트로 재조회 횟수 감소 |
+
+**적용 방안 (우선순위 순)**:
+1. `toDataURL('image/png')` → `toDataURL('image/jpeg', 0.8)` 변경 (`app.js` 1줄)
+2. `sendFcmPushMulti` for-await → `Promise.all` 병렬화 (`src/fcm.ts`)
+3. `_signReqSign` 완료 후 count 중복 조회 제거 (`app.js`)
+
+> ⚠️ 모니터링 기간 이후 사용자 확인 후 적용 예정
 
 ---
 

@@ -9955,3 +9955,58 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 - GitHub push → ✅ `7e0bad1c` (NAS_INSTALL_GUIDE.md v2.0), `1ebee708` (USER_GUIDE.md v2.0)
 - `node --check` → ✅ (세션 78 기준 유지)
 - `npm run build` → ✅ (세션 78 기준 유지)
+
+---
+
+## 세션 82 (2026-07-26)
+
+### 작업 개요
+- DECK-1 슬라이드 최종 완성 (25장)
+- GitHub Actions 배치 전송 시스템 개선 (100대+ NAS 지원)
+- 업데이트 탭 공식 버전 표시 추가
+
+### 주요 변경사항
+
+#### 1. 슬라이드 작업 (DECK-1)
+| 항목 | 내용 |
+|------|------|
+| 슬라이드 11 | `linkmax.myds.me` → `여러분의NAS주소` 수정 (노란색 강조) |
+| 슬라이드 12~17 | 그룹 3 — 초기 설정 화면 스크린샷 기반 6장 제작 |
+| 슬라이드 18~22 | 그룹 4 — Watchdog/외부접속/체크리스트 5장 제작 |
+| 슬라이드 23~25 | GitHub Secrets/nas-registry.json 안내 3장 추가 |
+
+#### 2. GitHub Actions 배치 전송 시스템
+| 파일 | 변경 내용 |
+|------|-----------|
+| `nas-registry.json` | NAS 목록 파일 기반 관리 (100대+ 지원), NAS001(linkmax) 등록 |
+| `.github/workflows/build-server.yml` | nas-registry.json 배치 전송 v2, timeout 30분, Secret 1개로 축소 |
+| `.github/workflows/build-apk.yml` | nas-registry.json 배치 전송 방식 적용 |
+
+#### 3. 업데이트 탭 공식 버전 표시 추가
+| 파일 | 변경 내용 |
+|------|-----------|
+| `package.json` | `"version": "2.0.0"` 필드 추가 |
+| `src/nas-routes/admin.ts` | `_getServiceVersion()` 헬퍼 추가, `/api/admin/update/status` 응답에 `serviceVersion` 포함 |
+| `public/static/app.js` | 업데이트 탭 현재 버전 카드에 `upd-service-version` 표시 (녹색 굵은 글씨) |
+
+**업데이트 탭 버전 표시 순서:**
+```
+현재 버전 (NAS)
+v2.0.0           ← 공식 서비스 버전 (초록색)
+cfdcbf3          ← Git 커밋 해시 (개발자용)
+V5.39_2607261226 ← 빌드 태그 (날짜/시각)
+```
+
+### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `662854d` | feat: [세션82] 업데이트 탭에 공식 서비스 버전(v2.0.0) 표시 추가 |
+
+### 빌드/배포 상태
+- `npm run build` → ✅ 성공 (`dist/_worker.js 287.31 kB`)
+- GitHub push → ✅ `cfdcbf3..662854d` main
+- GitHub Actions 배치 전송 테스트 → ✅ 성공 (NAS HTTP 403 수신 → 연결 성공)
+
+### 미완료 항목
+- DECK-2~5 사용자 설명서 제작 (미착수)

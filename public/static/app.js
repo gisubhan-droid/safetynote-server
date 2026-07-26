@@ -540,28 +540,33 @@ function getKSTTime() {
   return `${hh}:${mm}`;
 }
 
-// UTC 날짜/시각 문자열 → KST 기준 "YYYY-MM-DD HH:MM" 변환 (현장위치 지도용)
+// UTC 날짜/시각 문자열 → 브라우저 로컬 타임존 기준 "YYYY-MM-DD HH:MM" 변환
+// [Option A] 서버는 UTC 문자열 그대로 전달, 브라우저가 접속 기기의 로컬 TZ로 자동 변환
 // 입력: ISO8601 문자열('2026-06-16T05:30:00Z', '2026-06-16 05:30:00' 등) 또는 날짜만('2026-06-16')
-// 출력: "2026-06-16 14:30" (KST) 또는 날짜만 있으면 "2026-06-16"
+// 출력: 브라우저 로컬TZ 기준 "2026-06-16 14:30" 또는 날짜만 있으면 "2026-06-16"
 function _toKSTDateTime(raw) {
   if (!raw) return '';
   try {
     // 날짜만 있는 경우(10자리): 시간 변환 불필요 — 그대로 반환
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) return raw.trim().substring(0, 10);
-    // 공백 구분자를 T로 교체 후 파싱
-    const iso = raw.trim().replace(' ', 'T');
-    // 'Z' 없으면 UTC로 가정하여 +00:00 붙이기
-    const isoUtc = iso.endsWith('Z') || iso.includes('+') ? iso : iso + '+00:00';
-    const d = new Date(isoUtc);
+    var s = raw.trim();
+    // timezone 미명시 시 UTC로 강제 파싱 (SQLite CURRENT_TIMESTAMP 대응)
+    if (!s.includes('Z') && !s.match(/[+-]\d{2}:?\d{2}$/)) {
+      s = s.replace(' ', 'T') + 'Z';
+    } else {
+      s = s.replace(' ', 'T');
+    }
+    var d = new Date(s);
     if (isNaN(d.getTime())) return raw.substring(0, 10); // 파싱 실패 시 날짜만 반환
-    // UTC → KST (+9h)
-    const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-    const yy = kst.getUTCFullYear();
-    const mo = String(kst.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(kst.getUTCDate()).padStart(2, '0');
-    const hh = String(kst.getUTCHours()).padStart(2, '0');
-    const mm = String(kst.getUTCMinutes()).padStart(2, '0');
-    return `${yy}-${mo}-${dd} ${hh}:${mm}`;
+    // 브라우저 로컬 TZ로 자동 변환 (ko-KR 포맷 → YYYY-MM-DD HH:MM 정규화)
+    var loc = d.toLocaleString('ko-KR', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    });
+    // "2026. 06. 16. 14:30" → "2026-06-16 14:30"
+    var m = loc.match(/(\d{4})\.\s*(\d{2})\.\s*(\d{2})\.\s*(\d{2}):(\d{2})/);
+    if (m) return m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5];
+    return raw.substring(0, 10);
   } catch (_) {
     return raw.substring(0, 10);
   }
@@ -1382,30 +1387,50 @@ function downloadCSV(filename, headers, rows) {
   URL.revokeObjectURL(url);
 }
 
-// ── KST(Asia/Seoul) 기준 날짜·시간 포맷 전역 헬퍼 ──────────────────────────
-const _KST = { timeZone: 'Asia/Seoul' };
+// ── 날짜·시간 포맷 전역 헬퍼 ──────────────────────────────────────────────
+// [Option A] formatDate/formatDateTime: 브라우저 로컬 TZ 자동 적용 (서버 UTC → 브라우저 변환)
+// _KST_FIXED / _KST: 입력폼 기본값·인쇄·필터용 KST 고정 (현재 시각 표시 전용)
+const _KST_FIXED = { timeZone: 'Asia/Seoul' };
+const _KST = _KST_FIXED; // 하위 호환 유지 — 현재 시각 기반 표시용 (KST 고정 필요)
+
+// DB에서 오는 UTC 문자열을 안전하게 Date 객체로 파싱
+// timezone 미명시 시 'Z' 추가하여 UTC 강제 파싱 (SQLite CURRENT_TIMESTAMP 대응)
+function _parseUTCString(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  var s = String(v).trim().replace(' ', 'T');
+  if (!s.includes('Z') && !s.match(/[+-]\d{2}:?\d{2}$/)) s += 'Z';
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
 
 function formatDate(d) {
   if (!d) return '-';
-  return new Date(d).toLocaleDateString('ko-KR', { year:'2-digit', month:'2-digit', day:'2-digit', ..._KST });
+  var dt = _parseUTCString(d);
+  if (!dt) return '-';
+  // 브라우저 로컬 TZ로 자동 변환
+  return dt.toLocaleDateString('ko-KR', { year:'2-digit', month:'2-digit', day:'2-digit' });
 }
 
 function formatDateTime(d) {
   if (!d) return '-';
-  return new Date(d).toLocaleString('ko-KR', { year:'2-digit', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', ..._KST });
+  var dt = _parseUTCString(d);
+  if (!dt) return '-';
+  // 브라우저 로컬 TZ로 자동 변환
+  return dt.toLocaleString('ko-KR', { year:'2-digit', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 
-// KST 기준 오늘 날짜 문자열 (YYYY-MM-DD)
+// KST 기준 오늘 날짜 문자열 (YYYY-MM-DD) — 입력폼 기본값용, KST 고정 유지
 function kstDateStr(date) {
   const d = date || new Date();
-  return d.toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', ..._KST })
+  return d.toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', ..._KST_FIXED })
     .replace(/\. /g, '-').replace('.', '').trim();
 }
 
-// KST 기준 현재 datetime-local 입력값 (YYYY-MM-DDTHH:MM)
+// KST 기준 현재 datetime-local 입력값 (YYYY-MM-DDTHH:MM) — 입력폼 기본값용, KST 고정 유지
 function kstDateTimeLocal(date) {
   const d = date || new Date();
-  const [datePart, timePart] = d.toLocaleString('sv-SE', _KST).split(' ');
+  const [datePart, timePart] = d.toLocaleString('sv-SE', _KST_FIXED).split(' ');
   return datePart + 'T' + timePart.slice(0, 5);
 }
 

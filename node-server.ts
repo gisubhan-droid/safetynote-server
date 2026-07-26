@@ -6754,7 +6754,7 @@ app.get('/tbm-share/:token', async (c) => {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div><div class="label">담당자</div><div class="value">${_esc(tbm.supervisor_name || tbm.conductor_name) || '-'}</div></div>
         <div><div class="label">TBM 실시자</div><div class="value">${_esc(tbm.conductor_name) || '-'}</div></div>
-        <div><div class="label">TBM 실시 일시</div><div class="value">${_esc(toKSTDateTime(tbm.tbm_date || tbm.created_at))}</div></div>
+        <div><div class="label">TBM 실시 일시</div><div class="value" id="_tbm-date-display" data-utc="${_esc(tbm.tbm_date || tbm.created_at || '')}">${_esc(toKSTDateTime(tbm.tbm_date || tbm.created_at))}</div></div>
         <div><div class="label">날씨/기온</div><div class="value">${_esc(tbm.weather) || '-'} / ${tbm.temperature != null ? _esc(tbm.temperature) + '°C' : '-'}</div></div>
       </div>
       ${gpsAddr ? `
@@ -6803,6 +6803,41 @@ app.get('/tbm-share/:token', async (c) => {
   </div>
 
   <script>
+    // ── [Option A] data-utc → 브라우저 로컬 TZ 변환 ──────────────────────────
+    // 서버가 UTC 원본 문자열을 data-utc 속성으로 전달, 브라우저가 로컬 TZ로 표시
+    (function() {
+      function _parseUTC(s) {
+        if (!s) return null;
+        var t = s.trim();
+        // 날짜만(10자리)이면 변환 없이 그대로 반환 신호로 null 대신 특수 처리
+        if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
+        t = t.replace(' ', 'T');
+        if (!t.includes('Z') && !t.match(/[+-]\d{2}:?\d{2}$/)) t += 'Z';
+        var d = new Date(t);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      function _fmtLocal(d) {
+        if (!d) return '';
+        var loc = d.toLocaleString('ko-KR', {
+          year:'numeric', month:'2-digit', day:'2-digit',
+          hour:'2-digit', minute:'2-digit', hour12:false
+        });
+        var m = loc.match(/(\d{4})\.\s*(\d{2})\.\s*(\d{2})\.\s*(\d{2}):(\d{2})/);
+        if (m) return m[1]+'-'+m[2]+'-'+m[3]+' '+m[4]+':'+m[5];
+        return loc;
+      }
+      var el = document.getElementById('_tbm-date-display');
+      if (el) {
+        var utcStr = el.getAttribute('data-utc');
+        if (utcStr && /^\d{4}-\d{2}-\d{2}$/.test(utcStr.trim())) {
+          // 날짜만 있는 경우 그대로 표시
+          el.textContent = utcStr.trim().substring(0, 10);
+        } else {
+          var d = _parseUTC(utcStr);
+          if (d) el.textContent = _fmtLocal(d);
+        }
+      }
+    })();
     // ── 라이트박스 ──────────────────────────────────────────────────────────────
     function _lbOpen(src, cap) {
       document.getElementById('_lb-img').src = src;

@@ -83,3 +83,5 @@
 | node-server.ts TS2339 오류 원인 분석 완료 (수정 미착수 → 다음 세션 예정) | 세션 88 | — |
 | src/index.tsx 로그인/프로필 페이지 LG스마트체 Regular 적용 | 세션 88 | `b69e80b` |
 | BUG-169: node-server.ts app.fetch() TS2339 타입 오류 수정 (Promise.resolve 래핑) | 세션 88 | `e664b34` |
+| FEAT-170: 서명요청 renderCard() 내용 보기 링크 추가 (_signReqOpenRisk helper + ref_type별 버튼) | 세션 89 | `b1a539b` |
+| UI: 시스템 설정 메뉴를 법령안내 관리 아래로 이동 (NAV 배열 + 트리 메뉴 2곳) | 세션 89 | `6e18fd7` |

@@ -3,6 +3,23 @@
    버전: v3.0 (20260705a) — PLAN-UI-001 Option C (아이콘 레일 + 플라이아웃)
    ===================================================== */
 
+// ── BUG-168: 전역 IME 조합 상태 가드 ──────────────────────────────────────────
+// Android WebView에서 한글 입력 시 compositionstart/compositionend 이벤트를 사용해
+// oninput 핸들러가 IME 조합 중간값(ㅎ, ㅎㅏ, ㅎㅏㄴ)을 읽어 검색/필터 함수를
+// 잘못 호출하는 문제 방지.
+// 사용법: oninput 핸들러 앞에 if(window._imeComposing) return; 추가
+var _imeComposing = false;
+document.addEventListener('compositionstart', function() { _imeComposing = true; });
+document.addEventListener('compositionend',   function() {
+  _imeComposing = false;
+  // compositionend 직후 input 이벤트가 발화하지 않는 브라우저 대비 — 직접 fire
+  var ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+    ae.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ══════════════════════════════════════════════════════════════════════════════
 // 테마 시스템
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4146,9 +4163,9 @@ async function renderConstructionsPage(container) {
       <!-- ⑤ 키워드 검색 -->
       <div class="flex-1" style="min-width:140px">
         <div class="relative">
-          <input id="conKeyword" class="form-control" placeholder="공사명 / 요청번호 검색"
+          <input id="conKeyword" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="공사명 / 요청번호 검색"
             value="${_conFilters.keyword}" style="padding-left:32px"
-            onkeydown="if(event.key==='Enter'){_conFilters.keyword=this.value;_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))}">
+            onkeydown="if(event.key==='Enter'&&!event.isComposing){_conFilters.keyword=this.value;_conFilters.page=1;renderConstructionsPage(document.getElementById('page-content'))}">
           <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" style="font-size:13px;left:10px;top:50%;transform:translateY(-50%);position:absolute"></i>
         </div>
       </div>
@@ -6893,11 +6910,11 @@ async function renderTasksPage(container) {
             <option value="task_number" ${taskFilters.search_type==='task_number'?'selected':''}>작업번호</option>
           </select>
           <div class="relative" style="flex:1">
-            <input type="text" id="keywordInput"
+            <input type="text" id="keywordInput" autocomplete="off" inputmode="text"
               class="form-control" style="border-radius:0;border-right:none;font-size:12px;padding-left:32px;width:100%"
               placeholder="${taskFilters.search_type==='task_number' ? 'WKS-번호 입력' : taskFilters.search_type==='request_no' ? '요청번호 입력' : '공사명 입력'}"
               value="${taskFilters.keyword||''}"
-              onkeydown="if(event.key==='Enter'){ taskFilters.keyword=this.value; taskFilters.page=1; renderTasksPage(document.getElementById('page-content')); }"
+              onkeydown="if(event.key==='Enter'&&!event.isComposing){ taskFilters.keyword=this.value; taskFilters.page=1; renderTasksPage(document.getElementById('page-content')); }"
             >
             <i class="fas fa-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:12px;pointer-events:none"></i>
           </div>
@@ -15918,9 +15935,9 @@ async function renderMyTasksPage(container) {
       <div class="mb-2" style="position:relative">
         <div style="display:flex;align-items:center;background:#fff;border:1.5px solid ${activeSearchKw ? '#D70072' : '#E5E7EB'};border-radius:14px;padding:0 12px;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,0.06);transition:border-color .2s">
           <i class="fas fa-search" style="color:${activeSearchKw ? '#D70072' : '#C6C6C6'};font-size:14px;flex-shrink:0"></i>
-          <input id="myTasksSearchInput" type="search" inputmode="search" placeholder="등록건명 또는 공사담당자 검색"
+          <input id="myTasksSearchInput" type="text" autocomplete="off" inputmode="text" placeholder="등록건명 또는 공사담당자 검색"
             value="${activeSearchKw.replace(/"/g,'&quot;')}"
-            oninput="applyMyTasksSearch(this.value)"
+            oninput="if(!_imeComposing)applyMyTasksSearch(this.value)"
             style="flex:1;border:none;outline:none;font-size:14px;padding:11px 0;background:transparent;color:#374151;min-width:0"
             autocomplete="off" autocorrect="off" spellcheck="false">
           ${activeSearchKw ? `<button onclick="applyMyTasksSearch('');document.getElementById('myTasksSearchInput').value=''" style="background:none;border:none;padding:4px;cursor:pointer;color:#C6C6C6;font-size:16px;line-height:1;flex-shrink:0" aria-label="검색 초기화"><i class="fas fa-times-circle"></i></button>` : ''}
@@ -21845,9 +21862,9 @@ async function renderAdminSettingsPage(container, _activeTab) {
           <!-- 검색 -->
           <div class="relative mb-3">
             <i class="fas fa-search absolute left-2.5 top-2 text-gray-300 text-xs"></i>
-            <input id="fcm-user-search" type="text" placeholder="이름 또는 역할 검색..."
+            <input id="fcm-user-search" type="text" autocomplete="off" inputmode="text" placeholder="이름 또는 역할 검색..."
               class="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-blue-300"
-              oninput="_fcmRenderList()">
+              oninput="if(!_imeComposing)_fcmRenderList()">
           </div>
 
           <!-- 사용자 목록 -->
@@ -25971,9 +25988,9 @@ function _renderRiskWorkflow(modal, r, allUsers) {
           <!-- 검색 필터 -->
           <div style="margin-bottom:8px;position:relative">
             <i class="fas fa-search" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:11px"></i>
-            <input id="rdMemberSearch" type="text" placeholder="이름 검색..."
+            <input id="rdMemberSearch" type="text" autocomplete="off" inputmode="text" placeholder="이름 검색..."
                    style="width:100%;padding:6px 8px 6px 28px;border:1px solid #D8D0DC;border-radius:8px;font-size:12px;box-sizing:border-box"
-                   oninput="_filterRdMembers(this.value)">
+                   oninput="if(!_imeComposing)_filterRdMembers(this.value)">
           </div>
 
           <!-- 전체선택 / 선택해제 -->
@@ -29622,9 +29639,9 @@ async function renderUsersPage(container) {
         <div class="relative flex items-center gap-2">
           <div class="relative flex-1">
             <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
-            <input id="userSearchInput" type="text" placeholder="이름, 아이디, 연락처, 부서, 직위, 팀으로 검색..."
+            <input id="userSearchInput" type="text" autocomplete="off" inputmode="text" placeholder="이름, 아이디, 연락처, 부서, 직위, 팀으로 검색..."
               class="form-control pl-9 pr-9 text-sm" style="border-radius:12px;border:1.5px solid #D8D0DC"
-              oninput="filterUserList(this.value)">
+              oninput="if(!_imeComposing)filterUserList(this.value)">
             <button id="userSearchClear" onclick="clearUserSearch()"
               class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 hidden">
               <i class="fas fa-times-circle"></i>
@@ -34071,11 +34088,11 @@ async function renderWorkStopsPage(container) {
       <div class="flex gap-2 items-center mb-3 flex-wrap">
         <div class="flex-1 min-w-0 relative">
           <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-          <input type="text" id="wsSearch" value="${searchKeyword}"
+          <input type="text" id="wsSearch" autocomplete="off" inputmode="text" value="${searchKeyword}"
             placeholder="작업명·신고자·비고 검색"
             class="w-full pl-8 pr-3 py-2 text-sm border rounded-lg focus:outline-none"
             style="border-color:#E5E7EB"
-            oninput="_wsOnSearch(this.value)">
+            oninput="if(!_imeComposing)_wsOnSearch(this.value)">
         </div>
         <input type="date" id="wsStart" value="${startDate}"
           class="text-xs border rounded-lg px-2 py-2" style="border-color:#E5E7EB"
@@ -34774,8 +34791,8 @@ async function showEduSessionModal(sessionId, eduType) {
           <!-- 검색 필터 -->
           <div class="relative mb-2">
             <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-xs"></i>
-            <input type="text" id="edu-user-search"
-              oninput="_eduFilterUsers(this.value)"
+            <input type="text" id="edu-user-search" autocomplete="off" inputmode="text"
+              oninput="if(!_imeComposing)_eduFilterUsers(this.value)"
               class="w-full border border-gray-200 rounded-xl pl-8 pr-3 py-2 text-sm outline-none"
               placeholder="이름·부서로 검색">
           </div>

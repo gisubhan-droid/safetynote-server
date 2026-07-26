@@ -3055,6 +3055,28 @@ function patchSchema() {
     }
   }
 
+  // ─── patchSchema v0.172: APK 릴레이 대상(슬레이브 NAS) 테이블 신규 생성 ─────
+  // 목적: 마스터 NAS가 GitHub에서 APK 수신 후 슬레이브 NAS들에게 자동 릴레이 전송
+  //       슬레이브는 기존 POST /apk/webhook 엔드포인트를 그대로 재사용 (코드 수정 불필요)
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS apk_relay_targets (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        name              TEXT    NOT NULL DEFAULT '',
+        url               TEXT    NOT NULL UNIQUE,
+        active            INTEGER NOT NULL DEFAULT 1,
+        last_relay_at     DATETIME,
+        last_relay_status TEXT    NOT NULL DEFAULT '',
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    console.log('[patchSchema v0.172] ✅ apk_relay_targets 테이블 생성 완료')
+  } catch(e: any) {
+    if (!e.message?.includes('already exists')) {
+      console.warn('[patchSchema v0.172] apk_relay_targets 생성 실패 (무시):', e.message)
+    }
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }

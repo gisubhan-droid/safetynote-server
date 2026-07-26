@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-25 (세션 81 — Phase 4 문서 내용 보강 완료)
-> **GitHub 최신: `27790c5`** — docs: [세션81] Phase 4 문서 내용 보강 완료 — NAS_INSTALL_GUIDE.md + USER_GUIDE.md v2.0
+> 최종 업데이트: 2026-07-26 (세션 83 — APK 슬레이브 NAS 자동 릴레이 기능 추가)
+> **GitHub 최신: `(세션83 커밋 후 갱신)`** — feat: [세션83] APK 릴레이 배포 기능 추가 (슬레이브 NAS 자동 전달)
+> **이전 커밋: `dba60fb`** — refactor: [세션82] src/ 전체 위험 날짜 패턴 kst-utils로 전수 교체 (27곳)
+> **이전 커밋: `27790c5`** — docs: [세션81] Phase 4 문서 내용 보강 완료 — NAS_INSTALL_GUIDE.md + USER_GUIDE.md v2.0
 > **이전 커밋: `6a2eb2d`** — release: [세션80] 최종 버전 태깅 완료 — 서버 V2.0.0 + APK v2.0.0 동시 릴리즈
 > **이전 커밋: `ed2e7bf`** — fix: [세션 77-C] 공사 상세 화면 작업 등록 시 화면 유지
 > **이전 커밋: `99d0e7e`** — fix: [세션 77-B] updateTask/doCreate querySelector 오제거 버그 수정
@@ -9955,6 +9957,50 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 - GitHub push → ✅ `7e0bad1c` (NAS_INSTALL_GUIDE.md v2.0), `1ebee708` (USER_GUIDE.md v2.0)
 - `node --check` → ✅ (세션 78 기준 유지)
 - `npm run build` → ✅ (세션 78 기준 유지)
+
+---
+
+## 세션 83 (2026-07-26)
+
+### 주요 작업: APK 슬레이브 NAS 자동 릴레이 기능 추가 (FEAT-RELAY-APK)
+
+#### 배경
+- 마스터 NAS(LinkMak 본사)가 GitHub Actions에서 APK를 수신한 뒤, 등록된 슬레이브 NAS들에게 자동으로 릴레이 전송하는 기능 구현
+- 슬레이브 NAS는 별도 코드 수정 없음 — 기존 `POST /apk/webhook` 엔드포인트 재사용
+- 보안: `DEPLOY_WEBHOOK_SECRET` 동일 시크릿으로 자동 인증
+
+#### 변경 파일
+
+**`node-server.ts`**
+- `patchSchema v0.172` 추가: `apk_relay_targets` 테이블 신규 생성
+  - `id, name, url(UNIQUE), active(기본1), last_relay_at, last_relay_status, created_at` 컬럼
+
+**`src/nas-routes/dist.ts`**
+- `relayApkToSlaves()` 헬퍼 함수 추가: 비동기 fire-and-forget, 병렬 전송, AbortSignal 30초 타임아웃
+- `POST /apk/webhook` 성공 직후 릴레이 발동 (메인 응답에 영향 없음)
+- `GET  /apk/relay/targets` — 슬레이브 목록 조회 (관리자)
+- `POST /apk/relay/targets` — 슬레이브 등록 (body: `{url, name?}`, URL 중복 409)
+- `DELETE /apk/relay/targets/:id` — 슬레이브 삭제
+- `PATCH  /apk/relay/targets/:id` — active 토글 (body 없으면 현재값 반전)
+
+**`public/static/app.js`**
+- APK 배포 관리 탭(`spanel-apk`) 하단에 "슬레이브 NAS 자동 릴레이" 섹션 추가
+  - URL 입력창 + 이름 입력창 + [추가] 버튼
+  - 등록된 슬레이브 목록 테이블 (이름, URL, 활성, 마지막결과, 전송시각, 삭제)
+  - 토글 버튼으로 active 즉시 변경
+- `_loadRelayTargets()` — GET 목록 조회 + 테이블 렌더
+- `_addRelayTarget()` — POST 등록 후 목록 갱신
+- `_deleteRelayTarget(id, label)` — DELETE 삭제 후 목록 갱신
+- `_toggleRelayTarget(id)` — PATCH 토글 후 목록 갱신
+- `renderAdminSettingsPage()` — `firstTab === 'apk'` 시 `_loadRelayTargets()` 자동 호출
+- `switchSettingsTab()` — `key === 'apk'` 시 `_loadRelayTargets()` 자동 호출
+
+#### 빌드 결과
+- `tsc --noEmit`: 기존 40건 오류 동일 (D1Database/NonSharedBuffer — 기존 확인된 오류), **신규 오류 0건**
+- `npm run build`: ✅ `dist/_worker.js 287.58 kB` 59 modules
+
+#### 커밋
+- `feat: [세션83] APK 릴레이 배포 기능 추가 (슬레이브 NAS 자동 전달)`
 
 ---
 

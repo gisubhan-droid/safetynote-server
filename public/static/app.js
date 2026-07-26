@@ -22284,6 +22284,43 @@ async function renderAdminSettingsPage(container, _activeTab) {
             </button>
           </div>
         </div>
+
+        <!-- ── 슬레이브 NAS 자동 릴레이 섹션 ────────────────────────────── -->
+        <div class="bg-white rounded-2xl shadow-sm p-5 border border-purple-100 mt-4">
+          <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">
+            <i class="fas fa-network-wired text-purple-500"></i> 슬레이브 NAS 자동 릴레이
+          </h3>
+          <p class="text-xs text-gray-400 mb-4">
+            GitHub에서 APK를 수신하면 이 NAS(마스터)가 아래 등록된 NAS들에게 자동으로 APK를 전달합니다.<br>
+            슬레이브 NAS의 <span class="font-mono bg-gray-100 px-1 rounded">외부 주소(DDNS URL)</span>만 등록하면 됩니다.
+          </p>
+
+          <!-- URL 입력 + 추가 -->
+          <div class="flex gap-2 mb-4 flex-wrap">
+            <input type="text" id="relay-url-input"
+              class="form-control flex-1 font-mono text-xs"
+              placeholder="https://nas002.myds.me:3443"
+              onkeydown="if(event.key==='Enter') _addRelayTarget()">
+            <input type="text" id="relay-name-input"
+              class="form-control text-xs" style="max-width:140px"
+              placeholder="NAS 이름 (선택)"
+              onkeydown="if(event.key==='Enter') _addRelayTarget()">
+            <button onclick="_addRelayTarget()" id="relay-add-btn"
+              class="flex-shrink-0 flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all"
+              style="background:linear-gradient(135deg,#7c3aed,#4f46e5)">
+              <i class="fas fa-plus"></i> 추가
+            </button>
+          </div>
+
+          <!-- 슬레이브 목록 테이블 -->
+          <div id="relay-targets-table" class="overflow-x-auto">
+            <div class="flex items-center gap-2 text-xs text-gray-400 py-3">
+              <i class="fas fa-spinner fa-spin"></i> 목록 불러오는 중...
+            </div>
+          </div>
+        </div>
+        <!-- ── /슬레이브 NAS 자동 릴레이 섹션 끝 ──────────────────────── -->
+
       </div>
 
       <!-- ────────────────────────────────────────────────── -->
@@ -22691,6 +22728,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
     if (firstTab === 'push')   _loadFcmStatus();
     if (firstTab === 'info')   _loadDbResetCounts();
     if (firstTab === 'update') _updLoadStatus();
+    if (firstTab === 'apk')    _loadRelayTargets();
     // push 탭이 아닐 때도 FCM 상태 필요하므로 push 탭 진입 시 로드 (switchSettingsTab에서 처리)
 
   } catch(e) {
@@ -22718,6 +22756,7 @@ function switchSettingsTab(key) {
   if (key === 'push')    _loadFcmStatus();
   if (key === 'info')    _loadDbResetCounts();
   if (key === 'update')  _updLoadStatus();
+  if (key === 'apk')     _loadRelayTargets();
   // [v0.142 LGU+] lgu 탭 진입 시 최신 설정 리로드
   if (key === 'lgu')     _reloadLguTabSettings();
   // [FEAT-027] 그룹별 권한 탭 진입 시 로드
@@ -23885,6 +23924,148 @@ async function _apkClearSettings() {
     setTimeout(() => renderAdminSettingsPage(document.getElementById('page-content')), 600);
   } catch(e) {
     toast(e.response?.data?.error || '초기화 실패', 'error');
+  }
+}
+
+// ─── 슬레이브 NAS 릴레이 관리 함수들 ────────────────────────────────────────
+
+/**
+ * 슬레이브 NAS 목록 조회 후 테이블 렌더링
+ * GET /api/dist/apk/relay/targets
+ */
+async function _loadRelayTargets() {
+  const container = document.getElementById('relay-targets-table');
+  if (!container) return;
+  try {
+    const res = await API.get('/dist/apk/relay/targets');
+    const targets = res.data?.targets || [];
+
+    if (targets.length === 0) {
+      container.innerHTML = `
+        <div class="text-center py-6 text-gray-400 text-xs border border-dashed border-gray-200 rounded-xl">
+          <i class="fas fa-server text-2xl mb-2 block text-gray-300"></i>
+          등록된 슬레이브 NAS가 없습니다.<br>
+          위 입력창에 URL을 입력 후 <strong>[추가]</strong> 버튼을 클릭하세요.
+        </div>`;
+      return;
+    }
+
+    const rows = targets.map(t => {
+      const activeIcon  = t.active
+        ? '<i class="fas fa-toggle-on text-green-500 text-lg"></i>'
+        : '<i class="fas fa-toggle-off text-gray-300 text-lg"></i>';
+      const statusBadge = t.last_relay_status
+        ? (t.last_relay_status.startsWith('OK')
+            ? `<span class="text-xs text-green-600 font-mono">${t.last_relay_status}</span>`
+            : `<span class="text-xs text-red-500 font-mono truncate" style="max-width:120px" title="${t.last_relay_status}">${t.last_relay_status.slice(0,20)}</span>`)
+        : '<span class="text-xs text-gray-300">-</span>';
+      const lastAt = t.last_relay_at
+        ? `<span class="text-xs text-gray-400">${t.last_relay_at.replace('T',' ').slice(0,16)}</span>`
+        : '<span class="text-xs text-gray-300">-</span>';
+      return `
+        <tr class="border-b border-gray-100 hover:bg-purple-50 transition-colors">
+          <td class="py-2 px-3 text-xs font-medium text-gray-700">${t.name || '<span class="text-gray-300">-</span>'}</td>
+          <td class="py-2 px-3 text-xs font-mono text-blue-700 break-all">${t.url}</td>
+          <td class="py-2 px-3 text-center">
+            <button onclick="_toggleRelayTarget(${t.id})" title="${t.active ? '비활성화' : '활성화'}" class="cursor-pointer border-0 bg-transparent p-0">
+              ${activeIcon}
+            </button>
+          </td>
+          <td class="py-2 px-3 text-center">${statusBadge}</td>
+          <td class="py-2 px-3 text-center">${lastAt}</td>
+          <td class="py-2 px-3 text-center">
+            <button onclick="_deleteRelayTarget(${t.id}, '${(t.name || t.url).replace(/'/g,"\\'")}'')"
+              class="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded hover:bg-red-50 transition-colors">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </td>
+        </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <table class="w-full text-sm border-collapse">
+        <thead>
+          <tr class="bg-purple-50 border-b border-purple-100">
+            <th class="text-left py-2 px-3 text-xs text-purple-700 font-semibold">이름</th>
+            <th class="text-left py-2 px-3 text-xs text-purple-700 font-semibold">URL</th>
+            <th class="text-center py-2 px-3 text-xs text-purple-700 font-semibold">활성</th>
+            <th class="text-center py-2 px-3 text-xs text-purple-700 font-semibold">마지막 결과</th>
+            <th class="text-center py-2 px-3 text-xs text-purple-700 font-semibold">전송 시각</th>
+            <th class="text-center py-2 px-3 text-xs text-purple-700 font-semibold">삭제</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch(e) {
+    const errMsg = e.response?.data?.error || e.message || '목록 조회 실패';
+    if (container) {
+      container.innerHTML = `<div class="text-xs text-red-400 py-2"><i class="fas fa-exclamation-circle mr-1"></i>${errMsg}</div>`;
+    }
+  }
+}
+
+/**
+ * 슬레이브 NAS 추가
+ * POST /api/dist/apk/relay/targets  { url, name }
+ */
+async function _addRelayTarget() {
+  const urlInput  = document.getElementById('relay-url-input');
+  const nameInput = document.getElementById('relay-name-input');
+  const btn       = document.getElementById('relay-add-btn');
+  const url  = (urlInput?.value  || '').trim();
+  const name = (nameInput?.value || '').trim();
+
+  if (!url) {
+    toast('슬레이브 NAS의 외부 URL을 입력하세요.', 'warning');
+    urlInput?.focus();
+    return;
+  }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    toast('URL은 http:// 또는 https://로 시작해야 합니다.', 'error');
+    urlInput?.focus();
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 추가 중...'; }
+  try {
+    await API.post('/dist/apk/relay/targets', { url, name });
+    toast(`슬레이브 NAS가 등록되었습니다: ${name || url}`, 'success');
+    if (urlInput)  urlInput.value  = '';
+    if (nameInput) nameInput.value = '';
+    await _loadRelayTargets();
+  } catch(e) {
+    const errMsg = e.response?.data?.error || e.message || '등록 실패';
+    toast(errMsg, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus"></i> 추가'; }
+  }
+}
+
+/**
+ * 슬레이브 NAS 삭제
+ * DELETE /api/dist/apk/relay/targets/:id
+ */
+async function _deleteRelayTarget(id, label) {
+  if (!confirm(`슬레이브 NAS를 삭제하시겠습니까?\n\n${label}`)) return;
+  try {
+    await API.delete(`/dist/apk/relay/targets/${id}`);
+    toast('슬레이브 NAS가 삭제되었습니다.', 'success');
+    await _loadRelayTargets();
+  } catch(e) {
+    toast(e.response?.data?.error || '삭제 실패', 'error');
+  }
+}
+
+/**
+ * 슬레이브 NAS active 토글
+ * PATCH /api/dist/apk/relay/targets/:id  (body 없음 → 현재값 반전)
+ */
+async function _toggleRelayTarget(id) {
+  try {
+    await API.patch(`/dist/apk/relay/targets/${id}`);
+    await _loadRelayTargets();
+  } catch(e) {
+    toast(e.response?.data?.error || '상태 변경 실패', 'error');
   }
 }
 

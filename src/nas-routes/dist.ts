@@ -1,15 +1,25 @@
 /**
  * dist.ts — APK 배포 API
  *
- * 포함 라우트 (4개):
+ * 포함 라우트 (8개):
  *   GET  /api/dist/apk/version
  *   GET  /api/dist/apk/download
  *   POST /api/dist/apk/upload
- *   POST /api/dist/apk/webhook
+ *   POST /api/dist/apk/webhook          ← APK 수신 후 슬레이브 자동 릴레이 포함
+ *   GET  /api/dist/apk/relay/targets    ← 슬레이브 NAS 목록 조회 (관리자)
+ *   POST /api/dist/apk/relay/targets    ← 슬레이브 NAS 등록 (관리자)
+ *   DELETE /api/dist/apk/relay/targets/:id  ← 슬레이브 NAS 삭제 (관리자)
+ *   PATCH  /api/dist/apk/relay/targets/:id  ← 슬레이브 NAS active 토글 (관리자)
  *
  * 의존:
  *   - getRawDb(), getUser(), getSetting(), setSysSettings(), applyUploadRootOverride(),
  *     getUploadRootNow(), getApkFilePath() from ../nas-db
+ *
+ * 릴레이 동작:
+ *   - POST /apk/webhook 성공(APK 다운로드+DB저장) 직후 비동기 실행
+ *   - apk_relay_targets 테이블에서 active=1 슬레이브 목록 조회
+ *   - 각 슬레이브의 POST /api/dist/apk/webhook 에 동일 payload 전송
+ *   - 슬레이브 응답과 무관하게 메인 응답에 영향 없음 (fire-and-forget)
  */
 
 import { Hono } from 'hono'
@@ -46,6 +56,84 @@ async function reloadSysSettings(): Promise<void> {
 // ─── APK 파일 경로 헬퍼 (local) ────────────────────────────────────────────
 function apkFilePath(): string {
   return join(getUploadRootNow(), 'apk', 'safetynote.apk')
+}
+
+// ─── 슬레이브 NAS 릴레이 헬퍼 (비동기, 실패해도 메인 응답 영향 없음) ────────
+async function relayApkToSlaves(payload: {
+  version: string
+  apk_url: string
+  release_note: string
+  force_update: string
+}): Promise<void> {
+  const rawDb = getRawDb()
+  const secret = process.env.DEPLOY_WEBHOOK_SECRET || ''
+  if (!secret) {
+    console.warn('[APK Relay] DEPLOY_WEBHOOK_SECRET 미설정 — 릴레이 스킵')
+    return
+  }
+
+  let targets: { id: number; name: string; url: string }[] = []
+  try {
+    targets = rawDb
+      .prepare(`SELECT id, name, url FROM apk_relay_targets WHERE active = 1`)
+      .all() as { id: number; name: string; url: string }[]
+  } catch (e: any) {
+    console.warn('[APK Relay] 슬레이브 목록 조회 실패:', e.message)
+    return
+  }
+
+  if (targets.length === 0) {
+    console.log('[APK Relay] 등록된 슬레이브 NAS 없음 — 릴레이 스킵')
+    return
+  }
+
+  console.log(`[APK Relay] 슬레이브 ${targets.length}대 릴레이 시작 — v${payload.version}`)
+
+  const relayPayload = JSON.stringify({
+    secret:       secret,
+    version:      payload.version,
+    apk_url:      payload.apk_url,
+    release_note: payload.release_note,
+    force_update: payload.force_update,
+  })
+
+  // 병렬 전송 (각 슬레이브 독립 처리)
+  const results = await Promise.allSettled(
+    targets.map(async (target) => {
+      const endpoint = `${target.url.replace(/\/+$/, '')}/api/dist/apk/webhook`
+      const startAt = new Date().toISOString()
+      try {
+        const res = await fetch(endpoint, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'User-Agent': 'SafetyNOTE-Relay/1.0' },
+          body:    relayPayload,
+          signal:  AbortSignal.timeout(30_000), // 30초 타임아웃
+        })
+        const statusText = res.ok ? `OK(${res.status})` : `FAIL(${res.status})`
+        console.log(`[APK Relay] ${target.name || target.url} → ${statusText}`)
+        // last_relay_at / last_relay_status 업데이트
+        try {
+          rawDb.prepare(
+            `UPDATE apk_relay_targets SET last_relay_at = ?, last_relay_status = ? WHERE id = ?`
+          ).run(startAt, statusText, target.id)
+        } catch (_) { /* DB 업데이트 실패 무시 */ }
+        return { id: target.id, status: statusText }
+      } catch (err: any) {
+        const errMsg = `ERROR: ${err.message}`
+        console.error(`[APK Relay] ${target.name || target.url} → ${errMsg}`)
+        try {
+          rawDb.prepare(
+            `UPDATE apk_relay_targets SET last_relay_at = ?, last_relay_status = ? WHERE id = ?`
+          ).run(startAt, errMsg.slice(0, 100), target.id)
+        } catch (_) { /* DB 업데이트 실패 무시 */ }
+        return { id: target.id, status: errMsg }
+      }
+    })
+  )
+
+  const okCount   = results.filter(r => r.status === 'fulfilled' && (r.value as any).status?.startsWith('OK')).length
+  const failCount = targets.length - okCount
+  console.log(`[APK Relay] 완료 — 성공 ${okCount}대 / 실패 ${failCount}대`)
 }
 
 // ─── GET /apk/version ────────────────────────────────────────────────────────
@@ -146,6 +234,7 @@ app.post('/apk/upload', async (c) => {
 })
 
 // ─── POST /apk/webhook ───────────────────────────────────────────────────────
+// GitHub Actions에서 호출: secret 검증 → APK 다운로드 → DB저장 → 슬레이브 릴레이
 app.post('/apk/webhook', async (c) => {
   const body = await c.req.json() as {
     secret?: string
@@ -225,6 +314,16 @@ app.post('/apk/webhook', async (c) => {
   const stat = statSync(apkPath)
   console.log(`[APK Webhook] DB 업데이트 완료 — v${version} / ${localUrl}`)
 
+  // ─── 슬레이브 NAS 자동 릴레이 (비동기 fire-and-forget) ────────────────────
+  // 메인 응답 반환 후 백그라운드에서 실행 — 슬레이브 실패가 메인 응답에 영향 없음
+  relayApkToSlaves({
+    version,
+    apk_url:      localUrl,          // 슬레이브도 마스터 URL에서 받도록 외부 URL 대신 로컬 URL 사용
+    release_note: releaseNote,
+    force_update: forceUpdate,
+  }).catch((e: any) => console.error('[APK Relay] 예기치 못한 오류:', e.message))
+  // ─────────────────────────────────────────────────────────────────────────
+
   return c.json({
     success:   true,
     version,
@@ -232,6 +331,122 @@ app.post('/apk/webhook', async (c) => {
     file_size: stat.size,
     message:   `v${version} APK가 서버에 저장되었습니다. 로그인 화면에 다운로드 버튼이 표시됩니다.`,
   })
+})
+
+// ─── GET /apk/relay/targets ──────────────────────────────────────────────────
+// 슬레이브 NAS 목록 조회 (관리자 전용)
+app.get('/apk/relay/targets', (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const rawDb = getRawDb()
+  try {
+    const rows = rawDb
+      .prepare(`SELECT id, name, url, active, last_relay_at, last_relay_status, created_at
+                FROM apk_relay_targets ORDER BY id ASC`)
+      .all()
+    return c.json({ success: true, targets: rows })
+  } catch (e: any) {
+    console.error('[APK Relay] targets 조회 오류:', e.message)
+    return c.json({ error: '슬레이브 목록 조회 실패', detail: e.message }, 500)
+  }
+})
+
+// ─── POST /apk/relay/targets ─────────────────────────────────────────────────
+// 슬레이브 NAS 등록 (관리자 전용)
+// Body: { url: string, name?: string }
+app.post('/apk/relay/targets', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const body = await c.req.json() as { url?: string; name?: string }
+  const url  = (body.url  || '').trim()
+  const name = (body.name || '').trim()
+
+  if (!url) return c.json({ error: 'url 필드가 필요합니다.' }, 400)
+
+  // URL 형식 기본 검증
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return c.json({ error: 'URL은 http:// 또는 https://로 시작해야 합니다.' }, 400)
+  }
+
+  const rawDb = getRawDb()
+  try {
+    const result = rawDb
+      .prepare(`INSERT INTO apk_relay_targets (name, url, active) VALUES (?, ?, 1)`)
+      .run(name, url)
+    const inserted = rawDb
+      .prepare(`SELECT id, name, url, active, last_relay_at, last_relay_status, created_at FROM apk_relay_targets WHERE id = ?`)
+      .get(result.lastInsertRowid)
+    console.log(`[APK Relay] 슬레이브 등록 — ${name || url} / ${url}`)
+    return c.json({ success: true, target: inserted })
+  } catch (e: any) {
+    if (e.message?.includes('UNIQUE constraint')) {
+      return c.json({ error: '이미 등록된 URL입니다.' }, 409)
+    }
+    console.error('[APK Relay] 슬레이브 등록 오류:', e.message)
+    return c.json({ error: '등록 실패', detail: e.message }, 500)
+  }
+})
+
+// ─── DELETE /apk/relay/targets/:id ───────────────────────────────────────────
+// 슬레이브 NAS 삭제 (관리자 전용)
+app.delete('/apk/relay/targets/:id', (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const id = Number(c.req.param('id'))
+  if (!id || isNaN(id)) return c.json({ error: '유효하지 않은 ID입니다.' }, 400)
+
+  const rawDb = getRawDb()
+  try {
+    const result = rawDb.prepare(`DELETE FROM apk_relay_targets WHERE id = ?`).run(id)
+    if (result.changes === 0) return c.json({ error: '해당 ID의 슬레이브가 없습니다.' }, 404)
+    console.log(`[APK Relay] 슬레이브 삭제 — id=${id}`)
+    return c.json({ success: true, deleted_id: id })
+  } catch (e: any) {
+    console.error('[APK Relay] 슬레이브 삭제 오류:', e.message)
+    return c.json({ error: '삭제 실패', detail: e.message }, 500)
+  }
+})
+
+// ─── PATCH /apk/relay/targets/:id ────────────────────────────────────────────
+// 슬레이브 NAS active 토글 (관리자 전용)
+// Body: { active: 0 | 1 }  또는 Body 없으면 현재값 반전
+app.patch('/apk/relay/targets/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const id = Number(c.req.param('id'))
+  if (!id || isNaN(id)) return c.json({ error: '유효하지 않은 ID입니다.' }, 400)
+
+  const rawDb = getRawDb()
+  const existing = rawDb
+    .prepare(`SELECT id, active FROM apk_relay_targets WHERE id = ?`)
+    .get(id) as { id: number; active: number } | undefined
+
+  if (!existing) return c.json({ error: '해당 ID의 슬레이브가 없습니다.' }, 404)
+
+  let body: { active?: number } = {}
+  try { body = await c.req.json() } catch (_) { /* body 없는 경우 토글 */ }
+
+  const newActive = (body.active !== undefined) ? (body.active ? 1 : 0) : (existing.active ? 0 : 1)
+
+  try {
+    rawDb.prepare(`UPDATE apk_relay_targets SET active = ? WHERE id = ?`).run(newActive, id)
+    const updated = rawDb
+      .prepare(`SELECT id, name, url, active, last_relay_at, last_relay_status, created_at FROM apk_relay_targets WHERE id = ?`)
+      .get(id)
+    console.log(`[APK Relay] 슬레이브 상태 변경 — id=${id} active=${newActive}`)
+    return c.json({ success: true, target: updated })
+  } catch (e: any) {
+    console.error('[APK Relay] 슬레이브 토글 오류:', e.message)
+    return c.json({ error: '상태 변경 실패', detail: e.message }, 500)
+  }
 })
 
 export default app

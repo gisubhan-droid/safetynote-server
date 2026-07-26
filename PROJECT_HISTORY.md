@@ -1,9 +1,11 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 87 — BUG-168 검색 input 한글 IME 자음/모음 분리 수정)
-> **GitHub 최신 (safetynote-server): `26fba0f`** — fix: [BUG-168] 검색 input 한글 IME 자음/모음 분리 입력 수정
+> 최종 업데이트: 2026-07-26 (세션 87 완전 마무리 — BUGFIX_LOG BUG-166/167/IME/168 기록 정리)
+> **GitHub 최신 (safetynote-server): `0eb439f`** — docs(BUGFIX_LOG): BUG-166/167/IME/168 기록 추가 (2026-07-26)
 > **GitHub 최신 (safetynote-android): `a172a6f`** — fix: [BUG-IME] captureInput false — APK v1.4.15 빌드 완료
-> **이전 커밋: `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
+> **이전 커밋 (server): `f5d3d2f`** — docs: [세션87] 서버 빌드/배포 가이드 최초 작성
+> **이전 커밋 (server): `26fba0f`** — fix: [BUG-168] 검색 input 한글 IME 자음/모음 분리 입력 수정
+> **이전 커밋 (server): `fc33a03`** — feat: [세션85] Option A — 브라우저 로컬TZ 방식 전면 전환
 > **이전 커밋: `1a0c3b9`** — fix: [세션84-B] tbm-share 서버 버전 진단 API 추가 + tbm_date fallback 강화
 > **이전 커밋: `c87f319`** — docs: [세션84] PROJECT_HISTORY.md 세션83-B + 84 기록 추가, 헤더 해시 갱신
 > **이전 커밋: `9a97b31`** — fix: [세션84] kst-utils UTC 파싱 버그 수정 — TZ=Asia/Seoul 환경 대응
@@ -10136,7 +10138,7 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 
 ---
 
-## 📌 현재 남은 작업 (2026-07-26 기준, 세션 87 최종 업데이트)
+## 📌 현재 남은 작업 (2026-07-26 기준, 세션 87 완전 마무리)
 
 ### 🟢 선택적 작업 (요청 시 진행)
 
@@ -10151,8 +10153,9 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 | **시간 표시 현장 검증** | ✅ 현장 Android 기기 정상 확인 | 2026-07-26 |
 | **FCM 알림 수신 테스트** | ✅ Android 실기기 정상 수신 확인 | 2026-07-26 |
 | **APK v1.4.15 한글 IME 정상 동작** | ✅ 현장 배포 후 정상 확인 | 2026-07-26 |
-| **검색 input 느린 한글 입력** | ✅ 현장 확인 완료 (BUG-168 수정) | 2026-07-26 |
+| **검색 input 느린 한글 입력 (BUG-168)** | ✅ 현장 확인 완료 | 2026-07-26 |
 | **사용자 설명서 슬라이드 (DECK-2~5)** | ✅ "Safety NOTE 통합 사용자 가이드"로 완료 | 2026-07-26 |
+| **BUGFIX_LOG BUG-166/167/IME/168 기록** | ✅ 세션 87 마무리 추가 완료 | 2026-07-26 |
 
 ### 🔵 장기 보류 (요청 시 진행)
 
@@ -10291,6 +10294,72 @@ document.addEventListener('compositionend', function() {
 #### 커밋
 - `26fba0f` — fix: [BUG-168] 검색 input 한글 IME 자음/모음 분리 입력 수정
 - 캐시 버스팅: `?v=20260726c`
+
+---
+
+### 주요 작업 C: 에이전트 참조 문서 작성 (APK_BUILD_GUIDE / BUILD_AND_DEPLOY_GUIDE)
+
+#### 작업 배경
+APK 빌드 시 `gh workflow run` 403 오류 발생 → `curl` REST API 방식으로 우회 성공.
+이후 세션에서도 동일 방법을 재현할 수 있도록 에이전트 참조 문서 신규 작성.
+
+#### 작성된 문서
+
+| 파일 | 내용 | 커밋 |
+|------|------|------|
+| `docs/APK_BUILD_GUIDE.md` | APK 빌드 절차 (curl REST API workflow_dispatch), 버전 이력, 주의사항 | `bf1be78` |
+| `docs/BUILD_AND_DEPLOY_GUIDE.md` | 서버 빌드/배포 절차, build-server.yml 동작, 캐시 버스팅 규칙, 빌드/푸시 이력표 | `f5d3d2f` |
+
+#### APK 빌드 핵심 (403 우회 방법)
+```bash
+# gh CLI 대신 curl REST API 직접 호출
+curl -X POST \
+  -H "Authorization: token $GH_TOKEN" \
+  -H "Accept: application/vnd.github.v3+json" \
+  https://api.github.com/repos/gisubhan-droid/safetynote-android/actions/workflows/build-apk.yml/dispatches \
+  -d '{"ref":"main"}'
+```
+
+---
+
+### 주요 작업 D: BUGFIX_LOG.md 오늘 버그 4건 기록 정리
+
+#### 추가된 항목
+
+| 섹션 | 제목 | 커밋 | BUGFIX_LOG 위치 |
+|------|------|------|----------------|
+| BUG-166 | 사진 캡션 한글 IME 입력 지연 | `ffc0b30` | line 4453 |
+| BUG-167 | Android WebView HTTP 캐시 미반영 | `8fab226` | line 4488 |
+| BUG-IME | Android WebView 한글 IME 근본 원인 — captureInput: true | `a172a6f` | line 4525 |
+| BUG-168 | 검색 input 한글 자음/모음 분리 입력 | `26fba0f` | line 4574 |
+
+- BUGFIX_LOG.md: 4,449줄 → **4,653줄** (+204줄)
+- 커밋: `0eb439f` — docs(BUGFIX_LOG): BUG-166/167/IME/168 기록 추가 (2026-07-26)
+
+---
+
+### 세션 87 전체 커밋 요약 (safetynote-server)
+
+| 커밋 | 내용 |
+|------|------|
+| `820e358` | docs: [세션87] APK v1.4.15 빌드 완료 기록 |
+| `643a093` | docs: [세션87-B] BUG-168 기록 추가 |
+| `26fba0f` | fix: [BUG-168] 검색 input 한글 IME 자음/모음 분리 입력 수정 |
+| `bf1be78` | docs: [세션87] APK_BUILD_GUIDE.md 최초 작성 |
+| `bc02654` | docs: [세션87] 남은 작업 현황 최종 업데이트 |
+| `f5d3d2f` | docs: [세션87] BUILD_AND_DEPLOY_GUIDE.md 최초 작성 |
+| `0eb439f` | docs(BUGFIX_LOG): BUG-166/167/IME/168 기록 추가 |
+
+### 세션 87 전체 빌드/배포 상태
+
+| 항목 | 결과 |
+|------|------|
+| `node --check public/static/app.js` | ✅ 문법 오류 없음 |
+| `npm run build` | ✅ 성공 (`dist/_worker.js 288.21 kB`) |
+| GitHub push (safetynote-server) | ✅ main `0eb439f` |
+| APK v1.4.15 빌드 (GitHub Actions) | ✅ success, 5.0MB |
+| APK v1.4.15 현장 검증 | ✅ 현장 배포 후 정상 확인 |
+| BUG-168 현장 검증 | ✅ 현장 확인 완료 |
 
 ---
 

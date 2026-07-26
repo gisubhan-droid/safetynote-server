@@ -1,0 +1,20 @@
+{
+  "_comment": [
+    "SafetyNOTE NAS 배포 대상 목록",
+    "새 NAS 추가: nas_list 배열에 항목 추가 후 git push",
+    "active: false 로 설정하면 해당 NAS 전송 skip",
+    "batch_size: 한 번에 전송할 NAS 수 (권장 10, 최대 20)",
+    "batch_delay_sec: 배치 간 대기 시간(초) (권장 5~10)"
+  ],
+  "batch_size": 10,
+  "batch_delay_sec": 5,
+  "nas_list": [
+    {
+      "id": "NAS001",
+      "name": "본사 NAS",
+      "url": "https://example1.myds.me:3443",
+      "active": false,
+      "_note": "등록 예시 - 실제 주소로 변경하세요"
+    }
+  ]
+}

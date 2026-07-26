@@ -10157,7 +10157,7 @@ PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
 | ID | 항목 | 내용 |
 |----|------|------|
 | Phase 6-5 | **실제 신규 NAS 환경 설치 테스트** | `install.sh` v2.1 실제 신규 NAS에서 설치 검증 (사용자 직접 수행) |
-| — | **APK `nas-auto-deploy.sh` 크론잡 등록** | `safetynote-android/scripts/nas-auto-deploy.sh` NAS 크론잡 설정 |
+| ~~—~~ | ~~**APK `nas-auto-deploy.sh` 크론잡 등록**~~ | ~~구식 방식 — GitHub Actions 배치 전송(세션83)으로 대체됨. 불필요 항목 제거~~ |
 
 ---
 

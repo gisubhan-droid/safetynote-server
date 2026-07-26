@@ -116,7 +116,10 @@ app.get('/qr/:userId', async (c) => {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: linear-gradient(135deg, #F2F0EB 0%, #FDE8F3 100%); min-height: 100vh; font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; }
+    @font-face { font-family: 'LG Smart KR'; src: url('/static/fonts/LGSmartKR-regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'LG Smart KR'; src: url('/static/fonts/LGSmartKR-semibold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'LG Smart KR'; src: url('/static/fonts/LGSmartKR-bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+    body { background: linear-gradient(135deg, #F2F0EB 0%, #FDE8F3 100%); min-height: 100vh; font-family: 'LG Smart KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
     .profile-wrap { max-width: 440px; margin: 0 auto; padding: 20px 14px 48px; }
     /* Header */
     .lgu-header { background: linear-gradient(135deg, #E6007E 0%, #6B5B9A 100%); border-radius: 22px 22px 0 0; padding: 28px 24px 22px; text-align: center; color: white; }

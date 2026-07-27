@@ -19,6 +19,7 @@ import constructionRoutes from './routes/constructions'
 import notificationRoutes from './routes/notifications'
 import legalNoticeRoutes from './routes/legal-notices'
 import workReportRoutes from './routes/work-reports'
+import cableIncomingRoutes from './routes/cable-incoming'
 
 type Bindings = {
   DB: D1Database
@@ -51,6 +52,7 @@ app.route('/api/constructions', constructionRoutes)
 app.route('/api/notifications', notificationRoutes)
 app.route('/api/legal-notices', legalNoticeRoutes)
 app.route('/api/work-reports', workReportRoutes)
+app.route('/api/cable-incoming', cableIncomingRoutes)
 
 // Static files — 버전 민감 파일(app.js, style.css, service-worker.js)은
 // no-cache 헤더로 WebView/Cloudflare 캐시 우회 (BUG-166 Android WebView 미반영 수정)

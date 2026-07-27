@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FEAT-175 미리보기 — 정산요청 공사번호 입력</title>
+<link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'Apple SD Gothic Neo', sans-serif; background: #F3F4F6; }
+
+  /* ── 탭 네비 ── */
+  .tab-nav { display: flex; gap: 8px; padding: 20px 24px 0; }
+  .tab-btn {
+    padding: 10px 20px; border-radius: 12px 12px 0 0; border: none;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    background: #E5E7EB; color: #6B7280; transition: all .2s;
+  }
+  .tab-btn.active { background: #685182; color: #fff; }
+
+  .scene { display: none; padding: 24px; }
+  .scene.active { display: block; }
+
+  /* ── 공통 모달 스타일 ── */
+  .modal-overlay {
+    position: relative; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 520px;
+  }
+  .modal-overlay.dimmed {
+    background: rgba(0,0,0,0.38);
+    border-radius: 20px;
+    padding: 32px 16px;
+  }
+  .modal {
+    background: white; border-radius: 20px; overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.18);
+    width: 100%; max-width: 400px;
+  }
+
+  /* ── 입력 모달 (정산요청) ── */
+  .settle-modal-header {
+    background: linear-gradient(135deg,#D97706,#B45309);
+    padding: 24px 24px 20px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .settle-modal-icon {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .settle-modal-title { color: white; }
+  .settle-modal-title h3 { font-size: 16px; font-weight: 800; margin-bottom: 2px; }
+  .settle-modal-title p  { font-size: 12px; opacity: 0.85; }
+
+  .settle-modal-body { padding: 20px 24px; }
+
+  .field-label {
+    font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .field-label .req { color: #EF4444; }
+
+  .field-input {
+    width: 100%; padding: 11px 14px; border-radius: 10px;
+    border: 1.5px solid #D1D5DB; font-size: 15px; font-weight: 600;
+    font-family: monospace; letter-spacing: 2px; color: #1F2937;
+    outline: none; transition: border .2s, box-shadow .2s;
+  }
+  .field-input:focus { border-color: #D97706; box-shadow: 0 0 0 3px rgba(217,119,6,.12); }
+  .field-input::placeholder { color: #9CA3AF; letter-spacing: 1px; font-weight: 400; font-size: 13px; }
+  .field-input.disabled {
+    background: #F9FAFB; color: #9CA3AF;
+    border-color: #E5E7EB; cursor: not-allowed;
+    letter-spacing: 1px;
+  }
+
+  .field-hint {
+    margin-top: 5px; font-size: 11px; color: #9CA3AF;
+    display: flex; align-items: center; gap: 4px;
+  }
+
+  .checkbox-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 14px; padding: 10px 14px; border-radius: 10px;
+    background: #FFFBEB; border: 1.5px solid #FDE68A; cursor: pointer;
+  }
+  .checkbox-row input[type=checkbox] {
+    width: 16px; height: 16px; accent-color: #D97706; cursor: pointer;
+  }
+  .checkbox-label { font-size: 13px; font-weight: 600; color: #92400E; }
+  .checkbox-sub   { font-size: 11px; color: #B45309; margin-top: 1px; }
+
+  .modal-footer-btns {
+    display: flex; gap: 10px; padding: 0 24px 20px;
+  }
+  .btn-cancel {
+    flex: 1; padding: 12px 0; font-size: 14px; font-weight: 600;
+    color: #6B7280; background: #F3F4F6; border: none;
+    border-radius: 10px; cursor: pointer;
+  }
+  .btn-ok {
+    flex: 1.6; padding: 12px 0; font-size: 14px; font-weight: 700;
+    color: white; border: none; border-radius: 10px; cursor: pointer;
+    background: linear-gradient(135deg,#D97706,#B45309);
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn-ok.disabled {
+    background: #D1D5DB; cursor: not-allowed;
+  }
+
+  /* ── 공사 상세 모달 (정보 표시) ── */
+  .detail-modal-header {
+    background: linear-gradient(135deg,#685182,#4E3A63);
+    padding: 20px 24px 16px;
+  }
+  .detail-modal-header .badge-status {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(255,255,255,0.18); color: white;
+    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .detail-modal-header h3 { color: white; font-size: 15px; font-weight: 800; }
+  .detail-modal-header p  { color: rgba(255,255,255,0.7); font-size: 11px; margin-top: 2px; }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .info-cell {
+    padding: 12px; border-radius: 12px; background: #F9F7FB;
+  }
+  .info-cell.highlight {
+    background: #FFF7ED; border: 1.5px solid #FED7AA;
+  }
+  .info-cell .cell-label {
+    font-size: 11px; color: #9CA3AF; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 3px;
+  }
+  .info-cell .cell-value {
+    font-size: 13px; font-weight: 800; font-family: monospace; color: #685182;
+  }
+  .info-cell.highlight .cell-value { color: #B45309; }
+  .info-cell .cell-value.empty { color: #D1D5DB; font-weight: 400; font-family: sans-serif; font-size: 12px; }
+
+  .info-cell-wide {
+    padding: 12px; border-radius: 12px; background: #FDE8F3;
+    margin-bottom: 10px;
+  }
+  .info-cell-wide .cell-label { font-size: 11px; color: #D70072; margin-bottom: 3px; }
+  .info-cell-wide .cell-value { font-size: 14px; font-weight: 900; color: #D70072; }
+
+  /* ── 비교 박스 ── */
+  .compare-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 860px; margin: 0 auto; }
+  .compare-box { background: white; border-radius: 16px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+  .compare-box h4 { font-size: 13px; font-weight: 800; color: #374151; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+  .compare-box h4 .tag { font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 700; }
+  .tag-before { background: #FEE2E2; color: #DC2626; }
+  .tag-after  { background: #D1FAE5; color: #059669; }
+
+  /* ── 체크박스 ON 상태 ── */
+  .checkbox-row.checked { background: #FEF3C7; border-color: #D97706; }
+
+  /* ── 반응형 ── */
+  @media(max-width:600px) {
+    .compare-wrap { grid-template-columns: 1fr; }
+    .info-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 탭 네비게이션 -->
+<div style="background:white;border-bottom:1px solid #E5E7EB;padding:16px 24px 0;margin-bottom:0">
+  <div style="font-size:11px;color:#9CA3AF;margin-bottom:8px;font-weight:600">
+    FEAT-175 미리보기 · TBM Safety NOTE
+  </div>
+  <div class="tab-nav" style="padding:0;margin:0">
+    <button class="tab-btn active" onclick="showTab('tab1')">① 정산요청 클릭 시</button>
+    <button class="tab-btn" onclick="showTab('tab2')">② 나중에 입력 체크 시</button>
+    <button class="tab-btn" onclick="showTab('tab3')">③ 공사 상세 표시</button>
+    <button class="tab-btn" onclick="showTab('tab4')">④ Before / After 비교</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- TAB 1: 정산요청 클릭 → 공사번호 입력 모달 (초기 상태)            -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div id="tab1" class="scene active">
+  <div style="text-align:center;margin-bottom:16px">
+    <span style="font-size:12px;color:#6B7280;background:#E5E7EB;padding:4px 14px;border-radius:20px">
+      정산요청 버튼 클릭 시 표시되는 팝업
+    </span>
+  </div>
+
+  <div class="modal-overlay dimmed">
+    <div class="modal" style="max-width:400px">
+
+      <!-- 헤더 -->
+      <div class="settle-modal-header">
+        <div class="settle-modal-icon">
+          <i class="fas fa-file-invoice-dollar" style="color:white;font-size:20px"></i>
+        </div>
+        <div class="settle-modal-title">
+          <h3>정산요청</h3>
+          <p>담당자에게 정산요청 알림이 발송됩니다.</p>
+        </div>
+      </div>
+
+      <!-- 바디 -->
+      <div class="settle-modal-body">
+        <!-- 공사번호 입력 -->
+        <div class="field-label">
+          <i class="fas fa-hashtag" style="color:#D97706;font-size:11px"></i>
+          공사번호
+          <span class="req">*</span>
+        </div>
+        <input class="field-input" type="text" inputmode="numeric"
+          placeholder="숫자 7자리를 입력하세요" maxlength="7"
+          id="preview1Input" oninput="onPreview1Input(this)">
+        <div class="field-hint">
+          <i class="fas fa-info-circle" style="color:#FCD34D"></i>
+          숫자 7자리 (예: 2507001)
+        </div>
+
+        <!-- 나중에 입력 체크박스 -->
+        <label class="checkbox-row" id="preview1CbRow" onclick="togglePreview1()">
+          <input type="checkbox" id="preview1Cb" onclick="event.stopPropagation();togglePreview1()">
+          <div>
+            <div class="checkbox-label">나중에 입력</div>
+            <div class="checkbox-sub">체크 시 공사번호 없이 정산요청이 처리됩니다.</div>
+          </div>
+        </label>
+      </div>
+
+      <!-- 버튼 -->
+      <div class="modal-footer-btns">
+        <button class="btn-cancel">취소</button>
+        <button class="btn-ok disabled" id="preview1OkBtn">
+          <i class="fas fa-file-invoice-dollar"></i> 정산요청
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:12px;font-size:11px;color:#9CA3AF">
+    ▲ 숫자 7자리 입력 또는 '나중에 입력' 체크 시 정산요청 버튼 활성화
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- TAB 2: 나중에 입력 체크 상태                                       -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div id="tab2" class="scene">
+  <div style="text-align:center;margin-bottom:16px">
+    <span style="font-size:12px;color:#6B7280;background:#E5E7EB;padding:4px 14px;border-radius:20px">
+      '나중에 입력' 체크박스 ON 상태
+    </span>
+  </div>
+
+  <div class="modal-overlay dimmed">
+    <div class="modal" style="max-width:400px">
+
+      <div class="settle-modal-header">
+        <div class="settle-modal-icon">
+          <i class="fas fa-file-invoice-dollar" style="color:white;font-size:20px"></i>
+        </div>
+        <div class="settle-modal-title">
+          <h3>정산요청</h3>
+          <p>담당자에게 정산요청 알림이 발송됩니다.</p>
+        </div>
+      </div>
+
+      <div class="settle-modal-body">
+        <div class="field-label">
+          <i class="fas fa-hashtag" style="color:#D97706;font-size:11px"></i>
+          공사번호
+        </div>
+        <!-- 입력 비활성화 -->
+        <input class="field-input disabled" type="text"
+          value="번호없음" disabled>
+        <div class="field-hint" style="color:#D97706">
+          <i class="fas fa-clock" style="color:#D97706"></i>
+          '번호없음'으로 저장됩니다. 추후 수정 가능합니다.
+        </div>
+
+        <!-- 체크박스 ON 상태 -->
+        <label class="checkbox-row checked">
+          <input type="checkbox" checked style="accent-color:#D97706">
+          <div>
+            <div class="checkbox-label">나중에 입력</div>
+            <div class="checkbox-sub">체크 시 공사번호 없이 정산요청이 처리됩니다.</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="modal-footer-btns">
+        <button class="btn-cancel">취소</button>
+        <!-- 활성화된 OK 버튼 -->
+        <button class="btn-ok">
+          <i class="fas fa-file-invoice-dollar"></i> 정산요청
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:12px;font-size:11px;color:#9CA3AF">
+    ▲ 체크 ON → input 비활성화 + '번호없음' 표시 + 정산요청 버튼 즉시 활성화
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- TAB 3: 공사 상세 모달 — 공사번호 표시                              -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div id="tab3" class="scene">
+  <div style="text-align:center;margin-bottom:16px">
+    <span style="font-size:12px;color:#6B7280;background:#E5E7EB;padding:4px 14px;border-radius:20px">
+      공사 상세 모달 — 공사번호 표시 (공사요청번호 앞)
+    </span>
+  </div>
+
+  <div style="max-width:520px;margin:0 auto">
+    <div class="modal">
+
+      <!-- 상세 헤더 -->
+      <div class="detail-modal-header">
+        <div class="badge-status">
+          <i class="fas fa-file-invoice-dollar" style="font-size:10px"></i>
+          정산요청
+        </div>
+        <h3>안양~군포 1구간 외선공사 외선비밀공사</h3>
+        <p>2507001_안양~군포 1구간 외선공사</p>
+      </div>
+
+      <!-- 공사 기본 정보 -->
+      <div style="padding:16px 16px 8px">
+
+        <!-- ★ 신규: 공사번호 + 공사요청번호 + 작업번호 3열 -->
+        <div class="info-grid">
+          <!-- 공사번호 (NEW) -->
+          <div class="info-cell highlight">
+            <div class="cell-label">
+              <i class="fas fa-hashtag" style="color:#D97706"></i>
+              공사번호
+              <span style="font-size:9px;background:#FED7AA;color:#92400E;padding:1px 5px;border-radius:8px;font-weight:700;margin-left:2px">NEW</span>
+            </div>
+            <div class="cell-value">2507001</div>
+          </div>
+          <!-- 공사요청번호 (기존) -->
+          <div class="info-cell">
+            <div class="cell-label">
+              <i class="fas fa-hashtag"></i> 공사요청번호
+            </div>
+            <div class="cell-value">202507154481</div>
+          </div>
+          <!-- 작업번호 (기존) -->
+          <div class="info-cell">
+            <div class="cell-label">
+              <i class="fas fa-tag"></i> 작업번호
+            </div>
+            <div class="cell-value">JES-0000000-00000</div>
+          </div>
+        </div>
+
+        <!-- 공사명 -->
+        <div class="info-cell-wide">
+          <div class="cell-label"><i class="fas fa-building mr-1"></i>공사명</div>
+          <div class="cell-value">안양~군포 1구간 외선공사 외선비밀공사</div>
+        </div>
+
+        <!-- 번호없음 케이스 안내 -->
+        <div style="background:#F9FAFB;border:1px dashed #D1D5DB;border-radius:10px;padding:10px 14px;margin-bottom:10px">
+          <div style="font-size:11px;color:#6B7280;font-weight:700;margin-bottom:6px">
+            <i class="fas fa-info-circle" style="color:#9CA3AF;margin-right:4px"></i>
+            공사번호 미입력('번호없음') 케이스
+          </div>
+          <div class="info-cell" style="margin:0">
+            <div class="cell-label"><i class="fas fa-hashtag"></i> 공사번호</div>
+            <div class="cell-value empty">번호없음</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:12px;font-size:11px;color:#9CA3AF">
+    ▲ 공사요청번호 앞에 '공사번호' 셀 추가 · 3열 그리드 구성
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- TAB 4: Before / After 비교                                         -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div id="tab4" class="scene">
+  <div style="text-align:center;margin-bottom:16px">
+    <span style="font-size:12px;color:#6B7280;background:#E5E7EB;padding:4px 14px;border-radius:20px">
+      정산요청 버튼 클릭 — Before / After 비교
+    </span>
+  </div>
+
+  <div class="compare-wrap">
+
+    <!-- BEFORE -->
+    <div class="compare-box">
+      <h4>
+        <i class="fas fa-times-circle" style="color:#DC2626"></i>
+        기존 방식
+        <span class="tag tag-before">Before</span>
+      </h4>
+      <div class="modal-overlay dimmed" style="min-height:300px;border-radius:12px">
+        <div class="modal" style="max-width:320px">
+          <div style="padding:28px 20px 16px;text-align:center">
+            <div style="width:52px;height:52px;border-radius:50%;background:#FEF3C7;display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+              <i class="fas fa-exclamation-triangle" style="color:#D97706;font-size:20px"></i>
+            </div>
+            <div style="font-size:15px;font-weight:800;color:#1F1F2E;margin-bottom:8px">정산요청을 진행하시겠습니까?</div>
+            <div style="font-size:12px;color:#6B7280">담당자에게 정산요청 알림이 발송됩니다.</div>
+          </div>
+          <div style="display:flex;gap:8px;padding:0 16px 16px">
+            <button style="flex:1;padding:10px 0;background:#F3F4F6;border:none;border-radius:8px;font-weight:600;color:#6B7280;cursor:pointer">취소</button>
+            <button style="flex:1;padding:10px 0;background:#D97706;border:none;border-radius:8px;font-weight:700;color:white;cursor:pointer">정산요청</button>
+          </div>
+        </div>
+      </div>
+      <ul style="font-size:12px;color:#DC2626;margin-top:12px;padding-left:16px;line-height:2">
+        <li>공사번호 입력 불가</li>
+        <li>단순 확인 팝업만 존재</li>
+      </ul>
+    </div>
+
+    <!-- AFTER -->
+    <div class="compare-box">
+      <h4>
+        <i class="fas fa-check-circle" style="color:#059669"></i>
+        개선 방식
+        <span class="tag tag-after">After (FEAT-175)</span>
+      </h4>
+      <div class="modal-overlay dimmed" style="min-height:300px;border-radius:12px">
+        <div class="modal" style="max-width:320px">
+          <div class="settle-modal-header" style="padding:16px 18px 14px">
+            <div class="settle-modal-icon" style="width:38px;height:38px">
+              <i class="fas fa-file-invoice-dollar" style="color:white;font-size:16px"></i>
+            </div>
+            <div class="settle-modal-title">
+              <h3 style="font-size:14px">정산요청</h3>
+              <p style="font-size:11px">공사번호를 입력하세요</p>
+            </div>
+          </div>
+          <div class="settle-modal-body" style="padding:14px 18px">
+            <div class="field-label" style="font-size:11px">
+              <i class="fas fa-hashtag" style="color:#D97706;font-size:10px"></i>
+              공사번호 <span class="req">*</span>
+            </div>
+            <input class="field-input" type="text" placeholder="숫자 7자리" style="font-size:13px;padding:9px 12px">
+            <label class="checkbox-row" style="margin-top:10px;padding:8px 12px">
+              <input type="checkbox" style="accent-color:#D97706">
+              <div>
+                <div class="checkbox-label" style="font-size:12px">나중에 입력</div>
+                <div class="checkbox-sub" style="font-size:10px">번호없음으로 처리됩니다.</div>
+              </div>
+            </label>
+          </div>
+          <div class="modal-footer-btns" style="padding:0 18px 14px;gap:8px">
+            <button style="flex:1;padding:10px 0;background:#F3F4F6;border:none;border-radius:8px;font-weight:600;color:#6B7280;cursor:pointer;font-size:13px">취소</button>
+            <button style="flex:1.5;padding:10px 0;background:linear-gradient(135deg,#D97706,#B45309);border:none;border-radius:8px;font-weight:700;color:white;cursor:pointer;font-size:13px">
+              <i class="fas fa-file-invoice-dollar" style="font-size:11px;margin-right:3px"></i>정산요청
+            </button>
+          </div>
+        </div>
+      </div>
+      <ul style="font-size:12px;color:#059669;margin-top:12px;padding-left:16px;line-height:2">
+        <li>숫자 7자리 공사번호 입력</li>
+        <li>'나중에 입력' 체크 → 번호없음 처리</li>
+        <li>공사 상세에 공사번호 열 추가</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 플로우 설명 -->
+  <div style="max-width:860px;margin:20px auto 0;background:white;border-radius:14px;padding:16px 20px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
+    <div style="font-size:12px;font-weight:800;color:#374151;margin-bottom:12px">
+      <i class="fas fa-project-diagram" style="color:#685182;margin-right:6px"></i>처리 플로우
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px">
+      <div style="background:#FEF3C7;color:#92400E;padding:6px 14px;border-radius:20px;font-weight:700">
+        <i class="fas fa-mouse-pointer" style="margin-right:4px"></i>정산요청 버튼 클릭
+      </div>
+      <i class="fas fa-chevron-right" style="color:#D1D5DB"></i>
+      <div style="background:#E0E7FF;color:#3730A3;padding:6px 14px;border-radius:20px;font-weight:700">
+        공사번호 입력 팝업
+      </div>
+      <i class="fas fa-chevron-right" style="color:#D1D5DB"></i>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="background:#D1FAE5;color:#065F46;padding:6px 14px;border-radius:20px;font-weight:700">
+          <i class="fas fa-keyboard" style="margin-right:3px"></i>숫자 7자리 입력
+        </div>
+        <div style="color:#9CA3AF;font-weight:600;align-self:center">또는</div>
+        <div style="background:#FEF3C7;color:#92400E;padding:6px 14px;border-radius:20px;font-weight:700">
+          <i class="fas fa-clock" style="margin-right:3px"></i>나중에 입력 체크
+        </div>
+      </div>
+      <i class="fas fa-chevron-right" style="color:#D1D5DB"></i>
+      <div style="background:#D97706;color:white;padding:6px 14px;border-radius:20px;font-weight:700">
+        <i class="fas fa-paper-plane" style="margin-right:4px"></i>API 전송 + 알림 발송
+      </div>
+    </div>
+    <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:10px 14px">
+        <div style="font-size:11px;font-weight:700;color:#065F46;margin-bottom:4px">
+          <i class="fas fa-check" style="margin-right:4px"></i>숫자 7자리 입력 시
+        </div>
+        <div style="font-size:11px;color:#047857">DB: <code>con_number = '2507001'</code></div>
+        <div style="font-size:11px;color:#047857">표시: 공사 상세 → <strong>2507001</strong></div>
+      </div>
+      <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 14px">
+        <div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:4px">
+          <i class="fas fa-clock" style="margin-right:4px"></i>나중에 입력 체크 시
+        </div>
+        <div style="font-size:11px;color:#B45309">DB: <code>con_number = '번호없음'</code></div>
+        <div style="font-size:11px;color:#B45309">표시: 공사 상세 → <strong>번호없음</strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.scene').forEach(function(s) { s.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+  var idx = ['tab1','tab2','tab3','tab4'].indexOf(id);
+  document.querySelectorAll('.tab-btn')[idx].classList.add('active');
+}
+
+// TAB1 인터랙션
+function onPreview1Input(el) {
+  el.value = el.value.replace(/[^0-9]/g,'');
+  updatePreview1Btn();
+}
+
+function updatePreview1Btn() {
+  var inp = document.getElementById('preview1Input');
+  var cb  = document.getElementById('preview1Cb');
+  var btn = document.getElementById('preview1OkBtn');
+  if (!btn) return;
+  var valid = (inp && inp.value.length === 7) || (cb && cb.checked);
+  btn.classList.toggle('disabled', !valid);
+}
+
+function togglePreview1() {
+  setTimeout(function() {
+    var cb  = document.getElementById('preview1Cb');
+    var inp = document.getElementById('preview1Input');
+    var row = document.getElementById('preview1CbRow');
+    if (!cb || !inp) return;
+    if (cb.checked) {
+      inp.value = ''; inp.placeholder = '나중에 입력 선택됨';
+      inp.classList.add('disabled'); inp.disabled = true;
+      row.classList.add('checked');
+    } else {
+      inp.placeholder = '숫자 7자리를 입력하세요';
+      inp.classList.remove('disabled'); inp.disabled = false;
+      row.classList.remove('checked');
+    }
+    updatePreview1Btn();
+  }, 10);
+}
+</script>
+</body>
+</html>

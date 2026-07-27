@@ -2347,7 +2347,10 @@ function renderApp() {
         { id:'volume-stats',  icon:'fas fa-chart-bar',      label:'물량통계' },
         { id:'report-write',  icon:'fas fa-pen-to-square',  label:'작업일보 작성' },
         { id:'field-report',  icon:'fas fa-list-alt',       label:'공량내역' },
-        { id:'cable-detail',  icon:'fas fa-cable-car',      label:'광케이블 현황' },
+        { id:'cable', icon:'fas fa-cable-car', label:'광케이블 현황', children: [
+          { id:'cable-detail',   icon:'fas fa-chart-area', label:'광케이블 사용량' },
+          { id:'cable-incoming', icon:'fas fa-inbox',      label:'광케이블 입고관리' },
+        ]},
         ...(isSysAdmin ? [{ id:'unit-price', icon:'fas fa-tags', label:'단가 관리' }] : []),
       ]
     },
@@ -3089,7 +3092,9 @@ function getPageTitle(page) {
     'sign-requests': '서명 요청',
     'work-report': '공량내역 — 외선', 'splice-report': '공량내역 — 접속',
     'field-report': '공량내역', 'report-write': '작업일보 작성',
-    'field-volume': '현장공량관리', 'volume-stats': '물량통계', 'cable-detail': '광케이블 현황', 'unit-price': '단가 관리',
+    'field-volume': '현장공량관리', 'volume-stats': '물량통계',
+    'cable': '광케이블 현황', 'cable-detail': '광케이블 사용량', 'cable-incoming': '광케이블 입고관리',
+    'unit-price': '단가 관리',
   };
   return map[page] || page;
 }
@@ -3226,8 +3231,10 @@ function navigateTo(page) {
     case 'work-report':    renderWorkReportListPage(content); break;
     case 'splice-report':  renderSpliceReportListPage(content); break;
     case 'volume-stats':   renderVolumeStatsPage(content);  break;
-    case 'cable-detail':   renderCableDetailPage(content);  break;
-    case 'unit-price':     renderUnitPricePage(content);    break;
+    case 'cable':          navigateTo('cable-detail'); return;
+    case 'cable-detail':   renderCableDetailPage(content);   break;
+    case 'cable-incoming': renderCableIncomingPage(content); break;
+    case 'unit-price':     renderUnitPricePage(content);     break;
     case 'edu': navigateTo('edu-periodic'); return;
     case 'edu-periodic':   renderEducationPage(content, 'periodic');    break;
     case 'edu-hire':       renderEducationPage(content, 'hire');         break;
@@ -42851,6 +42858,321 @@ function downloadCableDetailCSV() {
   ]);
   const today = kstDateStr();
   downloadCSV(`광케이블현황_${today}.csv`, headers, rows);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 광케이블 입고관리 페이지 [FEAT-177]
+// ═══════════════════════════════════════════════════════════════
+async function renderCableIncomingPage(container) {
+  container.innerHTML = '<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-blue-400 text-2xl"></i></div></div>';
+  try {
+    var res = await fetch('/api/cable-incoming');
+    var data = res.ok ? await res.json() : { items: [] };
+    var items = data.items || [];
+    _renderCableIncomingUI(container, items);
+  } catch(e) {
+    container.innerHTML = '<div class="page-container"><p class="text-red-500 p-6"><i class="fas fa-exclamation-circle mr-2"></i>데이터를 불러오지 못했습니다: ' + e.message + '</p></div>';
+  }
+}
+
+function _renderCableIncomingUI(container, items) {
+  // ── 옵션 ────────────────────────────────────────────────────
+  var SPEC_OPTS_CI  = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(function(v){ return '<option value="' + v + '">' + (v||'규격') + '</option>'; }).join('');
+  var MAKER_OPTS_CI = ['','LS','대한','일진','가온','기타'].map(function(v){ return '<option value="' + v + '">' + (v||'제조사') + '</option>'; }).join('');
+  var KIND_OPTS_CI  = ['','가공','일반','지중','난연'].map(function(v){ return '<option value="' + v + '">' + (v||'케이블종류') + '</option>'; }).join('');
+  var YEAR_OPTS_CI  = (function(){ var a=[]; var y=getKSTYear(); for(var i=y;i>=y-20;i--) a.push('<option value="'+i+'">'+i+'</option>'); return '<option value="">제작년도</option>'+a.join(''); })();
+
+  // ── 집계 계산 ───────────────────────────────────────────────
+  // 제조사/규격/종류별 입고 현황
+  var inMap = {}; // key: maker+'|'+spec+'|'+kind
+  items.forEach(function(it) {
+    var k = (it.maker||'-') + '|' + (it.spec||'-') + '|' + (it.cable_kind||'-');
+    if (!inMap[k]) inMap[k] = { maker: it.maker||'-', spec: it.spec||'-', kind: it.cable_kind||'-', qty: 0 };
+    inMap[k].qty += (it.qty_m || 0);
+  });
+  var inSummary = Object.values(inMap).sort(function(a,b){ return (a.maker+a.spec+a.kind).localeCompare(b.maker+b.spec+b.kind); });
+
+  // 보유 현황 = 입고량 - 사용량 (사용량은 별도 API /api/cable-incoming/holding)
+  // → 렌더 후 비동기 로드
+
+  // ── 날짜별 정렬 (내림차순) ───────────────────────────────────
+  var listItems = items.slice().sort(function(a,b){ return (b.in_date||'').localeCompare(a.in_date||''); });
+
+  // ── HTML ────────────────────────────────────────────────────
+  container.innerHTML = '<div class="page-container space-y-6">' +
+
+    // 헤더
+    '<div class="flex items-center justify-between mb-2">' +
+      '<h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">' +
+        '<i class="fas fa-inbox text-blue-500"></i> 광케이블 입고관리' +
+      '</h2>' +
+      '<button onclick="_openCableIncomingModal()" class="btn-primary flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-semibold shadow">' +
+        '<i class="fas fa-plus"></i> 입고 등록' +
+      '</button>' +
+    '</div>' +
+
+    // ── 탭 ───────────────────────────────────────────────────
+    '<div class="flex gap-2 border-b border-gray-200 mb-0" id="ci-tabs">' +
+      '<button class="ci-tab-btn ci-tab-active px-4 py-2 text-sm font-semibold border-b-2 border-blue-500 text-blue-600" data-tab="in-summary" onclick="_ciSwitchTab(this,\'in-summary\')"><i class="fas fa-chart-bar mr-1"></i>입고 현황</button>' +
+      '<button class="ci-tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-blue-500" data-tab="hold-summary" onclick="_ciSwitchTab(this,\'hold-summary\')"><i class="fas fa-boxes mr-1"></i>보유 현황</button>' +
+      '<button class="ci-tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-blue-500" data-tab="in-list" onclick="_ciSwitchTab(this,\'in-list\')"><i class="fas fa-list mr-1"></i>날짜별 입고내역</button>' +
+    '</div>' +
+
+    // ── 탭 패널: 입고 현황 ────────────────────────────────────
+    '<div id="ci-panel-in-summary" class="ci-panel">' +
+      '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
+        '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
+          '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-chart-bar text-blue-400 mr-2"></i>제조사/규격/종류별 입고 현황</span>' +
+          '<span class="text-xs text-gray-400">총 ' + inSummary.length + '개 항목</span>' +
+        '</div>' +
+        '<div class="overflow-x-auto">' +
+          '<table class="w-full text-sm">' +
+            '<thead class="bg-gray-50"><tr>' +
+              '<th class="px-4 py-2 text-center text-gray-600 font-semibold">제조사</th>' +
+              '<th class="px-4 py-2 text-center text-gray-600 font-semibold">규격</th>' +
+              '<th class="px-4 py-2 text-center text-gray-600 font-semibold">케이블종류</th>' +
+              '<th class="px-4 py-2 text-right text-gray-600 font-semibold">입고량(M)</th>' +
+            '</tr></thead>' +
+            '<tbody id="ci-in-summary-body">' +
+              (inSummary.length === 0 ?
+                '<tr><td colspan="4" class="text-center py-8 text-gray-400">입고 데이터가 없습니다</td></tr>' :
+                inSummary.map(function(r){
+                  return '<tr class="border-t border-gray-100 hover:bg-blue-50">' +
+                    '<td class="px-4 py-2 text-center">' + r.maker + '</td>' +
+                    '<td class="px-4 py-2 text-center">' + r.spec + '</td>' +
+                    '<td class="px-4 py-2 text-center">' + r.kind + '</td>' +
+                    '<td class="px-4 py-2 text-right font-semibold text-blue-600">' + (r.qty||0).toLocaleString() + 'M</td>' +
+                  '</tr>';
+                }).join('')
+              ) +
+            '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    // ── 탭 패널: 보유 현황 ────────────────────────────────────
+    '<div id="ci-panel-hold-summary" class="ci-panel hidden">' +
+      '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
+        '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
+          '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-boxes text-green-400 mr-2"></i>제조사/규격/종류별 보유 현황 <span class="text-xs text-gray-400">(입고량 − 사용량)</span></span>' +
+          '<button onclick="_loadCableHoldingSummary()" class="text-xs text-blue-500 hover:underline"><i class="fas fa-sync-alt mr-1"></i>새로고침</button>' +
+        '</div>' +
+        '<div class="overflow-x-auto">' +
+          '<table class="w-full text-sm">' +
+            '<thead class="bg-gray-50"><tr>' +
+              '<th class="px-4 py-2 text-center text-gray-600 font-semibold">제조사</th>' +
+              '<th class="px-4 py-2 text-center text-gray-600 font-semibold">규격</th>' +
+              '<th class="px-4 py-2 text-center text-gray-600 font-semibold">케이블종류</th>' +
+              '<th class="px-4 py-2 text-right text-gray-600 font-semibold">입고량(M)</th>' +
+              '<th class="px-4 py-2 text-right text-gray-600 font-semibold">사용량(M)</th>' +
+              '<th class="px-4 py-2 text-right text-gray-600 font-semibold">보유량(M)</th>' +
+            '</tr></thead>' +
+            '<tbody id="ci-hold-summary-body">' +
+              '<tr><td colspan="6" class="text-center py-8 text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>집계 중...</td></tr>' +
+            '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    // ── 탭 패널: 날짜별 입고내역 ─────────────────────────────
+    '<div id="ci-panel-in-list" class="ci-panel hidden">' +
+      '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
+        '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
+          '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-list text-indigo-400 mr-2"></i>날짜별 입고 내역</span>' +
+          '<span class="text-xs text-gray-400">총 ' + listItems.length + '건</span>' +
+        '</div>' +
+        '<div class="overflow-x-auto">' +
+          '<table class="w-full text-sm">' +
+            '<thead class="bg-gray-50"><tr>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">입고일</th>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">LOT NO.</th>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">규격</th>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">제조사</th>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">제작년도</th>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">케이블종류</th>' +
+              '<th class="px-3 py-2 text-right text-gray-600 font-semibold">입고량(M)</th>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">비고</th>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">삭제</th>' +
+            '</tr></thead>' +
+            '<tbody>' +
+              (listItems.length === 0 ?
+                '<tr><td colspan="9" class="text-center py-8 text-gray-400">입고 내역이 없습니다</td></tr>' :
+                listItems.map(function(it){
+                  return '<tr class="border-t border-gray-100 hover:bg-indigo-50">' +
+                    '<td class="px-3 py-2 text-center text-xs font-mono">' + (it.in_date||'-') + '</td>' +
+                    '<td class="px-3 py-2 text-center text-xs">' + (it.lot_no||'-') + '</td>' +
+                    '<td class="px-3 py-2 text-center">' + (it.spec||'-') + '</td>' +
+                    '<td class="px-3 py-2 text-center">' + (it.maker||'-') + '</td>' +
+                    '<td class="px-3 py-2 text-center">' + (it.mfg_year||'-') + '</td>' +
+                    '<td class="px-3 py-2 text-center">' + (it.cable_kind||'-') + '</td>' +
+                    '<td class="px-3 py-2 text-right font-semibold text-blue-600">' + (it.qty_m||0).toLocaleString() + 'M</td>' +
+                    '<td class="px-3 py-2 text-center text-xs text-gray-500">' + (it.remark||'') + '</td>' +
+                    '<td class="px-3 py-2 text-center"><button onclick="_deleteCableIncoming(' + it.id + ')" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-trash"></i></button></td>' +
+                  '</tr>';
+                }).join('')
+              ) +
+            '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+  '</div>'; // end page-container
+
+  // 보유 현황 탭 선택 시 자동 로드
+  _loadCableHoldingSummary();
+}
+
+// ── 탭 전환 ────────────────────────────────────────────────────
+function _ciSwitchTab(btn, tab) {
+  document.querySelectorAll('.ci-tab-btn').forEach(function(b){
+    b.classList.remove('ci-tab-active','border-blue-500','text-blue-600');
+    b.classList.add('border-transparent','text-gray-500');
+  });
+  btn.classList.add('ci-tab-active','border-blue-500','text-blue-600');
+  btn.classList.remove('border-transparent','text-gray-500');
+  document.querySelectorAll('.ci-panel').forEach(function(p){ p.classList.add('hidden'); });
+  var panel = document.getElementById('ci-panel-' + tab);
+  if (panel) panel.classList.remove('hidden');
+}
+
+// ── 보유 현황 집계 로드 ─────────────────────────────────────────
+async function _loadCableHoldingSummary() {
+  var tbody = document.getElementById('ci-hold-summary-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>집계 중...</td></tr>';
+  try {
+    var res = await fetch('/api/cable-incoming/holding');
+    var data = res.ok ? await res.json() : { items: [] };
+    var rows = data.items || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-400">데이터가 없습니다</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function(r){
+      var holding = (r.in_qty||0) - (r.use_qty||0);
+      var color = holding < 0 ? 'text-red-500' : holding === 0 ? 'text-gray-400' : 'text-green-600';
+      return '<tr class="border-t border-gray-100 hover:bg-green-50">' +
+        '<td class="px-4 py-2 text-center">' + (r.maker||'-') + '</td>' +
+        '<td class="px-4 py-2 text-center">' + (r.spec||'-') + '</td>' +
+        '<td class="px-4 py-2 text-center">' + (r.cable_kind||'-') + '</td>' +
+        '<td class="px-4 py-2 text-right text-blue-600">' + (r.in_qty||0).toLocaleString() + 'M</td>' +
+        '<td class="px-4 py-2 text-right text-orange-500">' + (r.use_qty||0).toLocaleString() + 'M</td>' +
+        '<td class="px-4 py-2 text-right font-semibold ' + color + '">' + holding.toLocaleString() + 'M</td>' +
+      '</tr>';
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-red-400">집계 오류: ' + e.message + '</td></tr>';
+  }
+}
+
+// ── 입고 등록 모달 ──────────────────────────────────────────────
+function _openCableIncomingModal(editData) {
+  var d = editData || {};
+  var SPEC_O  = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(function(v){ return '<option value="' + v + '"' + (v===(d.spec||'')?'selected':'') + '>' + (v||'규격') + '</option>'; }).join('');
+  var MAKER_O = ['','LS','대한','일진','가온','기타'].map(function(v){ return '<option value="' + v + '"' + (v===(d.maker||'')?'selected':'') + '>' + (v||'제조사') + '</option>'; }).join('');
+  var KIND_O  = ['','가공','일반','지중','난연'].map(function(v){ return '<option value="' + v + '"' + (v===(d.cable_kind||'')?'selected':'') + '>' + (v||'케이블종류') + '</option>'; }).join('');
+  var YEAR_O  = (function(){ var a=[]; var y=getKSTYear(); for(var i=y;i>=y-20;i--) a.push('<option value="'+i+'"'+(String(i)===(d.mfg_year||'')?'selected':'')+'>'+i+'</option>'); return '<option value="">제작년도</option>'+a.join(''); })();
+
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50';
+  overlay.innerHTML =
+    '<div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">' +
+      '<div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">' +
+        '<h3 class="text-base font-bold text-gray-800"><i class="fas fa-inbox text-blue-500 mr-2"></i>케이블 입고 등록</h3>' +
+        '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>' +
+      '</div>' +
+      '<div class="p-6 space-y-4">' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div>' +
+            '<label class="block text-xs text-gray-500 mb-1">입고일 <span class="text-red-400">*</span></label>' +
+            '<input type="date" id="ci-modal-date" value="' + (d.in_date||kstDateStr()) + '" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' +
+          '</div>' +
+          '<div>' +
+            '<label class="block text-xs text-gray-500 mb-1">LOT NO.</label>' +
+            '<input type="text" id="ci-modal-lot" value="' + (d.lot_no||'') + '" placeholder="LOT NO." class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' +
+          '</div>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div>' +
+            '<label class="block text-xs text-gray-500 mb-1">규격</label>' +
+            '<select id="ci-modal-spec" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' + SPEC_O + '</select>' +
+          '</div>' +
+          '<div>' +
+            '<label class="block text-xs text-gray-500 mb-1">제조사</label>' +
+            '<select id="ci-modal-maker" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' + MAKER_O + '</select>' +
+          '</div>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div>' +
+            '<label class="block text-xs text-gray-500 mb-1">제작년도</label>' +
+            '<select id="ci-modal-year" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' + YEAR_O + '</select>' +
+          '</div>' +
+          '<div>' +
+            '<label class="block text-xs text-gray-500 mb-1">케이블종류</label>' +
+            '<select id="ci-modal-kind" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' + KIND_O + '</select>' +
+          '</div>' +
+        '</div>' +
+        '<div>' +
+          '<label class="block text-xs text-gray-500 mb-1">입고량(M) <span class="text-red-400">*</span></label>' +
+          '<input type="number" id="ci-modal-qty" value="' + (d.qty_m||'') + '" step="1" min="0" placeholder="입고량(M)" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' +
+        '</div>' +
+        '<div>' +
+          '<label class="block text-xs text-gray-500 mb-1">비고</label>' +
+          '<input type="text" id="ci-modal-remark" value="' + (d.remark||'') + '" placeholder="비고" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' +
+        '</div>' +
+      '</div>' +
+      '<div class="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50">' +
+        '<button onclick="this.closest(\'.modal-overlay\').remove()" class="px-4 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200">취소</button>' +
+        '<button onclick="_saveCableIncoming()" class="px-5 py-2 rounded-xl text-sm font-semibold bg-blue-500 hover:bg-blue-600 text-white shadow">저장</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+}
+
+// ── 입고 저장 ───────────────────────────────────────────────────
+async function _saveCableIncoming() {
+  var inDate  = (document.getElementById('ci-modal-date')||{}).value || '';
+  var qty     = parseFloat((document.getElementById('ci-modal-qty')||{}).value || '0');
+  if (!inDate) { alert('입고일을 입력해 주세요.'); return; }
+  if (!qty || qty <= 0) { alert('입고량(M)을 입력해 주세요.'); return; }
+  var payload = {
+    in_date:    inDate,
+    lot_no:     (document.getElementById('ci-modal-lot')||{}).value  || '',
+    spec:       (document.getElementById('ci-modal-spec')||{}).value || '',
+    maker:      (document.getElementById('ci-modal-maker')||{}).value || '',
+    mfg_year:   (document.getElementById('ci-modal-year')||{}).value || '',
+    cable_kind: (document.getElementById('ci-modal-kind')||{}).value || '',
+    qty_m:      qty,
+    remark:     (document.getElementById('ci-modal-remark')||{}).value || ''
+  };
+  try {
+    var res = await fetch('/api/cable-incoming', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) { alert('저장 실패: ' + res.status); return; }
+    var overlay = document.querySelector('.modal-overlay');
+    if (overlay) overlay.remove();
+    renderCableIncomingPage(document.getElementById('page-content'));
+  } catch(e) {
+    alert('저장 오류: ' + e.message);
+  }
+}
+
+// ── 입고 삭제 ───────────────────────────────────────────────────
+async function _deleteCableIncoming(id) {
+  if (!confirm('이 입고 내역을 삭제하시겠습니까?')) return;
+  try {
+    var res = await fetch('/api/cable-incoming/' + id, { method: 'DELETE' });
+    if (!res.ok) { alert('삭제 실패: ' + res.status); return; }
+    renderCableIncomingPage(document.getElementById('page-content'));
+  } catch(e) {
+    alert('삭제 오류: ' + e.message);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

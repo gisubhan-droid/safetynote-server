@@ -5,6 +5,49 @@
 
 ---
 
+## [FEAT-177] 광케이블 입고관리 신규 메뉴 + 광케이블 현황 메뉴 구조 변경 (커밋 `TBD`) — 세션 94 (2026-07-27)
+
+### 기능 요약
+1. **메뉴 구조 변경**: `광케이블 현황` 단일 메뉴 → 부모 메뉴(광케이블 현황) + 자식 2개 구조
+   - `광케이블 현황` (부모, cable) → 클릭 시 `광케이블 사용량`으로 자동 리디렉션
+   - `광케이블 사용량` (cable-detail) — 기존 renderCableDetailPage 그대로 유지
+   - `광케이블 입고관리` (cable-incoming) — 신규 메뉴 생성
+2. **광케이블 입고관리 기능**: 케이블 입고 등록/조회/삭제 + 3개 탭(입고현황/보유현황/날짜별내역)
+
+### 변경 내역
+- **`public/static/app.js`**:
+  - 메뉴(line ~2350): `cable-detail` 단일 → `cable` 부모 + `cable-detail`/`cable-incoming` 자식
+  - 브레드크럼(line ~3092): `cable-detail: '광케이블 현황'` → `cable-detail: '광케이블 사용량'`, `cable-incoming: '광케이블 입고관리'` 추가
+  - 라우팅(line ~3229): `case 'cable'` 리디렉션, `case 'cable-incoming'` 추가
+  - 신규 함수: `renderCableIncomingPage()`, `_renderCableIncomingUI()`, `_ciSwitchTab()`, `_loadCableHoldingSummary()`, `_openCableIncomingModal()`, `_saveCableIncoming()`, `_deleteCableIncoming()`
+- **`node-server.ts`**:
+  - `patchSchema v0.174`: `cable_incoming` 테이블 신규 생성
+  - NAS 전용 API 직접 구현: GET/POST/DELETE `/api/cable-incoming`, GET `/api/cable-incoming/holding`
+- **`src/routes/cable-incoming.ts`**: Cloudflare D1용 API 신규 파일 (GET/POST/DELETE + holding 집계)
+- **`src/index.tsx`**: `cable-incoming` 라우트 import + mount 추가
+- **`migrations/0060_cable_incoming.sql`**: `cable_incoming` 테이블 + 인덱스 생성
+
+### 테이블 스키마 (cable_incoming)
+```sql
+CREATE TABLE IF NOT EXISTS cable_incoming (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  in_date TEXT NOT NULL, lot_no TEXT DEFAULT '', spec TEXT DEFAULT '',
+  maker TEXT DEFAULT '', mfg_year TEXT DEFAULT '', cable_kind TEXT DEFAULT '',
+  cable_type TEXT DEFAULT '', qty_m REAL DEFAULT 0, remark TEXT DEFAULT '',
+  created_by TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+```
+
+### 보유 현황 계산
+- `보유량(M)` = `cable_incoming.qty_m 합계` - `work_report_cables.usage_m 합계`
+- 사용량 기준: `work_reports.status IN ('confirmed','submitted')` (확정/제출 일보만)
+- 집계 키: `maker + spec + cable_kind` 3개 컬럼 조합
+
+### RULE-001 준수
+- `renderCableIncomingPage`, `_renderCableIncomingUI`, `_ciSwitchTab`, `_loadCableHoldingSummary`, `_openCableIncomingModal`, `_saveCableIncoming`, `_deleteCableIncoming` 모두 `var` 전용, `const`/`let`/화살표함수 없음
+
+---
+
 ## [FEAT-176 / BUG-176] 외선작업일보 공정구분 철거 분리 + 광케이블 현황 케이블종류 오류 (커밋 `55b7aff`) — 세션 94 (2026-07-27)
 
 ### 기능 요약

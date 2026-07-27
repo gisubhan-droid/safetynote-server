@@ -3101,6 +3101,33 @@ function patchSchema() {
     }
   }
 
+  // ─── patchSchema v0.174: cable_incoming 테이블 신규 생성 [FEAT-177] ─────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS cable_incoming (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        in_date     TEXT NOT NULL,
+        lot_no      TEXT DEFAULT '',
+        spec        TEXT DEFAULT '',
+        maker       TEXT DEFAULT '',
+        mfg_year    TEXT DEFAULT '',
+        cable_kind  TEXT DEFAULT '',
+        cable_type  TEXT DEFAULT '',
+        qty_m       REAL DEFAULT 0,
+        remark      TEXT DEFAULT '',
+        created_by  TEXT DEFAULT '',
+        created_at  TEXT DEFAULT (datetime('now','localtime'))
+      )
+    `)
+    console.log('[patchSchema v0.174] ✅ cable_incoming 테이블 생성 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.174] cable_incoming 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.174] cable_incoming 테이블 생성 실패 (무시):', e.message)
+    }
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -6200,6 +6227,78 @@ app.route('/api/admin', adminRoutes)
 app.route('/api/app-version', createAppVersionRoute())
 // ─── APK 배포 API → nas-routes/dist.ts ─────────────────────────────────────────
 app.route('/api/dist', distRoutes)
+// ─── cable-incoming API (NAS 전용 직접 구현) [FEAT-177] ────────────────────────
+;(function() {
+  // GET /api/cable-incoming — 전체 입고 내역
+  app.get('/api/cable-incoming', (c) => {
+    try {
+      const rows = rawDb.prepare('SELECT * FROM cable_incoming ORDER BY in_date DESC, id DESC').all()
+      return c.json({ items: rows })
+    } catch(e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  // GET /api/cable-incoming/holding — 보유 현황 (입고량 - 사용량)
+  app.get('/api/cable-incoming/holding', (c) => {
+    try {
+      const inRows = rawDb.prepare(`
+        SELECT maker, spec, cable_kind, SUM(qty_m) AS in_qty
+        FROM cable_incoming GROUP BY maker, spec, cable_kind
+      `).all() as any[]
+
+      const useRows = rawDb.prepare(`
+        SELECT wrc.maker, wrc.spec, wrc.cable_kind, SUM(wrc.usage_m) AS use_qty
+        FROM work_report_cables wrc
+        JOIN work_reports wr ON wr.id = wrc.report_id
+        WHERE wr.status IN ('confirmed','submitted')
+        GROUP BY wrc.maker, wrc.spec, wrc.cable_kind
+      `).all() as any[]
+
+      const useMap: Record<string, number> = {}
+      for (const r of useRows) {
+        const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')
+        useMap[k] = (useMap[k]||0) + (r.use_qty||0)
+      }
+
+      const items = inRows.map(r => {
+        const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')
+        return { maker: r.maker||'-', spec: r.spec||'-', cable_kind: r.cable_kind||'-', in_qty: r.in_qty||0, use_qty: useMap[k]||0 }
+      })
+      // 사용량만 있는 항목 추가
+      for (const r of useRows) {
+        const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')
+        if (!inRows.some(i => ((i.maker||'')+'|'+(i.spec||'')+'|'+(i.cable_kind||''))===k)) {
+          items.push({ maker: r.maker||'-', spec: r.spec||'-', cable_kind: r.cable_kind||'-', in_qty: 0, use_qty: r.use_qty||0 })
+        }
+      }
+      items.sort((a,b) => (a.maker+a.spec+a.cable_kind).localeCompare(b.maker+b.spec+b.cable_kind))
+      return c.json({ items })
+    } catch(e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  // POST /api/cable-incoming — 입고 등록
+  app.post('/api/cable-incoming', async (c) => {
+    try {
+      const body = await c.req.json() as any
+      const { in_date, lot_no='', spec='', maker='', mfg_year='', cable_kind='', cable_type='', qty_m=0, remark='' } = body
+      if (!in_date) return c.json({ error: '입고일은 필수입니다.' }, 400)
+      if (!qty_m || Number(qty_m) <= 0) return c.json({ error: '입고량(M)은 0보다 커야 합니다.' }, 400)
+      const result = rawDb.prepare(`
+        INSERT INTO cable_incoming (in_date,lot_no,spec,maker,mfg_year,cable_kind,cable_type,qty_m,remark)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `).run(in_date, lot_no, spec, maker, mfg_year, cable_kind, cable_type, Number(qty_m), remark)
+      return c.json({ id: result.lastInsertRowid, success: true })
+    } catch(e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  // DELETE /api/cable-incoming/:id — 입고 삭제
+  app.delete('/api/cable-incoming/:id', (c) => {
+    const id = Number(c.req.param('id'))
+    try {
+      rawDb.prepare('DELETE FROM cable_incoming WHERE id = ?').run(id)
+      return c.json({ success: true })
+    } catch(e: any) { return c.json({ error: e.message }, 500) }
+  })
+})()
 // ─── work-reports + volume-unit-prices → nas-routes/work-reports.ts ────────────
 app.route('/api/work-reports', workReportsRoutes)
 app.route('/api/volume-unit-prices', createVolumeUnitPricesRoutes())

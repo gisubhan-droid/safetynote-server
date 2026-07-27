@@ -3102,6 +3102,7 @@ function patchSchema() {
   }
 
   // ─── patchSchema v0.174: cable_incoming 테이블 신규 생성 [FEAT-177] ─────────
+  // ※ asset_type 컬럼 없이 먼저 생성된 경우 v0.175에서 ALTER로 추가
   try {
     rawDb.exec(`
       CREATE TABLE IF NOT EXISTS cable_incoming (
@@ -3126,6 +3127,18 @@ function patchSchema() {
       console.log('[patchSchema v0.174] cable_incoming 테이블 이미 존재 — 스킵')
     } else {
       console.warn('[patchSchema v0.174] cable_incoming 테이블 생성 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.175: cable_incoming.asset_type 컬럼 추가 (v0.174 이전 생성 DB 보완) ─
+  try {
+    rawDb.exec(`ALTER TABLE cable_incoming ADD COLUMN asset_type TEXT DEFAULT ''`)
+    console.log('[patchSchema v0.175] ✅ cable_incoming.asset_type 컬럼 추가 완료')
+  } catch(e: any) {
+    if (e.message?.includes('duplicate column')) {
+      console.log('[patchSchema v0.175] asset_type 컬럼 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.175] asset_type 컬럼 추가 실패 (무시):', e.message)
     }
   }
 

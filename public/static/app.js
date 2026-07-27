@@ -5396,8 +5396,12 @@ async function autoLinkConstruction() {
       // 작업명 자동 입력: 비어있거나 이전 자동입력 값이면 공사명으로 채움
       const titleEl = document.getElementById('mTitle');
       if (titleEl && (!titleEl.value.trim() || titleEl.dataset.autoFilled === '1')) {
-        titleEl.value = con.title || '';
+        // [FEAT-173] prefix 자동입력 ON 상태이면 prefix 유지하며 공사명 채움
+        var _pfxCb = document.getElementById('mTitlePrefixCb');
+        var _pfx = (_pfxCb && _pfxCb.checked) ? _makeTitlePrefix() : '';
+        titleEl.value = _pfx + (con.title || '');
         titleEl.dataset.autoFilled = '1';
+        if (_pfx) _updateTitlePrefixHint(_pfx);
         // 자동입력 표시 — 힌트 문구 잠깐 표시
         titleEl.style.transition = 'background 0.3s';
         titleEl.style.background = '#F0FDF4';
@@ -7357,11 +7361,25 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
 
         <!-- 작업명 -->
         <div class="form-group md:col-span-2">
-          <label class="form-label">작업명 <span class="text-red-500">*</span></label>
-          <input id="mTitle" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="작업명 입력"
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+            <label class="form-label" style="margin-bottom:0">작업명 <span class="text-red-500">*</span></label>
+            <!-- [FEAT-173] 작업명 자동입력 체크박스 -->
+            <label id="mTitlePrefixCbWrap" onclick="onTitlePrefixCbChange()"
+              style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:${!editId?'#685182':'#9CA3AF'};cursor:pointer;user-select:none;padding:3px 8px;border-radius:6px;border:1.5px solid ${!editId?'#685182':'#E5E7EB'};background:${!editId?'#F0EBF8':'#F9FAFB'};transition:all 0.15s">
+              <input type="checkbox" id="mTitlePrefixCb" ${!editId?'checked':''} onclick="event.stopPropagation();onTitlePrefixCbChange()" style="width:13px;height:13px;accent-color:#685182;cursor:pointer;margin:0">
+              <i class="fas fa-magic" style="font-size:10px"></i>작업명 자동입력
+            </label>
+          </div>
+          <input id="mTitle" type="text" autocomplete="off" inputmode="text"
+            class="form-control" placeholder="작업명 입력"
             value="${task.title || (!editId ? (presetConstruction?.title || '') : '')}"
             data-auto-filled="${(!editId && !task.title && presetConstruction?.title) ? '1' : '0'}"
+            style="${!editId?'border-color:#685182':''}"
             oninput="this.dataset.autoFilled='0'">
+          <!-- prefix 힌트 한 줄 -->
+          <div id="mTitlePrefixHint"
+            style="display:${!editId?'flex':'none'};align-items:center;gap:4px;font-size:11.5px;color:#A78BCA;margin-top:4px;min-height:18px">
+          </div>
         </div>
 
         <!-- 작업종류 | 작업(예정)일 (2열) -->
@@ -7388,7 +7406,7 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
             }).join('');
             return '<div class="form-group">'
               + '<label class="form-label"><i class="fas fa-list-ul mr-1" style="color:#685182"></i>상세분류 <span class="text-red-500">*</span></label>'
-              + '<select id="mWorkSubClass" class="form-control">' + opts + '</select>'
+              + '<select id="mWorkSubClass" class="form-control" onchange="onMWorkSubClassChange()">' + opts + '</select>'
               + '</div>';
           })()}
         </div>
@@ -7558,6 +7576,12 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
       if (rnoEl) rnoEl.focus();
     }, 100);
   }
+
+  // [FEAT-173] 신규 등록: 체크박스 ON 상태로 초기 prefix 적용
+  if (!editId) {
+    // DOM 렌더링 완료 후 실행
+    setTimeout(function() { _applyTitlePrefixIfOn(); }, 50);
+  }
 }
 
 // 팀 배정 미리보기 업데이트
@@ -7587,10 +7611,74 @@ function onMWorkClassChange(wc) {
   }).join('');
   container.innerHTML = '<div class="form-group">'
     + '<label class="form-label"><i class="fas fa-list-ul mr-1" style="color:#685182"></i>상세분류 <span class="text-red-500">*</span></label>'
-    + '<select id="mWorkSubClass" class="form-control">' + opts + '</select>'
+    + '<select id="mWorkSubClass" class="form-control" onchange="onMWorkSubClassChange()">' + opts + '</select>'
     + '</div>';
   var sel = document.getElementById('mWorkSubClass');
   if (sel) sel.value = defaultSub;
+  // 자동입력 ON 상태이면 작업종류 변경 시 prefix 갱신
+  _applyTitlePrefixIfOn();
+}
+
+// ── [FEAT-173] 작업명 자동입력 헬퍼 함수들 (RULE-001: var 전용) ──────────────
+
+// prefix 정규식: 맨 앞 [xxx][yyy] 패턴
+var _TITLE_PREFIX_RE = /^(\[[^\]]+\]\[[^\]]+\])/;
+
+// 현재 작업종류+상세분류로 prefix 문자열 생성
+function _makeTitlePrefix() {
+  var wcSel = document.getElementById('mWorkClass');
+  var subSel = document.getElementById('mWorkSubClass');
+  if (!wcSel || !subSel) return '';
+  var wcLabel = workClassName(wcSel.value) || wcSel.options[wcSel.selectedIndex]?.text || '';
+  var subLabel = subSel.options[subSel.selectedIndex]?.text || '';
+  if (!wcLabel || !subLabel) return '';
+  return '[' + wcLabel + '][' + subLabel + ']';
+}
+
+// 체크박스 ON 상태일 때만 prefix 적용
+function _applyTitlePrefixIfOn() {
+  var cb = document.getElementById('mTitlePrefixCb');
+  if (!cb || !cb.checked) return;
+  var titleEl = document.getElementById('mTitle');
+  if (!titleEl) return;
+  var prefix = _makeTitlePrefix();
+  if (!prefix) return;
+  var bare = titleEl.value.replace(_TITLE_PREFIX_RE, '');
+  titleEl.value = prefix + bare;
+  _updateTitlePrefixHint(prefix);
+}
+
+// 힌트 문구 갱신
+function _updateTitlePrefixHint(prefix) {
+  var hint = document.getElementById('mTitlePrefixHint');
+  if (!hint) return;
+  hint.innerHTML = '<span style="display:inline-flex;align-items:center;gap:3px;background:#685182;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;margin-right:4px">'
+    + '<i class="fas fa-magic" style="font-size:9px"></i>자동</span>'
+    + '맨 앞에 <strong style="color:#685182">\u00a0' + prefix + '\u00a0</strong> 삽입 중 — 변경 시 자동 갱신';
+  hint.style.display = 'flex';
+}
+
+// 체크박스 ON/OFF 토글 핸들러
+function onTitlePrefixCbChange() {
+  var cb = document.getElementById('mTitlePrefixCb');
+  var wrap = document.getElementById('mTitlePrefixCbWrap');
+  var hint = document.getElementById('mTitlePrefixHint');
+  var titleEl = document.getElementById('mTitle');
+  if (!cb) return;
+  if (cb.checked) {
+    if (wrap) { wrap.style.borderColor = '#685182'; wrap.style.color = '#685182'; wrap.style.background = '#F0EBF8'; wrap.style.fontWeight = '700'; }
+    if (titleEl) titleEl.style.borderColor = '#685182';
+    _applyTitlePrefixIfOn();
+  } else {
+    if (wrap) { wrap.style.borderColor = '#E5E7EB'; wrap.style.color = '#9CA3AF'; wrap.style.background = '#F9FAFB'; wrap.style.fontWeight = '600'; }
+    if (titleEl) titleEl.style.borderColor = '';
+    if (hint) { hint.innerHTML = ''; hint.style.display = 'none'; }
+  }
+}
+
+// 상세분류 select 변경 시 호출 (onchange 이벤트용)
+function onMWorkSubClassChange() {
+  _applyTitlePrefixIfOn();
 }
 
 function validateTaskOrderAddress() {
@@ -43977,6 +44065,14 @@ async function copyTask(taskId) {
   var mWorkClass = document.getElementById('mWorkClass');
   if (mWorkClass) {
     mWorkClass.value = t.work_class || 'cable_install';
+    // [FEAT-173] 복사 시 체크박스 OFF → 작업명 자동입력 비활성 (기존 작업명 보존)
+    var _cpCb = document.getElementById('mTitlePrefixCb');
+    var _cpWrap = document.getElementById('mTitlePrefixCbWrap');
+    if (_cpCb) { _cpCb.checked = false; }
+    if (_cpWrap) { _cpWrap.style.borderColor='#E5E7EB'; _cpWrap.style.color='#9CA3AF'; _cpWrap.style.background='#F9FAFB'; _cpWrap.style.fontWeight='600'; }
+    var _cpHint = document.getElementById('mTitlePrefixHint');
+    if (_cpHint) { _cpHint.innerHTML=''; _cpHint.style.display='none'; }
+    if (mTitle) mTitle.style.borderColor = '';
     // 작업종류 변경 → 상세분류 select 재렌더링 후 기존값 복원
     onMWorkClassChange(mWorkClass.value);
     var mWorkSubClass = document.getElementById('mWorkSubClass');

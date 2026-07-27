@@ -5,6 +5,63 @@
 
 ---
 
+## [BUG-180] 현장위치 지도 진행 탭 날짜 필터 미동작 (커밋 `877ce55`) — 세션 99 (2026-07-27) ✅ 수정 완료
+
+### 증상
+현장위치 지도 → 진행(🟢) 탭에서 "오늘" 날짜 필터 선택 시,
+오늘 날짜가 아닌 **과거 날짜 작업까지 모두 표시**됨.
+
+### 원인
+`loadSiteMapMarkers()` 내 진행 탭 분기에서 `/api/tbm` 호출 시
+`date_from`/`date_to` 파라미터를 **아예 전송하지 않음**:
+
+```javascript
+// 수정 전 — 날짜 파라미터 미전송
+const twp = new URLSearchParams();
+if (userId) twp.set('user_id', userId);  // 날짜 없음!
+twp.set('limit', '500');
+const tbmAllRes = await API.get(`/tbm?${twp.toString()}`);
+```
+
+서버(`tbm.ts`)는 `date_from`/`date_to` 파라미터가 없으면 전체 기간 반환.
+→ `task_status='working'`인 **모든 날짜** 데이터가 반환되어 날짜 필터 무시됨.
+
+완료 탭(`completed`)은 동일 API에 `date_from`/`date_to`를 이미 정상 전송 중.
+진행 탭만 누락된 상태였음.
+
+### 해결 방법
+1. **서버 파라미터 전송**: 진행 탭도 `date_from`/`date_to` 서버 전송 추가
+2. **클라이언트 2차 필터**: `planned_date` 기준 클라이언트 필터 추가 (서버 `tbm_date` 필터 보완)
+
+```javascript
+// 수정 후
+const twp = new URLSearchParams();
+if (dateFrom) twp.set('date_from', dateFrom);  // ← 추가
+if (dateTo)   twp.set('date_to',   dateTo);    // ← 추가
+if (userId)   twp.set('user_id',   userId);
+twp.set('limit', '500');
+
+// + 클라이언트 2차 필터 (planned_date 기준)
+const workingTbmList = tbmAllFiltered.filter(function(tbm) {
+  if (tbm.task_status !== 'working') return false;
+  var pd = tbm.planned_date ? String(tbm.planned_date).slice(0, 10) : '';
+  if (dateFrom && pd && pd < dateFrom) return false;
+  if (dateTo   && pd && pd > dateTo)   return false;
+  return true;
+});
+```
+
+### 수정 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | 진행 탭 `/api/tbm` 호출에 `date_from`/`date_to` 파라미터 추가 + `planned_date` 클라이언트 2차 필터 추가 |
+
+### NAS 듀얼 구조 영향
+- `node-server.ts`: `/api/tbm` GET은 `src/routes/tbm.ts`를 `app.route()`로 위임 — 클라이언트 변경만으로 해결, 서버 수정 불필요
+- `src/routes/tbm.ts`: `date_from`/`date_to` 파라미터 이미 지원 중 (라인 20~21)
+
+---
+
 ## [BUG-179b] Android 앱 사진 갤러리 저장 — downloadApk 오용 수정 (커밋 `ea4cebe`) — 세션 98 (2026-07-27) ✅ 검증 완료
 
 ### 증상

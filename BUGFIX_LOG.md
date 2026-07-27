@@ -4926,6 +4926,46 @@ API.get('/tasks', { params: _taskParams })
 
 ---
 
+## [FEAT-175] 공사번호 입력 팝업 + 3열 폼 레이아웃 (커밋 `a161357`) — 세션 93 (2026-07-27)
+
+### 기능 요약
+공사완료건 정산요청/정산완료 시 공사번호(7자리) 입력 팝업 + 공사등록 폼 3열 레이아웃.
+
+### 변경 내역
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `app.js` | `_showConNumberPopupOrange()` 신규 — 정산요청 팝업 (주황 테마, "나중에 입력" 체크박스) |
+| `app.js` | `_showConNumberPopupGreen()` 신규 — 정산완료 팝업 (초록 테마, "공사번호 없이 처리" 체크박스) |
+| `app.js` | `_conNumPopupCancel()` / `_conNumPopupConfirmOrange()` / `_conNumPopupConfirmGreen()` 신규 |
+| `app.js` | `requestSettlement()` — `showWarningConfirm` → 팝업 기반으로 교체, con_number 함께 전송 |
+| `app.js` | `requestSettleComplete()` — `showSuccessConfirm` → 팝업 기반으로 교체, con_number 함께 전송 |
+| `app.js` | `showCreateConstructionModal()` — 2열(공사요청번호+작업번호)+별도행(공사번호) → **3열 1행** |
+| `app.js` | `saveConstruction()` — body에 `con_number` 필드 추가 |
+| `app.js` | 공사 상세 모달 — 공사번호 주황 셀 + 공사요청번호 + 작업번호 3열 추가 |
+| `constructions.ts` | `POST /` INSERT에 con_number 추가 (형식 검증: 7자리 숫자 or '번호없음') |
+| `constructions.ts` | `PUT /:id` UPDATE에 con_number 추가 (undefined 시 기존값 유지) |
+| `constructions.ts` | `POST /:id/settle` body con_number 읽어 상태변경과 동시 UPDATE |
+| `constructions.ts` | `POST /:id/settle-complete` body con_number 읽어 상태변경과 동시 UPDATE |
+| `node-server.ts` | `patchConstructionsColumns` 배열에 con_number 항목 추가 (NAS 자동 마이그레이션) |
+| `migrations/0059` | `constructions.con_number TEXT DEFAULT NULL` 신규 마이그레이션 파일 |
+
+### 충돌 체크 & 규칙 준수
+
+| 규칙 | 처리 방법 |
+|------|----------|
+| RULE-001 (var 전용) | 팝업 함수 내 모두 `var` 사용 |
+| RULE-003 (onclick 따옴표 중첩 금지) | `oninput` 내 `\'` 이스케이프 대신 정규식 내부에서만 사용, onclick은 전역 함수명만 |
+| 기존 `requestSettlement` / `requestSettleComplete` | async function → 내부 팝업 콜백으로 완전 교체 (기존 함수 시그니처 유지) |
+| settle 라우트 기존 body 없음 | `try { body = await c.req.json() } catch(_) {}` 로 안전 파싱 |
+
+### 검증
+- `node --check app.js` ✅
+- `npm run build` ✅ (291.51 kB)
+- **커밋**: `a161357`
+
+---
+
 ## [FEAT-174] TBM 사진 등록 소스 선택 바텀시트 (커밋 `e8fb2a8`)
 
 ### 문제

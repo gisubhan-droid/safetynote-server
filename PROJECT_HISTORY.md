@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-27 (세션 92 — FEAT-174 TBM 사진 등록 소스 선택 바텀시트 구현 완료)
-> **GitHub 최신 (safetynote-server): `e8fb2a8`** — feat: [FEAT-174] TBM 사진 등록 소스 선택 바텀시트 추가
+> 최종 업데이트: 2026-07-27 (세션 93 — FEAT-175 공사번호 입력 팝업 + 3열 폼 레이아웃 구현 완료)
+> **GitHub 최신 (safetynote-server): `a161357`** — feat: [FEAT-175] 공사번호(con_number) 입력 팝업 + 3열 폼 레이아웃 추가
+> **이전 커밋 (server): `0420795`** — docs: [FEAT-174] PROJECT_HISTORY + BUGFIX_LOG 세션 92 기록 추가
+> **이전 커밋 (server): `e8fb2a8`** — feat: [FEAT-174] TBM 사진 등록 소스 선택 바텀시트 추가
 > **이전 커밋 (server): `87edaa2`** — feat: [FEAT-173] 작업명 자동입력 체크박스 추가
 > **이전 커밋 (server): `eebadcb`** — feat: [FEAT-172] 외선 상세분류 전주건식(pole) 추가
 > **이전 커밋 (server): `038e40c`** — fix: 외선 상세분류 오타 수정 — 단수 → 단순 (cut)
@@ -256,6 +258,7 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 증상 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-175 | 93 | 2026-07-27 | ✅ 적용 | **공사번호(con_number) 입력 팝업 + 3열 폼 레이아웃** — 정산요청/정산완료 버튼 클릭 시 공사번호 7자리 입력 팝업(주황/초록 테마), "나중에 입력"/"공사번호 없이 처리" 체크박스, 공사등록/수정 폼 3열 1행(공사번호\|공사요청번호\|작업번호), 공사 상세 모달 공사번호 주황 셀 추가. con_number 컬럼 신규 추가(migrations/0059, patchSchema v0.159). 검증: node --check ✅ / npm run build ✅ (291.51 kB) | `a161357` |
 | BUG-ATTACH-FRONT | 63 | 2026-07-24 | ✅ 수정 | **app.js loadAttachments() — attach_type 파라미터 미전송으로 work_log 첨부파일이 작업지시서 섹션에 혼재 (프론트엔드 근본 원인)** — `loadAttachments(taskId)` 함수가 `/attachments?task_id=X` 로만 호출하여 `attach_type` 필터 없이 전체 첨부파일 반환 → 작업일지에서 업로드한 `TimePhoto_*` 사진들이 기본정보 탭 "작업지시서 첨부파일" 섹션에 혼재 표시. **해결**: `loadAttachments(taskId, attachType)` 두 번째 파라미터 추가(기본값 `'order'`), API 호출 시 `&attach_type=order` 자동 포함. 3곳 호출(기본정보 탭 렌더·삭제 후 갱신·업로드 후 갱신) 모두 기본값으로 자동 적용. `attachments-nas.ts` BUG FIX(`7feff5e`)와 이중 방어. 검증: `node --check` ✅ → `npm run build` ✅(283.54 kB) | `c701c98` |
 | BUG-ATTACH-NAS | 63 | 2026-07-24 | ✅ 수정 | **NAS GET /api/attachments — attach_type 필터 무시로 work_log 첨부파일이 작업지시서 섹션에 혼재** — `loadWorkLogAttachments()`는 `attach_type=work_log` 파라미터를 전송하고, Cloudflare `attachments.ts`는 해당 필터를 정상 처리하나, NAS `attachments-nas.ts`의 GET `/` 핸들러가 `task_id`만 받고 `attach_type` 파라미터를 완전 무시하여 전체 첨부파일 반환. **해결**: `attachments-nas.ts` — `attach_type` 파라미터 추출 추가, `attach_type` 지정 시 `WHERE ta.task_id = ? AND ta.attach_type = ?` 조건 분기, 미지정 시 기존 동작(전체 반환) 유지. 하위 호환성 보장. 검증: `node --check` ✅ → `npm run build` ✅(283.54 kB) | `7feff5e` |
 | FEAT-164 | 164 | 2026-07-23 | ✅ 적용 | **버전 캐시 자동화 — CACHE_VER=git 커밋 해시 7자리** — 기존 `?v=20260714a` 하드코딩 방식을 서버 시작 시 `execSync('git rev-parse --short HEAD')` 로 자동 취득하는 `CACHE_VER` 상수로 전환. ①`node-server.ts` line 57: `import { spawn, execSync }` 추가(기존 spawn만 있던 import 확장). ②line ~104(`__dirname` 직후): `CACHE_VER: string = (() => { try { return execSync(...) } catch { return '20260714a' } })()` 선언 + `console.log('[CACHE] 캐시 버전: ?v=...')`. ③HTML 응답 3곳 (`/static/style.css`, `/static/app.js`, `/static/mobile-app.js`) `?v=20260714a` → `?v=${CACHE_VER}` 교체. git 명령 실패(git 미설치 환경) 시 폴백값 `'20260714a'` 유지로 하위호환 보장. 검증: `npm run build` ✅(283.47 kB) | `e9ee637` |

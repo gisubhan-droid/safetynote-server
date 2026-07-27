@@ -5,7 +5,7 @@
 # =============================================================================
 #
 # 사용법:
-#   cd /volume1/safetynote
+#   cd /volume1/safetynote  (또는 해당 볼륨 경로)
 #   bash scripts/update.sh
 #
 #   특정 버전으로 업데이트:
@@ -20,9 +20,20 @@ log_info()    { echo -e "${BLUE}[INFO]${NC}  $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC}    $1"; }
 log_warning() { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 
-INSTALL_DIR="/volume1/safetynote"
+# ─── 볼륨 자동 감지 (volume1→2→3→4 순, SAFETYNOTE_VOLUME 환경변수로 수동 지정 가능) ──
+if [ -n "$SAFETYNOTE_VOLUME" ]; then
+  VOLUME="$SAFETYNOTE_VOLUME"
+else
+  VOLUME=""
+  for v in volume1 volume2 volume3 volume4; do
+    if [ -d "/$v" ]; then VOLUME="$v"; break; fi
+  done
+  [ -z "$VOLUME" ] && VOLUME="volume1"
+fi
+
+INSTALL_DIR="/${VOLUME}/safetynote"
 APP_NAME="safetynote"
-NODE_PATH="/volume1/@appstore/Node.js_v18/usr/local/bin"
+NODE_PATH="/${VOLUME}/@appstore/Node.js_v18/usr/local/bin"
 TARGET_COMMIT="${1:-}"  # 인수로 특정 커밋 지정 가능
 
 export PATH="$NODE_PATH:$PATH"

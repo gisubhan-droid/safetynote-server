@@ -33,12 +33,23 @@ for _arg in "$@"; do
   esac
 done
 
-INSTALL_DIR="${ARGS[0]:-/volume1/safetynote}"
+# ─── 볼륨 자동 감지 ──────────────────────────────────────────────────────────
+if [ -n "$SAFETYNOTE_VOLUME" ]; then
+  VOLUME="$SAFETYNOTE_VOLUME"
+else
+  VOLUME=""
+  for v in volume1 volume2 volume3 volume4; do
+    if [ -d "/$v" ]; then VOLUME="$v"; break; fi
+  done
+  [ -z "$VOLUME" ] && VOLUME="volume1"
+fi
+
+INSTALL_DIR="${ARGS[0]:-/${VOLUME}/safetynote}"
 PORT="${ARGS[1]:-3445}"
 
 # ─── 경로 설정 ────────────────────────────────────────────────────────────────
-NODE_PATH_V18="/volume1/@appstore/Node.js_v18/usr/local/bin"
-NODE_PATH_V20="/volume1/@appstore/Node.js_v20/usr/local/bin"
+NODE_PATH_V18="/${VOLUME}/@appstore/Node.js_v18/usr/local/bin"
+NODE_PATH_V20="/${VOLUME}/@appstore/Node.js_v20/usr/local/bin"
 export PATH="$NODE_PATH_V18:$NODE_PATH_V20:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 LOG_FILE="/var/log/safetynote-watchdog.log"
@@ -192,8 +203,8 @@ def do_restart():
     # NODE_BIN이 단순 'node'이면 절대경로로 보완
     node_bin = NODE_BIN if NODE_BIN and NODE_BIN.startswith("/") else \
         next((p for p in [
-            "/volume1/@appstore/Node.js_v18/usr/local/bin/node",
-            "/volume1/@appstore/Node.js_v20/usr/local/bin/node",
+            "//@appstore/Node.js_v18/usr/local/bin/node",
+            "//@appstore/Node.js_v20/usr/local/bin/node",
             "/usr/local/bin/node"
         ] if os.path.isfile(p)), NODE_BIN)
     run(f"{PM2_BIN} delete {APP_NAME}")
@@ -635,14 +646,14 @@ function doRestart() {
       if (l.startsWith('PORT=')) envPort = l.split('=')[1].trim();
     });
   } catch(e) {}
-  // NODE_BIN이 단순 'node'이면 절대경로로 보완
+  // NODE_BIN이 단순 'node'이면 절대경로로 보완 (volume 자동 감지: v1→v2→v3→v4)
   let nodeBin = NODE_BIN;
   if (!nodeBin || !nodeBin.startsWith('/')) {
-    const candidates = [
-      '/volume1/@appstore/Node.js_v18/usr/local/bin/node',
-      '/volume1/@appstore/Node.js_v20/usr/local/bin/node',
-      '/usr/local/bin/node'
-    ];
+    const vols = ['volume1','volume2','volume3','volume4'];
+    const candidates = [].concat(...vols.map(v => [
+      '/'+v+'/@appstore/Node.js_v18/usr/local/bin/node',
+      '/'+v+'/@appstore/Node.js_v20/usr/local/bin/node'
+    ])).concat(['/usr/local/bin/node']);
     nodeBin = candidates.find(p => { try { return fs.statSync(p).isFile(); } catch(e) { return false; } }) || NODE_BIN;
   }
   const cmd = 'PORT=' + envPort + ' ' + PM2_BIN + ' start ' + TSX_BIN +

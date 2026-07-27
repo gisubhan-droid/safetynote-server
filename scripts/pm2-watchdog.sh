@@ -23,8 +23,19 @@
 # 비상 복구    : http://NAS_IP:3445  (서버가 살아날 때까지 유지)
 # =============================================================================
 
+# ─── 볼륨 자동 감지 (volume1→2→3→4 순, SAFETYNOTE_VOLUME 환경변수로 수동 지정 가능) ──
+if [ -n "$SAFETYNOTE_VOLUME" ]; then
+  VOLUME="$SAFETYNOTE_VOLUME"
+else
+  VOLUME=""
+  for v in volume1 volume2 volume3 volume4; do
+    if [ -d "/$v" ]; then VOLUME="$v"; break; fi
+  done
+  [ -z "$VOLUME" ] && VOLUME="volume1"
+fi
+
 # ─── 설정값 ──────────────────────────────────────────────────────────────────
-INSTALL_DIR="/volume1/safetynote"
+INSTALL_DIR="/${VOLUME}/safetynote"
 APP_NAME="safetynote"
 LOG_FILE="/var/log/safetynote-watchdog.log"
 MAX_LOG_LINES=500
@@ -40,8 +51,8 @@ RECOVERY_PORT=3445
 RECOVERY_PID_FILE="/var/run/safetynote-recovery.pid"
 
 # Node.js / PM2 경로 (Synology DSM Node.js v18/v20 패키지 기준)
-NODE_PATH="/volume1/@appstore/Node.js_v18/usr/local/bin"
-NODE_PATH_V20="/volume1/@appstore/Node.js_v20/usr/local/bin"
+NODE_PATH="/${VOLUME}/@appstore/Node.js_v18/usr/local/bin"
+NODE_PATH_V20="/${VOLUME}/@appstore/Node.js_v20/usr/local/bin"
 export PATH="$NODE_PATH_V20:$NODE_PATH:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 # ─── 유틸 함수 ───────────────────────────────────────────────────────────────
@@ -82,7 +93,7 @@ find_pm2() {
 find_node() {
   local candidates=(
     "$NODE_PATH/node"
-    "/volume1/@appstore/Node.js_v20/usr/local/bin/node"
+    "/${VOLUME}/@appstore/Node.js_v20/usr/local/bin/node"
     "/usr/local/bin/node"
     "/usr/bin/node"
   )
@@ -112,7 +123,7 @@ find_tsx() {
 find_npm() {
   local candidates=(
     "$NODE_PATH/npm"
-    "/volume1/@appstore/Node.js_v20/usr/local/bin/npm"
+    "/${VOLUME}/@appstore/Node.js_v20/usr/local/bin/npm"
     "/usr/local/bin/npm"
     "/usr/bin/npm"
   )

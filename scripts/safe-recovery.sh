@@ -25,7 +25,18 @@
 #   - 로컬 NAS 네트워크에서만 접근 가능 (인터넷 노출 주의)
 # =============================================================================
 
-INSTALL_DIR="${1:-/volume1/safetynote}"
+# ─── 볼륨 자동 감지 (volume1→2→3→4 순, SAFETYNOTE_VOLUME 환경변수로 수동 지정 가능) ──
+if [ -n "$SAFETYNOTE_VOLUME" ]; then
+  VOLUME="$SAFETYNOTE_VOLUME"
+else
+  VOLUME=""
+  for v in volume1 volume2 volume3 volume4; do
+    if [ -d "/$v" ]; then VOLUME="$v"; break; fi
+  done
+  [ -z "$VOLUME" ] && VOLUME="volume1"
+fi
+
+INSTALL_DIR="${1:-/${VOLUME}/safetynote}"
 PORT="${2:-3445}"
 
 # .env 에서 설정 읽기
@@ -43,8 +54,8 @@ if [ -f "$ENV_FILE" ]; then
   [ -n "$_AN" ] && APP_NAME="$_AN"
 fi
 
-NODE_PATH="/volume1/@appstore/Node.js_v18/usr/local/bin"
-NODE_PATH_V20="/volume1/@appstore/Node.js_v20/usr/local/bin"
+NODE_PATH="/${VOLUME}/@appstore/Node.js_v18/usr/local/bin"
+NODE_PATH_V20="/${VOLUME}/@appstore/Node.js_v20/usr/local/bin"
 export PATH="$NODE_PATH_V20:$NODE_PATH:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 LOG_FILE="/var/log/safetynote-watchdog.log"
@@ -62,11 +73,11 @@ NPM_BIN=$(find_bin npm)
 for c in "/usr/local/bin/pm2" "$NODE_PATH_V20/pm2" "$NODE_PATH/pm2" "$INSTALL_DIR/node_modules/.bin/pm2"; do
   [ -x "$c" ] && PM2_BIN="$c" && break
 done
-for c in "$NODE_PATH/npm" "/volume1/@appstore/Node.js_v20/usr/local/bin/npm" "/usr/local/bin/npm"; do
+for c in "$NODE_PATH/npm" "/${VOLUME}/@appstore/Node.js_v20/usr/local/bin/npm" "/usr/local/bin/npm"; do
   [ -x "$c" ] && NPM_BIN="$c" && break
 done
 # Node.js: 절대경로 강제 (DSM 작업 스케줄러 PATH 제한 대응)
-for c in "$NODE_PATH/node" "/volume1/@appstore/Node.js_v20/usr/local/bin/node" "/usr/local/bin/node"; do
+for c in "$NODE_PATH/node" "/${VOLUME}/@appstore/Node.js_v20/usr/local/bin/node" "/usr/local/bin/node"; do
   [ -x "$c" ] && NODE_BIN="$c" && break
 done
 # tsx: node_modules/.bin 우선, 없으면 v20/v18 전역 탐색
@@ -534,8 +545,8 @@ def do_restart():
     # DSM PATH 제한 대응: NODE_BIN 절대경로 보완
     node_bin = NODE_BIN if NODE_BIN and NODE_BIN.startswith("/") else \
         next((p for p in [
-            "/volume1/@appstore/Node.js_v18/usr/local/bin/node",
-            "/volume1/@appstore/Node.js_v20/usr/local/bin/node",
+            "/${VOLUME}/@appstore/Node.js_v18/usr/local/bin/node",
+            "/${VOLUME}/@appstore/Node.js_v20/usr/local/bin/node",
             "/usr/local/bin/node"
         ] if os.path.isfile(p)), NODE_BIN)
     code2, out2 = run(

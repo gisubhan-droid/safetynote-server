@@ -33546,7 +33546,10 @@ async function renderSignatureRequestsPage(container) {
             var _viewBtn = '';
             var _btnStyle = 'font-size:12px;color:#685182;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:6px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-weight:600';
             if (req.ref_type === 'tbm') {
-              _viewBtn = '<div style="margin-top:10px"><button onclick="showTaskDetail(' + req.ref_id + ',\'tbm\')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> TBM 내용 보기</button></div>';
+              // [BUG-181 수정] ref_id = tbm_records.id → showTbmDetail() 사용
+              // 기존 showTaskDetail(ref_id,'tbm')은 task.id를 받는 함수여서
+              // tbm_records.id와 혼동되어 엉뚱한 작업 상세로 이동하는 버그 발생
+              _viewBtn = '<div style="margin-top:10px"><button onclick="showTbmDetail(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> TBM 내용 보기</button></div>';
             } else if (req.ref_type === 'risk_assessment') {
               _viewBtn = '<div style="margin-top:10px"><button onclick="_signReqOpenRisk(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 위험성평가 내용 보기</button></div>';
             } else if (req.ref_type === 'education') {

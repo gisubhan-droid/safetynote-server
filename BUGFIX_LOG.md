@@ -5,6 +5,72 @@
 
 ---
 
+## [BUG-181] TBM 서명 "TBM 내용 보기" → 엉뚱한 작업 상세 이동 (커밋 `TBD`) — 세션 99 (2026-07-27) ✅ 수정 완료
+
+### 증상
+서명요청 화면에서 TBM 서명 건의 **"TBM 내용 보기"** 버튼 클릭 시,
+해당 TBM이 아닌 **전혀 다른 작업의 상세화면**으로 이동.
+이동한 작업 상세의 TBM 탭에 "TBM 기록이 없습니다" 표시됨.
+
+### 원인
+`FEAT-170` 구현 시 `showTaskDetail(req.ref_id, 'tbm')` 으로 잘못 연결:
+
+```
+sign_requests.ref_id = tbm_records.id  (TBM 레코드 고유 ID)
+showTaskDetail(id)   = tasks.id        (작업 ID) ← 전혀 다른 테이블의 ID!
+```
+
+`tbm_records.id` 와 `tasks.id` 는 **별개 시퀀스**로 숫자가 우연히 겹치거나 달라,
+임의의 작업 상세가 열리거나 존재하지 않는 작업이 열리는 버그 발생.
+
+예: TBM 레코드 ID=5 → tasks.id=5인 전혀 다른 작업이 열림.
+
+### 원인 분석 (테이블 관계)
+```
+signature_requests
+  └─ ref_type = 'tbm'
+  └─ ref_id   = tbm_records.id  ← TBM 고유 ID
+
+tbm_records
+  ├─ id        (tbm_records 자체 PK)
+  └─ task_id   (tasks.id 참조)
+
+showTaskDetail(taskId)  ← tasks.id 필요
+showTbmDetail(tbmId)    ← tbm_records.id 필요 ✅
+```
+
+### 해결 방법
+`showTaskDetail(req.ref_id, 'tbm')` → `showTbmDetail(req.ref_id)` 교체:
+
+```javascript
+// 수정 전 (FEAT-170 — 잘못된 함수)
+_viewBtn = '...<button onclick="showTaskDetail(' + req.ref_id + ',\'tbm\')"...>';
+
+// 수정 후 (BUG-181 — 올바른 함수)
+_viewBtn = '...<button onclick="showTbmDetail(' + req.ref_id + ')"...>';
+```
+
+`showTbmDetail(tbmId)` 는 `/api/tbm/:id` 를 직접 호출하여 TBM 전용 모달을 열므로
+`tbm_records.id` 를 그대로 사용해 정확한 TBM 기록이 표시됨.
+
+### 수정 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | 서명요청 `renderCard()` 내 TBM "내용 보기" 버튼: `showTaskDetail(ref_id,'tbm')` → `showTbmDetail(ref_id)` |
+
+### NAS 듀얼 구조 영향
+- 클라이언트 단 수정만으로 해결 — `node-server.ts` / `src/routes/*.ts` 변경 없음
+- `showTbmDetail()` 은 `/api/tbm/:id` 호출 (이미 양쪽 서버 지원)
+
+### 이중 검증
+- `node --check public/static/app.js` → ✅ 문법 오류 없음
+- `npm run build` → ✅ `dist/_worker.js 295.49 kB` 빌드 성공
+
+### 관련 이력
+- `FEAT-170` (2026-07-26): 서명요청 내용 보기 링크 추가 시 최초 오구현
+
+---
+
 ## [BUG-180] 현장위치 지도 진행 탭 날짜 필터 미동작 (커밋 `877ce55`) — 세션 99 (2026-07-27) ✅ 수정 완료
 
 ### 증상

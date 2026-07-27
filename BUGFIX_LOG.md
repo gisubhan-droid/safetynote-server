@@ -5,7 +5,7 @@
 
 ---
 
-## [BUG-179b] Android 앱 사진 갤러리 저장 — downloadApk 오용 수정 (커밋 `ea4cebe`) — 세션 98 (2026-07-27)
+## [BUG-179b] Android 앱 사진 갤러리 저장 — downloadApk 오용 수정 (커밋 `ea4cebe`) — 세션 98 (2026-07-27) ✅ 검증 완료
 
 ### 증상
 Android 전용앱에서 사진 다운로드 버튼 클릭 시:
@@ -59,6 +59,8 @@ if (isAppBridge && typeof window.SafetyNoteApp.saveImageToGallery === 'function'
 ### 검증 결과
 - `node --check public/static/app.js` ✅ 통과
 - `npm run build` ✅ 성공 (295.49 kB)
+- **APK v1.4.16 빌드** ✅ GitHub Actions 성공 (약 3분)
+- **실기기 테스트** ✅ 갤러리 > SafetyNOTE 앨범에서 사진 확인 완료
 
 ---
 

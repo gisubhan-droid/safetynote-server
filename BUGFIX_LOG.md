@@ -5,7 +5,7 @@
 
 ---
 
-## [BUG-179b] Android 앱 사진 갤러리 저장 — downloadApk 오용 수정 (커밋 `TBD`) — 세션 98 (2026-07-27)
+## [BUG-179b] Android 앱 사진 갤러리 저장 — downloadApk 오용 수정 (커밋 `ea4cebe`) — 세션 98 (2026-07-27)
 
 ### 증상
 Android 전용앱에서 사진 다운로드 버튼 클릭 시:

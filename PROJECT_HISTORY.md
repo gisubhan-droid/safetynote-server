@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-27 (세션 98 — [BUG-179b] Android 앱 사진 갤러리 저장 — saveImageToGallery 신규 브릿지 추가)
-> **GitHub 최신 (safetynote-server): `TBD`** — fix: [BUG-179b] downloadPhoto 앱 환경 — saveImageToGallery 브릿지로 교체 (MediaStore 갤러리 직접 저장)
-> **GitHub 최신 (safetynote-android): `TBD`** — feat: [BUG-179b] SafetyNoteAppBridge.saveImageToGallery() 추가 — MediaStore/MediaScanner 갤러리 저장
+> **GitHub 최신 (safetynote-server): `ea4cebe`** — fix: [BUG-179b] downloadPhoto 앱 환경 — saveImageToGallery 브릿지로 교체 (MediaStore 갤러리 직접 저장)
+> **GitHub 최신 (safetynote-android): `45f995e`** — feat: [BUG-179b] SafetyNoteAppBridge.saveImageToGallery() 추가 — MediaStore/MediaScanner 갤러리 저장
 > **이전 커밋 (server): `2ed59bc`** — docs: [세션 97] BUG-179 커밋 해시 64ed3ac 반영
 > **이전 커밋 (server): `64ed3ac`** — fix: [BUG-179] iOS 사진 다운로드 — Web Share API로 사진 앱 저장 + ?dl=1 Content-Disposition attachment
 > **이전 커밋 (server): `82b89ac`** — docs: [세션 96] BUG-178b 커밋 해시 반영
@@ -10740,8 +10740,8 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 
 | 저장소 | 커밋 해시 | 메시지 |
 |--------|-----------|--------|
-| safetynote-server | `TBD` | fix: [BUG-179b] downloadPhoto 앱 환경 — saveImageToGallery 브릿지로 교체 |
-| safetynote-android | `TBD` | feat: [BUG-179b] SafetyNoteAppBridge.saveImageToGallery() 추가 |
+| safetynote-server | `ea4cebe` | fix: [BUG-179b] downloadPhoto 앱 환경 — saveImageToGallery 브릿지로 교체 |
+| safetynote-android | `45f995e` | feat: [BUG-179b] SafetyNoteAppBridge.saveImageToGallery() 추가 |
 
 ---
 

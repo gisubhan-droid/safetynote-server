@@ -5,6 +5,72 @@
 
 ---
 
+## [BUG-179] iOS 사진 다운로드 → 파일 앱 저장 문제 (커밋 `TBD`) — 세션 97 (2026-07-27)
+
+### 증상
+iPhone / iPad에서 사진 다운로드 버튼 클릭 시 사진이 **사진 앱(Photos)이 아닌 파일 앱(Files)** 에 저장됨.
+
+### 원인
+iOS Safari는 `<a download>` 방식을 처리할 때 파일을 **"파일 앱 > 다운로드"** 폴더에 저장함.  
+브라우저 자체적으로 사진 앱으로 보내는 기능이 없음.
+
+### 해결 방법: Web Share API (`navigator.share({ files })`)
+
+iOS 14.0+ Safari는 **Web Share API Level 2** 를 지원 — `File` 객체를 직접 공유 가능.  
+`navigator.share({ files: [imageFile] })` → iOS 공유 시트 → **"사진에 저장"** 선택 → 사진 앱 저장.
+
+```
+fetch(url) → blob → new File([blob], fileName, { type: 'image/jpeg' })
+  → navigator.share({ files: [file] })
+  → iOS 공유 시트 "사진에 저장" 탭 → 사진 앱 ✅
+```
+
+### 수정 내용
+
+#### `public/static/app.js` — `downloadPhoto()` 함수 전면 재구성
+
+| 환경 | 판별 기준 | 처리 방식 | 저장 위치 |
+|------|-----------|-----------|-----------|
+| Android 전용앱 | `window.SafetyNoteApp` 존재 | `downloadApk(url)` | Downloads/ → 갤러리 ✅ |
+| iOS Safari/Chrome | UA `/iP(hone\|ad\|od)/i` + `navigator.canShare({files})` | `fetch → blob → File → navigator.share()` | 사진 앱 ✅ |
+| PC · Android Chrome · 기타 | — | `fetch → blob → <a download>` | 브라우저 다운로드 폴더 ✅ |
+
+#### `_downloadPhotoFallback(blob, fileName)` 신규 헬퍼 함수 추가
+- `<a download>` 로직을 공통 함수로 분리
+- PC / Android Chrome / iOS canShare 불가 시 폴백에서 재사용
+
+#### URL 변경: `?dl=1` 파라미터 추가
+- 기존: `/api/photos/:id/img?token=...`
+- 변경: `/api/photos/:id/img?dl=1&token=...`
+- 서버에서 `?dl=1` 시 `Content-Disposition: attachment` 반환 → 브라우저 다운로드 명확히 트리거
+
+#### `node-server.ts` — `/api/photos/:id/img` 라우트
+- `c.req.query('dl') === '1'` 체크 추가
+- `dl=1`: `Content-Disposition: attachment; filename="..."` (다운로드)
+- 기본: `Content-Disposition: inline; filename="..."` (미리보기, 기존 동작 유지)
+- NAS 듀얼 구조 원칙: `src/routes/photos.ts` D1 버전도 동일하게 수정
+
+#### `src/routes/photos.ts` — D1 버전 동일 적용
+
+### iOS 사용자 UX
+1. 다운로드 버튼 클릭
+2. "사진 불러오는 중..." toast 표시
+3. iOS 공유 시트 자동 표시
+4. **"사진에 저장"** 탭 선택
+5. 사진 앱에 저장 완료
+
+> ⚠️ iOS에서는 "사진에 저장" 선택 단계가 추가됨 — 직접 저장 불가 (iOS 웹 보안 정책)
+
+### RULE-001 준수
+- `downloadPhoto()`: `var` 전용, `const`/`let`/화살표함수 없음 ✅
+- `_downloadPhotoFallback()`: 동일 ✅
+
+### 검증 결과
+- `node --check public/static/app.js` ✅ 통과
+- `npm run build` ✅ 성공 (295.49 kB)
+
+---
+
 ## [BUG-178b] 앱 환경 사진 다운로드 갤러리 미저장 (커밋 `51d02b0`) — 세션 96 (2026-07-27)
 
 ### 증상

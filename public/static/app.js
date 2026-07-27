@@ -11813,30 +11813,77 @@ function photoImgSrc(photoId) {
 function downloadPhoto(photoId, fileName) {
   var token = localStorage.getItem('token') || '';
   var safeFileName = fileName || ('photo_' + photoId + '.jpg');
+  // ?dl=1 → 서버가 Content-Disposition: attachment로 응답 (브라우저 다운로드 트리거)
   var url = window.location.origin
     + '/api/photos/' + photoId + '/img'
-    + (token ? '?token=' + encodeURIComponent(token) : '');
+    + '?dl=1'
+    + (token ? '&token=' + encodeURIComponent(token) : '');
 
-  // ✅ [BUG-178b 수정] Android APP 전용: SafetyNoteApp 브릿지 유무로만 판별
-  // (isCapacitor/UA 방식은 일반 모바일 Chrome에서 오탐 발생 → 사용 금지)
+  // ────────────────────────────────────────────────────────────────
+  // [BUG-179] 환경별 다운로드 전략 (수정 후)
   //
-  // 전략:
-  //   1순위: SafetyNoteApp.downloadApk(url) — Android DownloadManager로 Downloads 폴더 저장
-  //          → Android는 Downloads 폴더의 이미지(.jpg/.png)를 갤러리에서 자동 인식
-  //          → openAttachment()는 PDF/Word 외부앱 열기 전용이라 갤러리 저장 안 됨 (BUG-178b)
-  //   2순위(폴백): fetch → blob → <a download>  (브릿지 실패 시)
+  // ① Android 전용앱 (SafetyNoteApp 브릿지 존재)
+  //    → downloadApk(url) : DownloadManager → Downloads/ → 갤러리 자동 인식
+  //    (openAttachment는 외부앱 열기 전용 → 갤러리 저장 안 됨, BUG-178b)
   //
-  // PC · 모바일 브라우저: fetch → blob → <a download>
+  // ② iOS Safari / iOS 크롬 (navigator.share + files 지원)
+  //    → fetch → blob → File → navigator.share({ files })
+  //    → 공유 시트 "사진에 저장" 선택 → 사진 앱 저장
+  //    (<a download>는 iOS에서 파일 앱으로 저장 → 사진 앱 ❌, BUG-179)
+  //
+  // ③ PC · Android Chrome · 기타 브라우저
+  //    → fetch → blob → <a download> (브라우저 다운로드 폴더)
+  // ────────────────────────────────────────────────────────────────
+
+  // ① Android 전용앱
   var isAppBridge = !!(window.SafetyNoteApp);
   if (isAppBridge && typeof window.SafetyNoteApp.downloadApk === 'function') {
     try {
       window.SafetyNoteApp.downloadApk(url);
       toast('"' + safeFileName + '" 갤러리에 저장 중...', 'info');
       return;
-    } catch(e) { /* 폴백: 아래 fetch 방식으로 계속 */ }
+    } catch(e) { /* 폴백: 아래로 계속 */ }
   }
 
-  // PC · 모바일 브라우저 (Android Chrome 포함): fetch → blob → <a download>
+  // ② iOS: Web Share API (files) 지원 여부 확인
+  //    navigator.canShare({ files: [dummyFile] }) = iOS 14+ Safari 지원 판별
+  var isIos = /iP(hone|ad|od)/i.test(navigator.userAgent || '');
+  if (isIos && navigator.share && navigator.canShare) {
+    toast('사진 불러오는 중...', 'info');
+    fetch(url)
+      .then(function(res) {
+        if (!res.ok) { toast('다운로드 실패 (' + res.status + ')', 'error'); return null; }
+        return res.blob();
+      })
+      .then(function(blob) {
+        if (!blob) return;
+        // MIME 타입 결정: blob.type 우선, 없으면 확장자로 추론
+        var mime = blob.type || 'image/jpeg';
+        var file = new File([blob], safeFileName, { type: mime });
+        // canShare 지원 + 파일 공유 가능 여부 체크
+        if (!navigator.canShare({ files: [file] })) {
+          // canShare 불가 → 일반 <a download> 폴백
+          _downloadPhotoFallback(blob, safeFileName);
+          return;
+        }
+        navigator.share({ files: [file], title: safeFileName })
+          .then(function() {
+            toast('공유 시트에서 "사진에 저장"을 선택하세요.', 'success');
+          })
+          .catch(function(e) {
+            // 사용자가 취소한 경우(AbortError)는 오류 미표시
+            if (e && e.name !== 'AbortError') {
+              toast('공유 오류: ' + e.message, 'error');
+            }
+          });
+      })
+      .catch(function(e) {
+        toast('다운로드 오류: ' + e.message, 'error');
+      });
+    return;
+  }
+
+  // ③ PC · Android Chrome · 기타: fetch → blob → <a download>
   toast('다운로드 중...', 'info');
   fetch(url)
     .then(function(res) {
@@ -11845,19 +11892,24 @@ function downloadPhoto(photoId, fileName) {
     })
     .then(function(blob) {
       if (!blob) return;
-      var blobUrl = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = safeFileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 3000);
-      toast('"' + safeFileName + '" 다운로드 완료.', 'success');
+      _downloadPhotoFallback(blob, safeFileName);
     })
     .catch(function(e) {
       toast('다운로드 오류: ' + e.message, 'error');
     });
+}
+
+// 공통 <a download> 헬퍼 — PC·Android Chrome·iOS 폴백에서 재사용
+function _downloadPhotoFallback(blob, safeFileName) {
+  var blobUrl = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = safeFileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 3000);
+  toast('"' + safeFileName + '" 다운로드 완료.', 'success');
 }
 
 // BUG-056: TBM 안전조치 사진 전용 (tbm_photo_items.id 기반)

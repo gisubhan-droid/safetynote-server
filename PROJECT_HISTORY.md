@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-27 (세션 96 — [BUG-178b] 앱 환경 사진 갤러리 미저장 수정 — openAttachment → downloadApk 교체)
-> **GitHub 최신 (safetynote-server): `51d02b0`** — fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장
+> 최종 업데이트: 2026-07-27 (세션 97 — [BUG-179] iOS 사진 다운로드 파일 앱 저장 문제 → Web Share API로 사진 앱 저장)
+> **GitHub 최신 (safetynote-server): `TBD`** — fix: [BUG-179] iOS 사진 다운로드 — Web Share API로 사진 앱 저장 + ?dl=1 Content-Disposition attachment
+> **이전 커밋 (server): `82b89ac`** — docs: [세션 96] BUG-178b 커밋 해시 반영
+> **이전 커밋 (server): `51d02b0`** — fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장
 > **이전 커밋 (server): `ab85790`** — fix: [BUG-178] downloadPhoto — 모바일 브라우저 isCapacitor 오탐 제거, fetch→blob 방식으로 통일
 > **이전 커밋 (server): `696e959`** — feat: 작업등록 사진 다운로드 버튼 추가 — 감독자 이상, PC/모바일/APP 3환경 대응
 > **이전 커밋 (server): `d11f09f`** — fix: 보유현황 — 사용량 항목의 asset_type 실제값 표시 (useRows SQL에 asset_type GROUP BY 추가)
@@ -10700,6 +10702,49 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 |------|--------|------|
 | safetynote-server | `b1a539b` | feat: [FEAT-170] 서명요청 내용 보기 링크 추가 |
 | safetynote-server | `6e18fd7` | fix: [UI] 시스템 설정 메뉴를 법령안내 관리 아래로 이동 |
+
+---
+
+## 세션 97 (2026-07-27)
+
+### 작업 — [BUG-179] iOS 사진 다운로드 파일 앱 저장 문제 수정
+
+#### 문제
+iPhone에서 사진 다운로드 버튼 클릭 시 **파일 앱**에 저장 → 사진 앱에서 확인 불가.
+
+#### 원인
+iOS Safari는 `<a download>` 방식을 파일 앱(Files) > 다운로드 폴더에 저장. 사진 앱(Photos)으로 직접 보내는 `<a download>` 동작이 존재하지 않음.
+
+#### 해결: Web Share API Level 2
+
+```
+fetch → blob → new File([blob], name, {type:'image/jpeg'})
+  → navigator.share({ files: [file] })   // iOS 14+ Safari 지원
+  → 공유 시트 "사진에 저장" → 사진 앱 ✅
+```
+
+#### 수정 파일 3개
+
+| 파일 | 변경 |
+|------|------|
+| `public/static/app.js` `downloadPhoto()` | iOS UA 감지 + `navigator.canShare({files})` 지원 체크 후 Web Share API 분기 추가 |
+| `public/static/app.js` `_downloadPhotoFallback()` | `<a download>` 헬퍼 신규 함수 분리 |
+| `node-server.ts` `/api/photos/:id/img` | `?dl=1` → `Content-Disposition: attachment` 처리 추가 |
+| `src/routes/photos.ts` `/:id/img` | 동일 (NAS 듀얼 구조) |
+
+#### 환경별 최종 동작
+
+| 환경 | 처리 | 결과 |
+|------|------|------|
+| Android 전용앱 | `downloadApk(url)` | 갤러리 ✅ |
+| iOS Safari/Chrome | `fetch → File → navigator.share()` | 공유 시트 "사진에 저장" → 사진 앱 ✅ |
+| PC · Android Chrome | `fetch → blob → <a download>` | 다운로드 폴더 ✅ |
+
+### 커밋 이력
+
+| 저장소 | 커밋 해시 | 메시지 |
+|--------|-----------|--------|
+| safetynote-server | `TBD` | fix: [BUG-179] iOS 사진 다운로드 — Web Share API로 사진 앱 저장 + ?dl=1 attachment |
 
 ---
 

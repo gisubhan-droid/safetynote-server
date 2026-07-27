@@ -117,6 +117,7 @@ app.get('/', async (c) => {
 })
 
 // 사진 원본 파일 서빙 (file_path 기반)
+// ?dl=1 쿼리 파라미터: Content-Disposition: attachment → 브라우저 다운로드 트리거 [BUG-179]
 app.get('/:id/img', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
@@ -127,6 +128,13 @@ app.get('/:id/img', async (c) => {
   ).bind(id).first<any>()
   if (!photo) return c.json({ error: '사진 없음' }, 404)
 
+  // ?dl=1 → attachment (다운로드), 없으면 inline (미리보기)
+  const dl = c.req.query('dl') === '1'
+  const safeFileName = ((photo.file_name as string) || ('photo_' + id + '.jpg')).replace(/"/g, '_')
+  const disposition = dl
+    ? `attachment; filename="${safeFileName}"`
+    : `inline; filename="${safeFileName}"`
+
   // 파일 기반 (신규)
   if (photo.file_path) {
     try {
@@ -136,7 +144,7 @@ app.get('/:id/img', async (c) => {
         headers: {
           'Content-Type': photo.mime_type || 'image/jpeg',
           'Cache-Control': 'public, max-age=86400',
-          'Content-Disposition': `inline; filename="${photo.file_name}"`,
+          'Content-Disposition': disposition,
         },
       })
     } catch (_) {
@@ -153,6 +161,7 @@ app.get('/:id/img', async (c) => {
       headers: {
         'Content-Type': photo.mime_type || 'image/jpeg',
         'Cache-Control': 'public, max-age=86400',
+        'Content-Disposition': disposition,
       },
     })
   }

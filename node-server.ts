@@ -6260,28 +6260,28 @@ app.route('/api/dist', distRoutes)
       `).all() as any[]
 
       const useRows = rawDb.prepare(`
-        SELECT wrc.maker, wrc.spec, wrc.cable_kind, SUM(wrc.usage_m) AS use_qty
+        SELECT wrc.maker, wrc.spec, wrc.cable_kind, wrc.asset_type, SUM(wrc.usage_m) AS use_qty
         FROM work_report_cables wrc
         JOIN work_reports wr ON wr.id = wrc.report_id
         WHERE wr.status IN ('confirmed','submitted')
-        GROUP BY wrc.maker, wrc.spec, wrc.cable_kind
+        GROUP BY wrc.maker, wrc.spec, wrc.cable_kind, wrc.asset_type
       `).all() as any[]
 
       const useMap: Record<string, number> = {}
       for (const r of useRows) {
-        const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')
+        const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')+'|'+(r.asset_type||'')
         useMap[k] = (useMap[k]||0) + (r.use_qty||0)
       }
 
       const items = inRows.map(r => {
-        const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')
+        const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')+'|'+(r.asset_type||'')
         return { maker: r.maker||'-', spec: r.spec||'-', cable_kind: r.cable_kind||'-', asset_type: r.asset_type||'-', in_qty: r.in_qty||0, use_qty: useMap[k]||0 }
       })
-      // 사용량만 있는 항목 추가 (asset_type 없음)
+      // 사용량만 있는 항목 추가 (입고 없음 — asset_type 포함)
       for (const r of useRows) {
-        const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')
-        if (!inRows.some(i => ((i.maker||'')+'|'+(i.spec||'')+'|'+(i.cable_kind||''))===k)) {
-          items.push({ maker: r.maker||'-', spec: r.spec||'-', cable_kind: r.cable_kind||'-', asset_type: '-', in_qty: 0, use_qty: r.use_qty||0 })
+        const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')+'|'+(r.asset_type||'')
+        if (!inRows.some(i => ((i.maker||'')+'|'+(i.spec||'')+'|'+(i.cable_kind||'')+'|'+(i.asset_type||''))===k)) {
+          items.push({ maker: r.maker||'-', spec: r.spec||'-', cable_kind: r.cable_kind||'-', asset_type: r.asset_type||'-', in_qty: 0, use_qty: r.use_qty||0 })
         }
       }
       items.sort((a,b) => (a.maker+a.spec+a.cable_kind+a.asset_type).localeCompare(b.maker+b.spec+b.cable_kind+b.asset_type))

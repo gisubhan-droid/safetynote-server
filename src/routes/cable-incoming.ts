@@ -50,24 +50,25 @@ app.get('/holding', async (c) => {
         wrc.maker,
         wrc.spec,
         wrc.cable_kind,
+        wrc.asset_type,
         SUM(wrc.usage_m) AS use_qty
       FROM work_report_cables wrc
       JOIN work_reports wr ON wr.id = wrc.report_id
       WHERE wr.status IN ('confirmed','submitted')
-      GROUP BY wrc.maker, wrc.spec, wrc.cable_kind
+      GROUP BY wrc.maker, wrc.spec, wrc.cable_kind, wrc.asset_type
     `).all()
 
-    // 사용량 맵
+    // 사용량 맵 (maker|spec|kind|asset_type 키)
     const useMap: Record<string, number> = {}
     const useList = useRows.results || []
     for (const r of useList as any[]) {
-      const k = (r.maker || '') + '|' + (r.spec || '') + '|' + (r.cable_kind || '')
+      const k = (r.maker || '') + '|' + (r.spec || '') + '|' + (r.cable_kind || '') + '|' + (r.asset_type || '')
       useMap[k] = (useMap[k] || 0) + (r.use_qty || 0)
     }
 
     // 합산
     const items = (inRows.results || []).map((r: any) => {
-      const k = (r.maker || '') + '|' + (r.spec || '') + '|' + (r.cable_kind || '')
+      const k = (r.maker || '') + '|' + (r.spec || '') + '|' + (r.cable_kind || '') + '|' + (r.asset_type || '')
       return {
         maker:      r.maker      || '-',
         spec:       r.spec       || '-',
@@ -78,18 +79,18 @@ app.get('/holding', async (c) => {
       }
     })
 
-    // 사용량만 있고 입고가 없는 항목도 표시 (asset_type 없음)
+    // 사용량만 있고 입고가 없는 항목도 표시 (asset_type 포함)
     for (const r of useList as any[]) {
-      const k = (r.maker || '') + '|' + (r.spec || '') + '|' + (r.cable_kind || '')
+      const k = (r.maker || '') + '|' + (r.spec || '') + '|' + (r.cable_kind || '') + '|' + (r.asset_type || '')
       const alreadyIn = (inRows.results || []).some(
-        (i: any) => ((i.maker||'')+'|'+(i.spec||'')+'|'+(i.cable_kind||'')) === k
+        (i: any) => ((i.maker||'')+'|'+(i.spec||'')+'|'+(i.cable_kind||'')+'|'+(i.asset_type||'')) === k
       )
       if (!alreadyIn) {
         items.push({
           maker:      r.maker      || '-',
           spec:       r.spec       || '-',
           cable_kind: r.cable_kind || '-',
-          asset_type: '-',
+          asset_type: r.asset_type || '-',
           in_qty:     0,
           use_qty:    r.use_qty    || 0,
         })

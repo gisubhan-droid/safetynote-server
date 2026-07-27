@@ -6255,8 +6255,8 @@ app.route('/api/dist', distRoutes)
   app.get('/api/cable-incoming/holding', (c) => {
     try {
       const inRows = rawDb.prepare(`
-        SELECT maker, spec, cable_kind, SUM(qty_m) AS in_qty
-        FROM cable_incoming GROUP BY maker, spec, cable_kind
+        SELECT maker, spec, cable_kind, asset_type, SUM(qty_m) AS in_qty
+        FROM cable_incoming GROUP BY maker, spec, cable_kind, asset_type
       `).all() as any[]
 
       const useRows = rawDb.prepare(`
@@ -6275,16 +6275,16 @@ app.route('/api/dist', distRoutes)
 
       const items = inRows.map(r => {
         const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')
-        return { maker: r.maker||'-', spec: r.spec||'-', cable_kind: r.cable_kind||'-', in_qty: r.in_qty||0, use_qty: useMap[k]||0 }
+        return { maker: r.maker||'-', spec: r.spec||'-', cable_kind: r.cable_kind||'-', asset_type: r.asset_type||'-', in_qty: r.in_qty||0, use_qty: useMap[k]||0 }
       })
-      // 사용량만 있는 항목 추가
+      // 사용량만 있는 항목 추가 (asset_type 없음)
       for (const r of useRows) {
         const k = (r.maker||'')+'|'+(r.spec||'')+'|'+(r.cable_kind||'')
         if (!inRows.some(i => ((i.maker||'')+'|'+(i.spec||'')+'|'+(i.cable_kind||''))===k)) {
-          items.push({ maker: r.maker||'-', spec: r.spec||'-', cable_kind: r.cable_kind||'-', in_qty: 0, use_qty: r.use_qty||0 })
+          items.push({ maker: r.maker||'-', spec: r.spec||'-', cable_kind: r.cable_kind||'-', asset_type: '-', in_qty: 0, use_qty: r.use_qty||0 })
         }
       }
-      items.sort((a,b) => (a.maker+a.spec+a.cable_kind).localeCompare(b.maker+b.spec+b.cable_kind))
+      items.sort((a,b) => (a.maker+a.spec+a.cable_kind+a.asset_type).localeCompare(b.maker+b.spec+b.cable_kind+b.asset_type))
       return c.json({ items })
     } catch(e: any) { return c.json({ error: e.message }, 500) }
   })

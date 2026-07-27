@@ -42885,13 +42885,13 @@ function _renderCableIncomingUI(container, items, initialTab) {
 
   // ── 집계 계산 ───────────────────────────────────────────────
   // 제조사/규격/종류별 입고 현황
-  var inMap = {}; // key: maker+'|'+spec+'|'+kind
+  var inMap = {}; // key: maker+'|'+spec+'|'+kind+'|'+asset_type
   items.forEach(function(it) {
-    var k = (it.maker||'-') + '|' + (it.spec||'-') + '|' + (it.cable_kind||'-');
-    if (!inMap[k]) inMap[k] = { maker: it.maker||'-', spec: it.spec||'-', kind: it.cable_kind||'-', qty: 0 };
+    var k = (it.maker||'-') + '|' + (it.spec||'-') + '|' + (it.cable_kind||'-') + '|' + (it.asset_type||'-');
+    if (!inMap[k]) inMap[k] = { maker: it.maker||'-', spec: it.spec||'-', kind: it.cable_kind||'-', asset_type: it.asset_type||'-', qty: 0 };
     inMap[k].qty += (it.qty_m || 0);
   });
-  var inSummary = Object.values(inMap).sort(function(a,b){ return (a.maker+a.spec+a.kind).localeCompare(b.maker+b.spec+b.kind); });
+  var inSummary = Object.values(inMap).sort(function(a,b){ return (a.maker+a.spec+a.kind+a.asset_type).localeCompare(b.maker+b.spec+b.kind+b.asset_type); });
 
   // 보유 현황 = 입고량 - 사용량 (사용량은 별도 API /api/cable-incoming/holding)
   // → 렌더 후 비동기 로드
@@ -42923,7 +42923,7 @@ function _renderCableIncomingUI(container, items, initialTab) {
     '<div id="ci-panel-in-summary" class="ci-panel' + (_ciInitTab==='in-summary' ? '' : ' hidden') + '">' +
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
-          '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-chart-bar text-blue-400 mr-2"></i>제조사/규격/종류별 입고 현황</span>' +
+          '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-chart-bar text-blue-400 mr-2"></i>제조사/규격/종류/자산구분별 입고 현황</span>' +
           '<span class="text-xs text-gray-400">총 ' + inSummary.length + '개 항목</span>' +
         '</div>' +
         '<div class="overflow-x-auto">' +
@@ -42932,16 +42932,18 @@ function _renderCableIncomingUI(container, items, initialTab) {
               '<th class="px-4 py-2 text-center text-gray-600 font-semibold">제조사</th>' +
               '<th class="px-4 py-2 text-center text-gray-600 font-semibold">규격</th>' +
               '<th class="px-4 py-2 text-center text-gray-600 font-semibold">케이블종류</th>' +
+              '<th class="px-4 py-2 text-center text-gray-600 font-semibold">자산구분</th>' +
               '<th class="px-4 py-2 text-right text-gray-600 font-semibold">입고량(M)</th>' +
             '</tr></thead>' +
             '<tbody id="ci-in-summary-body">' +
               (inSummary.length === 0 ?
-                '<tr><td colspan="4" class="text-center py-8 text-gray-400">입고 데이터가 없습니다</td></tr>' :
+                '<tr><td colspan="5" class="text-center py-8 text-gray-400">입고 데이터가 없습니다</td></tr>' :
                 inSummary.map(function(r){
                   return '<tr class="border-t border-gray-100 hover:bg-blue-50">' +
                     '<td class="px-4 py-2 text-center">' + r.maker + '</td>' +
                     '<td class="px-4 py-2 text-center">' + r.spec + '</td>' +
                     '<td class="px-4 py-2 text-center">' + r.kind + '</td>' +
+                    '<td class="px-4 py-2 text-center">' + (r.asset_type||'-') + '</td>' +
                     '<td class="px-4 py-2 text-right font-semibold text-blue-600">' + (r.qty||0).toLocaleString() + 'M</td>' +
                   '</tr>';
                 }).join('')
@@ -42956,7 +42958,7 @@ function _renderCableIncomingUI(container, items, initialTab) {
     '<div id="ci-panel-hold-summary" class="ci-panel' + (_ciInitTab==='hold-summary' ? '' : ' hidden') + '">' +
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
-          '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-boxes text-green-400 mr-2"></i>제조사/규격/종류별 보유 현황 <span class="text-xs text-gray-400">(입고량 − 사용량)</span></span>' +
+          '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-boxes text-green-400 mr-2"></i>제조사/규격/종류/자산구분별 보유 현황 <span class="text-xs text-gray-400">(입고량 − 사용량)</span></span>' +
           '<button onclick="_loadCableHoldingSummary()" class="text-xs text-blue-500 hover:underline"><i class="fas fa-sync-alt mr-1"></i>새로고침</button>' +
         '</div>' +
         '<div class="overflow-x-auto">' +
@@ -42965,12 +42967,13 @@ function _renderCableIncomingUI(container, items, initialTab) {
               '<th class="px-4 py-2 text-center text-gray-600 font-semibold">제조사</th>' +
               '<th class="px-4 py-2 text-center text-gray-600 font-semibold">규격</th>' +
               '<th class="px-4 py-2 text-center text-gray-600 font-semibold">케이블종류</th>' +
+              '<th class="px-4 py-2 text-center text-gray-600 font-semibold">자산구분</th>' +
               '<th class="px-4 py-2 text-right text-gray-600 font-semibold">입고량(M)</th>' +
               '<th class="px-4 py-2 text-right text-gray-600 font-semibold">사용량(M)</th>' +
               '<th class="px-4 py-2 text-right text-gray-600 font-semibold">보유량(M)</th>' +
             '</tr></thead>' +
             '<tbody id="ci-hold-summary-body">' +
-              '<tr><td colspan="6" class="text-center py-8 text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>집계 중...</td></tr>' +
+              '<tr><td colspan="7" class="text-center py-8 text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>집계 중...</td></tr>' +
             '</tbody>' +
           '</table>' +
         '</div>' +
@@ -43057,13 +43060,13 @@ function _ciSwitchTab(btn, tab) {
 async function _loadCableHoldingSummary() {
   var tbody = document.getElementById('ci-hold-summary-body');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>집계 중...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>집계 중...</td></tr>';
   try {
     var res = await fetch('/api/cable-incoming/holding');
     var data = res.ok ? await res.json() : { items: [] };
     var rows = data.items || [];
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-400">데이터가 없습니다</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">데이터가 없습니다</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(function(r){
@@ -43073,13 +43076,14 @@ async function _loadCableHoldingSummary() {
         '<td class="px-4 py-2 text-center">' + (r.maker||'-') + '</td>' +
         '<td class="px-4 py-2 text-center">' + (r.spec||'-') + '</td>' +
         '<td class="px-4 py-2 text-center">' + (r.cable_kind||'-') + '</td>' +
+        '<td class="px-4 py-2 text-center">' + (r.asset_type||'-') + '</td>' +
         '<td class="px-4 py-2 text-right text-blue-600">' + (r.in_qty||0).toLocaleString() + 'M</td>' +
         '<td class="px-4 py-2 text-right text-orange-500">' + (r.use_qty||0).toLocaleString() + 'M</td>' +
         '<td class="px-4 py-2 text-right font-semibold ' + color + '">' + holding.toLocaleString() + 'M</td>' +
       '</tr>';
     }).join('');
   } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-red-400">집계 오류: ' + e.message + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-red-400">집계 오류: ' + e.message + '</td></tr>';
   }
 }
 

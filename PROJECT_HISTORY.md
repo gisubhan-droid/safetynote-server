@@ -1,7 +1,11 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-26 (세션 90 — FEAT-171 TBM 사진 갤러리 선택 가능하도록 변경 완료)
-> **GitHub 최신 (safetynote-server): `7d82184`** — docs: [FEAT-171] 커밋 해시 4029bf4 반영
+> 최종 업데이트: 2026-07-27 (세션 92 — FEAT-173 작업명 자동입력 체크박스 구현 완료)
+> **GitHub 최신 (safetynote-server): `87edaa2`** — feat: [FEAT-173] 작업명 자동입력 체크박스 추가
+> **이전 커밋 (server): `eebadcb`** — feat: [FEAT-172] 외선 상세분류 전주건식(pole) 추가
+> **이전 커밋 (server): `038e40c`** — fix: 외선 상세분류 오타 수정 — 단수 → 단순 (cut)
+> **이전 커밋 (server): `0aab32c`** — fix: [FEAT-172] 검토 후 누락 수정 3건
+> **이전 커밋 (server): `7d82184`** — docs: [FEAT-171] 커밋 해시 4029bf4 반영
 > **GitHub 최신 (safetynote-android): `a172a6f`** — fix: [BUG-IME] captureInput false — APK v1.4.15 빌드 완료
 > **이전 커밋 (server): `8e523f9`** — docs: [세션88 마무리] PROJECT_HISTORY + PENDING_TASKS 기록 정리
 > **이전 커밋 (server): `b69e80b`** — style: 로그인/프로필 페이지 LG스마트체 Regular 적용
@@ -353,6 +357,8 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-173 | 91~92 | 2026-07-27 | ✅ 구현 | **작업명 자동입력 체크박스** — 작업 등록/수정 모달 작업명 label 우측에 '🪄 작업명 자동입력' 체크박스 배치. 신규 등록: 기본 ON(보라색 활성), 수정 모달: 기본 OFF(기존 작업명 보존). 체크 ON 시 [작업종류][상세분류] prefix 자동 삽입, 종류/분류 변경 시 prefix 자동 교체(뒤 내용 보존). PREFIX_RE 패턴으로 prefix 구간만 교체. 충돌 4곳 처리: ①onMWorkClassChange 재렌더링 시 select 2곳 onchange 연결 ②autoLinkConstruction prefix 유지 ③copyTask 체크박스 강제 OFF ④신규 등록 setTimeout 50ms DOM 타이밍 대응. 전역 함수 5개 신규: _makeTitlePrefix/_applyTitlePrefixIfOn/_updateTitlePrefixHint/onTitlePrefixCbChange/onMWorkSubClassChange. RULE-001 완전 준수. 검증: node --check ✅ + npm run build ✅(290.40 kB) | `87edaa2` |
+| FEAT-172-FIX | 91~92 | 2026-07-27 | ✅ 수정 | **FEAT-172 누락 수정 3건 + 전주건식(pole) 추가** — ①app.js 27741: workClassBadge(wc) → workClassBadge(wc, t.work_sub_class) 상세분류 배지 누락 수정. ②NAS inspections 쿼리: t.work_class → COALESCE(work_class_new, work_class) AS work_class + t.work_sub_class 추가. ③현장점검 PDF guBun에 상세분류 병기. ④오타 단수→단순 수정. ⑤WORK_CLASS_DEF pole 추가 + tasks.ts VALID 배열 3곳 pole 추가. 커밋: 0aab32c(누락3건) / 038e40c(오타) / eebadcb(전주건식) | `eebadcb` |
 | FEAT-LINKED-TOGGLE | 78 | 2026-07-25 | ✅ 구현 | **연계작업 사진 섹션 접기/펼치기 토글** — 칩 버튼 과다 노출 문제 해결. `_toggleLinkedPhotos(taskId)` 전역 함수 신규 추가(RULE-001/003 준수). `linked-photos-section` HTML 헤더에 토글 버튼(`linked-photos-toggle-{taskId}`, 초기 `display:none`) + count span(`linked-photos-count-{taskId}`) 추가. `linked-photos-content` 초기 `display:none`(기본 접힘). `_loadLinkedCompletedPhotos()`: 로드 후 토글 버튼 `inline-flex` 표시 + count span `N건` 업데이트. 사진 0건 시 container `display:''` + 버튼 숨김 유지. 캐시 버스팅 `v=0c096141` → `v=1276a6f2`. 검증: `node --check` ✅ + `npm run build` ✅(287.31 kB) | `6da57b0` |
 | BUG-CON-TASK-NAV | 77~77-C | 2026-07-25 | ✅ 수정 | **공사 상세 화면에서 작업 등록/수정 후 화면 이동 버그 3종** — ①[세션77] `showCreateTaskFromConstruction()` `conDetailOverlay.remove()` → `display='none'+dataset.fromConId 보존`으로 교체. `_doCreate()/_closeTaskModalAndRestoreCon()` 공사 상세 복귀 로직 추가. ②[세션77-B] `conDetailOverlay`도 `modal-overlay` 클래스 보유 → `querySelector('.modal-overlay').remove()`가 `conDetailOverlay`를 제거하는 버그. `showCreateTaskModal` 생성 modal에 `id='taskCreateEditOverlay'` 부여. `_doCreate()/updateTask()` 성공 후 `getElementById('taskCreateEditOverlay').remove()`로 교체. ③[세션77-C] `display='none'` 숨김 로직 완전 제거 → `conDetailOverlay` 그대로 유지한 채 작업 등록 모달만 위에 쌓음. 검증: `node --check` ✅ + `npm run build` ✅ | `3e1921a`, `99d0e7e`, `ed2e7bf` |
 | BUG-COPY-TASK-CTYPE | 76 | 2026-07-25 | ✅ 수정 | **작업 복사 시 공사종류(construction_type) 미전달 버그** — `copyTask()` preset 객체에 `construction_type` 누락. `showCreateTaskModal()` ct 계산 시 `preset.work_class`를 `conKeyToLabel()`로 변환 → `CON_TYPE_DEF`에 없어 빈값 반환. **해결**: ①`copyTask()` preset에 `construction_type: t.construction_type||''` 추가. ②`showCreateTaskModal()` ct 결정 순서: `task.construction_type` → `presetConstruction.construction_type` → `conKeyToLabel(preset.work_class)` → 빈값. 캐시 버스팅 `v=d444f291` → `v=30300e9e`. 검증: `node --check` ✅ + `npm run build` ✅ | `a437526` |

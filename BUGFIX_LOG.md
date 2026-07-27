@@ -4871,3 +4871,55 @@ API.get('/tasks', { params: _taskParams })
 
 **검증**: node --check ✅ / npm run build ✅ (`dist/_worker.js 288.74 kB`)
 **커밋**: `4a7bb9d`
+
+---
+
+## [FEAT-172 누락 수정 + FEAT-173] 세션 91~92 (2026-07-27)
+
+### FEAT-172 검토 후 누락 수정 3건 (커밋 `0aab32c`)
+
+| 수정 위치 | 변경 내용 |
+|-----------|----------|
+| `app.js` 27741라인 | `workClassBadge(wc)` → `workClassBadge(wc, t.work_sub_class)` — 위험성평가 체크리스트 목록 상세분류 배지 미표시 수정 |
+| `node-server.ts` NAS inspections 쿼리 | `t.work_class` → `COALESCE(t.work_class_new, t.work_class, 'cable_install') AS work_class` + `t.work_sub_class` 추가 |
+| `app.js` 현장점검 PDF `guBun` | 상세분류(workSubLabel) 병기 |
+
+### FEAT-172 오타 수정 (커밋 `038e40c`)
+- `WORK_CLASS_DEF` `cut` key: `단수` → `단순`
+
+### 외선 상세분류 전주건식(pole) 추가 (커밋 `eebadcb`)
+- `app.js` WORK_CLASS_DEF: `{ key: 'pole', label: '전주건식' }` 추가
+- `tasks.ts` VALID_WORK_SUB_CLASS / VALID_SUB_PUT / VALID_SUB 3곳에 `'pole'` 추가
+
+---
+
+## [FEAT-173] 작업명 자동입력 체크박스 (커밋 `87edaa2`)
+
+### 기능 요약
+작업 등록/수정 모달의 작업명 label 우측에 '🪄 작업명 자동입력' 체크박스 배치.
+- **신규 등록**: 기본 ON (보라색 활성, input 테두리 강조)
+- **수정 모달**: 기본 OFF (기존 작업명 보존)
+- 체크 ON 시 `[작업종류][상세분류]` prefix 자동 삽입
+- 작업종류/상세분류 변경 시 prefix 자동 교체 (뒤 내용 보존)
+
+### 충돌 지점 4곳 처리
+| 충돌 지점 | 처리 방법 |
+|-----------|----------|
+| `onMWorkClassChange` 재렌더링 시 onchange 누락 | select 2곳에 `onchange="onMWorkSubClassChange()"` 연결 |
+| `autoLinkConstruction` 공사연동 시 prefix 덮어쓰기 | `_makeTitlePrefix()` 로 prefix 유지 후 공사명 채움 |
+| `copyTask` 복원 시 체크박스 ON으로 작업명 훼손 | 강제 OFF + hint 숨김 처리 |
+| 신규 등록 시 DOM 렌더링 타이밍 | `setTimeout(_applyTitlePrefixIfOn, 50)` |
+
+### 신규 전역 함수 (RULE-001: var 전용)
+| 함수명 | 역할 |
+|--------|------|
+| `_makeTitlePrefix()` | 현재 작업종류/상세분류 선택값으로 prefix 문자열 생성 |
+| `_applyTitlePrefixIfOn()` | 체크박스 ON 상태일 때 prefix 적용 |
+| `_updateTitlePrefixHint(prefix)` | 힌트 영역 업데이트 |
+| `onTitlePrefixCbChange()` | 체크박스 클릭 이벤트 핸들러 |
+| `onMWorkSubClassChange()` | 상세분류 변경 시 prefix 갱신 트리거 |
+
+### 검증
+- `node --check` ✅
+- `npm run build` ✅ (290.40 kB)
+- **커밋**: `87edaa2`

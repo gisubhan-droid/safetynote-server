@@ -11817,13 +11817,21 @@ function downloadPhoto(photoId, fileName) {
     + '/api/photos/' + photoId + '/img'
     + (token ? '?token=' + encodeURIComponent(token) : '');
 
-  // Android APP 전용: SafetyNoteApp 브릿지 유무로만 판별
+  // ✅ [BUG-178b 수정] Android APP 전용: SafetyNoteApp 브릿지 유무로만 판별
   // (isCapacitor/UA 방식은 일반 모바일 Chrome에서 오탐 발생 → 사용 금지)
+  //
+  // 전략:
+  //   1순위: SafetyNoteApp.downloadApk(url) — Android DownloadManager로 Downloads 폴더 저장
+  //          → Android는 Downloads 폴더의 이미지(.jpg/.png)를 갤러리에서 자동 인식
+  //          → openAttachment()는 PDF/Word 외부앱 열기 전용이라 갤러리 저장 안 됨 (BUG-178b)
+  //   2순위(폴백): fetch → blob → <a download>  (브릿지 실패 시)
+  //
+  // PC · 모바일 브라우저: fetch → blob → <a download>
   var isAppBridge = !!(window.SafetyNoteApp);
-  if (isAppBridge && typeof window.SafetyNoteApp.openAttachment === 'function') {
+  if (isAppBridge && typeof window.SafetyNoteApp.downloadApk === 'function') {
     try {
-      window.SafetyNoteApp.openAttachment(url, safeFileName);
-      toast('"' + safeFileName + '" 다운로드를 시작합니다.', 'info');
+      window.SafetyNoteApp.downloadApk(url);
+      toast('"' + safeFileName + '" 갤러리에 저장 중...', 'info');
       return;
     } catch(e) { /* 폴백: 아래 fetch 방식으로 계속 */ }
   }

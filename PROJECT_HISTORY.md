@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-27 (세션 95 — 광케이블 입고/보유현황 자산구분 추가 + 탭 고정 버그 수정 + 사진 다운로드)
-> **GitHub 최신 (safetynote-server): `696e959`** — feat: 작업등록 사진 다운로드 버튼 추가 — 감독자 이상, PC/모바일/APP 3환경 대응
+> 최종 업데이트: 2026-07-27 (세션 96 — [BUG-178b] 앱 환경 사진 갤러리 미저장 수정 — openAttachment → downloadApk 교체)
+> **GitHub 최신 (safetynote-server): `a388819`** — fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장
+> **이전 커밋 (server): `ab85790`** — fix: [BUG-178] downloadPhoto — 모바일 브라우저 isCapacitor 오탐 제거, fetch→blob 방식으로 통일
+> **이전 커밋 (server): `696e959`** — feat: 작업등록 사진 다운로드 버튼 추가 — 감독자 이상, PC/모바일/APP 3환경 대응
 > **이전 커밋 (server): `d11f09f`** — fix: 보유현황 — 사용량 항목의 asset_type 실제값 표시 (useRows SQL에 asset_type GROUP BY 추가)
 > **이전 커밋 (server): `ce6c49b`** — feat: 광케이블 입고/보유현황 테이블에 자산구분 컬럼 추가
 > **이전 커밋 (server): `cb7be88`** — fix: [탭고정] 광케이블 입고관리 — 수정/삭제 후 작업 탭 유지 (initialTab 파라미터 추가)
@@ -10698,6 +10700,47 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 |------|--------|------|
 | safetynote-server | `b1a539b` | feat: [FEAT-170] 서명요청 내용 보기 링크 추가 |
 | safetynote-server | `6e18fd7` | fix: [UI] 시스템 설정 메뉴를 법령안내 관리 아래로 이동 |
+
+---
+
+## 세션 96 (2026-07-27)
+
+### 작업 — [BUG-178b] 앱 환경 사진 다운로드 갤러리 미저장 수정
+
+#### 문제
+`downloadPhoto()` 앱 환경 분기에서 `SafetyNoteApp.openAttachment(url, fileName)` 호출 → "다운로드를 시작합니다." toast는 표시되지만 **갤러리에 사진이 저장되지 않음**.
+
+#### 원인 분석
+- `openAttachment()`는 PDF·Word 등 첨부파일을 외부앱(Chooser)으로 열기 위해 설계된 브릿지
+- 갤러리 저장 기능 없음 — 외부앱을 실행하는 것일 뿐
+
+#### 해결 전략
+기존 앱 브릿지 메서드 목록 (`saveAuthToken`, `clearAuthToken`, `openAttachment`, `downloadApk`) 중 **`downloadApk(url)`** 재활용:
+- `downloadApk()` = Android DownloadManager에 URL 직접 전달하는 범용 다운로드 브릿지
+- DownloadManager → `Downloads/` 폴더 저장 → Android 갤러리 자동 인식
+- **앱(safetynote-android) 신규 브릿지 추가 불필요**
+
+#### 수정 내용 (커밋 `a388819`)
+
+| 파일 | 변경 |
+|------|------|
+| `public/static/app.js` `downloadPhoto()` | 앱 분기 `openAttachment()` → `downloadApk()` 교체 |
+| `public/static/app.js` `downloadPhoto()` | toast: "다운로드를 시작합니다." → "갤러리에 저장 중..." |
+
+#### 환경별 최종 동작
+
+| 환경 | 판별 | 처리 | 결과 |
+|------|------|------|------|
+| Android 전용앱 | `window.SafetyNoteApp` 존재 | `downloadApk(url)` | Downloads/ 저장 → 갤러리 인식 ✅ |
+| PC 브라우저 | — | `fetch → blob → <a download>` | 브라우저 다운로드 폴더 |
+| Android Chrome | — | `fetch → blob → <a download>` | 브라우저 다운로드 폴더 |
+
+### 커밋 이력
+
+| 저장소 | 커밋 해시 | 메시지 |
+|--------|-----------|--------|
+| safetynote-server | `ab85790` | fix: [BUG-178] downloadPhoto — 모바일 브라우저 isCapacitor 오탐 제거 |
+| safetynote-server | `a388819` | fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장 |
 
 ---
 

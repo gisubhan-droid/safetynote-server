@@ -5,6 +5,94 @@
 
 ---
 
+## [BUG-178b] 앱 환경 사진 다운로드 갤러리 미저장 (커밋 `a388819`) — 세션 96 (2026-07-27)
+
+### 증상
+모바일 전용앱(Android)에서 사진 다운로드 버튼 클릭 시 "다운로드를 시작합니다." toast는 표시되나, 갤러리에서 사진이 확인되지 않음. (일부 기기에서는 "다운로드 완료" toast만 뜨고 갤러리 저장 안 됨)
+
+### 원인 분석
+`downloadPhoto()` 앱 환경 분기가 `SafetyNoteApp.openAttachment(url, fileName)`을 호출하고 있었음.
+
+`openAttachment()`는 PDF·Word 등 **첨부파일을 외부앱(Chooser)으로 열기** 위해 설계된 브릿지 메서드:
+- 내부적으로 Android DownloadManager 또는 FileProvider를 통해 외부앱을 실행함
+- **갤러리에 이미지를 저장하는 기능이 없음** → 다운로드 동작이 있어도 갤러리 미반영
+
+### 해결 방법
+
+`SafetyNoteApp.downloadApk(url)` 브릿지 재활용:
+- `downloadApk()`는 DownloadManager에 URL을 직접 전달하는 범용 다운로드 브릿지
+- Android DownloadManager → `Downloads/` 폴더에 파일 저장
+- Android는 `Downloads/` 폴더의 이미지(`.jpg`/`.png`) 파일을 **갤러리에서 자동 인식**
+- **앱 신규 브릿지 추가 불필요** — 기존 `downloadApk()` 브릿지로 해결
+
+### 수정 내용
+
+| 파일 | 변경 |
+|------|------|
+| `public/static/app.js` | `downloadPhoto()` 앱 분기: `openAttachment()` → `downloadApk()` 로 교체 |
+| `public/static/app.js` | toast 메시지: "다운로드를 시작합니다." → "갤러리에 저장 중..." |
+
+### 변경 전후 비교
+
+```javascript
+// ❌ 변경 전 (BUG-178b 발생)
+if (isAppBridge && typeof window.SafetyNoteApp.openAttachment === 'function') {
+  window.SafetyNoteApp.openAttachment(url, safeFileName);  // 외부앱 열기용 → 갤러리 저장 ❌
+  toast('"' + safeFileName + '" 다운로드를 시작합니다.', 'info');
+  return;
+}
+
+// ✅ 변경 후 (BUG-178b 수정)
+if (isAppBridge && typeof window.SafetyNoteApp.downloadApk === 'function') {
+  window.SafetyNoteApp.downloadApk(url);  // DownloadManager → Downloads 폴더 → 갤러리 자동 인식 ✅
+  toast('"' + safeFileName + '" 갤러리에 저장 중...', 'info');
+  return;
+}
+```
+
+### 환경별 동작 요약 (수정 후)
+
+| 환경 | 판별 기준 | 처리 방식 | 저장 위치 |
+|------|-----------|-----------|-----------|
+| Android 전용앱 | `window.SafetyNoteApp` 존재 | `downloadApk(url)` → DownloadManager | Downloads/ → 갤러리 자동 인식 ✅ |
+| PC 브라우저 | — | `fetch → blob → <a download>` | 브라우저 다운로드 폴더 |
+| Android Chrome | — | `fetch → blob → <a download>` | 브라우저 다운로드 폴더 |
+| iOS Safari | — | `fetch → blob → <a download>` | 브라우저 다운로드 폴더 |
+
+### RULE-001 준수
+- 수정 범위: `downloadPhoto()` 함수 내 `isAppBridge` 분기 1곳만 변경
+- `var` 전용, `const`/`let`/화살표함수 없음 ✅
+
+### 검증 결과
+- `node --check public/static/app.js` ✅ 통과
+- `npm run build` ✅ 성공 (295.36 kB)
+
+### 관련 이슈
+- BUG-178 (커밋 `ab85790`): isCapacitor 오탐으로 일반 모바일 Chrome에서 앱 선택기 팝업 — SafetyNoteApp 브릿지 판별로 수정
+- BUG-178b (이 항목): openAttachment 사용으로 갤러리 미저장 — downloadApk 브릿지로 교체
+
+---
+
+## [BUG-178] isCapacitor 오탐 — 일반 모바일 Chrome 앱 선택기 팝업 (커밋 `ab85790`) — 세션 95 (2026-07-27)
+
+### 증상
+일반 Android Chrome 브라우저에서 사진 다운로드 버튼 클릭 시 앱 선택기(Chooser) 팝업이 뜨며 다운로드 진행 안 됨.
+
+### 원인
+`downloadPhoto()` 초기 구현에서 `isCapacitor` 변수를 UA 기반으로 감지:
+```javascript
+var isCapacitor = /wv\b|WebView/i.test(ua);  // Android Chrome도 오탐
+```
+일반 모바일 Chrome의 UA에도 `wv` 또는 `WebView` 패턴이 포함될 수 있어 오탐 발생 → `window.open(url, '_system')` 실행 → 앱 선택기 팝업.
+
+### 수정
+UA 기반 감지 완전 제거. `window.SafetyNoteApp` 브릿지 유무만으로 앱 환경 판별:
+```javascript
+var isAppBridge = !!(window.SafetyNoteApp);  // 100% 확실한 앱 환경 판별
+```
+
+---
+
 ## [FEAT-178] 작업등록 사진 다운로드 기능 (커밋 `696e959`) — 세션 95 (2026-07-27)
 
 ### 기능 요약

@@ -4710,14 +4710,22 @@ async function showConstructionDetail(conId) {
       <!-- 공사 기본 정보 -->
       <div class="grid md:grid-cols-2 gap-3 mb-4">
 
-        <!-- 공사요청번호 | 작업번호 -->
-        <div class="p-3 rounded-xl" style="background:#F9F7FB">
-          <div class="text-xs text-gray-400 mb-1"><i class="fas fa-hashtag mr-1"></i>공사요청번호</div>
-          <div class="font-bold font-mono" style="color:#685182">${con.request_no}</div>
-        </div>
-        <div class="p-3 rounded-xl" style="background:#F9F7FB">
-          <div class="text-xs text-gray-400 mb-1"><i class="fas fa-tag mr-1"></i>작업번호</div>
-          <div class="font-bold font-mono" style="color:#685182">${con.work_number || '-'}</div>
+        <!-- ★ [FEAT-175] 공사번호 | 공사요청번호 | 작업번호 — 3열 1행 -->
+        <div class="md:col-span-2">
+          <div class="grid grid-cols-3 gap-2">
+            <div class="p-3 rounded-xl" style="background:#FFFBEB;border:1px solid #FCD34D">
+              <div class="text-xs mb-1" style="color:#B45309"><i class="fas fa-hashtag mr-1" style="color:#D97706"></i>공사번호</div>
+              <div class="font-bold font-mono" style="color:#D97706">${con.con_number || '-'}</div>
+            </div>
+            <div class="p-3 rounded-xl" style="background:#F9F7FB">
+              <div class="text-xs text-gray-400 mb-1"><i class="fas fa-hashtag mr-1"></i>공사요청번호</div>
+              <div class="font-bold font-mono" style="color:#685182">${con.request_no}</div>
+            </div>
+            <div class="p-3 rounded-xl" style="background:#F9F7FB">
+              <div class="text-xs text-gray-400 mb-1"><i class="fas fa-tag mr-1"></i>작업번호</div>
+              <div class="font-bold font-mono" style="color:#685182">${con.work_number || '-'}</div>
+            </div>
+          </div>
         </div>
 
         <!-- 공사명 -->
@@ -4904,42 +4912,186 @@ async function cancelSettlement(conId) {
   }
 }
 
+// ─── [FEAT-175] 공사번호 입력 팝업 (정산요청용 — 주황 테마) ──────────────────
+// RULE-001: var 전용 / RULE-003: onclick 내 따옴표 중첩 금지 — data-* 패턴
+function _showConNumberPopupOrange(conId, onConfirm) {
+  var overlay = document.createElement('div');
+  overlay.id = 'conNumPopupOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = (
+    '<div style="background:#fff;border-radius:20px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden">' +
+      '<div style="background:linear-gradient(135deg,#D97706,#B45309);padding:18px 20px;display:flex;align-items:center;gap:10px">' +
+        '<div style="width:36px;height:36px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center">' +
+          '<i class="fas fa-hashtag" style="color:#fff;font-size:15px"></i>' +
+        '</div>' +
+        '<div>' +
+          '<h3 style="color:#fff;font-size:15px;font-weight:800;margin:0">공사번호 입력</h3>' +
+          '<p style="color:rgba(255,255,255,0.85);font-size:11px;margin:2px 0 0">공사번호를 입력하세요 · 담당자에게 알림 발송</p>' +
+        '</div>' +
+      '</div>' +
+      '<div style="padding:20px">' +
+        '<div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:6px">' +
+          '<i class="fas fa-hashtag" style="color:#D97706;font-size:10px;margin-right:4px"></i>공사번호 <span style="color:#EF4444">*</span>' +
+        '</div>' +
+        '<input id="conNumInput175" type="text" inputmode="numeric" maxlength="7"' +
+          ' placeholder="숫자 7자리 (예: 2507001)"' +
+          ' style="width:100%;box-sizing:border-box;border:2px solid #FCD34D;border-radius:10px;padding:10px 12px;font-size:15px;font-family:monospace;outline:none;background:#FFFBEB;color:#92400E"' +
+          ' oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,7)">' +
+        '<div style="font-size:11px;color:#B45309;margin-top:5px">' +
+          '<i class="fas fa-info-circle" style="margin-right:3px"></i>숫자 7자리 (예: 2507001)' +
+        '</div>' +
+        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px;background:#FEF3C7;border-radius:10px;cursor:pointer">' +
+          '<input type="checkbox" id="conNumLaterCb175" style="width:16px;height:16px;accent-color:#D97706">' +
+          '<span style="font-size:13px;color:#92400E;font-weight:600">나중에 입력</span>' +
+          '<span style="font-size:11px;color:#B45309;margin-left:2px">— 체크 시 번호없음으로 처리</span>' +
+        '</label>' +
+        '<div style="display:flex;gap:10px;margin-top:16px">' +
+          '<button data-conid="' + conId + '" onclick="_conNumPopupCancel()" style="flex:1;padding:11px;background:#F3F4F6;border:none;border-radius:10px;font-weight:600;color:#6B7280;cursor:pointer;font-size:14px">취소</button>' +
+          '<button data-conid="' + conId + '" onclick="_conNumPopupConfirmOrange()" style="flex:1.5;padding:11px;background:linear-gradient(135deg,#D97706,#B45309);border:none;border-radius:10px;font-weight:700;color:#fff;cursor:pointer;font-size:14px">' +
+            '<i class="fas fa-paper-plane" style="margin-right:5px"></i>정산요청' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>'
+  );
+  document.body.appendChild(overlay);
+  // 배경 클릭 시 닫기 (모달 내부 클릭 전파 차단)
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) _conNumPopupCancel(); });
+  // 확인 콜백 저장 (전역)
+  window._conNumCb175 = onConfirm;
+  // 체크박스 변경 시 input 상태 동기화
+  document.getElementById('conNumLaterCb175').onchange = function() {
+    var inp = document.getElementById('conNumInput175');
+    if (inp) {
+      inp.disabled = this.checked;
+      inp.style.opacity = this.checked ? '0.4' : '1';
+      if (this.checked) inp.value = '';
+    }
+  };
+}
+
+function _conNumPopupCancel() {
+  var el = document.getElementById('conNumPopupOverlay');
+  if (el) el.remove();
+  window._conNumCb175 = null;
+}
+
+function _conNumPopupConfirmOrange() {
+  var laterCb = document.getElementById('conNumLaterCb175');
+  var inp     = document.getElementById('conNumInput175');
+  var isLater = laterCb && laterCb.checked;
+  var numVal  = inp ? inp.value.trim() : '';
+  if (!isLater && numVal.length !== 7) {
+    var hintEl = inp ? inp.nextElementSibling : null;
+    if (inp) { inp.style.borderColor = '#EF4444'; inp.focus(); }
+    if (hintEl) { hintEl.style.color = '#EF4444'; hintEl.textContent = '⚠ 숫자 7자리를 입력하거나 "나중에 입력"을 체크하세요'; }
+    return;
+  }
+  var finalNum = isLater ? '번호없음' : numVal;
+  var cb = window._conNumCb175;
+  _conNumPopupCancel();
+  if (typeof cb === 'function') cb(finalNum);
+}
+
+// ─── [FEAT-175] 공사번호 입력 팝업 (정산완료용 — 초록 테마) ──────────────────
+function _showConNumberPopupGreen(conId, onConfirm) {
+  var overlay = document.createElement('div');
+  overlay.id = 'conNumPopupOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = (
+    '<div style="background:#fff;border-radius:20px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden">' +
+      '<div style="background:linear-gradient(135deg,#059669,#047857);padding:18px 20px;display:flex;align-items:center;gap:10px">' +
+        '<div style="width:36px;height:36px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center">' +
+          '<i class="fas fa-check-circle" style="color:#fff;font-size:15px"></i>' +
+        '</div>' +
+        '<div>' +
+          '<h3 style="color:#fff;font-size:15px;font-weight:800;margin:0">공사번호 확인</h3>' +
+          '<p style="color:rgba(255,255,255,0.85);font-size:11px;margin:2px 0 0">공사번호를 확인 후 정산완료 처리합니다</p>' +
+        '</div>' +
+      '</div>' +
+      '<div style="padding:20px">' +
+        '<div style="font-size:12px;font-weight:700;color:#065F46;margin-bottom:6px">' +
+          '<i class="fas fa-hashtag" style="color:#059669;font-size:10px;margin-right:4px"></i>공사번호 <span style="color:#EF4444">*</span>' +
+        '</div>' +
+        '<input id="conNumInputG175" type="text" inputmode="numeric" maxlength="7"' +
+          ' placeholder="숫자 7자리 (예: 2507001)"' +
+          ' style="width:100%;box-sizing:border-box;border:2px solid #6EE7B7;border-radius:10px;padding:10px 12px;font-size:15px;font-family:monospace;outline:none;background:#ECFDF5;color:#065F46"' +
+          ' oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,7)">' +
+        '<div style="font-size:11px;color:#047857;margin-top:5px">' +
+          '<i class="fas fa-info-circle" style="margin-right:3px"></i>숫자 7자리 (예: 2507001)' +
+        '</div>' +
+        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px;background:#D1FAE5;border-radius:10px;cursor:pointer">' +
+          '<input type="checkbox" id="conNumLaterCbG175" style="width:16px;height:16px;accent-color:#059669">' +
+          '<span style="font-size:13px;color:#065F46;font-weight:600">공사번호 없이 처리</span>' +
+          '<span style="font-size:11px;color:#047857;margin-left:2px">— 체크 시 번호없음으로 처리</span>' +
+        '</label>' +
+        '<div style="display:flex;gap:10px;margin-top:16px">' +
+          '<button onclick="_conNumPopupCancel()" style="flex:1;padding:11px;background:#F3F4F6;border:none;border-radius:10px;font-weight:600;color:#6B7280;cursor:pointer;font-size:14px">취소</button>' +
+          '<button onclick="_conNumPopupConfirmGreen()" style="flex:1.5;padding:11px;background:linear-gradient(135deg,#059669,#047857);border:none;border-radius:10px;font-weight:700;color:#fff;cursor:pointer;font-size:14px">' +
+            '<i class="fas fa-check-circle" style="margin-right:5px"></i>정산완료' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>'
+  );
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) _conNumPopupCancel(); });
+  window._conNumCb175 = onConfirm;
+  document.getElementById('conNumLaterCbG175').onchange = function() {
+    var inp = document.getElementById('conNumInputG175');
+    if (inp) {
+      inp.disabled = this.checked;
+      inp.style.opacity = this.checked ? '0.4' : '1';
+      if (this.checked) inp.value = '';
+    }
+  };
+}
+
+function _conNumPopupConfirmGreen() {
+  var laterCb = document.getElementById('conNumLaterCbG175');
+  var inp     = document.getElementById('conNumInputG175');
+  var isLater = laterCb && laterCb.checked;
+  var numVal  = inp ? inp.value.trim() : '';
+  if (!isLater && numVal.length !== 7) {
+    if (inp) { inp.style.borderColor = '#EF4444'; inp.focus(); }
+    return;
+  }
+  var finalNum = isLater ? '번호없음' : numVal;
+  var cb = window._conNumCb175;
+  _conNumPopupCancel();
+  if (typeof cb === 'function') cb(finalNum);
+}
+
 // ─── 정산요청 (completed → settlement_requested) ─────────────────────────────
 async function requestSettlement(conId) {
-  const ok = await showWarningConfirm(
-    '정산요청을 진행하시겠습니까?',
-    '담당자에게 정산요청 알림이 발송됩니다.',
-    '정산요청'
-  );
-  if (!ok) return;
-  try {
-    await API.post(`/constructions/${conId}/settle`);
-    toast('정산요청이 접수되었습니다.', 'success');
-    document.getElementById('conDetailOverlay')?.remove();
-    setTimeout(() => showConstructionDetail(conId), 200);
-    if (document.getElementById('page-content')) renderConstructionsPage(document.getElementById('page-content'));
-  } catch(e) {
-    toast(e?.response?.data?.error || '정산요청 실패', 'error');
-  }
+  _showConNumberPopupOrange(conId, async function(conNumber) {
+    try {
+      await API.post('/constructions/' + conId + '/settle', { con_number: conNumber });
+      toast('정산요청이 접수되었습니다.', 'success');
+      var ov = document.getElementById('conDetailOverlay');
+      if (ov) ov.remove();
+      setTimeout(function() { showConstructionDetail(conId); }, 200);
+      if (document.getElementById('page-content')) renderConstructionsPage(document.getElementById('page-content'));
+    } catch(e) {
+      toast((e && e.response && e.response.data && e.response.data.error) || '정산요청 실패', 'error');
+    }
+  });
 }
 
 // ─── 정산완료 (settlement_requested → settled) ───────────────────────────────
 async function requestSettleComplete(conId) {
-  const ok = await showSuccessConfirm(
-    '정산완료 처리하시겠습니까?',
-    '정산완료 처리 후에는 되돌릴 수 없습니다.',
-    '정산완료'
-  );
-  if (!ok) return;
-  try {
-    await API.post(`/constructions/${conId}/settle-complete`);
-    toast('정산완료 처리되었습니다.', 'success');
-    document.getElementById('conDetailOverlay')?.remove();
-    setTimeout(() => showConstructionDetail(conId), 200);
-    if (document.getElementById('page-content')) renderConstructionsPage(document.getElementById('page-content'));
-  } catch(e) {
-    toast(e?.response?.data?.error || '정산완료 처리 실패', 'error');
-  }
+  _showConNumberPopupGreen(conId, async function(conNumber) {
+    try {
+      await API.post('/constructions/' + conId + '/settle-complete', { con_number: conNumber });
+      toast('정산완료 처리되었습니다.', 'success');
+      var ov = document.getElementById('conDetailOverlay');
+      if (ov) ov.remove();
+      setTimeout(function() { showConstructionDetail(conId); }, 200);
+      if (document.getElementById('page-content')) renderConstructionsPage(document.getElementById('page-content'));
+    } catch(e) {
+      toast((e && e.response && e.response.data && e.response.data.error) || '정산완료 처리 실패', 'error');
+    }
+  });
 }
 
 // ─── [TASK-003] 공사요청번호 자동부여 토글 ────────────────────────────────────
@@ -5024,35 +5176,55 @@ async function showCreateConstructionModal(editId = null) {
     <div class="modal-body" style="max-height:72vh;overflow-y:auto">
       <div class="grid md:grid-cols-2 gap-2">
 
-        <!-- ① 공사요청번호 -->
-        <div class="form-group" style="margin-bottom:4px">
-          <label class="form-label" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span>
-              <i class="fas fa-hashtag mr-1" style="color:#685182"></i>
-              공사요청번호 <span class="text-red-500">*</span>
-            </span>
-            ${!editId ? `<label style="display:inline-flex;align-items:center;gap:4px;font-weight:normal;font-size:0.78rem;color:#685182;cursor:pointer;margin-left:4px">
-              <input type="checkbox" id="cReqNoAuto" onchange="_toggleReqNoAuto(this.checked)" style="width:14px;height:14px;accent-color:#685182">
-              자동부여
-            </label>` : ''}
-          </label>
-          <input id="cReqNo" class="form-control font-mono" placeholder="############"
-            value="${con.request_no||''}"
-            ${editId ? 'readonly style="background:#F3F0F8;color:#888"' : ''}
-            oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,12)">
-          <div id="cReqNoHint" class="text-xs text-gray-400 mt-1">숫자만 12자리 입력 (예: 100158298100)</div>
-        </div>
+        <!-- ★ [FEAT-175] 공사번호 | 공사요청번호 | 작업번호 — 3열 1행 -->
+        <div class="form-group md:col-span-2" style="margin-bottom:4px">
+          <div class="grid grid-cols-3 gap-2">
 
-        <!-- ② 작업번호 -->
-        <div class="form-group" style="margin-bottom:4px">
-          <label class="form-label">
-            <i class="fas fa-tag mr-1" style="color:#D70072"></i>
-            작업번호
-          </label>
-          <input id="cWorkNum" class="form-control font-mono" placeholder="WKS-######-#####"
-            value="${con.work_number||''}"
-            oninput="this.value=formatWorkNumber(this.value)">
-          <div class="text-xs text-gray-400 mt-1">WKS-숫자6자리-숫자5자리 (예: WKS-260430-01782)</div>
+            <!-- 공사번호 (신규) -->
+            <div>
+              <label class="form-label">
+                <i class="fas fa-hashtag mr-1" style="color:#D97706"></i>
+                공사번호
+              </label>
+              <input id="cConNumber" class="form-control font-mono" placeholder="숫자 7자리"
+                value="${con.con_number||''}"
+                style="background:#FFFBEB;border-color:#FCD34D"
+                oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,7)">
+              <div class="text-xs mt-1" style="color:#B45309">정산 시 사용 (선택)</div>
+            </div>
+
+            <!-- 공사요청번호 -->
+            <div>
+              <label class="form-label" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span>
+                  <i class="fas fa-hashtag mr-1" style="color:#685182"></i>
+                  공사요청번호 <span class="text-red-500">*</span>
+                </span>
+                ${!editId ? `<label style="display:inline-flex;align-items:center;gap:3px;font-weight:normal;font-size:0.75rem;color:#685182;cursor:pointer">
+                  <input type="checkbox" id="cReqNoAuto" onchange="_toggleReqNoAuto(this.checked)" style="width:13px;height:13px;accent-color:#685182">
+                  자동
+                </label>` : ''}
+              </label>
+              <input id="cReqNo" class="form-control font-mono" placeholder="############"
+                value="${con.request_no||''}"
+                ${editId ? 'readonly style="background:#F3F0F8;color:#888"' : ''}
+                oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,12)">
+              <div id="cReqNoHint" class="text-xs text-gray-400 mt-1">숫자 12자리</div>
+            </div>
+
+            <!-- 작업번호 -->
+            <div>
+              <label class="form-label">
+                <i class="fas fa-tag mr-1" style="color:#D70072"></i>
+                작업번호
+              </label>
+              <input id="cWorkNum" class="form-control font-mono" placeholder="WKS-######-#####"
+                value="${con.work_number||''}"
+                oninput="this.value=formatWorkNumber(this.value)">
+              <div class="text-xs text-gray-400 mt-1">WKS-######-#####</div>
+            </div>
+
+          </div>
         </div>
 
         <!-- ③④⑤ 공사종류 | 공사담당자 | 공사감독자 (3열 한 줄) -->
@@ -5428,6 +5600,7 @@ async function autoLinkConstruction() {
 
 async function saveConstruction(editId) {
   const reqNo    = (document.getElementById('cReqNo')?.value || '').trim();
+  const conNum   = (document.getElementById('cConNumber')?.value || '').trim();
   const workNum  = (document.getElementById('cWorkNum')?.value || '').trim();
   const workClass = (document.getElementById('cWorkClass')?.value || '').trim();
   const title    = (document.getElementById('cTitle')?.value || '').trim();
@@ -5453,7 +5626,7 @@ async function saveConstruction(editId) {
   // [v0.143 LGU+] 자동부여 체크박스 상태 읽기
   const isAutoReqNo = !editId && !!(document.getElementById('cReqNoAuto')?.checked);
 
-  const body = { work_number: workNum, work_class: workClass, title, work_order_address: address,
+  const body = { con_number: conNum || null, work_number: workNum, work_class: workClass, title, work_order_address: address,
     manager_id: mgId, manager_name: mgName, supervisor_name: supName, description: desc,
     completion_date: completionDate, notification_date: notificationDate, notification_amount: notificationAmount };
   if (!editId) {

@@ -143,7 +143,7 @@ app.post('/', async (c) => {
   }
 
   const body = await c.req.json<any>()
-  const { request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, is_auto_request_no, completion_date, notification_date, notification_amount } = body
+  const { request_no, con_number, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, is_auto_request_no, completion_date, notification_date, notification_amount } = body
 
   if (!request_no || !title) return c.json({ error: '공사요청번호와 공사명은 필수입니다' }, 400)
 
@@ -171,12 +171,19 @@ app.post('/', async (c) => {
     const defaultCompletion = completion_date || `${d7.getUTCFullYear()}-${String(d7.getUTCMonth()+1).padStart(2,'0')}-${String(d7.getUTCDate()).padStart(2,'0')}`
     // notification_date 기본값: 미입력 시 오늘(공사등록일)
     const defaultNotification = notification_date || kstDateStr()
+    // con_number 형식 검증: 숫자 7자리 또는 '번호없음' 또는 null/undefined
+    const conNumberVal = con_number ? String(con_number).trim() : null
+    if (conNumberVal && conNumberVal !== '번호없음' && !/^\d{7}$/.test(conNumberVal)) {
+      return c.json({ error: '공사번호는 숫자 7자리여야 합니다' }, 400)
+    }
+
     const result = await c.env.DB.prepare(`
       INSERT INTO constructions
-        (request_no, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, created_by, is_auto_request_no, completion_date, notification_date, notification_amount)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (request_no, con_number, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, created_by, is_auto_request_no, completion_date, notification_date, notification_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       request_no,
+      conNumberVal,
       work_number || '',
       work_class || 'relocation',
       title,
@@ -213,7 +220,7 @@ app.put('/:id', async (c) => {
 
   const id = c.req.param('id')
   const body = await c.req.json<any>()
-  const { work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, completion_date: completionDatePut, notification_date: notificationDatePut, notification_amount: notificationAmountPut } = body
+  const { con_number: conNumberPut, work_number, work_class, title, work_order_address, manager_id, manager_name, supervisor_name, description, completion_date: completionDatePut, notification_date: notificationDatePut, notification_amount: notificationAmountPut } = body
 
   if (work_number && !/^WKS-\d{6}-\d{5}$/.test(work_number)) {
     return c.json({ error: '작업번호 형식: WKS-######-#####' }, 400)
@@ -223,13 +230,19 @@ app.put('/:id', async (c) => {
   if (work_class && !VALID_WORK_CLASS_PUT.includes(work_class)) {
     return c.json({ error: '공사종류 값이 올바르지 않습니다' }, 400)
   }
+  // con_number 형식 검증
+  const conNumberPutVal = conNumberPut !== undefined ? (conNumberPut ? String(conNumberPut).trim() : null) : undefined
+  if (conNumberPutVal !== undefined && conNumberPutVal !== null && conNumberPutVal !== '번호없음' && !/^\d{7}$/.test(conNumberPutVal)) {
+    return c.json({ error: '공사번호는 숫자 7자리여야 합니다' }, 400)
+  }
 
   try {
-    // 현재값 조회 (work_class 미입력 시 기존값 유지)
-    const existing = await c.env.DB.prepare('SELECT work_class FROM constructions WHERE id = ?').bind(id).first<any>()
+    // 현재값 조회 (work_class / con_number 미입력 시 기존값 유지)
+    const existing = await c.env.DB.prepare('SELECT work_class, con_number FROM constructions WHERE id = ?').bind(id).first<any>()
 
     await c.env.DB.prepare(`
       UPDATE constructions SET
+        con_number            = ?,
         work_number           = ?,
         work_class            = ?,
         title                 = ?,
@@ -244,6 +257,7 @@ app.put('/:id', async (c) => {
         updated_at            = CURRENT_TIMESTAMP
       WHERE id = ?
     `).bind(
+      conNumberPutVal !== undefined ? conNumberPutVal : (existing?.con_number ?? null),
       work_number || '',
       work_class || existing?.work_class || 'relocation',
       title || '',
@@ -326,10 +340,21 @@ app.post('/:id/settle', async (c) => {
       return c.json({ error: '모든 작업이 완료된 경우에만 정산요청 가능합니다' }, 400)
     }
 
-    // settlement_requested 상태로 변경
-    await c.env.DB.prepare(`
-      UPDATE constructions SET status = 'settlement_requested', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).bind(id).run()
+    // [FEAT-175] con_number 처리 (body 있을 때만 업데이트, 없으면 기존값 유지)
+    let settleBody: any = {}
+    try { settleBody = await c.req.json<any>() } catch (_) {}
+    const settleConNum = settleBody.con_number !== undefined ? (settleBody.con_number ? String(settleBody.con_number).trim() : null) : undefined
+
+    // settlement_requested 상태로 변경 (con_number 동시 업데이트)
+    if (settleConNum !== undefined) {
+      await c.env.DB.prepare(`
+        UPDATE constructions SET status = 'settlement_requested', con_number = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).bind(settleConNum, id).run()
+    } else {
+      await c.env.DB.prepare(`
+        UPDATE constructions SET status = 'settlement_requested', updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).bind(id).run()
+    }
 
     // ─── 정산담당자 알림 발송 (실패해도 정산요청 성공에 영향 없음) ──────────
     try {
@@ -407,9 +432,20 @@ app.post('/:id/settle-complete', async (c) => {
       return c.json({ error: '정산요청 상태인 공사만 정산완료 처리 가능합니다' }, 400)
     }
 
-    await c.env.DB.prepare(`
-      UPDATE constructions SET status = 'settled', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).bind(id).run()
+    // [FEAT-175] con_number 처리 (body 있을 때만 업데이트, 없으면 기존값 유지)
+    let completeBody: any = {}
+    try { completeBody = await c.req.json<any>() } catch (_) {}
+    const completeConNum = completeBody.con_number !== undefined ? (completeBody.con_number ? String(completeBody.con_number).trim() : null) : undefined
+
+    if (completeConNum !== undefined) {
+      await c.env.DB.prepare(`
+        UPDATE constructions SET status = 'settled', con_number = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).bind(completeConNum, id).run()
+    } else {
+      await c.env.DB.prepare(`
+        UPDATE constructions SET status = 'settled', updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).bind(id).run()
+    }
 
     return c.json({ success: true, message: '정산완료 처리되었습니다' })
   } catch (e: any) {

@@ -2707,6 +2707,12 @@ function patchSchema() {
         ddl:   `ALTER TABLE constructions ADD COLUMN notification_amount INTEGER DEFAULT NULL`,
         label: 'constructions.notification_amount',
       },
+      // [FEAT-175] 공사번호 — 정산 시 사용되는 7자리 공사번호 (선택)
+      {
+        col:   'con_number',
+        ddl:   `ALTER TABLE constructions ADD COLUMN con_number TEXT DEFAULT NULL`,
+        label: 'constructions.con_number',
+      },
     ]
 
     for (const { col, ddl, label } of colPatches) {

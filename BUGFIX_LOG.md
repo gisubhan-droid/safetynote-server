@@ -5,6 +5,58 @@
 
 ---
 
+## [BUG-182] TBM 결재 서명 후 서명요청 카드 "서명 필요" 잔존 (커밋 `TBD`) — 세션 99 (2026-07-27) ✅ 수정 완료
+
+### 증상
+TBM 상세 모달에서 결재 서명(안전관리자/총괄책임) 완료 후,
+서명요청 페이지를 새로고침해도 해당 건이 여전히 **"서명 필요"** 상태로 잔존.
+
+### 원인
+`POST /api/tbm/:id/approval-sign` 처리 흐름:
+1. `tbm_signatures` 테이블에 서명 INSERT ✅
+2. 다음 단계 알림 연쇄 (approval_safety → approval_general 서명요청 생성) ✅
+3. **`signature_requests` 테이블의 해당 건 `status='signed'` UPDATE 누락** ❌
+
+```sql
+-- 이 UPDATE가 없었음
+UPDATE signature_requests
+SET status='signed', signed_at=CURRENT_TIMESTAMP, sign_data=?
+WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type=? AND target_user_id=? AND status='pending'
+```
+
+서명요청 카드의 "서명하기" 버튼(`_signReqSign`)은 `/api/signature-requests/:id/sign`을 직접 호출하여 정상 처리됨.  
+그러나 TBM 모달의 결재란 서명 버튼(`_tbmApprovalSignInApp`)은 `/api/tbm/:id/approval-sign`을 호출하며,
+이 엔드포인트가 `signature_requests` 테이블을 업데이트하지 않아 두 경로 간 불일치 발생.
+
+### 해결 방법
+`approval-sign` 처리 후 `signature_requests` 상태 업데이트 추가:
+
+```typescript
+// tbm_signatures INSERT 후 즉시 실행
+rawDb.prepare(`
+  UPDATE signature_requests
+  SET status='signed', signed_at=CURRENT_TIMESTAMP, sign_data=?
+  WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type=? AND target_user_id=? AND status='pending'
+`).run(sign_data || null, id, approval_role, user.id)
+```
+
+### 수정 파일 (NAS 듀얼 구조 — 양쪽 동시 수정)
+| 파일 | 변경 내용 |
+|------|-----------|
+| `src/nas-routes/tbm-extra.ts` | `POST /:id/approval-sign` — `tbm_signatures` INSERT 직후 `signature_requests` UPDATE 추가 |
+| `src/routes/tbm.ts` | 동일 (D1 버전, Cloudflare Workers용) |
+
+### 이중 검증
+- `npm run build` → ✅ `dist/_worker.js 295.75 kB` 빌드 성공
+- `app.js` 변경 없음 (서버 사이드 수정만)
+
+### 관련 이력
+- `FEAT-170` (2026-07-26): 서명요청 내용 보기 링크 추가 시 최초 구현
+- `BUG-181` (세션 99): TBM 내용 보기 함수 오용 수정 (`showTaskDetail` → `showTbmDetail`)
+- 이번 `BUG-182`: 결재 서명 경로(`/approval-sign`)와 서명요청 상태 업데이트 불일치 수정
+
+---
+
 ## [BUG-181] TBM 서명 "TBM 내용 보기" → 엉뚱한 작업 상세 이동 (커밋 `d2058ef`) — 세션 99 (2026-07-27) ✅ 수정 완료
 
 ### 증상

@@ -365,6 +365,15 @@ app.post('/:id/approval-sign', async (c) => {
       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
     `).bind(id, user.id, user.name, user.position || '', approval_role, signMethod, sign_data || null).run()
 
+    // [BUG-182] TBM 모달 결재 서명 후 서명요청 카드 "서명 필요" 잔존 수정 (D1 버전)
+    // approval-sign은 tbm_signatures에만 INSERT하고 signature_requests를 갱신하지 않아
+    // 서명 완료 후에도 서명요청 카드가 "서명 필요"로 계속 표시됨
+    await c.env.DB.prepare(`
+      UPDATE signature_requests
+      SET status='signed', signed_at=CURRENT_TIMESTAMP, sign_data=?
+      WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type=? AND target_user_id=? AND status='pending'
+    `).bind(sign_data || null, id, approval_role, user.id).run()
+
     const tbmTitle = `TBM: ${tbm.task_title || id}`
 
     // ── 다음 단계 알림 연쇄 ────────────────────────────────────────────────────

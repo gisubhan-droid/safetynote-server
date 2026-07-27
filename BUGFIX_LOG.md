@@ -5,55 +5,64 @@
 
 ---
 
-## [BUG-182] TBM 결재 서명 후 서명요청 카드 "서명 필요" 잔존 (커밋 `TBD`) — 세션 99 (2026-07-27) ✅ 수정 완료
+## [BUG-182] TBM 결재 서명 후 서명요청 카드 "서명 필요" 잔존 (커밋 `8a1ac6e` / v2 `TBD`) — 세션 99 (2026-07-27) ✅ 수정 완료
 
 ### 증상
 TBM 상세 모달에서 결재 서명(안전관리자/총괄책임) 완료 후,
 서명요청 페이지를 새로고침해도 해당 건이 여전히 **"서명 필요"** 상태로 잔존.
 
-### 원인
+### 원인 (v1 — 커밋 8a1ac6e)
 `POST /api/tbm/:id/approval-sign` 처리 흐름:
 1. `tbm_signatures` 테이블에 서명 INSERT ✅
 2. 다음 단계 알림 연쇄 (approval_safety → approval_general 서명요청 생성) ✅
 3. **`signature_requests` 테이블의 해당 건 `status='signed'` UPDATE 누락** ❌
 
-```sql
--- 이 UPDATE가 없었음
-UPDATE signature_requests
-SET status='signed', signed_at=CURRENT_TIMESTAMP, sign_data=?
-WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type=? AND target_user_id=? AND status='pending'
+→ `8a1ac6e`에서 INSERT 직후 UPDATE 쿼리를 추가했으나 **재발 케이스 미처리**.
+
+### 재발 원인 (v2) — 세션 100 (2026-07-27)
+BUG-182 수정 이전에 TBM 모달에서 이미 서명한 경우:
+- `tbm_signatures`에는 이미 해당 role 레코드 존재
+- `POST /api/tbm/:id/approval-sign` 재시도 시 `signedRoles.has(approval_role)` → true
+- **409 반환 전에 UPDATE 쿼리가 없었으므로** `signature_requests`는 여전히 `pending` 상태로 잔존
+
+```
+이미 tbm_signatures에 INSERT됨 (BUG-182 수정 전 서명)
+  ↓
+POST /api/tbm/:id/approval-sign 재시도
+  ↓
+signedRoles.has(approval_role) → true → 409 반환 (UPDATE 쿼리 미실행!)
 ```
 
-서명요청 카드의 "서명하기" 버튼(`_signReqSign`)은 `/api/signature-requests/:id/sign`을 직접 호출하여 정상 처리됨.  
-그러나 TBM 모달의 결재란 서명 버튼(`_tbmApprovalSignInApp`)은 `/api/tbm/:id/approval-sign`을 호출하며,
-이 엔드포인트가 `signature_requests` 테이블을 업데이트하지 않아 두 경로 간 불일치 발생.
-
-### 해결 방법
-`approval-sign` 처리 후 `signature_requests` 상태 업데이트 추가:
+### 해결 방법 (v2)
+`signedRoles.has(approval_role)` 분기에서 409 반환 **이전에** `signature_requests` UPDATE 실행 후 성공 응답 반환:
 
 ```typescript
-// tbm_signatures INSERT 후 즉시 실행
-rawDb.prepare(`
-  UPDATE signature_requests
-  SET status='signed', signed_at=CURRENT_TIMESTAMP, sign_data=?
-  WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type=? AND target_user_id=? AND status='pending'
-`).run(sign_data || null, id, approval_role, user.id)
+if (signedRoles.has(approval_role)) {
+  // [BUG-182 v2] 이미 tbm_signatures에 서명됐어도 signature_requests가 pending이면 signed로 처리
+  rawDb.prepare(`
+    UPDATE signature_requests
+    SET status='signed', signed_at=CURRENT_TIMESTAMP, sign_data=?
+    WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type=? AND target_user_id=? AND status='pending'
+  `).run(sign_data || null, id, approval_role, user.id)
+  return c.json({ success: true, approval_role, signer: user.name, already_signed: true })
+}
 ```
 
 ### 수정 파일 (NAS 듀얼 구조 — 양쪽 동시 수정)
 | 파일 | 변경 내용 |
-|------|-----------|
-| `src/nas-routes/tbm-extra.ts` | `POST /:id/approval-sign` — `tbm_signatures` INSERT 직후 `signature_requests` UPDATE 추가 |
+|------|-----------| 
+| `src/nas-routes/tbm-extra.ts` | v1: INSERT 직후 UPDATE 추가 / v2: `signedRoles.has()` 분기에 UPDATE+성공반환 추가 |
 | `src/routes/tbm.ts` | 동일 (D1 버전, Cloudflare Workers용) |
 
 ### 이중 검증
-- `npm run build` → ✅ `dist/_worker.js 295.75 kB` 빌드 성공
+- `npm run build` → ✅ `dist/_worker.js 296.03 kB` 빌드 성공 (v2 수정 후)
 - `app.js` 변경 없음 (서버 사이드 수정만)
 
 ### 관련 이력
 - `FEAT-170` (2026-07-26): 서명요청 내용 보기 링크 추가 시 최초 구현
 - `BUG-181` (세션 99): TBM 내용 보기 함수 오용 수정 (`showTaskDetail` → `showTbmDetail`)
-- 이번 `BUG-182`: 결재 서명 경로(`/approval-sign`)와 서명요청 상태 업데이트 불일치 수정
+- `BUG-182 v1` (세션 99, `8a1ac6e`): INSERT 직후 UPDATE 추가
+- `BUG-182 v2` (세션 100): 이미 서명된 경우에도 `signature_requests` UPDATE 보장
 
 ---
 

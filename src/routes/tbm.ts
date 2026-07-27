@@ -355,8 +355,16 @@ app.post('/:id/approval-sign', async (c) => {
       return c.json({ error: '안전관리자 서명 후 총괄책임 서명이 가능합니다.' }, 409)
     if (approval_role === 'approval_ceo' && !signedRoles.has('approval_general'))
       return c.json({ error: '총괄책임 서명 후 대표이사 서명이 가능합니다.' }, 409)
-    if (signedRoles.has(approval_role))
-      return c.json({ error: '이미 서명된 결재란입니다.' }, 409)
+    if (signedRoles.has(approval_role)) {
+      // [BUG-182 v2] 이미 tbm_signatures에 서명됐어도 signature_requests가 pending이면 signed로 처리
+      // (BUG-182 수정 이전에 서명한 경우, 또는 서명요청 카드가 새로 생성된 후 재서명 시도)
+      await c.env.DB.prepare(`
+        UPDATE signature_requests
+        SET status='signed', signed_at=CURRENT_TIMESTAMP, sign_data=?
+        WHERE ref_type='tbm' AND ref_id=? AND ref_sub_type=? AND target_user_id=? AND status='pending'
+      `).bind(sign_data || null, id, approval_role, user.id).run()
+      return c.json({ success: true, approval_role, signer: user.name, already_signed: true })
+    }
 
     // 서명 저장
     const signMethod = sign_data ? 'pad' : 'account'

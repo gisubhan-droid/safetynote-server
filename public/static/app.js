@@ -11817,32 +11817,18 @@ function downloadPhoto(photoId, fileName) {
     + '/api/photos/' + photoId + '/img'
     + (token ? '?token=' + encodeURIComponent(token) : '');
 
-  // APP 환경 감지 (openAttachment 패턴과 동일)
-  var ua = navigator.userAgent || '';
+  // Android APP 전용: SafetyNoteApp 브릿지 유무로만 판별
+  // (isCapacitor/UA 방식은 일반 모바일 Chrome에서 오탐 발생 → 사용 금지)
   var isAppBridge = !!(window.SafetyNoteApp);
-  var isCapacitor = isAppBridge
-    || !!(window.Capacitor)
-    || (/Android/i.test(ua) && (/wv\b|WebView/i.test(ua) || !/Chrome\/\d/i.test(ua)));
-
-  // APP(Android) 환경: SafetyNoteApp 브릿지 → 외부 앱으로 파일 처리
   if (isAppBridge && typeof window.SafetyNoteApp.openAttachment === 'function') {
     try {
       window.SafetyNoteApp.openAttachment(url, safeFileName);
       toast('"' + safeFileName + '" 다운로드를 시작합니다.', 'info');
       return;
-    } catch(e) { /* 폴백 */ }
-  }
-  if (isCapacitor) {
-    try {
-      window.open(url, '_system');
-      toast('"' + safeFileName + '" 다운로드를 시작합니다.', 'info');
-    } catch(e) {
-      window.open(url, '_blank');
-    }
-    return;
+    } catch(e) { /* 폴백: 아래 fetch 방식으로 계속 */ }
   }
 
-  // PC / 일반 모바일 브라우저: fetch → blob → <a download>
+  // PC · 모바일 브라우저 (Android Chrome 포함): fetch → blob → <a download>
   toast('다운로드 중...', 'info');
   fetch(url)
     .then(function(res) {

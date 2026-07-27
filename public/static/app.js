@@ -16335,9 +16335,16 @@ async function renderInspectionsPage(container) {
     if (_dt) insParams.set('date_to',   _dt);
     if (_sf) insParams.set('status',    _sf);
 
+    // ── tasks 날짜 파라미터 (BUG-DATE: planned_date 기준 서버 필터) ──
+    // 날짜 범위가 지정된 경우에만 서버에 start_date/end_date 전달
+    // 전체(date 없음)일 때는 파라미터 없이 전체 조회
+    var _taskParams = {};
+    if (_df) _taskParams.start_date = _df;
+    if (_dt) _taskParams.end_date   = _dt;
+
     // ── 데이터 로드 ───────────────────────────────────────────
     const [tasksRes, insRes] = await Promise.all([
-      API.get('/tasks'),
+      API.get('/tasks', { params: _taskParams }),
       API.get(`/inspections?${insParams.toString()}`),
     ]);
     const _rawAllTasks = tasksRes.data.tasks || tasksRes.data || [];

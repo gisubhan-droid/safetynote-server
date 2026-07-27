@@ -39378,7 +39378,7 @@ async function renderWorkReportForm(container, taskId) {
     // 작업 케이블정보 전용 옵션
     const SPEC_OPTS     = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
     const KIND_OPTS     = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
-    const PROC_OPTS     = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
+    const PROC_OPTS     = ['','신설','철거(불용)','철거(폐기)','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');    // [FEAT-176] 철거 → 철거(불용)/철거(폐기) 분리
     const YEAR_OPTS     = (()=>{const a=[];const y=getKSTYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
     // ── 공종별 작업량 공종 목록: volume_unit_prices DB에서 동적 로드 ──
     // cable_new / cable_remove / cable_move 등 케이블 전용 항목은 제외
@@ -39676,7 +39676,7 @@ function _wrAddCableSet() {
   const DIV_OPTS    = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'선택'}</option>`).join('');
   const SPEC_OPTS   = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
   const KIND_OPTS2  = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
-  const PROC_OPTS   = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
+  const PROC_OPTS   = ['','신설','철거(불용)','철거(폐기)','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');    // [FEAT-176]
   const YEAR_OPTS   = (()=>{const a=[];const y=getKSTYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
   const OD_OPTS     = ['','32','50','63','75','100','125','150','200'].map(v=>`<option value="${v}">${v||'외경'}</option>`).join('');
   const ID_OPTS     = ['','26','42','51','63','82','101','127','170'].map(v=>`<option value="${v}">${v||'내경'}</option>`).join('');
@@ -39833,7 +39833,7 @@ function _wrAddCableRow(tbodyId) {
   const i = tbody.rows.length;
   const SPEC_OPTS3  = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
   const KIND_OPTS3  = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
-  const PROC_OPTS3  = ['','신설','철거','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');
+  const PROC_OPTS3  = ['','신설','철거(불용)','철거(폐기)','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');    // [FEAT-176]
   const YEAR_OPTS   = (()=>{const a=[];const y=getKSTYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
   const tr = document.createElement('tr');
   tr.className = 'hover:bg-gray-50';
@@ -42528,9 +42528,10 @@ async function renderCableDetailPage(container) {
     const years = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
     const savedMode = mode; const savedMVal = mVal; const savedQVal = qVal; const savedYVal = yVal || String(nowYear);
 
-    // 공정별 집계
+    // 공정별 집계 ([FEAT-176] 철거(불용)/철거(폐기) 모두 철거 집계에 포함)
+    var _isRemove = function(p){ return p==='철거' || p==='철거(불용)' || p==='철거(폐기)'; };
     const totalNew    = cables.filter(c=>c.proc==='신설').reduce((s,c)=>s+(c.usage_m||0),0);
-    const totalRemove = cables.filter(c=>c.proc==='철거').reduce((s,c)=>s+(c.usage_m||0),0);
+    const totalRemove = cables.filter(c=>_isRemove(c.proc)).reduce((s,c)=>s+(c.usage_m||0),0);
     const totalMove   = cables.filter(c=>c.proc==='이설').reduce((s,c)=>s+(c.usage_m||0),0);
     const totalAll    = cables.reduce((s,c)=>s+(c.usage_m||0),0);
 
@@ -42538,14 +42539,14 @@ async function renderCableDetailPage(container) {
     const byType = {};
     cables.forEach(c => {
       const maker  = c.maker      || '-';
-      const type   = c.cable_type || '-';
+      const type   = c.cable_kind || '-';  // [BUG-176] cable_type→cable_kind 수정
       const spec   = c.spec       || '-';
       const asset  = c.asset_type || '-';
       const key    = maker + '__' + type + '__' + spec + '__' + asset;
       if (!byType[key]) byType[key] = { maker: maker, type: type, spec: spec, asset: asset, new:0, remove:0, move:0 };
-      if (c.proc==='신설') byType[key].new    += (c.usage_m||0);
-      if (c.proc==='철거') byType[key].remove += (c.usage_m||0);
-      if (c.proc==='이설') byType[key].move   += (c.usage_m||0);
+      if (c.proc==='신설')      byType[key].new    += (c.usage_m||0);
+      if (_isRemove(c.proc))    byType[key].remove += (c.usage_m||0);  // [FEAT-176]
+      if (c.proc==='이설')      byType[key].move   += (c.usage_m||0);
     });
 
     // 자산구분별 집계 (N-1 / N-2 / 미지정)
@@ -42729,7 +42730,7 @@ async function renderCableDetailPage(container) {
                 ? `<tr><td colspan="16" class="text-center py-8 text-gray-400">데이터 없음</td></tr>`
                 : cables.map(cb => {
                     const procColor = cb.proc==='신설' ? 'bg-blue-50 text-blue-700'
-                                    : cb.proc==='철거' ? 'bg-red-50 text-red-700'
+                                    : _isRemove(cb.proc) ? 'bg-red-50 text-red-700'  // [FEAT-176]
                                     : cb.proc==='이설' ? 'bg-purple-50 text-purple-700' : '';
                     const assetLabel = cb.asset_type || '-';
                     const assetCls   = cb.asset_type === 'N-1' ? 'bg-teal-100 text-teal-700'
@@ -42753,7 +42754,7 @@ async function renderCableDetailPage(container) {
                       <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.spec||'-'}</td>
                       <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.maker||'-'}</td>
                       <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.mfg_year||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.cable_type||'-'}</td>
+                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.cable_kind||'-'}</td>  <!-- [BUG-176] cable_type→cable_kind -->
                       <td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded text-xs ${procColor}">${cb.proc||'-'}</span></td>
                       <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.start_point||'-'}</td>
                       <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.end_point||'-'}</td>
@@ -42839,7 +42840,7 @@ function downloadCableDetailCSV() {
     cb.spec||'-',
     cb.maker||'-',
     cb.mfg_year||'-',
-    cb.cable_type||'-',
+    cb.cable_kind||'-',  // [BUG-176] cable_type→cable_kind
     cb.proc||'-',
     cb.start_point||'-',
     cb.end_point||'-',

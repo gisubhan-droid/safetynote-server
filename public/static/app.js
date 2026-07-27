@@ -9761,7 +9761,10 @@ async function showTaskDetail(id, openTbmTab) {
                 <div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>
                 <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
                   <span class="truncate">${cap || '-'}</span>
-                  ${!isWorker ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>` : ''}
+                  <div class="flex gap-1 flex-shrink-0 ml-1">
+                    ${!isWorker ? `<button onclick="event.stopPropagation();downloadPhoto(${p.id},'${(p.file_name||cap||'video').replace(/'/g,"\\'")}')" class="text-blue-300 hover:text-blue-100" title="다운로드"><i class="fas fa-download"></i></button>` : ''}
+                    ${!isWorker ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100" title="삭제"><i class="fas fa-trash"></i></button>` : ''}
+                  </div>
                 </div>
               </div>`;
             } else {
@@ -9770,7 +9773,10 @@ async function showTaskDetail(id, openTbmTab) {
                 <div class="overlay"><i class="fas fa-expand text-lg"></i></div>
                 <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
                   <span class="truncate">${cap || '-'}</span>
-                  ${!isWorker ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>` : ''}
+                  <div class="flex gap-1 flex-shrink-0 ml-1">
+                    ${!isWorker ? `<button onclick="event.stopPropagation();downloadPhoto(${p.id},'${(p.file_name||cap||'photo.jpg').replace(/'/g,"\\'")}')" class="text-blue-300 hover:text-blue-100" title="다운로드"><i class="fas fa-download"></i></button>` : ''}
+                    ${!isWorker ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100" title="삭제"><i class="fas fa-trash"></i></button>` : ''}
+                  </div>
                 </div>
               </div>`;
             }
@@ -10711,7 +10717,8 @@ async function _refreshPhotoTab(taskId) {
     function renderThumb(p) {
       const cap = (p.caption || p.file_name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       const isVideo = p.media_type === 'video' || /\.(mp4|mov|avi|webm|mkv)$/i.test(p.file_name || '');
-      const _canDelete = currentUser && currentUser.role !== 'worker';
+      var _canDelete   = currentUser && currentUser.role !== 'worker';
+      var _canDownload  = currentUser && currentUser.role !== 'worker';
       if (isVideo) {
         return `<div class="photo-thumb relative cursor-pointer" onclick="showVideoData(${p.id},'${cap}')">
           <video src="${photoImgSrc(p.id)}" class="w-full h-full object-cover" muted preload="metadata"></video>
@@ -10719,7 +10726,10 @@ async function _refreshPhotoTab(taskId) {
           <div class="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded"><i class="fas fa-video"></i></div>
           <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
             <span class="truncate">${cap || '-'}</span>
-            ${_canDelete ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>` : ''}
+            <div class="flex gap-1 flex-shrink-0 ml-1">
+              ${_canDownload ? `<button onclick="event.stopPropagation();downloadPhoto(${p.id},'${(p.file_name||cap||'video').replace(/'/g,"\\'")}')" class="text-blue-300 hover:text-blue-100" title="다운로드"><i class="fas fa-download"></i></button>` : ''}
+              ${_canDelete ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100" title="삭제"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
           </div>
         </div>`;
       } else {
@@ -10728,7 +10738,10 @@ async function _refreshPhotoTab(taskId) {
           <div class="overlay"><i class="fas fa-expand text-lg"></i></div>
           <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 flex justify-between items-center">
             <span class="truncate">${cap || '-'}</span>
-            ${_canDelete ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100 ml-1 flex-shrink-0"><i class="fas fa-trash"></i></button>` : ''}
+            <div class="flex gap-1 flex-shrink-0 ml-1">
+              ${_canDownload ? `<button onclick="event.stopPropagation();downloadPhoto(${p.id},'${(p.file_name||cap||'photo.jpg').replace(/'/g,"\\'")}')" class="text-blue-300 hover:text-blue-100" title="다운로드"><i class="fas fa-download"></i></button>` : ''}
+              ${_canDelete ? `<button onclick="event.stopPropagation();deleteMedia(${p.id},'${cap}')" class="text-red-300 hover:text-red-100" title="삭제"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
           </div>
         </div>`;
       }
@@ -11795,6 +11808,64 @@ function photoImgSrc(photoId) {
   return `/api/photos/${photoId}/img${token ? '?token=' + encodeURIComponent(token) : ''}`;
 }
 
+// ─── 사진/동영상 다운로드 (감독자 권한 이상, PC·모바일·APP 3환경 대응) ──────────
+// RULE-001 준수: var 사용, const/let/화살표함수 금지 (전역 호출용)
+function downloadPhoto(photoId, fileName) {
+  var token = localStorage.getItem('token') || '';
+  var safeFileName = fileName || ('photo_' + photoId + '.jpg');
+  var url = window.location.origin
+    + '/api/photos/' + photoId + '/img'
+    + (token ? '?token=' + encodeURIComponent(token) : '');
+
+  // APP 환경 감지 (openAttachment 패턴과 동일)
+  var ua = navigator.userAgent || '';
+  var isAppBridge = !!(window.SafetyNoteApp);
+  var isCapacitor = isAppBridge
+    || !!(window.Capacitor)
+    || (/Android/i.test(ua) && (/wv\b|WebView/i.test(ua) || !/Chrome\/\d/i.test(ua)));
+
+  // APP(Android) 환경: SafetyNoteApp 브릿지 → 외부 앱으로 파일 처리
+  if (isAppBridge && typeof window.SafetyNoteApp.openAttachment === 'function') {
+    try {
+      window.SafetyNoteApp.openAttachment(url, safeFileName);
+      toast('"' + safeFileName + '" 다운로드를 시작합니다.', 'info');
+      return;
+    } catch(e) { /* 폴백 */ }
+  }
+  if (isCapacitor) {
+    try {
+      window.open(url, '_system');
+      toast('"' + safeFileName + '" 다운로드를 시작합니다.', 'info');
+    } catch(e) {
+      window.open(url, '_blank');
+    }
+    return;
+  }
+
+  // PC / 일반 모바일 브라우저: fetch → blob → <a download>
+  toast('다운로드 중...', 'info');
+  fetch(url)
+    .then(function(res) {
+      if (!res.ok) { toast('다운로드 실패 (' + res.status + ')', 'error'); return null; }
+      return res.blob();
+    })
+    .then(function(blob) {
+      if (!blob) return;
+      var blobUrl = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = safeFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 3000);
+      toast('"' + safeFileName + '" 다운로드 완료.', 'success');
+    })
+    .catch(function(e) {
+      toast('다운로드 오류: ' + e.message, 'error');
+    });
+}
+
 // BUG-056: TBM 안전조치 사진 전용 (tbm_photo_items.id 기반)
 function tbmPhotoImgSrc(photoItemId) {
   const token = localStorage.getItem('token') || '';
@@ -11824,6 +11895,8 @@ function loadPhotoData(img, photoId) {
 }
 
 async function showPhotoData(photoId, caption) {
+  var _spCanDL = currentUser && currentUser.role !== 'worker';
+  var _spFileName = caption || ('photo_' + photoId + '.jpg');
   const modal = document.createElement('div');
   modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
@@ -11831,6 +11904,7 @@ async function showPhotoData(photoId, caption) {
       <div class="flex justify-between items-center p-4 border-b" style="position:sticky;top:0;background:white;z-index:1;flex-shrink:0;">
         <span class="font-medium">${caption}</span>
         <div class="flex gap-2 items-center">
+          ${_spCanDL ? `<button onclick="downloadPhoto(${photoId},'${_spFileName.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')" class="text-blue-500 hover:text-blue-700 text-sm flex items-center gap-1" title="다운로드"><i class="fas fa-download"></i> 다운로드</button>` : ''}
           <button onclick="deleteMedia(${photoId},'${caption}',this.closest('.modal-overlay'))" class="text-red-500 hover:text-red-700 text-sm flex items-center gap-1">
             <i class="fas fa-trash"></i> 삭제
           </button>
@@ -11846,6 +11920,8 @@ async function showPhotoData(photoId, caption) {
 }
 
 async function showVideoData(videoId, caption) {
+  var _svCanDL = currentUser && currentUser.role !== 'worker';
+  var _svFileName = caption || ('video_' + videoId + '.mp4');
   const modal = document.createElement('div');
   modal.className = 'modal-overlay modal-sm';
   modal.innerHTML = `
@@ -11853,6 +11929,7 @@ async function showVideoData(videoId, caption) {
       <div class="flex justify-between items-center p-4 border-b border-gray-700" style="position:sticky;top:0;background:#000;z-index:1;flex-shrink:0;">
         <span class="font-medium text-white">${caption}</span>
         <div class="flex gap-2 items-center">
+          ${_svCanDL ? `<button onclick="downloadPhoto(${videoId},'${_svFileName.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')" class="text-blue-400 hover:text-blue-200 text-sm flex items-center gap-1" title="다운로드"><i class="fas fa-download"></i> 다운로드</button>` : ''}
           <button onclick="deleteMedia(${videoId},'${caption}',this.closest('.modal-overlay'))" class="text-red-400 hover:text-red-200 text-sm flex items-center gap-1">
             <i class="fas fa-trash"></i> 삭제
           </button>

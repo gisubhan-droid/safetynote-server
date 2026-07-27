@@ -9335,12 +9335,13 @@ async function showTaskDetail(id, openTbmTab) {
                     <span class="text-xs font-semibold text-blue-800">${sec.section_name}</span>
                     <span class="text-xs text-blue-500">(${regPhotos.length}/${allPhotos.length || regPhotos.length}장)</span>
                   </div>
-                  <label class="text-xs px-2 py-0.5 rounded-md cursor-pointer flex items-center gap-1 font-medium"
-                    style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0">
+                  <button type="button" class="text-xs px-2 py-0.5 rounded-md flex items-center gap-1 font-medium"
+                    style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;cursor:pointer"
+                    data-assid="${assId}" data-secid="${sec.id}"
+                    data-secname="${(sec.section_name||'').replace(/"/g,'&quot;')}" data-taskid="${task.id}"
+                    onclick="_tbmCamPickerOpenAdd(this)">
                     <i class="fas fa-plus" style="font-size:9px"></i>추가
-                    <input type="file" accept="image/*" class="hidden"
-                      onchange="_uploadTbmPhotoFromDetail(this,${assId},${sec.id},'${(sec.section_name||'').replace(/'/g,"\\'")}',${task.id})">
-                  </label>
+                  </button>
                 </div>
                 <!-- 사진 항목 리스트 -->
                 <div class="divide-y divide-gray-50">
@@ -9362,22 +9363,24 @@ async function showTaskDetail(id, openTbmTab) {
                       title="삭제"><i class="fas fa-times" style="font-size:9px"></i></button>
                   </div>`).join('')}
                   ${unregPhotos.map(p => `<div class="flex items-center gap-2 px-2.5 py-1.5">
-                    <!-- 빈 썸네일 슬롯 -->
-                    <label class="flex-shrink-0 rounded overflow-hidden cursor-pointer flex items-center justify-center"
-                      style="width:40px;height:40px;background:#FFF5F5;border:1.5px dashed #FECACA">
+                    <!-- 빈 썸네일 슬롯 → 바텀시트 -->
+                    <button type="button" class="flex-shrink-0 rounded overflow-hidden flex items-center justify-center"
+                      style="width:40px;height:40px;background:#FFF5F5;border:1.5px dashed #FECACA;cursor:pointer"
+                      data-assid="${assId}" data-secid="${sec.id}" data-phid="${p.id}"
+                      data-label="${(p.label||'').replace(/"/g,'&quot;')}" data-taskid="${task.id}"
+                      onclick="_tbmCamPickerOpenSlot(this)">
                       <i class="fas fa-camera" style="color:#EF4444;font-size:13px"></i>
-                      <input type="file" accept="image/*" class="hidden"
-                        onchange="_uploadTbmPhotoSlotFromDetail(this,${assId},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\\'")}',${task.id})">
-                    </label>
+                    </button>
                     <!-- 라벨 -->
                     <span class="flex-1 text-xs truncate" style="color:#DC2626">${p.label}</span>
-                    <!-- 등록 버튼 -->
-                    <label class="flex-shrink-0 text-xs px-2 py-0.5 rounded-md cursor-pointer font-medium"
-                      style="background:#FFF5F5;color:#DC2626;border:1px solid #FECACA">
+                    <!-- 등록 버튼 → 바텀시트 -->
+                    <button type="button" class="flex-shrink-0 text-xs px-2 py-0.5 rounded-md font-medium"
+                      style="background:#FFF5F5;color:#DC2626;border:1px solid #FECACA;cursor:pointer"
+                      data-assid="${assId}" data-secid="${sec.id}" data-phid="${p.id}"
+                      data-label="${(p.label||'').replace(/"/g,'&quot;')}" data-taskid="${task.id}"
+                      onclick="_tbmCamPickerOpenSlot(this)">
                       등록
-                      <input type="file" accept="image/*" class="hidden"
-                        onchange="_uploadTbmPhotoSlotFromDetail(this,${assId},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\\'")}',${task.id})">
-                    </label>
+                    </button>
                   </div>`).join('')}
                   ${regPhotos.length === 0 && unregPhotos.length === 0 ? `<div class="text-xs text-gray-400 px-2.5 py-2">등록된 사진이 없습니다.</div>` : ''}
                 </div>
@@ -28755,6 +28758,153 @@ async function _openTbmPhotoModal(assId, taskId) {
   } catch(e) { toast('사진 섹션 로드 실패', 'error'); }
 }
 
+// ── [FEAT-174] TBM 사진 등록 소스 선택 바텀시트 (파일선택 / 사진촬영) ────────────
+// RULE-001: var 전용 / RULE-003: onclick 따옴표 중첩 금지 → 전역 함수 분리
+// 공통: 바텀시트 팝업을 만들고 hidden input 2개(갤러리/카메라)에 연결
+// 파라미터 cbGallery / cbCamera 는 각각 onchange 핸들러 문자열 (전역 함수 호출)
+function _tbmCamPickerOpen(cbGallery, cbCamera) {
+  // 기존 팝업 제거(중복 방지)
+  var old = document.getElementById('_tbmCamPickerSheet');
+  if (old) old.remove();
+
+  var sheet = document.createElement('div');
+  sheet.id = '_tbmCamPickerSheet';
+  // 배경 딤 처리
+  sheet.style.cssText = 'position:fixed;inset:0;z-index:20000;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(0,0,0,0.45)';
+
+  // 바텀시트 본체
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:20px 20px 0 0;padding:20px 16px 32px;display:flex;flex-direction:column;gap:10px;box-shadow:0 -4px 24px rgba(0,0,0,0.15)';
+
+  // 제목
+  var title = document.createElement('div');
+  title.style.cssText = 'text-align:center;font-size:13px;font-weight:700;color:#374151;margin-bottom:4px;padding-bottom:10px;border-bottom:1px solid #F3F4F6';
+  title.innerHTML = '<i class="fas fa-camera" style="color:#685182;margin-right:6px"></i>사진 등록 방법 선택';
+  box.appendChild(title);
+
+  // ① 파일선택 버튼 (갤러리/파일)
+  var btnGallery = document.createElement('label');
+  btnGallery.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 16px;background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:12px;cursor:pointer;font-size:14px;font-weight:600;color:#5B21B6';
+  btnGallery.innerHTML = '<i class="fas fa-images" style="font-size:20px;width:28px;text-align:center;color:#7C3AED"></i>'
+    + '<span><div style="font-size:14px;font-weight:700;color:#5B21B6">파일 선택</div>'
+    + '<div style="font-size:11px;font-weight:400;color:#8B5CF6;margin-top:1px">갤러리·파일에서 선택</div></span>';
+  var inputGallery = document.createElement('input');
+  inputGallery.type = 'file';
+  inputGallery.accept = 'image/*';
+  inputGallery.style.display = 'none';
+  inputGallery.setAttribute('onchange', cbGallery + ';document.getElementById(\'_tbmCamPickerSheet\').remove()');
+  btnGallery.appendChild(inputGallery);
+  box.appendChild(btnGallery);
+
+  // ② 사진촬영 버튼 (카메라 직접 실행)
+  var btnCamera = document.createElement('label');
+  btnCamera.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 16px;background:#FFF5F5;border:1.5px solid #FECACA;border-radius:12px;cursor:pointer;font-size:14px;font-weight:600;color:#B91C1C';
+  btnCamera.innerHTML = '<i class="fas fa-camera" style="font-size:20px;width:28px;text-align:center;color:#DC2626"></i>'
+    + '<span><div style="font-size:14px;font-weight:700;color:#B91C1C">사진 촬영</div>'
+    + '<div style="font-size:11px;font-weight:400;color:#EF4444;margin-top:1px">카메라로 직접 촬영</div></span>';
+  var inputCamera = document.createElement('input');
+  inputCamera.type = 'file';
+  inputCamera.accept = 'image/*';
+  inputCamera.setAttribute('capture', 'environment');
+  inputCamera.style.display = 'none';
+  inputCamera.setAttribute('onchange', cbCamera + ';document.getElementById(\'_tbmCamPickerSheet\').remove()');
+  btnCamera.appendChild(inputCamera);
+  box.appendChild(btnCamera);
+
+  // ③ 취소 버튼
+  var btnCancel = document.createElement('button');
+  btnCancel.style.cssText = 'margin-top:4px;padding:12px;border:none;background:none;font-size:14px;font-weight:600;color:#6B7280;cursor:pointer;border-radius:10px';
+  btnCancel.textContent = '취소';
+  btnCancel.onclick = function() { sheet.remove(); };
+  box.appendChild(btnCancel);
+
+  sheet.appendChild(box);
+  // 배경 클릭 시 닫기
+  sheet.onclick = function(e) { if (e.target === sheet) sheet.remove(); };
+  document.body.appendChild(sheet);
+}
+
+// 갤러리 input onchange → uploadTbmPhoto 연결 (바텀시트 내부 input 이벤트 위임)
+function _tbmCamPickerGallery(el, assId, sectionId, photoItemId, label, taskId) {
+  uploadTbmPhoto(el, assId, sectionId, photoItemId, label, taskId);
+}
+// 카메라 input onchange → uploadTbmPhoto 연결
+function _tbmCamPickerCamera(el, assId, sectionId, photoItemId, label, taskId) {
+  uploadTbmPhoto(el, assId, sectionId, photoItemId, label, taskId);
+}
+// 갤러리 input onchange → uploadTbmPhotoExtra 연결
+function _tbmCamPickerExtraGallery(el, assId, sectionId, secLabel, taskId) {
+  uploadTbmPhotoExtra(el, assId, sectionId, secLabel, taskId);
+}
+// 카메라 input onchange → uploadTbmPhotoExtra 연결
+function _tbmCamPickerExtraCamera(el, assId, sectionId, secLabel, taskId) {
+  uploadTbmPhotoExtra(el, assId, sectionId, secLabel, taskId);
+}
+// 작업상세 탭 전용: 갤러리 → _uploadTbmPhotoSlotFromDetail
+function _tbmCamPickerSlotGallery(el, assId, sectionId, photoItemId, label, taskId) {
+  _uploadTbmPhotoSlotFromDetail(el, assId, sectionId, photoItemId, label, taskId);
+}
+// 작업상세 탭 전용: 카메라 → _uploadTbmPhotoSlotFromDetail
+function _tbmCamPickerSlotCamera(el, assId, sectionId, photoItemId, label, taskId) {
+  _uploadTbmPhotoSlotFromDetail(el, assId, sectionId, photoItemId, label, taskId);
+}
+// 작업상세 탭 전용: 갤러리 → _uploadTbmPhotoFromDetail
+function _tbmCamPickerAddGallery(el, assId, sectionId, secName, taskId) {
+  _uploadTbmPhotoFromDetail(el, assId, sectionId, secName, taskId);
+}
+// 작업상세 탭 전용: 카메라 → _uploadTbmPhotoFromDetail
+function _tbmCamPickerAddCamera(el, assId, sectionId, secName, taskId) {
+  _uploadTbmPhotoFromDetail(el, assId, sectionId, secName, taskId);
+}
+// data-* 속성으로 인자 전달 — RULE-003 준수 (onclick 따옴표 중첩 완전 회피)
+// showTbmPhotoModal: 등록 필수 버튼 클릭
+function _tbmCamPickerOpenRequired(btn) {
+  var assId  = Number(btn.dataset.assid);
+  var secId  = Number(btn.dataset.secid);
+  var phId   = Number(btn.dataset.phid);
+  var label  = btn.dataset.label;
+  var taskId = Number(btn.dataset.taskid);
+  _tbmCamPickerOpen(
+    '_tbmCamPickerGallery(this,' + assId + ',' + secId + ',' + phId + ',\'' + label.replace(/'/g,"\\'") + '\',' + taskId + ')',
+    '_tbmCamPickerCamera(this,' + assId + ',' + secId + ',' + phId + ',\'' + label.replace(/'/g,"\\'") + '\',' + taskId + ')'
+  );
+}
+// showTbmPhotoModal: 추가 사진 버튼 클릭
+function _tbmCamPickerOpenExtra(btn) {
+  var assId    = Number(btn.dataset.assid);
+  var secId    = Number(btn.dataset.secid);
+  var secLabel = btn.dataset.seclabel;
+  var taskId   = Number(btn.dataset.taskid);
+  _tbmCamPickerOpen(
+    '_tbmCamPickerExtraGallery(this,' + assId + ',' + secId + ',\'' + secLabel.replace(/'/g,"\\'") + '\',' + taskId + ')',
+    '_tbmCamPickerExtraCamera(this,' + assId + ',' + secId + ',\'' + secLabel.replace(/'/g,"\\'") + '\',' + taskId + ')'
+  );
+}
+// 작업상세 탭: 슬롯 등록 버튼 클릭
+function _tbmCamPickerOpenSlot(btn) {
+  var assId  = Number(btn.dataset.assid);
+  var secId  = Number(btn.dataset.secid);
+  var phId   = Number(btn.dataset.phid);
+  var label  = btn.dataset.label;
+  var taskId = Number(btn.dataset.taskid);
+  _tbmCamPickerOpen(
+    '_tbmCamPickerSlotGallery(this,' + assId + ',' + secId + ',' + phId + ',\'' + label.replace(/'/g,"\\'") + '\',' + taskId + ')',
+    '_tbmCamPickerSlotCamera(this,' + assId + ',' + secId + ',' + phId + ',\'' + label.replace(/'/g,"\\'") + '\',' + taskId + ')'
+  );
+}
+// 작업상세 탭: 추가(섹션 헤더) 버튼 클릭
+function _tbmCamPickerOpenAdd(btn) {
+  var assId   = Number(btn.dataset.assid);
+  var secId   = Number(btn.dataset.secid);
+  var secName = btn.dataset.secname;
+  var taskId  = Number(btn.dataset.taskid);
+  _tbmCamPickerOpen(
+    '_tbmCamPickerAddGallery(this,' + assId + ',' + secId + ',\'' + secName.replace(/'/g,"\\'") + '\',' + taskId + ')',
+    '_tbmCamPickerAddCamera(this,' + assId + ',' + secId + ',\'' + secName.replace(/'/g,"\\'") + '\',' + taskId + ')'
+  );
+}
+// ── [FEAT-174] END ────────────────────────────────────────────────────────────
+
 // 사진 모달 × 닫기 버튼 핸들러 — 미등록 사진 있으면 confirm 경고 (RULE-003: onclick 따옴표 중첩 방지)
 function _tbmPhotoCloseBtn(btn) {
   var modalOverlay = btn.closest('.modal-overlay');
@@ -28905,11 +29055,13 @@ async function showTbmPhotoModal(assId, taskId, sections) {
                   <div style="font-size:12px;font-weight:600;color:#374151">${ph.label}</div>
                   <div style="font-size:11px;color:#DC2626;font-weight:500">⚠️ 필수 — 미등록</div>
                 </div>
-                <label style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#DC2626;color:white;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">
-                  <i class="fas fa-upload"></i>등록 필수
-                  <input type="file" accept="image/*" style="display:none"
-                    onchange="uploadTbmPhoto(this, ${assId}, ${sec.id}, ${ph.id}, '${ph.label.replace(/'/g,"\\'")}', ${taskId})">
-                </label>
+                <button type="button"
+                  data-assid="${assId}" data-secid="${sec.id}" data-phid="${ph.id}"
+                  data-label="${ph.label.replace(/"/g,'&quot;')}" data-taskid="${taskId}"
+                  onclick="_tbmCamPickerOpenRequired(this)"
+                  style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#DC2626;color:white;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;border:none">
+                  <i class="fas fa-camera"></i>등록 필수
+                </button>
               </div>`).join('')}
             </div>
           </div>
@@ -28920,14 +29072,16 @@ async function showTbmPhotoModal(assId, taskId, sections) {
               <i class="fas fa-plus-circle" style="font-size:10px;color:#9CA3AF"></i>
               <span>추가 사진 등록 <span style="font-weight:400;color:#9CA3AF">(선택사항 — 필수 사진 등록 후 추가 가능)</span></span>
             </div>
-            <label style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:9px;border:2px dashed #D1D5DB;border-radius:10px;color:#6B7280;font-size:13px;font-weight:500;cursor:pointer;background:#fff;transition:all 0.15s"
+            <button type="button"
+              data-assid="${assId}" data-secid="${sec.id}"
+              data-seclabel="${secLabel.replace(/"/g,'&quot;')}" data-taskid="${taskId}"
+              onclick="_tbmCamPickerOpenExtra(this)"
+              style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:9px;border:2px dashed #D1D5DB;border-radius:10px;color:#6B7280;font-size:13px;font-weight:500;cursor:pointer;background:#fff;transition:all 0.15s"
               onmouseover="this.style.borderColor='#9CA3AF';this.style.background='#F3F4F6'"
               onmouseout="this.style.borderColor='#D1D5DB';this.style.background='#fff'">
               <i class="fas fa-plus" style="color:#9CA3AF"></i>
               <span>${secLabel} 추가 사진 등록</span>
-              <input type="file" accept="image/*" style="display:none"
-                onchange="uploadTbmPhotoExtra(this, ${assId}, ${sec.id}, '${secLabel.replace(/'/g,"\\'")}', ${taskId})">
-            </label>
+            </button>
           </div>
         </div>`;
       }).join('')}
@@ -29381,12 +29535,13 @@ async function _refreshTaskDetailTbmSection(taskId) {
             <span class="text-xs font-semibold text-blue-800">${sec.section_name}</span>
             <span class="text-xs text-blue-500">(${regPhotos.length}/${allPhotos.length || regPhotos.length}장)</span>
           </div>
-          <label class="text-xs px-2 py-0.5 rounded-md cursor-pointer flex items-center gap-1 font-medium"
-            style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0">
+          <button type="button" class="text-xs px-2 py-0.5 rounded-md flex items-center gap-1 font-medium"
+            style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;cursor:pointer"
+            data-assid="${assId}" data-secid="${sec.id}"
+            data-secname="${(sec.section_name||'').replace(/"/g,'&quot;')}" data-taskid="${taskId}"
+            onclick="_tbmCamPickerOpenAdd(this)">
             <i class="fas fa-plus" style="font-size:9px"></i>추가
-            <input type="file" accept="image/*" class="hidden"
-              onchange="_uploadTbmPhotoFromDetail(this,${assId},${sec.id},'${(sec.section_name||'').replace(/'/g, "\\'")}',${taskId})">
-          </label>
+          </button>
         </div>
         <!-- 사진 항목 리스트 -->
         <div class="divide-y divide-gray-50">
@@ -29404,18 +29559,23 @@ async function _refreshTaskDetailTbmSection(taskId) {
               title="삭제"><i class="fas fa-times" style="font-size:9px"></i></button>
           </div>`).join('')}
           ${unregPhotos.map(p => `<div class="flex items-center gap-2 px-2.5 py-1.5">
-            <label class="flex-shrink-0 rounded overflow-hidden cursor-pointer flex items-center justify-center"
-              style="width:40px;height:40px;background:#FFF5F5;border:1.5px dashed #FECACA">
+            <!-- 빈 썸네일 슬롯 → 바텀시트 -->
+            <button type="button" class="flex-shrink-0 rounded overflow-hidden flex items-center justify-center"
+              style="width:40px;height:40px;background:#FFF5F5;border:1.5px dashed #FECACA;cursor:pointer"
+              data-assid="${assId}" data-secid="${sec.id}" data-phid="${p.id}"
+              data-label="${(p.label||'').replace(/"/g,'&quot;')}" data-taskid="${taskId}"
+              onclick="_tbmCamPickerOpenSlot(this)">
               <i class="fas fa-camera" style="color:#EF4444;font-size:13px"></i>
-              <input type="file" accept="image/*" class="hidden"
-                onchange="_uploadTbmPhotoSlotFromDetail(this,${assId},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\\'")}',${taskId})">
-            </label>
+            </button>
             <span class="flex-1 text-xs truncate" style="color:#DC2626">${p.label}</span>
-            <label class="flex-shrink-0 text-xs px-2 py-0.5 rounded-md cursor-pointer font-medium"
-              style="background:#FFF5F5;color:#DC2626;border:1px solid #FECACA">
-              등록<input type="file" accept="image/*" class="hidden"
-                onchange="_uploadTbmPhotoSlotFromDetail(this,${assId},${sec.id},${p.id},'${(p.label||'').replace(/'/g,"\\'")}',${taskId})">
-            </label>
+            <!-- 등록 버튼 → 바텀시트 -->
+            <button type="button" class="flex-shrink-0 text-xs px-2 py-0.5 rounded-md font-medium"
+              style="background:#FFF5F5;color:#DC2626;border:1px solid #FECACA;cursor:pointer"
+              data-assid="${assId}" data-secid="${sec.id}" data-phid="${p.id}"
+              data-label="${(p.label||'').replace(/"/g,'&quot;')}" data-taskid="${taskId}"
+              onclick="_tbmCamPickerOpenSlot(this)">
+              등록
+            </button>
           </div>`).join('')}
           ${regPhotos.length === 0 && unregPhotos.length === 0 ? '<div class="text-xs text-gray-400 px-2.5 py-2">등록된 사진이 없습니다.</div>' : ''}
         </div>

@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-27 (세션 97 — [BUG-179] iOS 사진 다운로드 파일 앱 저장 문제 → Web Share API로 사진 앱 저장)
-> **GitHub 최신 (safetynote-server): `TBD`** — fix: [BUG-179] iOS 사진 다운로드 — Web Share API로 사진 앱 저장 + ?dl=1 Content-Disposition attachment
+> **GitHub 최신 (safetynote-server): `64ed3ac`** — fix: [BUG-179] iOS 사진 다운로드 — Web Share API로 사진 앱 저장 + ?dl=1 Content-Disposition attachment
 > **이전 커밋 (server): `82b89ac`** — docs: [세션 96] BUG-178b 커밋 해시 반영
 > **이전 커밋 (server): `51d02b0`** — fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장
 > **이전 커밋 (server): `ab85790`** — fix: [BUG-178] downloadPhoto — 모바일 브라우저 isCapacitor 오탐 제거, fetch→blob 방식으로 통일
@@ -10744,7 +10744,7 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 
 | 저장소 | 커밋 해시 | 메시지 |
 |--------|-----------|--------|
-| safetynote-server | `TBD` | fix: [BUG-179] iOS 사진 다운로드 — Web Share API로 사진 앱 저장 + ?dl=1 attachment |
+| safetynote-server | `64ed3ac` | fix: [BUG-179] iOS 사진 다운로드 — Web Share API로 사진 앱 저장 + ?dl=1 attachment |
 
 ---
 

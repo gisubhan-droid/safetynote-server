@@ -18191,7 +18191,9 @@ async function _printInspectionReport(insId) {
     var conType     = CON_TYPE_KR[rawConType] || rawConType;
     var rawWc       = ins.work_class || '';
     var workClass   = WC_MAP[rawWc] || (rawWc ? rawWc : '');
-    var guBun       = [conType, workClass].filter(Boolean).join(' / ');
+    var workSubLabel = getWorkSubLabel(rawWc, ins.work_sub_class);
+    var workClassFull = workSubLabel ? (workClass + '(' + workSubLabel + ')') : workClass;
+    var guBun       = [conType, workClassFull].filter(Boolean).join(' / ');
     var siteManager = ins.supervisor_name || ins.con_manager_name || '';
     var inspectorName = ins.inspector_name || '';
 
@@ -27738,7 +27740,7 @@ async function renderChecklistRiskPage(container) {
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap mb-1">
                   <span class="font-semibold text-gray-800 text-sm">${t.title}</span>
-                  ${workClassBadge(wc)}
+                  ${workClassBadge(wc, t.work_sub_class)}
                   ${statusBadge(t.status)}
                 </div>
                 <div class="text-xs text-gray-500">${t.task_number} · ${t.location||''} · ${formatDate(t.planned_date)}</div>

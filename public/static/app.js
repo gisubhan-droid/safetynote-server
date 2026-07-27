@@ -11836,13 +11836,17 @@ function downloadPhoto(photoId, fileName) {
   // ────────────────────────────────────────────────────────────────
 
   // ① Android 전용앱
+  //    saveImageToGallery(url, fileName) : MediaStore 직접 저장 → 갤러리 즉시 인식 [BUG-179 Fix]
+  //    (downloadApk()는 APK 전용 — "APK 다운로드 중" 알림 + 갤러리 저장 보장 없음)
   var isAppBridge = !!(window.SafetyNoteApp);
-  if (isAppBridge && typeof window.SafetyNoteApp.downloadApk === 'function') {
+  if (isAppBridge && typeof window.SafetyNoteApp.saveImageToGallery === 'function') {
     try {
-      window.SafetyNoteApp.downloadApk(url);
+      window.SafetyNoteApp.saveImageToGallery(url, safeFileName);
+      // 완료 toast는 앱에서 JS 콜백(evaluateJavascript)으로 전달됨
+      // 여기서는 시작 안내만 표시
       toast('"' + safeFileName + '" 갤러리에 저장 중...', 'info');
       return;
-    } catch(e) { /* 폴백: 아래로 계속 */ }
+    } catch(e) { /* 폴백: 아래 fetch 방식으로 계속 */ }
   }
 
   // ② iOS: Web Share API (files) 지원 여부 확인

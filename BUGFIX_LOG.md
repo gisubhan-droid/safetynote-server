@@ -5,6 +5,63 @@
 
 ---
 
+## [BUG-179b] Android 앱 사진 갤러리 저장 — downloadApk 오용 수정 (커밋 `TBD`) — 세션 98 (2026-07-27)
+
+### 증상
+Android 전용앱에서 사진 다운로드 버튼 클릭 시:
+- 상단 toast: `"파일명" 갤러리에 저장 중...`
+- 하단 toast: `APK 다운로드 중... 알림창을 확인하세요` ← **APK 다운로드 전용 알림**
+- 갤러리에 사진 저장되지 않음
+
+### 원인
+`downloadPhoto()` 앱 환경 분기에서 `SafetyNoteApp.downloadApk(url)` 호출:
+- `downloadApk()`는 **APK 전용** 브릿지 → `startApkDownload()` 실행
+- 내부에서 "Safety NOTE 업데이트" 알림 + APK 설치 흐름 진행
+- 이미지를 갤러리에 저장하는 기능 없음
+
+### 해결 방법
+**Android 앱에 이미지 전용 신규 브릿지 `saveImageToGallery(url, fileName)` 추가:**
+
+| Android 버전 | 저장 방식 | 결과 |
+|-------------|-----------|------|
+| Android 10+ (API 29+) | `MediaStore.Images.Media` ContentValues → `getContentResolver().insert()` → `IS_PENDING=0` | 갤러리 `Pictures/SafetyNOTE/` ✅ |
+| Android 9 이하 | `Environment.DIRECTORY_PICTURES/SafetyNOTE/` 파일 저장 + `MediaScannerConnection.scanFile()` | 갤러리 즉시 인식 ✅ |
+
+### 수정 내용
+
+#### `MainActivity.java` (safetynote-android)
+- `import android.content.ContentValues` 추가
+- `import android.provider.MediaStore` 추가
+- `import java.io.OutputStream` 추가
+- `SafetyNoteAppBridge` 내부 클래스에 `saveImageToGallery(String imageUrl, String fileName)` 메서드 추가
+  - 백그라운드 Thread: HttpURLConnection 다운로드 (openAttachmentExternally 패턴 재사용)
+  - NAS URL 변환: `https:3443` → `http:3444` (자체서명 인증서 대응)
+  - Android 10+: `MediaStore.Images.Media` 직접 삽입 → `Pictures/SafetyNOTE/` 폴더
+  - Android 9-: 파일 직접 저장 + `MediaScannerConnection.scanFile()`
+  - 완료 시 `evaluateJavascript("window.toast(...)")` 로 웹뷰 JS 콜백
+  - Toast 알림: 시작 + 완료 2단계
+
+#### `public/static/app.js` — `downloadPhoto()` 앱 분기
+```javascript
+// ❌ 변경 전: APK 전용 브릿지 오용
+if (isAppBridge && typeof window.SafetyNoteApp.downloadApk === 'function') {
+  window.SafetyNoteApp.downloadApk(url);  // APK 알림 + 설치 흐름 ❌
+
+// ✅ 변경 후: 이미지 전용 브릿지
+if (isAppBridge && typeof window.SafetyNoteApp.saveImageToGallery === 'function') {
+  window.SafetyNoteApp.saveImageToGallery(url, safeFileName);  // 갤러리 직접 저장 ✅
+```
+
+### 갤러리 저장 경로
+- `갤러리 > 앨범 > SafetyNOTE` 폴더에서 확인 가능
+- 또는 `갤러리 > 최근 항목`
+
+### 검증 결과
+- `node --check public/static/app.js` ✅ 통과
+- `npm run build` ✅ 성공 (295.49 kB)
+
+---
+
 ## [BUG-179] iOS 사진 다운로드 → 파일 앱 저장 문제 (커밋 `64ed3ac`) — 세션 97 (2026-07-27)
 
 ### 증상

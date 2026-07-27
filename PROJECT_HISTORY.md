@@ -1,7 +1,10 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-27 (세션 97 — [BUG-179] iOS 사진 다운로드 파일 앱 저장 문제 → Web Share API로 사진 앱 저장)
-> **GitHub 최신 (safetynote-server): `64ed3ac`** — fix: [BUG-179] iOS 사진 다운로드 — Web Share API로 사진 앱 저장 + ?dl=1 Content-Disposition attachment
+> 최종 업데이트: 2026-07-27 (세션 98 — [BUG-179b] Android 앱 사진 갤러리 저장 — saveImageToGallery 신규 브릿지 추가)
+> **GitHub 최신 (safetynote-server): `TBD`** — fix: [BUG-179b] downloadPhoto 앱 환경 — saveImageToGallery 브릿지로 교체 (MediaStore 갤러리 직접 저장)
+> **GitHub 최신 (safetynote-android): `TBD`** — feat: [BUG-179b] SafetyNoteAppBridge.saveImageToGallery() 추가 — MediaStore/MediaScanner 갤러리 저장
+> **이전 커밋 (server): `2ed59bc`** — docs: [세션 97] BUG-179 커밋 해시 64ed3ac 반영
+> **이전 커밋 (server): `64ed3ac`** — fix: [BUG-179] iOS 사진 다운로드 — Web Share API로 사진 앱 저장 + ?dl=1 Content-Disposition attachment
 > **이전 커밋 (server): `82b89ac`** — docs: [세션 96] BUG-178b 커밋 해시 반영
 > **이전 커밋 (server): `51d02b0`** — fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장
 > **이전 커밋 (server): `ab85790`** — fix: [BUG-178] downloadPhoto — 모바일 브라우저 isCapacitor 오탐 제거, fetch→blob 방식으로 통일
@@ -10702,6 +10705,43 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 |------|--------|------|
 | safetynote-server | `b1a539b` | feat: [FEAT-170] 서명요청 내용 보기 링크 추가 |
 | safetynote-server | `6e18fd7` | fix: [UI] 시스템 설정 메뉴를 법령안내 관리 아래로 이동 |
+
+---
+
+## 세션 98 (2026-07-27)
+
+### 작업 — [BUG-179b] Android 앱 사진 다운로드 갤러리 미저장 최종 수정
+
+#### 문제 (스크린샷 확인)
+앱에서 다운로드 버튼 클릭 시 하단에 `"APK 다운로드 중... 알림창을 확인하세요"` 토스트 표시.  
+`downloadApk()` 가 APK 전용 브릿지였기 때문 — 갤러리에 이미지 저장 없음.
+
+#### 해결: 신규 브릿지 `saveImageToGallery(url, fileName)` 추가
+
+**앱 수정** (`safetynote-android/MainActivity.java`):
+- `SafetyNoteAppBridge` 내부 클래스에 `@JavascriptInterface saveImageToGallery()` 추가
+- 백그라운드 Thread + HttpURLConnection 다운로드 (openAttachmentExternally 패턴)
+- **Android 10+**: `MediaStore.Images.Media` 직접 삽입 → `Pictures/SafetyNOTE/`
+- **Android 9-**: 파일 저장 + `MediaScannerConnection.scanFile()`
+- 완료 시 `evaluateJavascript("window.toast(...)")`로 웹뷰 성공 알림
+
+**웹 수정** (`app.js` `downloadPhoto()`):
+- `downloadApk()` → `saveImageToGallery()` 교체
+
+#### 최종 환경별 동작
+
+| 환경 | 처리 | 저장 위치 |
+|------|------|-----------|
+| Android 전용앱 | `saveImageToGallery(url, name)` → MediaStore | 갤러리 > SafetyNOTE 앨범 ✅ |
+| iOS Safari/Chrome | `navigator.share({ files })` | 공유 시트 > 사진에 저장 ✅ |
+| PC / Android Chrome | `fetch → blob → <a download>` | 브라우저 다운로드 폴더 ✅ |
+
+### 커밋 이력
+
+| 저장소 | 커밋 해시 | 메시지 |
+|--------|-----------|--------|
+| safetynote-server | `TBD` | fix: [BUG-179b] downloadPhoto 앱 환경 — saveImageToGallery 브릿지로 교체 |
+| safetynote-android | `TBD` | feat: [BUG-179b] SafetyNoteAppBridge.saveImageToGallery() 추가 |
 
 ---
 

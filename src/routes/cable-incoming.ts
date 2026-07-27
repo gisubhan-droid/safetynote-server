@@ -127,6 +127,49 @@ app.post('/', async (c) => {
 })
 
 // ═══════════════════════════════════════════════════════════════
+// GET /api/cable-incoming/:id
+// 단건 조회 (수정 모달용)
+// ═══════════════════════════════════════════════════════════════
+app.get('/:id', async (c) => {
+  const db = getDB(c)
+  const id = Number(c.req.param('id'))
+  try {
+    const row = await db.prepare('SELECT * FROM cable_incoming WHERE id = ?').bind(id).first()
+    if (!row) return c.json({ error: '항목을 찾을 수 없습니다.' }, 404)
+    return c.json({ item: row })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════
+// PUT /api/cable-incoming/:id
+// 입고 내역 수정
+// Body: { in_date, lot_no, spec, maker, mfg_year, cable_kind, asset_type, qty_m, remark }
+// ═══════════════════════════════════════════════════════════════
+app.put('/:id', async (c) => {
+  const db = getDB(c)
+  const id = Number(c.req.param('id'))
+  try {
+    const body = await c.req.json() as any
+    const { in_date, lot_no = '', spec = '', maker = '', mfg_year = '', cable_kind = '', cable_type = '', asset_type = '', qty_m = 0, remark = '' } = body
+
+    if (!in_date) return c.json({ error: '입고일은 필수입니다.' }, 400)
+    if (!qty_m || Number(qty_m) <= 0) return c.json({ error: '입고량(M)은 0보다 커야 합니다.' }, 400)
+
+    await db.prepare(`
+      UPDATE cable_incoming
+      SET in_date=?, lot_no=?, spec=?, maker=?, mfg_year=?, cable_kind=?, cable_type=?, asset_type=?, qty_m=?, remark=?
+      WHERE id=?
+    `).bind(in_date, lot_no, spec, maker, mfg_year, cable_kind, cable_type, asset_type, Number(qty_m), remark, id).run()
+
+    return c.json({ success: true })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════
 // DELETE /api/cable-incoming/:id
 // 입고 내역 삭제
 // ═══════════════════════════════════════════════════════════════

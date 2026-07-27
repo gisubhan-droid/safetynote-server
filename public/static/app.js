@@ -42981,7 +42981,12 @@ function _renderCableIncomingUI(container, items) {
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
           '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-list text-indigo-400 mr-2"></i>날짜별 입고 내역</span>' +
-          '<span class="text-xs text-gray-400">총 ' + listItems.length + '건</span>' +
+          '<div class="flex items-center gap-3">' +
+            '<span class="text-xs text-gray-400">총 ' + listItems.length + '건</span>' +
+            '<button onclick="_downloadCableIncomingCSV()" class="flex items-center gap-1 px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold rounded-lg shadow">' +
+              '<i class="fas fa-file-excel mr-1"></i>엑셀 다운로드' +
+            '</button>' +
+          '</div>' +
         '</div>' +
         '<div class="overflow-x-auto">' +
           '<table class="w-full text-sm">' +
@@ -42995,7 +43000,7 @@ function _renderCableIncomingUI(container, items) {
               '<th class="px-3 py-2 text-center text-gray-600 font-semibold bg-teal-50">자산구분</th>' +
               '<th class="px-3 py-2 text-right text-gray-600 font-semibold">입고량(M)</th>' +
               '<th class="px-3 py-2 text-center text-gray-600 font-semibold">비고</th>' +
-              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">삭제</th>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold">수정/삭제</th>' +
             '</tr></thead>' +
             '<tbody>' +
               (listItems.length === 0 ?
@@ -43004,6 +43009,7 @@ function _renderCableIncomingUI(container, items) {
                   var assetBadge = it.asset_type
                     ? '<span class="px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs">' + it.asset_type + '</span>'
                     : '<span class="text-gray-300 text-xs">-</span>';
+                  var safeIt = JSON.stringify(it).replace(/"/g, '&quot;');
                   return '<tr class="border-t border-gray-100 hover:bg-indigo-50">' +
                     '<td class="px-3 py-2 text-center text-xs font-mono">' + (it.in_date||'-') + '</td>' +
                     '<td class="px-3 py-2 text-center text-xs">' + (it.lot_no||'-') + '</td>' +
@@ -43014,7 +43020,10 @@ function _renderCableIncomingUI(container, items) {
                     '<td class="px-3 py-2 text-center bg-teal-50">' + assetBadge + '</td>' +
                     '<td class="px-3 py-2 text-right font-semibold text-blue-600">' + (it.qty_m||0).toLocaleString() + 'M</td>' +
                     '<td class="px-3 py-2 text-center text-xs text-gray-500">' + (it.remark||'') + '</td>' +
-                    '<td class="px-3 py-2 text-center"><button onclick="_deleteCableIncoming(' + it.id + ')" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-trash"></i></button></td>' +
+                    '<td class="px-3 py-2 text-center whitespace-nowrap">' +
+                      '<button onclick="_editCableIncoming(' + it.id + ')" class="text-blue-300 hover:text-blue-600 text-xs px-1 mr-1" title="수정"><i class="fas fa-edit"></i></button>' +
+                      '<button onclick="_deleteCableIncoming(' + it.id + ')" class="text-red-300 hover:text-red-500 text-xs px-1" title="삭제"><i class="fas fa-trash"></i></button>' +
+                    '</td>' +
                   '</tr>';
                 }).join('')
               ) +
@@ -43083,10 +43092,11 @@ function _openCableIncomingModal(editData) {
 
   var overlay = document.createElement('div');
   overlay.className = 'modal-overlay fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50';
+  overlay.setAttribute('data-edit-id', d.id ? String(d.id) : '');
   overlay.innerHTML =
     '<div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">' +
       '<div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">' +
-        '<h3 class="text-base font-bold text-gray-800"><i class="fas fa-inbox text-blue-500 mr-2"></i>케이블 입고 등록</h3>' +
+        '<h3 class="text-base font-bold text-gray-800"><i class="fas fa-' + (d.id ? 'edit' : 'inbox') + ' text-blue-500 mr-2"></i>' + (d.id ? '케이블 입고 수정' : '케이블 입고 등록') + '</h3>' +
         '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>' +
       '</div>' +
       '<div class="p-6 space-y-4">' +
@@ -43141,41 +43151,85 @@ function _openCableIncomingModal(editData) {
       '</div>' +
       '<div class="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50">' +
         '<button onclick="this.closest(\'.modal-overlay\').remove()" class="px-4 py-2 rounded-xl text-sm text-gray-600 bg-gray-100 hover:bg-gray-200">취소</button>' +
-        '<button onclick="_saveCableIncoming()" class="px-5 py-2 rounded-xl text-sm font-semibold bg-blue-500 hover:bg-blue-600 text-white shadow">저장</button>' +
+        '<button onclick="_saveCableIncoming()" class="px-5 py-2 rounded-xl text-sm font-semibold bg-blue-500 hover:bg-blue-600 text-white shadow">' + (d.id ? '수정' : '저장') + '</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(overlay);
 }
 
-// ── 입고 저장 ───────────────────────────────────────────────────
+// ── 입고 저장 (POST 신규 / PUT 수정) ──────────────────────────────
 async function _saveCableIncoming() {
   var inDate  = (document.getElementById('ci-modal-date')||{}).value || '';
   var qty     = parseFloat((document.getElementById('ci-modal-qty')||{}).value || '0');
   if (!inDate) { alert('입고일을 입력해 주세요.'); return; }
   if (!qty || qty <= 0) { alert('입고량(M)을 입력해 주세요.'); return; }
+  var overlay = document.querySelector('.modal-overlay');
+  var editId  = overlay ? (overlay.getAttribute('data-edit-id') || '') : '';
   var payload = {
     in_date:    inDate,
-    lot_no:     (document.getElementById('ci-modal-lot')||{}).value  || '',
-    spec:       (document.getElementById('ci-modal-spec')||{}).value || '',
-    maker:      (document.getElementById('ci-modal-maker')||{}).value || '',
-    mfg_year:   (document.getElementById('ci-modal-year')||{}).value || '',
-    cable_kind:  (document.getElementById('ci-modal-kind')||{}).value  || '',
-    asset_type:  (document.getElementById('ci-modal-asset')||{}).value || '',
-    qty_m:       qty,
-    remark:      (document.getElementById('ci-modal-remark')||{}).value || ''
+    lot_no:     (document.getElementById('ci-modal-lot')||{}).value    || '',
+    spec:       (document.getElementById('ci-modal-spec')||{}).value   || '',
+    maker:      (document.getElementById('ci-modal-maker')||{}).value  || '',
+    mfg_year:   (document.getElementById('ci-modal-year')||{}).value   || '',
+    cable_kind: (document.getElementById('ci-modal-kind')||{}).value   || '',
+    asset_type: (document.getElementById('ci-modal-asset')||{}).value  || '',
+    qty_m:      qty,
+    remark:     (document.getElementById('ci-modal-remark')||{}).value || ''
   };
   try {
-    var res = await fetch('/api/cable-incoming', {
-      method: 'POST',
+    var url    = editId ? '/api/cable-incoming/' + editId : '/api/cable-incoming';
+    var method = editId ? 'PUT' : 'POST';
+    var res = await fetch(url, {
+      method: method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) { alert('저장 실패: ' + res.status); return; }
-    var overlay = document.querySelector('.modal-overlay');
+    if (!res.ok) { alert((editId ? '수정' : '저장') + ' 실패: ' + res.status); return; }
     if (overlay) overlay.remove();
     renderCableIncomingPage(document.getElementById('page-content'));
   } catch(e) {
     alert('저장 오류: ' + e.message);
+  }
+}
+
+// ── 입고 수정 (행 클릭 → API 조회 → 모달 오픈) ─────────────────────
+async function _editCableIncoming(id) {
+  try {
+    var res = await fetch('/api/cable-incoming/' + id);
+    if (!res.ok) { alert('데이터 조회 실패: ' + res.status); return; }
+    var data = await res.json();
+    _openCableIncomingModal(data.item || data);
+  } catch(e) {
+    alert('조회 오류: ' + e.message);
+  }
+}
+
+// ── 입고관리 엑셀 다운로드 ────────────────────────────────────────
+async function _downloadCableIncomingCSV() {
+  try {
+    var res = await fetch('/api/cable-incoming');
+    if (!res.ok) { alert('데이터 조회 실패'); return; }
+    var data = await res.json();
+    var all  = (data.items || []).slice().sort(function(a,b){ return (b.in_date||'').localeCompare(a.in_date||''); });
+    var headers = ['입고일','LOT NO.','규격','제조사','제작년도','케이블종류','자산구분','입고량(M)','비고','등록일시'];
+    var rows = all.map(function(it){
+      return [
+        it.in_date    || '',
+        it.lot_no     || '',
+        it.spec       || '',
+        it.maker      || '',
+        it.mfg_year   || '',
+        it.cable_kind || '',
+        it.asset_type || '',
+        (it.qty_m     || 0),
+        it.remark     || '',
+        it.created_at || ''
+      ];
+    });
+    var today = kstDateStr();
+    downloadCSV('광케이블입고관리_' + today + '.csv', headers, rows);
+  } catch(e) {
+    alert('엑셀 다운로드 오류: ' + e.message);
   }
 }
 

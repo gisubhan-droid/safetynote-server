@@ -6291,6 +6291,33 @@ app.route('/api/dist', distRoutes)
     } catch(e: any) { return c.json({ error: e.message }, 500) }
   })
 
+  // GET /api/cable-incoming/:id — 단건 조회 (수정 모달용)
+  app.get('/api/cable-incoming/:id', (c) => {
+    const id = Number(c.req.param('id'))
+    try {
+      const row = rawDb.prepare('SELECT * FROM cable_incoming WHERE id = ?').get(id)
+      if (!row) return c.json({ error: '항목을 찾을 수 없습니다.' }, 404)
+      return c.json({ item: row })
+    } catch(e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  // PUT /api/cable-incoming/:id — 입고 수정
+  app.put('/api/cable-incoming/:id', async (c) => {
+    const id = Number(c.req.param('id'))
+    try {
+      const body = await c.req.json() as any
+      const { in_date, lot_no='', spec='', maker='', mfg_year='', cable_kind='', cable_type='', asset_type='', qty_m=0, remark='' } = body
+      if (!in_date) return c.json({ error: '입고일은 필수입니다.' }, 400)
+      if (!qty_m || Number(qty_m) <= 0) return c.json({ error: '입고량(M)은 0보다 커야 합니다.' }, 400)
+      rawDb.prepare(`
+        UPDATE cable_incoming
+        SET in_date=?,lot_no=?,spec=?,maker=?,mfg_year=?,cable_kind=?,cable_type=?,asset_type=?,qty_m=?,remark=?
+        WHERE id=?
+      `).run(in_date, lot_no, spec, maker, mfg_year, cable_kind, cable_type, asset_type, Number(qty_m), remark, id)
+      return c.json({ success: true })
+    } catch(e: any) { return c.json({ error: e.message }, 500) }
+  })
+
   // DELETE /api/cable-incoming/:id — 입고 삭제
   app.delete('/api/cable-incoming/:id', (c) => {
     const id = Number(c.req.param('id'))

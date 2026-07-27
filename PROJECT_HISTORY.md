@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-27 (세션 96 — [BUG-178b] 앱 환경 사진 갤러리 미저장 수정 — openAttachment → downloadApk 교체)
-> **GitHub 최신 (safetynote-server): `a388819`** — fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장
+> **GitHub 최신 (safetynote-server): `51d02b0`** — fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장
 > **이전 커밋 (server): `ab85790`** — fix: [BUG-178] downloadPhoto — 모바일 브라우저 isCapacitor 오탐 제거, fetch→blob 방식으로 통일
 > **이전 커밋 (server): `696e959`** — feat: 작업등록 사진 다운로드 버튼 추가 — 감독자 이상, PC/모바일/APP 3환경 대응
 > **이전 커밋 (server): `d11f09f`** — fix: 보유현황 — 사용량 항목의 asset_type 실제값 표시 (useRows SQL에 asset_type GROUP BY 추가)
@@ -10720,7 +10720,7 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 - DownloadManager → `Downloads/` 폴더 저장 → Android 갤러리 자동 인식
 - **앱(safetynote-android) 신규 브릿지 추가 불필요**
 
-#### 수정 내용 (커밋 `a388819`)
+#### 수정 내용 (커밋 `51d02b0`)
 
 | 파일 | 변경 |
 |------|------|
@@ -10740,7 +10740,7 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 | 저장소 | 커밋 해시 | 메시지 |
 |--------|-----------|--------|
 | safetynote-server | `ab85790` | fix: [BUG-178] downloadPhoto — 모바일 브라우저 isCapacitor 오탐 제거 |
-| safetynote-server | `a388819` | fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장 |
+| safetynote-server | `51d02b0` | fix: [BUG-178b] downloadPhoto 앱 환경 — openAttachment→downloadApk 교체, 갤러리 저장 보장 |
 
 ---
 

@@ -1,7 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-27 (세션 92 — FEAT-173 작업명 자동입력 체크박스 구현 완료)
-> **GitHub 최신 (safetynote-server): `87edaa2`** — feat: [FEAT-173] 작업명 자동입력 체크박스 추가
+> 최종 업데이트: 2026-07-27 (세션 92 — FEAT-174 TBM 사진 등록 소스 선택 바텀시트 구현 완료)
+> **GitHub 최신 (safetynote-server): `e8fb2a8`** — feat: [FEAT-174] TBM 사진 등록 소스 선택 바텀시트 추가
+> **이전 커밋 (server): `87edaa2`** — feat: [FEAT-173] 작업명 자동입력 체크박스 추가
 > **이전 커밋 (server): `eebadcb`** — feat: [FEAT-172] 외선 상세분류 전주건식(pole) 추가
 > **이전 커밋 (server): `038e40c`** — fix: 외선 상세분류 오타 수정 — 단수 → 단순 (cut)
 > **이전 커밋 (server): `0aab32c`** — fix: [FEAT-172] 검토 후 누락 수정 3건
@@ -357,6 +358,7 @@ onclick="_closePopup()"
 
 | 번호 | 세션 | 날짜 | 상태 | 기능 요약 | 커밋 |
 |------|------|------|------|----------|------|
+| FEAT-174 | 92 | 2026-07-27 | ✅ 구현 | **TBM 사진 등록 소스 선택 바텀시트** — 모바일 환경에서 '등록 필수'/'추가 사진'/'추가'/'등록' 버튼 클릭 시 [📂 파일 선택] / [📷 사진 촬영] 두 가지 소스를 선택할 수 있는 바텀시트 팝업 표시. 기존 label+hidden input 방식 → button+data-* 속성+_tbmCamPickerOpen() 방식으로 전환. RULE-003 준수: onclick 따옴표 중첩 회피를 위해 data-assid/secid/phid/label/taskid 속성 활용. 파일 선택: accept=image/*(갤러리·파일). 사진 촬영: accept=image/*+capture=environment(후면카메라 직접 실행). 배경 딤 처리+배경클릭 닫기+취소 버튼. 수정 위치 7곳(showTbmPhotoModal 2곳, 작업상세 탭 1차렌더 3곳, 2차렌더 2곳) 전부 교체. 신규 전역 함수 13개(_tbmCamPickerOpen/Required/Extra/Slot/Add + Gallery/Camera 위임 8개). RULE-001 완전 준수(var 전용). 검증: node --check ✅ + npm run build ✅(290.40 kB) | `e8fb2a8` |
 | FEAT-173 | 91~92 | 2026-07-27 | ✅ 구현 | **작업명 자동입력 체크박스** — 작업 등록/수정 모달 작업명 label 우측에 '🪄 작업명 자동입력' 체크박스 배치. 신규 등록: 기본 ON(보라색 활성), 수정 모달: 기본 OFF(기존 작업명 보존). 체크 ON 시 [작업종류][상세분류] prefix 자동 삽입, 종류/분류 변경 시 prefix 자동 교체(뒤 내용 보존). PREFIX_RE 패턴으로 prefix 구간만 교체. 충돌 4곳 처리: ①onMWorkClassChange 재렌더링 시 select 2곳 onchange 연결 ②autoLinkConstruction prefix 유지 ③copyTask 체크박스 강제 OFF ④신규 등록 setTimeout 50ms DOM 타이밍 대응. 전역 함수 5개 신규: _makeTitlePrefix/_applyTitlePrefixIfOn/_updateTitlePrefixHint/onTitlePrefixCbChange/onMWorkSubClassChange. RULE-001 완전 준수. 검증: node --check ✅ + npm run build ✅(290.40 kB) | `87edaa2` |
 | FEAT-172-FIX | 91~92 | 2026-07-27 | ✅ 수정 | **FEAT-172 누락 수정 3건 + 전주건식(pole) 추가** — ①app.js 27741: workClassBadge(wc) → workClassBadge(wc, t.work_sub_class) 상세분류 배지 누락 수정. ②NAS inspections 쿼리: t.work_class → COALESCE(work_class_new, work_class) AS work_class + t.work_sub_class 추가. ③현장점검 PDF guBun에 상세분류 병기. ④오타 단수→단순 수정. ⑤WORK_CLASS_DEF pole 추가 + tasks.ts VALID 배열 3곳 pole 추가. 커밋: 0aab32c(누락3건) / 038e40c(오타) / eebadcb(전주건식) | `eebadcb` |
 | FEAT-LINKED-TOGGLE | 78 | 2026-07-25 | ✅ 구현 | **연계작업 사진 섹션 접기/펼치기 토글** — 칩 버튼 과다 노출 문제 해결. `_toggleLinkedPhotos(taskId)` 전역 함수 신규 추가(RULE-001/003 준수). `linked-photos-section` HTML 헤더에 토글 버튼(`linked-photos-toggle-{taskId}`, 초기 `display:none`) + count span(`linked-photos-count-{taskId}`) 추가. `linked-photos-content` 초기 `display:none`(기본 접힘). `_loadLinkedCompletedPhotos()`: 로드 후 토글 버튼 `inline-flex` 표시 + count span `N건` 업데이트. 사진 0건 시 container `display:''` + 버튼 숨김 유지. 캐시 버스팅 `v=0c096141` → `v=1276a6f2`. 검증: `node --check` ✅ + `npm run build` ✅(287.31 kB) | `6da57b0` |

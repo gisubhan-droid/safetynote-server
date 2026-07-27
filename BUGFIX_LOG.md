@@ -4923,3 +4923,50 @@ API.get('/tasks', { params: _taskParams })
 - `node --check` ✅
 - `npm run build` ✅ (290.40 kB)
 - **커밋**: `87edaa2`
+
+---
+
+## [FEAT-174] TBM 사진 등록 소스 선택 바텀시트 (커밋 `e8fb2a8`)
+
+### 문제
+모바일(iOS Safari / Android WebView)에서 `<label>+<input type="file">` 클릭 시
+갤러리만 열리고 카메라 직접 촬영 불가 — 기기/브라우저마다 동작 상이.
+
+### 해결
+버튼 클릭 → 바텀시트 팝업으로 **파일 선택 / 사진 촬영** 두 가지 소스 선택.
+
+| 항목 | 기존 | 변경 |
+|------|------|------|
+| 등록 필수 버튼 | `label+hidden input` | `button` + `_tbmCamPickerOpenRequired(this)` |
+| 추가 사진 버튼 | `label+hidden input` | `button` + `_tbmCamPickerOpenExtra(this)` |
+| 작업상세 추가 버튼 | `label+hidden input` | `button` + `_tbmCamPickerOpenAdd(this)` |
+| 작업상세 등록 버튼 | `label+hidden input` | `button` + `_tbmCamPickerOpenSlot(this)` |
+
+### 인자 전달 방식 (RULE-003 준수)
+- onclick 속성 내 따옴표 중첩 완전 회피
+- `data-assid` / `data-secid` / `data-phid` / `data-label` / `data-taskid` 속성으로 전달
+- 핸들러 함수가 `btn.dataset.*` 로 읽어 처리
+
+### 바텀시트 UI
+- 배경 반투명 딤(rgba 0.45)
+- [📂 파일 선택] : `accept="image/*"` (갤러리·파일)
+- [📷 사진 촬영] : `accept="image/*" capture="environment"` (후면카메라 직접)
+- 배경 클릭 / 취소 버튼으로 닫기
+
+### 신규 전역 함수 13개
+| 함수 | 역할 |
+|------|------|
+| `_tbmCamPickerOpen(cbGallery, cbCamera)` | 바텀시트 생성 공통 |
+| `_tbmCamPickerOpenRequired(btn)` | 등록 필수 버튼 진입점 |
+| `_tbmCamPickerOpenExtra(btn)` | 추가 사진 버튼 진입점 |
+| `_tbmCamPickerOpenSlot(btn)` | 작업상세 탭 슬롯/등록 버튼 진입점 |
+| `_tbmCamPickerOpenAdd(btn)` | 작업상세 탭 추가 버튼 진입점 |
+| `_tbmCamPickerGallery/Camera` | uploadTbmPhoto 위임 |
+| `_tbmCamPickerExtraGallery/Camera` | uploadTbmPhotoExtra 위임 |
+| `_tbmCamPickerSlotGallery/Camera` | _uploadTbmPhotoSlotFromDetail 위임 |
+| `_tbmCamPickerAddGallery/Camera` | _uploadTbmPhotoFromDetail 위임 |
+
+### 검증
+- `node --check` ✅
+- `npm run build` ✅ (290.40 kB)
+- **커밋**: `e8fb2a8`

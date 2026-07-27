@@ -1770,6 +1770,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 }
 
 /* 컬럼별 너비 (colgroup col) */
+.con-col-table col.cc-connum { width: 90px;  }   /* 공사번호 [FEAT-175] */
 .con-col-table col.cc-req    { width: 130px; }
 .con-col-table col.cc-type   { width: 90px;  }   /* 공사종류 (신규) */
 .con-col-table col.cc-title  { width: auto;  }   /* 공사명 — 남은 공간 */

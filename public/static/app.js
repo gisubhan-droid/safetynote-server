@@ -4281,6 +4281,7 @@ async function renderConstructionsPage(container) {
         : '<span style="color:#CCC">-</span>';
       return `<tr class="con-tr" style="border-left:3px solid ${borderColor};background:${rowBg}"
         onclick="showConstructionDetail(${con.id})" title="클릭하여 상세 보기">
+        <td class="con-td" style="text-align:center;font-size:11px;font-family:monospace;color:#D97706;font-weight:700">${con.con_number || '<span style="color:#CCC">-</span>'}</td>
         <td class="con-td" style="font-size:12px;font-family:monospace;color:#685182;font-weight:600">${con.request_no}</td>
         <td class="con-td" style="font-size:12px;color:#374151">${typeText}</td>
         <td class="con-td">
@@ -4482,13 +4483,17 @@ async function renderConstructionsPage(container) {
       <div class="con-thead-sticky" id="conTheadWrap">
         <table id="conListTableHead" class="con-col-table">
           <colgroup>
-            <col class="cc-req"><col class="cc-type"><col class="cc-title">
+            <col class="cc-connum"><col class="cc-req"><col class="cc-type"><col class="cc-title">
             <col class="cc-addr">
             <col class="cc-cdate"><col class="cc-pdate"><col class="cc-tasks"><col class="cc-amount">
             <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
           </colgroup>
           <thead>
             <tr>
+              <th class="con-th con-th-resize" data-col="c0" data-sortcol="con_number"
+                  style="cursor:pointer;user-select:none;text-align:center"
+                  onclick="if(window._conSortTrigger)window._conSortTrigger('con_number')">
+                <i class="fas fa-hashtag" style="color:#F59E0B;font-size:9px;margin-right:2px"></i>공사번호<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
               <th class="con-th con-th-resize" data-col="0" data-sortcol="request_no"
                   style="cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('request_no')">
@@ -4542,7 +4547,7 @@ async function renderConstructionsPage(container) {
         <div class="con-tbody-scroll" id="conBodyScroll">
           <table id="conListTable" class="con-col-table">
             <colgroup>
-              <col class="cc-req"><col class="cc-type"><col class="cc-title">
+              <col class="cc-connum"><col class="cc-req"><col class="cc-type"><col class="cc-title">
               <col class="cc-addr">
               <col class="cc-cdate"><col class="cc-pdate"><col class="cc-tasks"><col class="cc-amount">
               <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">

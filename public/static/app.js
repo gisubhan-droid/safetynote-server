@@ -5316,6 +5316,7 @@ const WORK_CLASS_DEF = [
       { key: 'lay',    label: '포설' },
       { key: 'remove', label: '철거' },
       { key: 'cut',    label: '단순' },
+      { key: 'pole',   label: '전주건식' },
     ]
   },
   { key: 'cable_splice',    label: '접속', color: '#4338CA',

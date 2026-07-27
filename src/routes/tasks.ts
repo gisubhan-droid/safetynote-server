@@ -509,7 +509,7 @@ app.post('/', async (c) => {
     cable_install: 'lay', cable_splice: 'core', equipment_other: null, conduit: null
   }
   const VALID_WORK_SUB_CLASS: Record<string, string[]> = {
-    cable_install:   ['lay', 'remove', 'cut'],
+    cable_install:   ['lay', 'remove', 'cut', 'pole'],
     cable_splice:    ['core', 'switch', 'survey'],
     equipment_other: ['install', 'env'],
     conduit:         ['main', 'entry'],
@@ -705,7 +705,7 @@ app.put('/:id', async (c) => {
   const finalStatus = status || prevTask?.status || 'unassigned'
   // 상세분류: body에 명시된 경우 유효성 검증 후 적용, 없으면 기존값 유지
   const VALID_SUB_PUT: Record<string, string[]> = {
-    cable_install: ['lay','remove','cut'], cable_splice: ['core','switch','survey'],
+    cable_install: ['lay','remove','cut','pole'], cable_splice: ['core','switch','survey'],
     equipment_other: ['install','env'], conduit: ['main','entry'],
   }
   const putSubValid = VALID_SUB_PUT[finalWorkClass] || []
@@ -1217,7 +1217,7 @@ app.patch('/:id/work-sub-class', async (c) => {
   ).bind(id).first<any>()
   if (!task) return c.json({ error: '작업을 찾을 수 없습니다.' }, 404)
   const VALID_SUB: Record<string, string[]> = {
-    cable_install: ['lay','remove','cut'], cable_splice: ['core','switch','survey'],
+    cable_install: ['lay','remove','cut','pole'], cable_splice: ['core','switch','survey'],
     equipment_other: ['install','env'], conduit: ['main','entry'],
   }
   const validSubs = VALID_SUB[task.wc] || []

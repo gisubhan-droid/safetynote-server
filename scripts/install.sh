@@ -33,14 +33,32 @@ set -e
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
 
+# ─── 볼륨 자동 감지 ──────────────────────────────────────────────────────────
+# 환경변수 SAFETYNOTE_VOLUME 으로 직접 지정 가능 (예: SAFETYNOTE_VOLUME=volume2 bash install.sh)
+# 미지정 시 volume1 → volume2 → volume3 순서로 존재하는 볼륨 자동 선택
+if [ -n "$SAFETYNOTE_VOLUME" ]; then
+  VOLUME="$SAFETYNOTE_VOLUME"
+else
+  VOLUME=""
+  for v in volume1 volume2 volume3 volume4; do
+    if [ -d "/$v" ]; then
+      VOLUME="$v"
+      break
+    fi
+  done
+  if [ -z "$VOLUME" ]; then
+    VOLUME="volume1"   # fallback
+  fi
+fi
+
 # ─── 설정값 ──────────────────────────────────────────────────────────────────
-INSTALL_DIR="/volume1/safetynote"
+INSTALL_DIR="/${VOLUME}/safetynote"
 REPO_URL="https://github.com/gisubhan-droid/safetynote-server.git"
 APP_NAME="safetynote"
 APP_PORT="3443"
 
 # Synology Node.js v18 패키지 경로 (DSM 패키지 센터로 설치 시)
-NODE_BIN_PATH="/volume1/@appstore/Node.js_v18/usr/local/bin"
+NODE_BIN_PATH="/${VOLUME}/@appstore/Node.js_v18/usr/local/bin"
 NODE_EXEC=""   # 아래 detect_node()에서 채워짐
 NPM_EXEC=""
 TSX_EXEC=""    # npm install 후 채워짐
@@ -55,8 +73,9 @@ step()    { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 # ─── 배너 ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║   SafetyNOTE NAS 설치 스크립트  v2.1        ║${NC}"
+echo -e "${CYAN}║   SafetyNOTE NAS 설치 스크립트  v2.2        ║${NC}"
 echo -e "${CYAN}║   $(date '+%Y-%m-%d %H:%M:%S')                         ║${NC}"
+printf  "${CYAN}║   설치 볼륨 : %-30s${CYAN}║${NC}\n" "/${VOLUME}  (자동 감지)"
 echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 

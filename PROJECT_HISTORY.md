@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-27 (세션 94 — FEAT-177 광케이블 입고관리 메뉴 신규 + 메뉴 구조 변경)
-> **GitHub 최신 (safetynote-server): `TBD`** — feat: [FEAT-177] 광케이블 입고관리 신규 메뉴 + 광케이블 현황 메뉴 구조 변경
+> **GitHub 최신 (safetynote-server): `b4f25f3`** — feat: [FEAT-177] 광케이블 입고관리 신규 메뉴 + 광케이블 현황 메뉴 구조 변경
 > **이전 커밋 (server): `1325c61`** — docs: [FEAT-176/BUG-176] PROJECT_HISTORY + BUGFIX_LOG 세션 94 기록 추가
 > **이전 커밋 (server): `55b7aff`** — feat+fix: [FEAT-176/BUG-176] 외선작업일보 공정구분 철거 분리 + 광케이블 현황 케이블종류 오류 수정
 > **이전 커밋 (server): `a013fdd`** — feat: [FEAT-175] 공사현황 테이블에 공사번호 컬럼 추가 (공사요청번호 앞 첫 번째 열)

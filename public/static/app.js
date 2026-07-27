@@ -42863,19 +42863,20 @@ function downloadCableDetailCSV() {
 // ═══════════════════════════════════════════════════════════════
 // 광케이블 입고관리 페이지 [FEAT-177]
 // ═══════════════════════════════════════════════════════════════
-async function renderCableIncomingPage(container) {
+async function renderCableIncomingPage(container, initialTab) {
   container.innerHTML = '<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-blue-400 text-2xl"></i></div></div>';
   try {
     var res = await fetch('/api/cable-incoming');
     var data = res.ok ? await res.json() : { items: [] };
     var items = data.items || [];
-    _renderCableIncomingUI(container, items);
+    _renderCableIncomingUI(container, items, initialTab || 'in-summary');
   } catch(e) {
     container.innerHTML = '<div class="page-container"><p class="text-red-500 p-6"><i class="fas fa-exclamation-circle mr-2"></i>데이터를 불러오지 못했습니다: ' + e.message + '</p></div>';
   }
 }
 
-function _renderCableIncomingUI(container, items) {
+function _renderCableIncomingUI(container, items, initialTab) {
+  var _ciInitTab = initialTab || 'in-summary';
   // ── 옵션 ────────────────────────────────────────────────────
   var SPEC_OPTS_CI  = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(function(v){ return '<option value="' + v + '">' + (v||'규격') + '</option>'; }).join('');
   var MAKER_OPTS_CI = ['','LS','대한','일진','가온','기타'].map(function(v){ return '<option value="' + v + '">' + (v||'제조사') + '</option>'; }).join('');
@@ -42913,13 +42914,13 @@ function _renderCableIncomingUI(container, items) {
 
     // ── 탭 ───────────────────────────────────────────────────
     '<div class="flex gap-2 border-b border-gray-200 mb-0" id="ci-tabs">' +
-      '<button class="ci-tab-btn ci-tab-active px-4 py-2 text-sm font-semibold border-b-2 border-blue-500 text-blue-600" data-tab="in-summary" onclick="_ciSwitchTab(this,\'in-summary\')"><i class="fas fa-chart-bar mr-1"></i>입고 현황</button>' +
-      '<button class="ci-tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-blue-500" data-tab="hold-summary" onclick="_ciSwitchTab(this,\'hold-summary\')"><i class="fas fa-boxes mr-1"></i>보유 현황</button>' +
-      '<button class="ci-tab-btn px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-blue-500" data-tab="in-list" onclick="_ciSwitchTab(this,\'in-list\')"><i class="fas fa-list mr-1"></i>날짜별 입고내역</button>' +
+      '<button class="ci-tab-btn ' + (_ciInitTab==='in-summary' ? 'ci-tab-active px-4 py-2 text-sm font-semibold border-b-2 border-blue-500 text-blue-600' : 'px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-blue-500') + '" data-tab="in-summary" onclick="_ciSwitchTab(this,\'in-summary\')"><i class="fas fa-chart-bar mr-1"></i>입고 현황</button>' +
+      '<button class="ci-tab-btn ' + (_ciInitTab==='hold-summary' ? 'ci-tab-active px-4 py-2 text-sm font-semibold border-b-2 border-blue-500 text-blue-600' : 'px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-blue-500') + '" data-tab="hold-summary" onclick="_ciSwitchTab(this,\'hold-summary\')"><i class="fas fa-boxes mr-1"></i>보유 현황</button>' +
+      '<button class="ci-tab-btn ' + (_ciInitTab==='in-list' ? 'ci-tab-active px-4 py-2 text-sm font-semibold border-b-2 border-blue-500 text-blue-600' : 'px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-blue-500') + '" data-tab="in-list" onclick="_ciSwitchTab(this,\'in-list\')"><i class="fas fa-list mr-1"></i>날짜별 입고내역</button>' +
     '</div>' +
 
     // ── 탭 패널: 입고 현황 ────────────────────────────────────
-    '<div id="ci-panel-in-summary" class="ci-panel">' +
+    '<div id="ci-panel-in-summary" class="ci-panel' + (_ciInitTab==='in-summary' ? '' : ' hidden') + '">' +
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
           '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-chart-bar text-blue-400 mr-2"></i>제조사/규격/종류별 입고 현황</span>' +
@@ -42952,7 +42953,7 @@ function _renderCableIncomingUI(container, items) {
     '</div>' +
 
     // ── 탭 패널: 보유 현황 ────────────────────────────────────
-    '<div id="ci-panel-hold-summary" class="ci-panel hidden">' +
+    '<div id="ci-panel-hold-summary" class="ci-panel' + (_ciInitTab==='hold-summary' ? '' : ' hidden') + '">' +
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
           '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-boxes text-green-400 mr-2"></i>제조사/규격/종류별 보유 현황 <span class="text-xs text-gray-400">(입고량 − 사용량)</span></span>' +
@@ -42977,7 +42978,7 @@ function _renderCableIncomingUI(container, items) {
     '</div>' +
 
     // ── 탭 패널: 날짜별 입고내역 ─────────────────────────────
-    '<div id="ci-panel-in-list" class="ci-panel hidden">' +
+    '<div id="ci-panel-in-list" class="ci-panel' + (_ciInitTab==='in-list' ? '' : ' hidden') + '">' +
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
           '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-list text-indigo-400 mr-2"></i>날짜별 입고 내역</span>' +
@@ -43185,8 +43186,10 @@ async function _saveCableIncoming() {
       body: JSON.stringify(payload)
     });
     if (!res.ok) { alert((editId ? '수정' : '저장') + ' 실패: ' + res.status); return; }
+    var activeTabBtn = document.querySelector('.ci-tab-btn.ci-tab-active');
+    var activeTab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'in-summary';
     if (overlay) overlay.remove();
-    renderCableIncomingPage(document.getElementById('page-content'));
+    renderCableIncomingPage(document.getElementById('page-content'), activeTab);
   } catch(e) {
     alert('저장 오류: ' + e.message);
   }
@@ -43235,11 +43238,13 @@ async function _downloadCableIncomingCSV() {
 
 // ── 입고 삭제 ───────────────────────────────────────────────────
 async function _deleteCableIncoming(id) {
+  var activeTabBtn = document.querySelector('.ci-tab-btn.ci-tab-active');
+  var activeTab = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'in-summary';
   if (!confirm('이 입고 내역을 삭제하시겠습니까?')) return;
   try {
     var res = await fetch('/api/cable-incoming/' + id, { method: 'DELETE' });
     if (!res.ok) { alert('삭제 실패: ' + res.status); return; }
-    renderCableIncomingPage(document.getElementById('page-content'));
+    renderCableIncomingPage(document.getElementById('page-content'), activeTab);
   } catch(e) {
     alert('삭제 오류: ' + e.message);
   }

@@ -10732,7 +10732,7 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 
 | repo | commit | 내용 |
 |------|--------|------|
-| safetynote-server | `(pending)` | feat: [FEAT-172] 작업종류 명칭 변경 + 상세분류 추가 |
+| safetynote-server | `e85d58c` | feat: [FEAT-172] 작업종류 명칭 변경 + 상세분류 추가 |
 
 ---
 

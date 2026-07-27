@@ -57,8 +57,10 @@ REPO_URL="https://github.com/gisubhan-droid/safetynote-server.git"
 APP_NAME="safetynote"
 APP_PORT="3443"
 
-# Synology Node.js v18 패키지 경로 (DSM 패키지 센터로 설치 시)
-NODE_BIN_PATH="/${VOLUME}/@appstore/Node.js_v18/usr/local/bin"
+# Synology Node.js 패키지 경로 후보 (v18 우선 → v20 → v22 순)
+NODE_BIN_PATH="/${VOLUME}/@appstore/Node.js_v18/usr/local/bin"  # 1순위 (기본)
+NODE_BIN_PATH_V20="/${VOLUME}/@appstore/Node.js_v20/usr/local/bin"  # 2순위
+NODE_BIN_PATH_V22="/${VOLUME}/@appstore/Node.js_v22/usr/local/bin"  # 3순위
 NODE_EXEC=""   # 아래 detect_node()에서 채워짐
 NPM_EXEC=""
 TSX_EXEC=""    # npm install 후 채워짐
@@ -73,11 +75,17 @@ step()    { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 # ─── 배너 ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║   SafetyNOTE NAS 설치 스크립트  v2.2        ║${NC}"
+echo -e "${CYAN}║   SafetyNOTE NAS 설치 스크립트  v2.3        ║${NC}"
 echo -e "${CYAN}║   $(date '+%Y-%m-%d %H:%M:%S')                         ║${NC}"
 printf  "${CYAN}║   설치 볼륨 : %-30s${CYAN}║${NC}\n" "/${VOLUME}  (자동 감지)"
 echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
 echo ""
+
+# =============================================================================
+# Step 0: Node.js 버전 사전 안내
+# =============================================================================
+info "Node.js 탐색 순서: v18 → v20 → v22 → 시스템 node"
+info "권장: DSM 패키지 센터 → Node.js v18 (안정적)"
 
 # =============================================================================
 # Step 1: Node.js 탐지
@@ -85,8 +93,11 @@ echo ""
 step "Step 1/8: Node.js 탐지"
 
 detect_node() {
+  # v18 우선 → v20 → v22 → 시스템 node 순서로 탐색
   local candidates=(
     "$NODE_BIN_PATH/node"
+    "$NODE_BIN_PATH_V20/node"
+    "$NODE_BIN_PATH_V22/node"
     "/usr/local/bin/node"
     "/usr/bin/node"
     "$(command -v node 2>/dev/null || true)"
@@ -95,10 +106,11 @@ detect_node() {
     if [ -x "$c" ]; then
       local ver
       ver=$("$c" --version 2>/dev/null || echo "")
-      if [[ "$ver" == v18* ]]; then
+      # v18, v20, v22 모두 허용 (v18 권장)
+      if [[ "$ver" == v18* ]] || [[ "$ver" == v20* ]] || [[ "$ver" == v22* ]]; then
         NODE_EXEC="$c"
         NPM_EXEC="$(dirname "$c")/npm"
-        ok "Node.js v18 발견: $c  ($ver)"
+        ok "Node.js 발견: $c  ($ver)"
         export PATH="$(dirname "$c"):$PATH"
         return 0
       fi
@@ -108,9 +120,9 @@ detect_node() {
 }
 
 if ! detect_node; then
-  err "Node.js v18을 찾을 수 없습니다.
+  err "Node.js v18/v20/v22 를 찾을 수 없습니다.
   해결 방법:
-    1. DSM 패키지 센터 → 'Node.js v18' 검색 → 설치
+    1. DSM 패키지 센터 → 'Node.js v18' 또는 'Node.js v20' 검색 → 설치
     2. 설치 완료 후 이 스크립트를 다시 실행하세요."
 fi
 

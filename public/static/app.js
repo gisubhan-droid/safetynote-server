@@ -44539,9 +44539,14 @@ async function loadSiteMapMarkers(map) {
     //   - task_status='working' 인 건만 진행 탭에 표시 (중지 paused 제외)
     // GPS 우선순위: tbm_records.gps → work_logs.gps → 좌표 없음(목록만)
     if (filter === 'working') {
-      // ① TBM API로 전체 TBM 목록 확보 (날짜 파라미터 미전송: working 상태는 날짜 무관)
+      // ① TBM API로 진행 목록 확보 — [BUG-180 수정] 날짜 파라미터 전송
+      //   - 기존: 날짜 파라미터 미전송 → 전체 기간 working 데이터 반환 → 날짜 필터 무시됨
+      //   - 수정: date_from/date_to 서버 전송 + 클라이언트 planned_date 2차 필터
+      //   - working 상태는 '현재 진행중'이지만 등록일(tbm_date) 기준 날짜 범위 적용
       const twp = new URLSearchParams();
-      if (userId) twp.set('user_id', userId);
+      if (dateFrom) twp.set('date_from', dateFrom);
+      if (dateTo)   twp.set('date_to',   dateTo);
+      if (userId)   twp.set('user_id',   userId);
       twp.set('limit', '500');
       const tbmAllRes = await API.get(`/tbm?${twp.toString()}`);
       const _rawTbmAllList = Array.isArray(tbmAllRes.data) ? tbmAllRes.data
@@ -44554,8 +44559,14 @@ async function loadSiteMapMarkers(map) {
         : _rawTbmAllList;
 
       // ② task_status = 'working' 인 건만 추출 (진행 탭 조건, paused 중지 제외)
+      // [BUG-180] 서버 date_from/date_to 필터 후 클라이언트에서 planned_date 2차 필터
       const workingTbmList = tbmAllFiltered.filter(function(tbm) {
-        return tbm.task_status === 'working';
+        if (tbm.task_status !== 'working') return false;
+        // planned_date 기준 클라이언트 2차 필터 (서버 tbm_date 필터 보완)
+        var pd = tbm.planned_date ? String(tbm.planned_date).slice(0, 10) : '';
+        if (dateFrom && pd && pd < dateFrom) return false;
+        if (dateTo   && pd && pd > dateTo)   return false;
+        return true;
       });
 
       if (workingTbmList.length === 0) {

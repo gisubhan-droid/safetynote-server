@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-27 (세션 93 — FEAT-175 공사번호 입력 팝업 + 3열 폼 레이아웃 구현 완료)
-> **GitHub 최신 (safetynote-server): `a161357`** — feat: [FEAT-175] 공사번호(con_number) 입력 팝업 + 3열 폼 레이아웃 추가
+> 최종 업데이트: 2026-07-27 (세션 93 — FEAT-175 공사현황 테이블 공사번호 컬럼 추가)
+> **GitHub 최신 (safetynote-server): `a013fdd`** — feat: [FEAT-175] 공사현황 테이블에 공사번호 컬럼 추가 (공사요청번호 앞 첫 번째 열)
+> **이전 커밋 (server): `d347412`** — docs: [FEAT-175] PROJECT_HISTORY + BUGFIX_LOG 세션 93 기록 추가
+> **이전 커밋 (server): `a161357`** — feat: [FEAT-175] 공사번호(con_number) 입력 팝업 + 3열 폼 레이아웃 추가
 > **이전 커밋 (server): `0420795`** — docs: [FEAT-174] PROJECT_HISTORY + BUGFIX_LOG 세션 92 기록 추가
 > **이전 커밋 (server): `e8fb2a8`** — feat: [FEAT-174] TBM 사진 등록 소스 선택 바텀시트 추가
 > **이전 커밋 (server): `87edaa2`** — feat: [FEAT-173] 작업명 자동입력 체크박스 추가

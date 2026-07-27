@@ -4926,6 +4926,36 @@ API.get('/tasks', { params: _taskParams })
 
 ---
 
+## [FEAT-175] 공사현황 테이블 공사번호 컬럼 추가 (커밋 `a013fdd`) — 세션 93 (2026-07-27)
+
+### 기능 요약
+공사현황 목록 테이블에 공사번호 컬럼 추가 (공사요청번호 앞 첫 번째 열, 주황 텍스트).
+
+### 변경 내역
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `style.css` | `.cc-connum { width: 90px }` 컬럼 너비 클래스 추가 |
+| `app.js` | 헤더 colgroup 맨 앞에 `<col class="cc-connum">` 추가 |
+| `app.js` | 바디 colgroup 맨 앞에 `<col class="cc-connum">` 추가 |
+| `app.js` | thead 첫 번째 th에 공사번호 컬럼 추가 (`#` 아이콘, data-col="c0", sortcol="con_number") |
+| `app.js` | `_conBuildRow()` con.request_no td 앞에 con_number td 삽입 (주황색 표시, 없으면 '-') |
+
+### 충돌 체크 & 규칙 준수
+
+| 규칙 | 처리 방법 |
+|------|----------|
+| RULE-001 (var 전용) | 신규 코드 없음, 기존 템플릿 리터럴 수정만 |
+| RULE-003 (onclick 따옴표 중첩 금지) | onclick 내 따옴표 중첩 없음 |
+
+### 검증 결과
+
+- `node --check public/static/app.js` ✅ 통과
+- `npm run build` ✅ 성공 (dist/_worker.js 291.51 kB)
+- `git push origin main` ✅ `a013fdd` 업로드 완료
+
+---
+
 ## [FEAT-175] 공사번호 입력 팝업 + 3열 폼 레이아웃 (커밋 `a161357`) — 세션 93 (2026-07-27)
 
 ### 기능 요약

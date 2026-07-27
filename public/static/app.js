@@ -5311,11 +5311,41 @@ const WC_LABEL = Object.fromEntries(CON_TYPE_DEF.map(d => [d.key, d.label]));
 // DB 컬럼: tasks.work_class (영문 key 저장)
 // CON_TYPE_DEF(공사종류)와 완전히 분리된 별도 배열
 const WORK_CLASS_DEF = [
-  { key: 'cable_install',   label: '광케이블 시설',    color: '#1D4ED8' },
-  { key: 'cable_splice',    label: '광케이블 접속',    color: '#4338CA' },
-  { key: 'equipment_other', label: '장비 시설및 기타', color: '#C2410C' },
-  { key: 'conduit',         label: '관로시설',         color: '#15803D' },
+  { key: 'cable_install',   label: '외선', color: '#1D4ED8',
+    subClasses: [
+      { key: 'lay',    label: '포설' },
+      { key: 'remove', label: '철거' },
+      { key: 'cut',    label: '단수' },
+    ]
+  },
+  { key: 'cable_splice',    label: '접속', color: '#4338CA',
+    subClasses: [
+      { key: 'core',   label: '코어구성' },
+      { key: 'switch', label: '절체접속' },
+      { key: 'survey', label: '선번조사' },
+    ]
+  },
+  { key: 'equipment_other', label: '장비', color: '#C2410C',
+    subClasses: [
+      { key: 'install', label: '장비시설' },
+      { key: 'env',     label: '환경공사' },
+    ]
+  },
+  { key: 'conduit',         label: '관로', color: '#15803D',
+    subClasses: [
+      { key: 'main',  label: '주관로' },
+      { key: 'entry', label: '인입관로' },
+    ]
+  },
 ];
+// 상세분류 라벨 조회 헬퍼 (영문key → 한글)
+function getWorkSubLabel(wc, sub) {
+  if (!sub) return '';
+  var def = WORK_CLASS_DEF.find(function(d) { return d.key === wc; });
+  if (!def) return sub;
+  var found = def.subClasses.find(function(s) { return s.key === sub; });
+  return found ? found.label : sub;
+}
 
 // 공사요청번호 입력 → 공사정보 자동 연동
 async function autoLinkConstruction() {
@@ -6345,7 +6375,7 @@ async function renderTasksPage(container) {
         const labelColor = curIdx >= 5 ? '#685182' : (curIdx >= 0 ? '#D70072' : '#9CA3AF');
 
         // 공사종류 · 작업종류 배지 (짧게)
-        const wcShort = { cable_install:'광케이블시설', cable_splice:'광케이블접속', equipment_other:'장비·기타', conduit:'관로시설' };
+        const wcShort = { cable_install:'외선', cable_splice:'접속', equipment_other:'장비', conduit:'관로' };
 
         return `
         <div class="task-card-item" onclick="showTaskDetail(${t.id})"
@@ -6410,7 +6440,7 @@ async function renderTasksPage(container) {
               ${t.construction_type}
             </span>` : ''}
             <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;background:#F3F4F6;color:#374151">
-              ${wcShort[t.work_class] || t.work_class || '-'}
+              ${wcShort[t.work_class] || t.work_class || '-'}${t.work_sub_class ? ' · ' + getWorkSubLabel(t.work_class, t.work_sub_class) : ''}
             </span>
             ${getTaskTeam(t) !== '-' ? `
             <span style="font-size:10px;color:#6B7280;display:flex;align-items:center;gap:2px">
@@ -6444,7 +6474,7 @@ async function renderTasksPage(container) {
     };
     const rlLabelMap2 = { high: '고위험', medium: '중위험', normal: '일반' };
     const rlColorMap2 = { high: '#D70072', medium: '#9B59B6', normal: '#685182' };
-    const wcShortMap2 = { cable_install:'광케이블시설', cable_splice:'광케이블접속', equipment_other:'장비·기타', conduit:'관로시설' };
+    const wcShortMap2 = { cable_install:'외선', cable_splice:'접속', equipment_other:'장비', conduit:'관로' };
     // [FEAT-053] 삭제 버튼: sysadmin 전용 (deleteTask 함수 내부에서도 재검증)
     // 수정 버튼: admin 또는 supervisor만 표시
     const _tblCanModify  = currentUser.role === 'admin' || currentUser.role === 'supervisor';
@@ -6478,7 +6508,7 @@ async function renderTasksPage(container) {
         // 공사종류 (construction_type)
         const workTypeDisplay = t.construction_type || '-';
         // 작업종류 (work_class)
-        const workClassDisplay = wcShortMap2[t.work_class] || t.work_class || '-';
+        const workClassDisplay = (wcShortMap2[t.work_class] || t.work_class || '-') + (t.work_sub_class ? ' · ' + getWorkSubLabel(t.work_class, t.work_sub_class) : '');
         // [FEAT-053] 삭제: sysadmin + completed/cancelled 상태
         // [FEAT-060] 등록자 + unassigned/assigned 상태 추가 허용
         // [BUG-FIX] Number() 강제 변환으로 타입 불일치 방어
@@ -7096,13 +7126,14 @@ async function renderTasksPage(container) {
 
 // 작업목록 엑셀(CSV) 다운로드
 function downloadTaskListCSV() {
-  const headers = ['요청번호','공사종류','작업종류','공사명','위험도','진행단계','작업지시주소'];
-  const wcMap = { cable_install:'광케이블 시설', cable_splice:'광케이블 접속', equipment_other:'장비 시설및 기타', conduit:'관로시설' };
+  const headers = ['요청번호','공사종류','작업종류','상세분류','공사명','위험도','진행단계','작업지시주소'];
+  const wcMap = { cable_install:'외선', cable_splice:'접속', equipment_other:'장비', conduit:'관로' };
   const rlMap = { high:'고위험', medium:'중위험', normal:'일반' };
   const stMap = { unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료', tbm_done:'TBM완료', working:'작업진행중', completed:'작업완료' };
   const rows = _taskListData.map(t => [
     t.request_no||'', t.construction_type||'',
     wcMap[t.work_class]||t.work_class||'',
+    getWorkSubLabel(t.work_class, t.work_sub_class)||'',
     t.title||'', rlMap[t.risk_level]||'일반',
     stMap[t.status]||t.status||'',
     t.location||''
@@ -7111,19 +7142,24 @@ function downloadTaskListCSV() {
 }
 
 // 작업 분류 배지 (4종)
-function workClassBadge(wc) {
+function workClassBadge(wc, sub) {
   const map = {
-    cable_install:    '<span class="inline-flex items-center gap-0.5 bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 rounded font-medium"><i class="fas fa-ethernet text-xs"></i> 광케이블 시설</span>',
-    cable_splice:     '<span class="inline-flex items-center gap-0.5 bg-indigo-100 text-indigo-700 text-xs px-1.5 py-0.5 rounded font-medium"><i class="fas fa-plug text-xs"></i> 광케이블 접속</span>',
-    equipment_other:  '<span class="inline-flex items-center gap-0.5 bg-orange-100 text-orange-700 text-xs px-1.5 py-0.5 rounded font-medium"><i class="fas fa-tools text-xs"></i> 장비 시설및 기타</span>',
-    conduit:          '<span class="inline-flex items-center gap-0.5 bg-green-100 text-green-700 text-xs px-1.5 py-0.5 rounded font-medium"><i class="fas fa-circle-nodes text-xs"></i> 관로시설</span>'
+    cable_install:    '<span class="inline-flex items-center gap-0.5 bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 rounded font-medium"><i class="fas fa-ethernet text-xs"></i> 외선</span>',
+    cable_splice:     '<span class="inline-flex items-center gap-0.5 bg-indigo-100 text-indigo-700 text-xs px-1.5 py-0.5 rounded font-medium"><i class="fas fa-plug text-xs"></i> 접속</span>',
+    equipment_other:  '<span class="inline-flex items-center gap-0.5 bg-orange-100 text-orange-700 text-xs px-1.5 py-0.5 rounded font-medium"><i class="fas fa-tools text-xs"></i> 장비</span>',
+    conduit:          '<span class="inline-flex items-center gap-0.5 bg-green-100 text-green-700 text-xs px-1.5 py-0.5 rounded font-medium"><i class="fas fa-circle-nodes text-xs"></i> 관로</span>'
   };
-  return map[wc] || map['cable_install'];
+  var badge = map[wc] || map['cable_install'];
+  var subLabel = getWorkSubLabel(wc, sub);
+  if (subLabel) {
+    badge += '<span class="inline-flex items-center bg-gray-100 text-gray-600 text-xs px-1.5 py-0.5 rounded font-medium ml-1">' + subLabel + '</span>';
+  }
+  return badge;
 }
 
 // 작업 분류 한글명
 function workClassName(wc) {
-  return { cable_install:'광케이블 시설', cable_splice:'광케이블 접속', equipment_other:'장비 시설및 기타', conduit:'관로시설' }[wc] || '광케이블 시설';
+  return { cable_install:'외선', cable_splice:'접속', equipment_other:'장비', conduit:'관로' }[wc] || '외선';
 }
 
 // ======= 작업 생성/수정 모달 =======
@@ -7332,12 +7368,28 @@ async function showCreateTaskModal(editId = null, presetConstruction = null) {
           <label class="form-label">
             <i class="fas fa-layer-group mr-1" style="color:#685182"></i>작업종류 <span class="text-red-500">*</span>
           </label>
-          <select id="mWorkClass" class="form-control">
-            <option value="cable_install"   ${wc==='cable_install'   ?'selected':''}>광케이블 시설</option>
-            <option value="cable_splice"    ${wc==='cable_splice'    ?'selected':''}>광케이블 접속</option>
-            <option value="equipment_other" ${wc==='equipment_other' ?'selected':''}>장비 시설및 기타</option>
-            <option value="conduit"         ${wc==='conduit'         ?'selected':''}>관로시설</option>
+          <select id="mWorkClass" class="form-control" onchange="onMWorkClassChange(this.value)">
+            <option value="cable_install"   ${wc==='cable_install'   ?'selected':''}>외선</option>
+            <option value="cable_splice"    ${wc==='cable_splice'    ?'selected':''}>접속</option>
+            <option value="equipment_other" ${wc==='equipment_other' ?'selected':''}>장비</option>
+            <option value="conduit"         ${wc==='conduit'         ?'selected':''}>관로</option>
           </select>
+        </div>
+        <!-- 상세분류 (작업종류 선택에 따라 동적 렌더링) -->
+        <div id="mWorkSubClassWrap">
+          ${(() => {
+            var def = WORK_CLASS_DEF.find(function(d) { return d.key === wc; });
+            if (!def || !def.subClasses || def.subClasses.length === 0) return '';
+            var defaultSub = (wc === 'cable_install') ? 'lay' : (wc === 'cable_splice') ? 'core' : def.subClasses[0].key;
+            var curSub = task.work_sub_class || defaultSub;
+            var opts = def.subClasses.map(function(s) {
+              return '<option value="' + s.key + '" ' + (curSub === s.key ? 'selected' : '') + '>' + s.label + '</option>';
+            }).join('');
+            return '<div class="form-group">'
+              + '<label class="form-label"><i class="fas fa-list-ul mr-1" style="color:#685182"></i>상세분류 <span class="text-red-500">*</span></label>'
+              + '<select id="mWorkSubClass" class="form-control">' + opts + '</select>'
+              + '</div>';
+          })()}
         </div>
         <div class="form-group">
           <label class="form-label">
@@ -7518,6 +7570,28 @@ function updateTeamAssignPreview() {
 }
 
 // 작업지시 주소 입력 검증
+// 작업종류 select 변경 시 상세분류 select 동적 갱신 (RULE-001: var 전용)
+function onMWorkClassChange(wc) {
+  var container = document.getElementById('mWorkSubClassWrap');
+  if (!container) return;
+  var def = WORK_CLASS_DEF.find(function(d) { return d.key === wc; });
+  if (!def || !def.subClasses || def.subClasses.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  // 기본값: 외선→lay, 접속→core, 나머지→첫번째
+  var defaultSub = (wc === 'cable_install') ? 'lay' : (wc === 'cable_splice') ? 'core' : def.subClasses[0].key;
+  var opts = def.subClasses.map(function(s) {
+    return '<option value="' + s.key + '">' + s.label + '</option>';
+  }).join('');
+  container.innerHTML = '<div class="form-group">'
+    + '<label class="form-label"><i class="fas fa-list-ul mr-1" style="color:#685182"></i>상세분류 <span class="text-red-500">*</span></label>'
+    + '<select id="mWorkSubClass" class="form-control">' + opts + '</select>'
+    + '</div>';
+  var sel = document.getElementById('mWorkSubClass');
+  if (sel) sel.value = defaultSub;
+}
+
 function validateTaskOrderAddress() {
   const addrEl = document.getElementById('mOrderAddress');
   const statusEl = document.getElementById('mAddressStatus');
@@ -7627,6 +7701,7 @@ async function createTask() {
   const data = {
     title: document.getElementById('mTitle').value.trim(),
     work_class: document.getElementById('mWorkClass').value || 'cable_install',
+    work_sub_class: document.getElementById('mWorkSubClass')?.value || null,
     construction_type: constructionType,
     request_no: document.getElementById('mConReqNo')?.value.trim() || document.getElementById('mRequestNo')?.value.trim() || '',
     work_number: document.getElementById('mConWorkNum')?.value.trim() || document.getElementById('mWorkNumber')?.value.trim() || '',
@@ -7936,6 +8011,7 @@ async function updateTask(id) {
   const data = {
     title: document.getElementById('mTitle').value.trim(),
     work_class: document.getElementById('mWorkClass').value || 'cable_install',
+    work_sub_class: document.getElementById('mWorkSubClass')?.value || null,
     construction_type: document.getElementById('mConstructionType')?.value || '',
     request_no: document.getElementById('mConReqNo')?.value.trim() || document.getElementById('mRequestNo')?.value.trim() || '',
     work_number: document.getElementById('mConWorkNum')?.value.trim() || document.getElementById('mWorkNumber')?.value.trim() || '',
@@ -8635,10 +8711,10 @@ function showChangeWorkClassModal(taskId, currentClass) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay modal-sm';
   const wcList = [
-    { value:'cable_install',   label:'광케이블 시설',    icon:'fas fa-ethernet',      color:'blue'   },
-    { value:'cable_splice',    label:'광케이블 접속',    icon:'fas fa-plug',           color:'indigo' },
-    { value:'equipment_other', label:'장비 시설및 기타', icon:'fas fa-tools',          color:'orange' },
-    { value:'conduit',         label:'관로시설',         icon:'fas fa-circle-nodes',   color:'green'  }
+    { value:'cable_install',   label:'외선', icon:'fas fa-ethernet',      color:'blue'   },
+    { value:'cable_splice',    label:'접속', icon:'fas fa-plug',           color:'indigo' },
+    { value:'equipment_other', label:'장비', icon:'fas fa-tools',          color:'orange' },
+    { value:'conduit',         label:'관로', icon:'fas fa-circle-nodes',   color:'green'  }
   ];
   modal.innerHTML = `
   <div class="modal" style="max-width:420px">
@@ -8665,9 +8741,10 @@ function showChangeWorkClassModal(taskId, currentClass) {
 
 async function changeWorkClass(taskId, workClass, modalEl) {
   try {
-    await API.patch(`/tasks/${taskId}/work-class`, { work_class: workClass });
+    const res = await API.patch(`/tasks/${taskId}/work-class`, { work_class: workClass });
+    const newSub = res.data?.work_sub_class || null;
     const badge = document.getElementById(`wc-badge-${taskId}`);
-    if (badge) badge.innerHTML = workClassBadge(workClass);
+    if (badge) badge.innerHTML = workClassBadge(workClass, newSub);
     toast(`작업 분류가 ${workClassName(workClass)}으로 변경되었습니다.`);
     modalEl.remove();
   } catch(e) {
@@ -8863,7 +8940,7 @@ async function showTaskDetail(id, openTbmTab) {
                 </div>
                 ${!isWorker ? `<button onclick="showChangeWorkClassModal(${task.id},'${task.work_class||'cable_install'}')" class="text-xs text-blue-400 hover:text-blue-600"><i class="fas fa-edit"></i></button>` : ''}
               </div>
-              <div id="wc-badge-${task.id}">${workClassBadge(task.work_class)}</div>
+              <div id="wc-badge-${task.id}">${workClassBadge(task.work_class, task.work_sub_class)}</div>
             </div>
           </div>
 
@@ -18097,10 +18174,10 @@ async function _printInspectionReport(insId) {
     var insAddr     = ins.task_confirmed_address || ins.location || '';
     // 작업종류(work_class) 영문키 → 한글 변환 (WORK_CLASS_DEF 기반 + 추가 매핑)
     var WC_MAP = {
-      cable_install:   '광케이블 시설',
-      cable_splice:    '광케이블 접속',
-      equipment_other: '장비 시설및 기타',
-      conduit:         '관로시설',
+      cable_install:   '외선',
+      cable_splice:    '접속',
+      equipment_other: '장비',
+      conduit:         '관로',
       line:            '선로공사',
       inside:          '구내공사',
       other:           '기타'
@@ -20767,7 +20844,7 @@ async function loadMonthlyStats() {
 
     setTimeout(async () => {
       const wcOrder = ['cable_install','cable_splice','equipment_other','conduit'];
-      const wcLabelMap = { cable_install:'광케이블 시설', cable_splice:'광케이블 접속', equipment_other:'장비 시설및 기타', conduit:'관로시설' };
+      const wcLabelMap = { cable_install:'외선', cable_splice:'접속', equipment_other:'장비', conduit:'관로' };
       const wcColorMap = { cable_install:'#D70072', cable_splice:'#FF349E', equipment_other:'#685182', conduit:'#C6C6C6' };
       const wcStats = monthly.workClassStats || [];
       const donutCtx = document.getElementById('workClassDonutChart')?.getContext('2d');
@@ -43895,7 +43972,13 @@ async function copyTask(taskId) {
   var mTitle = document.getElementById('mTitle');
   if (mTitle) { mTitle.value = t.title || ''; mTitle.dataset.autoFilled = '0'; }
   var mWorkClass = document.getElementById('mWorkClass');
-  if (mWorkClass) mWorkClass.value = t.work_class || 'cable_install';
+  if (mWorkClass) {
+    mWorkClass.value = t.work_class || 'cable_install';
+    // 작업종류 변경 → 상세분류 select 재렌더링 후 기존값 복원
+    onMWorkClassChange(mWorkClass.value);
+    var mWorkSubClass = document.getElementById('mWorkSubClass');
+    if (mWorkSubClass && t.work_sub_class) mWorkSubClass.value = t.work_sub_class;
+  }
   var mRiskLevel = document.getElementById('mRiskLevel');
   if (mRiskLevel) {
     mRiskLevel.value = t.risk_level || 'normal';

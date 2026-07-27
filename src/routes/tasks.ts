@@ -58,7 +58,7 @@ app.get('/', async (c) => {
   const limitNum = Math.min(500, Math.max(0, parseInt(limitStr || '0') || 0))
   const pageNum  = Math.max(1, parseInt(pageStr  || '1') || 1)
   const offset   = limitNum > 0 ? (pageNum - 1) * limitNum : 0
-  let query = `SELECT t.*, COALESCE(t.work_class_new, t.work_class, 'cable_install') as work_class, wc.name as category_name, wt.name as work_type_name,
+  let query = `SELECT t.*, COALESCE(t.work_class_new, t.work_class, 'cable_install') as work_class, t.work_sub_class, wc.name as category_name, wt.name as work_type_name,
     u.name as supervisor_name, cb.name as created_by_name,
     t.construction_type, t.request_no, t.contractor_name,
     t.construction_id, t.sub_task_number,
@@ -76,7 +76,7 @@ app.get('/', async (c) => {
   const wheres: string[] = []
 
   if (user.role === 'worker') {
-    query = `SELECT t.*, COALESCE(t.work_class_new, t.work_class, 'cable_install') as work_class, wc.name as category_name, wt.name as work_type_name,
+    query = `SELECT t.*, COALESCE(t.work_class_new, t.work_class, 'cable_install') as work_class, t.work_sub_class, wc.name as category_name, wt.name as work_type_name,
       u.name as supervisor_name, cb.name as created_by_name,
       t.construction_type, t.request_no, t.contractor_name,
       t.construction_id, t.sub_task_number,
@@ -405,7 +405,7 @@ app.get('/:id', async (c) => {
   const id = c.req.param('id')
 
   const task = await c.env.DB.prepare(
-    `SELECT t.*, COALESCE(t.work_class_new, t.work_class, 'cable_install') as work_class, wc.name as category_name, wt.name as work_type_name,
+    `SELECT t.*, COALESCE(t.work_class_new, t.work_class, 'cable_install') as work_class, t.work_sub_class, wc.name as category_name, wt.name as work_type_name,
      u.name as supervisor_name,
      t.construction_type, t.request_no, t.contractor_name,
      t.construction_id, t.sub_task_number,
@@ -455,7 +455,7 @@ app.post('/', async (c) => {
     supervisor_id, priority, notes, worker_ids, work_class,
     work_order_address, gps_lat, gps_lon,
     construction_type, request_no, contractor_name, risk_level, high_subtypes, lgu_supervisor, work_number,
-    construction_id, sub_task_number } = body
+    construction_id, sub_task_number, work_sub_class } = body
 
   if (!title) return c.json({ error: '작업명을 입력하세요.' }, 400)
 
@@ -504,6 +504,21 @@ app.post('/', async (c) => {
   const primaryTypeId = typeIds.length > 0 ? typeIds[0] : null
   const taskNumber = 'TASK-' + Date.now()
   const workClass = work_class || 'cable_install'
+  // 상세분류 기본값: 외선→lay, 접속→core, 장비/관로→null
+  const WORK_SUB_CLASS_DEFAULT: Record<string, string | null> = {
+    cable_install: 'lay', cable_splice: 'core', equipment_other: null, conduit: null
+  }
+  const VALID_WORK_SUB_CLASS: Record<string, string[]> = {
+    cable_install:   ['lay', 'remove', 'cut'],
+    cable_splice:    ['core', 'switch', 'survey'],
+    equipment_other: ['install', 'env'],
+    conduit:         ['main', 'entry'],
+  }
+  const finalWorkSubClass = (() => {
+    const validSubs = VALID_WORK_SUB_CLASS[workClass] || []
+    if (work_sub_class && validSubs.includes(work_sub_class)) return work_sub_class
+    return WORK_SUB_CLASS_DEFAULT[workClass] ?? null
+  })()
 
   // 작업일: 등록 시간 기준으로 자동 설정 (KST = UTC+9)
   const now = new Date()
@@ -534,8 +549,8 @@ app.post('/', async (c) => {
       `INSERT INTO tasks (task_number, title, description, category_id, work_type_id, location,
        planned_date, planned_quantity, quantity_unit, supervisor_id, priority, notes, created_by, status, work_class_new,
        work_date, work_order_address, construction_type, request_no, contractor_name, risk_level, high_subtypes, lgu_supervisor, work_number,
-       construction_id, sub_task_number)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       construction_id, sub_task_number, work_sub_class)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(taskNumber, title, description || '', category_id || null, primaryTypeId,
       location || '', planned_date || null, planned_quantity || 0, quantity_unit || '개',
       supervisor_id || null, priority || 'normal', notes || '', user.id,
@@ -543,7 +558,7 @@ app.post('/', async (c) => {
       workDate, work_order_address || location || '',
       construction_type || '', finalRequestNo, contractor_name || '',
       risk_level || 'normal', high_subtypes || '[]', lgu_supervisor || '', finalWorkNumber,
-      construction_id || null, sub_task_number || ''
+      construction_id || null, sub_task_number || '', finalWorkSubClass
     ).run()
   } catch(insertErr: any) {
     console.error('[tasks/POST] INSERT 실패:', insertErr.message)
@@ -668,11 +683,12 @@ app.put('/:id', async (c) => {
   const { title, description, category_id, work_type_ids, work_type_id,
     location, planned_date, planned_quantity, quantity_unit,
     supervisor_id, status, priority, notes, worker_ids, work_class,
-    construction_type, request_no, contractor_name, risk_level, high_subtypes, lgu_supervisor, work_number } = body
+    construction_type, request_no, contractor_name, risk_level, high_subtypes, lgu_supervisor, work_number,
+    work_sub_class: putWorkSubClass } = body
 
   // 수정 전 기존 공사 ID 저장 (공사 상태 갱신에 사용)
   const prevTask = await c.env.DB.prepare(
-    'SELECT construction_id, COALESCE(work_class_new, work_class, \'cable_install\') as work_class_cur, status FROM tasks WHERE id=?'
+    'SELECT construction_id, COALESCE(work_class_new, work_class, \'cable_install\') as work_class_cur, work_sub_class as prev_work_sub_class, status FROM tasks WHERE id=?'
   ).bind(id).first<any>()
   const oldConId: number | null = prevTask?.construction_id ?? null
 
@@ -687,6 +703,15 @@ app.put('/:id', async (c) => {
   // work_date, work_order_address는 수정 불가 (최초 등록 시 자동 설정)
   const finalWorkClass = work_class || prevTask?.work_class_cur || 'cable_install'
   const finalStatus = status || prevTask?.status || 'unassigned'
+  // 상세분류: body에 명시된 경우 유효성 검증 후 적용, 없으면 기존값 유지
+  const VALID_SUB_PUT: Record<string, string[]> = {
+    cable_install: ['lay','remove','cut'], cable_splice: ['core','switch','survey'],
+    equipment_other: ['install','env'], conduit: ['main','entry'],
+  }
+  const putSubValid = VALID_SUB_PUT[finalWorkClass] || []
+  const finalWorkSubClassPut = (putWorkSubClass !== undefined)
+    ? (putSubValid.includes(putWorkSubClass) ? putWorkSubClass : (prevTask?.prev_work_sub_class ?? null))
+    : (prevTask?.prev_work_sub_class ?? null)
 
   // 수정 후 body에 포함된 새 공사 ID
   const newConId: number | null = (body.construction_id != null) ? Number(body.construction_id) : oldConId
@@ -695,13 +720,13 @@ app.put('/:id', async (c) => {
     await c.env.DB.prepare(
       `UPDATE tasks SET title=?, description=?, category_id=?, work_type_id=?, location=?,
        planned_date=?, planned_quantity=?, quantity_unit=?, supervisor_id=?, status=?,
-       priority=?, notes=?, work_class_new=?,
+       priority=?, notes=?, work_class_new=?, work_sub_class=?,
        construction_type=?, request_no=?, contractor_name=?, risk_level=?, high_subtypes=?, lgu_supervisor=?, work_number=?,
        updated_at=CURRENT_TIMESTAMP WHERE id=?`
       /* work_date, work_order_address 는 의도적으로 제외 → 수정 불가 */
     ).bind(title, description || '', category_id || null, primaryTypeId, location || '',
       planned_date || null, planned_quantity || 0, quantity_unit || '개', supervisor_id || null,
-      finalStatus, priority || 'normal', notes || '', finalWorkClass,
+      finalStatus, priority || 'normal', notes || '', finalWorkClass, finalWorkSubClassPut,
       construction_type || '', request_no || '', contractor_name || '',
       risk_level || 'normal', high_subtypes || '[]', lgu_supervisor || '', work_number || '', id
     ).run()
@@ -1158,7 +1183,8 @@ app.post('/:id/self-assign', async (c) => {
   return c.json({ success: true, assignedCount })
 })
 
-// 작업 분류 변경 (광케이블 시설/광케이블 접속/장비 시설및 기타/관로시설)
+// 작업 분류 변경 (외선/접속/장비/관로)
+// work_class 변경 시 work_sub_class도 해당 분류 기본값으로 자동 초기화
 app.patch('/:id/work-class', async (c) => {
   const user = getUser(c)
   if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
@@ -1168,9 +1194,39 @@ app.patch('/:id/work-class', async (c) => {
   if (!valid.includes(work_class)) {
     return c.json({ error: 'work_class는 cable_install/cable_splice/equipment_other/conduit 중 하나여야 합니다.' }, 400)
   }
+  // work_class 변경 시 상세분류 기본값으로 초기화
+  const subDefault: Record<string, string | null> = {
+    cable_install: 'lay', cable_splice: 'core', equipment_other: null, conduit: null
+  }
+  const newSubClass = subDefault[work_class] ?? null
   await c.env.DB.prepare(
-    'UPDATE tasks SET work_class_new=?, updated_at=CURRENT_TIMESTAMP WHERE id=?'
-  ).bind(work_class, id).run()
+    'UPDATE tasks SET work_class_new=?, work_sub_class=?, updated_at=CURRENT_TIMESTAMP WHERE id=?'
+  ).bind(work_class, newSubClass, id).run()
+  return c.json({ success: true, work_sub_class: newSubClass })
+})
+
+// 작업 상세분류 단독 변경
+app.patch('/:id/work-sub-class', async (c) => {
+  const user = getUser(c)
+  if (!user || user.role === 'worker') return c.json({ error: '권한 없음' }, 403)
+  const id = c.req.param('id')
+  const { work_sub_class } = await c.req.json()
+  // 현재 work_class 조회
+  const task = await c.env.DB.prepare(
+    'SELECT COALESCE(work_class_new, work_class, \'cable_install\') as wc FROM tasks WHERE id=?'
+  ).bind(id).first<any>()
+  if (!task) return c.json({ error: '작업을 찾을 수 없습니다.' }, 404)
+  const VALID_SUB: Record<string, string[]> = {
+    cable_install: ['lay','remove','cut'], cable_splice: ['core','switch','survey'],
+    equipment_other: ['install','env'], conduit: ['main','entry'],
+  }
+  const validSubs = VALID_SUB[task.wc] || []
+  if (!validSubs.includes(work_sub_class)) {
+    return c.json({ error: `work_sub_class가 유효하지 않습니다. 허용값: ${validSubs.join(', ')}` }, 400)
+  }
+  await c.env.DB.prepare(
+    'UPDATE tasks SET work_sub_class=?, updated_at=CURRENT_TIMESTAMP WHERE id=?'
+  ).bind(work_sub_class, id).run()
   return c.json({ success: true })
 })
 

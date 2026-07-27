@@ -524,6 +524,7 @@ console.log('[DB] pragma 최적화 적용 완료 (WAL+NORMAL+32MB캐시+mmap256M
     { column: 'confirmed_address',       def: "TEXT DEFAULT ''" },
     { column: 'confirmed_address_source',def: "TEXT DEFAULT ''" },
     { column: 'confirmed_address_at',    def: 'DATETIME DEFAULT NULL' },
+    { column: 'work_sub_class',          def: 'TEXT DEFAULT NULL' },
   ]
   for (const ep of taskEssentialPatches) {
     if (!taskColsNow.includes(ep.column)) {
@@ -3074,6 +3075,23 @@ function patchSchema() {
   } catch(e: any) {
     if (!e.message?.includes('already exists')) {
       console.warn('[patchSchema v0.172] apk_relay_targets 생성 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.173: tasks.work_sub_class 컬럼 추가 ──────────────────────
+  // 목적: 작업종류(work_class) 하위 상세분류 저장
+  //   외선(cable_install)    : lay(포설) / remove(철거) / cut(단수)   — 기본: lay
+  //   접속(cable_splice)     : core(코어구성) / switch(절체접속) / survey(선번조사) — 기본: core
+  //   장비(equipment_other)  : install(장비시설) / env(환경공사)       — 기본: null
+  //   관로(conduit)          : main(주관로) / entry(인입관로)           — 기본: null
+  try {
+    rawDb.exec(`ALTER TABLE tasks ADD COLUMN work_sub_class TEXT DEFAULT NULL`)
+    console.log('[patchSchema v0.173] ✅ tasks.work_sub_class 컬럼 추가 완료')
+  } catch(e: any) {
+    if (e.message?.includes('duplicate column')) {
+      console.log('[patchSchema v0.173] work_sub_class 컬럼 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.173] work_sub_class 컬럼 추가 실패 (무시):', e.message)
     }
   }
 

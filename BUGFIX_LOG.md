@@ -4820,6 +4820,31 @@ TBM 관련 2곳에서 `capture="environment"` 속성 제거.
 ### 커밋
 - `4029bf4` — feat: [FEAT-171] TBM 사진 등록 갤러리 선택 가능하도록 변경
 
+## FEAT-172: 작업종류 명칭 변경 + 상세분류 추가 (2026-07-27)
+
+**변경 내용**:
+- 작업종류(work_class) 한글 명칭 4종 변경: 광케이블 시설→외선, 광케이블 접속→접속, 장비 시설및 기타→장비, 관로시설→관로
+- 상세분류(work_sub_class) 신규 추가 (DB 컬럼 + API + UI 전체)
+
+**DB 변경**: `tasks.work_sub_class TEXT DEFAULT NULL` 컬럼 추가 (patchSchema v0.173)
+
+**유효값**:
+| work_class | work_sub_class 허용값 | 기본값 |
+|---|---|---|
+| cable_install (외선) | lay / remove / cut | lay (포설) |
+| cable_splice (접속) | core / switch / survey | core (코어구성) |
+| equipment_other (장비) | install / env | null |
+| conduit (관로) | main / entry | null |
+
+**수정 파일**:
+- `node-server.ts`: patchSchema v0.173 추가, taskEssentialPatches에 work_sub_class 항목 추가
+- `src/routes/tasks.ts`: GET(3곳) SELECT에 work_sub_class 추가, POST/PUT 바디 파싱+SQL 반영, PATCH /work-class 상세분류 자동초기화, PATCH /work-sub-class 신규 엔드포인트 추가
+- `public/static/app.js`: WORK_CLASS_DEF 라벨 변경+subClasses 추가, getWorkSubLabel() 헬퍼 추가, onMWorkClassChange() 추가, 하드코딩 라벨 9곳 변경, 등록/수정 폼 상세분류 select UI 추가, 작업상세 배지 표시, 목록(모바일+PC) 상세분류 표시, 엑셀 상세분류 컬럼 추가
+
+**검증**: node --check ✅ / npm run build ✅ (`dist/_worker.js 290.38 kB`)
+
+---
+
 ## BUG-DATE: 현장점검 날짜 필터 미적용 (2026-07-27)
 
 **증상**: 현장점검 화면에서 날짜 범위를 지정해도 ⚠️위험성체크 / 🦺TBM / 🟢진행 / ✅완료 / 전체 탭 모두 날짜 무관하게 전체 작업이 표시됨

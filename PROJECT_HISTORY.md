@@ -10680,6 +10680,62 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 
 ---
 
+## 세션 91 (2026-07-27)
+
+### 작업 — FEAT-172 작업종류 명칭 변경 + 상세분류(work_sub_class) 추가
+
+**배경**: 기존 작업종류 4종의 한글 명칭이 길어 UI 공간 낭비, 상세 분류가 없어 업무 구분 불가.
+
+**변경 명칭**:
+- 광케이블 시설 → **외선** (cable_install)
+- 광케이블 접속 → **접속** (cable_splice)
+- 장비 시설및 기타 → **장비** (equipment_other)
+- 관로시설 → **관로** (conduit)
+
+**신규 상세분류(work_sub_class)**:
+| 작업종류 | 상세항목 | 기본값 |
+|---|---|---|
+| 외선 | 포설(lay) / 철거(remove) / 단수(cut) | lay |
+| 접속 | 코어구성(core) / 절체접속(switch) / 선번조사(survey) | core |
+| 장비 | 장비시설(install) / 환경공사(env) | null |
+| 관로 | 주관로(main) / 인입관로(entry) | null |
+
+**구현 내용**:
+
+1. **node-server.ts**: `patchSchema v0.173` — `tasks.work_sub_class TEXT DEFAULT NULL` 컬럼 추가, `taskEssentialPatches` 안전망 항목 추가
+
+2. **src/routes/tasks.ts**:
+   - GET 3곳 SELECT에 `t.work_sub_class` 추가
+   - POST: 바디에서 `work_sub_class` 파싱, `VALID_WORK_SUB_CLASS` 유효성 검증, 기본값 자동 적용 (외선→lay, 접속→core, 장비/관로→null), INSERT SQL에 반영
+   - PUT: 기존값 유지 or 유효한 신규값 적용, UPDATE SQL에 반영
+   - `PATCH /:id/work-class`: work_class 변경 시 work_sub_class 기본값으로 자동 초기화, 응답에 `work_sub_class` 포함
+   - `PATCH /:id/work-sub-class`: 상세분류 단독 변경 신규 엔드포인트
+
+3. **public/static/app.js**:
+   - `WORK_CLASS_DEF` 4종 라벨 변경 + 각 항목에 `subClasses[]` 배열 추가
+   - `getWorkSubLabel(wc, sub)` 헬퍼 함수 신규 추가
+   - `onMWorkClassChange(wc)` 함수 신규 추가 — mWorkClass select 변경 시 상세분류 select 동적 렌더링
+   - `workClassBadge(wc, sub)` — 상세분류명 배지 함께 표시
+   - 하드코딩 라벨 9곳 변경 (wcShort, wcShortMap2, wcMap, workClassName(), wcList, WC_MAP, wcLabelMap, mWorkClass select 옵션)
+   - 작업등록/수정 폼: mWorkClass 아래 `mWorkSubClassWrap` 컨테이너 + 초기 렌더링, 수정 시 기존값 복원
+   - POST/PUT 바디에 `work_sub_class` 전송 추가
+   - 작업상세 배지: `workClassBadge(task.work_class, task.work_sub_class)` 호출
+   - 작업목록 모바일 카드 + PC 테이블: `· 상세분류명` 병기
+   - 엑셀 다운로드: 헤더/행에 상세분류 컬럼 추가
+   - 빠른 작업분류 변경 모달: API 응답 work_sub_class 반영하여 배지 갱신
+
+**검증**:
+- `node --check public/static/app.js` → ✅ 통과
+- `npm run build` → ✅ `dist/_worker.js 290.38 kB`
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `(pending)` | feat: [FEAT-172] 작업종류 명칭 변경 + 상세분류 추가 |
+
+---
+
 ## 세션 90 (2026-07-26)
 
 ### 작업 — FEAT-171 TBM 사진 등록 갤러리·카메라 선택 가능하도록 변경

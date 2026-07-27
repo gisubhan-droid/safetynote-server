@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS cable_incoming (
   mfg_year    TEXT DEFAULT '',            -- 제작년도
   cable_kind  TEXT DEFAULT '',            -- 케이블종류 (가공/일반/지중/난연)
   cable_type  TEXT DEFAULT '',            -- 케이블타입 (예비 컬럼)
+  asset_type  TEXT DEFAULT '',            -- 자산구분 (N-1/N-2)
   qty_m       REAL DEFAULT 0,             -- 입고량(M)
   remark      TEXT DEFAULT '',            -- 비고
   created_by  TEXT DEFAULT '',            -- 등록자

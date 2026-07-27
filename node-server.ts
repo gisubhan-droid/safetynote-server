@@ -3113,6 +3113,7 @@ function patchSchema() {
         mfg_year    TEXT DEFAULT '',
         cable_kind  TEXT DEFAULT '',
         cable_type  TEXT DEFAULT '',
+        asset_type  TEXT DEFAULT '',
         qty_m       REAL DEFAULT 0,
         remark      TEXT DEFAULT '',
         created_by  TEXT DEFAULT '',
@@ -6279,13 +6280,13 @@ app.route('/api/dist', distRoutes)
   app.post('/api/cable-incoming', async (c) => {
     try {
       const body = await c.req.json() as any
-      const { in_date, lot_no='', spec='', maker='', mfg_year='', cable_kind='', cable_type='', qty_m=0, remark='' } = body
+      const { in_date, lot_no='', spec='', maker='', mfg_year='', cable_kind='', cable_type='', asset_type='', qty_m=0, remark='' } = body
       if (!in_date) return c.json({ error: '입고일은 필수입니다.' }, 400)
       if (!qty_m || Number(qty_m) <= 0) return c.json({ error: '입고량(M)은 0보다 커야 합니다.' }, 400)
       const result = rawDb.prepare(`
-        INSERT INTO cable_incoming (in_date,lot_no,spec,maker,mfg_year,cable_kind,cable_type,qty_m,remark)
-        VALUES (?,?,?,?,?,?,?,?,?)
-      `).run(in_date, lot_no, spec, maker, mfg_year, cable_kind, cable_type, Number(qty_m), remark)
+        INSERT INTO cable_incoming (in_date,lot_no,spec,maker,mfg_year,cable_kind,cable_type,asset_type,qty_m,remark)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+      `).run(in_date, lot_no, spec, maker, mfg_year, cable_kind, cable_type, asset_type, Number(qty_m), remark)
       return c.json({ id: result.lastInsertRowid, success: true })
     } catch(e: any) { return c.json({ error: e.message }, 500) }
   })

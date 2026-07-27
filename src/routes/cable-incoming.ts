@@ -109,16 +109,16 @@ app.post('/', async (c) => {
   const db = getDB(c)
   try {
     const body = await c.req.json() as any
-    const { in_date, lot_no = '', spec = '', maker = '', mfg_year = '', cable_kind = '', cable_type = '', qty_m = 0, remark = '' } = body
+    const { in_date, lot_no = '', spec = '', maker = '', mfg_year = '', cable_kind = '', cable_type = '', asset_type = '', qty_m = 0, remark = '' } = body
 
     if (!in_date) return c.json({ error: '입고일은 필수입니다.' }, 400)
     if (!qty_m || Number(qty_m) <= 0) return c.json({ error: '입고량(M)은 0보다 커야 합니다.' }, 400)
 
     const result = await db.prepare(`
       INSERT INTO cable_incoming
-        (in_date, lot_no, spec, maker, mfg_year, cable_kind, cable_type, qty_m, remark)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(in_date, lot_no, spec, maker, mfg_year, cable_kind, cable_type, Number(qty_m), remark).run()
+        (in_date, lot_no, spec, maker, mfg_year, cable_kind, cable_type, asset_type, qty_m, remark)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(in_date, lot_no, spec, maker, mfg_year, cable_kind, cable_type, asset_type, Number(qty_m), remark).run()
 
     return c.json({ id: result.meta?.last_row_id, success: true })
   } catch (e: any) {

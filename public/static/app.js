@@ -42992,14 +42992,18 @@ function _renderCableIncomingUI(container, items) {
               '<th class="px-3 py-2 text-center text-gray-600 font-semibold">제조사</th>' +
               '<th class="px-3 py-2 text-center text-gray-600 font-semibold">제작년도</th>' +
               '<th class="px-3 py-2 text-center text-gray-600 font-semibold">케이블종류</th>' +
+              '<th class="px-3 py-2 text-center text-gray-600 font-semibold bg-teal-50">자산구분</th>' +
               '<th class="px-3 py-2 text-right text-gray-600 font-semibold">입고량(M)</th>' +
               '<th class="px-3 py-2 text-center text-gray-600 font-semibold">비고</th>' +
               '<th class="px-3 py-2 text-center text-gray-600 font-semibold">삭제</th>' +
             '</tr></thead>' +
             '<tbody>' +
               (listItems.length === 0 ?
-                '<tr><td colspan="9" class="text-center py-8 text-gray-400">입고 내역이 없습니다</td></tr>' :
+                '<tr><td colspan="10" class="text-center py-8 text-gray-400">입고 내역이 없습니다</td></tr>' :
                 listItems.map(function(it){
+                  var assetBadge = it.asset_type
+                    ? '<span class="px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs">' + it.asset_type + '</span>'
+                    : '<span class="text-gray-300 text-xs">-</span>';
                   return '<tr class="border-t border-gray-100 hover:bg-indigo-50">' +
                     '<td class="px-3 py-2 text-center text-xs font-mono">' + (it.in_date||'-') + '</td>' +
                     '<td class="px-3 py-2 text-center text-xs">' + (it.lot_no||'-') + '</td>' +
@@ -43007,6 +43011,7 @@ function _renderCableIncomingUI(container, items) {
                     '<td class="px-3 py-2 text-center">' + (it.maker||'-') + '</td>' +
                     '<td class="px-3 py-2 text-center">' + (it.mfg_year||'-') + '</td>' +
                     '<td class="px-3 py-2 text-center">' + (it.cable_kind||'-') + '</td>' +
+                    '<td class="px-3 py-2 text-center bg-teal-50">' + assetBadge + '</td>' +
                     '<td class="px-3 py-2 text-right font-semibold text-blue-600">' + (it.qty_m||0).toLocaleString() + 'M</td>' +
                     '<td class="px-3 py-2 text-center text-xs text-gray-500">' + (it.remark||'') + '</td>' +
                     '<td class="px-3 py-2 text-center"><button onclick="_deleteCableIncoming(' + it.id + ')" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-trash"></i></button></td>' +
@@ -43115,9 +43120,19 @@ function _openCableIncomingModal(editData) {
             '<select id="ci-modal-kind" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' + KIND_O + '</select>' +
           '</div>' +
         '</div>' +
-        '<div>' +
-          '<label class="block text-xs text-gray-500 mb-1">입고량(M) <span class="text-red-400">*</span></label>' +
-          '<input type="number" id="ci-modal-qty" value="' + (d.qty_m||'') + '" step="1" min="0" placeholder="입고량(M)" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div>' +
+            '<label class="block text-xs text-gray-500 mb-1">자산구분</label>' +
+            '<select id="ci-modal-asset" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' +
+              '<option value="">자산구분</option>' +
+              '<option value="N-1"' + ((d.asset_type||'')==='N-1'?' selected':'') + '>N-1</option>' +
+              '<option value="N-2"' + ((d.asset_type||'')==='N-2'?' selected':'') + '>N-2</option>' +
+            '</select>' +
+          '</div>' +
+          '<div>' +
+            '<label class="block text-xs text-gray-500 mb-1">입고량(M) <span class="text-red-400">*</span></label>' +
+            '<input type="number" id="ci-modal-qty" value="' + (d.qty_m||'') + '" step="1" min="0" placeholder="입고량(M)" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">' +
+          '</div>' +
         '</div>' +
         '<div>' +
           '<label class="block text-xs text-gray-500 mb-1">비고</label>' +
@@ -43144,9 +43159,10 @@ async function _saveCableIncoming() {
     spec:       (document.getElementById('ci-modal-spec')||{}).value || '',
     maker:      (document.getElementById('ci-modal-maker')||{}).value || '',
     mfg_year:   (document.getElementById('ci-modal-year')||{}).value || '',
-    cable_kind: (document.getElementById('ci-modal-kind')||{}).value || '',
-    qty_m:      qty,
-    remark:     (document.getElementById('ci-modal-remark')||{}).value || ''
+    cable_kind:  (document.getElementById('ci-modal-kind')||{}).value  || '',
+    asset_type:  (document.getElementById('ci-modal-asset')||{}).value || '',
+    qty_m:       qty,
+    remark:      (document.getElementById('ci-modal-remark')||{}).value || ''
   };
   try {
     var res = await fetch('/api/cable-incoming', {

@@ -4819,3 +4819,30 @@ TBM 관련 2곳에서 `capture="environment"` 속성 제거.
 
 ### 커밋
 - `4029bf4` — feat: [FEAT-171] TBM 사진 등록 갤러리 선택 가능하도록 변경
+
+## BUG-DATE: 현장점검 날짜 필터 미적용 (2026-07-27)
+
+**증상**: 현장점검 화면에서 날짜 범위를 지정해도 ⚠️위험성체크 / 🦺TBM / 🟢진행 / ✅완료 / 전체 탭 모두 날짜 무관하게 전체 작업이 표시됨
+
+**원인**:
+- `/inspections` API에는 `date_from`/`date_to` 파라미터를 전달하고 있었음
+- `/tasks` API 호출 시 날짜 파라미터를 전달하지 않아 `planned_date` 기준 필터 미적용 → 전체 기간 작업 목록이 반환됨
+- 작업 탭(위험성체크/TBM/진행/완료/전체)은 `/tasks` 결과를 `status`만으로 필터링하므로 날짜 조건 완전 무시
+
+**서버 측 지원 확인**:
+- `src/routes/tasks.ts`: `start_date`/`end_date` 파라미터로 `planned_date BETWEEN ? AND ?` 쿼리 이미 구현됨 → 서버 수정 불필요
+
+**수정**: `public/static/app.js` `renderInspectionsPage()` 내 API 호출부
+```javascript
+// Before
+API.get('/tasks')
+
+// After
+var _taskParams = {};
+if (_df) _taskParams.start_date = _df;
+if (_dt) _taskParams.end_date   = _dt;
+API.get('/tasks', { params: _taskParams })
+```
+
+**검증**: node --check ✅ / npm run build ✅ (`dist/_worker.js 288.74 kB`)
+**커밋**: `4a7bb9d`

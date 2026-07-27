@@ -5,6 +5,121 @@
 
 ---
 
+## [FEAT-178] 작업등록 사진 다운로드 기능 (커밋 `696e959`) — 세션 95 (2026-07-27)
+
+### 기능 요약
+감독자 권한 이상 사용자가 작업등록의 사진/동영상을 PC·모바일·APP 모든 환경에서 다운로드할 수 있도록 버튼 추가.
+
+### 권한 조건
+- **표시**: `role !== 'worker'` (감독자·관리자·시스템관리자 등 모두)
+- **숨김**: `role === 'worker'` (작업자)
+
+### 신규 함수: `downloadPhoto(photoId, fileName)`
+
+| 환경 | 처리 방식 |
+|------|-----------|
+| Android APP (`SafetyNoteApp` 브릿지) | `SafetyNoteApp.openAttachment(url, fileName)` |
+| Android WebView (`Capacitor`) | `window.open(url, '_system')` → DownloadManager |
+| PC / 일반 모바일 브라우저 | `fetch → blob → <a download>` |
+
+- RULE-001 준수: `var` 전용, `const`/`let`/화살표함수 없음
+- `toast()` 피드백: 다운로드 시작 / 완료 / 오류 3종
+
+### 적용 위치 4곳
+
+| 위치 | 표시 형태 | 조건 변수 |
+|------|-----------|-----------|
+| `showTaskDetail` `dtab-photo` `renderThumb` (초기 렌더) | 썸네일 하단 바 파란 아이콘 버튼 | `!isWorker` |
+| `_refreshPhotoTab` `renderThumb` (갱신 렌더) | 동일 | `_canDownload` |
+| `showPhotoData` 모달 헤더 | `다운로드` 텍스트+아이콘 버튼 | `_spCanDL` |
+| `showVideoData` 모달 헤더 | 동일 | `_svCanDL` |
+
+### 검증 결과
+- `node --check public/static/app.js` ✅ 통과
+- `npm run build` ✅ 성공 (295.36 kB)
+- `git push origin main` ✅ `696e959` 업로드 완료
+
+---
+
+## [BUG-177c] 보유현황 사용량 항목 자산구분 `-` 표시 (커밋 `d11f09f`) — 세션 95 (2026-07-27)
+
+### 증상
+광케이블 보유현황 탭에서 사용량만 있고 입고 내역이 없는 자재 행의 자산구분이 항상 `-`로 표시됨.
+
+### 원인
+`useRows` SQL이 `asset_type` 없이 `maker, spec, cable_kind` 3개 키로만 GROUP BY → `work_report_cables.asset_type` 값을 가져오지 못함 → 사용량 전용 항목 push 시 `asset_type: '-'` 고정.
+
+### 수정 내용
+
+| 파일 | 변경 |
+|------|------|
+| `node-server.ts` (NAS) | `useRows` SELECT에 `wrc.asset_type` 추가, GROUP BY에 `wrc.asset_type` 추가 |
+| `src/routes/cable-incoming.ts` (D1) | 동일 |
+| 양쪽 공통 | `useMap` 키 `maker\|spec\|kind` → `maker\|spec\|kind\|asset_type` |
+| 양쪽 공통 | 사용량 전용 항목 push 시 `asset_type: r.asset_type\|\|'-'` 실제값 사용 |
+| 양쪽 공통 | 중복 체크 키도 4개 기준으로 통일 |
+
+### 검증 결과
+- `node --check` ✅ / `npm run build` ✅
+- `git push origin main` ✅ `d11f09f`
+
+---
+
+## [FEAT-177c] 광케이블 입고/보유현황 자산구분 컬럼 추가 (커밋 `ce6c49b`) — 세션 95 (2026-07-27)
+
+### 기능 요약
+입고현황·보유현황 테이블 헤더와 데이터 행에 자산구분(N-1/N-2) 컬럼 추가.
+
+### 변경 내용
+
+#### `public/static/app.js`
+| 위치 | 변경 |
+|------|------|
+| 입고현황 집계 `inMap` | 키 `maker\|spec\|kind` → `maker\|spec\|kind\|asset_type` |
+| 입고현황 테이블 | 헤더 자산구분 추가 (5열), colspan 4→5, 행에 `r.asset_type` 표시 |
+| 보유현황 테이블 HTML | 헤더 자산구분 추가 (7열), colspan 6→7 |
+| `_loadCableHoldingSummary()` | 행에 `r.asset_type` 표시, spinner/빈데이터 colspan 7 |
+
+#### `node-server.ts` (NAS)
+- `inRows` SQL: `asset_type` SELECT + GROUP BY 추가
+- 반환 객체에 `asset_type` 필드 추가
+
+#### `src/routes/cable-incoming.ts` (D1)
+- 동일
+
+### 검증 결과
+- `node --check` ✅ / `npm run build` ✅ (295.21 kB)
+- `git push origin main` ✅ `ce6c49b`
+
+---
+
+## [BUG-177b] 광케이블 입고관리 탭 고정 버그 (커밋 `cb7be88`) — 세션 95 (2026-07-27)
+
+### 증상
+`날짜별 입고내역` 탭에서 수정 저장 또는 삭제 후, 항상 `입고현황` 탭(첫 번째 탭)으로 자동 이동됨.
+
+### 원인
+`_saveCableIncoming()` / `_deleteCableIncoming()` 가 저장/삭제 후 `renderCableIncomingPage(container)` 를 호출하는데, 이 함수가 `_renderCableIncomingUI()` 를 항상 `in-summary` 탭 active 상태로 초기화.
+
+### 수정 내용
+
+| 함수 | 변경 |
+|------|------|
+| `renderCableIncomingPage(container, initialTab)` | `initialTab` 파라미터 추가, 기본값 `'in-summary'` |
+| `_renderCableIncomingUI(container, items, initialTab)` | `_ciInitTab` 변수 선언, 탭 버튼 3개 active/inactive 동적 분기, 패널 3개 hidden 동적 분기 |
+| `_saveCableIncoming()` | 저장 전 `.ci-tab-btn.ci-tab-active`의 `data-tab` 값 캡처 → `renderCableIncomingPage(el, activeTab)` |
+| `_deleteCableIncoming()` | confirm 전에 탭 캡처 (취소해도 안전) → 동일 |
+
+### 재발 방지
+- `renderCableIncomingPage` 호출부에서 `initialTab` 미전달 시 `'in-summary'` 기본값 적용 (하위 호환 유지)
+- `_renderCableIncomingUI` 내 `_ciInitTab` 변수는 탭 버튼 HTML + 패널 hidden 양쪽 모두에 사용 (버튼·패널 불일치 방지)
+
+### 검증 결과
+- `node --check` ✅ / `npm run build` ✅ (295.11 kB)
+- `git push origin main` ✅ `cb7be88`
+
+---
+
 ## [FEAT-177] 광케이블 입고관리 신규 메뉴 + 광케이블 현황 메뉴 구조 변경 (커밋 `b4f25f3`) — 세션 94 (2026-07-27)
 
 ### 기능 요약

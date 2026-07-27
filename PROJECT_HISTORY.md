@@ -1,7 +1,12 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-27 (세션 94 — FEAT-177 광케이블 입고관리 메뉴 신규 + 메뉴 구조 변경)
-> **GitHub 최신 (safetynote-server): `b4f25f3`** — feat: [FEAT-177] 광케이블 입고관리 신규 메뉴 + 광케이블 현황 메뉴 구조 변경
+> 최종 업데이트: 2026-07-27 (세션 95 — 광케이블 입고/보유현황 자산구분 추가 + 탭 고정 버그 수정 + 사진 다운로드)
+> **GitHub 최신 (safetynote-server): `696e959`** — feat: 작업등록 사진 다운로드 버튼 추가 — 감독자 이상, PC/모바일/APP 3환경 대응
+> **이전 커밋 (server): `d11f09f`** — fix: 보유현황 — 사용량 항목의 asset_type 실제값 표시 (useRows SQL에 asset_type GROUP BY 추가)
+> **이전 커밋 (server): `ce6c49b`** — feat: 광케이블 입고/보유현황 테이블에 자산구분 컬럼 추가
+> **이전 커밋 (server): `cb7be88`** — fix: [탭고정] 광케이블 입고관리 — 수정/삭제 후 작업 탭 유지 (initialTab 파라미터 추가)
+> **이전 커밋 (server): `f866280`** — fix: [FEAT-177] patchSchema v0.175 — cable_incoming.asset_type 컬럼 ALTER TABLE 추가
+> **이전 커밋 (server): `b4f25f3`** — feat: [FEAT-177] 광케이블 입고관리 신규 메뉴 + 광케이블 현황 메뉴 구조 변경
 > **이전 커밋 (server): `1325c61`** — docs: [FEAT-176/BUG-176] PROJECT_HISTORY + BUGFIX_LOG 세션 94 기록 추가
 > **이전 커밋 (server): `55b7aff`** — feat+fix: [FEAT-176/BUG-176] 외선작업일보 공정구분 철거 분리 + 광케이블 현황 케이블종류 오류 수정
 > **이전 커밋 (server): `a013fdd`** — feat: [FEAT-175] 공사현황 테이블에 공사번호 컬럼 추가 (공사요청번호 앞 첫 번째 열)
@@ -10693,6 +10698,54 @@ return super.onCreateInputConnection(outAttrs);  ← 정상 WebView IME
 |------|--------|------|
 | safetynote-server | `b1a539b` | feat: [FEAT-170] 서명요청 내용 보기 링크 추가 |
 | safetynote-server | `6e18fd7` | fix: [UI] 시스템 설정 메뉴를 법령안내 관리 아래로 이동 |
+
+---
+
+## 세션 95 (2026-07-27)
+
+### 작업 — 광케이블 입고/보유현황 자산구분 컬럼 추가 + 탭 고정 버그 수정 + 사진 다운로드 기능
+
+#### 1. 탭 고정 버그 수정 (커밋 `cb7be88`)
+- **증상**: 광케이블 입고관리 `날짜별 입고내역` 탭에서 수정/삭제 후 항상 `입고현황` 탭으로 이동
+- **원인**: `_saveCableIncoming()` / `_deleteCableIncoming()` 가 `renderCableIncomingPage()` 호출 시 탭 상태 미보존
+- **수정**:
+  - `renderCableIncomingPage(container, initialTab)` — `initialTab` 파라미터 추가
+  - `_renderCableIncomingUI(container, items, initialTab)` — `_ciInitTab` 변수로 탭 버튼 active 클래스 + 패널 hidden 클래스 동적 초기화
+  - `_saveCableIncoming()` — 저장 전 `.ci-tab-btn.ci-tab-active`의 `data-tab` 캡처 → 재렌더 시 전달
+  - `_deleteCableIncoming()` — confirm 전에 탭 캡처 (취소해도 안전)
+
+#### 2. 입고현황 / 보유현황 테이블에 자산구분 컬럼 추가 (커밋 `ce6c49b`)
+- **입고현황**: 집계 키 `maker|spec|kind` → `maker|spec|kind|asset_type`, 헤더·행에 자산구분 열 추가 (5열, colspan 4→5)
+- **보유현황 HTML**: 헤더에 자산구분 추가 (7열, colspan 6→7)
+- **`_loadCableHoldingSummary()`**: 행에 `r.asset_type` 표시, 로딩/빈데이터 colspan 7로 수정
+- **NAS `node-server.ts`** holding API: `inRows` SQL `GROUP BY` + `asset_type` 컬럼 반환
+- **D1 `src/routes/cable-incoming.ts`** holding API: 동일
+
+#### 3. 보유현황 사용량 항목 자산구분 데이터 없음 수정 (커밋 `d11f09f`)
+- **원인**: `useRows` SQL이 `asset_type` 없이 3개 키로 GROUP BY → 사용량 전용 항목은 항상 `-`
+- **수정**: `useRows` SELECT/GROUP BY에 `wrc.asset_type` 추가, useMap 키도 4개(`maker|spec|kind|asset_type`)로 통일
+- **적용**: NAS `node-server.ts` + D1 `src/routes/cable-incoming.ts` 동일
+
+#### 4. 작업등록 사진 다운로드 버튼 추가 (커밋 `696e959`)
+- **조건**: 감독자 권한 이상(`role !== 'worker'`)만 버튼 표시
+- **신규 함수**: `downloadPhoto(photoId, fileName)` — 환경별 분기
+  - Android APP(`SafetyNoteApp` 브릿지): `openAttachment()` 호출
+  - Android WebView(`Capacitor`): `window.open(url, '_system')` → DownloadManager
+  - PC / 일반 모바일 브라우저: `fetch → blob → <a download>`
+- **적용 위치 4곳**:
+  1. `showTaskDetail` `dtab-photo` `renderThumb` — 썸네일 하단 바 다운로드 아이콘 버튼
+  2. `_refreshPhotoTab` `renderThumb` — 동일
+  3. `showPhotoData` 모달 헤더 — `다운로드` 텍스트+아이콘 버튼 (삭제 버튼 왼쪽)
+  4. `showVideoData` 모달 헤더 — 동일
+
+### 커밋 이력
+
+| 저장소 | 커밋 해시 | 메시지 |
+|--------|-----------|--------|
+| safetynote-server | `cb7be88` | fix: [탭고정] 광케이블 입고관리 — 수정/삭제 후 작업 탭 유지 |
+| safetynote-server | `ce6c49b` | feat: 광케이블 입고/보유현황 테이블에 자산구분 컬럼 추가 |
+| safetynote-server | `d11f09f` | fix: 보유현황 — 사용량 항목의 asset_type 실제값 표시 |
+| safetynote-server | `696e959` | feat: 작업등록 사진 다운로드 버튼 추가 — 감독자 이상, PC/모바일/APP 3환경 대응 |
 
 ---
 

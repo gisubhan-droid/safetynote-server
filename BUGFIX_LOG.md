@@ -2,6 +2,92 @@
 
 ---
 
+## [BUG-189] 위험성평가 감소대책 저장 후 화면 미전환 + 서명화면 잘못된 내용 표시 + 근로자 메뉴 누락 (세션 108)
+
+### 요구사항
+1. **BUG-1**: 감소대책(reduction measures) 작성 저장 후 "최종 위험도 선정" 단계로 화면 상태가 변경되지 않는 문제
+2. **BUG-2**: 서명 요청 화면에서 "연결된 내용 확인" 클릭 시 관련 없는 작업건의 내용이 표시되는 문제
+3. **검증**: 근로자(worker) 권한 사용자를 평가위원으로 등록했을 때 위험성평가 열람 및 서명 가능한지 확인
+
+### 단계 정의 명확화
+| 상태 | 단계명 | 트리거 |
+|------|--------|--------|
+| `draft` | 평가전 위험도 선정 | 저장 후 → 감소대책 의견요청 푸시 알림 |
+| `in_review` | 감소대책 수립 중 | 각 위원 감소대책 작성 |
+| `measures_done` | 최종 위험도 선정 | 평가후 빈도×강도 저장 후 → 서명요청 발송 |
+| `completed` | 평가완료 | 모든 위원 서명 완료 |
+
+### BUG-1 원인 및 해결
+
+#### 원인 1 — 모달 선택자 부정확
+- `document.querySelector('.modal-overlay')` 가 여러 모달 중 첫 번째를 잡아 `riskId`와 무관한 모달 조작
+- `_reload()` 가 다른 모달에 호출되거나 호출 자체가 누락됨
+
+#### 원인 2 — 감소대책 단계에서 불필요한 서명요청 발송
+- `_saveRiskMemberMeasures` 에서 감소대책 저장 후 서명요청을 발송하는 코드 존재
+- 단계 정의상 서명요청은 "최종 위험도 선정(`measures_done`)" 저장 후에만 발송해야 함
+- 감소대책 단계에서는 `finish-measures` API 호출 + `modal._reload()` 만 실행해야 함
+
+#### 원인 3 — `rd-final-s` 강도 입력값 매칭 오류
+- `_saveRiskFinalScores` 에서 배열 인덱스(`sInputs[i]`)로 강도 입력값을 찾던 방식 → DOM 순서에 의존
+- 실제 `detailId`와 매칭되지 않는 값이 저장될 수 있음
+
+#### 원인 4 — 위험도 레벨 계산 공식 불일치
+- 프론트엔드 레벨 계산이 백엔드(`≤4낮음, ≤9보통, ≤16높음, ≥17중대`)와 불일치
+
+#### 해결
+
+| 수정 위치 | 변경 내용 |
+|-----------|----------|
+| `_saveRiskMemberMeasures` | 모달 선택자 → `data-risk-id="riskId"` 기반으로 수정 |
+| `_saveRiskMemberMeasures` | 불필요한 서명요청 발송 코드 제거 → `finish-measures` + `modal._reload()` 만 실행 |
+| `_saveRiskFinalScores` | 모달 선택자 → `data-risk-id="riskId"` 기반으로 수정 |
+| `_saveRiskFinalScores` | `rd-final-s` 매칭 방식 → 배열 인덱스에서 `data-detail-id` 속성 매칭으로 변경 |
+| `_saveRiskFinalScores` | 위험도 레벨 공식 백엔드 일치: `≤4낮음 / ≤9보통 / ≤16높음 / ≥17중대` |
+| `_finalizeRisk` | 모달 선택자 → `data-risk-id="riskId"` 기반으로 수정 |
+
+### BUG-2 원인 및 해결
+
+#### 원인
+- `showRiskDetail(riskId)` 호출 시 새 모달을 `body.appendChild`로 추가만 하고 기존 모달을 닫지 않음
+- 사용자가 "연결된 내용 확인" 클릭 시 이전에 열린 다른 위험성평가 모달이 화면에 남아있어 보이게 됨
+
+#### 해결
+- `_signReqOpenRisk(riskId)` 함수에서 기존에 열린 모든 `.modal-overlay[data-risk-id]` 제거 후 새 모달 열기
+
+```javascript
+function _signReqOpenRisk(riskId) {
+  // [BUG-2 FIX] 이미 열린 위험성평가 모달이 있으면 모두 닫고 새로 열기
+  document.querySelectorAll('.modal-overlay[data-risk-id]').forEach(function(el) { el.remove(); });
+  showRiskDetail(Number(riskId));
+}
+```
+
+### 검증: 근로자 위험성평가 접근
+
+#### 백엔드 API 권한 확인
+| API | 권한 | 비고 |
+|-----|------|------|
+| `GET /risk/:id` | worker ✅ | 상세 조회 허용 |
+| `GET /risk/:id/members` | worker ✅ | 평가위원 목록 허용 |
+| `PATCH /risk/:id/details/:detailId` | worker ✅ | 감소대책 입력 허용 |
+| `POST /risk/:id/signatures` | worker ✅ | 서명 허용 |
+
+#### 프론트엔드 메뉴 추가
+- 기존 `workerGroups` 메뉴에 위험성평가 항목 없음 → 접근 불가
+- `risk-periodic` (정기 위험성평가), `risk-adhoc` (수시 위험성평가) 메뉴 추가
+
+### 수정 파일
+- `public/static/app.js` — 5곳 수정 (모달 선택자 4곳, 서명요청 발송 제거, rd-final-s 매칭, 레벨 공식, 메뉴 추가, signReqOpenRisk)
+- `src/nas-routes/signature-requests.ts` — 관련 수정
+
+### 커밋
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `91c7be2` | fix: BUG-1 감소대책저장 후 상태미전환, BUG-2 서명화면 잘못된내용, 근로자 위험성평가 메뉴추가 |
+
+---
+
 ## [FEAT-188] 정기 위험성평가 개선 — 기본값·평가위원 역할·서명관리 (세션 107)
 
 ### 요구사항

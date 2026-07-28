@@ -404,27 +404,57 @@ app.delete('/meetings/:id', async (c) => {
     return c.json({ error: '권한 없음' }, 403)
 
   const id = Number(c.req.param('id'))
-  // 연관 데이터 cascade 삭제
-  rawDb.prepare(`DELETE FROM safety_committee_votes     WHERE meeting_id = ?`).run(id)
-  rawDb.prepare(`DELETE FROM safety_committee_agendas   WHERE meeting_id = ?`).run(id)
-  rawDb.prepare(`DELETE FROM safety_committee_attendees WHERE meeting_id = ?`).run(id)
+  // [BUG-184b] 연관 데이터 cascade 삭제 — 각 테이블을 개별 try/catch로 보호
+  // votes: meeting_id 컬럼이 없는 구버전 DB에서 500 방지
+  // 방법1: meeting_id 컬럼 직접 삭제 시도
+  // 방법2: 실패 시 agenda_id를 통한 간접 삭제로 폴백
+  try {
+    rawDb.prepare(`DELETE FROM safety_committee_votes WHERE meeting_id = ?`).run(id)
+  } catch(e1: any) {
+    // meeting_id 컬럼 없음 → agenda_id 경유 폴백 삭제
+    console.warn('[SC] DELETE votes by meeting_id 실패, agenda_id 경유 폴백:', e1.message)
+    try {
+      const agendaIds: any[] = rawDb.prepare(`SELECT id FROM safety_committee_agendas WHERE meeting_id = ?`).all(id)
+      for (const ag of agendaIds) {
+        try { rawDb.prepare(`DELETE FROM safety_committee_votes WHERE agenda_id = ?`).run(ag.id) } catch(_) {}
+      }
+    } catch(e2: any) {
+      console.warn('[SC] DELETE votes 폴백도 실패 (무시):', e2.message)
+    }
+  }
+  try {
+    rawDb.prepare(`DELETE FROM safety_committee_agendas WHERE meeting_id = ?`).run(id)
+  } catch(e: any) { console.warn('[SC] DELETE agendas 오류 (무시):', e.message) }
+  try {
+    rawDb.prepare(`DELETE FROM safety_committee_attendees WHERE meeting_id = ?`).run(id)
+  } catch(e: any) { console.warn('[SC] DELETE attendees 오류 (무시):', e.message) }
   // 사진 파일 삭제
-  const photos: any[] = rawDb.prepare(`SELECT file_path FROM safety_committee_photos WHERE meeting_id = ?`).all(id)
-  for (const p of photos) {
-    if (p.file_path && existsSync(p.file_path)) {
-      try { unlinkSync(p.file_path) } catch(_) {}
+  try {
+    const photos: any[] = rawDb.prepare(`SELECT file_path FROM safety_committee_photos WHERE meeting_id = ?`).all(id)
+    for (const p of photos) {
+      if (p.file_path && existsSync(p.file_path)) {
+        try { unlinkSync(p.file_path) } catch(_) {}
+      }
     }
-  }
-  rawDb.prepare(`DELETE FROM safety_committee_photos WHERE meeting_id = ?`).run(id)
+    rawDb.prepare(`DELETE FROM safety_committee_photos WHERE meeting_id = ?`).run(id)
+  } catch(e: any) { console.warn('[SC] DELETE photos 오류 (무시):', e.message) }
   // 회의 자료 파일 삭제
-  const docsRows: any[] = rawDb.prepare(`SELECT file_path FROM safety_committee_docs WHERE meeting_id = ?`).all(id)
-  for (const d of docsRows) {
-    if (d.file_path && existsSync(d.file_path)) {
-      try { unlinkSync(d.file_path) } catch(_) {}
+  try {
+    const docsRows: any[] = rawDb.prepare(`SELECT file_path FROM safety_committee_docs WHERE meeting_id = ?`).all(id)
+    for (const d of docsRows) {
+      if (d.file_path && existsSync(d.file_path)) {
+        try { unlinkSync(d.file_path) } catch(_) {}
+      }
     }
+    rawDb.prepare(`DELETE FROM safety_committee_docs WHERE meeting_id = ?`).run(id)
+  } catch(e: any) { console.warn('[SC] DELETE docs 오류 (무시):', e.message) }
+  // 회의 본체 삭제
+  try {
+    rawDb.prepare(`DELETE FROM safety_committee_meetings WHERE id = ?`).run(id)
+  } catch(e: any) {
+    console.error('[SC] DELETE meetings 오류:', e.message)
+    return c.json({ error: '회의 삭제 실패: ' + e.message }, 500)
   }
-  rawDb.prepare(`DELETE FROM safety_committee_docs WHERE meeting_id = ?`).run(id)
-  rawDb.prepare(`DELETE FROM safety_committee_meetings WHERE id = ?`).run(id)
   return c.json({ success: true })
 })
 

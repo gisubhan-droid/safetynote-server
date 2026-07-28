@@ -3404,6 +3404,34 @@ function patchSchema() {
   }
   console.log('[patchSchema v0.184] ✅ 누락 컬럼 보정 완료')
 
+  // ─── patchSchema v0.185: safety_committee_votes — meeting_id 컬럼 추가 ──────
+  // [BUG-184b] v0.180 생성 시 meeting_id가 없어 DELETE WHERE meeting_id=? 가 500
+  // ADD COLUMN이 성공하면 DELETE 도 정상 동작, 실패(이미 존재)하면 조용히 무시
+  try {
+    rawDb.exec(`ALTER TABLE safety_committee_votes ADD COLUMN meeting_id INTEGER`)
+    // 기존 rows: agenda_id 로 meeting_id 역산 후 채우기
+    try {
+      rawDb.exec(`
+        UPDATE safety_committee_votes
+        SET meeting_id = (
+          SELECT ag.meeting_id FROM safety_committee_agendas ag
+          WHERE ag.id = safety_committee_votes.agenda_id
+        )
+        WHERE meeting_id IS NULL
+      `)
+      console.log('[patchSchema v0.185] ✅ votes.meeting_id 추가 + 기존 데이터 채우기 완료')
+    } catch(e2: any) {
+      console.warn('[patchSchema v0.185] votes.meeting_id 데이터 채우기 실패 (무시):', e2.message)
+    }
+  } catch(e: any) {
+    if (e.message?.includes('duplicate column')) {
+      console.log('[patchSchema v0.185] votes.meeting_id 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.185] votes.meeting_id 추가 실패 (무시):', e.message)
+    }
+  }
+  console.log('[patchSchema v0.185] ✅ safety_committee_votes.meeting_id 보정 완료')
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -6597,11 +6625,31 @@ app.patch('/api/safety-committee/meeting/:id', async (c) => {
   return c.json({ success: true })
 })
 app.delete('/api/safety-committee/meeting/:id', async (c) => {
+  // [BUG-184b] 단수 경로 하위호환 + try/catch (votes.meeting_id 누락 대응)
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   if (user.role !== 'admin' && user.role !== 'supervisor') return c.json({ error: '권한 없음' }, 403)
   const id = Number(c.req.param('id'))
-  rawDb.prepare(`DELETE FROM safety_committee_meetings WHERE id = ?`).run(id)
+  // votes 삭제 — meeting_id 없는 구버전 폴백
+  try {
+    rawDb.prepare(`DELETE FROM safety_committee_votes WHERE meeting_id = ?`).run(id)
+  } catch(e1: any) {
+    try {
+      const agIds: any[] = rawDb.prepare(`SELECT id FROM safety_committee_agendas WHERE meeting_id = ?`).all(id)
+      for (const ag of agIds) {
+        try { rawDb.prepare(`DELETE FROM safety_committee_votes WHERE agenda_id = ?`).run(ag.id) } catch(_) {}
+      }
+    } catch(_) {}
+  }
+  try { rawDb.prepare(`DELETE FROM safety_committee_agendas   WHERE meeting_id = ?`).run(id) } catch(_) {}
+  try { rawDb.prepare(`DELETE FROM safety_committee_attendees WHERE meeting_id = ?`).run(id) } catch(_) {}
+  try { rawDb.prepare(`DELETE FROM safety_committee_photos    WHERE meeting_id = ?`).run(id) } catch(_) {}
+  try { rawDb.prepare(`DELETE FROM safety_committee_docs      WHERE meeting_id = ?`).run(id) } catch(_) {}
+  try {
+    rawDb.prepare(`DELETE FROM safety_committee_meetings WHERE id = ?`).run(id)
+  } catch(e: any) {
+    return c.json({ error: '회의 삭제 실패: ' + e.message }, 500)
+  }
   return c.json({ success: true })
 })
 app.route('/api/safety-committee', safetyCommitteeRoutes)

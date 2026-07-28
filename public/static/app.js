@@ -49152,21 +49152,53 @@ function _scMyVote(agId) {
 }
 
 // ─ 탭3: 참석·서명·투표 ────────────────────────────────────────────────────────
+// [BUG-184a] res 미정의 수정 + [FEAT-184] 위원 자동 추가 + [BUG-184c] RULE-003 수정
 function _scLoadAttendTab(body) {
   Promise.all([
     _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }),
-    _scFetch('/api/users?active=1').then(function(r){ return r.json(); })
+    _scFetch('/api/users?active=1').then(function(r){ return r.json(); }),
+    _scFetch('/api/safety-committee/members').then(function(r){ return r.json(); }).catch(function(){ return []; })
   ]).then(function(results) {
-    var m       = results[0].data || results[0];
-    var allUsers = results[1].data || results[1] || [];
-    var attendees = res.attendees || m.attendees || [];
+    var meetingRes = results[0];
+    var m          = meetingRes.meeting || meetingRes.data || meetingRes;
+    var allUsers   = results[1].data || results[1] || [];
+    // [BUG-184a] results[0].attendees 우선 (res.attendees 참조 오류 수정)
+    var attendees  = meetingRes.attendees || m.attendees || [];
+    var members    = results[2].data || results[2] || [];
+
+    // [FEAT-184] 위원 자동 추가 — 참석자 탭 최초 진입 시 위원 목록 자동 등록
+    // attendees가 0명이고 members가 있으면 → 위원 전체 자동 등록 후 재렌더링
+    if (attendees.length === 0 && members.length > 0) {
+      var addChain = Promise.resolve();
+      for (var mi = 0; mi < members.length; mi++) {
+        (function(mem) {
+          addChain = addChain.then(function() {
+            return _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId + '/attendees', {
+              method: 'POST',
+              body: JSON.stringify({
+                user_id:      mem.user_id,
+                name:         mem.user_name || '',
+                role_type:    mem.role_type  || 'member',
+                custom_title: mem.custom_title || '',
+                side:         mem.side        || 'employer'
+              })
+            }).then(function(r){ return r.json(); }).catch(function(){});
+          });
+        })(members[mi]);
+      }
+      addChain.then(function() {
+        _scLoadAttendTab(body);
+      });
+      return;
+    }
+
     var attendeeIds = {};
     for (var i = 0; i < attendees.length; i++) { attendeeIds[attendees[i].user_id] = true; }
     var available = [];
     for (var j = 0; j < allUsers.length; j++) {
       if (!attendeeIds[allUsers[j].id]) available.push(allUsers[j]);
     }
-    var userOpts = '<option value="">-- 사용자 선택 --</option>';
+    var userOpts = '<option value="">-- 사용자 직접 추가 --</option>';
     for (var n = 0; n < available.length; n++) {
       userOpts += '<option value="' + available[n].id + '">' + available[n].name + '</option>';
     }
@@ -49174,18 +49206,22 @@ function _scLoadAttendTab(body) {
     var rows = '';
     for (var k = 0; k < attendees.length; k++) {
       var att = attendees[k];
+      var attId = att.id;
       var signedBadge = att.signed_at
         ? '<span style="background:#D1FAE5;color:#065F46;padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700"><i class="fas fa-check-circle" style="margin-right:3px"></i>서명완료</span>'
         : '<span style="background:#FEF3C7;color:#92400E;padding:3px 8px;border-radius:10px;font-size:11px">미서명</span>';
-      var sideBadge = att.side === 'employer' ? '<span style="background:#EDE9F8;color:#4E3A63;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">사용자측</span>' : '<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">근로자측</span>';
-      rows += '<tr style="border-bottom:1px solid #F3F4F6">' +
+      var sideBadge = att.side === 'employer'
+        ? '<span style="background:#EDE9F8;color:#4E3A63;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">사용자측</span>'
+        : '<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">근로자측</span>';
+      // [BUG-184c] RULE-003: onclick 내 따옴표 중첩 → data-* 없이 전역 헬퍼 사용
+      rows += '<tr style="border-bottom:1px solid #F3F4F6" data-attid="' + attId + '">' +
         '<td style="padding:10px 12px;font-size:13px;font-weight:600;color:#1E293B">' + (att.name||att.user_name||'') + '</td>' +
         '<td style="padding:10px 12px">' + sideBadge + '</td>' +
         '<td style="padding:10px 12px;font-size:12px;color:#64748B">' + (att.custom_title || att.role_type || '') + '</td>' +
         '<td style="padding:10px 12px">' + signedBadge + '</td>' +
         '<td style="padding:10px 12px;text-align:right">' +
-          (!att.signed_at ? '<button data-attid="' + att.id + '" onclick="_scSignAttendee(this.getAttribute(\'data-attid\'))" style="padding:4px 10px;border:1px solid #A7F3D0;border-radius:6px;font-size:11px;color:#065F46;cursor:pointer;background:#fff">서명</button> ' : '') +
-          '<button data-attid="' + att.id + '" onclick="_scRemoveAttendee(this.getAttribute(\'data-attid\'))" style="padding:4px 10px;border:1px solid #FCA5A5;border-radius:6px;font-size:11px;color:#EF4444;cursor:pointer;background:#fff">삭제</button>' +
+          (!att.signed_at ? '<button onclick="_scSignAttendeeRow(this)" data-attid="' + attId + '" style="padding:4px 10px;border:1px solid #A7F3D0;border-radius:6px;font-size:11px;color:#065F46;cursor:pointer;background:#fff">서명</button> ' : '') +
+          '<button onclick="_scRemoveAttendeeRow(this)" data-attid="' + attId + '" style="padding:4px 10px;border:1px solid #FCA5A5;border-radius:6px;font-size:11px;color:#EF4444;cursor:pointer;background:#fff">삭제</button>' +
         '</td>' +
       '</tr>';
     }
@@ -49210,7 +49246,21 @@ function _scLoadAttendTab(body) {
           '<tbody>' + (rows || '<tr><td colspan="5" style="text-align:center;padding:24px;color:#9CA3AF;font-size:13px">등록된 참석자가 없습니다.</td></tr>') + '</tbody>' +
         '</table>' +
       '</div>';
+  }).catch(function(e) {
+    body.innerHTML = '<p style="color:#EF4444;padding:16px">참석자 로드 실패: ' + e.message + '</p>';
   });
+}
+
+// [BUG-184c] RULE-003 준수 헬퍼 — data-attid를 el.getAttribute으로 안전 취득
+function _scSignAttendeeRow(el) {
+  var attId = el.getAttribute('data-attid');
+  if (!attId) return;
+  _scSignAttendee(attId);
+}
+function _scRemoveAttendeeRow(el) {
+  var attId = el.getAttribute('data-attid');
+  if (!attId) return;
+  _scRemoveAttendee(attId);
 }
 
 function _scAddAttendee() {

@@ -254,6 +254,28 @@ app.patch('/:id/sign', async (c) => {
         INSERT OR REPLACE INTO risk_assessment_signatures (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
         VALUES (?, ?, ?, ?, 'member', CURRENT_TIMESTAMP, ?, ?)
       `).run(req.ref_id, user.id, user.name, user.position || '', signMethod, signData)
+
+      // ── 모든 위원 서명 완료 시 자동 평가완료(completed) 전환 ──────────────
+      try {
+        const raRow: any = rawDb.prepare(`SELECT status FROM risk_assessments WHERE id=?`).get(req.ref_id)
+        if (raRow && raRow.status === 'measures_done') {
+          // 등록된 평가위원 수
+          const memberCount: any = rawDb.prepare(
+            `SELECT COUNT(*) as cnt FROM risk_assessment_members WHERE assessment_id=?`
+          ).get(req.ref_id)
+          // 서명 완료한 위원 수 (pending 서명요청 기준)
+          const signedCount: any = rawDb.prepare(
+            `SELECT COUNT(*) as cnt FROM signature_requests
+             WHERE ref_type='risk_assessment' AND ref_id=? AND status='signed'`
+          ).get(req.ref_id)
+          const totalMembers = memberCount?.cnt || 0
+          // 현재 서명(방금 처리된 건 포함)
+          const totalSigned = (signedCount?.cnt || 0)
+          if (totalMembers > 0 && totalSigned >= totalMembers) {
+            rawDb.prepare(`UPDATE risk_assessments SET status='completed' WHERE id=?`).run(req.ref_id)
+          }
+        }
+      } catch(_autoComplete) { /* 자동완료 실패 시 무시 */ }
     } else if (req.ref_type === 'sc') {
       // 산업안전보건위원회 회의록 — attendee signature_data + signed_at 업데이트
       try { rawDb.exec(`ALTER TABLE safety_committee_attendees ADD COLUMN signature_data TEXT NOT NULL DEFAULT ''`) } catch(_) {}

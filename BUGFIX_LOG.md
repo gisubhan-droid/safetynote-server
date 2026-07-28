@@ -6288,3 +6288,69 @@ API.get('/tasks', { params: _taskParams })
 - `node --check` ✅
 - `npm run build` ✅ (290.40 kB)
 - **커밋**: `e8fb2a8`
+
+---
+
+## [BUG-189] 위험성평가 워크플로 3개 버그 수정 (세션 108)
+
+### 문제
+1. **BUG-189a**: 감소대책 저장 후 다음 단계("최종 위험도 선정")로 전환 안 됨
+2. **BUG-189b**: 서명요청 카드에서 "위험성평가 내용 보기" 클릭 시 관계없는 작업건 표시
+3. **BUG-189c**: 근로자 평가위원 등록 시 위험성평가 열람·서명 가능 여부 확인 요청
+
+### 원인
+
+#### BUG-189a
+- `감소대책 저장` 버튼(`_saveRiskMemberMeasures`) = 텍스트만 임시 저장, 상태 전환 없음
+- `감소대책 수립 완료` 버튼(`_finishRiskMeasures`) = 상태 전환 (`in_review → measures_done`)
+- **두 버튼이 분리**되어 사용자가 "저장"만 누르고 완료 버튼을 못 보는 UX 혼동
+
+#### BUG-189b
+- `_signReqOpenRisk(taskId)` 함수가 내부적으로 `showTaskDetail(taskId)` 호출
+- `risk_assessment` 서명 요청의 `ref_id`는 **위험성평가 ID**인데, `showTaskDetail`은 **작업(task) ID**를 받음
+- 결과: 위험성평가 ID와 같은 번호의 작업건이 열림 → 무관한 작업 표시
+
+#### BUG-189c
+- 백엔드 `GET /risk/:id`, `POST /risk/:id/signatures`: worker 권한 제한 없음 ✅
+- `PATCH /signature-requests/:id/sign`: 본인 요청 처리 허용 ✅
+- **근로자가 평가위원으로 등록되고 서명 요청을 받으면** 서명 가능 (설계 정상)
+
+### 해결
+
+#### BUG-189a — 감소대책 저장 + 상태 전환 통합 (app.js)
+- `_saveRiskMemberMeasures`: 텍스트 저장 + `finish-measures` API 호출(→ `measures_done`) + 서명 요청 자동 발송 통합
+- `_finishRiskMeasures` 버튼 제거, 단일 버튼 "감소대책 저장 → 최종 위험도 선정"으로 변경
+- 미입력 항목 있을 시 확인 대화상자 표시
+
+#### BUG-189b — _signReqOpenRisk 수정 (app.js)
+- `showTaskDetail(taskId)` → `showRiskDetail(riskId)` 직접 호출로 교체
+- 탭 클릭 setTimeout 코드 제거 (불필요)
+
+#### BUG-189c — 근로자 서명 + 자동 평가완료 (app.js + signature-requests.ts)
+- 근로자 접근: BUG-189b 수정으로 서명요청 카드에서 위험성평가 상세 직접 열람 가능
+- `_saveRiskFinalScores`: 최종 위험도 저장 후 서명 요청 자동 발송 추가
+- `signature-requests.ts` risk_assessment 처리: **모든 위원 서명 완료 시 자동 `completed` 전환** 추가
+  - `risk_assessment_members` 등록 위원 수 vs `signature_requests` signed 건수 비교
+  - 모두 서명 → `UPDATE risk_assessments SET status='completed'`
+
+### 변경 내역
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `app.js` | `_saveRiskMemberMeasures`: 저장+완료+서명발송 통합 (RULE-001 준수) |
+| `app.js` | `_finishRiskMeasures` 버튼 제거 → 단일 버튼으로 통합 |
+| `app.js` | `_saveRiskFinalScores`: const/let → var 교체 + 서명 요청 자동 발송 추가 |
+| `app.js` | `_signReqOpenRisk`: showTaskDetail → showRiskDetail 직접 호출 |
+| `signature-requests.ts` | risk_assessment 서명 완료 후 위원 전원 서명 시 자동 completed 전환 |
+
+### 충돌 체크 & 규칙 준수
+
+| 규칙 | 처리 방법 |
+|------|----------|
+| RULE-001 (var 전용) | `_saveRiskMemberMeasures`, `_saveRiskFinalScores` 모두 `var` 사용 |
+| RULE-002 (NAS 라우트 순서) | 변경 없음 |
+| `_finishRiskMeasures` 호환 | 함수 자체는 유지, 버튼만 제거 (혹시 외부 호출 시 동작 유지) |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (296.03 kB)

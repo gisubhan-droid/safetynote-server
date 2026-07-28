@@ -2388,6 +2388,9 @@ function renderApp() {
       items: [
         { id:'hazard-report', icon:'fas fa-exclamation-triangle', label:'위험신고' },
         { id:'sign-requests', icon:'fas fa-pen-fancy',            label:'서명요청' },
+        // [검증-3 FIX] 근로자도 위험성평가 열람 가능 (평가위원 서명 포함)
+        { id:'risk-periodic', icon:'fas fa-calendar-check',       label:'정기 위험성평가' },
+        { id:'risk-adhoc',    icon:'fas fa-bolt',                 label:'수시 위험성평가' },
       ]
     },
     {
@@ -26562,15 +26565,15 @@ function _renderRiskWorkflow(modal, r, allUsers) {
           </div>
         </div>`;
     } else if (r.status === 'in_review') {
-      // 단계2: 감소대책 수립 완료 버튼 → measures_done
+      // 단계2: 감소대책 수립 — 저장하면 동시에 measures_done으로 전환
       actionHtml = `
         <div style="background:#EDE7F6;border:1px solid #C4BAD4;border-radius:10px;padding:12px 14px;margin-bottom:14px">
           <div style="font-size:13px;font-weight:700;color:#4E3A63;margin-bottom:8px"><i class="fas fa-pen" style="margin-right:6px"></i>감소대책 수립 중</div>
           <textarea id="rdReviewNotes" class="form-control" rows="2" style="font-size:12px;margin-bottom:8px" placeholder="대책 회의 내용 메모 (선택)">${r.review_notes||''}</textarea>
           <div style="display:flex;justify-content:flex-end">
-            <button onclick="_finishRiskMeasures(${r.id})"
-              style="padding:7px 18px;background:#685182;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
-              <i class="fas fa-check" style="margin-right:4px"></i>감소대책 수립 완료 → 최종 위험도 선정
+            <button onclick="_saveRiskMemberMeasures(${r.id})"
+              style="padding:7px 18px;background:linear-gradient(135deg,#685182,#8E72A8);color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+              <i class="fas fa-arrow-right" style="margin-right:4px"></i>감소대책 저장 → 최종 위험도 선정
             </button>
           </div>
         </div>`;
@@ -26820,8 +26823,8 @@ function _renderRiskWorkflow(modal, r, allUsers) {
       </button>` : ''}
       ${r.status === 'in_review' && !isWorker ? `
       <button onclick="_saveRiskMemberMeasures(${r.id})"
-        style="padding:7px 16px;background:#685182;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">
-        <i class="fas fa-save" style="margin-right:4px"></i>감소대책 저장
+        style="padding:7px 16px;background:linear-gradient(135deg,#685182,#8E72A8);color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+        <i class="fas fa-arrow-right" style="margin-right:4px"></i>감소대책 저장 → 최종위험도
       </button>` : ''}
       ${r.status === 'measures_done' && !isWorker ? `
       <button onclick="_saveRiskFinalScores(${r.id})"
@@ -27385,22 +27388,28 @@ window._saveRiskDraftInfo = async function(riskId) {
   }
 };
 
-// ── measures_done 단계: 최종 위험도 점수 저장 (확정 전) ──────────────────────
+// ── measures_done 단계: 최종 위험도 점수 저장 + 서명 요청 발송 ──────────────
 window._saveRiskFinalScores = async function(riskId) {
-  const modal = document.querySelector('.modal-overlay');
-  const fInputs = modal?.querySelectorAll('.rd-final-f') || [];
-  const sInputs = modal?.querySelectorAll('.rd-final-s') || [];
-  const finalNotes = modal?.querySelector('#rdFinalNotes')?.value || '';
+  // [BUG-1 FIX] data-risk-id 속성으로 정확한 모달 선택
+  var modal = document.querySelector('.modal-overlay[data-risk-id="' + riskId + '"]') || document.querySelector('.modal-overlay');
+  var fInputs = modal ? modal.querySelectorAll('.rd-final-f') : [];
+  var sInputs = modal ? modal.querySelectorAll('.rd-final-s') : [];
+  var finalNotes = (modal && modal.querySelector('#rdFinalNotes')) ? modal.querySelector('#rdFinalNotes').value : '';
   try {
-    for (let i = 0; i < fInputs.length; i++) {
-      const detailId = fInputs[i].dataset.detailId;
-      const ff = Number(fInputs[i].value) || 1;
-      const fs = Number(sInputs[i]?.value) || 1;
+    for (var i = 0; i < fInputs.length; i++) {
+      var detailId = fInputs[i].dataset.detailId;
+      var ff = Number(fInputs[i].value) || 1;
+      // [BUG-FIX] sInputs[i] 대신 data-detail-id 속성으로 정확히 매칭
+      var siEl = modal.querySelector('.rd-final-s[data-detail-id="' + detailId + '"]');
+      var fs = Number(siEl ? siEl.value : 1) || 1;
+      var score = ff * fs;
+      // [BUG-FIX] 백엔드와 일치하는 위험도 레벨 계산 (낮음≤4, 보통≤9, 높음≤16, 중대≥17)
+      var rl = score <= 4 ? '낮음' : score <= 9 ? '보통' : score <= 16 ? '높음' : '중대';
       if (detailId) {
         await API.patch('/risk/' + riskId + '/details/' + detailId, {
           final_frequency: ff,
           final_severity:  fs,
-          final_risk_level: ff * fs >= 15 ? '긴급' : ff * fs >= 10 ? '높음' : ff * fs >= 5 ? '보통' : '낮음',
+          final_risk_level: rl,
         });
       }
     }
@@ -27408,47 +27417,66 @@ window._saveRiskFinalScores = async function(riskId) {
       await API.patch('/risk/' + riskId + '/save-draft', { notes: finalNotes });
     }
     toast('최종 위험도가 저장되었습니다.');
+    // [단계정의 FIX] 최종 위험도 선정 저장 시 평가위원에게 서명 요청 발송
+    try {
+      var raRes2 = await API.get('/risk/' + riskId);
+      var ra2 = raRes2.data;
+      var mIds = (ra2.members || []).map(function(m) { return m.user_id; }).filter(Boolean);
+      if (mIds.length > 0) {
+        await API.post('/signature-requests/bulk', {
+          ref_type: 'risk_assessment',
+          ref_id: Number(riskId),
+          title: '[서명요청] 위험성평가 — ' + (ra2.title || ('위험성평가 #' + riskId)),
+          description: '최종 위험도 선정 완료. 평가 확인 후 서명해 주세요.',
+          target_user_ids: mIds,
+        });
+        toast('평가위원 ' + mIds.length + '명에게 서명 요청을 보냈습니다.', 'success');
+      }
+    } catch(sigErr2) {
+      toast('서명 요청 자동 발송 실패 (수동으로 보내주세요)', 'warning');
+    }
     await modal._reload();
   } catch(e) {
-    toast(e.response?.data?.error || e.message || '저장 실패', 'error');
+    toast(e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message || '저장 실패', 'error');
   }
 };
 
-// 감소대책 저장 (위원 입력)
+// 감소대책 저장 + 수립 완료 (in_review → measures_done + 서명 요청 발송)
 window._saveRiskMemberMeasures = async function(riskId) {
-  const modal = document.querySelector('.modal-overlay');
-  const inputs = modal?.querySelectorAll('.rd-member-measures') || [];
+  // [BUG-1 FIX] data-risk-id 속성으로 정확한 모달 선택 (여러 모달 열려있을 때 오동작 방지)
+  var modal = document.querySelector('.modal-overlay[data-risk-id="' + riskId + '"]') || document.querySelector('.modal-overlay');
+  var inputs = modal ? modal.querySelectorAll('.rd-member-measures') : [];
+  var notes  = modal && modal.querySelector('#rdReviewNotes') ? modal.querySelector('#rdReviewNotes').value : '';
+  // 감소대책 미입력 항목 경고
+  var emptyCount = 0;
+  for (var i = 0; i < inputs.length; i++) { if (!inputs[i].value.trim()) emptyCount++; }
+  if (emptyCount > 0) {
+    if (!confirm('감소대책이 입력되지 않은 항목이 ' + emptyCount + '개 있습니다.\n그대로 저장하고 최종 위험도 선정 단계로 진행하시겠습니까?')) return;
+  }
   try {
-    for(const inp of inputs) {
-      const detailId = inp.dataset.detailId;
-      const val = inp.value.trim();
+    // 1) 감소대책 텍스트 일괄 저장
+    for (var j = 0; j < inputs.length; j++) {
+      var detailId = inputs[j].dataset.detailId;
+      var val = inputs[j].value.trim();
       if (detailId) {
         await API.patch('/risk/' + riskId + '/details/' + detailId, { member_measures: val });
       }
     }
-    toast('감소대책이 저장되었습니다.');
-    await modal._reload();
-  } catch(e) {
-    toast(e.response?.data?.error || e.message || '저장 실패', 'error');
-  }
-};
-
-// 감소대책 수립 완료 (in_review → measures_done)
-window._finishRiskMeasures = async function(riskId) {
-  const modal = document.querySelector('.modal-overlay');
-  const notes = modal?.querySelector('#rdReviewNotes')?.value;
-  try {
+    // 2) 상태 전이: in_review → measures_done
     await API.patch('/risk/' + riskId + '/finish-measures', { review_notes: notes });
-    toast('감소대책 수립이 완료되었습니다. 최종 위험도를 선정하세요.');
+    toast('감소대책이 저장되었습니다. 최종 위험도 선정 단계로 이동합니다.', 'success');
+    // 3) 단계 정의: 감소대책 저장 단계에서는 상태만 전환 (서명 요청은 최종위험도 저장 시 발송)
+    // [BUG-1 FIX] modal._reload()로 화면 갱신하여 measures_done 단계로 표시
     await modal._reload();
   } catch(e) {
-    toast(e.response?.data?.error || e.message || '처리 실패', 'error');
+    toast(e.response && e.response.data && e.response.data.error ? e.response.data.error : e.message || '저장 실패', 'error');
   }
 };
 
 // 최종 위험도 확정 (measures_done → completed)
 window._finalizeRisk = async function(riskId) {
-  const modal = document.querySelector('.modal-overlay[data-risk-id]');
+  // [BUG-1 FIX] data-risk-id="riskId" 로 정확한 모달 선택
+  const modal = document.querySelector('.modal-overlay[data-risk-id="' + riskId + '"]') || document.querySelector('.modal-overlay[data-risk-id]');
   const finalNotes = modal?.querySelector('#rdFinalNotes')?.value;
 
   // 각 항목별 최종 빈도/강도 수집
@@ -33500,13 +33528,11 @@ async function loadWsSafetyStats(periodType) {
   }
 }
 
-// ======= 서명요청 내용 보기 헬퍼 (위험성평가 탭 직접 열기) =======
-function _signReqOpenRisk(taskId) {
-  showTaskDetail(taskId);
-  setTimeout(function() {
-    var riskBtn = document.querySelector('[onclick*="switchDetailTab"][onclick*="risk"]');
-    if (riskBtn) riskBtn.click();
-  }, 400);
+// ======= 서명요청 내용 보기 헬퍼 (위험성평가 상세 직접 열기) =======
+function _signReqOpenRisk(riskId) {
+  // [BUG-2 FIX] 이미 열린 위험성평가 모달이 있으면 모두 닫고 새로 열기
+  document.querySelectorAll('.modal-overlay[data-risk-id]').forEach(function(el) { el.remove(); });
+  showRiskDetail(Number(riskId));
 }
 
 // ======= 서명 요청 페이지 (모든 역할 공통) =======

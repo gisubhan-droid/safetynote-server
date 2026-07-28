@@ -49558,7 +49558,8 @@ function _scLoadAttendTab(body) {
       var att = attendees[k];
       var attId = att.id;
       var signedBadge = att.signed_at
-        ? '<span style="background:#D1FAE5;color:#065F46;padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700"><i class="fas fa-check-circle" style="margin-right:3px"></i>서명완료</span>'
+        ? '<span style="background:#D1FAE5;color:#065F46;padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700"><i class="fas fa-check-circle" style="margin-right:3px"></i>서명완료</span>' +
+          (att.signature_data ? '<img src="' + att.signature_data + '" style="max-width:60px;max-height:24px;object-fit:contain;vertical-align:middle;margin-left:6px;border:1px solid #D1FAE5;border-radius:4px">' : '')
         : '<span style="background:#FEF3C7;color:#92400E;padding:3px 8px;border-radius:10px;font-size:11px">미서명</span>';
       var sideBadge = att.side === 'employer'
         ? '<span style="background:#EDE9F8;color:#4E3A63;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">사용자측</span>'
@@ -49624,15 +49625,24 @@ function _scAddAttendee() {
 }
 
 function _scSignAttendee(attId) {
-  _scConfirmModal({
-    icon: 'fa-pen-nib',
-    title: '서명 처리',
-    message: '서명 처리하시겠습니까?<br><span style="font-size:12px;color:#9B2335">서명 후에는 취소할 수 없습니다.</span>',
-    confirmLabel: '서명',
-    confirmColor: '#065F46',
-    onConfirm: function() {
-      _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId + '/attendees/' + attId + '/sign', { method: 'PATCH', body: JSON.stringify({}) }).then(function(){ _scLoadAttendTab(document.getElementById('sc-detail-body')); });
-    }
+  // 자필패드 서명 방식 (위험성평가/TBM 동일 방식)
+  showSignaturePad({
+    title: '참석자 서명',
+    subtitle: '서명 후 [서명 완료] 버튼을 눌러주세요',
+    penColor: '#1a1a1a'
+  }).then(function(signData) {
+    if (signData === null) return; // 취소
+    _scFetch(
+      '/api/safety-committee/meetings/' + _scCurrentMeetingId + '/attendees/' + attId + '/sign',
+      { method: 'PATCH', body: JSON.stringify({ sign_data: signData }) }
+    ).then(function(r) {
+      return r.json();
+    }).then(function(res) {
+      if (res && res.error) { alert('서명 실패: ' + res.error); return; }
+      _scLoadAttendTab(document.getElementById('sc-detail-body'));
+    }).catch(function(e) {
+      alert('서명 처리 중 오류가 발생했습니다.');
+    });
   });
 }
 
@@ -49820,9 +49830,11 @@ function _scPrintMeeting(meetingId) {
     var workerRows   = '';
     for (var j = 0; j < attendees.length; j++) {
       var att = attendees[j];
-      var signCell = att.signed_at
-        ? '<td style="width:120px;border-bottom:1px solid #555;text-align:center;font-size:12px;color:#065F46">✔ ' + (att.signed_at||'').substring(0,10) + '</td>'
-        : '<td style="width:120px;border-bottom:1px solid #555;text-align:center"></td>';
+      var signCell = att.signature_data
+        ? '<td style="width:120px;border-bottom:1px solid #555;text-align:center;padding:2px"><img src="' + att.signature_data + '" style="max-width:110px;max-height:38px;object-fit:contain"></td>'
+        : (att.signed_at
+          ? '<td style="width:120px;border-bottom:1px solid #555;text-align:center;font-size:12px;color:#065F46">✔ ' + (att.signed_at||'').substring(0,10) + '</td>'
+          : '<td style="width:120px;border-bottom:1px solid #555;text-align:center"></td>');
       var row = '<tr style="height:44px">' +
         '<td style="text-align:center;font-size:13px;font-weight:600;width:100px">' + (att.name||att.user_name||'') + '</td>' +
         '<td style="text-align:center;font-size:12px;color:#475569;width:120px">' + (att.custom_title||att.role_type||'위원') + '</td>' +

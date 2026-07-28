@@ -254,6 +254,15 @@ app.patch('/:id/sign', async (c) => {
         INSERT OR REPLACE INTO risk_assessment_signatures (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
         VALUES (?, ?, ?, ?, 'member', CURRENT_TIMESTAMP, ?, ?)
       `).run(req.ref_id, user.id, user.name, user.position || '', signMethod, signData)
+    } else if (req.ref_type === 'sc') {
+      // 산업안전보건위원회 회의록 — attendee signature_data + signed_at 업데이트
+      try { rawDb.exec(`ALTER TABLE safety_committee_attendees ADD COLUMN signature_data TEXT NOT NULL DEFAULT ''`) } catch(_) {}
+      try { rawDb.exec(`ALTER TABLE safety_committee_attendees ADD COLUMN signed_at TEXT`) } catch(_) {}
+      rawDb.prepare(`
+        UPDATE safety_committee_attendees
+        SET signature_data = ?, signed_at = datetime('now','localtime')
+        WHERE meeting_id = ? AND user_id = ?
+      `).run(signData || '', Number(req.ref_id), user.id)
     } else if (req.ref_type === 'education') {
       rawDb.prepare(`
         UPDATE safety_education_attendees SET signature_data=? WHERE session_id=? AND user_id=?
@@ -262,7 +271,7 @@ app.patch('/:id/sign', async (c) => {
   } catch(e: any) { console.warn('[signature-request/sign] ref 반영 실패:', e.message) }
 
   broadcastToRoles(['admin','supervisor'], {
-    type: `${req.ref_type === 'tbm' ? 'tbm' : req.ref_type === 'risk_assessment' ? 'risk' : 'edu'}_sign`,
+    type: `${req.ref_type === 'tbm' ? 'tbm' : req.ref_type === 'risk_assessment' ? 'risk' : req.ref_type === 'sc' ? 'sc' : 'edu'}_sign`,
     signer: user.name, title: req.title,
     message: `[서명완료] ${user.name}님이 "${req.title}"에 서명했습니다`,
     ts: Date.now()

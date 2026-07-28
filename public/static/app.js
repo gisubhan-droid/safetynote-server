@@ -49317,18 +49317,23 @@ function _scLoadAgendasTab(body) {
       var ag = agendas[i];
       var voteHtml = '';
       if (ag.vote_enabled) {
-        var votes = ag.votes || [];
-        var yes = 0, no = 0, abs = 0;
-        for (var vi = 0; vi < votes.length; vi++) {
-          if (votes[vi].vote === 'yes') yes++;
-          else if (votes[vi].vote === 'no') no++;
-          else abs++;
+        // 서버: vote_agree/vote_disagree/vote_abstain 집계값 or votes 배열
+        var agreeCount = ag.vote_agree != null ? Number(ag.vote_agree) : 0;
+        var disagreeCount = ag.vote_disagree != null ? Number(ag.vote_disagree) : 0;
+        var abstainCount = ag.vote_abstain != null ? Number(ag.vote_abstain) : 0;
+        if (ag.votes && ag.votes.length) {
+          agreeCount = 0; disagreeCount = 0; abstainCount = 0;
+          for (var vi = 0; vi < ag.votes.length; vi++) {
+            if (ag.votes[vi].vote === 'agree') agreeCount++;
+            else if (ag.votes[vi].vote === 'disagree') disagreeCount++;
+            else abstainCount++;
+          }
         }
         voteHtml = '<div style="display:flex;gap:6px;margin-top:6px;align-items:center">' +
           '<span style="font-size:11px;font-weight:700;color:#374151">투표:</span>' +
-          '<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:10px;font-size:11px">✔ 찬성 ' + yes + '</span>' +
-          '<span style="background:#FEE2E2;color:#991B1B;padding:2px 8px;border-radius:10px;font-size:11px">✘ 반대 ' + no + '</span>' +
-          '<span style="background:#F3F4F6;color:#6B7280;padding:2px 8px;border-radius:10px;font-size:11px">— 기권 ' + abs + '</span>' +
+          '<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:10px;font-size:11px">✔ 찬성 ' + agreeCount + '</span>' +
+          '<span style="background:#FEE2E2;color:#991B1B;padding:2px 8px;border-radius:10px;font-size:11px">✘ 반대 ' + disagreeCount + '</span>' +
+          '<span style="background:#F3F4F6;color:#6B7280;padding:2px 8px;border-radius:10px;font-size:11px">— 기권 ' + abstainCount + '</span>' +
           (ag.vote_closed ? '<span style="background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">마감</span>' : '') +
         '</div>';
       }
@@ -49491,14 +49496,45 @@ function _scDeleteAgenda(agId) {
   });
 }
 
+// 투표 대상 안건 ID 임시 저장 (RULE-003: onclick 따옴표 중첩 회피)
+var _scVoteAgendaId = null;
+
 function _scMyVote(agId) {
-  var vote = prompt('투표 입력 (yes=찬성 / no=반대 / abstain=기권):', 'yes');
-  if (!vote) return;
-  if (vote !== 'yes' && vote !== 'no' && vote !== 'abstain') { alert('yes / no / abstain 중 하나를 입력하세요.'); return; }
-  _scFetch('/api/safety-committee/agendas/' + agId + '/vote', { method: 'POST', body: JSON.stringify({ vote: vote }) }).then(function(r){ return r.json(); }).then(function(res) {
-    if (res.error) { alert('투표 실패: ' + res.error); return; }
+  _scVoteAgendaId = agId;
+  var ov = document.getElementById('sc-vote-overlay');
+  if (ov) ov.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'sc-vote-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:16px;padding:24px;width:100%;max-width:320px;text-align:center">' +
+      '<div style="width:48px;height:48px;background:#EDE9F8;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px">' +
+        '<i class="fas fa-vote-yea" style="font-size:20px;color:#7C3AED"></i>' +
+      '</div>' +
+      '<h3 style="font-size:15px;font-weight:700;color:#1E293B;margin:0 0 6px">안건 투표</h3>' +
+      '<p style="font-size:12px;color:#64748B;margin:0 0 18px">찬성 / 반대 / 기권 중 선택하세요</p>' +
+      '<div style="display:flex;flex-direction:column;gap:8px">' +
+        '<button onclick="_scSubmitVote(\'agree\')" style="padding:11px;background:#065F46;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer"><i class="fas fa-check" style="margin-right:7px"></i>찬성</button>' +
+        '<button onclick="_scSubmitVote(\'disagree\')" style="padding:11px;background:#991B1B;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer"><i class="fas fa-times" style="margin-right:7px"></i>반대</button>' +
+        '<button onclick="_scSubmitVote(\'abstain\')" style="padding:11px;background:#4B5563;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer"><i class="fas fa-minus" style="margin-right:7px"></i>기권</button>' +
+      '</div>' +
+      '<button onclick="document.getElementById(\'sc-vote-overlay\').remove()" style="margin-top:10px;padding:8px 20px;background:#fff;color:#64748B;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;cursor:pointer">취소</button>' +
+    '</div>';
+  document.body.appendChild(overlay);
+}
+
+function _scSubmitVote(vote) {
+  var agId = _scVoteAgendaId;
+  var ov = document.getElementById('sc-vote-overlay');
+  if (ov) ov.remove();
+  if (!agId) return;
+  _scFetch('/api/safety-committee/agendas/' + agId + '/vote', {
+    method: 'POST',
+    body: JSON.stringify({ vote: vote })
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    if (res && res.error) { alert('투표 실패: ' + res.error); return; }
     _scLoadAgendasTab(document.getElementById('sc-detail-body'));
-  });
+  }).catch(function() { alert('투표 처리 중 오류가 발생했습니다.'); });
 }
 
 // ─ 탭3: 참석·서명·투표 ────────────────────────────────────────────────────────
@@ -49581,6 +49617,7 @@ function _scLoadAttendTab(body) {
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
         '<h3 style="font-size:14px;font-weight:700;color:#1E293B;margin:0">참석자 목록 (' + attendees.length + '명)</h3>' +
         '<div style="display:flex;gap:8px;align-items:center">' +
+          '<button onclick="_scSendSignRequests()" style="padding:7px 12px;background:linear-gradient(135deg,#685182,#D70072);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer"><i class="fas fa-paper-plane" style="margin-right:5px"></i>서명 요청</button>' +
           '<select id="sc-att-user" style="padding:7px 10px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:12px">' + userOpts + '</select>' +
           '<button onclick="_scAddAttendee()" style="padding:7px 14px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">추가</button>' +
         '</div>' +
@@ -49607,6 +49644,130 @@ function _scSignAttendeeRow(el) {
   var attId = el.getAttribute('data-attid');
   if (!attId) return;
   _scSignAttendee(attId);
+}
+
+// SC 서명 요청 보내기 (TBM 방식 — signature-requests/bulk, ref_type:'sc')
+function _scSendSignRequests() {
+  var meetingId = _scCurrentMeetingId;
+  Promise.all([
+    _scFetch('/api/safety-committee/meetings/' + meetingId).then(function(r){ return r.json(); }),
+    _scFetch('/api/users?active=1').then(function(r){ return r.json(); }).catch(function(){ return []; }),
+    _scFetch('/api/signature-requests?status=pending').then(function(r){ return r.json(); }).catch(function(){ return []; })
+  ]).then(function(results) {
+    var meetingRes = results[0];
+    var m = meetingRes.meeting || meetingRes.data || meetingRes;
+    var attendees = meetingRes.attendees || m.attendees || [];
+    var allUsersRaw = results[1];
+    var allUsers = Array.isArray(allUsersRaw) ? allUsersRaw : (allUsersRaw.data || []);
+    allUsers = allUsers.filter(function(u){ return u.is_active && !u.is_pending; });
+    var existingReqs = Array.isArray(results[2]) ? results[2] : (results[2].data || []);
+
+    // 이미 서명완료된 attendee user_id 목록
+    var signedUserIds = {};
+    for (var i = 0; i < attendees.length; i++) {
+      if (attendees[i].signed_at && attendees[i].user_id) {
+        signedUserIds[attendees[i].user_id] = true;
+      }
+    }
+    // 이미 pending 서명 요청 발송된 user_id 목록
+    var pendingUserIds = {};
+    for (var j = 0; j < existingReqs.length; j++) {
+      var req = existingReqs[j];
+      if (req.ref_type === 'sc' && Number(req.ref_id) === Number(meetingId)) {
+        pendingUserIds[req.target_user_id] = true;
+      }
+    }
+    // 참석자 user_id 목록
+    var attendeeUserIds = {};
+    for (var k = 0; k < attendees.length; k++) {
+      if (attendees[k].user_id) attendeeUserIds[attendees[k].user_id] = true;
+    }
+
+    var meetingTitle = m.title || ('회의 #' + meetingId);
+    var heldDate = (m.held_date || '').slice(0, 10);
+
+    var userListHtml = '';
+    for (var n = 0; n < allUsers.length; n++) {
+      var u = allUsers[n];
+      var isSigned = !!signedUserIds[u.id];
+      var isPending = !!pendingUserIds[u.id];
+      var isAttendee = !!attendeeUserIds[u.id];
+      var isChecked = isAttendee && !isSigned;
+      var isDisabled = isSigned;
+      var badge = '';
+      if (isSigned) badge = '<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:#D1FAE5;color:#065F46;font-weight:700">서명완료</span>';
+      else if (isPending) badge = '<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:#FEF3C7;color:#92400E;font-weight:700">요청중</span>';
+      else if (isAttendee) badge = '<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:#EDE9FE;color:#5B21B6;font-weight:700">참석자</span>';
+      userListHtml +=
+        '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:' + (isDisabled ? 'default' : 'pointer') + ';' +
+          'background:' + (isSigned ? '#F0FDF4' : isAttendee ? '#F5F3FF' : '#FAFAFA') + ';' +
+          'border:1px solid ' + (isSigned ? '#BBF7D0' : isAttendee ? '#DDD6FE' : '#E5E7EB') + ';margin-bottom:5px;opacity:' + (isDisabled ? '0.7' : '1') + '">' +
+          '<input type="checkbox" value="' + u.id + '" ' + (isChecked ? 'checked' : '') + ' ' + (isDisabled ? 'disabled' : '') + ' style="width:15px;height:15px;accent-color:#685182">' +
+          '<span style="font-size:13px;font-weight:600;flex:1">' + (u.name||'') + '</span>' +
+          '<span style="font-size:11px;color:#9CA3AF">' + (u.position||u.role||'') + '</span>' +
+          badge +
+        '</label>';
+    }
+
+    var bm = document.createElement('div');
+    bm.id = 'sc-sign-req-modal';
+    bm.className = 'modal-overlay';
+    bm.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9900;display:flex;align-items:center;justify-content:center;padding:16px';
+    bm.innerHTML =
+      '<div style="background:#fff;border-radius:16px;width:100%;max-width:440px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">' +
+        '<div style="background:linear-gradient(135deg,#685182,#D70072);padding:18px 20px;display:flex;align-items:flex-start;justify-content:space-between">' +
+          '<div>' +
+            '<div style="display:flex;align-items:center;gap:8px;color:#fff;font-size:15px;font-weight:700"><i class="fas fa-paper-plane"></i>서명 요청 보내기</div>' +
+            '<div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:3px">' + meetingTitle + (heldDate ? ' · ' + heldDate : '') + '</div>' +
+          '</div>' +
+          '<button onclick="document.getElementById(\'sc-sign-req-modal\').remove()" style="background:none;border:none;color:#fff;font-size:20px;cursor:pointer;line-height:1">×</button>' +
+        '</div>' +
+        '<div style="padding:16px;overflow-y:auto;flex:1">' +
+          '<div style="display:flex;gap:6px;margin-bottom:8px">' +
+            '<button onclick="this.closest(\'.modal-overlay\').querySelectorAll(\'input[type=checkbox]:not(:disabled)\').forEach(function(cb){cb.checked=true})" style="font-size:11px;padding:3px 10px;border:1px solid #685182;color:#685182;background:#fff;border-radius:6px;cursor:pointer">전체선택</button>' +
+            '<button onclick="this.closest(\'.modal-overlay\').querySelectorAll(\'input[type=checkbox]:not(:disabled)\').forEach(function(cb){cb.checked=false})" style="font-size:11px;padding:3px 10px;border:1px solid #9CA3AF;color:#6B7280;background:#fff;border-radius:6px;cursor:pointer">전체해제</button>' +
+          '</div>' +
+          '<div style="max-height:280px;overflow-y:auto">' +
+            (userListHtml || '<div style="color:#9CA3AF;font-size:13px;text-align:center;padding:16px">활성 사용자가 없습니다</div>') +
+          '</div>' +
+        '</div>' +
+        '<div style="padding:12px 16px;border-top:1px solid #F3F4F6;display:flex;gap:8px;justify-content:flex-end">' +
+          '<button onclick="document.getElementById(\'sc-sign-req-modal\').remove()" style="padding:9px 18px;background:#fff;color:#64748B;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;cursor:pointer">취소</button>' +
+          '<button id="sc-do-sign-req" style="padding:9px 18px;background:linear-gradient(135deg,#685182,#D70072);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer"><i class="fas fa-paper-plane" style="margin-right:6px"></i>서명 요청 보내기</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(bm);
+
+    document.getElementById('sc-do-sign-req').onclick = function() {
+      var checked = [];
+      var cbs = bm.querySelectorAll('input[type=checkbox]:checked:not(:disabled)');
+      for (var ci = 0; ci < cbs.length; ci++) { checked.push(Number(cbs[ci].value)); }
+      if (checked.length === 0) { alert('대상자를 선택해주세요.'); return; }
+      var btn = document.getElementById('sc-do-sign-req');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>전송 중...';
+      _scFetch('/api/signature-requests/bulk', {
+        method: 'POST',
+        body: JSON.stringify({
+          ref_type: 'sc',
+          ref_id: Number(meetingId),
+          title: '[서명요청] ' + meetingTitle,
+          description: '산업안전보건위원회 회의록 서명을 요청합니다.' + (heldDate ? ' (' + heldDate + ')' : ''),
+          target_user_ids: checked
+        })
+      }).then(function(r){ return r.json(); }).then(function(res) {
+        bm.remove();
+        var cnt = (res && res.created) ? res.created : checked.length;
+        alert(cnt + '명에게 서명 요청을 보냈습니다.');
+      }).catch(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-paper-plane" style="margin-right:6px"></i>서명 요청 보내기';
+        alert('서명 요청 전송 실패');
+      });
+    };
+  }).catch(function(e) {
+    alert('서명 요청 로드 실패: ' + e.message);
+  });
 }
 function _scRemoveAttendeeRow(el) {
   var attId = el.getAttribute('data-attid');

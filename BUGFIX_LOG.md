@@ -95,6 +95,50 @@ FK = ON 복원
 |------|--------|------|
 | safetynote-server | (세션 104) | fix: [BUG-185b-v2] patchSchema v0.188 FK제거 + POST /risk signatures 핸들러 전면 재작성 |
 | safetynote-server | (세션 105) | fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거 |
+| safetynote-server | (세션 105-2) | fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정 |
+| safetynote-server | (세션 106) | fix: [SC-투표/서명요청] 투표 400 에러 수정 + SC 서명요청 푸시(TBM 방식) + ref_type=sc 처리 |
+
+---
+
+## [BUG-186] SC 투표 400 에러 + 서명 요청 미구현 (세션 106)
+
+### 문제
+1. **BUG-186a**: 투표 버튼 클릭 시 400 에러 — 클라이언트가 `yes/no` 전송, 서버는 `agree/disagree/abstain` 기대
+2. **BUG-186b**: `_scMyVote()` 가 `prompt()` 사용 → 모바일 불가 + UX 열악
+3. **BUG-186c**: SC 참석자에게 서명 요청 푸시 미구현
+4. **BUG-186d**: `signature-requests.ts` PATCH `/:id/sign`에서 `ref_type='sc'` 처리 누락
+
+### 원인
+- 클라이언트 `_scSubmitVote()` 에서 `vote: 'yes'/'no'` 전송 (구버전 코드)
+- 서버 `/agendas/:id/vote` 핸들러는 `agree/disagree/abstain` 3가지만 수용
+- `signature-requests/bulk` 호출 함수 자체가 없었음
+- `signature-requests.ts` PATCH sign 핸들러에 `ref_type='sc'` 분기 없음 → 서명완료 후 DB 반영 안 됨
+
+### 해결
+
+#### BUG-186a/b — 투표 버튼 팝업 + agree/disagree/abstain 전송 (app.js)
+- `_scMyVote()`: `prompt()` 제거 → 찬성/반대/기권 버튼 팝업 UI (모달)
+- `_scSubmitVote(vote)`: vote = `'agree'|'disagree'|'abstain'` → 서버로 POST
+- 투표 집계 표시: `votes[].vote==='yes'` → `ag.vote_agree/disagree/abstain` 숫자 컬럼 기준
+
+#### BUG-186c — SC 서명 요청 푸시 (app.js, TBM 패턴)
+- `_scLoadAttendTab()` 헤더에 **서명 요청** 버튼 추가
+- `_scSendSignRequests()` 신규 구현: `signature-requests/bulk` (`ref_type:'sc'`) 사용
+- 서명 완료자 자동 비활성화 (중복 요청 방지)
+
+#### BUG-186d — ref_type='sc' 처리 (signature-requests.ts line 257)
+```typescript
+} else if (req.ref_type === 'sc') {
+  // ADD COLUMN 방어 처리 (signature_data, signed_at)
+  rawDb.prepare(`UPDATE safety_committee_attendees SET signature_data=?, signed_at=datetime('now','localtime') WHERE meeting_id=? AND user_id=?`)
+    .run(signData || '', Number(req.ref_id), user.id)
+}
+```
+- broadcastToRoles type 분기에 `'sc'` 케이스 추가
+
+### 수정 파일
+- `public/static/app.js` — _scMyVote 버튼팝업, _scSubmitVote 신규, _scSendSignRequests 신규, 투표집계 수정, 서명뱃지 이미지, 프린트 서명이미지
+- `src/nas-routes/signature-requests.ts` — PATCH /:id/sign에 ref_type='sc' 블록 + broadcast 분기 추가
 
 ---
 

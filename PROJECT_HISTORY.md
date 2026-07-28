@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 105-2 — [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정)
-> **GitHub 최신 (safetynote-server): `2c12724`** — fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정
+> 최종 업데이트: 2026-07-28 (세션 106 — [SC-투표/서명요청] 투표 400 에러 수정 + 서명 요청 푸시 + ref_type=sc 처리)
+> **GitHub 최신 (safetynote-server): `(세션 106)`** — fix: [SC-투표/서명요청] 투표 400 에러 수정 + SC 서명요청 푸시(TBM 방식) + ref_type=sc 처리
+> **이전 커밋 (safetynote-server): `aa792f8`** — docs: [세션 105-2] PROJECT_HISTORY 커밋 해시 2c12724 반영
+> **이전 커밋 (safetynote-server): `2c12724`** — fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정
 > **이전 커밋 (safetynote-server): `c76ea33`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
 > **이전 커밋 (safetynote-server): `40978c9`** — fix: [BUG-182b-v2] /meeting 단수 경로 호환을 node-server.ts 레벨로 이동
 > **이전 커밋 (safetynote-server): `586022c`** — fix: [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 호환 라우트 추가
@@ -6229,6 +6231,58 @@ After: seq (||agenda_no), title, content, assignee_id, assignee_name, result (||
 - [x] safety-committee.ts PATCH /meetings/:id: 안건 INSERT 필드명 수정
 - [x] node --check ✅ / npm run build ✅
 - [x] git commit & push (`2c12724`)
+
+---
+
+## 세션 106 — 2026-07-28
+
+### [SC-투표/서명요청] 투표 400 에러 수정 + SC 서명요청 푸시(TBM 방식) + ref_type=sc 처리
+
+**배경**: 세션 105에서 SC 자필패드 서명 구현 후, 투표 클릭 시 400 에러 발생 및 서명 요청 푸시 기능 구현 요청
+
+#### BUG-186a/b — 투표 400 에러 + prompt() 제거
+
+**문제**:
+- 클라이언트 `_scSubmitVote()` 에서 `vote: 'yes'/'no'` 전송
+- 서버 `/agendas/:id/vote` 핸들러는 `agree/disagree/abstain` 3가지만 수용 → 400
+- `_scMyVote()` 가 `prompt()` 사용 → 모바일 불가 + UX 열악
+
+**수정** (`app.js`):
+- `_scMyVote()`: `prompt()` 제거 → 찬성/반대/기권 버튼 모달 팝업 UI
+- `_scSubmitVote(vote)`: `vote = 'agree' | 'disagree' | 'abstain'` 전송
+- 투표 집계 표시: `votes[].vote==='yes'` → `ag.vote_agree/disagree/abstain` 숫자 컬럼
+
+#### BUG-186c — SC 서명 요청 푸시 (TBM 패턴)
+
+**수정** (`app.js`):
+- `_scLoadAttendTab()` 헤더에 **서명 요청** 버튼 추가
+- `_scSendSignRequests()` 신규: `signature-requests/bulk` (`ref_type:'sc'`) 호출
+- 서명 완료자 자동 비활성화
+
+#### BUG-186d — ref_type='sc' 처리 누락
+
+**문제**: `signature-requests.ts` PATCH `/:id/sign`에서 `ref_type='sc'` 분기 없음
+→ 서명 완료 후 `safety_committee_attendees` DB 미반영
+
+**수정** (`src/nas-routes/signature-requests.ts` line 257):
+```typescript
+} else if (req.ref_type === 'sc') {
+  // ADD COLUMN 방어 + signature_data + signed_at 업데이트
+  rawDb.prepare(`UPDATE safety_committee_attendees SET signature_data=?, signed_at=datetime('now','localtime') WHERE meeting_id=? AND user_id=?`)
+    .run(signData || '', Number(req.ref_id), user.id)
+}
+```
+- broadcastToRoles type 분기에 `'sc'` 케이스 추가
+
+### 완료 항목
+- [x] `_scMyVote()` 버튼 팝업으로 교체, `_scSubmitVote()` agree/disagree/abstain 전송
+- [x] 투표 집계 표시 vote_agree/disagree/abstain 기준 수정
+- [x] `_scSendSignRequests()` 신규 구현 (TBM 패턴)
+- [x] `signature-requests.ts` ref_type='sc' 처리 블록 추가
+- [x] node --check ✅ / npm run build ✅ (`296.03 kB`)
+- [x] BUGFIX_LOG.md 업데이트 (BUG-186 항목 추가)
+- [x] PROJECT_HISTORY.md 업데이트 (세션 106 항목)
+- [x] git commit & push
 
 ---
 

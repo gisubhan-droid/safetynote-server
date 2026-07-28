@@ -48716,12 +48716,23 @@ function _scRenderMeetingCardsOnly(container, meetings) {
   container.innerHTML = html;
 }
 
+// SC 상세 화면 컨테이너 반환 헬퍼 — sc-tab-content 우선, 없으면 page-content
+function _scGetDetailContainer() {
+  return document.getElementById('sc-tab-content') ||
+         document.getElementById('page-content') ||
+         document.getElementById('main-content');
+}
+
 function _scOpenMeeting(el) {
-  var mid = el.getAttribute('data-mid');
+  // 자식 요소 클릭 시 closest 로 data-mid 보유 요소 탐색
+  var target = el.hasAttribute ? (el.hasAttribute('data-mid') ? el : el.closest('[data-mid]')) : el;
+  if (!target) return;
+  var mid = target.getAttribute('data-mid');
+  if (!mid) return;
   _scCurrentMeetingId = parseInt(mid);
   _scMeetingDetailTab = 'basic';
-  var main = document.getElementById('main-content');
-  if (main) renderSCMeetingDetail(main, _scCurrentMeetingId);
+  var container = _scGetDetailContainer();
+  if (container) renderSCMeetingDetail(container, _scCurrentMeetingId);
 }
 
 function _scCreateMeeting() {
@@ -48771,7 +48782,7 @@ function _scSubmitCreateMeeting() {
       document.querySelectorAll('.modal-overlay').forEach(function(el){ el.remove(); });
       if (res.id) {
         _scCurrentMeetingId = res.id;
-        renderSCMeetingDetail(document.getElementById('main-content'), res.id);
+        renderSCMeetingDetail(_scGetDetailContainer(), res.id);
       } else {
         _scLoadTabContent('meetings');
       }
@@ -48939,13 +48950,13 @@ function _scSubmitEditBasic(mid) {
   var summary  = (document.getElementById('sc-edit-summary')  || {}).value || '';
   _scFetch('/api/safety-committee/meetings/' + mid, { method: 'PATCH', body: JSON.stringify({ title: title, held_date: date, location: location, summary: summary }) }).then(function(){ 
     document.querySelectorAll('.modal-overlay').forEach(function(el){ el.remove(); });
-    renderSCMeetingDetail(document.getElementById('main-content'), parseInt(mid));
+    renderSCMeetingDetail(_scGetDetailContainer(), parseInt(mid));
   });
 }
 
 function _scConfirmMeeting(mid) {
   if (!confirm('회의를 확정하시겠습니까? 확정 후에는 수정이 제한됩니다.')) return;
-  _scFetch('/api/safety-committee/meetings/' + mid, { method: 'PATCH', body: JSON.stringify({ confirmed: 1 }) }).then(function(){ renderSCMeetingDetail(document.getElementById('main-content'), parseInt(mid)); });
+  _scFetch('/api/safety-committee/meetings/' + mid, { method: 'PATCH', body: JSON.stringify({ confirmed: 1 }) }).then(function(){ renderSCMeetingDetail(_scGetDetailContainer(), parseInt(mid)); });
 }
 
 function _scDeleteMeeting(mid) {

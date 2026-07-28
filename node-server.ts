@@ -3479,6 +3479,56 @@ function patchSchema() {
   }
   console.log('[patchSchema v0.187] ✅ risk_assessment_signatures 누락 컬럼 보정 완료')
 
+  // ─── patchSchema v0.188: risk_assessment_signatures FK 제약 제거 ─────────────
+  // [BUG-185b-v2] FK REFERENCES users(id) / risk_assessments(id) 가 foreign_keys=ON 상태에서
+  // INSERT 시 500 오류 발생 (참조 테이블 레코드 없거나 구버전 스키마 불일치)
+  // → FK 제약 없는 테이블로 재생성 (데이터 보존)
+  try {
+    const rasSql: any = rawDb.prepare(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name='risk_assessment_signatures'`
+    ).get()
+    // FK 제약이 있는 경우에만 재생성 (이미 제거된 경우 skip)
+    const hasFk = rasSql?.sql && (
+      rasSql.sql.includes('REFERENCES users') ||
+      rasSql.sql.includes('REFERENCES risk_assessments')
+    )
+    if (hasFk) {
+      console.log('[patchSchema v0.188] risk_assessment_signatures FK 제약 제거 시작...')
+      rawDb.pragma('foreign_keys = OFF')
+      const fixTx = rawDb.transaction(() => {
+        const existingCols: any[] = rawDb.prepare('PRAGMA table_info(risk_assessment_signatures)').all()
+        const colNames = existingCols.map((c: any) => c.name).join(', ')
+        rawDb.exec('ALTER TABLE risk_assessment_signatures RENAME TO risk_assessment_signatures_fk_old')
+        rawDb.exec(`CREATE TABLE risk_assessment_signatures (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          assessment_id INTEGER NOT NULL,
+          user_id       INTEGER NOT NULL,
+          user_name     TEXT NOT NULL DEFAULT '',
+          position      TEXT DEFAULT '',
+          role          TEXT DEFAULT 'member',
+          signed_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+          sign_method   TEXT DEFAULT 'account',
+          sign_data     TEXT
+        )`)
+        // 기존 컬럼 중 새 테이블에도 있는 것만 복사
+        const newColSet = new Set(['id','assessment_id','user_id','user_name','position','role','signed_at','sign_method','sign_data'])
+        const copyColNames = existingCols.map((c: any) => c.name).filter((n: string) => newColSet.has(n)).join(', ')
+        rawDb.exec(`INSERT INTO risk_assessment_signatures (${copyColNames}) SELECT ${copyColNames} FROM risk_assessment_signatures_fk_old`)
+        rawDb.exec('DROP TABLE risk_assessment_signatures_fk_old')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_ras_assessment ON risk_assessment_signatures(assessment_id)')
+        rawDb.exec('CREATE INDEX IF NOT EXISTS idx_ras_user ON risk_assessment_signatures(user_id)')
+      })
+      fixTx()
+      rawDb.pragma('foreign_keys = ON')
+      console.log('[patchSchema v0.188] ✅ risk_assessment_signatures FK 제약 제거 완료')
+    } else {
+      console.log('[patchSchema v0.188] risk_assessment_signatures FK 제약 없음 (skip)')
+    }
+  } catch(e: any) {
+    console.warn('[patchSchema v0.188] FK 제거 실패 (무시):', e.message)
+    try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -6378,6 +6428,7 @@ app.get('/api/risk/:id/signatures', async (c) => {
 })
 
 // 위험성평가 서명 등록 (본인 계정 또는 서명 패드)
+// [BUG-185b-v2] FK 제약(REFERENCES users/risk_assessments) + UNIQUE 누락 + 컬럼 누락 완전 대응
 app.post('/api/risk/:id/signatures', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
@@ -6386,51 +6437,85 @@ app.post('/api/risk/:id/signatures', async (c) => {
   const role = body.role || 'member'
   const signData = body.sign_data || null   // base64 서명 이미지
   const signMethod = signData ? 'pad' : 'account'
+  const assessmentId = Number(id)
 
-  // [BUG-185b] sign_method / sign_data / position / role 컬럼 없는 구버전 DB 대응
-  // 1차: 풀 컬럼 INSERT OR REPLACE
-  // 2차: 컬럼 ADD 후 재시도
-  // 3차: 최소 컬럼(assessment_id, user_id, user_name, signed_at)만으로 재시도
+  // ── 0단계: 테이블 없으면 생성 (가장 먼저) ─────────────────────────────
   try {
-    const info = rawDb.prepare(
-      `INSERT OR REPLACE INTO risk_assessment_signatures
-       (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
-       VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?)`
-    ).run(Number(id), user.id, user.name, user.position || '', role, signMethod, signData)
-    return c.json({ success: true, id: info.lastInsertRowid })
-  } catch(e1: any) {
-    console.warn('[risk/sign] 1차 INSERT 실패:', e1.message)
-    // 컬럼 누락 가능 → ADD COLUMN 시도 후 재시도
-    const addCols = [
-      { col: 'sign_method', def: "TEXT DEFAULT 'account'" },
-      { col: 'sign_data',   def: 'TEXT' },
-      { col: 'position',    def: "TEXT DEFAULT ''" },
-      { col: 'role',        def: "TEXT DEFAULT 'member'" },
-    ]
-    for (const { col, def } of addCols) {
-      try { rawDb.exec(`ALTER TABLE risk_assessment_signatures ADD COLUMN ${col} ${def}`) } catch(_) {}
-    }
-    try {
-      const info2 = rawDb.prepare(
-        `INSERT OR REPLACE INTO risk_assessment_signatures
+    rawDb.exec(`CREATE TABLE IF NOT EXISTS risk_assessment_signatures (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      assessment_id INTEGER NOT NULL,
+      user_id       INTEGER NOT NULL,
+      user_name     TEXT NOT NULL DEFAULT '',
+      position      TEXT DEFAULT '',
+      role          TEXT DEFAULT 'member',
+      signed_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+      sign_method   TEXT DEFAULT 'account',
+      sign_data     TEXT
+    )`)
+  } catch(_) {}
+
+  // ── 컬럼 누락 보완 ────────────────────────────────────────────────────
+  const addCols = [
+    { col: 'sign_method', def: "TEXT DEFAULT 'account'" },
+    { col: 'sign_data',   def: 'TEXT' },
+    { col: 'position',    def: "TEXT DEFAULT ''" },
+    { col: 'role',        def: "TEXT DEFAULT 'member'" },
+  ]
+  for (const { col, def } of addCols) {
+    try { rawDb.exec(`ALTER TABLE risk_assessment_signatures ADD COLUMN ${col} ${def}`) } catch(_) {}
+  }
+
+  // ── FK 비활성화 후 INSERT (REFERENCES users/risk_assessments FK 오류 방지) ──
+  // INSERT OR REPLACE 는 UNIQUE 제약 없으면 중복 삽입됨
+  // → 기존 레코드 UPDATE OR INSERT 방식으로 처리
+  try {
+    rawDb.pragma('foreign_keys = OFF')
+
+    // 기존 레코드 확인 (동일 assessment + user)
+    const existing = rawDb.prepare(
+      `SELECT id FROM risk_assessment_signatures WHERE assessment_id=? AND user_id=?`
+    ).get(assessmentId, user.id) as any
+
+    let resultId: number | bigint
+    if (existing) {
+      // 이미 서명된 경우 → UPDATE
+      rawDb.prepare(
+        `UPDATE risk_assessment_signatures
+         SET signed_at=datetime('now','localtime'), sign_method=?, sign_data=?, role=?, position=?, user_name=?
+         WHERE id=?`
+      ).run(signMethod, signData, role, user.position || '', user.name, existing.id)
+      resultId = existing.id
+    } else {
+      // 신규 서명 → INSERT
+      const info = rawDb.prepare(
+        `INSERT INTO risk_assessment_signatures
          (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
          VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?)`
-      ).run(Number(id), user.id, user.name, user.position || '', role, signMethod, signData)
-      return c.json({ success: true, id: info2.lastInsertRowid })
-    } catch(e2: any) {
-      console.warn('[risk/sign] 2차(컬럼추가 후) INSERT 실패:', e2.message)
-      // 3차: 최소 컬럼만
-      try {
-        const info3 = rawDb.prepare(
-          `INSERT OR REPLACE INTO risk_assessment_signatures
-           (assessment_id, user_id, user_name, signed_at)
-           VALUES (?, ?, ?, datetime('now','localtime'))`
-        ).run(Number(id), user.id, user.name)
-        return c.json({ success: true, id: info3.lastInsertRowid })
-      } catch(e3: any) {
-        console.error('[risk/sign] 3차 INSERT 실패:', e3.message)
-        return c.json({ error: '서명 저장 실패: ' + e3.message }, 500)
-      }
+      ).run(assessmentId, user.id, user.name, user.position || '', role, signMethod, signData)
+      resultId = info.lastInsertRowid
+    }
+
+    rawDb.pragma('foreign_keys = ON')
+    return c.json({ success: true, id: resultId })
+
+  } catch(e1: any) {
+    console.warn('[risk/sign] FK=OFF INSERT/UPDATE 실패:', e1.message)
+    try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+
+    // 최후 수단: 최소 컬럼만
+    try {
+      rawDb.pragma('foreign_keys = OFF')
+      const info3 = rawDb.prepare(
+        `INSERT INTO risk_assessment_signatures
+         (assessment_id, user_id, user_name, signed_at)
+         VALUES (?, ?, ?, datetime('now','localtime'))`
+      ).run(assessmentId, user.id, user.name || '')
+      rawDb.pragma('foreign_keys = ON')
+      return c.json({ success: true, id: info3.lastInsertRowid })
+    } catch(e3: any) {
+      try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+      console.error('[risk/sign] 최소 INSERT도 실패:', e3.message)
+      return c.json({ error: '서명 저장 실패: ' + e3.message }, 500)
     }
   }
 })

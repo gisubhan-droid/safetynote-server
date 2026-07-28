@@ -2,40 +2,57 @@
 
 ---
 
-## [BUG-185] SC 서명 500 + 위험성평가 서명 500 (세션 103, 커밋 f7ef95c)
+## [BUG-185] SC 서명 500 + 위험성평가 서명 500 (세션 103~104)
 
 ### 문제
-1. **BUG-185a**: `PATCH /api/safety-committee/meetings/:id/attendees/:id/sign` → 500
-2. **BUG-185b**: `POST /api/risk/:id/signatures` → 500
+1. **BUG-185a**: `PATCH /api/safety-committee/meetings/:id/attendees/:id/sign` → 500 ✅ 해결
+2. **BUG-185b**: `POST /api/risk/:id/signatures` → 500 (세션 103 수정 후에도 재발 → 세션 104 재수정)
 
 ### 원인
 
-#### BUG-185a — `safety_committee_attendees` 누락 컬럼
+#### BUG-185a — `safety_committee_attendees` 누락 컬럼 (세션 103 해결)
 - patchSchema v0.178이 `CREATE TABLE IF NOT EXISTS`로 생성
 - **구버전 DB에 이미 테이블이 존재**하면 CREATE가 스킵됨
 - 결과: `signature_data`, `signed_at`, `custom_title`, `side`, `role_type` 컬럼 없음
 - UPDATE 쿼리가 없는 컬럼 참조 → 500
 
-#### BUG-185b — `risk_assessment_signatures` 누락 컬럼
+#### BUG-185b (세션 103) — `risk_assessment_signatures` 누락 컬럼
 - patchSchema v0.111m에서 ADD COLUMN 처리가 있으나 더 오래된 DB에는 미적용
 - `sign_method`, `sign_data`, `position`, `role` 컬럼 없음
 - `INSERT OR REPLACE` 시 컬럼 없음 → 500
+- 세션 103에서 patchSchema v0.187 + 3단계 폴백 추가했으나 여전히 500 재발
+
+#### BUG-185b-v2 (세션 104) — FK 제약 문제 (근본 원인)
+- `risk_assessment_signatures` 테이블에 `REFERENCES users(id)`, `REFERENCES risk_assessments(id)` FK 존재
+- NAS DB의 `foreign_keys = ON` pragma 상태에서 INSERT 시 FK 검증 실패 → 500
+- `INSERT OR REPLACE`는 UNIQUE 제약이 없으면 중복 레코드 생성 문제도 있음
+- 기존 3단계 폴백도 모두 FK 오류로 실패
 
 ### 해결
 
-#### patchSchema v0.186 (node-server.ts)
+#### BUG-185a — patchSchema v0.186 (세션 103, node-server.ts)
 - `safety_committee_attendees` 누락 컬럼 5개 ADD COLUMN
 - `duplicate column` 에러는 조용히 무시
+- PATCH /sign 핸들러 3단계 폴백 추가 (safety-committee.ts)
 
-#### patchSchema v0.187 (node-server.ts)
-- `risk_assessment_signatures` 누락 컬럼 4개 ADD COLUMN
+#### BUG-185b-v2 — patchSchema v0.188 + 핸들러 전면 재작성 (세션 104, node-server.ts)
 
-#### PATCH /sign 핸들러 3단계 폴백 (safety-committee.ts)
+**patchSchema v0.188**: `risk_assessment_signatures` 테이블 FK 제약 제거
 ```
-1차: signature_data + signed_at 업데이트 (정상 경로)
-2차: signed_at 만 업데이트 (signature_data 컬럼 없는 경우)
-3차: ADD COLUMN 직접 실행 후 재시도
-→ 실패 시에만 500 반환 (명확한 에러 메시지)
+1. 기존 테이블 SQL에서 REFERENCES 키워드 감지
+2. FK 없는 새 테이블로 재생성 (데이터 보존)
+3. foreign_keys = OFF → 재생성 → foreign_keys = ON
+```
+
+**POST /api/risk/:id/signatures 핸들러 전면 재작성**:
+```
+0단계: 테이블 없으면 CREATE TABLE (FK 없는 버전)
+컬럼 보완: sign_method, sign_data, position, role ADD COLUMN
+FK = OFF 후:
+  - 기존 레코드 있으면 UPDATE (재서명 지원)
+  - 없으면 INSERT
+FK = ON 복원
+최후 수단: 최소 컬럼(assessment_id, user_id, user_name, signed_at)만으로 재시도
 ```
 
 #### POST /signatures 핸들러 3단계 폴백 (node-server.ts)

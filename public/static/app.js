@@ -37909,51 +37909,48 @@ let _frSpliceCacheItemKeys = [];
 // ═══════════════════════════════════════════════════════════════
 // 공량내역 — 조회조건 + 데이터 테이블 (요약카드/차트 없음)
 // ═══════════════════════════════════════════════════════════════
-// ── 공량내역 조회 기간 계산 공통 헬퍼 ──
+// ── [FEAT-통일] 공량내역 조회 기간 계산 공통 헬퍼 (4탭 방식) ──
 function _frCalcDateRange() {
-  const mode  = document.getElementById('fr-period-mode')?.value || 'month';
-  const mVal  = document.getElementById('fr-period-month')?.value || '';
-  const wVal  = document.getElementById('fr-period-week')?.value  || '';
-  const qVal  = document.getElementById('fr-period-quarter')?.value || '';
-  const yVal  = document.getElementById('fr-period-year')?.value  || String(getKSTYear());
-  let from = '', to = '';
-  if (mode === 'week' && wVal) {
-    const [yr, wk] = wVal.split('-W').map(Number);
-    const jan4 = new Date(yr, 0, 4);
-    const startOfWeek = new Date(jan4.getTime() + (wk - 1) * 7 * 86400000);
-    startOfWeek.setDate(startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7));
-    const endOfWeek = new Date(startOfWeek.getTime() + 6 * 86400000);
-    from = _kstDateOf(startOfWeek);
-    to   = _kstDateOf(endOfWeek);
-  } else if (mode === 'month' && mVal) {
-    from = mVal + '-01';
-    var d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-    to = _kstDateOf(d);
-  } else if (mode === 'quarter' && qVal && yVal) {
+  var mode = document.getElementById('fr-period-mode')?.value || 'monthly';
+  var mVal = document.getElementById('fr-period-month')?.value || '';
+  var wkStart = document.getElementById('fr-week-start')?.value || '';
+  var qVal = document.getElementById('fr-period-quarter')?.value || '';
+  var yVal = document.getElementById('fr-period-year')?.value  || String(getKSTYear());
+  var from = '', to = '';
+  if (mode === 'yearly') {
+    from = yVal + '-01-01'; to = yVal + '-12-31';
+  } else if (mode === 'quarterly' && qVal) {
     var q = parseInt(qVal);
     from = yVal + '-' + String((q-1)*3+1).padStart(2,'0') + '-01';
     var d = new Date(yVal + '-' + String(q*3).padStart(2,'00') + '-01');
     d.setMonth(d.getMonth()+1); d.setDate(0);
     to = _kstDateOf(d);
-  } else if (mode === 'year' && yVal) {
-    from = `${yVal}-01-01`; to = `${yVal}-12-31`;
+  } else if (mode === 'monthly' && mVal) {
+    from = mVal + '-01';
+    var d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+    to = _kstDateOf(d);
+  } else if (mode === 'weekly' && wkStart) {
+    from = wkStart;
+    var d = new Date(wkStart); d.setDate(d.getDate()+6);
+    to = _kstDateOf(d);
   }
-  return { from, to };
+  return { from: from, to: to };
 }
 
 async function renderFieldReportPage(container) {
   // ⚠️ DOM 값을 innerHTML 덮어쓰기 전에 먼저 읽어야 함 (DOM 소멸 방지)
-  // container.innerHTML = ... 하기 전에 현재 필터/탭 상태를 변수에 저장
-  const nowYear   = getKSTYear();
-  const frMode    = document.getElementById('fr-period-mode')?.value    || 'month';
-  const frMVal    = document.getElementById('fr-period-month')?.value   || new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);
-  const frWVal    = document.getElementById('fr-period-week')?.value    || '';
-  const frQVal    = document.getElementById('fr-period-quarter')?.value || '';
-  const frYVal    = document.getElementById('fr-period-year')?.value    || String(nowYear);
-  const frConsVal = document.getElementById('fr-construction')?.value   || '';
-  const frTab     = document.getElementById('fr-active-tab')?.value     || 'cable';
+  // [FEAT-통일] 4탭 방식 — fr-period-mode hidden input 사용
+  var nowYear   = getKSTYear();
+  var frMode    = document.getElementById('fr-period-mode')?.value    || 'monthly';
+  var frMVal    = document.getElementById('fr-period-month')?.value   || new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);
+  var frWkStart = document.getElementById('fr-week-start')?.value     || '';
+  var frQVal    = document.getElementById('fr-period-quarter')?.value || '';
+  var frYVal    = document.getElementById('fr-period-year')?.value    || String(nowYear);
+  var frConsVal = document.getElementById('fr-construction')?.value   || '';
+  var frTab     = document.getElementById('fr-active-tab')?.value     || 'cable';
   // 기간 계산도 DOM 소멸 전에 미리 수행
-  const { from: frFromDate, to: frToDate } = _frCalcDateRange();
+  var frDateRange = _frCalcDateRange();
+  var frFromDate = frDateRange.from, frToDate = frDateRange.to;
 
   container.innerHTML = `<div class="w-full px-3 py-6"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
@@ -37987,19 +37984,18 @@ async function renderFieldReportPage(container) {
     _frCacheRows = rows; _frCacheExtras = extras;
     _frCachePriceMap = priceMap; _frCacheIsWorker = isWorker;
 
-    const frYears = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
-    const savedFrMode = frMode, savedFrMVal = frMVal, savedFrWVal = frWVal;
-    const savedFrQVal = frQVal, savedFrYVal = frYVal, savedFrTab  = frTab;
-
-    // 주간 기본값 계산 (KST 기준)
-    var _nowWeekStr = (function() {
-      var now = getKSTNow();
-      var yr  = getKSTYear();
-      var jan4 = new Date(yr, 0, 4);
-      var wk = Math.ceil(((now - new Date(yr,0,1)) / 86400000 + new Date(yr,0,1).getDay() + 1) / 7);
-      return yr + '-W' + String(wk).padStart(2,'0');
+    var frYears = Array.from({length: nowYear-2019}, function(_,i){ return nowYear-i; });
+    // [FEAT-통일] 4탭 방식 — saved 값 보존
+    var savedFrMode    = frMode;
+    var savedFrMVal    = frMVal;
+    var savedFrWkStart = frWkStart || (function() {
+      var now = getKSTNow(); var d = now.getUTCDay();
+      var mon = new Date(now.getTime()); mon.setUTCDate(now.getUTCDate() - (d===0?6:d-1));
+      return _kstDateOf(mon);
     })();
-    var displayWeekVal = savedFrWVal || _nowWeekStr;
+    var savedFrQVal    = frQVal;
+    var savedFrYVal    = frYVal;
+    var savedFrTab     = frTab;
     var _curQ = Math.ceil(getKSTMonth()/3);
 
     const extrasMap = {};     // report_id → { item_key: qty }
@@ -38024,39 +38020,47 @@ async function renderFieldReportPage(container) {
     _frCacheItemKeys = allItemKeys;
     _frCacheLabelMap = labelMap; // [BUG-086] item_key → item_label 캐시 저장 (엑셀 헤더용)
 
-    // ── 공유 조회 조건 바 ──
-    const sharedFilterBar = `
-      <div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center">
-        <select id="fr-construction" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
-          <option value="">전체 공사</option>
-          ${constructions.map(c=>`<option value="${c.id}" ${frConsVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
-        </select>
-        <select id="fr-period-mode" onchange="_frUpdatePeriodUI()" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
-          <option value="week"    ${savedFrMode==='week'   ?'selected':''}>주간</option>
-          <option value="month"   ${savedFrMode==='month'  ?'selected':''}>월간</option>
-          <option value="quarter" ${savedFrMode==='quarter'?'selected':''}>분기</option>
-          <option value="year"    ${savedFrMode==='year'   ?'selected':''}>연간</option>
-          <option value="all"     ${savedFrMode==='all'    ?'selected':''}>전체</option>
-        </select>
-        <input type="week" id="fr-period-week" value="${displayWeekVal}"
-          class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedFrMode!=='week'?'hidden':''}">
-        <input type="month" id="fr-period-month" value="${savedFrMVal}"
-          class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedFrMode!=='month'?'hidden':''}">
-        <select id="fr-period-year" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${(savedFrMode==='month'||savedFrMode==='week'||savedFrMode==='all')?'hidden':''}">
-          ${frYears.map(y=>`<option value="${y}" ${savedFrYVal==y?'selected':''}>${y}년</option>`).join('')}
-        </select>
-        <select id="fr-period-quarter" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedFrMode!=='quarter'?'hidden':''}">
-          ${[1,2,3,4].map(q=>`<option value="${q}" ${(savedFrQVal||String(_curQ))==String(q)?'selected':''}>Q${q}(${(q-1)*3+1}~${q*3}월)</option>`).join('')}
-        </select>
-        <button onclick="_frSearch()"
-          class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600 font-medium">
-          <i class="fas fa-search mr-1"></i>조회
-        </button>
-        <button onclick="downloadFieldReportCSV()"
-          class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
-          <i class="fas fa-file-excel mr-1"></i>엑셀
-        </button>
-      </div>`;
+    // ── [FEAT-통일] 공유 조회 조건 바 (4탭 방식) ──
+    var sharedFilterBar = '<div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center">' +
+      '<select id="fr-construction" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">' +
+        '<option value="">전체 공사</option>' +
+        constructions.map(function(c){ return '<option value="'+c.id+'" '+(frConsVal==c.id?'selected':'')+'>'+c.request_no+' '+(c.title||'')+'</option>'; }).join('') +
+      '</select>' +
+      '<input type="hidden" id="fr-period-mode" value="'+savedFrMode+'">' +
+      '<div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;flex-shrink:0">' +
+        [['yearly','년간'],['quarterly','분기별'],['monthly','월간'],['weekly','주간']].map(function(pair){
+          var p=pair[0], lbl=pair[1];
+          return '<button id="fr-tab-'+p+'" onclick="window._frSetPeriod(\''+p+'\')"'+
+            ' style="padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;'+
+            'background:'+(p===savedFrMode?'#685182':'#fff')+';color:'+(p===savedFrMode?'#fff':'#6B7280')+';transition:all .15s">'+lbl+'</button>';
+        }).join('') +
+      '</div>' +
+      '<select id="fr-period-year" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">' +
+        frYears.map(function(y){ return '<option value="'+y+'" '+(savedFrYVal==y?'selected':'')+'>'+y+'년</option>'; }).join('') +
+      '</select>' +
+      '<select id="fr-period-quarter" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none"'+
+        ' style="display:'+(savedFrMode==='quarterly'?'':'none')+'">' +
+        [1,2,3,4].map(function(q){ return '<option value="'+q+'" '+((savedFrQVal||String(_curQ))==String(q)?'selected':'')+'>Q'+q+'('+((q-1)*3+1)+'~'+(q*3)+'월)</option>'; }).join('') +
+      '</select>' +
+      '<input type="month" id="fr-period-month" value="'+savedFrMVal+'"' +
+        ' style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;display:'+(savedFrMode==='monthly'?'':'none')+'">' +
+      '<input type="hidden" id="fr-week-start" value="'+savedFrWkStart+'">' +
+      '<div id="fr-week-nav" style="display:'+(savedFrMode==='weekly'?'flex':'none')+';align-items:center;gap:6px">' +
+        '<button onclick="window._frWeekShift(-1)" style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8249;</button>' +
+        '<span id="fr-week-label" style="font-size:12px;color:#374151;font-weight:600;white-space:nowrap">' + (function(){
+          if (!savedFrWkStart) return '';
+          var d = new Date(savedFrWkStart); var e = new Date(d); e.setDate(d.getDate()+6);
+          return (d.getMonth()+1)+'/'+d.getDate()+' ~ '+(e.getMonth()+1)+'/'+e.getDate();
+        })() + '</span>' +
+        '<button onclick="window._frWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>' +
+      '</div>' +
+      '<button onclick="_frSearch()" class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600 font-medium">' +
+        '<i class="fas fa-search mr-1"></i>조회' +
+      '</button>' +
+      '<button onclick="downloadFieldReportCSV()" class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">' +
+        '<i class="fas fa-file-excel mr-1"></i>엑셀' +
+      '</button>' +
+    '</div>';
 
     // ── 외선 테이블 HTML 빌드 ──
     const cableColWidths = JSON.parse(localStorage.getItem('fr_cable_col_widths') || '{}');
@@ -38245,22 +38249,37 @@ async function renderFieldReportPage(container) {
   }
 }
 
-function _frUpdatePeriodUI() {
-  const mode = document.getElementById('fr-period-mode')?.value;
-  if (!mode) return;
-  const yearSel    = document.getElementById('fr-period-year');
-  const quarterSel = document.getElementById('fr-period-quarter');
-  const monthInp   = document.getElementById('fr-period-month');
-  const weekInp    = document.getElementById('fr-period-week');
-  // week 모드: 주간 입력만 표시
-  if (weekInp)    weekInp.classList.toggle('hidden',    mode !== 'week');
-  // month 모드: 월 입력만 표시
-  if (monthInp)   monthInp.classList.toggle('hidden',   mode !== 'month');
-  // year 셀렉터: month/week/all 제외하고 표시
-  if (yearSel)    yearSel.classList.toggle('hidden',    mode === 'month' || mode === 'week' || mode === 'all');
-  // quarter 셀렉터: quarter 모드만 표시
-  if (quarterSel) quarterSel.classList.toggle('hidden', mode !== 'quarter');
-}
+// [FEAT-통일] 공량내역 기간 탭 컨트롤
+window._frSetPeriod = function(p) {
+  var modeEl = document.getElementById('fr-period-mode');
+  if (modeEl) modeEl.value = p;
+  ['yearly','quarterly','monthly','weekly'].forEach(function(x) {
+    var btn = document.getElementById('fr-tab-'+x);
+    if (!btn) return;
+    btn.style.background = x===p ? '#685182' : '#fff';
+    btn.style.color      = x===p ? '#fff'    : '#6B7280';
+  });
+  var qSel = document.getElementById('fr-period-quarter');
+  var mInp = document.getElementById('fr-period-month');
+  var wNav = document.getElementById('fr-week-nav');
+  if (qSel) qSel.style.display = p==='quarterly' ? '' : 'none';
+  if (mInp) mInp.style.display = p==='monthly'   ? '' : 'none';
+  if (wNav) wNav.style.display = p==='weekly'     ? 'flex' : 'none';
+};
+window._frWeekShift = function(delta) {
+  var el = document.getElementById('fr-week-start');
+  if (!el) return;
+  var d = new Date(el.value); d.setDate(d.getDate() + delta*7);
+  var newStart = _kstDateOf(d);
+  el.value = newStart;
+  var lbl = document.getElementById('fr-week-label');
+  if (lbl) {
+    var e = new Date(d); e.setDate(d.getDate()+6);
+    lbl.textContent = (d.getMonth()+1)+'/'+d.getDate()+' ~ '+(e.getMonth()+1)+'/'+e.getDate();
+  }
+};
+// 레거시 호환
+function _frUpdatePeriodUI() { if (window._frSetPeriod) window._frSetPeriod(document.getElementById('fr-period-mode')?.value || 'monthly'); }
 
 function _frSwitchTab(tab) {
   const stateEl = document.getElementById('fr-active-tab');
@@ -40972,19 +40991,37 @@ async function submitSpliceReport() {
 // ═══════════════════════════════════════════════════════════════
 let _volumeStatsCache = { rows: [], extras: [], allItemKeys: [] };
 
-// ─── 물량통계 기간 UI show/hide ──────────────────────────────────────────────
-function _vsUpdatePeriodUI() {
-  const mode = document.getElementById('vs-period-mode')?.value || 'month';
-  document.querySelectorAll('.vs-year-sel').forEach(el => {
-    el.classList.toggle('hidden', mode === 'month' || mode === 'all' || mode === 'week');
+// ─── [FEAT-통일] 물량통계 외선 기간 탭 컨트롤 ──────────────────────────────────
+window._vsSetPeriod = function(p) {
+  var modeEl = document.getElementById('vs-period-mode');
+  if (modeEl) modeEl.value = p;
+  ['yearly','quarterly','monthly','weekly'].forEach(function(x) {
+    var btn = document.getElementById('vs-tab-'+x);
+    if (!btn) return;
+    btn.style.background = x===p ? '#685182' : '#fff';
+    btn.style.color      = x===p ? '#fff'    : '#6B7280';
   });
-  const qSel = document.getElementById('vs-period-quarter');
-  if (qSel) qSel.classList.toggle('hidden', mode !== 'quarter');
-  const mIn = document.getElementById('vs-period-month');
-  if (mIn) mIn.classList.toggle('hidden', mode !== 'month');
-  const wIn = document.getElementById('vs-period-week');
-  if (wIn) wIn.classList.toggle('hidden', mode !== 'week');
-}
+  var qSel = document.getElementById('vs-period-quarter');
+  var mInp = document.getElementById('vs-period-month');
+  var wNav = document.getElementById('vs-week-nav');
+  if (qSel) qSel.style.display = p==='quarterly' ? '' : 'none';
+  if (mInp) mInp.style.display = p==='monthly'   ? '' : 'none';
+  if (wNav) wNav.style.display = p==='weekly'     ? 'flex' : 'none';
+};
+window._vsWeekShift = function(delta) {
+  var el = document.getElementById('vs-week-start');
+  if (!el) return;
+  var d = new Date(el.value); d.setDate(d.getDate() + delta*7);
+  var newStart = _kstDateOf(d);
+  el.value = newStart;
+  var lbl = document.getElementById('vs-week-label');
+  if (lbl) {
+    var e = new Date(d); e.setDate(d.getDate()+6);
+    lbl.textContent = (d.getMonth()+1)+'/'+d.getDate()+' ~ '+(e.getMonth()+1)+'/'+e.getDate();
+  }
+};
+// 레거시 호환 — 구버전 onchange 핸들러 잔존 시 대비
+function _vsUpdatePeriodUI() { if (window._vsSetPeriod) window._vsSetPeriod(document.getElementById('vs-period-mode')?.value || 'monthly'); }
 
 // ─── 주간 날짜 범위 계산 헬퍼 ────────────────────────────────────────────────
 function _vsWeekRange(weekVal) {
@@ -41527,33 +41564,34 @@ async function renderConStatsPage(container) {
 async function renderVolumeStatsPage(container) {
   container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-pink-400 text-2xl"></i></div></div>`;
   try {
-    // ── 조회 조건 읽기 ──
-    const vsMode  = document.getElementById('vs-period-mode')?.value  || 'month';
-    const vsMVal  = document.getElementById('vs-period-month')?.value || '';
-    const vsWVal  = document.getElementById('vs-period-week')?.value  || '';
-    const vsQVal  = document.getElementById('vs-period-quarter')?.value || '';
-    const nowYear = getKSTYear();
-    const vsYVal  = document.getElementById('vs-period-year')?.value  || String(nowYear);
-    const vsConsVal = document.getElementById('vs-construction')?.value || '';
+    // ── [FEAT-통일] 조회 조건 읽기 (4탭 방식: yearly/quarterly/monthly/weekly) ──
+    var vsMode    = document.getElementById('vs-period-mode')?.value  || 'monthly';
+    var vsMVal    = document.getElementById('vs-period-month')?.value || '';
+    var vsQVal    = document.getElementById('vs-period-quarter')?.value || '';
+    var vsWkStart = document.getElementById('vs-week-start')?.value   || '';
+    var nowYear   = getKSTYear();
+    var vsYVal    = document.getElementById('vs-period-year')?.value  || String(nowYear);
+    var vsConsVal = document.getElementById('vs-construction')?.value || '';
 
-    let vsFromDate = '', vsToDate = '';
-    if (vsMode === 'week' && vsWVal) {
-      const wr = _vsWeekRange(vsWVal);
-      vsFromDate = wr.from; vsToDate = wr.to;
-    } else if (vsMode === 'month' && vsMVal) {
+    var vsFromDate = '', vsToDate = '';
+    if (vsMode === 'yearly') {
+      vsFromDate = vsYVal + '-01-01';
+      vsToDate   = vsYVal + '-12-31';
+    } else if (vsMode === 'quarterly' && vsQVal) {
+      var vq = parseInt(vsQVal);
+      var vsStartM = String((vq-1)*3+1).padStart(2,'0');
+      var vsEndM   = String(vq*3).padStart(2,'0');
+      vsFromDate = vsYVal + '-' + vsStartM + '-01';
+      var vqd = new Date(vsYVal + '-' + vsEndM + '-01'); vqd.setMonth(vqd.getMonth()+1); vqd.setDate(0);
+      vsToDate = _kstDateOf(vqd);
+    } else if (vsMode === 'monthly' && vsMVal) {
       vsFromDate = vsMVal + '-01';
-      var d = new Date(vsMVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      vsToDate = _kstDateOf(d);
-    } else if (vsMode === 'quarter' && vsQVal && vsYVal) {
-      const q = parseInt(vsQVal);
-      const startM = String((q-1)*3+1).padStart(2,'0');
-      const endM   = String(q*3).padStart(2,'0');
-      vsFromDate = `${vsYVal}-${startM}-01`;
-      var d = new Date(vsYVal + '-' + endM + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      vsToDate = _kstDateOf(d);
-    } else if (vsMode === 'year' && vsYVal) {
-      vsFromDate = `${vsYVal}-01-01`;
-      vsToDate   = `${vsYVal}-12-31`;
+      var vmd = new Date(vsMVal + '-01'); vmd.setMonth(vmd.getMonth()+1); vmd.setDate(0);
+      vsToDate = _kstDateOf(vmd);
+    } else if (vsMode === 'weekly' && vsWkStart) {
+      vsFromDate = vsWkStart;
+      var vwd = new Date(vsWkStart); vwd.setDate(vwd.getDate()+6);
+      vsToDate = _kstDateOf(vwd);
     }
 
     const vsParams = [];
@@ -41586,9 +41624,19 @@ async function renderVolumeStatsPage(container) {
     const isWorker = currentUser && currentUser.role === 'worker';
 
     // 연도 목록 생성 (2020~현재년)
-    const vsYears = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
-    const savedVsMode = vsMode; const savedVsMVal = vsMVal;
-    const savedVsQVal = vsQVal; const savedVsYVal = vsYVal;
+    var vsYears = Array.from({length: nowYear-2019}, function(_,i){ return nowYear-i; });
+    // [FEAT-통일] 4탭 방식 — saved 값 보존 (HTML 재렌더링 후 복원용)
+    var savedVsMode   = vsMode;
+    var savedVsMVal   = vsMVal;
+    var savedVsQVal   = vsQVal;
+    var savedVsYVal   = vsYVal;
+    var savedVsWkStart = vsWkStart || (function() {
+      var now = getKSTNow();
+      var d   = now.getUTCDay();
+      var mon = new Date(now.getTime());
+      mon.setUTCDate(now.getUTCDate() - (d === 0 ? 6 : d - 1));
+      return _kstDateOf(mon);
+    })();
 
     _volumeStatsCache = { rows, extras, cables, allItemKeys: [], priceMap };
 
@@ -41644,42 +41692,57 @@ async function renderVolumeStatsPage(container) {
       <!-- ── 외선 섹션 ── -->
       <div id="vs-cable-section">
       <div class="flex items-center justify-between flex-wrap gap-2">
-        <div class="flex gap-2 flex-wrap items-center">
+        <!-- [FEAT-통일] 4탭 필터 바 (물량통계 외선) -->
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center vs-no-print">
           <!-- 공사 선택 -->
           <select id="vs-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
             <option value="">전체 공사</option>
             ${constructions.map(c=>`<option value="${c.id}" ${vsConsVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
           </select>
-          <!-- 기간 모드 -->
-          <select id="vs-period-mode" onchange="_vsUpdatePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
-            <option value="week"    ${savedVsMode==='week'   ?'selected':''}>주간</option>
-            <option value="month"   ${savedVsMode==='month'  ?'selected':''}>월별</option>
-            <option value="quarter" ${savedVsMode==='quarter'?'selected':''}>분기별</option>
-            <option value="year"    ${savedVsMode==='year'   ?'selected':''}>연도별</option>
-            <option value="all"     ${savedVsMode==='all'    ?'selected':''}>전체</option>
+          <!-- 기간 탭 (hidden input + 버튼 그룹) -->
+          <input type="hidden" id="vs-period-mode" value="${savedVsMode}">
+          <div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;flex-shrink:0">
+            ${[['yearly','년간'],['quarterly','분기별'],['monthly','월간'],['weekly','주간']].map(function(pair){
+              var p=pair[0], lbl=pair[1];
+              return '<button id="vs-tab-'+p+'" onclick="window._vsSetPeriod(\''+p+'\')"'+
+                ' style="padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;'+
+                'background:'+(p===savedVsMode?'#685182':'#fff')+';color:'+(p===savedVsMode?'#fff':'#6B7280')+';transition:all .15s">'+lbl+'</button>';
+            }).join('')}
+          </div>
+          <!-- 연도 -->
+          <select id="vs-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            ${vsYears.map(function(y){ return '<option value="'+y+'" '+(savedVsYVal==y?'selected':'')+'>'+y+'년</option>'; }).join('')}
           </select>
-          <!-- 연도 선택 (분기/연도 모드) -->
-          <select id="vs-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none vs-year-sel ${savedVsMode==='month'||savedVsMode==='all'||savedVsMode==='week'?'hidden':''}">
-            ${vsYears.map(y=>`<option value="${y}" ${savedVsYVal==y?'selected':''}>${y}년</option>`).join('')}
+          <!-- 분기 선택 (분기별 전용) -->
+          <select id="vs-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+            style="display:${savedVsMode==='quarterly'?'':'none'}">
+            ${[1,2,3,4].map(function(q){ return '<option value="'+q+'" '+(savedVsQVal==q?'selected':'')+'>Q'+q+' ('+(q-1)*3+1+'~'+q*3+'월)</option>'; }).join('')}
           </select>
-          <!-- 분기 선택 -->
-          <select id="vs-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none ${savedVsMode!=='quarter'?'hidden':''}">
-            ${[1,2,3,4].map(q=>`<option value="${q}" ${savedVsQVal==q?'selected':''}>Q${q} (${(q-1)*3+1}~${q*3}월)</option>`).join('')}
-          </select>
-          <!-- 월 선택 -->
-          <input type="month" id="vs-period-month" value="${savedVsMVal}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedVsMode!=='month'?'hidden':''}">
-          <!-- 주간 선택 -->
-          <input type="week" id="vs-period-week" value="${savedVsMode==='week'?document.getElementById('vs-period-week')?.value||'':''}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedVsMode!=='week'?'hidden':''}">
+          <!-- 월 선택 (월간 전용) -->
+          <input type="month" id="vs-period-month" value="${savedVsMVal}"
+            style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;display:${savedVsMode==='monthly'?'':'none'}">
+          <!-- 주간 이동 (주간 전용) -->
+          <input type="hidden" id="vs-week-start" value="${savedVsWkStart}">
+          <div id="vs-week-nav" style="display:${savedVsMode==='weekly'?'flex':'none'};align-items:center;gap:6px">
+            <button onclick="window._vsWeekShift(-1)" style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8249;</button>
+            <span id="vs-week-label" style="font-size:12px;color:#374151;font-weight:600;white-space:nowrap">${(function(){
+              if(!savedVsWkStart) return '';
+              var d = new Date(savedVsWkStart); var e = new Date(d); e.setDate(d.getDate()+6);
+              return (d.getMonth()+1)+'/'+d.getDate()+' ~ '+(e.getMonth()+1)+'/'+e.getDate();
+            })()}</span>
+            <button onclick="window._vsWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>
+          </div>
+          <!-- 조회/엑셀/인쇄 -->
           <button onclick="renderVolumeStatsPage(document.getElementById('page-content'))"
-                  class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600 vs-no-print">
+                  class="bg-pink-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-pink-600">
             <i class="fas fa-search mr-1"></i>조회
           </button>
           <button onclick="downloadVolumeStatsCSV()"
-                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600 vs-no-print">
+                  class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
             <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
           </button>
           <button onclick="printVolumeStats()"
-                  class="bg-gray-600 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-gray-700 vs-no-print">
+                  class="bg-gray-600 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-gray-700">
             <i class="fas fa-print mr-1"></i>인쇄
           </button>
         </div>
@@ -41721,26 +41784,45 @@ async function renderVolumeStatsPage(container) {
 
       <!-- ── 접속 통계 섹션 (기본 숨김) ── -->
       <div id="vs-splice-section" class="hidden space-y-4">
-        <div class="flex gap-2 flex-wrap items-center vs-no-print">
+        <!-- [FEAT-통일] 4탭 필터 바 (물량통계 접속) -->
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center vs-no-print">
           <select id="vs-splice-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
             <option value="">전체 공사</option>
             ${constructions.map(c=>`<option value="${c.id}">${c.request_no} ${c.title||''}</option>`).join('')}
           </select>
-          <select id="vs-splice-period-mode" onchange="_vsSplicePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
-            <option value="week">주간</option>
-            <option value="month">월별</option><option value="quarter">분기별</option>
-            <option value="year">연도별</option><option value="all">전체</option>
+          <!-- 기간 탭 (hidden input + 버튼 그룹) -->
+          <input type="hidden" id="vs-splice-period-mode" value="monthly">
+          <div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;flex-shrink:0">
+            ${[['yearly','년간'],['quarterly','분기별'],['monthly','월간'],['weekly','주간']].map(function(pair){
+              var p=pair[0], lbl=pair[1];
+              return '<button id="vs-splice-tab-'+p+'" onclick="window._vsSpliceSetPeriod(\''+p+'\')"'+
+                ' style="padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;'+
+                'background:'+(p==='monthly'?'#685182':'#fff')+';color:'+(p==='monthly'?'#fff':'#6B7280')+';transition:all .15s">'+lbl+'</button>';
+            }).join('')}
+          </div>
+          <!-- 연도 -->
+          <select id="vs-splice-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+            ${vsYears.map(function(y){ return '<option value="'+y+'">'+y+'년</option>'; }).join('')}
           </select>
-          <select id="vs-splice-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none hidden">
-            ${vsYears.map(y=>`<option value="${y}">${y}년</option>`).join('')}
+          <!-- 분기 선택 (분기별 전용) -->
+          <select id="vs-splice-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+            style="display:none">
+            ${[1,2,3,4].map(function(q){ return '<option value="'+q+'">Q'+q+' ('+(q-1)*3+1+'~'+q*3+'월)</option>'; }).join('')}
           </select>
-          <select id="vs-splice-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none hidden">
-            ${[1,2,3,4].map(q=>`<option value="${q}">Q${q}</option>`).join('')}
-          </select>
+          <!-- 월 선택 (월간 전용) -->
           <input type="month" id="vs-splice-period-month" value="${new Date().toLocaleDateString('sv-SE', _KST).slice(0,7)}"
-            class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none hidden">
-          <input type="week" id="vs-splice-period-week"
-            class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">
+            style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;display:''">
+          <!-- 주간 이동 (주간 전용) -->
+          <input type="hidden" id="vs-splice-week-start" value="${(function(){
+            var now = getKSTNow(); var d = now.getUTCDay();
+            var mon = new Date(now.getTime()); mon.setUTCDate(now.getUTCDate() - (d===0?6:d-1));
+            return _kstDateOf(mon);
+          })()}">
+          <div id="vs-splice-week-nav" style="display:none;align-items:center;gap:6px">
+            <button onclick="window._vsSpliceWeekShift(-1)" style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8249;</button>
+            <span id="vs-splice-week-label" style="font-size:12px;color:#374151;font-weight:600;white-space:nowrap"></span>
+            <button onclick="window._vsSpliceWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>
+          </div>
           <button onclick="_vsLoadSpliceStats()"
             class="bg-indigo-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-indigo-600">
             <i class="fas fa-search mr-1"></i>조회
@@ -42011,13 +42093,37 @@ function _vsSwitchTab(tab) {
   }
 }
 
-function _vsSplicePeriodUI() {
-  const mode = document.getElementById('vs-splice-period-mode')?.value || 'week';
-  document.getElementById('vs-splice-period-year')?.classList.toggle('hidden', mode === 'month' || mode === 'all' || mode === 'week');
-  document.getElementById('vs-splice-period-quarter')?.classList.toggle('hidden', mode !== 'quarter');
-  document.getElementById('vs-splice-period-month')?.classList.toggle('hidden', mode !== 'month');
-  document.getElementById('vs-splice-period-week')?.classList.toggle('hidden', mode !== 'week');
-}
+// [FEAT-통일] 물량통계 접속 기간 탭 컨트롤
+window._vsSpliceSetPeriod = function(p) {
+  var modeEl = document.getElementById('vs-splice-period-mode');
+  if (modeEl) modeEl.value = p;
+  ['yearly','quarterly','monthly','weekly'].forEach(function(x) {
+    var btn = document.getElementById('vs-splice-tab-'+x);
+    if (!btn) return;
+    btn.style.background = x===p ? '#685182' : '#fff';
+    btn.style.color      = x===p ? '#fff'    : '#6B7280';
+  });
+  var qSel = document.getElementById('vs-splice-period-quarter');
+  var mInp = document.getElementById('vs-splice-period-month');
+  var wNav = document.getElementById('vs-splice-week-nav');
+  if (qSel) qSel.style.display = p==='quarterly' ? '' : 'none';
+  if (mInp) mInp.style.display = p==='monthly'   ? '' : 'none';
+  if (wNav) wNav.style.display = p==='weekly'     ? 'flex' : 'none';
+};
+window._vsSpliceWeekShift = function(delta) {
+  var el = document.getElementById('vs-splice-week-start');
+  if (!el) return;
+  var d = new Date(el.value); d.setDate(d.getDate() + delta*7);
+  var newStart = _kstDateOf(d);
+  el.value = newStart;
+  var lbl = document.getElementById('vs-splice-week-label');
+  if (lbl) {
+    var e = new Date(d); e.setDate(d.getDate()+6);
+    lbl.textContent = (d.getMonth()+1)+'/'+d.getDate()+' ~ '+(e.getMonth()+1)+'/'+e.getDate();
+  }
+};
+// 레거시 호환
+function _vsSplicePeriodUI() { if (window._vsSpliceSetPeriod) window._vsSpliceSetPeriod(document.getElementById('vs-splice-period-mode')?.value || 'monthly'); }
 
 async function _vsLoadSpliceStats() {
   const resultEl = document.getElementById('vs-splice-result');
@@ -42025,31 +42131,32 @@ async function _vsLoadSpliceStats() {
   resultEl.innerHTML = `<div class="flex justify-center py-8"><i class="fas fa-spinner fa-spin text-indigo-400 text-xl"></i></div>`;
 
   try {
-    const mode = document.getElementById('vs-splice-period-mode')?.value || 'week';
-    const cons  = document.getElementById('vs-splice-construction')?.value || '';
-    let from = '', to = '';
-    const nowY = getKSTYear();
-    if (mode === 'week') {
-      const wv = document.getElementById('vs-splice-period-week')?.value || '';
-      if (wv) { const wr = _vsWeekRange(wv); from = wr.from; to = wr.to; }
-    } else if (mode === 'month') {
-      const mv = document.getElementById('vs-splice-period-month')?.value || new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);
-      from = mv + '-01';
-      var d = new Date(mv + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      to = _kstDateOf(d);
-    } else if (mode === 'quarter') {
-      const y = parseInt(document.getElementById('vs-splice-period-year')?.value || nowY);
-      const q = parseInt(document.getElementById('vs-splice-period-quarter')?.value || 1);
-      from = `${y}-${String((q-1)*3+1).padStart(2,'0')}-01`;
-      var d = new Date(y + '-' + String(q*3).padStart(2,'0') + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      to = _kstDateOf(d);
-    } else if (mode === 'year') {
-      const y = parseInt(document.getElementById('vs-splice-period-year')?.value || nowY);
-      from = `${y}-01-01`; to = `${y}-12-31`;
+    // [FEAT-통일] 4탭 방식 DOM 읽기 (vs-splice-period-mode hidden input)
+    var mode = document.getElementById('vs-splice-period-mode')?.value || 'monthly';
+    var cons = document.getElementById('vs-splice-construction')?.value || '';
+    var from = '', to = '';
+    var nowY = getKSTYear();
+    var spYVal = document.getElementById('vs-splice-period-year')?.value || String(nowY);
+    if (mode === 'yearly') {
+      from = spYVal + '-01-01'; to = spYVal + '-12-31';
+    } else if (mode === 'quarterly') {
+      var spQ = parseInt(document.getElementById('vs-splice-period-quarter')?.value || '1');
+      from = spYVal + '-' + String((spQ-1)*3+1).padStart(2,'0') + '-01';
+      var spQd = new Date(spYVal + '-' + String(spQ*3).padStart(2,'00') + '-01');
+      spQd.setMonth(spQd.getMonth()+1); spQd.setDate(0);
+      to = _kstDateOf(spQd);
+    } else if (mode === 'monthly') {
+      var spMv = document.getElementById('vs-splice-period-month')?.value || new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);
+      from = spMv + '-01';
+      var spMd = new Date(spMv + '-01'); spMd.setMonth(spMd.getMonth()+1); spMd.setDate(0);
+      to = _kstDateOf(spMd);
+    } else if (mode === 'weekly') {
+      var spWk = document.getElementById('vs-splice-week-start')?.value || '';
+      if (spWk) { from = spWk; var spWd = new Date(spWk); spWd.setDate(spWd.getDate()+6); to = _kstDateOf(spWd); }
     }
-    let qs = '?';
-    if (cons) qs += `construction_id=${cons}&`;
-    if (from) qs += `from_date=${from}&to_date=${to}&`;
+    var qs = '?';
+    if (cons) qs += 'construction_id='+cons+'&';
+    if (from) qs += 'from_date='+from+'&to_date='+to+'&';
 
     const [statsRes, priceRes] = await Promise.all([
       API.get('/splice-reports/stats' + qs),
@@ -42496,20 +42603,26 @@ function printVolumeStats() {
   const chartCanvas = document.getElementById('vs-chart-main');
   const chartImg    = chartCanvas ? chartCanvas.toDataURL('image/png') : null;
 
-  // 조회 조건 텍스트
-  const modeEl  = document.getElementById('vs-period-mode');
-  const modeMap = { month:'월별', quarter:'분기별', year:'연도별', all:'전체' };
-  const modeStr = modeMap[modeEl?.value] || '전체';
-  const consEl  = document.getElementById('vs-construction');
-  const consStr = consEl?.options[consEl.selectedIndex]?.text || '전체 공사';
-  const periodStr = (() => {
-    const m = modeEl?.value;
-    if (m==='month')   return document.getElementById('vs-period-month')?.value || '';
-    if (m==='year')    return document.getElementById('vs-period-year')?.value + '년' || '';
-    if (m==='quarter') {
-      const y = document.getElementById('vs-period-year')?.value;
-      const q = document.getElementById('vs-period-quarter')?.value;
-      return y && q ? `${y}년 Q${q}` : '';
+  // [FEAT-통일] 조회 조건 텍스트 (4탭 방식 키 사용)
+  var modeEl  = document.getElementById('vs-period-mode');
+  var modeMap = { yearly:'년간', quarterly:'분기별', monthly:'월간', weekly:'주간' };
+  var modeStr = modeMap[modeEl?.value] || '전체';
+  var consEl  = document.getElementById('vs-construction');
+  var consStr = consEl?.options[consEl.selectedIndex]?.text || '전체 공사';
+  var periodStr = (function() {
+    var m = modeEl?.value;
+    if (m==='monthly')   return document.getElementById('vs-period-month')?.value || '';
+    if (m==='yearly')    return (document.getElementById('vs-period-year')?.value || '') + '년';
+    if (m==='quarterly') {
+      var y = document.getElementById('vs-period-year')?.value;
+      var q = document.getElementById('vs-period-quarter')?.value;
+      return y && q ? y+'년 Q'+q : '';
+    }
+    if (m==='weekly') {
+      var ws = document.getElementById('vs-week-start')?.value || '';
+      if (!ws) return '';
+      var we = new Date(ws); we.setDate(we.getDate()+6);
+      return ws + ' ~ ' + _kstDateOf(we);
     }
     return '전체';
   })();
@@ -42622,34 +42735,42 @@ let _cableDetailCache = [];
 async function renderCableDetailPage(container) {
   container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-blue-400 text-2xl"></i></div></div>`;
   try {
-    // 조회 기간 계산 (mode: month/quarter/year)
-    const mode  = document.getElementById('cd-period-mode')?.value  || 'month';
-    const mVal  = document.getElementById('cd-period-month')?.value || '';
-    const qVal  = document.getElementById('cd-period-quarter')?.value || '';
-    const yVal  = document.getElementById('cd-period-year')?.value  || '';
+    // [FEAT-통일] 조회 기간 계산 (mode: yearly/quarterly/monthly/weekly)
+    const mode    = document.getElementById('cd-period-mode')?.value  || 'monthly';
+    const mVal    = document.getElementById('cd-period-month')?.value || '';
+    const qVal    = document.getElementById('cd-period-quarter')?.value || '';
+    const yVal    = document.getElementById('cd-period-year')?.value  || '';
+    const wkStart = document.getElementById('cd-week-start')?.value   || '';
     const consVal = document.getElementById('cd-construction')?.value || '';
 
+    var cdNowYear = getKSTYear();
+    var cdEffYear = yVal ? Number(yVal) : cdNowYear;
+
     let fromDate = '', toDate = '';
-    if (mode === 'month' && mVal) {
+    if (mode === 'yearly') {
+      fromDate = cdEffYear + '-01-01';
+      toDate   = cdEffYear + '-12-31';
+    } else if (mode === 'quarterly' && qVal) {
+      var q = parseInt(qVal);
+      var startM = String((q-1)*3+1).padStart(2,'0');
+      var endM   = String(q*3).padStart(2,'00');
+      fromDate = cdEffYear + '-' + startM + '-01';
+      var dq = new Date(cdEffYear + '-' + endM + '-01'); dq.setMonth(dq.getMonth()+1); dq.setDate(0);
+      toDate = _kstDateOf(dq);
+    } else if (mode === 'monthly' && mVal) {
       fromDate = mVal + '-01';
-      var d = new Date(mVal + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      toDate = _kstDateOf(d);
-    } else if (mode === 'quarter' && qVal && yVal) {
-      const q = parseInt(qVal);
-      const startM = String((q-1)*3+1).padStart(2,'0');
-      const endM   = String(q*3).padStart(2,'0');
-      fromDate = `${yVal}-${startM}-01`;
-      var d = new Date(yVal + '-' + endM + '-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
-      toDate = _kstDateOf(d);
-    } else if (mode === 'year' && yVal) {
-      fromDate = `${yVal}-01-01`;
-      toDate   = `${yVal}-12-31`;
+      var dm = new Date(mVal + '-01'); dm.setMonth(dm.getMonth()+1); dm.setDate(0);
+      toDate = _kstDateOf(dm);
+    } else if (mode === 'weekly' && wkStart) {
+      fromDate = wkStart;
+      var dw = new Date(wkStart); dw.setDate(dw.getDate()+6);
+      toDate = _kstDateOf(dw);
     }
 
     const params = [];
-    if (consVal)  params.push(`construction_id=${consVal}`);
-    if (fromDate) params.push(`from_date=${fromDate}`);
-    if (toDate)   params.push(`to_date=${toDate}`);
+    if (consVal)  params.push('construction_id=' + consVal);
+    if (fromDate) params.push('from_date=' + fromDate);
+    if (toDate)   params.push('to_date='   + toDate);
     const qs = params.length ? '?' + params.join('&') : '';
 
     const [statsRes, consRes] = await Promise.all([
@@ -42662,8 +42783,26 @@ async function renderCableDetailPage(container) {
 
     // 연도 목록 생성 (2020~현재년)
     const nowYear = getKSTYear();
-    const years = Array.from({length: nowYear-2019}, (_,i) => nowYear-i);
-    const savedMode = mode; const savedMVal = mVal; const savedQVal = qVal; const savedYVal = yVal || String(nowYear);
+    const years = Array.from({length: nowYear-2019}, function(_,i){ return nowYear-i; });
+    // 주간 기본값 계산 (KST)
+    var cdDefaultWeek = (function() {
+      var now = getKSTNow();
+      var day = now.getUTCDay();
+      var mon = new Date(now.getTime());
+      mon.setUTCDate(now.getUTCDate() - (day === 0 ? 6 : day - 1));
+      return _kstDateOf(mon);
+    })();
+    var savedMode = mode;
+    var savedMVal = mVal || new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);
+    var savedQVal = qVal || '1';
+    var savedYVal = yVal || String(nowYear);
+    var savedWkStart = wkStart || cdDefaultWeek;
+    // 주간 범위 표시 헬퍼
+    function cdWeekRange(startStr) {
+      var d = new Date(startStr); var e = new Date(d); e.setDate(d.getDate()+6);
+      var fmt = function(x){ return (x.getMonth()+1) + '/' + x.getDate(); };
+      return fmt(d) + ' ~ ' + fmt(e);
+    }
 
     // 공정별 집계 ([FEAT-176] 철거(불용)/철거(폐기) 모두 철거 집계에 포함)
     var _isRemove = function(p){ return p==='철거' || p==='철거(불용)' || p==='철거(폐기)'; };
@@ -42699,32 +42838,6 @@ async function renderCableDetailPage(container) {
           <i class="fas fa-project-diagram text-blue-500"></i> 광케이블 현황
         </h2>
         <div class="flex gap-2 flex-wrap items-center">
-          <!-- 공사 선택 -->
-          <select id="cd-construction" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
-            <option value="">전체 공사</option>
-            ${constructions.map(c=>`<option value="${c.id}" ${consVal==c.id?'selected':''}>${c.request_no} ${c.title||''}</option>`).join('')}
-          </select>
-          <!-- 기간 모드 선택 -->
-          <select id="cd-period-mode" onchange="_cdUpdatePeriodUI()" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
-            <option value="month"   ${savedMode==='month'  ?'selected':''}>월별</option>
-            <option value="quarter" ${savedMode==='quarter'?'selected':''}>분기별</option>
-            <option value="year"    ${savedMode==='year'   ?'selected':''}>연도별</option>
-            <option value="all"     ${savedMode==='all'    ?'selected':''}>전체</option>
-          </select>
-          <!-- 연도 선택 (분기/연도 모드) -->
-          <select id="cd-period-year" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none cd-year-sel ${savedMode==='month'||savedMode==='all'?'hidden':''}">
-            ${years.map(y=>`<option value="${y}" ${savedYVal==y?'selected':''}>${y}년</option>`).join('')}
-          </select>
-          <!-- 분기 선택 -->
-          <select id="cd-period-quarter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none ${savedMode!=='quarter'?'hidden':''}" id="cd-quarter-sel">
-            ${[1,2,3,4].map(q=>`<option value="${q}" ${savedQVal==q?'selected':''}>Q${q} (${(q-1)*3+1}~${q*3}월)</option>`).join('')}
-          </select>
-          <!-- 월 선택 -->
-          <input type="month" id="cd-period-month" value="${savedMVal}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none ${savedMode!=='month'?'hidden':''}">
-          <button onclick="renderCableDetailPage(document.getElementById('page-content'))"
-                  class="bg-blue-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-blue-600">
-            <i class="fas fa-search mr-1"></i>조회
-          </button>
           <button onclick="downloadCableDetailCSV()"
                   class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">
             <i class="fas fa-file-excel mr-1"></i>엑셀 다운로드
@@ -42734,6 +42847,50 @@ async function renderCableDetailPage(container) {
             <i class="fas fa-arrow-left mr-1"></i>물량통계로
           </button>
         </div>
+      </div>
+
+      <!-- [FEAT-통일] 필터 바 — 공사통계 방식 통일 (년간/분기별/월간/주간) -->
+      <div style="background:#fff;border-radius:12px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <!-- 공사 선택 -->
+        <select id="cd-construction" style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;cursor:pointer">
+          <option value="">전체 공사</option>
+          ${constructions.map(c=>'<option value="'+c.id+'" '+(consVal==c.id?'selected':'')+'>'+c.request_no+' '+(c.title||'')+'</option>').join('')}
+        </select>
+        <!-- 기간 탭 -->
+        <input type="hidden" id="cd-period-mode" value="${savedMode}">
+        <div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;flex-shrink:0">
+          ${[['yearly','년간'],['quarterly','분기별'],['monthly','월간'],['weekly','주간']].map(function(pair){
+            var p=pair[0], lbl=pair[1];
+            return '<button id="cd-tab-'+p+'" onclick="window._cdSetPeriod(\''+p+'\')"'+
+              ' style="padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;'+
+              'background:'+(p===savedMode?'#685182':'#fff')+';color:'+(p===savedMode?'#fff':'#6B7280')+';transition:all .15s">'+lbl+'</button>';
+          }).join('')}
+        </div>
+        <!-- 연도 -->
+        <select id="cd-period-year" onchange="window._cdSetYear(this.value)"
+          style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;cursor:pointer">
+          ${years.map(function(y){ return '<option value="'+y+'" '+(savedYVal==y?'selected':'')+'>'+y+'년</option>'; }).join('')}
+        </select>
+        <!-- 분기 선택 (분기별 전용) -->
+        <select id="cd-period-quarter"
+          style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;cursor:pointer;display:${savedMode==='quarterly'?'':'none'}">
+          ${[1,2,3,4].map(function(q){ return '<option value="'+q+'" '+(savedQVal==q?'selected':'')+'>Q'+q+' ('+(q-1)*3+1+'~'+q*3+'월)</option>'; }).join('')}
+        </select>
+        <!-- 월 선택 (월간 전용) -->
+        <input type="month" id="cd-period-month" value="${savedMVal}"
+          style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;display:${savedMode==='monthly'?'':'none'}">
+        <!-- 주간 이동 (주간 전용) -->
+        <input type="hidden" id="cd-week-start" value="${savedWkStart}">
+        <div id="cd-week-nav" style="display:${savedMode==='weekly'?'flex':'none'};align-items:center;gap:6px">
+          <button onclick="window._cdWeekShift(-1)" style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8249;</button>
+          <span id="cd-week-label" style="font-size:12px;color:#374151;font-weight:600;white-space:nowrap">${cdWeekRange(savedWkStart)}</span>
+          <button onclick="window._cdWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>
+        </div>
+        <!-- 조회 버튼 -->
+        <button onclick="renderCableDetailPage(document.getElementById('page-content'))"
+          style="padding:7px 18px;background:#685182;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">
+          <i class="fas fa-search" style="margin-right:5px"></i>조회
+        </button>
       </div>
 
       <!-- 요약 카드 -->
@@ -42923,22 +43080,44 @@ async function renderCableDetailPage(container) {
 }
 
 // ─── 광케이블 현황 기간 UI show/hide ────────────────────────────────────────
+// [FEAT-통일] 광케이블 현황 기간 탭 컨트롤 함수
 function _cdUpdatePeriodUI() {
-  const mode = document.getElementById('cd-period-mode')?.value || 'month';
-
-  // 연도 select: quarter/year 모드에서만 표시
-  document.querySelectorAll('.cd-year-sel').forEach(el => {
-    el.classList.toggle('hidden', mode === 'month' || mode === 'all');
-  });
-
-  // 분기 select: quarter 모드에서만 표시
-  const qSel = document.getElementById('cd-period-quarter');
-  if (qSel) qSel.classList.toggle('hidden', mode !== 'quarter');
-
-  // 월 input: month 모드에서만 표시
-  const mIn = document.getElementById('cd-period-month');
-  if (mIn) mIn.classList.toggle('hidden', mode !== 'month');
+  // 드롭다운 방식 레거시 호환용 — 신규 탭 방식은 window._cdSetPeriod 사용
+  var mode = document.getElementById('cd-period-mode')?.value || 'monthly';
+  window._cdSetPeriod(mode);
 }
+window._cdSetPeriod = function(p) {
+  var modeEl = document.getElementById('cd-period-mode');
+  if (modeEl) modeEl.value = p;
+  ['yearly','quarterly','monthly','weekly'].forEach(function(x) {
+    var btn = document.getElementById('cd-tab-'+x);
+    if (!btn) return;
+    btn.style.background = x===p ? '#685182' : '#fff';
+    btn.style.color      = x===p ? '#fff'    : '#6B7280';
+  });
+  var qSel  = document.getElementById('cd-period-quarter');
+  var mInp  = document.getElementById('cd-period-month');
+  var wNav  = document.getElementById('cd-week-nav');
+  if (qSel)  qSel.style.display  = p==='quarterly' ? '' : 'none';
+  if (mInp)  mInp.style.display  = p==='monthly'   ? '' : 'none';
+  if (wNav)  wNav.style.display  = p==='weekly'     ? 'flex' : 'none';
+};
+window._cdSetYear = function(y) {
+  // 연도 변경 시 기간 라벨 갱신 불필요 (조회 버튼 클릭 시 반영)
+};
+window._cdWeekShift = function(delta) {
+  var el = document.getElementById('cd-week-start');
+  if (!el) return;
+  var d = new Date(el.value); d.setDate(d.getDate() + delta*7);
+  var newStart = _kstDateOf(d);
+  el.value = newStart;
+  var lbl = document.getElementById('cd-week-label');
+  if (lbl) {
+    var e = new Date(d); e.setDate(d.getDate()+6);
+    var fmt = function(x){ return (x.getMonth()+1)+'/'+x.getDate(); };
+    lbl.textContent = fmt(d) + ' ~ ' + fmt(e);
+  }
+};
 
 // ─── 광케이블 현황 엑셀 다운로드 ────────────────────────────────────────────
 // ─── 케이블 요약 공정 필터 ───────────────────────────────────────────────────

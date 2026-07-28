@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-28 (세션 106-2 — [SC-투표500/투표요청] votes FK 제거 + sc_vote push + 서명요청 카드 투표UI)
-> **GitHub 최신 (safetynote-server): `(세션 106-2)`** — fix: [SC-투표500/투표요청] patchSchema v0.189 + sc_vote push + 서명요청카드 투표UI
+> **GitHub 최신 (safetynote-server): `7cae5e0`** — fix: [SC-투표500/투표요청] patchSchema v0.189 + sc_vote push + 서명요청카드 투표UI
 > **이전 커밋 (safetynote-server): `5a68e78`** — docs: [세션 106] PROJECT_HISTORY 커밋 해시 d369b94 반영
 > **이전 커밋 (safetynote-server): `2c12724`** — fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정
 > **이전 커밋 (safetynote-server): `c76ea33`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
@@ -6261,7 +6261,7 @@ After: seq (||agenda_no), title, content, assignee_id, assignee_name, result (||
 - [x] _scSendVoteRequests 신규
 - [x] signature-requests.ts sc_vote 처리
 - [x] node --check ✅ / npm run build ✅ (296.03 kB)
-- [x] git commit & push
+- [x] git commit & push (`7cae5e0`)
 
 ---
 

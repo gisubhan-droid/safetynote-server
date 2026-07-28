@@ -38,6 +38,18 @@ import { join } from 'node:path'
 
 const app = new Hono()
 
+// ─── SC 전체 권한 미들웨어 ─────────────────────────────────────────────────────
+// 산업안전보건위원회는 admin/supervisor 전용 메뉴
+// 근로자(worker, lgu, lgu_plus) 접근 완전 차단
+app.use('/*', async (c, next) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const blockedRoles = ['worker', 'lgu', 'lgu_plus']
+  if (blockedRoles.includes(user.role))
+    return c.json({ error: '산업안전보건위원회는 관리자/감독자 전용 메뉴입니다.' }, 403)
+  return next()
+})
+
 // ─── 내부 헬퍼 ────────────────────────────────────────────────────────────────
 
 function safeName(s: string): string {
@@ -696,10 +708,12 @@ app.post('/agendas/:agendaId/vote', async (c) => {
     return c.json({ error: '확정된 회의는 투표 변경 불가' }, 409)
 
   // UPSERT (기존 투표 변경 허용)
+  // voted_at 컬럼이 구DB에 없을 수 있으므로 ADD COLUMN 방어 처리
+  try { rawDb.exec(`ALTER TABLE safety_committee_votes ADD COLUMN voted_at TEXT`) } catch(_) {}
   rawDb.prepare(`
-    INSERT INTO safety_committee_votes (agenda_id, meeting_id, user_id, vote)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(agenda_id, user_id) DO UPDATE SET vote=excluded.vote, voted_at=CURRENT_TIMESTAMP
+    INSERT INTO safety_committee_votes (agenda_id, meeting_id, user_id, vote, voted_at)
+    VALUES (?, ?, ?, ?, datetime('now','localtime'))
+    ON CONFLICT(agenda_id, user_id) DO UPDATE SET vote=excluded.vote, voted_at=datetime('now','localtime')
   `).run(agendaId, agenda.meeting_id, user.id, vote)
 
   // 현재 집계 반환

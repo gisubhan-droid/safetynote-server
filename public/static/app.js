@@ -2388,7 +2388,6 @@ function renderApp() {
       items: [
         { id:'hazard-report', icon:'fas fa-exclamation-triangle', label:'위험신고' },
         { id:'sign-requests', icon:'fas fa-pen-fancy',            label:'서명요청' },
-        { id:'sc-meetings',   icon:'fas fa-landmark',             label:'안전보건위원회' },
       ]
     },
     {

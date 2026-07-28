@@ -48743,60 +48743,320 @@ function _scOpenMeeting(el) {
   if (container) renderSCMeetingDetail(container, _scCurrentMeetingId);
 }
 
+// ─── FEAT: 회의 종류별 기본값 정의 ───────────────────────────────────────────
+// 유형별 제목 패턴, 기본 장소, 기본 안건
+var _SC_MEETING_DEFAULTS = {
+  regular: {
+    // 제목은 N차를 계산해서 채움 — 아래 _scAutoFillMeetingTitle() 참고
+    titleTpl:  '산업안전보건위원회 제{N}차 정기회의',
+    location:  '',
+    summary:   '',
+    agendas: [
+      { title: '산업재해 예방계획 수립·이행 보고',          content: '당기 산업재해 예방계획 수립 현황 및 전기 이행 결과를 보고하고 개선 방향을 심의한다.' },
+      { title: '안전·보건 교육 실시 결과 보고',             content: '법정 안전보건교육 실시 현황(대상자·이수율)을 보고하고 미이수 사항 개선방안을 심의한다.' },
+      { title: '작업환경 개선 및 유해·위험 요인 심의',      content: '작업환경측정 결과, 유해·위험 요인 개선 진행 현황을 보고하고 필요 조치를 심의한다.' }
+    ]
+  },
+  extraordinary: {
+    titleTpl:  '산업안전보건위원회 임시회의',
+    location:  '',
+    summary:   '',
+    agendas: []
+  },
+  written: {
+    titleTpl:  '산업안전보건위원회 서면결의',
+    location:  '',
+    summary:   '',
+    agendas: []
+  }
+};
+
+// 올해 정기회의 횟수를 조회해 제목 자동 완성
+// onDone(title) 콜백으로 완성된 제목 반환
+function _scCalcRegularTitle(onDone) {
+  var year = new Date().getFullYear();
+  _scFetch('/api/safety-committee/meetings?year=' + year)
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      var list = rows.data || rows || [];
+      var count = 0;
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].meeting_type === 'regular') count++;
+      }
+      var n = count + 1;
+      // 서수 표현: 1→1, 2→2 ... 그냥 숫자로
+      onDone('산업안전보건위원회 제' + n + '차 정기회의');
+    })
+    .catch(function() {
+      onDone('산업안전보건위원회 제1차 정기회의');
+    });
+}
+
 function _scCreateMeeting() {
-  var today = new Date().toISOString().substring(0,10);
+  var today = new Date().toISOString().substring(0, 10);
+
   var overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
+
   overlay.innerHTML =
-    '<div style="background:#fff;border-radius:16px;padding:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">' +
-        '<h3 style="font-size:16px;font-weight:700;color:#1E293B;margin:0"><i class="fas fa-landmark" style="color:#7C3AED;margin-right:8px"></i>회의 생성</h3>' +
-        '<button onclick="this.closest(\'.modal-overlay\').remove()" style="background:none;border:none;font-size:18px;color:#9CA3AF;cursor:pointer">✕</button>' +
+    '<div style="background:#fff;border-radius:16px;overflow:hidden;width:100%;max-width:540px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.22)">' +
+
+      // ── 헤더 ──
+      '<div style="background:#7C3AED;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">' +
+        '<span style="color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px">' +
+          '<i class="fas fa-landmark"></i>새 회의 생성' +
+        '</span>' +
+        '<button onclick="this.closest(\'.modal-overlay\').remove()" style="background:none;border:none;color:rgba(255,255,255,.8);font-size:18px;cursor:pointer;line-height:1">✕</button>' +
       '</div>' +
-      '<div style="display:grid;gap:12px">' +
-        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">회의 제목 *</label>' +
-          '<input id="sc-new-title" type="text" placeholder="예: 2024년 2분기 산업안전보건위원회" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box"></div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-          '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">개최일 *</label>' +
-            '<input id="sc-new-date" type="date" value="' + today + '" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box"></div>' +
-          '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">회의 유형</label>' +
-            '<select id="sc-new-type" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px">' +
-              '<option value="regular">정기</option><option value="extraordinary">임시</option><option value="written">서면</option>' +
-            '</select></div>' +
+
+      // ── 유형 선택 탭 ──
+      '<div style="background:#F5F3FF;padding:12px 20px;border-bottom:1px solid #EDE9F8;flex-shrink:0">' +
+        '<div style="display:flex;gap:8px">' +
+          '<button id="sc-type-btn-regular"       onclick="_scSelectMeetingType(\'regular\')"       style="flex:1;padding:9px 4px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #7C3AED;background:#7C3AED;color:#fff;transition:.15s">📅 정기</button>' +
+          '<button id="sc-type-btn-extraordinary" onclick="_scSelectMeetingType(\'extraordinary\')" style="flex:1;padding:9px 4px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid #E5E7EB;background:#fff;color:#6B7280;transition:.15s">⚡ 임시</button>' +
+          '<button id="sc-type-btn-written"       onclick="_scSelectMeetingType(\'written\')"       style="flex:1;padding:9px 4px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid #E5E7EB;background:#fff;color:#6B7280;transition:.15s">📄 서면</button>' +
         '</div>' +
-        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">개최 장소</label>' +
-          '<input id="sc-new-location" type="text" placeholder="예: 본사 회의실 2층" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box"></div>' +
-        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">회의 요약</label>' +
-          '<textarea id="sc-new-summary" rows="3" placeholder="회의 주요 내용 요약..." style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea></div>' +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:16px">' +
-        '<button onclick="_scSubmitCreateMeeting()" style="flex:1;padding:10px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">생성</button>' +
-        '<button onclick="this.closest(\'.modal-overlay\').remove()" style="padding:10px 20px;background:#fff;color:#64748B;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;cursor:pointer">취소</button>' +
+
+      // ── 폼 ──
+      '<div style="padding:20px;overflow-y:auto;flex:1">' +
+        '<div style="display:grid;gap:14px">' +
+
+          // 제목
+          '<div>' +
+            '<label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">' +
+              '<i class="fas fa-heading" style="color:#7C3AED;margin-right:4px"></i>회의 제목 <span style="color:#EF4444">*</span>' +
+            '</label>' +
+            '<div style="position:relative">' +
+              '<input id="sc-new-title" type="text" placeholder="회의 제목을 입력하세요" ' +
+                'style="width:100%;padding:10px 38px 10px 12px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:13px;box-sizing:border-box">' +
+              '<button id="sc-title-refresh" onclick="_scRefreshMeetingTitle()" title="제목 자동완성 새로고침" ' +
+                'style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#7C3AED;cursor:pointer;font-size:14px;padding:2px">' +
+                '<i class="fas fa-sync-alt"></i>' +
+              '</button>' +
+            '</div>' +
+            '<div id="sc-title-hint" style="font-size:11px;color:#7C3AED;margin-top:3px;display:none">' +
+              '<i class="fas fa-magic" style="margin-right:3px"></i>올해 정기회의 횟수를 기준으로 자동 계산되었습니다.' +
+            '</div>' +
+          '</div>' +
+
+          // 개최일 + 장소
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+            '<div>' +
+              '<label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">' +
+                '<i class="fas fa-calendar-alt" style="color:#7C3AED;margin-right:4px"></i>개최일 <span style="color:#EF4444">*</span>' +
+              '</label>' +
+              '<input id="sc-new-date" type="date" value="' + today + '" ' +
+                'style="width:100%;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:13px;box-sizing:border-box">' +
+            '</div>' +
+            '<div>' +
+              '<label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">' +
+                '<i class="fas fa-map-marker-alt" style="color:#7C3AED;margin-right:4px"></i>개최 장소' +
+              '</label>' +
+              '<input id="sc-new-location" type="text" placeholder="예: 본사 회의실 2층" ' +
+                'style="width:100%;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:13px;box-sizing:border-box">' +
+            '</div>' +
+          '</div>' +
+
+          // 회의 요약
+          '<div>' +
+            '<label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">' +
+              '<i class="fas fa-align-left" style="color:#7C3AED;margin-right:4px"></i>회의 요약' +
+            '</label>' +
+            '<textarea id="sc-new-summary" rows="2" placeholder="회의 주요 내용 요약..." ' +
+              'style="width:100%;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>' +
+          '</div>' +
+
+          // 기본 안건 미리보기 (정기만 표시)
+          '<div id="sc-default-agendas-preview" style="">' +
+            '<label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:6px">' +
+              '<i class="fas fa-list-ul" style="color:#7C3AED;margin-right:4px"></i>기본 안건 <span style="font-size:11px;font-weight:400;color:#7C3AED">(생성 후 자동 등록)</span>' +
+            '</label>' +
+            '<div id="sc-default-agendas-list" style="display:grid;gap:6px"></div>' +
+          '</div>' +
+
+        '</div>' +
       '</div>' +
+
+      // ── 하단 버튼 ──
+      '<div style="padding:14px 20px;border-top:1px solid #F3F4F6;display:flex;gap:8px;flex-shrink:0;background:#FAFAFA">' +
+        '<button onclick="_scSubmitCreateMeeting()" ' +
+          'style="flex:1;padding:11px;background:#7C3AED;color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">' +
+          '<i class="fas fa-plus-circle"></i>회의 생성' +
+        '</button>' +
+        '<button onclick="this.closest(\'.modal-overlay\').remove()" ' +
+          'style="padding:11px 20px;background:#fff;color:#64748B;border:1.5px solid #E5E7EB;border-radius:9px;font-size:13px;cursor:pointer">취소</button>' +
+      '</div>' +
+
     '</div>';
+
   document.body.appendChild(overlay);
+
+  // 숨겨진 type 값 저장용
+  overlay._scMeetingType = 'regular';
+
+  // 초기: 정기 선택 상태로 자동 완성
+  _scSelectMeetingType('regular');
+}
+
+// 유형 탭 전환 + 자동 완성
+function _scSelectMeetingType(type) {
+  var overlay = document.querySelector('.modal-overlay');
+  if (!overlay) return;
+  overlay._scMeetingType = type;
+
+  // 탭 버튼 스타일 갱신
+  var types = ['regular', 'extraordinary', 'written'];
+  for (var i = 0; i < types.length; i++) {
+    var btn = document.getElementById('sc-type-btn-' + types[i]);
+    if (!btn) continue;
+    if (types[i] === type) {
+      btn.style.background = '#7C3AED';
+      btn.style.color      = '#fff';
+      btn.style.border     = '2px solid #7C3AED';
+      btn.style.fontWeight = '700';
+    } else {
+      btn.style.background = '#fff';
+      btn.style.color      = '#6B7280';
+      btn.style.border     = '2px solid #E5E7EB';
+      btn.style.fontWeight = '600';
+    }
+  }
+
+  var def = _SC_MEETING_DEFAULTS[type] || _SC_MEETING_DEFAULTS.regular;
+
+  // 장소·요약 자동 채우기 (비어있을 때만)
+  var locEl = document.getElementById('sc-new-location');
+  var sumEl = document.getElementById('sc-new-summary');
+  if (locEl && !locEl.value) locEl.value = def.location;
+  if (sumEl && !sumEl.value) sumEl.value = def.summary;
+
+  // 기본 안건 미리보기 표시 여부
+  var preview = document.getElementById('sc-default-agendas-preview');
+  var listEl  = document.getElementById('sc-default-agendas-list');
+  if (preview) preview.style.display = (type === 'regular' && def.agendas.length > 0) ? '' : 'none';
+  if (listEl) {
+    listEl.innerHTML = '';
+    for (var j = 0; j < def.agendas.length; j++) {
+      var ag = def.agendas[j];
+      listEl.innerHTML +=
+        '<div style="background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:9px 12px;display:flex;align-items:flex-start;gap:8px">' +
+          '<span style="background:#7C3AED;color:#fff;border-radius:50%;width:20px;height:20px;font-size:10px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center">' + (j + 1) + '</span>' +
+          '<div>' +
+            '<div style="font-size:12px;font-weight:700;color:#4E3A63">' + ag.title + '</div>' +
+            '<div style="font-size:11px;color:#7C6A8A;margin-top:2px;line-height:1.4">' + ag.content + '</div>' +
+          '</div>' +
+        '</div>';
+    }
+  }
+
+  // 제목 자동 완성
+  _scAutoFillMeetingTitle(type);
+}
+
+// 제목 자동 완성 (유형에 따라)
+function _scAutoFillMeetingTitle(type) {
+  var titleEl = document.getElementById('sc-new-title');
+  var hintEl  = document.getElementById('sc-title-hint');
+  if (!titleEl) return;
+
+  if (type === 'regular') {
+    // 로딩 표시
+    titleEl.value       = '계산 중...';
+    titleEl.disabled    = true;
+    _scCalcRegularTitle(function(title) {
+      if (titleEl) {
+        titleEl.value    = title;
+        titleEl.disabled = false;
+        titleEl.focus();
+        titleEl.select();
+      }
+      if (hintEl) hintEl.style.display = '';
+    });
+  } else {
+    var def = _SC_MEETING_DEFAULTS[type] || {};
+    titleEl.value    = def.titleTpl || '';
+    titleEl.disabled = false;
+    if (hintEl) hintEl.style.display = 'none';
+  }
+}
+
+// 새로고침 버튼 — 정기 N차 재계산
+function _scRefreshMeetingTitle() {
+  var overlay = document.querySelector('.modal-overlay');
+  if (!overlay) return;
+  var type = overlay._scMeetingType || 'regular';
+  _scAutoFillMeetingTitle(type);
 }
 
 function _scSubmitCreateMeeting() {
+  var overlay  = document.querySelector('.modal-overlay');
+  var meetType = (overlay && overlay._scMeetingType) || 'regular';
+
   var title    = (document.getElementById('sc-new-title')    || {}).value || '';
   var date     = (document.getElementById('sc-new-date')     || {}).value || '';
-  var type     = (document.getElementById('sc-new-type')     || {}).value || 'regular';
   var location = (document.getElementById('sc-new-location') || {}).value || '';
   var summary  = (document.getElementById('sc-new-summary')  || {}).value || '';
-  if (!title || !date) { alert('회의 제목과 개최일은 필수입니다.'); return; }
-  _scFetch('/api/safety-committee/meetings', { method: 'POST', body: JSON.stringify({ title: title, held_date: date, meeting_type: type, location: location, summary: summary }) }).then(function(r){ return r.json(); }).then(function(res) {
+
+  if (!title || !date) {
+    alert('회의 제목과 개최일은 필수입니다.');
+    return;
+  }
+
+  // 생성 버튼 비활성화 (중복 클릭 방지)
+  var submitBtn = overlay ? overlay.querySelector('button[onclick="_scSubmitCreateMeeting()"]') : null;
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 생성 중...'; }
+
+  _scFetch('/api/safety-committee/meetings', {
+    method: 'POST',
+    body: JSON.stringify({ title: title, held_date: date, meeting_type: meetType, location: location, summary: summary })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(res) {
     if (res.ok || res.id) {
       document.querySelectorAll('.modal-overlay').forEach(function(el){ el.remove(); });
-      if (res.id) {
-        _scCurrentMeetingId = res.id;
-        renderSCMeetingDetail(_scGetDetailContainer(), res.id);
+      var newId = res.id;
+      if (!newId) { _scLoadTabContent('meetings'); return; }
+
+      // 정기회의 → 기본 안건 자동 등록 후 상세 이동
+      var def = _SC_MEETING_DEFAULTS[meetType];
+      if (meetType === 'regular' && def && def.agendas && def.agendas.length > 0) {
+        var autoAgendas = [];
+        for (var i = 0; i < def.agendas.length; i++) {
+          autoAgendas.push({
+            agenda_no:   i + 1,
+            title:       def.agendas[i].title,
+            content:     def.agendas[i].content,
+            decision:    '',
+            vote_enabled: 0
+          });
+        }
+        _scFetch('/api/safety-committee/meetings/' + newId, {
+          method: 'PATCH',
+          body: JSON.stringify({ agendas: autoAgendas })
+        })
+        .then(function() {
+          _scCurrentMeetingId = newId;
+          renderSCMeetingDetail(_scGetDetailContainer(), newId);
+        })
+        .catch(function() {
+          // 안건 등록 실패해도 상세 이동은 진행
+          _scCurrentMeetingId = newId;
+          renderSCMeetingDetail(_scGetDetailContainer(), newId);
+        });
       } else {
-        _scLoadTabContent('meetings');
+        _scCurrentMeetingId = newId;
+        renderSCMeetingDetail(_scGetDetailContainer(), newId);
       }
     } else {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fas fa-plus-circle"></i>회의 생성'; }
       alert('생성 실패: ' + (res.error || JSON.stringify(res)));
     }
+  })
+  .catch(function(e) {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fas fa-plus-circle"></i>회의 생성'; }
+    alert('오류: ' + e.message);
   });
 }
 

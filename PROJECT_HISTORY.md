@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-28 (세션 105 — [SC-서명] 클릭=서명완료 방식 단순화 / signature_data 제거)
-> **GitHub 최신 (safetynote-server): `TBD`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
+> **GitHub 최신 (safetynote-server): `c76ea33`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
 > **이전 커밋 (safetynote-server): `49f3bd8`** — fix: [BUG-185b-v2] risk_assessment_signatures FK 제약 제거 + POST /risk/signatures 핸들러 재작성
 > **이전 커밋 (safetynote-server): `40978c9`** — fix: [BUG-182b-v2] /meeting 단수 경로 호환을 node-server.ts 레벨로 이동
 > **이전 커밋 (safetynote-server): `586022c`** — fix: [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 호환 라우트 추가
@@ -6207,7 +6207,7 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 - [x] npm run build ✅
 - [x] BUGFIX_LOG.md 업데이트 (BUG-185 항목에 세션 105 SC-서명 단순화 기록 추가)
 - [x] PROJECT_HISTORY.md 업데이트 (세션 105 항목 추가)
-- [x] git commit & push
+- [x] git commit & push (`c76ea33`)
 
 ---
 

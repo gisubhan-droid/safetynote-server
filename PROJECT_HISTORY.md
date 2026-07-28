@@ -1,7 +1,10 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 101 — [FEAT-180] 산업안전보건위원회 500 에러 수정 + 탭 통합 UI)
-> **GitHub 최신 (safetynote-server): `ef6c244`** — fix: [FEAT-180b] SC 500 에러 추가 수정(NOT NULL/sort_order) + 사이드바 하위메뉴 제거
+> 최종 업데이트: 2026-07-28 (세션 102 — [FEAT-182] 산업안전보건위원회 운영규칙+조직도 탭 추가)
+> **GitHub 최신 (safetynote-server): `174ee7c`** — feat: [FEAT-182] 산업안전보건위원회 운영규칙+조직도 탭 추가
+> **이전 커밋 (safetynote-server): `eccce5d`** — feat: [FEAT-181] 위원관리 다중행 일괄등록 + 인라인 수정폼
+> **이전 커밋 (safetynote-server): `311fd91`** — docs: [세션 101] FEAT-180b 커밋 해시 ef6c244 반영
+> **이전 커밋 (safetynote-server): `ef6c244`** — fix: [FEAT-180b] SC 500 에러 추가 수정(NOT NULL/sort_order) + 사이드바 하위메뉴 제거
 > **이전 커밋 (safetynote-server): `eaf04a6`** — fix+feat: [FEAT-180] SC 500 에러 수정(DB 컬럼명 불일치) + 회의록·위원관리 탭 통합 UI
 > **이전 커밋 (safetynote-server): `8cb1ffc`** — docs: [세션 100] 커밋 해시 6f507f9 반영
 > **이전 커밋 (safetynote-server): `6f507f9`** — fix+feat: [FEAT-179] SC 401 수정(_scFetch 헬퍼) + 위원관리·회의록 UI 안전교육 스타일 개선

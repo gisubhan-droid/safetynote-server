@@ -5,6 +5,62 @@
 
 ---
 
+## [FEAT-182] 산업안전보건위원회 운영규칙 + 조직도 탭 추가 (세션 102)
+
+### 신규 기능
+1. **운영규칙 탭**: 법정 14개 조항 view/edit 토글 UI (편집/저장/취소/출력)
+2. **조직도 탭**: 등록 위원 기반 3단 조직도 렌더링 (위원장→부위원장·간사→사용자측/근로자측), 출력 지원
+
+### 구현 내용
+
+#### DB (node-server.ts — patchSchema v0.183)
+```sql
+CREATE TABLE IF NOT EXISTS safety_committee_rules (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_key   TEXT    NOT NULL UNIQUE,
+  rule_value TEXT    NOT NULL DEFAULT '',
+  updated_by INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+)
+```
+- 14개 법정 기본값 `INSERT OR IGNORE` 삽입 (org_name, purpose, basis, composition, chair, term, meeting_cycle, quorum, agenda_submit, agenda_scope, resolution, minutes, penalty, enforcement)
+
+#### API (safety-committee.ts)
+- `GET /api/safety-committee/rules` — key/value 객체 반환
+- `PUT /api/safety-committee/rules` — UPSERT 방식 일괄 저장 (updated_by, updated_at 갱신)
+
+#### 프론트엔드 (app.js)
+- 탭 바 4개로 확장: 회의록관리 / 위원관리 / 운영규칙(fa-gavel) / 조직도(fa-sitemap)
+- `_scSwitchMainTab` 루프 방식 리팩토링
+- `_scLoadTabContent` rules/orgchart 분기 추가
+- `_scRulesMeta[]` — 14조항 메타 배열
+- `_scRenderRulesTab` — view/edit 토글 렌더
+- `_scToggleRulesEdit / _scCancelRulesEdit / _scSaveRules / _scPrintRules`
+- `_scRenderOrgChartTab` — 3단 조직도 (위원장→부위원장·간사→사용자측/근로자측)
+- `_scPrintOrgChart` — 새 창 출력 (FontAwesome CDN 포함)
+
+### 커밋
+- `174ee7c` — feat: [FEAT-182]
+
+---
+
+## [FEAT-181] 위원관리 다중행 일괄등록 + 인라인 수정폼 (세션 101)
+
+### 신규 기능
+1. **다중행 위원 추가**: 버튼 클릭마다 입력 행 추가, 일괄 등록, 각 행 ✕ 삭제 버튼
+2. **인라인 수정폼**: `prompt()` 제거 → 인라인 카드 수정 폼 (구분/직책유형/직책표시명/임명일 4개 필드)
+
+### 구현
+- `_scToggleOrAddMemberRow / _scAddMemberRow / _scRemoveMemberRow`
+- `_scSubmitAddMember` 순차 API 호출
+- `window._scAvailableUsers` 전역 캐시
+- `data-role`, `data-appointed` 카드 버튼에 추가
+
+### 커밋
+- `eccce5d` — feat: [FEAT-181]
+
+---
+
 ## [FEAT-180b] SC 500 에러 추가 수정 + 사이드바 하위메뉴 제거 (세션 101)
 
 ### 문제

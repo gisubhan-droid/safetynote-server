@@ -665,4 +665,48 @@ app.get('/docs/:docId/download', async (c) => {
   })
 })
 
+// ─── 운영 규칙 API ────────────────────────────────────────────────────────────
+
+// GET /api/safety-committee/rules — 전체 규칙 조회 (key→value 객체 반환)
+app.get('/rules', async (c) => {
+  const rawDb = getRawDb()
+  const user  = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const rows: any[] = rawDb.prepare(
+    `SELECT rule_key, rule_value FROM safety_committee_rules ORDER BY id ASC`
+  ).all()
+
+  const result: Record<string, string> = {}
+  for (const r of rows) result[r.rule_key] = r.rule_value
+  return c.json(result)
+})
+
+// PUT /api/safety-committee/rules — 규칙 일괄 저장 (body: { rule_key: rule_value, ... })
+app.put('/rules', async (c) => {
+  const rawDb = getRawDb()
+  const user  = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin' && user.role !== 'supervisor')
+    return c.json({ error: '권한 없음' }, 403)
+
+  const body = await c.req.json().catch(() => ({})) as Record<string, string>
+
+  const upsert = rawDb.prepare(`
+    INSERT INTO safety_committee_rules (rule_key, rule_value, updated_by, updated_at)
+    VALUES (?, ?, ?, datetime('now','localtime'))
+    ON CONFLICT(rule_key) DO UPDATE SET
+      rule_value = excluded.rule_value,
+      updated_by = excluded.updated_by,
+      updated_at = excluded.updated_at
+  `)
+
+  const tx = rawDb.transaction((entries: [string, string][]) => {
+    for (const [k, v] of entries) upsert.run(k, v, user.id)
+  })
+  tx(Object.entries(body))
+
+  return c.json({ ok: true })
+})
+
 export default app

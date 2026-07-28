@@ -3320,6 +3320,47 @@ function patchSchema() {
     }
   }
 
+  // ─── patchSchema v0.183: safety_committee_rules 테이블 신규 생성 ─────────
+  // 위원회 운영 규칙(조례) — key/value JSON 방식, 단일 행 upsert
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS safety_committee_rules (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_key   TEXT    NOT NULL UNIQUE,
+        rule_value TEXT    NOT NULL DEFAULT '',
+        updated_by INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+      )
+    `)
+    // 법정 기본값 삽입 (이미 있으면 무시)
+    const defaultRules: {key: string, val: string}[] = [
+      { key: 'org_name',        val: '산업안전보건위원회' },
+      { key: 'purpose',         val: '산업안전보건법 제24조에 의거하여 사업장의 산업재해 예방 및 근로자의 안전·보건 증진을 위한 중요 사항을 심의·의결함을 목적으로 한다.' },
+      { key: 'basis',           val: '산업안전보건법 제24조, 동법 시행령 제34~37조' },
+      { key: 'composition',     val: '위원회는 사용자측 위원과 근로자측 위원을 동수로 구성하며, 각 측 9인 이내로 한다.' },
+      { key: 'chair',           val: '위원장은 위원 중에서 호선(互選)하며, 사용자를 대표하는 자와 근로자를 대표하는 자 각 1인을 공동위원장으로 할 수 있다.' },
+      { key: 'term',            val: '위원의 임기는 2년으로 하며, 연임할 수 있다. 보궐 위원의 임기는 전임자의 잔여기간으로 한다.' },
+      { key: 'meeting_cycle',   val: '위원회는 3개월마다 정기회의를 개최하며, 필요 시 임시회의를 소집할 수 있다.' },
+      { key: 'quorum',          val: '회의는 위원장이 소집하고, 위원회 재적위원 과반수의 출석으로 개의(開議)하며 출석위원 과반수의 찬성으로 의결한다.' },
+      { key: 'agenda_submit',   val: '안건은 회의 개최 7일 전까지 위원장에게 제출하여야 한다. 긴급 사항은 예외로 한다.' },
+      { key: 'agenda_scope',    val: '1. 산업재해 예방계획의 수립에 관한 사항\n2. 안전보건관리규정의 작성 및 변경에 관한 사항\n3. 안전보건교육에 관한 사항\n4. 작업환경측정 등 작업환경의 점검 및 개선에 관한 사항\n5. 근로자의 건강진단 등 건강관리에 관한 사항\n6. 중대재해의 원인 조사 및 재발방지 대책 수립에 관한 사항\n7. 유해·위험한 기계·기구·설비를 도입한 경우 안전 및 보건조치에 관한 사항\n8. 그 밖에 해당 사업장 근로자의 안전 및 보건을 유지·증진시키기 위하여 필요한 사항' },
+      { key: 'resolution',      val: '의결사항은 사업주와 근로자가 성실히 이행하여야 하며, 사업주는 의결사항을 지체 없이 이행하여야 한다.' },
+      { key: 'minutes',         val: '회의 결과는 회의록으로 작성하여 3년간 보존하고, 근로자에게 공지하여야 한다. (산업안전보건법 시행규칙 제30조)' },
+      { key: 'penalty',         val: '위원회를 설치·운영하지 않거나 결의사항을 이행하지 않은 경우 과태료 500만원 (산업안전보건법 제175조)' },
+      { key: 'enforcement',     val: '본 운영규칙은 위원회의 의결을 거쳐 확정하며, 개정 시에도 동일한 절차를 따른다.' },
+    ]
+    for (const r of defaultRules) {
+      rawDb.prepare(`INSERT OR IGNORE INTO safety_committee_rules (rule_key, rule_value) VALUES (?, ?)`).run(r.key, r.val)
+    }
+    console.log('[patchSchema v0.183] ✅ safety_committee_rules 테이블 생성 + 기본값 삽입 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.183] safety_committee_rules 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.183] safety_committee_rules 생성 실패 (무시):', e.message)
+    }
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }

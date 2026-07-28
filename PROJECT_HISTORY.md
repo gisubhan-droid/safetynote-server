@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 104 — [BUG-185b-v2] 위험성평가 서명 500 근본 원인(FK 제약) 수정)
-> **GitHub 최신 (safetynote-server): `49f3bd8`** — fix: [BUG-185b-v2] risk_assessment_signatures FK 제약 제거 + POST /risk/signatures 핸들러 재작성
-> **이전 커밋 (safetynote-server): `3db29f1`** — fix: [BUG-183] SC 회의록 삭제 무반응 + 출력 빈칸 2종 수정
+> 최종 업데이트: 2026-07-28 (세션 105 — [SC-서명] 클릭=서명완료 방식 단순화 / signature_data 제거)
+> **GitHub 최신 (safetynote-server): `TBD`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
+> **이전 커밋 (safetynote-server): `49f3bd8`** — fix: [BUG-185b-v2] risk_assessment_signatures FK 제약 제거 + POST /risk/signatures 핸들러 재작성
 > **이전 커밋 (safetynote-server): `40978c9`** — fix: [BUG-182b-v2] /meeting 단수 경로 호환을 node-server.ts 레벨로 이동
 > **이전 커밋 (safetynote-server): `586022c`** — fix: [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 호환 라우트 추가
 > **이전 커밋 (safetynote-server): `d32f3f1`** — fix: [BUG-182a] 회의록 상세보기 클릭 무반응 수정 (main-content ID 없음 + closest)
@@ -6163,6 +6163,51 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 **커밋**: `d329cf0` — feat: PLAN-UI-001 Option C 구현 완료
 
 **다음 작업**: NAS git pull + pm2 restart + 동작 확인
+
+---
+
+## 세션 105 — 2026-07-28
+
+### [SC-서명] 산업안전보건위원회 서명 방식 단순화
+
+**배경**: 산업안전보건위원회 회의록은 위험성평가/TBM에서 사용하는 자필패드 서명 방식이 아닌
+**클릭=서명완료** 방식으로 동작해야 함.
+
+**분석 내용**:
+- `app.js _scSignAttendee()` (line 49626): 이미 `JSON.stringify({})` 빈 body PATCH → **정상 구현 확인**
+- `_scLoadAttendTab()` 서명 표시: `att.signed_at` 기준 → **정상**
+- `_scPrintMeeting()` 출력 서명란: `att.signed_at` 기준, signature_data 이미지 없음 → **정상**
+- **문제**: `safety-committee.ts` PATCH `/sign` 핸들러가 불필요하게 `signature_data` 컬럼에 빈 문자열 저장
+
+**수정 파일**: `src/nas-routes/safety-committee.ts`
+
+**변경 내용** (line 617~682):
+```
+수정 전 — 3단계 폴백 (sign_data 파라미터 수신 + signature_data 컬럼 저장):
+  1차: SET signature_data = ?, signed_at = ...
+  2차: SET signed_at = ...  (signature_data 없는 경우)
+  3차: ADD COLUMN 후 재시도 (signature_data + signed_at)
+
+수정 후 — 2단계 폴백 (signed_at 만):
+  1차: SET signed_at = datetime('now','localtime') WHERE id = ?
+  2차: ADD COLUMN signed_at 후 재시도
+  sign_data 파라미터 수신 제거, signature_data 참조 완전 제거
+```
+
+**충돌 검증**:
+- RULE-001: safety-committee.ts는 TypeScript → var 규칙 해당 없음
+- RULE-002: SC 오버라이드 라우트 (line 6713~6796) < app.route 마운트 (line 6824) → 정상
+- RULE-003: app.js onclick 내 서명 관련 코드 수정 없음 → 충돌 없음
+- app.js에서 sign_data 전송 없음 (`{}` 빈 body) → 서버 수신 제거해도 기능 동일
+
+**빌드**: `npm run build` → ✅ `dist/_worker.js 296.03 kB`
+
+### 완료 항목
+- [x] safety-committee.ts PATCH /sign: signature_data 로직 제거, signed_at 단순화
+- [x] npm run build ✅
+- [x] BUGFIX_LOG.md 업데이트 (BUG-185 항목에 세션 105 SC-서명 단순화 기록 추가)
+- [x] PROJECT_HISTORY.md 업데이트 (세션 105 항목 추가)
+- [x] git commit & push
 
 ---
 

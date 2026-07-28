@@ -66,9 +66,35 @@ FK = ON 복원
 #### CURRENT_TIMESTAMP → datetime('now','localtime') 통일
 - UTC 시각 저장 방지
 
+#### SC 서명 방식 단순화 (세션 105, safety-committee.ts)
+
+**확인 사항**: 산업안전보건위원회 회의록 서명은 **클릭=서명완료** 방식 (자필패드 미사용)
+- `app.js _scSignAttendee()`: 이미 `JSON.stringify({})` 빈 body PATCH 전송 → **정상**
+- 서명 표시/출력: `signed_at` 기준으로 동작 → **정상**
+- **서버 핸들러 문제**: `signature_data` 컬럼에 빈 문자열 저장하는 불필요한 로직 존재
+
+**수정**: `PATCH /meetings/:id/attendees/:aid/sign` 핸들러 단순화
+```
+수정 전 (3단계 폴백):
+  1차: SET signature_data = ?, signed_at = ...  (sign_data 사용)
+  2차: SET signed_at = ...  (signature_data 컬럼 없는 경우)
+  3차: ADD COLUMN signature_data + signed_at 후 재시도
+
+수정 후 (2단계 폴백 — signed_at 만):
+  1차: SET signed_at = datetime('now','localtime') WHERE id = ?
+  2차: ADD COLUMN signed_at 후 재시도
+  → sign_data / signature_data 관련 코드 완전 제거
+```
+
 ### 수정 파일
-- `node-server.ts` — patchSchema v0.186/v0.187 + POST /risk signatures 폴백
-- `src/nas-routes/safety-committee.ts` — PATCH /sign 3단계 폴백
+- `node-server.ts` — patchSchema v0.186/v0.187/v0.188 + POST /risk/:id/signatures 전면 재작성
+- `src/nas-routes/safety-committee.ts` — PATCH /sign: signature_data 로직 제거, signed_at 단순화 (세션 105)
+
+### 커밋
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (세션 104) | fix: [BUG-185b-v2] patchSchema v0.188 FK제거 + POST /risk signatures 핸들러 전면 재작성 |
+| safetynote-server | (세션 105) | fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거 |
 
 ---
 

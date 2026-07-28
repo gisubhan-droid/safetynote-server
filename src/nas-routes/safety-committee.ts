@@ -615,14 +615,16 @@ app.delete('/meetings/:id/attendees/:aid', async (c) => {
 })
 
 // PATCH /api/safety-committee/meetings/:id/attendees/:aid/sign
+// [SC-서명] 산업안전보건위원회 회의록은 클릭=서명완료 방식 (자필서명 미사용)
+// → signed_at 만 업데이트, signature_data 불필요
 app.patch('/meetings/:id/attendees/:aid/sign', async (c) => {
   const rawDb = getRawDb()
   const user  = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const aid  = Number(c.req.param('aid'))
-  const body = await c.req.json().catch(() => ({})) as any
-  const { sign_data } = body
+  const aid = Number(c.req.param('aid'))
+  // body는 수신하지만 sign_data는 사용하지 않음 (클릭=서명완료 방식)
+  await c.req.json().catch(() => ({}))
 
   let att: any
   try {
@@ -637,44 +639,28 @@ app.patch('/meetings/:id/attendees/:aid/sign', async (c) => {
   if (att.user_id && att.user_id !== user.id && user.role !== 'admin')
     return c.json({ error: '본인 서명만 가능합니다.' }, 403)
 
-  // [BUG-185a] signature_data / signed_at 컬럼 없는 구버전 DB 대응
-  // 1차: signature_data + signed_at 동시 업데이트
-  // 2차: signed_at 만 업데이트 (signature_data 컬럼 없는 경우)
-  // 3차: signed_at 컬럼도 없으면 → ADD COLUMN 후 재시도
-  var updateOk = false
+  // [SC-서명 단순화] signed_at 만 업데이트 — 클릭=서명완료
+  // 1차: signed_at 업데이트
+  // 2차: signed_at 컬럼 없으면 ADD COLUMN 후 재시도
   try {
     rawDb.prepare(`
       UPDATE safety_committee_attendees
-      SET signature_data = ?, signed_at = datetime('now','localtime')
+      SET signed_at = datetime('now','localtime')
       WHERE id = ?
-    `).run(sign_data || '', aid)
-    updateOk = true
+    `).run(aid)
   } catch(e1: any) {
     console.warn('[SC] PATCH /sign 1차 실패:', e1.message)
-    // signature_data 컬럼 없는 경우 → signed_at 만
+    // signed_at 컬럼 없음 → ADD COLUMN 후 재시도
     try {
+      try { rawDb.exec(`ALTER TABLE safety_committee_attendees ADD COLUMN signed_at TEXT`) } catch(_) {}
       rawDb.prepare(`
         UPDATE safety_committee_attendees
         SET signed_at = datetime('now','localtime')
         WHERE id = ?
       `).run(aid)
-      updateOk = true
     } catch(e2: any) {
-      console.warn('[SC] PATCH /sign 2차 실패:', e2.message)
-      // signed_at 컬럼도 없음 → ADD COLUMN 후 재시도
-      try {
-        try { rawDb.exec(`ALTER TABLE safety_committee_attendees ADD COLUMN signature_data TEXT NOT NULL DEFAULT ''`) } catch(_) {}
-        try { rawDb.exec(`ALTER TABLE safety_committee_attendees ADD COLUMN signed_at TEXT`) } catch(_) {}
-        rawDb.prepare(`
-          UPDATE safety_committee_attendees
-          SET signature_data = ?, signed_at = datetime('now','localtime')
-          WHERE id = ?
-        `).run(sign_data || '', aid)
-        updateOk = true
-      } catch(e3: any) {
-        console.error('[SC] PATCH /sign 3차(컬럼추가 후 재시도) 실패:', e3.message)
-        return c.json({ error: '서명 처리 실패: ' + e3.message }, 500)
-      }
+      console.error('[SC] PATCH /sign 2차(컬럼추가 후 재시도) 실패:', e2.message)
+      return c.json({ error: '서명 처리 실패: ' + e2.message }, 500)
     }
   }
 

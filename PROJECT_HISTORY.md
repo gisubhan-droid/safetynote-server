@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-28 (세션 109 — BUG-190 시스템관리자 위험성평가/SC회의 처리단계 구분 없이 삭제 허용)
-> **GitHub 최신 (safetynote-server): `TBD`** — fix: [BUG-190] 시스템관리자 위험성평가·SC회의 처리단계 구분없이 삭제 허용
+> **GitHub 최신 (safetynote-server): `2f98cec`** — fix: [BUG-190] 시스템관리자 위험성평가·SC회의 처리단계 구분없이 삭제 허용
 > **이전 커밋 (safetynote-server): `36de318`** — docs: [세션 108] BUG-189 커밋 91c7be2 반영
 > **이전 커밋 (safetynote-server): `91c7be2`** — fix: BUG-1 감소대책저장 후 상태미전환, BUG-2 서명화면 잘못된내용, 근로자 위험성평가 메뉴추가
 > **이전 커밋 (safetynote-server): `7cae5e0`** — fix: [SC-투표500/투표요청] patchSchema v0.189 + sc_vote push + 서명요청카드 투표UI

@@ -2,6 +2,59 @@
 
 ---
 
+## [BUG-185] SC 서명 500 + 위험성평가 서명 500 (세션 103, 커밋 f7ef95c)
+
+### 문제
+1. **BUG-185a**: `PATCH /api/safety-committee/meetings/:id/attendees/:id/sign` → 500
+2. **BUG-185b**: `POST /api/risk/:id/signatures` → 500
+
+### 원인
+
+#### BUG-185a — `safety_committee_attendees` 누락 컬럼
+- patchSchema v0.178이 `CREATE TABLE IF NOT EXISTS`로 생성
+- **구버전 DB에 이미 테이블이 존재**하면 CREATE가 스킵됨
+- 결과: `signature_data`, `signed_at`, `custom_title`, `side`, `role_type` 컬럼 없음
+- UPDATE 쿼리가 없는 컬럼 참조 → 500
+
+#### BUG-185b — `risk_assessment_signatures` 누락 컬럼
+- patchSchema v0.111m에서 ADD COLUMN 처리가 있으나 더 오래된 DB에는 미적용
+- `sign_method`, `sign_data`, `position`, `role` 컬럼 없음
+- `INSERT OR REPLACE` 시 컬럼 없음 → 500
+
+### 해결
+
+#### patchSchema v0.186 (node-server.ts)
+- `safety_committee_attendees` 누락 컬럼 5개 ADD COLUMN
+- `duplicate column` 에러는 조용히 무시
+
+#### patchSchema v0.187 (node-server.ts)
+- `risk_assessment_signatures` 누락 컬럼 4개 ADD COLUMN
+
+#### PATCH /sign 핸들러 3단계 폴백 (safety-committee.ts)
+```
+1차: signature_data + signed_at 업데이트 (정상 경로)
+2차: signed_at 만 업데이트 (signature_data 컬럼 없는 경우)
+3차: ADD COLUMN 직접 실행 후 재시도
+→ 실패 시에만 500 반환 (명확한 에러 메시지)
+```
+
+#### POST /signatures 핸들러 3단계 폴백 (node-server.ts)
+```
+1차: 풀 컬럼 INSERT OR REPLACE
+2차: ADD COLUMN 후 재시도
+3차: 최소 컬럼만 INSERT (assessment_id, user_id, user_name)
+→ 실패 시에만 500 반환
+```
+
+#### CURRENT_TIMESTAMP → datetime('now','localtime') 통일
+- UTC 시각 저장 방지
+
+### 수정 파일
+- `node-server.ts` — patchSchema v0.186/v0.187 + POST /risk signatures 폴백
+- `src/nas-routes/safety-committee.ts` — PATCH /sign 3단계 폴백
+
+---
+
 ## [BUG-184] SC 회의록 삭제 500 + res 미정의 + 참석자 위원 자동추가 (세션 103, 커밋 503909f)
 
 ### 문제

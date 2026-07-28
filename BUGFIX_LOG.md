@@ -5,6 +5,30 @@
 
 ---
 
+## [BUG-182a] 회의록 상세보기 클릭 무반응 (세션 102)
+
+### 문제
+산업안전보건위원회 회의록 목록에서 회의 카드 클릭 시 상세 화면이 열리지 않음 (아무 반응 없음)
+
+### 원인 (2가지 복합)
+1. **`getElementById('main-content')` → null**
+   - `_scOpenMeeting` 및 관련 함수들이 `document.getElementById('main-content')` 사용
+   - 실제 DOM에 `id="main-content"` 없음 — `class="main-content"` 로만 존재
+   - `main`이 `null`이 되어 `if (main)` 분기 전혀 실행 안 됨
+2. **자식 요소 클릭 시 `data-mid` 누락**
+   - 카드 div에 `onclick="_scOpenMeeting(this)"` 설정
+   - 내부 span/i 클릭 시 `this` = 자식 요소 → `getAttribute('data-mid')` = null
+
+### 해결
+- `_scGetDetailContainer()` 헬퍼 추가: `sc-tab-content` 우선 탐색 → `page-content` fallback
+- `_scOpenMeeting`: `el.closest('[data-mid]')` 로 data-mid 보유 요소 안전 탐색
+- `_scSubmitCreateMeeting`, `_scSubmitEditBasic`, `_scConfirmMeeting` 3곳도 동일 적용
+
+### 커밋
+- `d32f3f1` — fix: [BUG-182a]
+
+---
+
 ## [FEAT-182] 산업안전보건위원회 운영규칙 + 조직도 탭 추가 (세션 102)
 
 ### 신규 기능

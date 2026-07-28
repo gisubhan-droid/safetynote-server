@@ -47453,6 +47453,9 @@ function _scRenderMembersInTab(container, members, allUsers) {
     ? '<span style="background:#D1FAE5;color:#065F46;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700"><i class="fas fa-check-circle" style="margin-right:3px"></i>동수 충족</span>'
     : '<span style="background:#FEF3C7;color:#92400E;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700"><i class="fas fa-exclamation-triangle" style="margin-right:3px"></i>동수 불일치</span>';
 
+  // 전역 캐시 — _scAddMemberRow() 에서 사용자 목록 재활용
+  window._scAvailableUsers = available;
+
   var userOpts = '<option value="">-- 사용자 선택 --</option>';
   for (var n = 0; n < available.length; n++) {
     userOpts += '<option value="' + available[n].id + '">' + available[n].name + ' (' + (available[n].team_name || '') + ')</option>';
@@ -47502,7 +47505,7 @@ function _scRenderMembersInTab(container, members, allUsers) {
               statusBadge +
             '</div>' +
             '<div style="display:flex;gap:6px">' +
-              '<button data-mid="' + m.id + '" data-name="' + (m.user_name || '') + '" data-title="' + (m.custom_title || '') + '" data-side="' + (m.side || 'employer') + '" onclick="_scEditMemberCard(this)" style="padding:4px 10px;border:1.5px solid #DDD6FE;border-radius:7px;font-size:11px;font-weight:600;color:#7C3AED;cursor:pointer;background:#F5F3FF">수정</button>' +
+              '<button data-mid="' + m.id + '" data-uid="' + (m.user_id || '') + '" data-name="' + (m.user_name || '') + '" data-title="' + (m.custom_title || '') + '" data-side="' + (m.side || 'employer') + '" data-role="' + (m.role_type || 'member') + '" data-appointed="' + appointedStr + '" onclick="_scEditMemberCard(this)" style="padding:4px 10px;border:1.5px solid #DDD6FE;border-radius:7px;font-size:11px;font-weight:600;color:#7C3AED;cursor:pointer;background:#F5F3FF">수정</button>' +
               '<button data-mid="' + m.id + '" onclick="_scDeleteMember(this)" style="padding:4px 10px;border:1.5px solid #FCA5A5;border-radius:7px;font-size:11px;font-weight:600;color:#EF4444;cursor:pointer;background:#FFF5F5">해제</button>' +
             '</div>' +
           '</div>' +
@@ -47513,7 +47516,7 @@ function _scRenderMembersInTab(container, members, allUsers) {
   container.innerHTML =
     // 액션 버튼
     '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
-      '<button onclick="_scShowAddMemberForm()" style="display:flex;align-items:center;gap:6px;padding:9px 18px;background:#7C3AED;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(124,58,237,.25)">' +
+      '<button onclick="_scToggleOrAddMemberRow()" style="display:flex;align-items:center;gap:6px;padding:9px 18px;background:#7C3AED;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(124,58,237,.25)">' +
         '<i class="fas fa-user-plus"></i>위원 추가' +
       '</button>' +
     '</div>' +
@@ -47544,31 +47547,31 @@ function _scRenderMembersInTab(container, members, allUsers) {
         '<span style="font-size:12px;font-weight:700;color:#92400E">시행령 제35조 — 사용자측·근로자측 동수 구성 필수 (미이행 시 과태료 500만원)</span>' +
       '</div>' +
     '</div>' +
-    // 위원 추가 폼 (토글)
+    // 위원 추가 폼 (다중행 — 위원 추가 버튼 클릭마다 행 추가)
     '<div id="sc-add-member-form" style="display:none;background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:14px;padding:16px;margin-bottom:14px">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
         '<h3 style="font-size:14px;font-weight:700;color:#4E3A63;margin:0"><i class="fas fa-user-plus" style="margin-right:6px;color:#7C3AED"></i>신규 위원 추가</h3>' +
         '<button onclick="_scHideAddMemberForm()" style="background:none;border:none;color:#9CA3AF;cursor:pointer;font-size:16px">✕</button>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px">' +
-        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">사용자 선택 *</label>' +
-          '<select id="sc-m-user" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;background:#fff">' + userOpts + '</select></div>' +
-        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">구분 *</label>' +
-          '<select id="sc-m-side" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;background:#fff">' +
-            '<option value="employer">사용자측</option><option value="worker">근로자측</option>' +
-          '</select></div>' +
-        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">직책 유형</label>' +
-          '<select id="sc-m-role" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;background:#fff">' +
-            '<option value="member">위원</option><option value="chair">위원장</option><option value="vice_chair">부위원장</option><option value="secretary">간사</option>' +
-          '</select></div>' +
-        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">직책 표시명</label>' +
-          '<input id="sc-m-title" type="text" placeholder="예: 안전보건관리책임자" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;box-sizing:border-box;background:#fff"></div>' +
-        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">임명일</label>' +
-          '<input id="sc-m-date" type="date" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;box-sizing:border-box;background:#fff"></div>' +
+      // 테이블 헤더
+      '<div style="display:grid;grid-template-columns:1fr 110px 110px 1fr 130px 36px;gap:6px;margin-bottom:6px;padding:0 2px">' +
+        '<div style="font-size:11px;font-weight:700;color:#6B7280">사용자 선택 *</div>' +
+        '<div style="font-size:11px;font-weight:700;color:#6B7280">구분 *</div>' +
+        '<div style="font-size:11px;font-weight:700;color:#6B7280">직책 유형</div>' +
+        '<div style="font-size:11px;font-weight:700;color:#6B7280">직책 표시명</div>' +
+        '<div style="font-size:11px;font-weight:700;color:#6B7280">임명일</div>' +
+        '<div></div>' +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:12px">' +
-        '<button onclick="_scSubmitAddMember()" style="padding:8px 22px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer"><i class="fas fa-save" style="margin-right:5px"></i>등록</button>' +
-        '<button onclick="_scHideAddMemberForm()" style="padding:8px 16px;background:#fff;color:#64748B;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;cursor:pointer">취소</button>' +
+      // 행 컨테이너
+      '<div id="sc-member-rows"></div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">' +
+        '<button onclick="_scAddMemberRow()" style="display:flex;align-items:center;gap:6px;padding:7px 16px;background:#EDE9F8;color:#7C3AED;border:1.5px solid #DDD6FE;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">' +
+          '<i class="fas fa-plus"></i>행 추가' +
+        '</button>' +
+        '<div style="display:flex;gap:8px">' +
+          '<button onclick="_scSubmitAddMember()" style="padding:8px 22px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer"><i class="fas fa-save" style="margin-right:5px"></i>일괄 등록</button>' +
+          '<button onclick="_scHideAddMemberForm()" style="padding:8px 16px;background:#fff;color:#64748B;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;cursor:pointer">취소</button>' +
+        '</div>' +
       '</div>' +
     '</div>' +
     // 위원 카드 그리드
@@ -47618,22 +47621,109 @@ function _scBuildMeetingCard(m) {
   '</div>';
 }
 
-// 카드 방식 위원 수정 버튼 핸들러 (data-* 활용, RULE-003 준수)
+// 카드 방식 위원 수정 버튼 핸들러 — 카드 위에 인라인 수정 폼 표시 (RULE-003 준수)
 function _scEditMemberCard(btn) {
-  var mid      = btn.getAttribute('data-mid');
-  var name     = btn.getAttribute('data-name') || '';
-  var curTitle = btn.getAttribute('data-title') || '';
-  var curSide  = btn.getAttribute('data-side') || 'employer';
-  var newTitle = prompt(name + '의 직책 표시명을 입력하세요:', curTitle);
-  if (newTitle === null) return;
-  var newSide = prompt('구분 입력 (employer=사용자측 / worker=근로자측):', curSide);
-  if (!newSide) return;
-  _scFetch('/api/safety-committee/members/' + mid, {
-    method: 'PATCH',
-    body: JSON.stringify({ custom_title: newTitle, side: newSide })
-  }).then(function(r){ return r.json(); }).then(function() {
-    _scLoadTabContent('members');
-  });
+  var mid       = btn.getAttribute('data-mid');
+  var curName   = btn.getAttribute('data-name')      || '';
+  var curTitle  = btn.getAttribute('data-title')     || '';
+  var curSide   = btn.getAttribute('data-side')      || 'employer';
+  var curRole   = btn.getAttribute('data-role')      || 'member';
+  var curDate   = btn.getAttribute('data-appointed') || '';
+
+  // 이미 열려있는 수정 폼 닫기
+  var existing = document.getElementById('sc-edit-inline-form');
+  if (existing) existing.remove();
+
+  // 수정 폼 생성
+  var form = document.createElement('div');
+  form.id = 'sc-edit-inline-form';
+  form.style.cssText = 'background:#F0FDF4;border:1.5px solid #6EE7B7;border-radius:14px;padding:16px;margin-bottom:12px';
+
+  form.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<h3 style="font-size:14px;font-weight:700;color:#065F46;margin:0">' +
+        '<i class="fas fa-user-edit" style="margin-right:6px;color:#059669"></i>' + curName + ' 위원 정보 수정' +
+      '</h3>' +
+      '<button id="sc-edit-close-btn" style="background:none;border:none;color:#9CA3AF;cursor:pointer;font-size:16px">✕</button>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:14px">' +
+      '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">구분 *</label>' +
+        '<select id="sc-edit-side" style="width:100%;padding:8px;border:1.5px solid #6EE7B7;border-radius:8px;font-size:13px;background:#fff">' +
+          '<option value="employer"' + (curSide === 'employer' ? ' selected' : '') + '>사용자측</option>' +
+          '<option value="worker"'   + (curSide === 'worker'   ? ' selected' : '') + '>근로자측</option>' +
+        '</select>' +
+      '</div>' +
+      '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">직책 유형</label>' +
+        '<select id="sc-edit-role" style="width:100%;padding:8px;border:1.5px solid #6EE7B7;border-radius:8px;font-size:13px;background:#fff">' +
+          '<option value="member"'    + (curRole === 'member'    ? ' selected' : '') + '>위원</option>' +
+          '<option value="chair"'     + (curRole === 'chair'     ? ' selected' : '') + '>위원장</option>' +
+          '<option value="vice_chair"'+ (curRole === 'vice_chair'? ' selected' : '') + '>부위원장</option>' +
+          '<option value="secretary"' + (curRole === 'secretary' ? ' selected' : '') + '>간사</option>' +
+        '</select>' +
+      '</div>' +
+      '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">직책 표시명</label>' +
+        '<input id="sc-edit-title" type="text" value="' + curTitle + '" placeholder="예: 안전보건관리책임자" style="width:100%;padding:8px;border:1.5px solid #6EE7B7;border-radius:8px;font-size:13px;box-sizing:border-box;background:#fff">' +
+      '</div>' +
+      '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">임명일</label>' +
+        '<input id="sc-edit-date" type="date" value="' + curDate + '" style="width:100%;padding:8px;border:1.5px solid #6EE7B7;border-radius:8px;font-size:13px;box-sizing:border-box;background:#fff">' +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px">' +
+      '<button id="sc-edit-save-btn" data-mid="' + mid + '" style="padding:8px 22px;background:#059669;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">' +
+        '<i class="fas fa-save" style="margin-right:5px"></i>저장' +
+      '</button>' +
+      '<button id="sc-edit-cancel-btn" style="padding:8px 16px;background:#fff;color:#64748B;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;cursor:pointer">취소</button>' +
+    '</div>';
+
+  // 카드 그리드 앞에 삽입
+  var grid = document.querySelector('#sc-tab-content div[style*="grid-template-columns"]');
+  var tabContent = document.getElementById('sc-tab-content');
+  if (grid && grid.parentNode) {
+    grid.parentNode.insertBefore(form, grid);
+  } else if (tabContent) {
+    tabContent.appendChild(form);
+  }
+
+  // 닫기 버튼
+  document.getElementById('sc-edit-close-btn').onclick = function() {
+    var f = document.getElementById('sc-edit-inline-form');
+    if (f) f.remove();
+  };
+  document.getElementById('sc-edit-cancel-btn').onclick = function() {
+    var f = document.getElementById('sc-edit-inline-form');
+    if (f) f.remove();
+  };
+
+  // 저장 버튼
+  document.getElementById('sc-edit-save-btn').onclick = function() {
+    var memberId  = this.getAttribute('data-mid');
+    var newSide   = document.getElementById('sc-edit-side').value;
+    var newRole   = document.getElementById('sc-edit-role').value;
+    var newTitle  = document.getElementById('sc-edit-title').value;
+    var newDate   = document.getElementById('sc-edit-date').value;
+    var saveBtn   = this;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:5px"></i>저장 중...';
+    _scFetch('/api/safety-committee/members/' + memberId, {
+      method: 'PATCH',
+      body: JSON.stringify({ side: newSide, role_type: newRole, custom_title: newTitle, appointed_at: newDate })
+    }).then(function(r){ return r.json(); }).then(function(res) {
+      if (res.ok || res.success) {
+        _scLoadTabContent('members');
+      } else {
+        alert('저장 실패: ' + (res.error || JSON.stringify(res)));
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-save" style="margin-right:5px"></i>저장';
+      }
+    }).catch(function(e) {
+      alert('오류: ' + e.message);
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<i class="fas fa-save" style="margin-right:5px"></i>저장';
+    });
+  };
+
+  // 폼으로 스크롤
+  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // ─── 위원 관리 페이지 (구버전 — navigateTo('sc-members') 호환) ─────────────
@@ -47838,33 +47928,154 @@ function _scRenderMembersPage(container, members, allUsers) {
     '</div>';
 }
 
+// 다중행 위원 등록 — 전역 행 카운터
+var _scMemberRowCount = 0;
+
+// 위원 추가 버튼 클릭: 폼 닫혀있으면 열기+첫행, 열려있으면 행만 추가
+function _scToggleOrAddMemberRow() {
+  var f = document.getElementById('sc-add-member-form');
+  if (!f) return;
+  if (f.style.display === 'none' || f.style.display === '') {
+    _scShowAddMemberForm();
+  } else {
+    _scAddMemberRow();
+  }
+}
+
+// 위원 추가 폼 열기 + 첫 번째 행 자동 추가
 function _scShowAddMemberForm() {
   var f = document.getElementById('sc-add-member-form');
-  if (f) f.style.display = 'block';
+  if (!f) return;
+  _scMemberRowCount = 0;
+  var rowsEl = document.getElementById('sc-member-rows');
+  if (rowsEl) rowsEl.innerHTML = '';
+  f.style.display = 'block';
+  _scAddMemberRow();
+  f.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+// 폼 닫기 + 행 초기화
 function _scHideAddMemberForm() {
   var f = document.getElementById('sc-add-member-form');
-  if (f) f.style.display = 'none';
+  if (f) { f.style.display = 'none'; }
+  var rowsEl = document.getElementById('sc-member-rows');
+  if (rowsEl) rowsEl.innerHTML = '';
+  _scMemberRowCount = 0;
 }
 
-function _scSubmitAddMember() {
-  var userId = document.getElementById('sc-m-user').value;
-  var side   = document.getElementById('sc-m-side').value;
-  var role   = document.getElementById('sc-m-role').value;
-  var title  = document.getElementById('sc-m-title').value;
-  var date   = document.getElementById('sc-m-date').value;
-  if (!userId) { alert('사용자를 선택하세요.'); return; }
-  _scFetch('/api/safety-committee/members', {
-    method: 'POST',
-    body: JSON.stringify({ user_id: parseInt(userId), side: side, role_type: role, custom_title: title, appointed_at: date })
-  }).then(function(r){ return r.json(); }).then(function(res) {
-    if (res.ok || res.id) {
-      _scLoadTabContent('members');
-    } else {
-      alert('등록 실패: ' + (res.error || JSON.stringify(res)));
+// 새 입력 행 추가 (위원 추가 버튼 클릭마다 호출)
+function _scAddMemberRow() {
+  var rowsEl = document.getElementById('sc-member-rows');
+  if (!rowsEl) return;
+  _scMemberRowCount++;
+  var idx = _scMemberRowCount;
+
+  // 현재 탭 컨텍스트에서 사용 가능한 사용자 목록 가져오기
+  var userOpts = '<option value="">-- 선택 --</option>';
+  var selEl = document.getElementById('sc-member-rows');
+  // _scAvailableUsers 전역 캐시 활용
+  if (window._scAvailableUsers) {
+    for (var n = 0; n < window._scAvailableUsers.length; n++) {
+      var u = window._scAvailableUsers[n];
+      userOpts += '<option value="' + u.id + '">' + u.name + ' (' + (u.team_name || '') + ')</option>';
     }
-  });
+  }
+
+  var row = document.createElement('div');
+  row.id = 'sc-row-' + idx;
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 110px 110px 1fr 130px 36px;gap:6px;margin-bottom:6px;align-items:center';
+  row.innerHTML =
+    '<select id="sc-row-user-' + idx + '" style="width:100%;padding:7px 8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:12px;background:#fff">' + userOpts + '</select>' +
+    '<select id="sc-row-side-' + idx + '" style="width:100%;padding:7px 8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:12px;background:#fff">' +
+      '<option value="employer">사용자측</option>' +
+      '<option value="worker">근로자측</option>' +
+    '</select>' +
+    '<select id="sc-row-role-' + idx + '" style="width:100%;padding:7px 8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:12px;background:#fff">' +
+      '<option value="member">위원</option>' +
+      '<option value="chair">위원장</option>' +
+      '<option value="vice_chair">부위원장</option>' +
+      '<option value="secretary">간사</option>' +
+    '</select>' +
+    '<input id="sc-row-title-' + idx + '" type="text" placeholder="예: 안전보건관리책임자" style="width:100%;padding:7px 8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:12px;box-sizing:border-box;background:#fff">' +
+    '<input id="sc-row-date-' + idx + '" type="date" style="width:100%;padding:7px 6px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:12px;box-sizing:border-box;background:#fff">' +
+    '<button data-row="' + idx + '" onclick="_scRemoveMemberRow(this)" title="행 삭제" style="width:32px;height:32px;padding:0;background:#FEE2E2;color:#EF4444;border:1.5px solid #FCA5A5;border-radius:7px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>';
+
+  rowsEl.appendChild(row);
+}
+
+// 행 삭제
+function _scRemoveMemberRow(btn) {
+  var idx = btn.getAttribute('data-row');
+  var row = document.getElementById('sc-row-' + idx);
+  if (row) row.remove();
+  // 행이 0개면 한 행 다시 추가
+  var rowsEl = document.getElementById('sc-member-rows');
+  if (rowsEl && rowsEl.children.length === 0) _scAddMemberRow();
+}
+
+// 일괄 등록 — 모든 행을 순차적으로 API 호출
+function _scSubmitAddMember() {
+  var rowsEl = document.getElementById('sc-member-rows');
+  if (!rowsEl) return;
+  var rows = rowsEl.querySelectorAll('div[id^="sc-row-"]');
+  if (rows.length === 0) { alert('등록할 위원이 없습니다.'); return; }
+
+  var items = [];
+  var hasError = false;
+  for (var i = 0; i < rows.length; i++) {
+    var rowId  = rows[i].id.replace('sc-row-', '');
+    var userId = document.getElementById('sc-row-user-'  + rowId);
+    var side   = document.getElementById('sc-row-side-'  + rowId);
+    var role   = document.getElementById('sc-row-role-'  + rowId);
+    var title  = document.getElementById('sc-row-title-' + rowId);
+    var date   = document.getElementById('sc-row-date-'  + rowId);
+    if (!userId || !userId.value) {
+      userId && (userId.style.borderColor = '#EF4444');
+      hasError = true;
+      continue;
+    }
+    if (userId) userId.style.borderColor = '#C4BAD4';
+    items.push({
+      user_id:      parseInt(userId.value),
+      side:         side  ? side.value  : 'employer',
+      role_type:    role  ? role.value  : 'member',
+      custom_title: title ? (title.value || '') : '',
+      appointed_at: date  ? (date.value  || '') : ''
+    });
+  }
+  if (hasError) { alert('사용자를 선택하지 않은 행이 있습니다. 확인 후 다시 시도하세요.'); return; }
+  if (items.length === 0) return;
+
+  var saveBtn = document.querySelector('#sc-add-member-form button[onclick="_scSubmitAddMember()"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:5px"></i>등록 중...'; }
+
+  // 순차 등록 (Promise 체인)
+  var successCount = 0;
+  var failMsgs = [];
+
+  function doNext(idx) {
+    if (idx >= items.length) {
+      // 완료
+      if (failMsgs.length > 0) {
+        alert(successCount + '명 등록 완료.\n실패 ' + failMsgs.length + '건:\n' + failMsgs.join('\n'));
+      }
+      _scLoadTabContent('members');
+      return;
+    }
+    var item = items[idx];
+    _scFetch('/api/safety-committee/members', {
+      method: 'POST',
+      body: JSON.stringify(item)
+    }).then(function(r){ return r.json(); }).then(function(res) {
+      if (res.ok || res.id) { successCount++; }
+      else { failMsgs.push('행' + (idx + 1) + ': ' + (res.error || '등록 실패')); }
+      doNext(idx + 1);
+    }).catch(function(e) {
+      failMsgs.push('행' + (idx + 1) + ': ' + e.message);
+      doNext(idx + 1);
+    });
+  }
+  doNext(0);
 }
 
 function _scEditMember(btn) {

@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-28 (세션 106 — [SC-투표/서명요청] 투표 400 에러 수정 + 서명 요청 푸시 + ref_type=sc 처리)
-> **GitHub 최신 (safetynote-server): `(세션 106)`** — fix: [SC-투표/서명요청] 투표 400 에러 수정 + SC 서명요청 푸시(TBM 방식) + ref_type=sc 처리
+> **GitHub 최신 (safetynote-server): `d369b94`** — fix: [SC-투표/서명요청] 투표 400 에러 수정 + SC 서명요청 푸시(TBM 방식) + ref_type=sc 처리
 > **이전 커밋 (safetynote-server): `aa792f8`** — docs: [세션 105-2] PROJECT_HISTORY 커밋 해시 2c12724 반영
 > **이전 커밋 (safetynote-server): `2c12724`** — fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정
 > **이전 커밋 (safetynote-server): `c76ea33`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
@@ -6282,7 +6282,7 @@ After: seq (||agenda_no), title, content, assignee_id, assignee_name, result (||
 - [x] node --check ✅ / npm run build ✅ (`296.03 kB`)
 - [x] BUGFIX_LOG.md 업데이트 (BUG-186 항목 추가)
 - [x] PROJECT_HISTORY.md 업데이트 (세션 106 항목)
-- [x] git commit & push
+- [x] git commit & push (`d369b94`)
 
 ---
 

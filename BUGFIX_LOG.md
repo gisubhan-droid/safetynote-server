@@ -5,6 +5,27 @@
 
 ---
 
+## [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 (세션 102)
+
+### 문제
+회의 카드 클릭 후 상세 화면에서 `"회의 상세 로드 실패: Unexpected token 'I', "Internal S"... is not valid JSON"` 에러 및 콘솔 `GET /api/safety-committee/meeting/1 500` 발생
+
+### 원인
+- NAS에 git pull이 적용되지 않아 **구버전 app.js** 실행 중
+- 구버전 클라이언트가 `/api/safety-committee/meeting/:id` (단수) 경로로 요청
+- 서버 라우터에는 `/meetings/:id` (복수)만 등록 → 매칭 실패 → 500
+
+### 해결
+`safety-committee.ts`에 단수 경로 호환 라우트 추가:
+- `GET /meeting/:id` — meetings/:id 와 동일한 상세 조회 로직
+- `PATCH /meeting/:id` — meetings/:id 와 동일한 수정 로직
+- `DELETE /meeting/:id` — meetings/:id 와 동일한 삭제 로직
+
+### 커밋
+- `586022c` — fix: [BUG-182b]
+
+---
+
 ## [BUG-182a] 회의록 상세보기 클릭 무반응 (세션 102)
 
 ### 문제

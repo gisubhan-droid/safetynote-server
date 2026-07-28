@@ -5750,8 +5750,9 @@ registerEducationExtraRoutes(app)
 app.route('/api/education', educationRoutes)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// [FEAT-063] GET /api/constructions/stats — 공사통계 (년/월/주 기간 집계)
-// Query: period=yearly|monthly|weekly  year=YYYY  month=MM(월간전용)  week_start=YYYY-MM-DD(주간전용)
+// [FEAT-063] GET /api/constructions/stats — 공사통계 (년/분기/월/주 기간 집계)
+// Query: period=yearly|quarterly|monthly|weekly  year=YYYY  quarter=1~4(분기전용)
+//        month=MM(월간전용)  week_start=YYYY-MM-DD(주간전용)
 //        work_classes=relocation,subscription,...  (쉼표 구분 영문키 복수선택, 생략시 전체)
 // Response:
 //   summary   : { total, completed, settled, notify_total }
@@ -5762,8 +5763,9 @@ app.get('/api/constructions/stats', async (c) => {
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
-  const period     = c.req.query('period')       || 'yearly'   // yearly | monthly | weekly
+  const period     = c.req.query('period')       || 'yearly'   // yearly | quarterly | monthly | weekly
   const year       = c.req.query('year')         || String(new Date(Date.now() + 9*3600*1000).getUTCFullYear())
+  const quarter    = c.req.query('quarter')      || ''          // 분기별: '1'~'4'
   const month      = c.req.query('month')        || ''          // 월간: '1'~'12'
   const weekStart  = c.req.query('week_start')   || ''          // 주간: 'YYYY-MM-DD'
   // work_classes: 쉼표 구분 영문 key (예: 'relocation,subscription') — 생략 시 전체
@@ -5786,6 +5788,16 @@ app.get('/api/constructions/stats', async (c) => {
     // 연간: created_at 연도 기준
     dateWhere = `AND strftime('%Y', c.created_at) = ?`
     dateParams.push(year)
+  } else if (period === 'quarterly' && quarter) {
+    // 분기별: Q1=1~3월, Q2=4~6월, Q3=7~9월, Q4=10~12월
+    const q = Number(quarter)
+    const startM = String((q - 1) * 3 + 1).padStart(2, '0')
+    const endM   = String(q * 3).padStart(2, '0')
+    // 분기 마지막 달의 말일 계산
+    const endDate = new Date(Number(year), q * 3, 0) // month=q*3, day=0 → 전달 말일
+    const endDay  = String(endDate.getDate()).padStart(2, '0')
+    dateWhere = `AND date(c.created_at) >= ? AND date(c.created_at) <= ?`
+    dateParams.push(`${year}-${startM}-01`, `${year}-${endM}-${endDay}`)
   } else if (period === 'monthly') {
     const m = month.padStart(2, '0')
     dateWhere = `AND strftime('%Y', c.created_at) = ? AND strftime('%m', c.created_at) = ?`

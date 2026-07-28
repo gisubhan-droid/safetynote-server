@@ -41046,9 +41046,10 @@ function _vsWeekRange(weekVal) {
 // ═══════════════════════════════════════════════════════════════════════════════
 async function renderConStatsPage(container) {
   // ── 상태 변수 ────────────────────────────────────────────────────────────────
-  let _csPeriod    = 'yearly';
-  let _csYear      = getKSTYear();
-  let _csMonth     = getKSTMonth();
+  var _csPeriod    = 'yearly';
+  var _csYear      = getKSTYear();
+  var _csQuarter   = Math.ceil(getKSTMonth() / 3);  // [FEAT-통일] 분기별 추가
+  var _csMonth     = getKSTMonth();
   var _csWeekStart = (function() {
     var now = getKSTNow();
     var d   = now.getUTCDay();
@@ -41086,9 +41087,10 @@ async function renderConStatsPage(container) {
 
   // ── 기간 라벨 ────────────────────────────────────────────────────────────────
   function periodLabel() {
-    if (_csPeriod === 'yearly')  return `${_csYear}년`;
-    if (_csPeriod === 'monthly') return `${_csYear}년 ${_csMonth}월`;
-    return `${_csYear}년 ${getWeekRange(_csWeekStart)}주`;
+    if (_csPeriod === 'yearly')    return _csYear + '년';
+    if (_csPeriod === 'quarterly') return _csYear + '년 Q' + _csQuarter + ' (' + ((_csQuarter-1)*3+1) + '~' + (_csQuarter*3) + '월)';
+    if (_csPeriod === 'monthly')   return _csYear + '년 ' + _csMonth + '월';
+    return _csYear + '년 ' + getWeekRange(_csWeekStart) + '주';
   }
 
   // ── 연도 옵션 ────────────────────────────────────────────────────────────────
@@ -41135,10 +41137,11 @@ async function renderConStatsPage(container) {
 
     destroyCharts();
 
-    // 파라미터 구성
-    const params = new URLSearchParams({ period: _csPeriod, year: _csYear });
-    if (_csPeriod === 'monthly') params.set('month', _csMonth);
-    if (_csPeriod === 'weekly')  params.set('week_start', _csWeekStart);
+    // [FEAT-통일] 파라미터 구성 (quarterly 추가)
+    var params = new URLSearchParams({ period: _csPeriod, year: _csYear });
+    if (_csPeriod === 'quarterly') params.set('quarter', _csQuarter);
+    if (_csPeriod === 'monthly')   params.set('month', _csMonth);
+    if (_csPeriod === 'weekly')    params.set('week_start', _csWeekStart);
     // 공사종류 필터 — 선택된 key가 있으면 쉼표 구분 문자열로 전달
     if (_csWorkClasses.length > 0) params.set('work_classes', _csWorkClasses.join(','));
 
@@ -41358,27 +41361,33 @@ async function renderConStatsPage(container) {
 
       <!-- 필터 바 -->
       <div style="background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <!-- 기간 탭 -->
+        <!-- [FEAT-통일] 기간 탭 — 4탭(년간/분기별/월간/주간) -->
         <div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;flex-shrink:0">
-          ${['yearly','monthly','weekly'].map(p => {
-            const lbl = {yearly:'년간',monthly:'월간',weekly:'주간'}[p];
-            return `<button id="cs-tab-${p}" onclick="window._csSetPeriod('${p}')"
-              style="padding:6px 16px;font-size:12px;font-weight:600;cursor:pointer;border:none;
-                background:${p==='yearly'?'#685182':'#fff'};color:${p==='yearly'?'#fff':'#6B7280'};
-                transition:all .15s">${lbl}</button>`;
+          ${[['yearly','년간'],['quarterly','분기별'],['monthly','월간'],['weekly','주간']].map(function(pair) {
+            var p = pair[0], lbl = pair[1];
+            return '<button id="cs-tab-' + p + '" onclick="window._csSetPeriod(\'' + p + '\')"' +
+              ' style="padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;' +
+              'background:' + (p==='yearly'?'#685182':'#fff') + ';color:' + (p==='yearly'?'#fff':'#6B7280') + ';' +
+              'transition:all .15s">' + lbl + '</button>';
           }).join('')}
         </div>
 
         <!-- 연도 -->
         <select id="cs-year-sel" onchange="window._csSetYear(this.value)"
           style="padding:6px 12px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;cursor:pointer">
-          ${yearOpts.map(y => `<option value="${y}" ${y===_csYear?'selected':''}>${y}년</option>`).join('')}
+          ${yearOpts.map(function(y) { return '<option value="' + y + '" ' + (y===_csYear?'selected':'') + '>' + y + '년</option>'; }).join('')}
+        </select>
+
+        <!-- 분기 선택 (분기별 전용) -->
+        <select id="cs-quarter-sel" onchange="window._csSetQuarter(this.value)"
+          style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;cursor:pointer;display:none">
+          ${[1,2,3,4].map(function(q) { return '<option value="' + q + '" ' + (q===_csQuarter?'selected':'') + '>Q' + q + ' (' + ((q-1)*3+1) + '~' + (q*3) + '월)</option>'; }).join('')}
         </select>
 
         <!-- 월 선택 (월간 전용) -->
         <select id="cs-month-sel" onchange="window._csSetMonth(this.value)"
           style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;cursor:pointer;display:none">
-          ${Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${m}" ${m===_csMonth?'selected':''}>${m}월</option>`).join('')}
+          ${Array.from({length:12},function(_,i){ return '<option value="' + (i+1) + '" ' + ((i+1)===_csMonth?'selected':'') + '>' + (i+1) + '월</option>'; }).join('')}
         </select>
 
         <!-- 주간 이동 (주간 전용) -->
@@ -41450,40 +41459,49 @@ async function renderConStatsPage(container) {
   // ── 컨트롤 함수 전역 등록 ────────────────────────────────────────────────────
   window._csSetPeriod = function(p) {
     _csPeriod = p;
-    // 탭 스타일 업데이트
-    ['yearly','monthly','weekly'].forEach(x => {
-      const btn = document.getElementById(`cs-tab-${x}`);
+    // [FEAT-통일] 탭 스타일 업데이트 (4탭)
+    ['yearly','quarterly','monthly','weekly'].forEach(function(x) {
+      var btn = document.getElementById('cs-tab-' + x);
       if (!btn) return;
       btn.style.background = x === p ? '#685182' : '#fff';
       btn.style.color      = x === p ? '#fff'    : '#6B7280';
     });
-    // 월/주 컨트롤 show/hide
-    const monthSel  = document.getElementById('cs-month-sel');
-    const weekNav   = document.getElementById('cs-week-nav');
-    if (monthSel) monthSel.style.display = p === 'monthly' ? '' : 'none';
-    if (weekNav)  weekNav.style.display  = p === 'weekly'  ? 'flex' : 'none';
+    // 분기/월/주 컨트롤 show/hide
+    var quarterSel = document.getElementById('cs-quarter-sel');
+    var monthSel   = document.getElementById('cs-month-sel');
+    var weekNav    = document.getElementById('cs-week-nav');
+    if (quarterSel) quarterSel.style.display = p === 'quarterly' ? '' : 'none';
+    if (monthSel)   monthSel.style.display   = p === 'monthly'   ? '' : 'none';
+    if (weekNav)    weekNav.style.display     = p === 'weekly'    ? 'flex' : 'none';
     // 기간 라벨 업데이트
-    const lbl = document.getElementById('cs-period-label');
+    var lbl = document.getElementById('cs-period-label');
     if (lbl) lbl.textContent = periodLabel();
   };
 
   window._csSetYear = function(y) {
     _csYear = Number(y);
-    const lbl = document.getElementById('cs-period-label');
+    var lbl = document.getElementById('cs-period-label');
+    if (lbl) lbl.textContent = periodLabel();
+  };
+
+  // [FEAT-통일] 분기 설정
+  window._csSetQuarter = function(q) {
+    _csQuarter = Number(q);
+    var lbl = document.getElementById('cs-period-label');
     if (lbl) lbl.textContent = periodLabel();
   };
 
   window._csSetMonth = function(m) {
     _csMonth = Number(m);
-    const lbl = document.getElementById('cs-period-label');
+    var lbl = document.getElementById('cs-period-label');
     if (lbl) lbl.textContent = periodLabel();
   };
 
   window._csWeekShift = function(delta) {
     shiftWeek(delta);
-    const wl = document.getElementById('cs-week-label');
+    var wl = document.getElementById('cs-week-label');
     if (wl) wl.textContent = getWeekRange(_csWeekStart);
-    const lbl = document.getElementById('cs-period-label');
+    var lbl = document.getElementById('cs-period-label');
     if (lbl) lbl.textContent = periodLabel();
   };
 
@@ -43186,6 +43204,18 @@ async function renderCableIncomingPage(container, initialTab) {
 
 function _renderCableIncomingUI(container, items, initialTab) {
   var _ciInitTab = initialTab || 'in-summary';
+  // ── [FEAT-통일] 날짜별 탭 기간 필터 상태 (4탭) ──────────────
+  var _ciPeriod    = 'monthly';
+  var _ciYear      = getKSTYear();
+  var _ciQuarter   = Math.ceil(getKSTMonth() / 3);
+  var _ciMonth     = new Date().toLocaleDateString('sv-SE', _KST).slice(0,7);  // YYYY-MM
+  var _ciWkStart   = (function() {
+    var now = getKSTNow(); var d = now.getUTCDay();
+    var mon = new Date(now.getTime()); mon.setUTCDate(now.getUTCDate() - (d===0?6:d-1));
+    return _kstDateOf(mon);
+  })();
+  var _ciYears     = (function(){ var a=[]; var y=getKSTYear(); for(var i=y;i>=y-5;i--) a.push(i); return a; })();
+
   // ── 옵션 ────────────────────────────────────────────────────
   var SPEC_OPTS_CI  = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(function(v){ return '<option value="' + v + '">' + (v||'규격') + '</option>'; }).join('');
   var MAKER_OPTS_CI = ['','LS','대한','일진','가온','기타'].map(function(v){ return '<option value="' + v + '">' + (v||'제조사') + '</option>'; }).join('');
@@ -43289,17 +43319,51 @@ function _renderCableIncomingUI(container, items, initialTab) {
       '</div>' +
     '</div>' +
 
-    // ── 탭 패널: 날짜별 입고내역 ─────────────────────────────
+    // ── 탭 패널: 날짜별 입고내역 (4탭 기간 필터 포함) ───────────
     '<div id="ci-panel-in-list" class="ci-panel' + (_ciInitTab==='in-list' ? '' : ' hidden') + '">' +
+      // 4탭 필터 바
+      '<div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center mb-3">' +
+        '<input type="hidden" id="ci-period-mode" value="' + _ciPeriod + '">' +
+        '<div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;flex-shrink:0">' +
+          [['yearly','년간'],['quarterly','분기별'],['monthly','월간'],['weekly','주간']].map(function(pair){
+            var p=pair[0], lbl=pair[1];
+            return '<button id="ci-tab-'+p+'" onclick="window._ciSetPeriod(\''+p+'\')"' +
+              ' style="padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;' +
+              'background:'+(p===_ciPeriod?'#685182':'#fff')+';color:'+(p===_ciPeriod?'#fff':'#6B7280')+';transition:all .15s">'+lbl+'</button>';
+          }).join('') +
+        '</div>' +
+        // 연도
+        '<select id="ci-period-year" onchange="window._ciApplyFilter()" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">' +
+          _ciYears.map(function(y){ return '<option value="'+y+'" '+(_ciYear===y?'selected':'')+'>'+y+'년</option>'; }).join('') +
+        '</select>' +
+        // 분기 (분기별 전용)
+        '<select id="ci-period-quarter" onchange="window._ciApplyFilter()" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none" style="display:' + (_ciPeriod==='quarterly'?'':'none') + '">' +
+          [1,2,3,4].map(function(q){ return '<option value="'+q+'" '+(_ciQuarter===q?'selected':'')+'>Q'+q+' ('+((q-1)*3+1)+'~'+(q*3)+'월)</option>'; }).join('') +
+        '</select>' +
+        // 월 (월간 전용)
+        '<input type="month" id="ci-period-month" value="'+_ciMonth+'" onchange="window._ciApplyFilter()"' +
+          ' style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;display:'+(_ciPeriod==='monthly'?'':'none')+'">' +
+        // 주간 이동 (주간 전용)
+        '<input type="hidden" id="ci-week-start" value="'+_ciWkStart+'">' +
+        '<div id="ci-week-nav" style="display:'+(_ciPeriod==='weekly'?'flex':'none')+';align-items:center;gap:6px">' +
+          '<button onclick="window._ciWeekShift(-1)" style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8249;</button>' +
+          '<span id="ci-week-label" style="font-size:12px;color:#374151;font-weight:600;white-space:nowrap">' +
+            (function(){ var d=new Date(_ciWkStart); var e=new Date(d); e.setDate(d.getDate()+6); return (d.getMonth()+1)+'/'+d.getDate()+' ~ '+(e.getMonth()+1)+'/'+e.getDate(); })() +
+          '</span>' +
+          '<button onclick="window._ciWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>' +
+        '</div>' +
+        '<button onclick="window._ciApplyFilter()" class="bg-blue-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-blue-600">' +
+          '<i class="fas fa-search mr-1"></i>조회' +
+        '</button>' +
+        '<button onclick="_downloadCableIncomingCSV()" class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">' +
+          '<i class="fas fa-file-excel mr-1"></i>엑셀' +
+        '</button>' +
+      '</div>' +
+      // 결과 테이블
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
           '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-list text-indigo-400 mr-2"></i>날짜별 입고 내역</span>' +
-          '<div class="flex items-center gap-3">' +
-            '<span class="text-xs text-gray-400">총 ' + listItems.length + '건</span>' +
-            '<button onclick="_downloadCableIncomingCSV()" class="flex items-center gap-1 px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold rounded-lg shadow">' +
-              '<i class="fas fa-file-excel mr-1"></i>엑셀 다운로드' +
-            '</button>' +
-          '</div>' +
+          '<span class="text-xs text-gray-400" id="ci-list-count">총 ' + listItems.length + '건</span>' +
         '</div>' +
         '<div class="overflow-x-auto">' +
           '<table class="w-full text-sm">' +
@@ -43315,14 +43379,13 @@ function _renderCableIncomingUI(container, items, initialTab) {
               '<th class="px-3 py-2 text-center text-gray-600 font-semibold">비고</th>' +
               '<th class="px-3 py-2 text-center text-gray-600 font-semibold">수정/삭제</th>' +
             '</tr></thead>' +
-            '<tbody>' +
+            '<tbody id="ci-list-tbody">' +
               (listItems.length === 0 ?
                 '<tr><td colspan="10" class="text-center py-8 text-gray-400">입고 내역이 없습니다</td></tr>' :
                 listItems.map(function(it){
                   var assetBadge = it.asset_type
                     ? '<span class="px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs">' + it.asset_type + '</span>'
                     : '<span class="text-gray-300 text-xs">-</span>';
-                  var safeIt = JSON.stringify(it).replace(/"/g, '&quot;');
                   return '<tr class="border-t border-gray-100 hover:bg-indigo-50">' +
                     '<td class="px-3 py-2 text-center text-xs font-mono">' + (it.in_date||'-') + '</td>' +
                     '<td class="px-3 py-2 text-center text-xs">' + (it.lot_no||'-') + '</td>' +
@@ -43350,6 +43413,119 @@ function _renderCableIncomingUI(container, items, initialTab) {
 
   // 보유 현황 탭 선택 시 자동 로드
   _loadCableHoldingSummary();
+
+  // ── [FEAT-통일] 날짜별 입고내역 4탭 제어 함수 ─────────────────
+  // items 전체 배열을 전역 캐시에 보관 (필터링에 사용)
+  window._ciAllItems = listItems;
+
+  // 탭 활성화 + 분기/월/주 컨트롤 show/hide
+  window._ciSetPeriod = function(p) {
+    var modeEl = document.getElementById('ci-period-mode');
+    if (modeEl) modeEl.value = p;
+    ['yearly','quarterly','monthly','weekly'].forEach(function(x) {
+      var btn = document.getElementById('ci-tab-' + x);
+      if (!btn) return;
+      btn.style.background = x === p ? '#685182' : '#fff';
+      btn.style.color      = x === p ? '#fff'    : '#6B7280';
+    });
+    var qSel = document.getElementById('ci-period-quarter');
+    var mInp = document.getElementById('ci-period-month');
+    var wNav = document.getElementById('ci-week-nav');
+    if (qSel) qSel.style.display = p === 'quarterly' ? '' : 'none';
+    if (mInp) mInp.style.display = p === 'monthly'   ? '' : 'none';
+    if (wNav) wNav.style.display = p === 'weekly'     ? 'flex' : 'none';
+    window._ciApplyFilter();
+  };
+
+  // 주간 이전/다음 이동 + 라벨 갱신
+  window._ciWeekShift = function(delta) {
+    var el = document.getElementById('ci-week-start');
+    if (!el) return;
+    var d = new Date(el.value);
+    d.setDate(d.getDate() + delta * 7);
+    el.value = _kstDateOf(d);
+    var lbl = document.getElementById('ci-week-label');
+    if (lbl) {
+      var e = new Date(d.getTime());
+      e.setDate(d.getDate() + 6);
+      lbl.textContent = (d.getMonth()+1) + '/' + d.getDate() + ' ~ ' + (e.getMonth()+1) + '/' + e.getDate();
+    }
+    window._ciApplyFilter();
+  };
+
+  // 날짜 범위 계산 → listItems 필터링 → tbody/count 갱신
+  window._ciApplyFilter = function() {
+    var mode = document.getElementById('ci-period-mode') ? document.getElementById('ci-period-mode').value : 'monthly';
+    var yr   = document.getElementById('ci-period-year') ? document.getElementById('ci-period-year').value : String(getKSTYear());
+    var from = '', to = '';
+
+    if (mode === 'yearly') {
+      from = yr + '-01-01';
+      to   = yr + '-12-31';
+    } else if (mode === 'quarterly') {
+      var qEl = document.getElementById('ci-period-quarter');
+      var q = qEl ? parseInt(qEl.value, 10) : 1;
+      var sm = String((q - 1) * 3 + 1).padStart(2, '0');
+      var em = String(q * 3).padStart(2, '0');
+      from = yr + '-' + sm + '-01';
+      var dd = new Date(parseInt(yr, 10), q * 3, 0); // 분기 말일
+      to = _kstDateOf(dd);
+    } else if (mode === 'monthly') {
+      var mvEl = document.getElementById('ci-period-month');
+      var mv = mvEl ? mvEl.value : '';
+      if (mv) {
+        from = mv + '-01';
+        var dm = new Date(parseInt(mv.slice(0,4),10), parseInt(mv.slice(5,7),10), 0); // 월 말일
+        to = _kstDateOf(dm);
+      }
+    } else if (mode === 'weekly') {
+      var wkEl = document.getElementById('ci-week-start');
+      var wk = wkEl ? wkEl.value : '';
+      if (wk) {
+        from = wk;
+        var dw = new Date(wk);
+        dw.setDate(dw.getDate() + 6);
+        to = _kstDateOf(dw);
+      }
+    }
+
+    var all = window._ciAllItems || [];
+    var filtered = (from && to)
+      ? all.filter(function(it) { return it.in_date >= from && it.in_date <= to; })
+      : all;
+
+    // 건수 표시 갱신
+    var cntEl = document.getElementById('ci-list-count');
+    if (cntEl) cntEl.textContent = '총 ' + filtered.length + '건';
+
+    // tbody 갱신
+    var tbody = document.getElementById('ci-list-tbody');
+    if (!tbody) return;
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-gray-400">해당 기간 입고 내역이 없습니다</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map(function(it) {
+      var assetBadge = it.asset_type
+        ? '<span class="px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs">' + it.asset_type + '</span>'
+        : '<span class="text-gray-300 text-xs">-</span>';
+      return '<tr class="border-t border-gray-100 hover:bg-indigo-50">' +
+        '<td class="px-3 py-2 text-center text-xs font-mono">' + (it.in_date||'-') + '</td>' +
+        '<td class="px-3 py-2 text-center text-xs">' + (it.lot_no||'-') + '</td>' +
+        '<td class="px-3 py-2 text-center">' + (it.spec||'-') + '</td>' +
+        '<td class="px-3 py-2 text-center">' + (it.maker||'-') + '</td>' +
+        '<td class="px-3 py-2 text-center">' + (it.mfg_year||'-') + '</td>' +
+        '<td class="px-3 py-2 text-center">' + (it.cable_kind||'-') + '</td>' +
+        '<td class="px-3 py-2 text-center bg-teal-50">' + assetBadge + '</td>' +
+        '<td class="px-3 py-2 text-right font-semibold text-blue-600">' + (it.qty_m||0).toLocaleString() + 'M</td>' +
+        '<td class="px-3 py-2 text-center text-xs text-gray-500">' + (it.remark||'') + '</td>' +
+        '<td class="px-3 py-2 text-center whitespace-nowrap">' +
+          '<button onclick="_editCableIncoming(' + it.id + ')" class="text-blue-300 hover:text-blue-600 text-xs px-1 mr-1" title="수정"><i class="fas fa-edit"></i></button>' +
+          '<button onclick="_deleteCableIncoming(' + it.id + ')" class="text-red-300 hover:text-red-500 text-xs px-1" title="삭제"><i class="fas fa-trash"></i></button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+  };
 }
 
 // ── 탭 전환 ────────────────────────────────────────────────────

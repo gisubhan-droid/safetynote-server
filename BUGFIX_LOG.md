@@ -2,6 +2,50 @@
 
 ---
 
+## [FEAT-188] 정기 위험성평가 개선 — 기본값·평가위원 역할·서명관리 (세션 107)
+
+### 요구사항
+1. **정기 위험성평가 등록 모달 제목/특이사항 기본값 자동 입력**
+2. **평가위원 선정 역할 기본값 — SC role_type 기반으로 변경**
+   - 기존: 시스템 role(`admin/supervisor` → 의장, 근로자 → 위원)
+   - 변경: SC `role_type='chair'` → 의장, 나머지 SC 위원 → 위원
+3. **서명 관리 방식 확인** — 이미 `signature-requests/bulk` 패턴 적용 확인(추가 변경 불필요)
+
+### 변경 내역
+
+#### FEAT-188a — 정기평가 등록 모달 제목 기본값 (app.js)
+- `rrTitle` input — `mode === 'periodic'`이면 `${year}년 ${quarter}분기 정기 위험성평가` 자동 입력
+- `rrNotes` textarea — `mode === 'periodic'`이면 `산업안전보건법 제36조에 따른 정기 위험성평가를 실시합니다.` 자동 입력
+- 수시평가(`adhoc`) 모드는 기존 빈 값 유지
+
+#### FEAT-188b — 평가위원 선정 역할 기본값 (app.js)
+- `_scMemberRoleMap` 전역 변수 추가 — SC 위원 XHR 로드 시 `user_id → role_type` 저장
+- `buildUserCards` 함수의 `defaultRole` 결정 로직 수정:
+  - SC 의장(`_scMemberRoleMap[u.id] === 'chair'`) → select 기본값 `'chair'` (의장)
+  - SC 위원(chair가 아님) → select 기본값 `'member'` (위원)
+  - SC 위원 아님 → 기존 `defaultRole` 매개변수 유지(admin/supervisor 전달 → 의장)
+- 위원회 배지 표시 개선: SC 의장이면 `위원회 의장`, 일반 위원이면 `위원회` 표시
+
+#### FEAT-188c — 서명 관리 방식 확인 (변경 없음)
+- `_raSendSignRequest(riskId)` — 이미 `signature-requests/bulk` + `ref_type:'risk_assessment'` TBM 패턴과 동일하게 구현됨
+- 서명 현황(완료/요청중/등록위원) 3칸 요약 표시도 이미 동일 구조
+
+### 충돌 체크 & 규칙 준수
+
+| 규칙 | 처리 방법 |
+|------|----------|
+| RULE-001 (var 전용) | `_scMemberRoleMap` 선언 `var` 사용, 루프 변수 `var` 유지 |
+| RULE-002 (NAS 라우트 순서) | 변경 없음 |
+| RULE-003 (onclick 따옴표) | 변경 없음 |
+| 기존 `_scMemberPreCheckIds` 로직 | 확장(role_type 저장 추가)이며 기존 체크 기능 유지 |
+| `buildUserCards` `data-default-role` | `defaultRole` → `resolvedRole` 변수로 교체, SC 비위원에겐 원래 `defaultRole` 그대로 전달 |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (296.03 kB)
+
+---
+
 ## [BUG-185] SC 서명 500 + 위험성평가 서명 500 (세션 103~104)
 
 ### 문제

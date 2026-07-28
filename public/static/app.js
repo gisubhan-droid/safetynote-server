@@ -26420,8 +26420,9 @@ function _renderRiskWorkflow(modal, r, allUsers) {
       const roleCol  = role => role === 'admin' ? '#D70072' : role === 'supervisor' ? '#685182' : '#16A34A';
       const roleLabel= role => role === 'admin' ? '관리자' : role === 'supervisor' ? '감독자' : '근로자';
 
-      // 산업안전보건위원회 위원 자동체크 연동: 위원 user_id 집합 로드
+      // 산업안전보건위원회 위원 자동체크 연동: 위원 user_id 집합 로드 + role_type 저장
       var _scMemberPreCheckIds = {};
+      var _scMemberRoleMap = {}; // user_id → role_type('chair'|'member')
       try {
         var _scMembersRaw = [];
         var _scXhr = new XMLHttpRequest();
@@ -26432,7 +26433,10 @@ function _renderRiskWorkflow(modal, r, allUsers) {
         if (_scXhr.status === 200) {
           _scMembersRaw = JSON.parse(_scXhr.responseText).data || JSON.parse(_scXhr.responseText) || [];
           for (var _sci = 0; _sci < _scMembersRaw.length; _sci++) {
-            if (_scMembersRaw[_sci].is_active) _scMemberPreCheckIds[_scMembersRaw[_sci].user_id] = true;
+            if (_scMembersRaw[_sci].is_active) {
+              _scMemberPreCheckIds[_scMembersRaw[_sci].user_id] = true;
+              _scMemberRoleMap[_scMembersRaw[_sci].user_id] = _scMembersRaw[_sci].role_type || 'member';
+            }
           }
         }
       } catch(e) { /* 실패 시 무시 */ }
@@ -26441,8 +26445,12 @@ function _renderRiskWorkflow(modal, r, allUsers) {
         ? `<div style="color:#9CA3AF;font-size:11px;padding:6px 0">해당 없음</div>`
         : users.map(u => {
           var isScMember = !!_scMemberPreCheckIds[u.id];
+          // SC role_type 기반 역할 결정: SC 의장이면 'chair', SC 위원이면 'member', SC 아님이면 defaultRole 유지
+          var resolvedRole = isScMember
+            ? (_scMemberRoleMap[u.id] === 'chair' ? 'chair' : 'member')
+            : defaultRole;
           var preChecked = isScMember ? 'checked' : '';
-          var scBadge    = isScMember ? `<span style="background:#EDE9F8;color:#7C3AED;padding:1px 5px;border-radius:9999px;font-size:9px;font-weight:700;margin-left:3px"><i class="fas fa-landmark" style="margin-right:2px"></i>위원회</span>` : '';
+          var scBadge    = isScMember ? `<span style="background:#EDE9F8;color:#7C3AED;padding:1px 5px;border-radius:9999px;font-size:9px;font-weight:700;margin-left:3px"><i class="fas fa-landmark" style="margin-right:2px"></i>${_scMemberRoleMap[u.id]==='chair'?'위원회 의장':'위원회'}</span>` : '';
           return `
           <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;border:1.5px solid ${isScMember ? '#DDD6FE' : '#E5E7EB'};background:${isScMember ? '#FAF8FF' : '#FAFAFA'};cursor:pointer;transition:all .15s"
                  class="rd-member-card"
@@ -26450,7 +26458,7 @@ function _renderRiskWorkflow(modal, r, allUsers) {
                  data-name="${(u.name||'').replace(/"/g,'&quot;')}"
                  onmouseover="this.style.borderColor='#C4BAD4'"
                  onmouseout="if(!this.querySelector('input').checked)this.style.borderColor='${isScMember ? '#DDD6FE' : '#E5E7EB'}'">
-            <input type="checkbox" value="${u.id}" data-default-role="${defaultRole}"
+            <input type="checkbox" value="${u.id}" data-default-role="${resolvedRole}"
                    style="width:16px;height:16px;accent-color:#685182;cursor:pointer;flex-shrink:0"
                    ${preChecked}
                    onchange="_onRdMemberCheck(this)">
@@ -26468,8 +26476,8 @@ function _renderRiskWorkflow(modal, r, allUsers) {
             <select class="rd-member-role-sel" data-userid="${u.id}"
                     style="font-size:10px;border:1px solid #E5E7EB;border-radius:6px;padding:2px 4px;color:#4E3A63;background:white;cursor:pointer"
                     onclick="event.stopPropagation()">
-              <option value="member" ${defaultRole==='member'?'selected':''}>위원</option>
-              <option value="chair"  ${defaultRole==='chair' ?'selected':''}>의장</option>
+              <option value="member" ${resolvedRole==='member'?'selected':''}>위원</option>
+              <option value="chair"  ${resolvedRole==='chair' ?'selected':''}>의장</option>
             </select>
           </label>`;
         }).join('');
@@ -27555,7 +27563,8 @@ async function showRiskRegisterModal(mode) {
       <div class="grid grid-cols-2 gap-3 mb-4">
         <div class="col-span-2">
           <label class="form-label">제목 <span class="text-red-500">*</span></label>
-          <input id="rrTitle" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="${modeLabel} 위험성평가 제목">
+          <input id="rrTitle" type="text" autocomplete="off" inputmode="text" class="form-control" placeholder="${modeLabel} 위험성평가 제목"
+            value="${(function(){ if(mode!=='periodic') return ''; var _n=new Date(); var _y=_n.getFullYear(); var _q=Math.ceil((_n.getMonth()+1)/3); return _y+'년 '+_q+'분기 정기 위험성평가'; })()}">
         </div>
         <div>
           <label class="form-label">평가일 <span class="text-red-500">*</span></label>
@@ -27589,7 +27598,7 @@ async function showRiskRegisterModal(mode) {
         </div>
         <div class="col-span-2">
           <label class="form-label">비고</label>
-          <textarea id="rrNotes" class="form-control" rows="2" placeholder="특이사항 입력"></textarea>
+          <textarea id="rrNotes" class="form-control" rows="2" placeholder="특이사항 입력">${mode === 'periodic' ? '산업안전보건법 제36조에 따른 정기 위험성평가를 실시합니다.' : ''}</textarea>
         </div>
       </div>
 

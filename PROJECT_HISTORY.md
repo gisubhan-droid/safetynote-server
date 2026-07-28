@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 106-2 — [SC-투표500/투표요청] votes FK 제거 + sc_vote push + 서명요청 카드 투표UI)
-> **GitHub 최신 (safetynote-server): `7cae5e0`** — fix: [SC-투표500/투표요청] patchSchema v0.189 + sc_vote push + 서명요청카드 투표UI
+> 최종 업데이트: 2026-07-28 (세션 107 — [정기위험성평가] 제목/특이사항 기본값 + 평가위원 SC role_type 기반 역할 기본설정)
+> **GitHub 최신 (safetynote-server): `(세션107 커밋)`** — feat: [정기위험성평가] 기본값 자동입력 + 평가위원 SC role_type 기반 역할 기본설정
+> **이전 커밋 (safetynote-server): `f241385`** — docs: [세션 106-2] PROJECT_HISTORY 커밋 해시 7cae5e0 반영
+> **이전 커밋 (safetynote-server): `7cae5e0`** — fix: [SC-투표500/투표요청] patchSchema v0.189 + sc_vote push + 서명요청카드 투표UI
 > **이전 커밋 (safetynote-server): `5a68e78`** — docs: [세션 106] PROJECT_HISTORY 커밋 해시 d369b94 반영
 > **이전 커밋 (safetynote-server): `2c12724`** — fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정
 > **이전 커밋 (safetynote-server): `c76ea33`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
@@ -6231,6 +6233,41 @@ After: seq (||agenda_no), title, content, assignee_id, assignee_name, result (||
 - [x] safety-committee.ts PATCH /meetings/:id: 안건 INSERT 필드명 수정
 - [x] node --check ✅ / npm run build ✅
 - [x] git commit & push (`2c12724`)
+
+---
+
+## 세션 107 — 2026-07-28
+
+### [정기위험성평가] 제목/특이사항 기본값 + 평가위원 SC role_type 기반 역할 기본설정
+
+**배경**: 정기 위험성평가 등록 시 제목/특이사항 기본값 자동 입력 및 평가위원 역할을 SC role_type 기반으로 변경
+
+#### FEAT-188a — 정기평가 등록 모달 기본값 (app.js)
+- `rrTitle`: `mode === 'periodic'` 일 때 `${year}년 ${quarter}분기 정기 위험성평가` 자동 입력 (IIFE 패턴)
+- `rrNotes`: `mode === 'periodic'` 일 때 `산업안전보건법 제36조에 따른 정기 위험성평가를 실시합니다.` 자동 입력
+- 수시평가(`adhoc`) 모드는 기존 빈 값 유지
+
+#### FEAT-188b — 평가위원 역할 기본값 (app.js)
+- `_scMemberRoleMap = {}` 변수 추가 — XHR 로드 시 `user_id → role_type` 저장
+- `buildUserCards` 내 `resolvedRole` 결정 로직:
+  - SC 의장(`role_type='chair'`) → select 기본값 `'chair'`
+  - SC 일반 위원 → select 기본값 `'member'`
+  - SC 비위원 → 기존 `defaultRole` 매개변수 유지
+- 위원회 배지: SC 의장이면 `위원회 의장` 표시
+
+#### FEAT-188c — 서명 관리 방식 확인 (변경 없음)
+- `_raSendSignRequest`가 이미 `signature-requests/bulk` + `ref_type:'risk_assessment'` TBM 패턴과 동일하게 구현됨
+- 추가 변경 불필요
+
+### 완료 항목
+- [x] `showRiskRegisterModal` rrTitle/rrNotes 기본값 자동 입력 (periodic 모드)
+- [x] `_scMemberRoleMap` 추가 + XHR role_type 저장
+- [x] `buildUserCards` resolvedRole 로직 SC role_type 기반으로 수정
+- [x] 서명 관리 TBM 방식 동일 확인 (변경 없음)
+- [x] node --check ✅ / npm run build ✅ (296.03 kB)
+- [x] git commit & push (`(세션107 커밋)`)
+- [x] BUGFIX_LOG.md FEAT-188 항목 추가
+- [x] PROJECT_HISTORY.md 세션 107 항목 추가
 
 ---
 

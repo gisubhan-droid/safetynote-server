@@ -19,11 +19,34 @@ import { sendFcmToUsers } from './push-helper'
 const app = new Hono()
 
 // GET /api/signature-requests
+// 파라미터:
+//   status  : pending | signed | rejected (기본: pending)
+//   year    : 처리완료 연도 필터 (status=signed|rejected 시 적용, signed_at 기준)
+//   month   : 처리완료 월 필터  (status=signed|rejected 시 적용, 1~12)
 app.get('/', async (c) => {
   const rawDb = getRawDb()
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const status = c.req.query('status') || 'pending'
+  const year   = c.req.query('year')  || ''
+  const month  = c.req.query('month') || ''
+
+  // 처리완료(signed/rejected) 상태이고 year+month 가 모두 지정된 경우 날짜 필터 적용
+  const isDone = status === 'signed' || status === 'rejected'
+  let dateWhere = ''
+  const dateParams: (string | number)[] = []
+
+  if (isDone && year && month) {
+    const mm = String(Number(month)).padStart(2, '0')
+    const fromDate = `${year}-${mm}-01`
+    // 다음 달 1일 미만으로 범위 계산
+    const nextMonth = Number(month) === 12 ? 1 : Number(month) + 1
+    const nextYear  = Number(month) === 12 ? Number(year) + 1 : Number(year)
+    const toDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
+    dateWhere = `AND date(sr.signed_at) >= ? AND date(sr.signed_at) < ?`
+    dateParams.push(fromDate, toDate)
+  }
+
   const rows = rawDb.prepare(`
     SELECT sr.*,
            ru.name as requester_name, ru.position as requester_position,
@@ -32,9 +55,10 @@ app.get('/', async (c) => {
     LEFT JOIN users ru ON ru.id = sr.requester_id
     LEFT JOIN users tu ON tu.id = sr.target_user_id
     WHERE sr.target_user_id = ? AND sr.status = ?
-    ORDER BY sr.created_at DESC
-    LIMIT 100
-  `).all(user.id, status)
+    ${dateWhere}
+    ORDER BY sr.${isDone ? 'signed_at' : 'created_at'} DESC
+    LIMIT 200
+  `).all(user.id, status, ...dateParams)
   return c.json(rows)
 })
 

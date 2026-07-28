@@ -33457,165 +33457,282 @@ function _signReqOpenRisk(taskId) {
 }
 
 // ======= 서명 요청 페이지 (모든 역할 공통) =======
+// 전역: 처리완료 전체 목록 캐시 (월별 필터링용)
+var _srAllDone = [];
+
 async function renderSignatureRequestsPage(container) {
   showLoading(container);
   try {
-    const [pendingRes, signedRes, rejectedRes] = await Promise.all([
+    var srResponses = await Promise.all([
       API.get('/signature-requests', { params: { status: 'pending' } }),
       API.get('/signature-requests', { params: { status: 'signed' } }),
       API.get('/signature-requests', { params: { status: 'rejected' } }),
     ]);
-    const pending  = pendingRes.data  || [];
-    const signed   = signedRes.data   || [];
-    const rejected = rejectedRes.data || [];
-    const done     = [...signed, ...rejected].sort((a, b) =>
-      new Date(b.signed_at || b.created_at) - new Date(a.signed_at || a.created_at)
-    );
+    var pending  = srResponses[0].data || [];
+    var signed   = srResponses[1].data || [];
+    var rejected = srResponses[2].data || [];
+    var done = signed.concat(rejected).sort(function(a, b) {
+      return new Date(b.signed_at || b.created_at) - new Date(a.signed_at || a.created_at);
+    });
+
+    // 전역 캐시 저장 (월별 필터링에 사용)
+    _srAllDone = done;
 
     refreshSignRequestCount();
 
-    const META = {
+    var SR_META = {
       tbm:             { label:'TBM 서명',       icon:'fa-users',          color:'#685182', bg:'#F5F3FF', border:'#DDD6FE' },
       risk_assessment: { label:'위험성평가 서명', icon:'fa-shield-alt',     color:'#D70072', bg:'#FFF0F7', border:'#FBCFE8' },
       education:       { label:'안전교육 서명',   icon:'fa-graduation-cap', color:'#FF349E', bg:'#FFF5FA', border:'#FBCFE8' },
     };
 
-    function fmtDt(s) {
-      if (!s) return '';
-      const d = new Date(s);
-      return `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    // 현재 날짜 기반 초기 연도/월
+    var _srNow = new Date();
+    var _srInitYear  = _srNow.getFullYear();
+    var _srInitMonth = _srNow.getMonth() + 1;
+
+    // 연도 옵션 (최근 3년)
+    var _srYearOpts = '';
+    for (var _y = _srInitYear; _y >= _srInitYear - 2; _y--) {
+      _srYearOpts += '<option value="' + _y + '"' + (_y === _srInitYear ? ' selected' : '') + '>' + _y + '년</option>';
+    }
+    // 월 옵션
+    var _srMonthOpts = '';
+    for (var _mo = 1; _mo <= 12; _mo++) {
+      _srMonthOpts += '<option value="' + _mo + '"' + (_mo === _srInitMonth ? ' selected' : '') + '>' + _mo + '월</option>';
     }
 
-    function renderCard(req, isDone) {
-      const m = META[req.ref_type] || { label:'서명', icon:'fa-pen-fancy', color:'#685182', bg:'#F9FAFB', border:'#E5E7EB' };
-      const isSigned   = req.status === 'signed';
-      const isRejected = req.status === 'rejected';
+    container.innerHTML = '<div class="page-container">' +
+      '<!-- 탭 -->' +
+      '<div class="tab-bar mb-4">' +
+        '<div class="tab-item active" id="srtab-pending" onclick="_srPageSwitchTab(\'pending\')">' +
+          '미처리' +
+          (pending.length > 0 ? '<span class="ml-1 font-bold" style="color:#D70072">(' + pending.length + ')</span>' : '') +
+        '</div>' +
+        '<div class="tab-item" id="srtab-done" onclick="_srPageSwitchTab(\'done\')">' +
+          '처리완료 <span id="srtab-done-count" style="color:#6B7280;font-weight:400;font-size:12px">(' + done.length + ')</span>' +
+        '</div>' +
+      '</div>' +
 
-      // 상태 배지
-      let statusBadge = '';
-      if (isSigned)   statusBadge = `<span style="font-size:11px;padding:2px 8px;border-radius:12px;background:#D1FAE5;color:#065F46;font-weight:700">✅ 서명완료</span>`;
-      if (isRejected) statusBadge = `<span style="font-size:11px;padding:2px 8px;border-radius:12px;background:#FEE2E2;color:#991B1B;font-weight:700">❌ 거부됨</span>`;
+      '<!-- 처리완료 월별 필터 (초기 hidden) -->' +
+      '<div id="sr-month-filter" class="hidden" style="display:none;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:10px 14px;margin-bottom:12px;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<i class="fas fa-calendar-alt" style="color:#685182"></i>' +
+        '<span style="font-size:12px;font-weight:600;color:#374151">월별 조회</span>' +
+        '<select id="sr-filter-year" onchange="_srApplyMonthFilter()" style="font-size:13px;border:1px solid #D1D5DB;border-radius:6px;padding:4px 8px;color:#374151">' +
+          _srYearOpts +
+        '</select>' +
+        '<select id="sr-filter-month" onchange="_srApplyMonthFilter()" style="font-size:13px;border:1px solid #D1D5DB;border-radius:6px;padding:4px 8px;color:#374151">' +
+          _srMonthOpts +
+        '</select>' +
+        '<button onclick="_srClearMonthFilter()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D1D5DB;background:#fff;color:#6B7280;cursor:pointer">전체 보기</button>' +
+      '</div>' +
 
-      // 서명 이미지
-      const hasImg = req.sign_data && req.sign_data.startsWith('data:');
-      const sigImgHtml = (isDone && isSigned && hasImg) ? `
-        <div style="margin-top:10px;padding:8px;background:#FAFAFA;border:1px solid #E5E7EB;border-radius:8px;display:inline-block">
-          <div style="font-size:10px;color:#9CA3AF;margin-bottom:4px"><i class="fas fa-signature mr-1"></i>서명 이미지</div>
-          <img src="${req.sign_data}" style="height:44px;max-width:140px;object-fit:contain;display:block">
-        </div>` : '';
+      '<!-- 미처리 패널 -->' +
+      '<div id="sr-panel-pending">' +
+        (pending.length === 0
+          ? '<div class="card text-center py-12" style="color:#9CA3AF">' +
+              '<i class="fas fa-check-circle" style="font-size:40px;color:#6EE7B7;display:block;margin-bottom:10px"></i>' +
+              '<div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:4px">미처리 서명 요청이 없습니다</div>' +
+              '<div style="font-size:12px">모든 서명을 완료했습니다 🎉</div>' +
+            '</div>'
+          : pending.map(function(r) { return _srRenderCard(r, false, SR_META); }).join('')
+        ) +
+      '</div>' +
 
-      return `
-      <div class="card mb-3 p-0 overflow-hidden" style="border:1.5px solid ${isDone?'#e5e7eb':m.border};border-radius:12px">
-        <!-- 타입 + 상태 헤더 -->
-        <div class="flex items-center gap-2 px-4 py-2.5" style="background:${isDone?'#F9FAFB':m.bg}">
-          <div style="width:28px;height:28px;border-radius:50%;background:${m.color}22;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-            <i class="fas ${m.icon}" style="color:${m.color};font-size:12px"></i>
-          </div>
-          <div style="flex:1">
-            <div style="font-size:12px;font-weight:700;color:${m.color}">${m.label}</div>
-            <div style="font-size:10px;color:#9CA3AF">${fmtDt(req.created_at)} 요청</div>
-          </div>
-          ${isDone ? statusBadge : `<span style="font-size:10px;color:#D70072;font-weight:700;background:#FFF0F7;padding:2px 8px;border-radius:12px;border:1px solid #FBCFE8">🔔 서명 필요</span>`}
-        </div>
+      '<!-- 처리완료 패널 -->' +
+      '<div id="sr-panel-done" style="display:none">' +
+        '<div id="sr-done-list">' +
+          (done.length === 0
+            ? '<div class="card text-center py-12" style="color:#9CA3AF">' +
+                '<i class="fas fa-inbox" style="font-size:40px;display:block;margin-bottom:10px"></i>' +
+                '<div style="font-size:14px;font-weight:600;color:#374151">처리된 서명 요청이 없습니다</div>' +
+              '</div>'
+            : done.map(function(r) { return _srRenderCard(r, true, SR_META); }).join('')
+          ) +
+        '</div>' +
+      '</div>' +
+    '</div>';
 
-        <!-- 본문 -->
-        <div class="px-4 py-3">
-          <div style="font-size:14px;font-weight:700;color:#1F2937;margin-bottom:6px;line-height:1.4">${req.title}</div>
-          ${req.description ? `<div style="font-size:12px;color:#6B7280;margin-bottom:8px;line-height:1.4">${req.description}</div>` : ''}
-
-          <!-- 요청자 / 처리일시 -->
-          <div style="display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:#6B7280">
-            <div><i class="fas fa-user-tie mr-1" style="color:#9CA3AF"></i>
-              요청자: <span style="font-weight:600;color:#374151">${req.requester_name||'-'}</span>
-              ${req.requester_position?`<span style="color:#9CA3AF"> (${req.requester_position})</span>`:''}
-            </div>
-            ${isDone && req.signed_at ? `
-            <div><i class="fas fa-clock mr-1" style="color:#9CA3AF"></i>
-              처리: <span style="font-weight:600;color:#374151">${fmtDt(req.signed_at)}</span>
-            </div>` : ''}
-          </div>
-
-          ${sigImgHtml}
-          ${isDone && isRejected && req.rejected_reason ? `
-          <div style="margin-top:8px;padding:6px 10px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;font-size:11px;color:#DC2626">
-            <i class="fas fa-comment-slash mr-1"></i>거부사유: ${req.rejected_reason}
-          </div>` : ''}
-
-          <!-- 내용 보기 링크 (ref_type별 분기) -->
-          ${(function() {
-            var _viewBtn = '';
-            var _btnStyle = 'font-size:12px;color:#685182;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:6px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-weight:600';
-            if (req.ref_type === 'tbm') {
-              // [BUG-181 수정] ref_id = tbm_records.id → showTbmDetail() 사용
-              // 기존 showTaskDetail(ref_id,'tbm')은 task.id를 받는 함수여서
-              // tbm_records.id와 혼동되어 엉뚱한 작업 상세로 이동하는 버그 발생
-              _viewBtn = '<div style="margin-top:10px"><button onclick="showTbmDetail(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> TBM 내용 보기</button></div>';
-            } else if (req.ref_type === 'risk_assessment') {
-              _viewBtn = '<div style="margin-top:10px"><button onclick="_signReqOpenRisk(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 위험성평가 내용 보기</button></div>';
-            } else if (req.ref_type === 'education') {
-              var _eduSubType = req.ref_sub_type || 'periodic';
-              _viewBtn = '<div style="margin-top:10px"><button onclick="showEduDetailModal(' + req.ref_id + ',\'' + _eduSubType + '\')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 안전교육 내용 보기</button></div>';
-            }
-            return _viewBtn;
-          })()}
-        </div>
-
-        ${!isDone ? `
-        <!-- 서명 / 거부 버튼 -->
-        <div style="display:flex;gap:8px;padding:0 16px 14px">
-          <button onclick="_signReqSign(${req.id},'${req.ref_type}',${req.ref_id})"
-            style="flex:1;padding:9px 0;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:700;
-              background:linear-gradient(135deg,${m.color},#8E72A8);color:white;display:flex;align-items:center;justify-content:center;gap:6px">
-            <i class="fas fa-pen-fancy"></i>서명하기
-          </button>
-          <button onclick="_signReqReject(${req.id})"
-            style="padding:9px 14px;border-radius:8px;border:1.5px solid #D1D5DB;cursor:pointer;font-size:13px;
-              font-weight:600;color:#6B7280;background:white;display:flex;align-items:center;gap:4px">
-            <i class="fas fa-times"></i>거부
-          </button>
-        </div>` : ''}
-      </div>`;
-    }
-
-    container.innerHTML = `
-    <div class="page-container">
-      <!-- 탭 -->
-      <div class="tab-bar mb-4">
-        <div class="tab-item active" id="srtab-pending" onclick="_srSwitchTab('pending',this)">
-          미처리
-          ${pending.length > 0 ? `<span class="ml-1 font-bold" style="color:#D70072">(${pending.length})</span>` : ''}
-        </div>
-        <div class="tab-item" id="srtab-done" onclick="_srSwitchTab('done',this)">
-          처리완료 <span style="color:#6B7280;font-weight:400;font-size:12px">(${done.length})</span>
-        </div>
-      </div>
-
-      <!-- 미처리 목록 -->
-      <div id="sr-panel-pending">
-        ${pending.length === 0
-          ? `<div class="card text-center py-12" style="color:#9CA3AF">
-              <i class="fas fa-check-circle" style="font-size:40px;color:#6EE7B7;display:block;margin-bottom:10px"></i>
-              <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:4px">미처리 서명 요청이 없습니다</div>
-              <div style="font-size:12px">모든 서명을 완료했습니다 🎉</div>
-            </div>`
-          : pending.map(r => renderCard(r, false)).join('')
-        }
-      </div>
-
-      <!-- 처리완료 목록 -->
-      <div id="sr-panel-done" class="hidden">
-        ${done.length === 0
-          ? `<div class="card text-center py-12" style="color:#9CA3AF">
-              <i class="fas fa-inbox" style="font-size:40px;display:block;margin-bottom:10px"></i>
-              <div style="font-size:14px;font-weight:600;color:#374151">처리된 서명 요청이 없습니다</div>
-            </div>`
-          : done.map(r => renderCard(r, true)).join('')
-        }
-      </div>
-    </div>`;
   } catch(e) {
-    container.innerHTML = `<div class="card text-red-500 p-6">로드 실패: ${e.message}</div>`;
+    container.innerHTML = '<div class="card text-red-500 p-6">로드 실패: ' + e.message + '</div>';
   }
+}
+
+// 서명요청 페이지 전용 탭 전환 함수
+function _srPageSwitchTab(tab) {
+  var pendingTab  = document.getElementById('srtab-pending');
+  var doneTab     = document.getElementById('srtab-done');
+  var pendingPanel = document.getElementById('sr-panel-pending');
+  var donePanel    = document.getElementById('sr-panel-done');
+  var monthFilter  = document.getElementById('sr-month-filter');
+
+  if (!pendingPanel || !donePanel) return;
+
+  if (tab === 'pending') {
+    // 미처리 탭 활성
+    if (pendingTab) { pendingTab.classList.add('active'); }
+    if (doneTab)    { doneTab.classList.remove('active'); }
+    pendingPanel.style.display = '';
+    donePanel.style.display    = 'none';
+    if (monthFilter) { monthFilter.style.display = 'none'; monthFilter.classList.add('hidden'); }
+  } else {
+    // 처리완료 탭 활성
+    if (pendingTab) { pendingTab.classList.remove('active'); }
+    if (doneTab)    { doneTab.classList.add('active'); }
+    pendingPanel.style.display = 'none';
+    donePanel.style.display    = '';
+    if (monthFilter) { monthFilter.style.display = 'flex'; monthFilter.classList.remove('hidden'); }
+    // 탭 전환 시 현재 선택된 월로 필터 적용
+    _srApplyMonthFilter();
+  }
+}
+
+// 처리완료 월별 필터 적용
+function _srApplyMonthFilter() {
+  var yearEl  = document.getElementById('sr-filter-year');
+  var monthEl = document.getElementById('sr-filter-month');
+  var listEl  = document.getElementById('sr-done-list');
+  var cntEl   = document.getElementById('srtab-done-count');
+  if (!yearEl || !monthEl || !listEl) return;
+
+  var selYear  = Number(yearEl.value);
+  var selMonth = Number(monthEl.value);
+  var prefix   = selYear + '-' + String(selMonth).padStart(2, '0');
+
+  var filtered = _srAllDone.filter(function(r) {
+    var dt = r.signed_at || r.created_at || '';
+    return String(dt).slice(0, 7) === prefix;
+  });
+
+  var SR_META = {
+    tbm:             { label:'TBM 서명',       icon:'fa-users',          color:'#685182', bg:'#F5F3FF', border:'#DDD6FE' },
+    risk_assessment: { label:'위험성평가 서명', icon:'fa-shield-alt',     color:'#D70072', bg:'#FFF0F7', border:'#FBCFE8' },
+    education:       { label:'안전교육 서명',   icon:'fa-graduation-cap', color:'#FF349E', bg:'#FFF5FA', border:'#FBCFE8' },
+  };
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div class="card text-center py-12" style="color:#9CA3AF">' +
+      '<i class="fas fa-search" style="font-size:40px;display:block;margin-bottom:10px"></i>' +
+      '<div style="font-size:14px;font-weight:600;color:#374151">' + selYear + '년 ' + selMonth + '월 처리 내역이 없습니다</div>' +
+      '</div>';
+  } else {
+    listEl.innerHTML = filtered.map(function(r) { return _srRenderCard(r, true, SR_META); }).join('');
+  }
+  if (cntEl) { cntEl.textContent = '(' + filtered.length + ')'; }
+}
+
+// 처리완료 필터 해제 (전체 보기)
+function _srClearMonthFilter() {
+  var listEl = document.getElementById('sr-done-list');
+  var cntEl  = document.getElementById('srtab-done-count');
+  var SR_META = {
+    tbm:             { label:'TBM 서명',       icon:'fa-users',          color:'#685182', bg:'#F5F3FF', border:'#DDD6FE' },
+    risk_assessment: { label:'위험성평가 서명', icon:'fa-shield-alt',     color:'#D70072', bg:'#FFF0F7', border:'#FBCFE8' },
+    education:       { label:'안전교육 서명',   icon:'fa-graduation-cap', color:'#FF349E', bg:'#FFF5FA', border:'#FBCFE8' },
+  };
+  if (!listEl) return;
+  if (_srAllDone.length === 0) {
+    listEl.innerHTML = '<div class="card text-center py-12" style="color:#9CA3AF">' +
+      '<i class="fas fa-inbox" style="font-size:40px;display:block;margin-bottom:10px"></i>' +
+      '<div style="font-size:14px;font-weight:600;color:#374151">처리된 서명 요청이 없습니다</div>' +
+      '</div>';
+  } else {
+    listEl.innerHTML = _srAllDone.map(function(r) { return _srRenderCard(r, true, SR_META); }).join('');
+  }
+  if (cntEl) { cntEl.textContent = '(' + _srAllDone.length + ')'; }
+}
+
+// 서명요청 카드 렌더링 (공통)
+function _srRenderCard(req, isDone, META) {
+  var m = META[req.ref_type] || { label:'서명', icon:'fa-pen-fancy', color:'#685182', bg:'#F9FAFB', border:'#E5E7EB' };
+  var isSigned   = req.status === 'signed';
+  var isRejected = req.status === 'rejected';
+
+  function fmtDt(s) {
+    if (!s) return '';
+    var d = new Date(s);
+    return String(d.getMonth()+1).padStart(2,'0') + '.' + String(d.getDate()).padStart(2,'0') + ' ' +
+           String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  }
+
+  // 상태 배지
+  var statusBadge = '';
+  if (isSigned)   statusBadge = '<span style="font-size:11px;padding:2px 8px;border-radius:12px;background:#D1FAE5;color:#065F46;font-weight:700">✅ 서명완료</span>';
+  if (isRejected) statusBadge = '<span style="font-size:11px;padding:2px 8px;border-radius:12px;background:#FEE2E2;color:#991B1B;font-weight:700">❌ 거부됨</span>';
+
+  // 서명 이미지
+  var hasImg = req.sign_data && req.sign_data.indexOf('data:') === 0;
+  var sigImgHtml = (isDone && isSigned && hasImg)
+    ? '<div style="margin-top:10px;padding:8px;background:#FAFAFA;border:1px solid #E5E7EB;border-radius:8px;display:inline-block">' +
+        '<div style="font-size:10px;color:#9CA3AF;margin-bottom:4px"><i class="fas fa-signature mr-1"></i>서명 이미지</div>' +
+        '<img src="' + req.sign_data + '" style="height:44px;max-width:140px;object-fit:contain;display:block">' +
+      '</div>'
+    : '';
+
+  // 내용 보기 버튼
+  var _viewBtn = '';
+  var _btnStyle = 'font-size:12px;color:#685182;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:6px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-weight:600';
+  if (req.ref_type === 'tbm') {
+    _viewBtn = '<div style="margin-top:10px"><button onclick="showTbmDetail(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> TBM 내용 보기</button></div>';
+  } else if (req.ref_type === 'risk_assessment') {
+    _viewBtn = '<div style="margin-top:10px"><button onclick="_signReqOpenRisk(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 위험성평가 내용 보기</button></div>';
+  } else if (req.ref_type === 'education') {
+    var _eduSubType = req.ref_sub_type || 'periodic';
+    _viewBtn = '<div style="margin-top:10px"><button onclick="showEduDetailModal(' + req.ref_id + ',\'' + _eduSubType + '\')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 안전교육 내용 보기</button></div>';
+  }
+
+  // 서명/거부 버튼 (미처리만)
+  var actionBtns = '';
+  if (!isDone) {
+    actionBtns = '<div style="display:flex;gap:8px;padding:0 16px 14px">' +
+      '<button onclick="_signReqSign(' + req.id + ',\'' + req.ref_type + '\',' + req.ref_id + ')" ' +
+        'style="flex:1;padding:9px 0;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:700;' +
+        'background:linear-gradient(135deg,' + m.color + ',#8E72A8);color:white;display:flex;align-items:center;justify-content:center;gap:6px">' +
+        '<i class="fas fa-pen-fancy"></i>서명하기' +
+      '</button>' +
+      '<button onclick="_signReqReject(' + req.id + ')" ' +
+        'style="padding:9px 14px;border-radius:8px;border:1.5px solid #D1D5DB;cursor:pointer;font-size:13px;' +
+        'font-weight:600;color:#6B7280;background:white;display:flex;align-items:center;gap:4px">' +
+        '<i class="fas fa-times"></i>거부' +
+      '</button>' +
+    '</div>';
+  }
+
+  return '<div class="card mb-3 p-0 overflow-hidden" style="border:1.5px solid ' + (isDone ? '#e5e7eb' : m.border) + ';border-radius:12px">' +
+    '<!-- 타입 + 상태 헤더 -->' +
+    '<div class="flex items-center gap-2 px-4 py-2.5" style="background:' + (isDone ? '#F9FAFB' : m.bg) + '">' +
+      '<div style="width:28px;height:28px;border-radius:50%;background:' + m.color + '22;display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+        '<i class="fas ' + m.icon + '" style="color:' + m.color + ';font-size:12px"></i>' +
+      '</div>' +
+      '<div style="flex:1">' +
+        '<div style="font-size:12px;font-weight:700;color:' + m.color + '">' + m.label + '</div>' +
+        '<div style="font-size:10px;color:#9CA3AF">' + fmtDt(req.created_at) + ' 요청</div>' +
+      '</div>' +
+      (isDone ? statusBadge : '<span style="font-size:10px;color:#D70072;font-weight:700;background:#FFF0F7;padding:2px 8px;border-radius:12px;border:1px solid #FBCFE8">🔔 서명 필요</span>') +
+    '</div>' +
+    '<!-- 본문 -->' +
+    '<div class="px-4 py-3">' +
+      '<div style="font-size:14px;font-weight:700;color:#1F2937;margin-bottom:6px;line-height:1.4">' + (req.title || '') + '</div>' +
+      (req.description ? '<div style="font-size:12px;color:#6B7280;margin-bottom:8px;line-height:1.4">' + req.description + '</div>' : '') +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:#6B7280">' +
+        '<div><i class="fas fa-user-tie mr-1" style="color:#9CA3AF"></i>' +
+          '요청자: <span style="font-weight:600;color:#374151">' + (req.requester_name || '-') + '</span>' +
+          (req.requester_position ? '<span style="color:#9CA3AF"> (' + req.requester_position + ')</span>' : '') +
+        '</div>' +
+        (isDone && req.signed_at
+          ? '<div><i class="fas fa-clock mr-1" style="color:#9CA3AF"></i>처리: <span style="font-weight:600;color:#374151">' + fmtDt(req.signed_at) + '</span></div>'
+          : '') +
+      '</div>' +
+      sigImgHtml +
+      (isDone && isRejected && req.rejected_reason
+        ? '<div style="margin-top:8px;padding:6px 10px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;font-size:11px;color:#DC2626">' +
+            '<i class="fas fa-comment-slash mr-1"></i>거부사유: ' + req.rejected_reason +
+          '</div>'
+        : '') +
+      _viewBtn +
+    '</div>' +
+    actionBtns +
+  '</div>';
 }
 
 // 서명 실행 (서명 패드 → API PATCH)

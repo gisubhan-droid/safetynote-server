@@ -624,18 +624,60 @@ app.patch('/meetings/:id/attendees/:aid/sign', async (c) => {
   const body = await c.req.json().catch(() => ({})) as any
   const { sign_data } = body
 
-  const att: any = rawDb.prepare(`SELECT * FROM safety_committee_attendees WHERE id=?`).get(aid)
+  let att: any
+  try {
+    att = rawDb.prepare(`SELECT * FROM safety_committee_attendees WHERE id=?`).get(aid)
+  } catch(e: any) {
+    console.error('[SC] PATCH /sign — attendees 조회 오류:', e.message)
+    return c.json({ error: 'DB 조회 오류: ' + e.message }, 500)
+  }
   if (!att) return c.json({ error: '참석자 없음' }, 404)
 
   // 본인 서명만 허용 (admin 예외)
   if (att.user_id && att.user_id !== user.id && user.role !== 'admin')
     return c.json({ error: '본인 서명만 가능합니다.' }, 403)
 
-  rawDb.prepare(`
-    UPDATE safety_committee_attendees
-    SET signature_data = ?, signed_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(sign_data || null, aid)
+  // [BUG-185a] signature_data / signed_at 컬럼 없는 구버전 DB 대응
+  // 1차: signature_data + signed_at 동시 업데이트
+  // 2차: signed_at 만 업데이트 (signature_data 컬럼 없는 경우)
+  // 3차: signed_at 컬럼도 없으면 → ADD COLUMN 후 재시도
+  var updateOk = false
+  try {
+    rawDb.prepare(`
+      UPDATE safety_committee_attendees
+      SET signature_data = ?, signed_at = datetime('now','localtime')
+      WHERE id = ?
+    `).run(sign_data || '', aid)
+    updateOk = true
+  } catch(e1: any) {
+    console.warn('[SC] PATCH /sign 1차 실패:', e1.message)
+    // signature_data 컬럼 없는 경우 → signed_at 만
+    try {
+      rawDb.prepare(`
+        UPDATE safety_committee_attendees
+        SET signed_at = datetime('now','localtime')
+        WHERE id = ?
+      `).run(aid)
+      updateOk = true
+    } catch(e2: any) {
+      console.warn('[SC] PATCH /sign 2차 실패:', e2.message)
+      // signed_at 컬럼도 없음 → ADD COLUMN 후 재시도
+      try {
+        try { rawDb.exec(`ALTER TABLE safety_committee_attendees ADD COLUMN signature_data TEXT NOT NULL DEFAULT ''`) } catch(_) {}
+        try { rawDb.exec(`ALTER TABLE safety_committee_attendees ADD COLUMN signed_at TEXT`) } catch(_) {}
+        rawDb.prepare(`
+          UPDATE safety_committee_attendees
+          SET signature_data = ?, signed_at = datetime('now','localtime')
+          WHERE id = ?
+        `).run(sign_data || '', aid)
+        updateOk = true
+      } catch(e3: any) {
+        console.error('[SC] PATCH /sign 3차(컬럼추가 후 재시도) 실패:', e3.message)
+        return c.json({ error: '서명 처리 실패: ' + e3.message }, 500)
+      }
+    }
+  }
+
   return c.json({ success: true })
 })
 

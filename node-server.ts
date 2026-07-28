@@ -3432,6 +3432,53 @@ function patchSchema() {
   }
   console.log('[patchSchema v0.185] ✅ safety_committee_votes.meeting_id 보정 완료')
 
+  // ─── patchSchema v0.186: safety_committee_attendees 누락 컬럼 ADD COLUMN ─────
+  // [BUG-185a] 구버전 DB에서 attendees 테이블이 이미 존재 시 v0.178 CREATE 스킵됨
+  // → signed_at, signature_data 컬럼 없어 PATCH /sign 500 발생
+  const v186Cols: {table:string, col:string, def:string}[] = [
+    { table: 'safety_committee_attendees', col: 'signed_at',       def: 'TEXT' },
+    { table: 'safety_committee_attendees', col: 'signature_data',  def: "TEXT NOT NULL DEFAULT ''" },
+    { table: 'safety_committee_attendees', col: 'custom_title',    def: "TEXT NOT NULL DEFAULT ''" },
+    { table: 'safety_committee_attendees', col: 'side',            def: "TEXT NOT NULL DEFAULT 'employer'" },
+    { table: 'safety_committee_attendees', col: 'role_type',       def: "TEXT NOT NULL DEFAULT 'member'" },
+  ]
+  for (const { table, col, def } of v186Cols) {
+    try {
+      rawDb.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`)
+      console.log(`[patchSchema v0.186] ✅ ${table}.${col} 컬럼 추가`)
+    } catch(e: any) {
+      if (e.message?.includes('duplicate column')) {
+        // 이미 존재 — 정상
+      } else {
+        console.warn(`[patchSchema v0.186] ${table}.${col} 추가 실패(무시):`, e.message)
+      }
+    }
+  }
+  console.log('[patchSchema v0.186] ✅ safety_committee_attendees 누락 컬럼 보정 완료')
+
+  // ─── patchSchema v0.187: risk_assessment_signatures 누락 컬럼 ADD COLUMN ─────
+  // [BUG-185b] 구버전 DB에서 sign_method, sign_data 컬럼 없는 경우 INSERT 500
+  // patchSchema v0.111m 에서 이미 처리하나, 그 이전 버전 DB 보호용 이중 패치
+  const v187Cols: {table:string, col:string, def:string}[] = [
+    { table: 'risk_assessment_signatures', col: 'sign_method', def: "TEXT DEFAULT 'account'" },
+    { table: 'risk_assessment_signatures', col: 'sign_data',   def: 'TEXT' },
+    { table: 'risk_assessment_signatures', col: 'position',    def: "TEXT DEFAULT ''" },
+    { table: 'risk_assessment_signatures', col: 'role',        def: "TEXT DEFAULT 'member'" },
+  ]
+  for (const { table, col, def } of v187Cols) {
+    try {
+      rawDb.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`)
+      console.log(`[patchSchema v0.187] ✅ ${table}.${col} 컬럼 추가`)
+    } catch(e: any) {
+      if (e.message?.includes('duplicate column')) {
+        // 이미 존재 — 정상
+      } else {
+        console.warn(`[patchSchema v0.187] ${table}.${col} 추가 실패(무시):`, e.message)
+      }
+    }
+  }
+  console.log('[patchSchema v0.187] ✅ risk_assessment_signatures 누락 컬럼 보정 완료')
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -6339,15 +6386,52 @@ app.post('/api/risk/:id/signatures', async (c) => {
   const role = body.role || 'member'
   const signData = body.sign_data || null   // base64 서명 이미지
   const signMethod = signData ? 'pad' : 'account'
+
+  // [BUG-185b] sign_method / sign_data / position / role 컬럼 없는 구버전 DB 대응
+  // 1차: 풀 컬럼 INSERT OR REPLACE
+  // 2차: 컬럼 ADD 후 재시도
+  // 3차: 최소 컬럼(assessment_id, user_id, user_name, signed_at)만으로 재시도
   try {
     const info = rawDb.prepare(
       `INSERT OR REPLACE INTO risk_assessment_signatures
        (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
-       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?)`
     ).run(Number(id), user.id, user.name, user.position || '', role, signMethod, signData)
     return c.json({ success: true, id: info.lastInsertRowid })
-  } catch(e: any) {
-    return c.json({ error: e.message }, 500)
+  } catch(e1: any) {
+    console.warn('[risk/sign] 1차 INSERT 실패:', e1.message)
+    // 컬럼 누락 가능 → ADD COLUMN 시도 후 재시도
+    const addCols = [
+      { col: 'sign_method', def: "TEXT DEFAULT 'account'" },
+      { col: 'sign_data',   def: 'TEXT' },
+      { col: 'position',    def: "TEXT DEFAULT ''" },
+      { col: 'role',        def: "TEXT DEFAULT 'member'" },
+    ]
+    for (const { col, def } of addCols) {
+      try { rawDb.exec(`ALTER TABLE risk_assessment_signatures ADD COLUMN ${col} ${def}`) } catch(_) {}
+    }
+    try {
+      const info2 = rawDb.prepare(
+        `INSERT OR REPLACE INTO risk_assessment_signatures
+         (assessment_id, user_id, user_name, position, role, signed_at, sign_method, sign_data)
+         VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?)`
+      ).run(Number(id), user.id, user.name, user.position || '', role, signMethod, signData)
+      return c.json({ success: true, id: info2.lastInsertRowid })
+    } catch(e2: any) {
+      console.warn('[risk/sign] 2차(컬럼추가 후) INSERT 실패:', e2.message)
+      // 3차: 최소 컬럼만
+      try {
+        const info3 = rawDb.prepare(
+          `INSERT OR REPLACE INTO risk_assessment_signatures
+           (assessment_id, user_id, user_name, signed_at)
+           VALUES (?, ?, ?, datetime('now','localtime'))`
+        ).run(Number(id), user.id, user.name)
+        return c.json({ success: true, id: info3.lastInsertRowid })
+      } catch(e3: any) {
+        console.error('[risk/sign] 3차 INSERT 실패:', e3.message)
+        return c.json({ error: '서명 저장 실패: ' + e3.message }, 500)
+      }
+    }
   }
 })
 

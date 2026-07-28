@@ -1,5 +1,52 @@
 # SafetyNOTE 버그픽스 기록
 
+---
+
+## [BUG-184] SC 회의록 삭제 500 + res 미정의 + 참석자 위원 자동추가 (세션 103, 커밋 503909f)
+
+### 문제
+1. **BUG-184a**: `ReferenceError: res is not defined at app.js:49162` — 참석자 탭 진입 시 콘솔 에러
+2. **BUG-184b**: `DELETE /api/safety-committee/meetings/:id` → 500 Internal Server Error
+3. **FEAT-184**: 참석자 탭 진입 시 상시위원 자동 추가 요청
+
+### 원인
+
+#### BUG-184a — Promise.all 콜백 변수명 오류
+```javascript
+// 기존: Promise.all 콜백에서 res.attendees 참조 (res는 undefined)
+}).then(function(results) {
+  var res = ...  // 없음
+  var attendees = res.attendees  // ← ReferenceError
+// 수정: results[0]을 meetingRes로 명명
+  var meetingRes = results[0];
+  var attendees  = meetingRes.attendees || m.attendees || [];
+```
+
+#### BUG-184b — `safety_committee_votes` 테이블에 `meeting_id` 컬럼 없음
+- patchSchema v0.180에서 `votes` 생성 시: `agenda_id`, `user_id`, `vote` 컬럼만 생성
+- DELETE 핸들러: `DELETE FROM safety_committee_votes WHERE meeting_id = ?` → 컬럼 없음 → 500
+
+### 해결
+
+#### BUG-184a (`app.js`)
+- `_scLoadAttendTab`: `res.attendees` → `meetingRes.attendees || m.attendees || []`
+
+#### BUG-184b (`safety-committee.ts`, `node-server.ts`)
+- **즉시 대응**: DELETE 핸들러 각 테이블 try/catch 개별화
+  - votes 삭제 실패 시 → agenda_id 경유 폴백 삭제
+- **근본 해결**: `patchSchema v0.185` — `safety_committee_votes.meeting_id ADD COLUMN`
+  - 기존 rows는 `agenda_id → agendas.meeting_id` 역산으로 채움
+
+#### FEAT-184 (`app.js`)
+- `_scLoadAttendTab`: 참석자 0명 + members > 0 → 위원 전체 자동 POST 후 재렌더링
+
+### 수정 파일
+- `public/static/app.js` — BUG-184a/c + FEAT-184
+- `src/nas-routes/safety-committee.ts` — BUG-184b try/catch
+- `node-server.ts` — patchSchema v0.185 + 단수경로 DELETE 보완
+
+---
+
 > 코드 수정 전 반드시 이 파일을 확인할 것.
 > 동일 에러 재발 방지 및 NAS 듀얼 구조 이해를 위한 핵심 기록.
 

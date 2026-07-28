@@ -21,11 +21,62 @@
  *    node-server.ts에서 registerEducationExtraRoutes(app) 로 직접 등록
  */
 
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, unlinkSync, writeFileSync, renameSync, copyFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { getRawDb, getUser, getUploadRootNow } from '../nas-db'
 import { sendToUser, broadcastToRoles } from '../sse'
 import { sendFcmToUsers } from './push-helper'
+
+// ─── 안전교육 폴더 구조 헬퍼 [세션 110] ────────────────────────────────────────
+// 폴더 구조: {root}/{년도}/안전교육/{교육유형}/{날짜}_{과목}/사진|자료/
+const EDU_TYPE_DIR: Record<string, string> = {
+  periodic:   '정기안전교육',
+  hire:       '채용시안전교육',
+  job_change: '작업내용변경시교육',
+  special:    '특별안전교육',
+  supervisor: '관리감독자교육',
+}
+
+/** 파일시스템 안전 문자열 변환 (특수문자 제거) */
+function safeFsNameEdu(s: string): string {
+  return (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim() || 'unknown'
+}
+
+/**
+ * 안전교육 사진/자료 업로드 디렉토리 반환 [세션 110]
+ * 폴더 구조: {root}/{년도}/안전교육/{교육유형}/{날짜}_{과목}/사진|자료/
+ * @param sessionId - 교육 세션 ID
+ * @param subDir    - 'photos' | 'materials'
+ * @returns { dir: 절대경로, relBase: URL 상대경로(/uploads/~) }
+ */
+function getEduUploadDir(sessionId: number, subDir: 'photos' | 'materials'): { dir: string; relBase: string } {
+  const rawDb = getRawDb()
+  const root  = getUploadRootNow()
+  const sess: any = rawDb.prepare(
+    `SELECT edu_type, edu_date, edu_subject FROM safety_education_sessions WHERE id=?`
+  ).get(sessionId)
+
+  if (!sess) {
+    // 세션이 없으면 레거시 경로 사용
+    const legacyDir = join(root, subDir === 'photos' ? 'edu_photos' : 'edu_materials')
+    mkdirSync(legacyDir, { recursive: true })
+    return { dir: legacyDir, relBase: `/uploads/${subDir === 'photos' ? 'edu_photos' : 'edu_materials'}` }
+  }
+
+  // 년도 추출 (edu_date: YYYY-MM-DD)
+  const year       = (sess.edu_date || '').substring(0, 4) || String(new Date().getFullYear())
+  const typeDir    = EDU_TYPE_DIR[sess.edu_type] || safeFsNameEdu(sess.edu_type) || '기타교육'
+  const dateStr    = (sess.edu_date || '').substring(0, 10)
+  const subjStr    = safeFsNameEdu(sess.edu_subject || '')
+  const folderName = `${dateStr}_${subjStr}`
+  const subLabel   = subDir === 'photos' ? '사진' : '자료'
+
+  const dir = join(root, year, '안전교육', typeDir, folderName, subLabel)
+  mkdirSync(dir, { recursive: true })
+
+  const relBase = `/uploads/${year}/안전교육/${typeDir}/${folderName}/${subLabel}`
+  return { dir, relBase }
+}
 
 /**
  * education-extra 라우트를 serverApp에 직접 등록
@@ -87,13 +138,13 @@ export function registerEducationExtraRoutes(serverApp: any) {
 
     const ext   = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const fname = `edu_${sessionId}_${Date.now()}.${ext}`
-    const dir   = join(getUploadRootNow(), 'edu_photos')
-    mkdirSync(dir, { recursive: true })
-    const fpath = join(dir, fname)
+    // [세션 110] 새 폴더 구조 적용
+    const { dir: photoDir, relBase: photoRelBase } = getEduUploadDir(sessionId, 'photos')
+    const fpath = join(photoDir, fname)
     const buf   = Buffer.from(await file.arrayBuffer())
     writeFileSync(fpath, buf)
 
-    const rel    = `/uploads/edu_photos/${fname}`
+    const rel    = `${photoRelBase}/${fname}`
     const result = rawDb.prepare(
       `INSERT INTO edu_photos (session_id, file_name, file_path, caption, uploaded_by) VALUES (?,?,?,?,?)`
     ).run(sessionId, fname, rel, caption || null, user.id)
@@ -110,7 +161,13 @@ export function registerEducationExtraRoutes(serverApp: any) {
     const photo   = rawDb.prepare('SELECT * FROM edu_photos WHERE id=?').get(photoId) as any
     if (!photo) return c.json({ error: '사진을 찾을 수 없습니다.' }, 404)
     try {
-      const absPath = join(getUploadRootNow(), 'edu_photos', photo.file_name)
+      // [세션 110] file_path 기반 삭제 우선, 없으면 레거시 경로
+      let absPath: string
+      if (photo.file_path && photo.file_path.startsWith('/uploads/')) {
+        absPath = join(getUploadRootNow(), photo.file_path.replace('/uploads/', ''))
+      } else {
+        absPath = join(getUploadRootNow(), 'edu_photos', photo.file_name)
+      }
       if (existsSync(absPath)) unlinkSync(absPath)
     } catch (_) {}
     rawDb.prepare('DELETE FROM edu_photos WHERE id=?').run(photoId)
@@ -409,13 +466,13 @@ export function registerEducationExtraRoutes(serverApp: any) {
       return c.json({ error: '파일 크기는 50MB 이하여야 합니다.' }, 400)
 
     const fname = `edu_mat_${sessionId}_${Date.now()}.${ext}`
-    const dir   = join(getUploadRootNow(), 'edu_materials')
-    mkdirSync(dir, { recursive: true })
-    const fpath = join(dir, fname)
+    // [세션 110] 새 폴더 구조 적용
+    const { dir: matDir, relBase: matRelBase } = getEduUploadDir(sessionId, 'materials')
+    const fpath = join(matDir, fname)
     const buf   = Buffer.from(await file.arrayBuffer())
     writeFileSync(fpath, buf)
 
-    const rel    = `/uploads/edu_materials/${fname}`
+    const rel    = `${matRelBase}/${fname}`
     const result = rawDb.prepare(
       `INSERT INTO edu_materials (session_id, file_name, orig_name, file_path, file_size, mime_type, description, uploaded_by)
        VALUES (?,?,?,?,?,?,?,?)`
@@ -439,7 +496,13 @@ export function registerEducationExtraRoutes(serverApp: any) {
     const mat        = rawDb.prepare('SELECT * FROM edu_materials WHERE id=?').get(materialId) as any
     if (!mat) return c.json({ error: '자료를 찾을 수 없습니다.' }, 404)
     try {
-      const absPath = join(getUploadRootNow(), 'edu_materials', mat.file_name)
+      // [세션 110] file_path 기반 삭제 우선, 없으면 레거시 경로
+      let absPath: string
+      if (mat.file_path && mat.file_path.startsWith('/uploads/')) {
+        absPath = join(getUploadRootNow(), mat.file_path.replace('/uploads/', ''))
+      } else {
+        absPath = join(getUploadRootNow(), 'edu_materials', mat.file_name)
+      }
       if (existsSync(absPath)) unlinkSync(absPath)
     } catch (_) {}
     rawDb.prepare('DELETE FROM edu_materials WHERE id=?').run(materialId)

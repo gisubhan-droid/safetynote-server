@@ -49,7 +49,8 @@ import { cors } from 'hono/cors'
 import Database from 'better-sqlite3'
 import {
   readFileSync, writeFileSync, unlinkSync,
-  mkdirSync, existsSync, readdirSync, statSync, createReadStream
+  mkdirSync, existsSync, readdirSync, statSync, createReadStream,
+  renameSync, copyFileSync
 } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6177,6 +6178,266 @@ app.route('/api/teams', teamRoutes)
 // ─── 교육 사진/리포트 → nas-routes/education-extra.ts (RULE-002: educationRoutes 앞) ─
 registerEducationExtraRoutes(app)
 app.route('/api/education', educationRoutes)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [세션 110] POST /api/admin/migrate-uploads — 기존 파일 새 폴더 구조로 마이그레이션
+// admin 전용 API: 기존 edu_photos/edu_materials/safety_committee 파일들을
+// 새 폴더 구조({년도}/안전교육/..., {년도}/산업안전보건위원회/...)로 이동 + DB file_path 갱신
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/admin/migrate-uploads', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '시스템관리자 전용 기능입니다.' }, 403)
+
+  const uploadRoot = getUploadRootNow()
+
+  // edu_type → 폴더명 매핑
+  const EDU_TYPE_DIR_MAP: Record<string, string> = {
+    periodic:   '정기안전교육',
+    hire:       '채용시안전교육',
+    job_change: '작업내용변경시교육',
+    special:    '특별안전교육',
+    supervisor: '관리감독자교육',
+  }
+
+  function _safeFsName(s: string): string {
+    return (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim() || 'unknown'
+  }
+
+  function _moveFile(srcAbs: string, dstAbs: string): boolean {
+    if (!existsSync(srcAbs)) return false
+    try {
+      mkdirSync(dirname(dstAbs), { recursive: true })
+      renameSync(srcAbs, dstAbs)
+      return true
+    } catch (_e: any) {
+      // 볼륨이 다른 경우 rename 실패 → copy+delete
+      try {
+        mkdirSync(dirname(dstAbs), { recursive: true })
+        copyFileSync(srcAbs, dstAbs)
+        unlinkSync(srcAbs)
+        return true
+      } catch (e2: any) {
+        console.warn('[migrate-uploads] 파일 이동 실패:', srcAbs, '->', dstAbs, e2?.message)
+        return false
+      }
+    }
+  }
+
+  const results = {
+    edu_photos:    { moved: 0, skipped: 0, errors: 0 },
+    edu_materials: { moved: 0, skipped: 0, errors: 0 },
+    sc_photos:     { moved: 0, skipped: 0, errors: 0 },
+    sc_docs:       { moved: 0, skipped: 0, errors: 0 },
+  }
+
+  // ── 1. edu_photos 마이그레이션 ─────────────────────────────────────────────
+  try {
+    const photos: any[] = rawDb.prepare(`
+      SELECT ep.id, ep.file_name, ep.file_path, ep.session_id,
+             ses.edu_type, ses.edu_date, ses.edu_subject
+      FROM edu_photos ep
+      LEFT JOIN safety_education_sessions ses ON ses.id = ep.session_id
+    `).all()
+
+    for (const p of photos) {
+      try {
+        // 이미 새 경로 구조이면 스킵 (레거시 경로: /uploads/edu_photos/파일명)
+        const isLegacy = (p.file_path || '').includes('/edu_photos/')
+        if (!isLegacy) { results.edu_photos.skipped++; continue }
+
+        if (!p.edu_type || !p.edu_date) { results.edu_photos.skipped++; continue }
+
+        const year       = (p.edu_date || '').substring(0, 4)
+        const typeDir    = EDU_TYPE_DIR_MAP[p.edu_type] || _safeFsName(p.edu_type)
+        const dateStr    = (p.edu_date || '').substring(0, 10)
+        const subjStr    = _safeFsName(p.edu_subject || '')
+        const folderName = `${dateStr}_${subjStr}`
+        const subLabel   = '사진'
+
+        const newRelPath = `/uploads/${year}/안전교육/${typeDir}/${folderName}/${subLabel}/${p.file_name}`
+        const newAbsPath = join(uploadRoot, year, '안전교육', typeDir, folderName, subLabel, p.file_name)
+        const oldAbsPath = join(uploadRoot, 'edu_photos', p.file_name)
+
+        // 이미 새 경로에 파일이 있으면 DB만 갱신
+        if (existsSync(newAbsPath)) {
+          rawDb.prepare(`UPDATE edu_photos SET file_path=? WHERE id=?`).run(newRelPath, p.id)
+          results.edu_photos.skipped++
+          continue
+        }
+
+        const ok = _moveFile(oldAbsPath, newAbsPath)
+        if (ok) {
+          rawDb.prepare(`UPDATE edu_photos SET file_path=? WHERE id=?`).run(newRelPath, p.id)
+          results.edu_photos.moved++
+        } else {
+          results.edu_photos.errors++
+        }
+      } catch (e: any) {
+        console.warn('[migrate edu_photos] row error:', e?.message)
+        results.edu_photos.errors++
+      }
+    }
+  } catch (e: any) {
+    console.error('[migrate edu_photos] 전체 오류:', e?.message)
+  }
+
+  // ── 2. edu_materials 마이그레이션 ─────────────────────────────────────────
+  try {
+    const mats: any[] = rawDb.prepare(`
+      SELECT em.id, em.file_name, em.file_path, em.session_id,
+             ses.edu_type, ses.edu_date, ses.edu_subject
+      FROM edu_materials em
+      LEFT JOIN safety_education_sessions ses ON ses.id = em.session_id
+    `).all()
+
+    for (const m of mats) {
+      try {
+        const isLegacy = (m.file_path || '').includes('/edu_materials/')
+        if (!isLegacy) { results.edu_materials.skipped++; continue }
+
+        if (!m.edu_type || !m.edu_date) { results.edu_materials.skipped++; continue }
+
+        const year       = (m.edu_date || '').substring(0, 4)
+        const typeDir    = EDU_TYPE_DIR_MAP[m.edu_type] || _safeFsName(m.edu_type)
+        const dateStr    = (m.edu_date || '').substring(0, 10)
+        const subjStr    = _safeFsName(m.edu_subject || '')
+        const folderName = `${dateStr}_${subjStr}`
+        const subLabel   = '자료'
+
+        const newRelPath = `/uploads/${year}/안전교육/${typeDir}/${folderName}/${subLabel}/${m.file_name}`
+        const newAbsPath = join(uploadRoot, year, '안전교육', typeDir, folderName, subLabel, m.file_name)
+        const oldAbsPath = join(uploadRoot, 'edu_materials', m.file_name)
+
+        if (existsSync(newAbsPath)) {
+          rawDb.prepare(`UPDATE edu_materials SET file_path=? WHERE id=?`).run(newRelPath, m.id)
+          results.edu_materials.skipped++
+          continue
+        }
+
+        const ok = _moveFile(oldAbsPath, newAbsPath)
+        if (ok) {
+          rawDb.prepare(`UPDATE edu_materials SET file_path=? WHERE id=?`).run(newRelPath, m.id)
+          results.edu_materials.moved++
+        } else {
+          results.edu_materials.errors++
+        }
+      } catch (e: any) {
+        console.warn('[migrate edu_materials] row error:', e?.message)
+        results.edu_materials.errors++
+      }
+    }
+  } catch (e: any) {
+    console.error('[migrate edu_materials] 전체 오류:', e?.message)
+  }
+
+  // ── 3. safety_committee_photos 마이그레이션 ────────────────────────────────
+  try {
+    const scPhotos: any[] = rawDb.prepare(`
+      SELECT scp.id, scp.file_name, scp.file_path, scp.meeting_id,
+             scm.held_date, scm.title
+      FROM safety_committee_photos scp
+      LEFT JOIN safety_committee_meetings scm ON scm.id = scp.meeting_id
+    `).all()
+
+    for (const p of scPhotos) {
+      try {
+        // file_path가 절대경로(UPLOAD_ROOT 직접 포함)인 레거시 구조
+        const isLegacy = (p.file_path || '').includes('safety_committee/photos') ||
+                         (p.file_path || '').includes('safety_committee\\photos')
+        if (!isLegacy) { results.sc_photos.skipped++; continue }
+
+        if (!p.held_date) { results.sc_photos.skipped++; continue }
+
+        const year       = (p.held_date || '').substring(0, 4)
+        const dateStr    = (p.held_date || '').substring(0, 10)
+        const titleStr   = _safeFsName(p.title || '')
+        const folderName = titleStr ? `${dateStr}_${titleStr}` : dateStr
+        const subLabel   = '사진'
+
+        // 기존 파일명 추출 (절대경로의 basename)
+        const oldAbsPath = p.file_path  // 이미 절대경로
+        const fname      = oldAbsPath.split(/[/\\]/).pop() || p.file_name || ''
+        if (!fname) { results.sc_photos.skipped++; continue }
+
+        const newAbsPath = join(uploadRoot, year, '산업안전보건위원회', folderName, subLabel, fname)
+
+        if (existsSync(newAbsPath)) {
+          rawDb.prepare(`UPDATE safety_committee_photos SET file_path=? WHERE id=?`).run(newAbsPath, p.id)
+          results.sc_photos.skipped++
+          continue
+        }
+
+        const ok = _moveFile(oldAbsPath, newAbsPath)
+        if (ok) {
+          rawDb.prepare(`UPDATE safety_committee_photos SET file_path=? WHERE id=?`).run(newAbsPath, p.id)
+          results.sc_photos.moved++
+        } else {
+          results.sc_photos.errors++
+        }
+      } catch (e: any) {
+        console.warn('[migrate sc_photos] row error:', e?.message)
+        results.sc_photos.errors++
+      }
+    }
+  } catch (e: any) {
+    console.error('[migrate sc_photos] 전체 오류:', e?.message)
+  }
+
+  // ── 4. safety_committee_docs 마이그레이션 ──────────────────────────────────
+  try {
+    const scDocs: any[] = rawDb.prepare(`
+      SELECT scd.id, scd.file_name, scd.file_path, scd.meeting_id,
+             scm.held_date, scm.title
+      FROM safety_committee_docs scd
+      LEFT JOIN safety_committee_meetings scm ON scm.id = scd.meeting_id
+    `).all()
+
+    for (const d of scDocs) {
+      try {
+        const isLegacy = (d.file_path || '').includes('safety_committee/docs') ||
+                         (d.file_path || '').includes('safety_committee\\docs')
+        if (!isLegacy) { results.sc_docs.skipped++; continue }
+
+        if (!d.held_date) { results.sc_docs.skipped++; continue }
+
+        const year       = (d.held_date || '').substring(0, 4)
+        const dateStr    = (d.held_date || '').substring(0, 10)
+        const titleStr   = _safeFsName(d.title || '')
+        const folderName = titleStr ? `${dateStr}_${titleStr}` : dateStr
+        const subLabel   = '자료'
+
+        const oldAbsPath = d.file_path
+        const fname      = oldAbsPath.split(/[/\\]/).pop() || d.file_name || ''
+        if (!fname) { results.sc_docs.skipped++; continue }
+
+        const newAbsPath = join(uploadRoot, year, '산업안전보건위원회', folderName, subLabel, fname)
+
+        if (existsSync(newAbsPath)) {
+          rawDb.prepare(`UPDATE safety_committee_docs SET file_path=? WHERE id=?`).run(newAbsPath, d.id)
+          results.sc_docs.skipped++
+          continue
+        }
+
+        const ok = _moveFile(oldAbsPath, newAbsPath)
+        if (ok) {
+          rawDb.prepare(`UPDATE safety_committee_docs SET file_path=? WHERE id=?`).run(newAbsPath, d.id)
+          results.sc_docs.moved++
+        } else {
+          results.sc_docs.errors++
+        }
+      } catch (e: any) {
+        console.warn('[migrate sc_docs] row error:', e?.message)
+        results.sc_docs.errors++
+      }
+    }
+  } catch (e: any) {
+    console.error('[migrate sc_docs] 전체 오류:', e?.message)
+  }
+
+  console.log('[migrate-uploads] 완료:', JSON.stringify(results))
+  return c.json({ success: true, results })
+})
 
 // ─────────────────────────────────────────────────────────────────────────────
 // [FEAT-063] GET /api/constructions/stats — 공사통계 (년/분기/월/주 기간 집계)

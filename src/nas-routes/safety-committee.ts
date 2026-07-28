@@ -33,7 +33,7 @@
 
 import { Hono } from 'hono'
 import { getRawDb, getUser, getUploadRootNow } from '../nas-db'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync, copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const app = new Hono()
@@ -61,6 +61,42 @@ function genFileName(original: string): string {
   const ts   = Date.now()
   const rand = Math.random().toString(36).substring(2, 8)
   return `${ts}_${rand}.${ext}`
+}
+
+// ─── SC 회의 폴더 구조 헬퍼 [세션 110] ───────────────────────────────────────
+// 폴더 구조: {root}/{년도}/산업안전보건위원회/{날짜}_{제목}/사진|자료/
+/**
+ * SC 회의 사진/자료 업로드 디렉토리 반환 [세션 110]
+ * @param meetingId - 회의 ID
+ * @param subDir    - 'photos' | 'docs'
+ * @returns { dir: 절대경로, relBase: URL 상대경로(/uploads/~) }
+ */
+function getScMeetingUploadDir(meetingId: number, subDir: 'photos' | 'docs'): { dir: string; relBase: string } {
+  const rawDb = getRawDb()
+  const root  = getUploadRootNow()
+  const mtg: any = rawDb.prepare(
+    `SELECT held_date, title FROM safety_committee_meetings WHERE id=?`
+  ).get(meetingId)
+
+  if (!mtg) {
+    // 회의가 없으면 레거시 경로 사용
+    const legacyDir = join(root, 'safety_committee', subDir)
+    mkdirSync(legacyDir, { recursive: true })
+    return { dir: legacyDir, relBase: `/uploads/safety_committee/${subDir}` }
+  }
+
+  // 년도 추출 (held_date: YYYY-MM-DD 또는 YYYY-MM-DD HH:mm:ss)
+  const year       = (mtg.held_date || '').substring(0, 4) || String(new Date().getFullYear())
+  const dateStr    = (mtg.held_date || '').substring(0, 10)
+  const titleStr   = safeName(mtg.title || '')
+  const folderName = `${dateStr}_${titleStr}` || dateStr || `meeting_${meetingId}`
+  const subLabel   = subDir === 'photos' ? '사진' : '자료'
+
+  const dir = join(root, year, '산업안전보건위원회', folderName, subLabel)
+  mkdirSync(dir, { recursive: true })
+
+  const relBase = `/uploads/${year}/산업안전보건위원회/${folderName}/${subLabel}`
+  return { dir, relBase }
 }
 
 function getScUploadDir(subDir: string): string {
@@ -774,9 +810,10 @@ app.post('/meetings/:id/photos', async (c) => {
   if (!file) return c.json({ error: 'file 필드 필수' }, 400)
 
   const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase()
-  const dir  = getScUploadDir('photos')
+  // [세션 110] 새 폴더 구조 적용
+  const { dir: photoDir, relBase: photoRelBase } = getScMeetingUploadDir(meetingId, 'photos')
   const savedName = genFileName(file.name)
-  const filePath  = join(dir, savedName)
+  const filePath  = join(photoDir, savedName)
   const buf = await file.arrayBuffer()
   writeFileSync(filePath, Buffer.from(buf))
 
@@ -865,7 +902,8 @@ app.post('/meetings/:id/docs', async (c) => {
   const saved: any[] = []
   const errors: string[] = []
 
-  const dir = getScUploadDir('docs')
+  // [세션 110] 새 폴더 구조 적용
+  const { dir: docsDir } = getScMeetingUploadDir(meetingId, 'docs')
 
   for (const file of allFiles) {
     if (!file || typeof file === 'string') continue
@@ -879,7 +917,7 @@ app.post('/meetings/:id/docs', async (c) => {
       continue
     }
     const savedName = genFileName(file.name)
-    const filePath  = join(dir, savedName)
+    const filePath  = join(docsDir, savedName)
     const buf = await file.arrayBuffer()
     writeFileSync(filePath, Buffer.from(buf))
 

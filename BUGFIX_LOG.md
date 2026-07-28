@@ -2,6 +2,68 @@
 
 ---
 
+## [FEAT-191] 파일 저장 구조 체계화 + 기존 파일 마이그레이션 (세션 110)
+
+### 요구사항
+- 안전교육·산업안전보건위원회 첨부파일/사진을 공사/작업처럼 **체계적 폴더 구조**로 저장
+- 기존에 저장된 파일들도 새 경로로 마이그레이션 (DB `file_path` 컬럼 업데이트 포함)
+- 지정 폴더 구조:
+  ```
+  {UPLOAD_ROOT}/
+  └── {자료생성년도}/
+      ├── 안전교육/
+      │   ├── 정기안전교육/{교육일자}_{교육과목}/사진|자료/
+      │   ├── 채용시안전교육/{교육일자}_{교육과목}/사진|자료/
+      │   ├── 작업내용변경시교육/{교육일자}_{교육과목}/사진|자료/
+      │   ├── 특별안전교육/{교육일자}_{교육과목}/사진|자료/
+      │   └── 관리감독자교육/{교육일자}_{교육과목}/사진|자료/
+      └── 산업안전보건위원회/{회의일자}_{회의제목}/사진|자료/
+  ```
+
+### 분석 결과
+| 항목 | 기존 구조 | 변경 후 구조 |
+|------|-----------|-------------|
+| 교육 사진 (`edu_photos`) | `edu_photos/파일명` | `{년도}/안전교육/{유형}/{날짜}_{과목}/사진/파일명` |
+| 교육 자료 (`edu_materials`) | `edu_materials/파일명` | `{년도}/안전교육/{유형}/{날짜}_{과목}/자료/파일명` |
+| SC 회의 사진 (`sc_photos`) | `safety_committee/photos/파일명` | `{년도}/산업안전보건위원회/{날짜}_{제목}/사진/파일명` |
+| SC 회의 자료 (`sc_docs`) | `safety_committee/docs/파일명` | `{년도}/산업안전보건위원회/{날짜}_{제목}/자료/파일명` |
+| 위험성평가 스캔파일 | DB `scan_files` TEXT (Base64) | 변경 없음 (파일시스템 미사용) |
+
+### 변경 내용
+
+#### `src/nas-routes/education-extra.ts`
+```typescript
+// 추가: EDU_TYPE_DIR, safeFsNameEdu(), getEduUploadDir()
+// 사진 업로드: getEduUploadDir(sessionId, 'photos') 반환값으로 dir/relBase 사용
+// 자료 업로드: getEduUploadDir(sessionId, 'materials') 반환값으로 dir/relBase 사용
+// 삭제: file_path 기반 절대경로 우선, 없으면 레거시 edu_photos/ 경로 fallback
+```
+
+#### `src/nas-routes/safety-committee.ts`
+```typescript
+// 추가: getScMeetingUploadDir(meetingId, 'photos'|'docs')
+// 사진 업로드: getScMeetingUploadDir(meetingId, 'photos') 사용
+// 자료 업로드: getScMeetingUploadDir(meetingId, 'docs') 사용
+// 삭제: 기존 file_path(절대경로) 그대로 사용 (변경 없음)
+```
+
+#### `node-server.ts`
+```typescript
+// import 추가: renameSync, copyFileSync
+// POST /api/admin/migrate-uploads (admin 전용)
+// → edu_photos, edu_materials, safety_committee_photos, safety_committee_docs
+// → 기존 파일 물리 이동 (renameSync → fallback copyFileSync+unlink) + DB file_path 갱신
+// → 이미 새 경로에 존재하면 DB만 갱신 (중복 이동 방지)
+```
+
+### 주요 설계 결정
+- **`/uploads/*` 서빙 라우트 호환**: 기존 라우트가 `relPath = urlPath.replace('/uploads/', '')`로 동적 처리 → 새 폴더 구조 자동 호환
+- **SC 파일 절대경로 유지**: `safety_committee_photos/docs`의 `file_path`는 절대경로로 저장되던 기존 방식 유지 (파일 서빙은 직접 `readFileSync(row.file_path)` 사용)
+- **Fallback 전략**: 세션/회의 정보 없으면 레거시 경로 사용하여 서비스 안정성 확보
+- **마이그레이션 API**: `/api/admin/migrate-uploads` — admin 권한 필요, 중복 이동 방지, 볼륨 간 이동 fallback(copy+delete)
+
+---
+
 ## [BUG-190] 시스템관리자 위험성평가/SC회의 처리단계 구분 없이 삭제 허용 (세션 109)
 
 ### 요구사항

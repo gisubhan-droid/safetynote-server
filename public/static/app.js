@@ -48431,9 +48431,17 @@ function _scEditMember(btn) {
 
 function _scDeleteMember(btn) {
   var mid = btn.getAttribute('data-mid');
-  if (!confirm('해당 위원을 해제하시겠습니까?')) return;
-  _scFetch('/api/safety-committee/members/' + mid, { method: 'DELETE' })
-    .then(function(){ _scLoadTabContent('members'); });
+  _scConfirmModal({
+    icon: 'fa-user-minus',
+    title: '위원 해제',
+    message: '해당 위원을 해제하시겠습니까?<br><span style="font-size:12px;color:#9B2335">위원 정보가 목록에서 삭제됩니다.</span>',
+    confirmLabel: '해제',
+    confirmColor: '#C0255A',
+    onConfirm: function() {
+      _scFetch('/api/safety-committee/members/' + mid, { method: 'DELETE' })
+        .then(function(){ _scLoadTabContent('members'); });
+    }
+  });
 }
 
 // ─── 회의록 목록 페이지 ────────────────────────────────────────────────────────
@@ -48954,15 +48962,89 @@ function _scSubmitEditBasic(mid) {
   });
 }
 
+// ─── SC 공통 확인 모달 헬퍼 ─────────────────────────────────────────────────
+// [STYLE] 두 번째 스크린샷 스타일: 핑크 헤더 + 경고 박스 + 취소/확인 버튼
+// opts: { icon, title, message, confirmLabel, confirmColor, onConfirm }
+// icon 기본값: 'fa-trash'  confirmLabel 기본값: '삭제'  confirmColor 기본값: '#C0255A'
+function _scConfirmModal(opts) {
+  var icon         = opts.icon         || 'fa-trash';
+  var title        = opts.title        || '삭제';
+  var message      = opts.message      || '삭제하시겠습니까?';
+  var confirmLabel = opts.confirmLabel || '삭제';
+  var confirmColor = opts.confirmColor || '#C0255A';
+  var onConfirm    = opts.onConfirm    || function(){};
+
+  // 기존 SC 모달 제거
+  var prev = document.getElementById('_scConfirmModalOverlay');
+  if (prev) prev.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = '_scConfirmModalOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center';
+
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:14px;overflow:hidden;width:360px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,.22)">' +
+      // 헤더
+      '<div style="background:' + confirmColor + ';padding:14px 18px;display:flex;align-items:center;justify-content:space-between">' +
+        '<span style="color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px">' +
+          '<i class="fas ' + icon + '"></i>' + title +
+        '</span>' +
+        '<button id="_scCMClose" style="background:none;border:none;color:rgba(255,255,255,.8);font-size:16px;cursor:pointer;line-height:1;padding:0"><i class="fas fa-times"></i></button>' +
+      '</div>' +
+      // 본문
+      '<div style="padding:20px 18px 16px">' +
+        '<div style="background:#FFF0F5;border:1px solid #F9A8C9;border-radius:10px;padding:12px 14px;display:flex;align-items:flex-start;gap:10px">' +
+          '<i class="fas fa-exclamation-triangle" style="color:#E0115F;margin-top:2px;flex-shrink:0"></i>' +
+          '<div style="font-size:13px;color:#3D1020;line-height:1.55">' + message + '</div>' +
+        '</div>' +
+        // 버튼
+        '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">' +
+          '<button id="_scCMCancel" style="padding:8px 18px;border:1.5px solid #D1D5DB;border-radius:8px;background:#fff;color:#6B7280;font-size:13px;font-weight:600;cursor:pointer">취소</button>' +
+          '<button id="_scCMOk" style="padding:8px 18px;border:none;border-radius:8px;background:' + confirmColor + ';color:#fff;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px">' +
+            '<i class="fas ' + icon + '"></i>' + confirmLabel +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  function _close() { overlay.remove(); }
+  document.getElementById('_scCMClose').onclick  = _close;
+  document.getElementById('_scCMCancel').onclick = _close;
+  overlay.addEventListener('click', function(e){ if (e.target === overlay) _close(); });
+  document.getElementById('_scCMOk').onclick = function() {
+    _close();
+    onConfirm();
+  };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function _scConfirmMeeting(mid) {
-  if (!confirm('회의를 확정하시겠습니까? 확정 후에는 수정이 제한됩니다.')) return;
-  _scFetch('/api/safety-committee/meetings/' + mid, { method: 'PATCH', body: JSON.stringify({ confirmed: 1 }) }).then(function(){ renderSCMeetingDetail(_scGetDetailContainer(), parseInt(mid)); });
+  _scConfirmModal({
+    icon: 'fa-check-circle',
+    title: '회의 확정',
+    message: '회의를 확정하시겠습니까?<br><span style="font-size:12px;color:#9B2335">확정 후에는 수정이 제한됩니다.</span>',
+    confirmLabel: '확정',
+    confirmColor: '#7C3AED',
+    onConfirm: function() {
+      _scFetch('/api/safety-committee/meetings/' + mid, { method: 'PATCH', body: JSON.stringify({ confirmed: 1 }) }).then(function(){ renderSCMeetingDetail(_scGetDetailContainer(), parseInt(mid)); });
+    }
+  });
 }
 
 function _scDeleteMeeting(mid) {
-  if (!confirm('회의록을 삭제하시겠습니까? 모든 안건·참석자·사진·자료가 함께 삭제됩니다.')) return;
-  _scFetch('/api/safety-committee/meetings/' + mid, { method: 'DELETE' })
-    .then(function(){ _scSwitchMainTab('meetings'); });
+  _scConfirmModal({
+    icon: 'fa-trash',
+    title: '회의록 삭제',
+    message: '회의록을 삭제하시겠습니까?<br><span style="font-size:12px;color:#9B2335">모든 안건·참석자·사진·자료가 함께 삭제됩니다.<br>삭제된 데이터는 복구할 수 없습니다.</span>',
+    confirmLabel: '삭제',
+    confirmColor: '#C0255A',
+    onConfirm: function() {
+      _scFetch('/api/safety-committee/meetings/' + mid, { method: 'DELETE' })
+        .then(function(){ _scSwitchMainTab('meetings'); });
+    }
+  });
 }
 
 // ─ 탭2: 안건 ─────────────────────────────────────────────────────────────────
@@ -49128,16 +49210,24 @@ function _scSubmitEditAgenda(agId) {
 }
 
 function _scDeleteAgenda(agId) {
-  if (!confirm('안건을 삭제하시겠습니까?')) return;
-  _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.meeting || res.data || res;
-    var agendas = res.agendas || m.agendas || [];
-    var remaining = [];
-    for (var i = 0; i < agendas.length; i++) {
-      if (String(agendas[i].id) !== String(agId)) remaining.push(agendas[i]);
+  _scConfirmModal({
+    icon: 'fa-trash',
+    title: '안건 삭제',
+    message: '안건을 삭제하시겠습니까?<br><span style="font-size:12px;color:#9B2335">삭제된 데이터는 복구할 수 없습니다.</span>',
+    confirmLabel: '삭제',
+    confirmColor: '#C0255A',
+    onConfirm: function() {
+      _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
+        var m = res.meeting || res.data || res;
+        var agendas = res.agendas || m.agendas || [];
+        var remaining = [];
+        for (var i = 0; i < agendas.length; i++) {
+          if (String(agendas[i].id) !== String(agId)) remaining.push(agendas[i]);
+        }
+        for (var j = 0; j < remaining.length; j++) { remaining[j].seq = j + 1; }
+        _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId, { method: 'PATCH', body: JSON.stringify({ agendas: remaining }) }).then(function(){ _scLoadAgendasTab(document.getElementById('sc-detail-body')); });
+      });
     }
-    for (var j = 0; j < remaining.length; j++) { remaining[j].seq = j + 1; }
-    _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId, { method: 'PATCH', body: JSON.stringify({ agendas: remaining }) }).then(function(){ _scLoadAgendasTab(document.getElementById('sc-detail-body')); });
   });
 }
 
@@ -49274,14 +49364,30 @@ function _scAddAttendee() {
 }
 
 function _scSignAttendee(attId) {
-  if (!confirm('서명 처리하시겠습니까?')) return;
-  _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId + '/attendees/' + attId + '/sign', { method: 'PATCH', body: JSON.stringify({}) }).then(function(){ _scLoadAttendTab(document.getElementById('sc-detail-body')); });
+  _scConfirmModal({
+    icon: 'fa-pen-nib',
+    title: '서명 처리',
+    message: '서명 처리하시겠습니까?<br><span style="font-size:12px;color:#9B2335">서명 후에는 취소할 수 없습니다.</span>',
+    confirmLabel: '서명',
+    confirmColor: '#065F46',
+    onConfirm: function() {
+      _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId + '/attendees/' + attId + '/sign', { method: 'PATCH', body: JSON.stringify({}) }).then(function(){ _scLoadAttendTab(document.getElementById('sc-detail-body')); });
+    }
+  });
 }
 
 function _scRemoveAttendee(attId) {
-  if (!confirm('참석자를 삭제하시겠습니까?')) return;
-  _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId + '/attendees/' + attId, { method: 'DELETE' })
-    .then(function(){ _scLoadAttendTab(document.getElementById('sc-detail-body')); });
+  _scConfirmModal({
+    icon: 'fa-user-minus',
+    title: '참석자 삭제',
+    message: '참석자를 삭제하시겠습니까?<br><span style="font-size:12px;color:#9B2335">삭제된 데이터는 복구할 수 없습니다.</span>',
+    confirmLabel: '삭제',
+    confirmColor: '#C0255A',
+    onConfirm: function() {
+      _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId + '/attendees/' + attId, { method: 'DELETE' })
+        .then(function(){ _scLoadAttendTab(document.getElementById('sc-detail-body')); });
+    }
+  });
 }
 
 // ─ 탭4: 사진·자료 ─────────────────────────────────────────────────────────────
@@ -49396,15 +49502,31 @@ function _scUploadDocs(input) {
 }
 
 function _scDeletePhoto(photoId) {
-  if (!confirm('사진을 삭제하시겠습니까?')) return;
-  _scFetch('/api/safety-committee/photos/' + photoId, { method: 'DELETE' })
-    .then(function(){ _scLoadMediaTab(document.getElementById('sc-detail-body')); });
+  _scConfirmModal({
+    icon: 'fa-image',
+    title: '사진 삭제',
+    message: '사진을 삭제하시겠습니까?<br><span style="font-size:12px;color:#9B2335">삭제된 파일은 복구할 수 없습니다.</span>',
+    confirmLabel: '삭제',
+    confirmColor: '#C0255A',
+    onConfirm: function() {
+      _scFetch('/api/safety-committee/photos/' + photoId, { method: 'DELETE' })
+        .then(function(){ _scLoadMediaTab(document.getElementById('sc-detail-body')); });
+    }
+  });
 }
 
 function _scDeleteDoc(docId) {
-  if (!confirm('자료를 삭제하시겠습니까?')) return;
-  _scFetch('/api/safety-committee/docs/' + docId, { method: 'DELETE' })
-    .then(function(){ _scLoadMediaTab(document.getElementById('sc-detail-body')); });
+  _scConfirmModal({
+    icon: 'fa-file-alt',
+    title: '자료 삭제',
+    message: '자료를 삭제하시겠습니까?<br><span style="font-size:12px;color:#9B2335">삭제된 파일은 복구할 수 없습니다.</span>',
+    confirmLabel: '삭제',
+    confirmColor: '#C0255A',
+    onConfirm: function() {
+      _scFetch('/api/safety-committee/docs/' + docId, { method: 'DELETE' })
+        .then(function(){ _scLoadMediaTab(document.getElementById('sc-detail-body')); });
+    }
+  });
 }
 
 // ─── PDF 출력 ─────────────────────────────────────────────────────────────────

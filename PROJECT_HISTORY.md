@@ -1,7 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 103 — [BUG-182b] GET /meetings/:id 500 근본 해결)
-> **GitHub 최신 (safetynote-server): `bc8ee00`** — fix: [BUG-182b] GET /meetings/:id 500 — try/catch fallback + patchSchema v0.184
+> 최종 업데이트: 2026-07-28 (세션 103 — [BUG-183] SC 회의록 삭제 무반응 + 출력 빈칸 수정)
+> **GitHub 최신 (safetynote-server): `3db29f1`** — fix: [BUG-183] SC 회의록 삭제 무반응 + 출력 빈칸 2종 수정
+> **이전 커밋 (safetynote-server): `bc8ee00`** — fix: [BUG-182b] GET /meetings/:id 500 — try/catch fallback + patchSchema v0.184
 > **이전 커밋 (safetynote-server): `40978c9`** — fix: [BUG-182b-v2] /meeting 단수 경로 호환을 node-server.ts 레벨로 이동
 > **이전 커밋 (safetynote-server): `586022c`** — fix: [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 호환 라우트 추가
 > **이전 커밋 (safetynote-server): `d32f3f1`** — fix: [BUG-182a] 회의록 상세보기 클릭 무반응 수정 (main-content ID 없음 + closest)

@@ -5,6 +5,60 @@
 
 ---
 
+## [BUG-183] SC 회의록 삭제 무반응 + 출력 빈칸 (세션 103)
+
+### 문제
+1. **BUG-183a**: 삭제 확인 팝업에서 확인 클릭해도 회의록이 삭제되지 않음
+2. **BUG-183b**: PDF 출력 시 회의명·개최일시·장소·요약 등 모든 칸이 빈칸
+3. **BUG-183c**: 기본정보·안건·참석자·사진 탭 모두 데이터 미표시 (같은 원인)
+
+### 원인
+
+#### BUG-183a — RULE-003 위반 (onclick 따옴표 중첩)
+```html
+<!-- 기존 (NAS 브라우저에서 따옴표 중첩으로 파싱 실패) -->
+onclick="_scDeleteMeeting(this.getAttribute('data-mid'))"
+```
+- onclick 속성 내부에서 작은따옴표 사용 → HTML 파서가 속성 값을 일찍 닫아버림
+- 함수 자체가 호출되지 않음 (confirm 팝업은 뜨지만 DELETE 요청 안 감)
+
+#### BUG-183b/c — API 응답 구조 불일치
+```
+API 응답: { meeting: {...}, attendees: [...], agendas: [...], photos: [...], docs: [...] }
+기존 코드: var m = res.data || res  → m = { meeting, attendees, agendas, ... } 전체
+           m.title  → undefined (실제로는 m.meeting.title)
+```
+
+### 해결
+
+#### BUG-183a
+```javascript
+// 수정 후: _scCurrentMeetingId 전역변수 직접 참조
+onclick="_scDeleteMeeting(_scCurrentMeetingId)"
+onclick="_scConfirmMeeting(_scCurrentMeetingId)"
+onclick="_scPrintMeeting(_scCurrentMeetingId)"
+```
+
+#### BUG-183b/c — res 구조 수정 (12곳 일괄)
+```javascript
+// 수정 후
+var m = res.meeting || res.data || res;      // meeting 객체
+var agendas  = res.agendas  || m.agendas  || [];
+var attendees = res.attendees || m.attendees || [];
+var photos   = res.photos   || m.photos   || [];
+var docs     = res.docs     || m.docs     || [];
+```
+
+#### BUG-183d — 출력 레이아웃 개선 (안전교육 출력 방식 참고)
+- `@page A4 portrait` + 고정 toolbar (닫기/인쇄 버튼)
+- `@media print` 시 toolbar 숨김, 내용 여백 최적화
+- agenda_no → seq 폴백: `ag.agenda_no || ag.seq || (i+1)`
+
+### 커밋
+- `3db29f1` — fix: [BUG-183] SC 회의록 삭제 무반응 + 출력 빈칸 2종 수정
+
+---
+
 ## [BUG-182b] 회의 상세 500 에러 — 서브 테이블 컬럼 불일치 (세션 103, 근본 해결)
 
 ### 문제 (3차 — 최종 원인)

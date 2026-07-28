@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 108 — BUG-189 위험성평가 감소대책저장 후 화면미전환 + 서명화면 잘못된내용 + 근로자 메뉴 추가)
-> **GitHub 최신 (safetynote-server): `91c7be2`** — fix: BUG-1 감소대책저장 후 상태미전환, BUG-2 서명화면 잘못된내용, 근로자 위험성평가 메뉴추가
-> **이전 커밋 (safetynote-server): `bd2e0ea`** — feat: [정기위험성평가] 기본값 자동입력 + 평가위원 SC role_type 기반 역할 기본설정
-> **이전 커밋 (safetynote-server): `f241385`** — docs: [세션 106-2] PROJECT_HISTORY 커밋 해시 7cae5e0 반영
+> 최종 업데이트: 2026-07-28 (세션 109 — BUG-190 시스템관리자 위험성평가/SC회의 처리단계 구분 없이 삭제 허용)
+> **GitHub 최신 (safetynote-server): `TBD`** — fix: [BUG-190] 시스템관리자 위험성평가·SC회의 처리단계 구분없이 삭제 허용
+> **이전 커밋 (safetynote-server): `36de318`** — docs: [세션 108] BUG-189 커밋 91c7be2 반영
+> **이전 커밋 (safetynote-server): `91c7be2`** — fix: BUG-1 감소대책저장 후 상태미전환, BUG-2 서명화면 잘못된내용, 근로자 위험성평가 메뉴추가
 > **이전 커밋 (safetynote-server): `7cae5e0`** — fix: [SC-투표500/투표요청] patchSchema v0.189 + sc_vote push + 서명요청카드 투표UI
 > **이전 커밋 (safetynote-server): `5a68e78`** — docs: [세션 106] PROJECT_HISTORY 커밋 해시 d369b94 반영
 > **이전 커밋 (safetynote-server): `2c12724`** — fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정

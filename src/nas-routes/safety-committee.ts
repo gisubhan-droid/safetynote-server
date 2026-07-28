@@ -414,8 +414,9 @@ app.delete('/meetings/:id', async (c) => {
   const rawDb = getRawDb()
   const user  = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  if (user.role !== 'admin' && user.role !== 'supervisor')
-    return c.json({ error: '권한 없음' }, 403)
+  // [BUG-190] 시스템관리자(admin)만 회의 삭제 가능 — 처리 단계 구분 없이 삭제 허용
+  if (user.role !== 'admin')
+    return c.json({ error: '시스템관리자만 회의를 삭제할 수 있습니다.' }, 403)
 
   const id = Number(c.req.param('id'))
   // [BUG-184b] 연관 데이터 cascade 삭제 — 각 테이블을 개별 try/catch로 보호

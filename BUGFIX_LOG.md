@@ -2,6 +2,99 @@
 
 ---
 
+## [BUG-190] 시스템관리자 위험성평가/SC회의 처리단계 구분 없이 삭제 허용 (세션 109)
+
+### 요구사항
+- **위험성평가**: 시스템관리자(admin) 권한에서 처리 단계(`draft/in_review/measures_done/completed`) 구분 없이 모든 단계 삭제 가능
+- **SC 회의**: 시스템관리자(admin) 권한에서 처리 단계(초안/확정) 구분 없이 모든 회의 삭제 가능
+
+### 기존 동작 (문제)
+| 항목 | 기존 조건 | 문제 |
+|------|-----------|------|
+| 위험성평가 백엔드 | `completed` 상태면 무조건 삭제 불가 | 시스템관리자도 completed 삭제 불가 |
+| 위험성평가 목록 삭제 버튼 | `!isWorker && r.status !== 'completed'` | admin도 completed에서 버튼 미표시 |
+| 위험성평가 모달 삭제 버튼 | `!isWorker && r.status !== 'completed'` | admin도 completed에서 버튼 미표시 |
+| SC 회의 백엔드 | `admin OR supervisor` 허용 | supervisor도 삭제 가능 (너무 넓음) |
+| SC 회의 삭제 버튼 | 권한 조건 없이 항상 표시 | 모든 역할에서 삭제 버튼 표시 |
+
+### 변경 내용
+
+#### 백엔드 — `src/routes/risk.ts`
+```typescript
+// 변경 전
+if (row.status === 'completed') return c.json({ error: '완료된 위험성평가는 삭제할 수 없습니다.' }, 400)
+
+// 변경 후 [BUG-190]
+// admin(시스템관리자)은 completed 포함 모든 단계 삭제 허용
+if (row.status === 'completed' && user.role !== 'admin')
+  return c.json({ error: '완료된 위험성평가는 삭제할 수 없습니다.' }, 400)
+```
+
+#### 백엔드 — `src/nas-routes/safety-committee.ts`
+```typescript
+// 변경 전
+if (user.role !== 'admin' && user.role !== 'supervisor')
+  return c.json({ error: '권한 없음' }, 403)
+
+// 변경 후 [BUG-190]
+// admin(시스템관리자)만 회의 삭제 가능 — 처리 단계 구분 없이 삭제 허용
+if (user.role !== 'admin')
+  return c.json({ error: '시스템관리자만 회의를 삭제할 수 있습니다.' }, 403)
+```
+
+#### 프론트엔드 — `public/static/app.js`
+
+**① 위험성평가 목록 카드 삭제 버튼** (renderRiskPage)
+```javascript
+// 변경 전
+${!isWorker && r.status !== 'completed' ? `<button ...>삭제</button>` : ''}
+
+// 변경 후
+var _riskIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
+${!isWorker && (r.status !== 'completed' || _riskIsSysAdmin) ? `<button ...>삭제</button>` : ''}
+```
+
+**② 위험성평가 모달 상세 삭제 버튼** (_renderRiskWorkflow)
+```javascript
+// 변경 전
+${!isWorker && r.status !== 'completed' ? `<button ...>삭제</button>` : ''}
+
+// 변경 후
+var _raIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
+${!isWorker && (r.status !== 'completed' || _raIsSysAdmin) ? `<button ...>삭제</button>` : ''}
+```
+
+**③ SC 회의 삭제 버튼** (_scRenderDetailShell)
+```javascript
+// 변경 전 — 항상 표시
+'<button onclick="_scDeleteMeeting(...)">삭제</button>'
+
+// 변경 후 — admin(sysadmin)만 표시
+var _scIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
+var _scDeleteBtn = _scIsSysAdmin
+  ? '<button onclick="_scDeleteMeeting(...)">삭제</button>'
+  : '';
+// 렌더링 시 _scDeleteBtn 삽입
+```
+
+### 충돌 체크 & 규칙 준수
+
+| 규칙 | 처리 방법 |
+|------|----------|
+| RULE-001 (var 전용) | `_riskIsSysAdmin`, `_raIsSysAdmin`, `_scIsSysAdmin`, `_scDeleteBtn` 모두 `var` 사용 |
+| RULE-002 (NAS 라우트 순서) | 변경 없음 |
+| RULE-003 (onclick 따옴표) | `_scDeleteMeeting` 이미 전역 함수 — 변경 없음 |
+| 기존 BUG-189 수정 충돌 | `_renderRiskWorkflow` 내 `var isWorker/isAdmin` 이미 기존 코드 유지, 신규 `var _raIsSysAdmin`만 추가 |
+| `dbRoleToUi` 함수 의존성 | 기존 전역 함수 재사용 — 새 의존성 없음 |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (296.05 kB)
+- `npx tsc --noEmit` — 수정 파일(risk.ts, safety-committee.ts) 신규 TS 에러 없음 ✅
+- `pm2 restart safetynote` + HTTP 200 ✅
+
+---
+
 ## [BUG-189] 위험성평가 감소대책 저장 후 화면 미전환 + 서명화면 잘못된 내용 표시 + 근로자 메뉴 누락 (세션 108)
 
 ### 요구사항

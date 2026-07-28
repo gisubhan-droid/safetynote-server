@@ -219,7 +219,10 @@ app.delete('/:id', async (c) => {
     `SELECT status FROM risk_assessments WHERE id=?`
   ).bind(id).first<any>()
   if (!row) return c.json({ error: '존재하지 않습니다.' }, 404)
-  if (row.status === 'completed') return c.json({ error: '완료된 위험성평가는 삭제할 수 없습니다.' }, 400)
+  // [BUG-190] 시스템관리자(admin)는 completed 포함 모든 단계 삭제 허용
+  // admin이 아닌 supervisor는 기존대로 completed 삭제 불가
+  if (row.status === 'completed' && user.role !== 'admin')
+    return c.json({ error: '완료된 위험성평가는 삭제할 수 없습니다.' }, 400)
   // 연관 데이터 먼저 삭제 (FK CASCADE 없는 테이블 모두 명시 삭제)
   // 각 단계 개별 try-catch로 정확한 에러 위치 파악
   const steps: Array<[string, string]> = [

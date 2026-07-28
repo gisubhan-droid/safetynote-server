@@ -24947,7 +24947,9 @@ async function renderRiskAdhocPage(container) {
 // ─── 공통 렌더러 (periodic | adhoc) ─────────────────────────────────────────
 async function renderRiskPage(container, mode) {
   container.innerHTML = `<div class="flex justify-center py-8"><div class="spinner"></div></div>`;
-  const isWorker = currentUser.role === 'worker';
+  var isWorker = currentUser.role === 'worker';
+  // [BUG-190] 시스템관리자 여부 — completed 포함 모든 단계 삭제 권한
+  var _riskIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
   const modeLabel = mode === 'periodic' ? '정기' : '수시';
   const modeColor = mode === 'periodic' ? 'purple' : 'pink';
   const modeIcon  = mode === 'periodic' ? 'fas fa-calendar-check' : 'fas fa-bolt';
@@ -25043,7 +25045,7 @@ async function renderRiskPage(container, mode) {
             </div>
             <div class="flex flex-col items-end gap-2 shrink-0">
               <span style="font-size:10px;padding:3px 10px;border-radius:8px;font-weight:700;${sd.style}">${sd.label}</span>
-              ${!isWorker && r.status !== 'completed' ? `
+              ${!isWorker && (r.status !== 'completed' || _riskIsSysAdmin) ? `
               <button onclick="event.stopPropagation();_deleteRiskFromList(${r.id})"
                 class="text-xs px-2 py-1 rounded-lg font-semibold flex items-center gap-1"
                 style="background:#FEF2F2;color:#DC2626;border:1px solid #FCA5A5"
@@ -26372,10 +26374,12 @@ async function showRiskDetail(riskId) {
 }
 
 function _renderRiskWorkflow(modal, r, allUsers) {
-  const details  = r.details  || [];
-  const members  = r.members  || [];
-  const isWorker = currentUser.role === 'worker';
-  const isAdmin  = currentUser.role === 'admin' || currentUser.role === 'supervisor';
+  var details  = r.details  || [];
+  var members  = r.members  || [];
+  var isWorker = currentUser.role === 'worker';
+  var isAdmin  = currentUser.role === 'admin' || currentUser.role === 'supervisor';
+  // [BUG-190] 시스템관리자 여부 — completed 포함 모든 단계 삭제 권한
+  var _raIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
 
   const stepIdx    = _riskStepIndex(r.status);
   const typeLabel  = r.assessment_type === 'periodic' ? '정기' : r.assessment_type === 'adhoc' ? '수시' : '작업별';
@@ -26805,7 +26809,7 @@ function _renderRiskWorkflow(modal, r, allUsers) {
   <div style="padding:10px 16px;border-top:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;background:white;border-radius:0 0 12px 12px">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-size:11px;color:#9CA3AF">ID: ${r.id}</span>
-      ${!isWorker && r.status !== 'completed' ? `
+      ${!isWorker && (r.status !== 'completed' || _raIsSysAdmin) ? `
       <button onclick="_deleteRiskAssessment(${r.id})"
         style="padding:6px 13px;background:#FEF2F2;color:#DC2626;border:1.5px solid #FCA5A5;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px">
         <i class="fas fa-trash-alt"></i> 삭제
@@ -49141,6 +49145,11 @@ function renderSCMeetingDetail(container, meetingId) {
 function _scRenderDetailShell(container, meeting) {
   var typeLabel = meeting.meeting_type === 'regular' ? '정기' : meeting.meeting_type === 'extraordinary' ? '임시' : '서면';
   var confirmed = meeting.confirmed ? '<span style="background:#D1FAE5;color:#065F46;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700"><i class="fas fa-check-circle" style="margin-right:4px"></i>확정</span>' : '<span style="background:#FEF3C7;color:#92400E;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700"><i class="fas fa-clock" style="margin-right:4px"></i>초안</span>';
+  // [BUG-190] 시스템관리자(admin)만 회의 삭제 가능 — 처리 단계(확정/초안) 구분 없이 삭제 허용
+  var _scIsSysAdmin = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role) === 'sysadmin';
+  var _scDeleteBtn = _scIsSysAdmin
+    ? '<button onclick="_scDeleteMeeting(_scCurrentMeetingId)" style="padding:7px 12px;background:#fff;color:#EF4444;border:1.5px solid #FCA5A5;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-trash" style="margin-right:4px"></i>삭제</button>'
+    : '';
 
   container.innerHTML =
     '<div style="max-width:960px;margin:0 auto;padding:16px">' +
@@ -49160,7 +49169,7 @@ function _scRenderDetailShell(container, meeting) {
         '<div style="display:flex;gap:6px">' +
           '<button onclick="_scPrintMeeting(_scCurrentMeetingId)" style="padding:7px 12px;background:#fff;color:#7C3AED;border:1.5px solid #DDD6FE;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-print" style="margin-right:4px"></i>PDF 출력</button>' +
           (meeting.confirmed ? '' : '<button onclick="_scConfirmMeeting(_scCurrentMeetingId)" style="padding:7px 12px;background:#10B981;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-check" style="margin-right:4px"></i>회의 확정</button>') +
-          '<button onclick="_scDeleteMeeting(_scCurrentMeetingId)" style="padding:7px 12px;background:#fff;color:#EF4444;border:1.5px solid #FCA5A5;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-trash" style="margin-right:4px"></i>삭제</button>' +
+          _scDeleteBtn +
         '</div>' +
       '</div>' +
 

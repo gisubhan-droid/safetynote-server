@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-28 (세션 107 — [정기위험성평가] 제목/특이사항 기본값 + 평가위원 SC role_type 기반 역할 기본설정)
-> **GitHub 최신 (safetynote-server): `(세션107 커밋)`** — feat: [정기위험성평가] 기본값 자동입력 + 평가위원 SC role_type 기반 역할 기본설정
+> **GitHub 최신 (safetynote-server): `bd2e0ea`** — feat: [정기위험성평가] 기본값 자동입력 + 평가위원 SC role_type 기반 역할 기본설정
 > **이전 커밋 (safetynote-server): `f241385`** — docs: [세션 106-2] PROJECT_HISTORY 커밋 해시 7cae5e0 반영
 > **이전 커밋 (safetynote-server): `7cae5e0`** — fix: [SC-투표500/투표요청] patchSchema v0.189 + sc_vote push + 서명요청카드 투표UI
 > **이전 커밋 (safetynote-server): `5a68e78`** — docs: [세션 106] PROJECT_HISTORY 커밋 해시 d369b94 반영
@@ -6265,7 +6265,7 @@ After: seq (||agenda_no), title, content, assignee_id, assignee_name, result (||
 - [x] `buildUserCards` resolvedRole 로직 SC role_type 기반으로 수정
 - [x] 서명 관리 TBM 방식 동일 확인 (변경 없음)
 - [x] node --check ✅ / npm run build ✅ (296.03 kB)
-- [x] git commit & push (`(세션107 커밋)`)
+- [x] git commit & push (`bd2e0ea`)
 - [x] BUGFIX_LOG.md FEAT-188 항목 추가
 - [x] PROJECT_HISTORY.md 세션 107 항목 추가
 

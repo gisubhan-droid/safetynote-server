@@ -1,7 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 99 — [FEAT-178] 산업안전보건위원회 신규 메뉴 전체 구현 + 위험성평가 위원 자동체크 연동)
-> **GitHub 최신 (safetynote-server): `TBD`** — feat: [FEAT-178] 산업안전보건위원회 — 위원/회의록/안건/투표/사진/자료첨부 + 위험성평가 위원 자동체크
+> 최종 업데이트: 2026-07-28 (세션 100 — [FEAT-179] 산업안전보건위원회 401 수정 + UI 개선 (안전교육 스타일))
+> **GitHub 최신 (safetynote-server): `TBD`** — fix+feat: [FEAT-179] SC 401 수정(_scFetch 헬퍼) + 위원관리·회의록 UI 안전교육 스타일 개선
+> **이전 커밋 (safetynote-server): `543993d`** — feat: [FEAT-178] 산업안전보건위원회 신규 메뉴 전체 구현 + 위험성평가 위원 자동체크 연동
 > **GitHub 최신 (safetynote-server): `ea4cebe`** — fix: [BUG-179b] downloadPhoto 앱 환경 — saveImageToGallery 브릿지로 교체 (MediaStore 갤러리 직접 저장)
 > **GitHub 최신 (safetynote-android): `45f995e`** — feat: [BUG-179b] SafetyNoteAppBridge.saveImageToGallery() 추가 — MediaStore/MediaScanner 갤러리 저장
 > **이전 커밋 (server): `2ed59bc`** — docs: [세션 97] BUG-179 커밋 해시 64ed3ac 반영

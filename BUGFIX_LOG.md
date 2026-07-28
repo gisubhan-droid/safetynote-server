@@ -5,6 +5,49 @@
 
 ---
 
+## [FEAT-179] 산업안전보건위원회 UI 개선 + 401 인증 수정 (세션 100)
+
+### 문제
+1. **401 Unauthorized**: safety-committee 신규 함수들이 순수 `fetch()`를 사용하여 `Authorization: Bearer` 헤더 미포함
+   - `/api/safety-committee/*`, `/api/users?active=1` 모두 401 반환
+
+### 원인
+`renderSafetyCommitteeMembersPage`, `renderSafetyCommitteePage` 등 신규 SC 함수들이 `fetch()`를 직접 호출하여 토큰 헤더를 첨부하지 않음.
+
+### 해결
+1. `_scFetch(url, options)` 헬퍼 함수 신규 생성
+   - `localStorage.getItem('token')` → `Authorization: Bearer <token>` 자동 추가
+   - `Content-Type: application/json` 자동 설정 (body 있을 때)
+2. Python 스크립트로 36개 `fetch('/api/safety-committee...`) → `_scFetch(...)` 일괄 교체
+3. 위험성평가 연동 XHR에도 `Authorization` 헤더 추가
+
+### UI 개선 (안전교육 스타일)
+**`_scRenderMembersPage` 완전 재작성**:
+- 상단 헤더: 아이콘+제목+법령기준 서브타이틀
+- 통계 카드 4개: 전체 위원 / 사용자측 / 근로자측 / 동수 충족 여부 배지
+- 법령 안내 카드 (amber 배경): 산업안전보건법 시행령 제35조 — 위원 구성 기준 테이블
+- 위원 추가 폼: 기존 토글 방식 유지, 스타일 개선
+- 위원 카드 그리드: 테이블 방식 → 카드 그리드 방식 (사이드별 테두리 색상 구분)
+
+**`_scRenderMeetingList` 완전 재작성**:
+- 상단 헤더: 아이콘+제목+법령기준, 위원관리+회의생성 버튼
+- 통계 카드 4개: 전체 회의 / 이번 분기 / 확정 완료 / 정기·임시 건수
+- 연도·분기·유형 필터 셀렉터 (안전교육 연도 셀렉터 방식)
+- `_scFilterMeetings()` 클라이언트 사이드 필터 함수 신규 추가
+- `_scRenderMeetingCardsOnly()` 필터 결과 재렌더 헬퍼 신규 추가
+- 법령 안내 카드 (amber): 산업안전보건법 제24조 — 개최주기/보존/심의사항
+- 회의 카드: 요약 내용 미리보기, 사이드별 테두리 색상, 확대 hover 효과
+
+### RULE 준수
+- RULE-001: `var` 전용 — `const`/`let`/화살표함수 없음 확인
+- RULE-003: onclick 내 따옴표 중첩 → `data-*` 속성 활용
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ `dist/_worker.js 296.03 kB`
+
+---
+
 ## [FEAT-178] 산업안전보건위원회 신규 메뉴 (세션 99)
 
 ### 구현 내용

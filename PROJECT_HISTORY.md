@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 105 — [SC-서명] 클릭=서명완료 방식 단순화 / signature_data 제거)
-> **GitHub 최신 (safetynote-server): `c76ea33`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
-> **이전 커밋 (safetynote-server): `49f3bd8`** — fix: [BUG-185b-v2] risk_assessment_signatures FK 제약 제거 + POST /risk/signatures 핸들러 재작성
+> 최종 업데이트: 2026-07-28 (세션 105-2 — [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정)
+> **GitHub 최신 (safetynote-server): `2c12724`** — fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정
+> **이전 커밋 (safetynote-server): `c76ea33`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
 > **이전 커밋 (safetynote-server): `40978c9`** — fix: [BUG-182b-v2] /meeting 단수 경로 호환을 node-server.ts 레벨로 이동
 > **이전 커밋 (safetynote-server): `586022c`** — fix: [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 호환 라우트 추가
 > **이전 커밋 (safetynote-server): `d32f3f1`** — fix: [BUG-182a] 회의록 상세보기 클릭 무반응 수정 (main-content ID 없음 + closest)
@@ -6163,6 +6163,72 @@ pm2 start ... --cwd "$INSTALL_DIR" -- node-server.ts
 **커밋**: `d329cf0` — feat: PLAN-UI-001 Option C 구현 완료
 
 **다음 작업**: NAS git pull + pm2 restart + 동작 확인
+
+---
+
+## 세션 105-2 — 2026-07-28
+
+### [SC-서명] 자필패드 서명 방식 적용 (위험성평가/TBM 동일 방식)
+
+**배경**: 사용자 요청 — "다른 서명 방법(위험성평가/TBM)과 같은 방법으로 수정"
+
+**변경 내용**:
+
+#### 1. `app.js _scSignAttendee()` — 클릭 확인 모달 → 자필패드 팝업
+```javascript
+// Before: _scConfirmModal 클릭 확인 후 빈 body PATCH
+// After: showSignaturePad() → .then() → sign_data 포함 PATCH
+showSignaturePad({ title: '참석자 서명', ... }).then(function(signData) {
+  if (signData === null) return; // 취소
+  _scFetch(..., { body: JSON.stringify({ sign_data: signData }) })
+})
+```
+- RULE-001 준수: `async/await` 대신 `.then()` 체인 사용
+- 취소 시 아무 동작 없음 (signData === null 반환)
+
+#### 2. `safety-committee.ts PATCH /sign` — sign_data 수신 + signature_data 저장
+```typescript
+// Before: signed_at 만 업데이트 (클릭 완료 방식)
+// After: sign_data 수신 → signature_data + signed_at 저장 (자필패드 방식)
+const signData = body.sign_data || ''
+// ADD COLUMN 선행 (구버전 DB 대응) + 2단계 폴백
+```
+
+#### 3. 서명 목록 표시 — signature_data 미리보기 추가
+```javascript
+// 서명완료 뱃지 옆에 60x24 미리보기 이미지 추가
+att.signature_data ? '<img src="' + att.signature_data + '" ...>' : ''
+```
+
+#### 4. 출력(프린트) 서명란 — signature_data 이미지 우선 표시
+```javascript
+// signature_data 있으면 이미지, 없으면 signed_at 날짜, 없으면 빈 셀
+att.signature_data ? '<img ...>' : (att.signed_at ? '✔ 날짜' : '빈 셀')
+```
+
+### [안건 추가 500 에러 수정] — 필드명 불일치
+
+**원인**: `PATCH /meetings/:id` 안건 INSERT 시 존재하지 않는 컬럼명 사용
+```
+DB 실제 컬럼: seq, title, content, assignee_id, assignee_name, result, vote_enabled
+서버 쿼리 (Before): agenda_no, content, decision, assignee_id, due_date, vote_enabled
+```
+
+**수정**: 실제 DB 스키마에 맞게 INSERT 컬럼명 교정
+```
+After: seq (||agenda_no), title, content, assignee_id, assignee_name, result (||decision), vote_enabled
+```
+
+**빌드**: `npm run build` → ✅ `dist/_worker.js 296.03 kB`
+
+### 완료 항목
+- [x] app.js _scSignAttendee(): showSignaturePad .then() 방식으로 교체
+- [x] safety-committee.ts PATCH /sign: sign_data + signature_data 저장 재구현
+- [x] app.js 서명목록: signature_data 미리보기 뱃지 추가
+- [x] app.js 출력: signature_data 이미지 우선 표시
+- [x] safety-committee.ts PATCH /meetings/:id: 안건 INSERT 필드명 수정
+- [x] node --check ✅ / npm run build ✅
+- [x] git commit & push (`2c12724`)
 
 ---
 

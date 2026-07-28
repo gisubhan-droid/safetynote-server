@@ -22528,6 +22528,62 @@ async function renderAdminSettingsPage(container, _activeTab) {
                 <i class="fas fa-info-circle mr-1"></i>
                 단계별 폴더명은 시스템 내부 고정값입니다. 공사와 연결되지 않은 작업은 <code class="bg-blue-100 px-1 rounded">미분류/</code> 폴더에 저장됩니다. 년도/월은 공사 등록일 기준으로 자동 생성됩니다.
               </p>
+
+              <!-- 안전교육 폴더 구조 -->
+              <div class="mt-3 pt-3 border-t border-blue-200">
+                <div class="font-semibold text-blue-800 flex items-center gap-1.5 mb-2">
+                  <i class="fas fa-graduation-cap text-green-600"></i> 안전교육 폴더 구조
+                </div>
+                <div class="text-xs text-blue-700 space-y-1 font-mono leading-relaxed">
+                  <div><i class="fas fa-folder text-yellow-500 mr-1"></i><span class="font-semibold">{루트}/</span></div>
+                  <div class="pl-4"><i class="fas fa-folder text-yellow-500 mr-1"></i><span class="font-semibold">{자료생성년도}/</span></div>
+                  <div class="pl-8"><i class="fas fa-folder text-green-500 mr-1"></i><span class="font-semibold">안전교육/</span></div>
+                  <div class="pl-12"><i class="fas fa-folder text-green-400 mr-1"></i><span>{교육유형}/</span> <span class="text-gray-400 text-xs">(정기안전교육·채용시안전교육·작업내용변경시교육·특별안전교육·관리감독자교육)</span></div>
+                  <div class="pl-16"><i class="fas fa-folder text-green-300 mr-1"></i><span>{날짜}_{과목}/</span></div>
+                  <div class="pl-20 space-y-0.5">
+                    <div><i class="fas fa-folder-open text-orange-400 mr-1"></i>사진/</div>
+                    <div><i class="fas fa-folder-open text-blue-400 mr-1"></i>자료/</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 산업안전보건위원회 폴더 구조 -->
+              <div class="mt-3 pt-3 border-t border-blue-200">
+                <div class="font-semibold text-blue-800 flex items-center gap-1.5 mb-2">
+                  <i class="fas fa-users text-purple-600"></i> 산업안전보건위원회 폴더 구조
+                </div>
+                <div class="text-xs text-blue-700 space-y-1 font-mono leading-relaxed">
+                  <div><i class="fas fa-folder text-yellow-500 mr-1"></i><span class="font-semibold">{루트}/</span></div>
+                  <div class="pl-4"><i class="fas fa-folder text-yellow-500 mr-1"></i><span class="font-semibold">{자료생성년도}/</span></div>
+                  <div class="pl-8"><i class="fas fa-folder text-purple-500 mr-1"></i><span class="font-semibold">산업안전보건위원회/</span></div>
+                  <div class="pl-12"><i class="fas fa-folder text-purple-400 mr-1"></i><span>{날짜}_{제목}/</span></div>
+                  <div class="pl-16 space-y-0.5">
+                    <div><i class="fas fa-folder-open text-orange-400 mr-1"></i>사진/</div>
+                    <div><i class="fas fa-folder-open text-blue-400 mr-1"></i>자료/</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 위험성평가 폴더 구조 -->
+              <div class="mt-3 pt-3 border-t border-blue-200">
+                <div class="font-semibold text-blue-800 flex items-center gap-1.5 mb-2">
+                  <i class="fas fa-exclamation-triangle text-red-600"></i> 위험성평가 폴더 구조
+                </div>
+                <div class="text-xs text-blue-700 space-y-1 font-mono leading-relaxed">
+                  <div><i class="fas fa-folder text-yellow-500 mr-1"></i><span class="font-semibold">{루트}/</span></div>
+                  <div class="pl-4"><i class="fas fa-folder text-yellow-500 mr-1"></i><span class="font-semibold">{자료생성년도}/</span></div>
+                  <div class="pl-8"><i class="fas fa-folder text-red-500 mr-1"></i><span class="font-semibold">위험성평가/</span></div>
+                  <div class="pl-12 space-y-0.5">
+                    <div><i class="fas fa-folder text-red-400 mr-1"></i><span>정기위험성평가/</span></div>
+                    <div><i class="fas fa-folder text-red-400 mr-1"></i><span>수시위험성평가/</span></div>
+                  </div>
+                  <div class="pl-16"><i class="fas fa-folder text-red-300 mr-1"></i><span>{날짜}_{제목}/</span></div>
+                </div>
+                <p class="text-xs text-gray-500 mt-1.5">
+                  <i class="fas fa-info-circle mr-1 text-gray-400"></i>
+                  위험성평가 스캔파일은 데이터베이스에 직접 저장되며 별도 파일 폴더를 사용하지 않습니다.
+                </p>
+              </div>
             </div>
           </div>
           <div class="mt-5 flex gap-2">

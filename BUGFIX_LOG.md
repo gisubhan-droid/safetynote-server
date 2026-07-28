@@ -5,6 +5,28 @@
 
 ---
 
+## [FEAT-180b] SC 500 에러 추가 수정 + 사이드바 하위메뉴 제거 (세션 101)
+
+### 문제
+1. **500 Internal Server Error (2차)**: `/api/safety-committee/members` GET/POST 여전히 500
+2. **사이드바 하위메뉴**: "산업안전보건위원회" 클릭 시 하위 메뉴(회의록/위원관리)가 펼쳐지고 탭 통합 화면으로 바로 이동 안 됨
+
+### 원인 (2차 500 에러)
+1. `GET /members`: `ORDER BY scm.sort_order` — `safety_committee_members` 테이블에 `sort_order` 컬럼 없음 → `no such column` 에러
+2. `POST /members`: `custom_title || null`, `appointed_at || null` → DB가 `NOT NULL DEFAULT ''`인 컬럼에 `null` 명시 삽입 → `NOT NULL constraint failed` 에러
+
+### 해결
+- `GET /members`: `ORDER BY scm.sort_order ASC` → `ORDER BY scm.side ASC`로 교체
+- `POST /members`: `custom_title || ''`, `appointed_at || ''` (null 대신 빈문자열)
+- `PATCH /members`: `role_type/side` 빈값 fallback 명시적 처리
+- `app.js` 사이드바: `sc-meetings` children 배열 제거 → 단일 메뉴 클릭 시 `renderSCMainPage(content, 'meetings')` 직접 진입
+- `renderSafetyCommitteePage` 내 "위원 관리" 버튼: `navigateTo('sc-members')` → `_scSwitchMainTab('members')`
+
+### 커밋
+- `ef6c244` — fix: [FEAT-180b]
+
+---
+
 ## [FEAT-180] 산업안전보건위원회 500 에러 수정 + 탭 통합 UI (세션 101)
 
 ### 문제

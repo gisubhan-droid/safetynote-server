@@ -2337,10 +2337,7 @@ function renderApp() {
           { id:'edu-stats',      icon:'fas fa-chart-bar',          label:'교육현황통계' },
         ]},
         { id:'sign-requests', icon:'fas fa-pen-fancy', label:'서명요청' },
-        { id:'sc-meetings',  icon:'fas fa-landmark', label:'산업안전보건위원회', children: [
-          { id:'sc-meetings', icon:'fas fa-file-alt',   label:'회의록 관리' },
-          { id:'sc-members',  icon:'fas fa-users-cog',  label:'위원 관리' },
-        ]},
+        { id:'sc-meetings',  icon:'fas fa-landmark', label:'산업안전보건위원회' },
       ]
     },
     {
@@ -48002,7 +47999,7 @@ function _scRenderMeetingList(container, meetings) {
           '</div>' +
         '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-          '<button onclick="navigateTo(\'sc-members\')" style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#7C3AED;border:1.5px solid #DDD6FE;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">' +
+          '<button onclick="_scSwitchMainTab(\'members\')" style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#7C3AED;border:1.5px solid #DDD6FE;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">' +
             '<i class="fas fa-users-cog"></i>위원 관리' +
           '</button>' +
           '<button onclick="_scCreateMeeting()" style="display:flex;align-items:center;gap:6px;padding:9px 18px;background:#7C3AED;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(124,58,237,.25)">' +

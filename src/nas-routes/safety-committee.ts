@@ -72,7 +72,7 @@ app.get('/members', async (c) => {
     FROM safety_committee_members scm
     LEFT JOIN users u ON u.id = scm.user_id
     WHERE scm.is_active = 1
-    ORDER BY scm.sort_order ASC, scm.id ASC
+    ORDER BY scm.side ASC, scm.id ASC
   `).all()
   return c.json(rows)
 })
@@ -98,10 +98,10 @@ app.post('/members', async (c) => {
     VALUES (?, ?, ?, ?, ?, 1)
   `).run(
     Number(user_id),
-    role_type || 'member',
-    custom_title || null,
-    side || 'employer',
-    appointed_at || null
+    role_type    || 'member',
+    custom_title || '',
+    side         || 'employer',
+    appointed_at || ''
   )
   return c.json({ ok: true, id: info.lastInsertRowid })
 })
@@ -128,11 +128,11 @@ app.patch('/members/:id', async (c) => {
       is_active    = COALESCE(?, is_active)
     WHERE id = ?
   `).run(
-    role_type    || null,
-    custom_title != null ? custom_title : null,
-    side         || null,
-    appointed_at || null,
-    is_active != null ? Number(is_active) : null,
+    role_type    != null ? (role_type    || 'member')   : null,
+    custom_title != null ?  custom_title                : null,
+    side         != null ? (side         || 'employer') : null,
+    appointed_at != null ?  appointed_at                : null,
+    is_active    != null ?  Number(is_active)           : null,
     id
   )
   return c.json({ ok: true })

@@ -94,6 +94,7 @@ import pushRoutes from './src/nas-routes/push'
 import signatureRequestsRoutes from './src/nas-routes/signature-requests'
 import legalNoticesNasRoutes from './src/nas-routes/legal-notices'
 import geocodeRoutes from './src/nas-routes/geocode'
+import safetyCommitteeRoutes from './src/nas-routes/safety-committee'
 import photosRoutes from './src/routes/photos'
 import {
   kstDateStr, kstDateTimeStr, kstYear, kstMonth, kstTimeStr,
@@ -3139,6 +3140,183 @@ function patchSchema() {
       console.log('[patchSchema v0.175] asset_type 컬럼 이미 존재 — 스킵')
     } else {
       console.warn('[patchSchema v0.175] asset_type 컬럼 추가 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.176: safety_committee_meetings 테이블 신규 생성 ──────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS safety_committee_meetings (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        title       TEXT    NOT NULL DEFAULT '',
+        held_date   TEXT    NOT NULL,
+        location    TEXT    NOT NULL DEFAULT '',
+        meeting_type TEXT   NOT NULL DEFAULT 'regular',
+        quorum_met  INTEGER NOT NULL DEFAULT 0,
+        summary     TEXT    NOT NULL DEFAULT '',
+        legal_items TEXT    NOT NULL DEFAULT '[]',
+        confirmed   INTEGER NOT NULL DEFAULT 0,
+        created_by  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+      )
+    `)
+    console.log('[patchSchema v0.176] ✅ safety_committee_meetings 테이블 생성 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.176] safety_committee_meetings 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.176] safety_committee_meetings 생성 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.177: safety_committee_members 테이블 신규 생성 ───────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS safety_committee_members (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        role_type   TEXT    NOT NULL DEFAULT 'member',
+        custom_title TEXT   NOT NULL DEFAULT '',
+        side        TEXT    NOT NULL DEFAULT 'employer',
+        is_active   INTEGER NOT NULL DEFAULT 1,
+        appointed_at TEXT   NOT NULL DEFAULT (date('now','localtime')),
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        UNIQUE(user_id)
+      )
+    `)
+    console.log('[patchSchema v0.177] ✅ safety_committee_members 테이블 생성 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.177] safety_committee_members 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.177] safety_committee_members 생성 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.178: safety_committee_attendees 테이블 신규 생성 ─────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS safety_committee_attendees (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_id  INTEGER NOT NULL,
+        user_id     INTEGER NOT NULL,
+        name        TEXT    NOT NULL DEFAULT '',
+        role_type   TEXT    NOT NULL DEFAULT 'member',
+        custom_title TEXT   NOT NULL DEFAULT '',
+        side        TEXT    NOT NULL DEFAULT 'employer',
+        signed_at   TEXT,
+        signature_data TEXT NOT NULL DEFAULT '',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        UNIQUE(meeting_id, user_id),
+        FOREIGN KEY(meeting_id) REFERENCES safety_committee_meetings(id) ON DELETE CASCADE
+      )
+    `)
+    console.log('[patchSchema v0.178] ✅ safety_committee_attendees 테이블 생성 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.178] safety_committee_attendees 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.178] safety_committee_attendees 생성 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.179: safety_committee_agendas 테이블 신규 생성 ───────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS safety_committee_agendas (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_id   INTEGER NOT NULL,
+        seq          INTEGER NOT NULL DEFAULT 1,
+        title        TEXT    NOT NULL DEFAULT '',
+        content      TEXT    NOT NULL DEFAULT '',
+        assignee_id  INTEGER,
+        assignee_name TEXT   NOT NULL DEFAULT '',
+        vote_enabled INTEGER NOT NULL DEFAULT 0,
+        vote_closed  INTEGER NOT NULL DEFAULT 0,
+        result       TEXT    NOT NULL DEFAULT '',
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY(meeting_id) REFERENCES safety_committee_meetings(id) ON DELETE CASCADE
+      )
+    `)
+    console.log('[patchSchema v0.179] ✅ safety_committee_agendas 테이블 생성 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.179] safety_committee_agendas 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.179] safety_committee_agendas 생성 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.180: safety_committee_votes 테이블 신규 생성 ────────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS safety_committee_votes (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        agenda_id  INTEGER NOT NULL,
+        user_id    INTEGER NOT NULL,
+        vote       TEXT    NOT NULL DEFAULT 'yes',
+        created_at TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        UNIQUE(agenda_id, user_id),
+        FOREIGN KEY(agenda_id) REFERENCES safety_committee_agendas(id) ON DELETE CASCADE
+      )
+    `)
+    console.log('[patchSchema v0.180] ✅ safety_committee_votes 테이블 생성 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.180] safety_committee_votes 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.180] safety_committee_votes 생성 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.181: safety_committee_photos 테이블 신규 생성 ───────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS safety_committee_photos (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_id INTEGER NOT NULL,
+        file_path  TEXT    NOT NULL DEFAULT '',
+        file_name  TEXT    NOT NULL DEFAULT '',
+        mime_type  TEXT    NOT NULL DEFAULT 'image/jpeg',
+        file_size  INTEGER NOT NULL DEFAULT 0,
+        caption    TEXT    NOT NULL DEFAULT '',
+        created_by INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY(meeting_id) REFERENCES safety_committee_meetings(id) ON DELETE CASCADE
+      )
+    `)
+    console.log('[patchSchema v0.181] ✅ safety_committee_photos 테이블 생성 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.181] safety_committee_photos 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.181] safety_committee_photos 생성 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.182: safety_committee_docs 테이블 신규 생성 ─────────────
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS safety_committee_docs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_id  INTEGER NOT NULL,
+        file_path   TEXT    NOT NULL DEFAULT '',
+        file_name   TEXT    NOT NULL DEFAULT '',
+        orig_name   TEXT    NOT NULL DEFAULT '',
+        mime_type   TEXT    NOT NULL DEFAULT 'application/octet-stream',
+        file_size   INTEGER NOT NULL DEFAULT 0,
+        created_by  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY(meeting_id) REFERENCES safety_committee_meetings(id) ON DELETE CASCADE
+      )
+    `)
+    console.log('[patchSchema v0.182] ✅ safety_committee_docs 테이블 생성 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.182] safety_committee_docs 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.182] safety_committee_docs 생성 실패 (무시):', e.message)
     }
   }
 
@@ -6248,6 +6426,8 @@ app.delete('/api/work-type-safety/:typeKey', async (c) => {
 app.route('/api/legal-notices', legalNoticesNasRoutes)
 // ─── 지오코딩 API → nas-routes/geocode.ts ──────────────────────────────────────
 app.route('/api/geocode', geocodeRoutes)
+// ─── 산업안전보건위원회 API → nas-routes/safety-committee.ts ───────────────────
+app.route('/api/safety-committee', safetyCommitteeRoutes)
 // ─── 관리자 설정 + 앱버전 → nas-routes/admin.ts ────────────────────────────────
 app.route('/api/admin', adminRoutes)
 app.route('/api/app-version', createAppVersionRoute())

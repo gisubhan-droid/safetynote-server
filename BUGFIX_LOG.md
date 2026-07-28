@@ -5,6 +5,61 @@
 
 ---
 
+## [FEAT-178] 산업안전보건위원회 신규 메뉴 (세션 99)
+
+### 구현 내용
+산업안전보건법 제24조 기반 위원회 관리 기능 전체 신규 구현.
+
+### 신규 파일
+- `src/nas-routes/safety-committee.ts` — 19개 라우트 (위원/회의/참석자/투표/사진/자료)
+
+### node-server.ts 수정
+- `import safetyCommitteeRoutes` 추가 (라인 97)
+- `patchSchema v0.176~v0.182`: 7개 테이블 신규 생성
+  - `safety_committee_meetings` — 회의 기본정보
+  - `safety_committee_members` — 상시위원 (UNIQUE user_id)
+  - `safety_committee_attendees` — 회의별 참석자 + 서명 (CASCADE)
+  - `safety_committee_agendas` — 안건 (담당자/투표 포함)
+  - `safety_committee_votes` — 찬반투표 UNIQUE(agenda_id, user_id)
+  - `safety_committee_photos` — 회의 사진
+  - `safety_committee_docs` — 회의 자료 첨부 (PDF/Office/HWP/ZIP 등, 최대 50MB/파일)
+- `app.route('/api/safety-committee', safetyCommitteeRoutes)` 등록
+
+### app.js 수정
+- `edu` 그룹 메뉴에 `sc-meetings` / `sc-members` 서브메뉴 추가
+- `wsafety` 그룹에 `sc-meetings` 단일 메뉴 추가
+- `getPageTitle` map에 `sc-meetings`, `sc-members` 추가
+- `navigateTo` switch에 2개 case 추가
+- 신규 함수 목록:
+  - `renderSafetyCommitteeMembersPage()` — 위원 관리 (추가/수정/해제)
+  - `renderSafetyCommitteePage()` — 회의록 목록
+  - `_scCreateMeeting()` / `_scSubmitCreateMeeting()` — 회의 생성
+  - `renderSCMeetingDetail()` — 4탭 회의 상세
+  - `_scSwitchDetailTab()` — 탭 전환
+  - `_scLoadBasicTab()` — 기본정보 + 법적요건 체크
+  - `_scLoadAgendasTab()` — 안건 목록/추가/수정/삭제/투표
+  - `_scLoadAttendTab()` — 참석자 관리 + 서명 처리
+  - `_scLoadMediaTab()` — 사진 + 회의자료 첨부 (다중 업로드/다운로드/삭제)
+  - `_scPrintMeeting()` — PDF 출력 (`_openPrintOverlay` 방식)
+  - `_scPreCheckRiskMembers()` — 위험성평가 연동 헬퍼
+
+### 위험성평가 자동체크 연동
+`_renderRiskWorkflow` 내 평가위원 선정 단계에서:
+- `/api/safety-committee/members` 동기 XHR 조회 (XMLHttpRequest)
+- `is_active` 위원 user_id를 `_scMemberPreCheckIds` 집합으로 추출
+- `buildUserCards` 렌더링 시 위원에 `checked` + 보라색 배경 + `<위원회>` 배지 자동 적용
+- `setTimeout(50ms)` 후 카드 스타일 + `_updateRdSelectedCount` 갱신
+
+### RULE 준수
+- RULE-001: `app.js` 내 `var` 전용 — `const`/`let`/화살표함수 없음 확인
+- RULE-003: onclick 내 따옴표 중첩 → `data-*` 속성 활용
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ `dist/_worker.js 296.03 kB`
+
+---
+
 ## [BUG-185] 현장위치 지도 위험성체크 탭 날짜 필터 미적용 (커밋 `TBD`)
 
 ### 문제

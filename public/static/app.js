@@ -48796,7 +48796,7 @@ function _scSubmitCreateMeeting() {
 function renderSCMeetingDetail(container, meetingId) {
   container.innerHTML = '<div class="flex items-center justify-center h-40"><i class="fas fa-spinner fa-spin text-purple-500 text-2xl"></i></div>';
   _scFetch('/api/safety-committee/meetings/' + meetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var meeting = res.data || res;
+    var meeting = res.meeting || res.data || res;
     _scRenderDetailShell(container, meeting);
     _scSwitchDetailTab(_scMeetingDetailTab || 'basic', meeting);
   }).catch(function(e) {
@@ -48824,9 +48824,9 @@ function _scRenderDetailShell(container, meeting) {
           '</div>' +
         '</div>' +
         '<div style="display:flex;gap:6px">' +
-          '<button data-mid="' + meeting.id + '" onclick="_scPrintMeeting(this.getAttribute(\'data-mid\'))" style="padding:7px 12px;background:#fff;color:#7C3AED;border:1.5px solid #DDD6FE;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-print" style="margin-right:4px"></i>PDF 출력</button>' +
-          (meeting.confirmed ? '' : '<button data-mid="' + meeting.id + '" onclick="_scConfirmMeeting(this.getAttribute(\'data-mid\'))" style="padding:7px 12px;background:#10B981;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-check" style="margin-right:4px"></i>회의 확정</button>') +
-          '<button data-mid="' + meeting.id + '" onclick="_scDeleteMeeting(this.getAttribute(\'data-mid\'))" style="padding:7px 12px;background:#fff;color:#EF4444;border:1.5px solid #FCA5A5;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-trash" style="margin-right:4px"></i>삭제</button>' +
+          '<button onclick="_scPrintMeeting(_scCurrentMeetingId)" style="padding:7px 12px;background:#fff;color:#7C3AED;border:1.5px solid #DDD6FE;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-print" style="margin-right:4px"></i>PDF 출력</button>' +
+          (meeting.confirmed ? '' : '<button onclick="_scConfirmMeeting(_scCurrentMeetingId)" style="padding:7px 12px;background:#10B981;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-check" style="margin-right:4px"></i>회의 확정</button>') +
+          '<button onclick="_scDeleteMeeting(_scCurrentMeetingId)" style="padding:7px 12px;background:#fff;color:#EF4444;border:1.5px solid #FCA5A5;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-trash" style="margin-right:4px"></i>삭제</button>' +
         '</div>' +
       '</div>' +
 
@@ -48861,7 +48861,7 @@ function _scSwitchDetailTab(tab, meeting) {
 // ─ 탭1: 기본정보 ─────────────────────────────────────────────────────────────
 function _scLoadBasicTab(body) {
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
+    var m = res.meeting || res.data || res;
     var legalItems = [];
     try { legalItems = JSON.parse(m.legal_items || '[]'); } catch(e) { legalItems = []; }
     var legalChecks = [
@@ -48903,7 +48903,7 @@ function _scLoadBasicTab(body) {
 
 function _scToggleLegalItem(checkbox) {
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
+    var m = res.meeting || res.data || res;
     var items = [];
     try { items = JSON.parse(m.legal_items || '[]'); } catch(e) { items = []; }
     var key = checkbox.getAttribute('data-key');
@@ -48917,7 +48917,7 @@ function _scToggleLegalItem(checkbox) {
 
 function _scEditBasicInfo(mid) {
   _scFetch('/api/safety-committee/meetings/' + mid).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
+    var m = res.meeting || res.data || res;
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -48968,8 +48968,8 @@ function _scDeleteMeeting(mid) {
 // ─ 탭2: 안건 ─────────────────────────────────────────────────────────────────
 function _scLoadAgendasTab(body) {
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
-    var agendas = m.agendas || [];
+    var m = res.meeting || res.data || res;
+    var agendas = res.agendas || m.agendas || [];
     var rows = '';
     for (var i = 0; i < agendas.length; i++) {
       var ag = agendas[i];
@@ -49020,8 +49020,8 @@ function _scLoadAgendasTab(body) {
 
 function _scAddAgenda() {
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
-    var nextSeq = (m.agendas || []).length + 1;
+    var m = res.meeting || res.data || res;
+    var nextSeq = (res.agendas || m.agendas || []).length + 1;
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -49060,8 +49060,8 @@ function _scSubmitAddAgenda() {
   var voteEnabled = voteChk ? (voteChk.checked ? 1 : 0) : 0;
   if (!title) { alert('안건 제목을 입력하세요.'); return; }
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
-    var agendas = m.agendas || [];
+    var m = res.meeting || res.data || res;
+    var agendas = res.agendas || m.agendas || [];
     var newAgendas = [];
     for (var i = 0; i < agendas.length; i++) { newAgendas.push(agendas[i]); }
     newAgendas.push({ seq: agendas.length + 1, title: title, content: content, assignee_name: assignee, result: result, vote_enabled: voteEnabled });
@@ -49074,9 +49074,9 @@ function _scSubmitAddAgenda() {
 
 function _scEditAgenda(agId) {
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
+    var m = res.meeting || res.data || res;
     var ag = null;
-    var agendas = m.agendas || [];
+    var agendas = res.agendas || m.agendas || [];
     for (var i = 0; i < agendas.length; i++) { if (String(agendas[i].id) === String(agId)) { ag = agendas[i]; break; } }
     if (!ag) return;
     var overlay = document.createElement('div');
@@ -49110,8 +49110,8 @@ function _scSubmitEditAgenda(agId) {
   var assignee = (document.getElementById('sc-ag-edit-assignee') || {}).value || '';
   var result   = (document.getElementById('sc-ag-edit-result')   || {}).value || '';
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
-    var agendas = m.agendas || [];
+    var m = res.meeting || res.data || res;
+    var agendas = res.agendas || m.agendas || [];
     var updated = [];
     for (var i = 0; i < agendas.length; i++) {
       if (String(agendas[i].id) === String(agId)) {
@@ -49130,8 +49130,8 @@ function _scSubmitEditAgenda(agId) {
 function _scDeleteAgenda(agId) {
   if (!confirm('안건을 삭제하시겠습니까?')) return;
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
-    var agendas = m.agendas || [];
+    var m = res.meeting || res.data || res;
+    var agendas = res.agendas || m.agendas || [];
     var remaining = [];
     for (var i = 0; i < agendas.length; i++) {
       if (String(agendas[i].id) !== String(agId)) remaining.push(agendas[i]);
@@ -49159,7 +49159,7 @@ function _scLoadAttendTab(body) {
   ]).then(function(results) {
     var m       = results[0].data || results[0];
     var allUsers = results[1].data || results[1] || [];
-    var attendees = m.attendees || [];
+    var attendees = res.attendees || m.attendees || [];
     var attendeeIds = {};
     for (var i = 0; i < attendees.length; i++) { attendeeIds[attendees[i].user_id] = true; }
     var available = [];
@@ -49237,9 +49237,9 @@ function _scRemoveAttendee(attId) {
 // ─ 탭4: 사진·자료 ─────────────────────────────────────────────────────────────
 function _scLoadMediaTab(body) {
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
-    var photos = m.photos || [];
-    var docs   = m.docs   || [];
+    var m = res.meeting || res.data || res;
+    var photos = res.photos || m.photos || [];
+    var docs   = res.docs   || m.docs   || [];
 
     var photoHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px">';
     for (var pi = 0; pi < photos.length; pi++) {
@@ -49358,22 +49358,29 @@ function _scDeleteDoc(docId) {
 }
 
 // ─── PDF 출력 ─────────────────────────────────────────────────────────────────
+// [BUG-183b] res 구조 수정: API 응답 { meeting, attendees, agendas, photos, docs }
+//            → res.meeting 으로 접근, attendees/agendas 별도 키
+// [BUG-183d] 닫기/인쇄 버튼 추가 (안전교육 출력 방식 참고)
 function _scPrintMeeting(meetingId) {
   _scFetch('/api/safety-committee/meetings/' + meetingId).then(function(r){ return r.json(); }).then(function(res) {
-    var m = res.data || res;
-    var agendas  = m.agendas   || [];
-    var attendees = m.attendees || [];
+    // API 응답: { meeting:{...}, attendees:[...], agendas:[...], photos:[...], docs:[...] }
+    // 구버전 호환: res 자체가 meeting 객체인 경우(res.title 있으면)
+    var m         = res.meeting  || res.data || res;
+    var agendas   = res.agendas  || m.agendas  || [];
+    var attendees = res.attendees || m.attendees || [];
     var typeLabel = m.meeting_type === 'regular' ? '정기' : m.meeting_type === 'extraordinary' ? '임시' : '서면';
 
     var agendaRows = '';
     for (var i = 0; i < agendas.length; i++) {
       var ag = agendas[i];
+      // agenda_no 우선, seq 폴백 (patchSchema v0.184 이전 구 DB 대응)
+      var agNo = ag.agenda_no || ag.seq || (i + 1);
       agendaRows += '<tr>' +
-        '<td style="padding:8px;text-align:center;font-weight:700;font-size:13px;width:60px">제' + ag.seq + '호</td>' +
+        '<td style="padding:8px;text-align:center;font-weight:700;font-size:13px;width:60px">제' + agNo + '호</td>' +
         '<td style="padding:8px;font-weight:700;font-size:13px">' + (ag.title||'') + '</td>' +
         '<td style="padding:8px;font-size:12px;color:#475569">' + (ag.content||'') + '</td>' +
         '<td style="padding:8px;font-size:12px;text-align:center">' + (ag.assignee_name||'-') + '</td>' +
-        '<td style="padding:8px;font-size:12px;text-align:center;font-weight:600;color:#065F46">' + (ag.result||'-') + '</td>' +
+        '<td style="padding:8px;font-size:12px;text-align:center;font-weight:600;color:#065F46">' + (ag.result||ag.decision||'-') + '</td>' +
       '</tr>';
     }
 
@@ -49381,7 +49388,9 @@ function _scPrintMeeting(meetingId) {
     var workerRows   = '';
     for (var j = 0; j < attendees.length; j++) {
       var att = attendees[j];
-      var signCell = att.signed_at ? '<td style="width:120px;border-bottom:1px solid #555;text-align:center;font-size:12px;color:#065F46">✔ ' + (att.signed_at||'').substring(0,10) + '</td>' : '<td style="width:120px;border-bottom:1px solid #555;text-align:center"></td>';
+      var signCell = att.signed_at
+        ? '<td style="width:120px;border-bottom:1px solid #555;text-align:center;font-size:12px;color:#065F46">✔ ' + (att.signed_at||'').substring(0,10) + '</td>'
+        : '<td style="width:120px;border-bottom:1px solid #555;text-align:center"></td>';
       var row = '<tr style="height:44px">' +
         '<td style="text-align:center;font-size:13px;font-weight:600;width:100px">' + (att.name||att.user_name||'') + '</td>' +
         '<td style="text-align:center;font-size:12px;color:#475569;width:120px">' + (att.custom_title||att.role_type||'위원') + '</td>' +
@@ -49395,7 +49404,12 @@ function _scPrintMeeting(meetingId) {
       '<meta charset="UTF-8">' +
       '<title>산업안전보건위원회 회의록</title>' +
       '<style>' +
-        'body{font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif;margin:20mm 18mm;font-size:13px;color:#000}' +
+        '@page{size:A4 portrait;margin:14mm 12mm 16mm 15mm}' +
+        'body{font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif;margin:0;padding:0;font-size:13px;color:#000;background:#fff}' +
+        '.toolbar{position:fixed;top:0;left:0;right:0;height:48px;background:#1f2937;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:0 20px;z-index:9999}' +
+        '.btn-close{background:#374151;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;cursor:pointer}' +
+        '.btn-print{background:#7C3AED;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer}' +
+        '.content{padding:20mm 18mm 10mm;margin-top:48px}' +
         'h1{font-size:22px;text-align:center;font-weight:700;margin:0 0 6px;letter-spacing:2px}' +
         '.meta{text-align:center;font-size:12px;color:#444;margin-bottom:20px}' +
         'table{width:100%;border-collapse:collapse;margin-bottom:16px}' +
@@ -49404,11 +49418,16 @@ function _scPrintMeeting(meetingId) {
         '.section-title{font-size:15px;font-weight:700;margin:16px 0 8px;padding:4px 0;border-bottom:2px solid #333}' +
         '.sign-table td{border:none}' +
         '.sign-table{margin-bottom:0}' +
-        '@media print{body{margin:10mm}}' +
+        '@media print{.toolbar{display:none}.content{margin-top:0;padding:10mm}}' +
       '</style>' +
     '</head><body>' +
+    '<div class="toolbar">' +
+      '<button class="btn-close" onclick="window.parent.postMessage(\'closePrintOverlay\',\'*\')">✕ 닫기</button>' +
+      '<button class="btn-print" onclick="window.print()"><i style="margin-right:4px">🖨</i> 인쇄 / PDF 저장</button>' +
+    '</div>' +
+    '<div class="content">' +
     '<h1>산업안전보건위원회 회의록</h1>' +
-    '<div class="meta">개최일: ' + (m.held_date||'').substring(0,10) + ' &nbsp;|&nbsp; 장소: ' + (m.location||'') + ' &nbsp;|&nbsp; 유형: ' + typeLabel + '회의</div>' +
+    '<div class="meta">개최일: ' + (m.held_date||'').substring(0,10) + ' &nbsp;|&nbsp; 장소: ' + (m.location||'-') + ' &nbsp;|&nbsp; 유형: ' + typeLabel + '회의</div>' +
     '<table><thead><tr><th style="width:80px">구분</th><th>내용</th></tr></thead><tbody>' +
       '<tr><td style="font-weight:700;text-align:center">회의명</td><td>' + (m.title||'') + '</td></tr>' +
       '<tr><td style="font-weight:700;text-align:center">개최일시</td><td>' + (m.held_date||'').substring(0,10) + '</td></tr>' +
@@ -49416,15 +49435,24 @@ function _scPrintMeeting(meetingId) {
       '<tr><td style="font-weight:700;text-align:center">요약</td><td style="white-space:pre-wrap">' + (m.summary||'') + '</td></tr>' +
     '</tbody></table>' +
     '<div class="section-title">▣ 안건 목록</div>' +
-    (agendaRows ? '<table><thead><tr><th>안건번호</th><th>안건제목</th><th>내용</th><th style="width:80px">담당자</th><th style="width:80px">의결결과</th></tr></thead><tbody>' + agendaRows + '</tbody></table>' : '<p style="color:#888;font-size:12px">안건 없음</p>') +
+    (agendaRows
+      ? '<table><thead><tr><th style="width:60px">안건번호</th><th>안건제목</th><th>내용</th><th style="width:80px">담당자</th><th style="width:80px">의결결과</th></tr></thead><tbody>' + agendaRows + '</tbody></table>'
+      : '<p style="color:#888;font-size:12px;padding:8px 0">안건 없음</p>') +
     '<div class="section-title">▣ 참석자 서명부 — 사용자측</div>' +
-    (employerRows ? '<table class="sign-table"><thead><tr><th style="width:100px">이름</th><th style="width:120px">직책</th><th style="width:120px">서명</th></tr></thead><tbody>' + employerRows + '</tbody></table>' : '<p style="color:#888;font-size:12px">참석자 없음</p>') +
+    (employerRows
+      ? '<table class="sign-table"><thead><tr><th style="width:100px">이름</th><th style="width:120px">직책</th><th style="width:120px">서명</th></tr></thead><tbody>' + employerRows + '</tbody></table>'
+      : '<p style="color:#888;font-size:12px;padding:8px 0">참석자 없음</p>') +
     '<div class="section-title">▣ 참석자 서명부 — 근로자측</div>' +
-    (workerRows ? '<table class="sign-table"><thead><tr><th style="width:100px">이름</th><th style="width:120px">직책</th><th style="width:120px">서명</th></tr></thead><tbody>' + workerRows + '</tbody></table>' : '<p style="color:#888;font-size:12px">참석자 없음</p>') +
+    (workerRows
+      ? '<table class="sign-table"><thead><tr><th style="width:100px">이름</th><th style="width:120px">직책</th><th style="width:120px">서명</th></tr></thead><tbody>' + workerRows + '</tbody></table>'
+      : '<p style="color:#888;font-size:12px;padding:8px 0">참석자 없음</p>') +
     '<div style="margin-top:32px;font-size:11px;color:#888;text-align:center">산업안전보건법 제24조 / 보존기간 3년</div>' +
+    '</div>' +
     '</body></html>';
 
     _openPrintOverlay(htmlContent);
+  }).catch(function(e) {
+    alert('회의록 출력 데이터 불러오기 실패: ' + e.message);
   });
 }
 

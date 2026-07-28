@@ -3361,6 +3361,49 @@ function patchSchema() {
     }
   }
 
+  // ─── patchSchema v0.184: safety_committee_agendas / docs 누락 컬럼 추가 ──────
+  // [BUG-182b] 원인: v0.179에서 agendas를 seq로 생성했으나 쿼리는 agenda_no 참조
+  //            v0.182에서 docs를 caption/uploader_id 없이 생성했으나 쿼리가 참조
+  // 해결: ADD COLUMN IF NOT EXISTS (SQLite 3.37.0+) 또는 try/catch per-column
+  const v184Columns: {table: string, col: string, def: string}[] = [
+    // agendas — agenda_no alias (seq 컬럼 있는 환경 대비)
+    { table: 'safety_committee_agendas', col: 'agenda_no',    def: 'INTEGER NOT NULL DEFAULT 1' },
+    // agendas — decision, due_date, vote_enabled (기존 스키마에 없는 경우)
+    { table: 'safety_committee_agendas', col: 'decision',     def: "TEXT NOT NULL DEFAULT ''" },
+    { table: 'safety_committee_agendas', col: 'due_date',     def: 'TEXT' },
+    { table: 'safety_committee_agendas', col: 'vote_enabled', def: 'INTEGER NOT NULL DEFAULT 0' },
+    { table: 'safety_committee_agendas', col: 'vote_closed',  def: 'INTEGER NOT NULL DEFAULT 0' },
+    { table: 'safety_committee_agendas', col: 'result',       def: "TEXT NOT NULL DEFAULT ''" },
+    // docs — caption, uploader_id (기존 스키마에 없는 경우)
+    { table: 'safety_committee_docs',    col: 'caption',      def: "TEXT NOT NULL DEFAULT ''" },
+    { table: 'safety_committee_docs',    col: 'uploader_id',  def: 'INTEGER' },
+    // photos — caption (안전하게 추가)
+    { table: 'safety_committee_photos',  col: 'caption',      def: "TEXT NOT NULL DEFAULT ''" },
+  ]
+  for (const { table, col, def } of v184Columns) {
+    try {
+      rawDb.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`)
+      console.log(`[patchSchema v0.184] ✅ ${table}.${col} 컬럼 추가 완료`)
+    } catch(e: any) {
+      if (e.message?.includes('duplicate column name') || e.message?.includes('already exists')) {
+        // 이미 있는 컬럼 — 정상 (이전 마이그레이션에서 추가된 경우)
+      } else {
+        console.warn(`[patchSchema v0.184] ${table}.${col} 추가 실패 (무시):`, e.message)
+      }
+    }
+  }
+  // agendas: seq → agenda_no 데이터 동기화 (seq 컬럼이 있고 agenda_no가 모두 1이면 복사)
+  try {
+    const hasSec = rawDb.prepare(`SELECT COUNT(*) as cnt FROM pragma_table_info('safety_committee_agendas') WHERE name='seq'`).get() as any
+    if (hasSec && hasSec.cnt > 0) {
+      rawDb.exec(`UPDATE safety_committee_agendas SET agenda_no = seq WHERE agenda_no = 1 OR agenda_no IS NULL`)
+      console.log('[patchSchema v0.184] ✅ agendas seq → agenda_no 데이터 동기화 완료')
+    }
+  } catch(e: any) {
+    console.warn('[patchSchema v0.184] agendas seq 동기화 실패 (무시):', e.message)
+  }
+  console.log('[patchSchema v0.184] ✅ 누락 컬럼 보정 완료')
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -6471,37 +6514,68 @@ app.route('/api/geocode', geocodeRoutes)
 // [BUG-182b] /meeting (단수) → /meetings (복수) 하위호환 인라인 처리
 // 구버전 클라이언트 캐시 대응: node-server.ts 레벨에서 직접 처리 (rawDb 직접 사용)
 app.get('/api/safety-committee/meeting/:id', async (c) => {
+  // [BUG-182b] 인라인 단수 경로 — try/catch + 서브 테이블 빈 배열 fallback
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = Number(c.req.param('id'))
-  const meeting = rawDb.prepare(`
-    SELECT m.*, u.name as created_by_name
-    FROM safety_committee_meetings m
-    LEFT JOIN users u ON u.id = m.created_by
-    WHERE m.id = ?
-  `).get(id) as any
+  let meeting: any
+  try {
+    meeting = rawDb.prepare(`
+      SELECT m.*, u.name as created_by_name
+      FROM safety_committee_meetings m
+      LEFT JOIN users u ON u.id = m.created_by
+      WHERE m.id = ?
+    `).get(id) as any
+  } catch(e: any) {
+    console.error('[SC inline] GET /meeting/:id — meetings 조회 오류:', e.message)
+    return c.json({ error: 'DB 오류: ' + e.message }, 500)
+  }
   if (!meeting) return c.json({ error: '회의 없음' }, 404)
-  const attendees = rawDb.prepare(`
-    SELECT a.*, u.name as user_name, u.position as user_position, u.department as user_department
-    FROM safety_committee_attendees a
-    LEFT JOIN users u ON u.id = a.user_id
-    WHERE a.meeting_id = ? ORDER BY a.id ASC
-  `).all(id) as any[]
-  const agendas = rawDb.prepare(`
-    SELECT ag.*, u.name as assignee_name,
-           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='agree')    as vote_agree,
-           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='disagree') as vote_disagree,
-           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='abstain')  as vote_abstain
-    FROM safety_committee_agendas ag
-    LEFT JOIN users u ON u.id = ag.assignee_id
-    WHERE ag.meeting_id = ? ORDER BY ag.agenda_no ASC
-  `).all(id) as any[]
-  const photos = rawDb.prepare(`SELECT id, file_name, caption, created_at, mime_type FROM safety_committee_photos WHERE meeting_id = ? ORDER BY id ASC`).all(id) as any[]
-  const docs   = rawDb.prepare(`
-    SELECT id, file_name, file_size, mime_type, caption, uploader_id, u.name as uploader_name, created_at
-    FROM safety_committee_docs sd LEFT JOIN users u ON u.id = sd.uploader_id
-    WHERE sd.meeting_id = ? ORDER BY sd.id ASC
-  `).all(id) as any[]
+  let attendees: any[] = []
+  try {
+    attendees = rawDb.prepare(`
+      SELECT a.*, u.name as user_name, u.position as user_position, u.department as user_department
+      FROM safety_committee_attendees a
+      LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.meeting_id = ? ORDER BY a.id ASC
+    `).all(id) as any[]
+  } catch(e: any) { console.warn('[SC inline] attendees 실패 (빈 배열):', e.message) }
+  let agendas: any[] = []
+  try {
+    agendas = rawDb.prepare(`
+      SELECT ag.*,
+             COALESCE(u.name, ag.assignee_name, '') as assignee_name,
+             (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='agree')    as vote_agree,
+             (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='disagree') as vote_disagree,
+             (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='abstain')  as vote_abstain
+      FROM safety_committee_agendas ag
+      LEFT JOIN users u ON u.id = ag.assignee_id
+      WHERE ag.meeting_id = ? ORDER BY COALESCE(ag.agenda_no, ag.seq, ag.id) ASC
+    `).all(id) as any[]
+  } catch(e: any) {
+    console.warn('[SC inline] agendas 1차 실패, 단순 조회 시도:', e.message)
+    try { agendas = rawDb.prepare(`SELECT ag.* FROM safety_committee_agendas ag WHERE ag.meeting_id = ? ORDER BY ag.id ASC`).all(id) as any[] } catch(e2: any) {
+      console.warn('[SC inline] agendas 2차도 실패 (빈 배열):', e2.message)
+    }
+  }
+  let photos: any[] = []
+  try {
+    photos = rawDb.prepare(`SELECT id, file_name, caption, created_at, mime_type FROM safety_committee_photos WHERE meeting_id = ? ORDER BY id ASC`).all(id) as any[]
+  } catch(e: any) {
+    console.warn('[SC inline] photos 실패 (빈 배열):', e.message)
+    try { photos = rawDb.prepare(`SELECT id, file_name, created_at, mime_type FROM safety_committee_photos WHERE meeting_id = ? ORDER BY id ASC`).all(id) as any[] } catch(_) {}
+  }
+  let docs: any[] = []
+  try {
+    docs = rawDb.prepare(`
+      SELECT id, file_name, file_size, mime_type, caption, uploader_id, u.name as uploader_name, created_at
+      FROM safety_committee_docs sd LEFT JOIN users u ON u.id = sd.uploader_id
+      WHERE sd.meeting_id = ? ORDER BY sd.id ASC
+    `).all(id) as any[]
+  } catch(e: any) {
+    console.warn('[SC inline] docs 1차 실패 (빈 배열):', e.message)
+    try { docs = rawDb.prepare(`SELECT id, file_name, file_size, mime_type, created_by as uploader_id, created_at FROM safety_committee_docs WHERE meeting_id = ? ORDER BY id ASC`).all(id) as any[] } catch(_) {}
+  }
   return c.json({ meeting, attendees, agendas, photos, docs })
 })
 app.patch('/api/safety-committee/meeting/:id', async (c) => {

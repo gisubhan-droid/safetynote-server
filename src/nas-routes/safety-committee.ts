@@ -226,49 +226,114 @@ app.get('/meetings/:id', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const id = Number(c.req.param('id'))
-  const meeting: any = rawDb.prepare(`
-    SELECT m.*, u.name as created_by_name
-    FROM safety_committee_meetings m
-    LEFT JOIN users u ON u.id = m.created_by
-    WHERE m.id = ?
-  `).get(id)
+
+  // ─── [BUG-182b] try/catch + 서브 테이블 빈 배열 fallback ─────────────────
+  // 원인: NAS DB 마이그레이션 시 patchSchema 컬럼명 불일치 가능성
+  //   - agendas: patchSchema(seq) vs 쿼리(agenda_no), patchSchema에 decision/due_date 없음
+  //   - docs: patchSchema에 caption/uploader_id 없음
+  // 대응: 각 서브 테이블 조회를 독립 try/catch로 감싸 빈 배열 반환 + 상세 에러 로깅
+  // ─────────────────────────────────────────────────────────────────────────
+
+  let meeting: any
+  try {
+    meeting = rawDb.prepare(`
+      SELECT m.*, u.name as created_by_name
+      FROM safety_committee_meetings m
+      LEFT JOIN users u ON u.id = m.created_by
+      WHERE m.id = ?
+    `).get(id)
+  } catch(e: any) {
+    console.error('[SC] GET /meetings/:id — meetings 조회 오류:', e.message)
+    return c.json({ error: 'DB 오류: ' + e.message }, 500)
+  }
   if (!meeting) return c.json({ error: '회의 없음' }, 404)
 
-  const attendees = rawDb.prepare(`
-    SELECT a.*, u.name as user_name, u.position as user_position,
-           u.department as user_department
-    FROM safety_committee_attendees a
-    LEFT JOIN users u ON u.id = a.user_id
-    WHERE a.meeting_id = ?
-    ORDER BY a.id ASC
-  `).all(id)
+  let attendees: any[] = []
+  try {
+    attendees = rawDb.prepare(`
+      SELECT a.*, u.name as user_name, u.position as user_position,
+             u.department as user_department
+      FROM safety_committee_attendees a
+      LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.meeting_id = ?
+      ORDER BY a.id ASC
+    `).all(id)
+  } catch(e: any) {
+    console.warn('[SC] GET /meetings/:id — attendees 조회 실패 (빈 배열 반환):', e.message)
+  }
 
-  const agendas = rawDb.prepare(`
-    SELECT ag.*, u.name as assignee_name,
-           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='agree')    as vote_agree,
-           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='disagree') as vote_disagree,
-           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='abstain')  as vote_abstain
-    FROM safety_committee_agendas ag
-    LEFT JOIN users u ON u.id = ag.assignee_id
-    WHERE ag.meeting_id = ?
-    ORDER BY ag.agenda_no ASC
-  `).all(id)
+  // agendas: agenda_no 컬럼 유무를 동적으로 판별하여 안전하게 조회
+  let agendas: any[] = []
+  try {
+    // 1차 시도: agenda_no 컬럼 사용 (최신 스키마)
+    agendas = rawDb.prepare(`
+      SELECT ag.*,
+             COALESCE(u.name, ag.assignee_name, '') as assignee_name,
+             (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='agree')    as vote_agree,
+             (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='disagree') as vote_disagree,
+             (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='abstain')  as vote_abstain
+      FROM safety_committee_agendas ag
+      LEFT JOIN users u ON u.id = ag.assignee_id
+      WHERE ag.meeting_id = ?
+      ORDER BY COALESCE(ag.agenda_no, ag.seq, ag.id) ASC
+    `).all(id)
+  } catch(e: any) {
+    console.warn('[SC] GET /meetings/:id — agendas 1차 조회 실패, 단순 조회 시도:', e.message)
+    try {
+      // 2차 폴백: 컬럼명 문제 우회 — ag.* 만 조회
+      agendas = rawDb.prepare(`
+        SELECT ag.* FROM safety_committee_agendas ag
+        WHERE ag.meeting_id = ? ORDER BY ag.id ASC
+      `).all(id)
+    } catch(e2: any) {
+      console.warn('[SC] GET /meetings/:id — agendas 2차 조회도 실패 (빈 배열 반환):', e2.message)
+    }
+  }
 
-  const photos = rawDb.prepare(`
-    SELECT id, file_name, caption, created_at, mime_type
-    FROM safety_committee_photos
-    WHERE meeting_id = ?
-    ORDER BY id ASC
-  `).all(id)
+  let photos: any[] = []
+  try {
+    photos = rawDb.prepare(`
+      SELECT id, file_name, caption, created_at, mime_type
+      FROM safety_committee_photos
+      WHERE meeting_id = ?
+      ORDER BY id ASC
+    `).all(id)
+  } catch(e: any) {
+    console.warn('[SC] GET /meetings/:id — photos 조회 실패 (빈 배열 반환):', e.message)
+    try {
+      // caption 컬럼 없는 구 버전 대응
+      photos = rawDb.prepare(`
+        SELECT id, file_name, created_at, mime_type FROM safety_committee_photos
+        WHERE meeting_id = ? ORDER BY id ASC
+      `).all(id)
+    } catch(e2: any) {
+      console.warn('[SC] GET /meetings/:id — photos 2차 조회도 실패:', e2.message)
+    }
+  }
 
-  const docs = rawDb.prepare(`
-    SELECT id, file_name, file_size, mime_type, caption, uploader_id,
-           u.name as uploader_name, created_at
-    FROM safety_committee_docs sd
-    LEFT JOIN users u ON u.id = sd.uploader_id
-    WHERE sd.meeting_id = ?
-    ORDER BY sd.id ASC
-  `).all(id)
+  let docs: any[] = []
+  try {
+    docs = rawDb.prepare(`
+      SELECT id, file_name, file_size, mime_type, caption, uploader_id,
+             u.name as uploader_name, created_at
+      FROM safety_committee_docs sd
+      LEFT JOIN users u ON u.id = sd.uploader_id
+      WHERE sd.meeting_id = ?
+      ORDER BY sd.id ASC
+    `).all(id)
+  } catch(e: any) {
+    console.warn('[SC] GET /meetings/:id — docs 1차 조회 실패 (caption/uploader_id 없을 수 있음):', e.message)
+    try {
+      // caption / uploader_id 컬럼 없는 구 버전 대응
+      docs = rawDb.prepare(`
+        SELECT id, file_name, file_size, mime_type, created_by as uploader_id,
+               created_at FROM safety_committee_docs
+        WHERE meeting_id = ? ORDER BY id ASC
+      `).all(id)
+    } catch(e2: any) {
+      console.warn('[SC] GET /meetings/:id — docs 2차 조회도 실패 (빈 배열 반환):', e2.message)
+    }
+  }
 
   return c.json({ meeting, attendees, agendas, photos, docs })
 })
@@ -369,38 +434,71 @@ app.get('/meeting', async (c) => {
   return c.redirect('/api/safety-committee/meetings' + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''), 301)
 })
 app.get('/meeting/:id', async (c) => {
+  // [BUG-182b] 단수 경로 하위호환 — /meetings/:id GET과 동일 로직 (try/catch fallback 포함)
   const rawDb  = getRawDb()
   const user   = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
   const id = Number(c.req.param('id'))
-  const meeting: any = rawDb.prepare(`
-    SELECT m.*, u.name as created_by_name
-    FROM safety_committee_meetings m
-    LEFT JOIN users u ON u.id = m.created_by
-    WHERE m.id = ?
-  `).get(id)
+  let meeting: any
+  try {
+    meeting = rawDb.prepare(`
+      SELECT m.*, u.name as created_by_name
+      FROM safety_committee_meetings m
+      LEFT JOIN users u ON u.id = m.created_by
+      WHERE m.id = ?
+    `).get(id)
+  } catch(e: any) {
+    console.error('[SC] GET /meeting/:id — meetings 조회 오류:', e.message)
+    return c.json({ error: 'DB 오류: ' + e.message }, 500)
+  }
   if (!meeting) return c.json({ error: '회의 없음' }, 404)
-  const attendees = rawDb.prepare(`
-    SELECT a.*, u.name as user_name, u.position as user_position, u.department as user_department
-    FROM safety_committee_attendees a
-    LEFT JOIN users u ON u.id = a.user_id
-    WHERE a.meeting_id = ? ORDER BY a.id ASC
-  `).all(id)
-  const agendas = rawDb.prepare(`
-    SELECT ag.*, u.name as assignee_name,
-           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='agree')    as vote_agree,
-           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='disagree') as vote_disagree,
-           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='abstain')  as vote_abstain
-    FROM safety_committee_agendas ag
-    LEFT JOIN users u ON u.id = ag.assignee_id
-    WHERE ag.meeting_id = ? ORDER BY ag.agenda_no ASC
-  `).all(id)
-  const photos = rawDb.prepare(`SELECT id, file_name, caption, created_at, mime_type FROM safety_committee_photos WHERE meeting_id = ? ORDER BY id ASC`).all(id)
-  const docs   = rawDb.prepare(`
-    SELECT id, file_name, file_size, mime_type, caption, uploader_id, u.name as uploader_name, created_at
-    FROM safety_committee_docs sd LEFT JOIN users u ON u.id = sd.uploader_id
-    WHERE sd.meeting_id = ? ORDER BY sd.id ASC
-  `).all(id)
+  let attendees: any[] = []
+  try {
+    attendees = rawDb.prepare(`
+      SELECT a.*, u.name as user_name, u.position as user_position, u.department as user_department
+      FROM safety_committee_attendees a
+      LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.meeting_id = ? ORDER BY a.id ASC
+    `).all(id)
+  } catch(e: any) {
+    console.warn('[SC] GET /meeting/:id — attendees 조회 실패 (빈 배열):', e.message)
+  }
+  let agendas: any[] = []
+  try {
+    agendas = rawDb.prepare(`
+      SELECT ag.*,
+             COALESCE(u.name, ag.assignee_name, '') as assignee_name,
+             (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='agree')    as vote_agree,
+             (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='disagree') as vote_disagree,
+             (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='abstain')  as vote_abstain
+      FROM safety_committee_agendas ag
+      LEFT JOIN users u ON u.id = ag.assignee_id
+      WHERE ag.meeting_id = ? ORDER BY COALESCE(ag.agenda_no, ag.seq, ag.id) ASC
+    `).all(id)
+  } catch(e: any) {
+    console.warn('[SC] GET /meeting/:id — agendas 1차 실패, 단순 조회 시도:', e.message)
+    try { agendas = rawDb.prepare(`SELECT ag.* FROM safety_committee_agendas ag WHERE ag.meeting_id = ? ORDER BY ag.id ASC`).all(id) } catch(e2: any) {
+      console.warn('[SC] GET /meeting/:id — agendas 2차도 실패 (빈 배열):', e2.message)
+    }
+  }
+  let photos: any[] = []
+  try {
+    photos = rawDb.prepare(`SELECT id, file_name, caption, created_at, mime_type FROM safety_committee_photos WHERE meeting_id = ? ORDER BY id ASC`).all(id)
+  } catch(e: any) {
+    console.warn('[SC] GET /meeting/:id — photos 실패 (빈 배열):', e.message)
+    try { photos = rawDb.prepare(`SELECT id, file_name, created_at, mime_type FROM safety_committee_photos WHERE meeting_id = ? ORDER BY id ASC`).all(id) } catch(_) {}
+  }
+  let docs: any[] = []
+  try {
+    docs = rawDb.prepare(`
+      SELECT id, file_name, file_size, mime_type, caption, uploader_id, u.name as uploader_name, created_at
+      FROM safety_committee_docs sd LEFT JOIN users u ON u.id = sd.uploader_id
+      WHERE sd.meeting_id = ? ORDER BY sd.id ASC
+    `).all(id)
+  } catch(e: any) {
+    console.warn('[SC] GET /meeting/:id — docs 1차 실패 (빈 배열):', e.message)
+    try { docs = rawDb.prepare(`SELECT id, file_name, file_size, mime_type, created_by as uploader_id, created_at FROM safety_committee_docs WHERE meeting_id = ? ORDER BY id ASC`).all(id) } catch(_) {}
+  }
   return c.json({ meeting, attendees, agendas, photos, docs })
 })
 app.patch('/meeting/:id', async (c) => {

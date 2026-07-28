@@ -363,6 +363,77 @@ app.delete('/meetings/:id', async (c) => {
   return c.json({ success: true })
 })
 
+// ─── 하위 호환 라우트: /meeting (단수) → /meetings (복수) 리다이렉트 ─────────
+// 구버전 클라이언트(app.js 미업데이트 NAS)가 단수 경로로 요청할 때 동일 처리
+app.get('/meeting', async (c) => {
+  return c.redirect('/api/safety-committee/meetings' + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''), 301)
+})
+app.get('/meeting/:id', async (c) => {
+  const rawDb  = getRawDb()
+  const user   = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = Number(c.req.param('id'))
+  const meeting: any = rawDb.prepare(`
+    SELECT m.*, u.name as created_by_name
+    FROM safety_committee_meetings m
+    LEFT JOIN users u ON u.id = m.created_by
+    WHERE m.id = ?
+  `).get(id)
+  if (!meeting) return c.json({ error: '회의 없음' }, 404)
+  const attendees = rawDb.prepare(`
+    SELECT a.*, u.name as user_name, u.position as user_position, u.department as user_department
+    FROM safety_committee_attendees a
+    LEFT JOIN users u ON u.id = a.user_id
+    WHERE a.meeting_id = ? ORDER BY a.id ASC
+  `).all(id)
+  const agendas = rawDb.prepare(`
+    SELECT ag.*, u.name as assignee_name,
+           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='agree')    as vote_agree,
+           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='disagree') as vote_disagree,
+           (SELECT COUNT(*) FROM safety_committee_votes WHERE agenda_id = ag.id AND vote='abstain')  as vote_abstain
+    FROM safety_committee_agendas ag
+    LEFT JOIN users u ON u.id = ag.assignee_id
+    WHERE ag.meeting_id = ? ORDER BY ag.agenda_no ASC
+  `).all(id)
+  const photos = rawDb.prepare(`SELECT id, file_name, caption, created_at, mime_type FROM safety_committee_photos WHERE meeting_id = ? ORDER BY id ASC`).all(id)
+  const docs   = rawDb.prepare(`
+    SELECT id, file_name, file_size, mime_type, caption, uploader_id, u.name as uploader_name, created_at
+    FROM safety_committee_docs sd LEFT JOIN users u ON u.id = sd.uploader_id
+    WHERE sd.meeting_id = ? ORDER BY sd.id ASC
+  `).all(id)
+  return c.json({ meeting, attendees, agendas, photos, docs })
+})
+app.patch('/meeting/:id', async (c) => {
+  // 단수 경로 호환 — /meetings/:id PATCH와 동일
+  const rawDb = getRawDb()
+  const user  = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id   = Number(c.req.param('id'))
+  const body: any = await c.req.json().catch(() => ({}))
+  const fields: string[] = []
+  const vals:   any[]    = []
+  if (body.title     !== undefined) { fields.push('title=?');     vals.push(body.title) }
+  if (body.held_date !== undefined) { fields.push('held_date=?'); vals.push(body.held_date) }
+  if (body.location  !== undefined) { fields.push('location=?');  vals.push(body.location) }
+  if (body.summary   !== undefined) { fields.push('summary=?');   vals.push(body.summary) }
+  if (body.confirmed !== undefined) { fields.push('confirmed=?'); vals.push(body.confirmed ? 1 : 0) }
+  if (body.legal_items !== undefined) { fields.push('legal_items=?'); vals.push(body.legal_items) }
+  if (body.agendas   !== undefined) { fields.push('agendas=?');   vals.push(body.agendas) }
+  if (fields.length === 0) return c.json({ error: '수정할 항목 없음' }, 400)
+  vals.push(id)
+  rawDb.prepare(`UPDATE safety_committee_meetings SET ${fields.join(',')} WHERE id=?`).run(...vals)
+  return c.json({ success: true })
+})
+app.delete('/meeting/:id', async (c) => {
+  const rawDb = getRawDb()
+  const user  = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin' && user.role !== 'supervisor') return c.json({ error: '권한 없음' }, 403)
+  const id = Number(c.req.param('id'))
+  rawDb.prepare(`DELETE FROM safety_committee_meetings WHERE id = ?`).run(id)
+  return c.json({ success: true })
+})
+
 // ─── 참석자 API ───────────────────────────────────────────────────────────────
 
 // POST /api/safety-committee/meetings/:id/attendees

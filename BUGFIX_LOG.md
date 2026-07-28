@@ -5,24 +5,40 @@
 
 ---
 
-## [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 (세션 102)
+## [BUG-182b] 회의 상세 500 에러 — 서브 테이블 컬럼 불일치 (세션 103, 근본 해결)
 
-### 문제
-회의 카드 클릭 후 상세 화면에서 `"회의 상세 로드 실패: Unexpected token 'I', "Internal S"... is not valid JSON"` 에러 및 콘솔 `GET /api/safety-committee/meeting/1 500` 발생
+### 문제 (3차 — 최종 원인)
+NAS git pull 완료 후(`app.js?v=40978c9` 로드 확인), 경로도 `/meetings/1` 복수로 정상화됐으나
+`GET /api/safety-committee/meetings/1` → **여전히 500** 발생
 
-### 원인
-- NAS에 git pull이 적용되지 않아 **구버전 app.js** 실행 중
-- 구버전 클라이언트가 `/api/safety-committee/meeting/:id` (단수) 경로로 요청
-- 서버 라우터에는 `/meetings/:id` (복수)만 등록 → 매칭 실패 → 500
+### 근본 원인: patchSchema 컬럼명 불일치
+| 테이블 | patchSchema 생성 컬럼 | 쿼리 참조 컬럼 | 불일치 |
+|---|---|---|---|
+| `safety_committee_agendas` | `seq` (v0.179) | `agenda_no` | ✗ 컬럼 없음 |
+| `safety_committee_agendas` | (없음) | `decision`, `due_date` | ✗ 컬럼 없음 |
+| `safety_committee_docs` | (없음) | `caption`, `uploader_id` | ✗ 컬럼 없음 |
 
 ### 해결
-`safety-committee.ts`에 단수 경로 호환 라우트 추가:
-- `GET /meeting/:id` — meetings/:id 와 동일한 상세 조회 로직
-- `PATCH /meeting/:id` — meetings/:id 와 동일한 수정 로직
-- `DELETE /meeting/:id` — meetings/:id 와 동일한 삭제 로직
+**1. safety-committee.ts GET /meetings/:id / GET /meeting/:id**
+- 각 서브 테이블(attendees, agendas, photos, docs) 조회를 독립 try/catch로 감쌈
+- 실패 시 빈 배열 반환 + 콘솔 warn 로깅
+- agendas ORDER BY: `COALESCE(agenda_no, seq, id)` — 컬럼명 불일치 우회
+- agendas 2차 폴백: `ag.*` 단순 조회
+- docs 2차 폴백: `created_by as uploader_id`
+- photos 2차 폴백: caption 컬럼 제외 조회
+
+**2. node-server.ts 인라인 라우트도 동일 적용**
+
+**3. patchSchema v0.184 추가** (컬럼 영구 보정)
+- `safety_committee_agendas`: `agenda_no`, `decision`, `due_date`, `vote_enabled`, `vote_closed`, `result` ADD COLUMN
+- `safety_committee_docs`: `caption`, `uploader_id` ADD COLUMN
+- `safety_committee_photos`: `caption` ADD COLUMN
+- seq → agenda_no 데이터 동기화
 
 ### 커밋
-- `586022c` — fix: [BUG-182b]
+- `586022c` — fix: [BUG-182b] /meeting 단수 경로 호환 라우트 추가
+- `40978c9` — fix: [BUG-182b-v2] /meeting 단수 경로 호환을 node-server.ts 레벨로 이동
+- `bc8ee00` — fix: [BUG-182b] GET /meetings/:id 500 — try/catch fallback + patchSchema v0.184
 
 ---
 

@@ -1,7 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 102 — [FEAT-182] 산업안전보건위원회 운영규칙+조직도 탭 추가)
-> **GitHub 최신 (safetynote-server): `586022c`** — fix: [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 호환 라우트 추가
+> 최종 업데이트: 2026-07-28 (세션 103 — [BUG-182b] GET /meetings/:id 500 근본 해결)
+> **GitHub 최신 (safetynote-server): `bc8ee00`** — fix: [BUG-182b] GET /meetings/:id 500 — try/catch fallback + patchSchema v0.184
+> **이전 커밋 (safetynote-server): `40978c9`** — fix: [BUG-182b-v2] /meeting 단수 경로 호환을 node-server.ts 레벨로 이동
+> **이전 커밋 (safetynote-server): `586022c`** — fix: [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 호환 라우트 추가
 > **이전 커밋 (safetynote-server): `d32f3f1`** — fix: [BUG-182a] 회의록 상세보기 클릭 무반응 수정 (main-content ID 없음 + closest)
 > **이전 커밋 (safetynote-server): `174ee7c`** — feat: [FEAT-182] 산업안전보건위원회 운영규칙+조직도 탭 추가
 > **이전 커밋 (safetynote-server): `eccce5d`** — feat: [FEAT-181] 위원관리 다중행 일괄등록 + 인라인 수정폼

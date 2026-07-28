@@ -44747,18 +44747,33 @@ async function loadSiteMapMarkers(map) {
       //   limit=500 → {tasks:[...], total:N, page:1, limit:500} 형식 — data?.tasks 로 처리하지만
       //   서버 status 필터가 LGU+ 서버 필터와 AND 조건으로 결합되어 실제 작업이 있어도 0건 반환 가능
       //   → 안전하게 status만 지정, limit은 서버 기본값(전체) 사용
+      // [BUG-185] 날짜 파라미터 추가: tasks API는 start_date/end_date(planned_date 기준) 사용
+      //   기존: userId만 전송 → 날짜 필터 완전 무시, 전체 기간 데이터 반환
+      //   수정: start_date/end_date 서버 전송 + 클라이언트 planned_date 2차 필터
+      //   user_id: tasks API는 supervisor_id 파라미터로 담당자 필터링
       const rp = new URLSearchParams();
       rp.set('status', 'in_progress');
-      if (userId) rp.set('user_id', userId);
+      if (dateFrom) rp.set('start_date', dateFrom);
+      if (dateTo)   rp.set('end_date',   dateTo);
+      if (userId)   rp.set('supervisor_id', userId);
       const riskTaskRes = await API.get(`/tasks?${rp.toString()}`);
       const _rawRiskTasks = riskTaskRes.data?.tasks || riskTaskRes.data || [];
 
       // [BUG-079 준용] LGU+ 클라이언트 이중 방어: is_auto_request_no=0 건만 표시 (서버 필터 보조)
       var _smMyUiRoleR = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
       var _smIsLguR = (_smMyUiRoleR === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
-      const riskTaskList = _smIsLguR
+      const _riskLguFiltered = _smIsLguR
         ? _rawRiskTasks.filter(function(t) { return t.is_auto_request_no === 0; })
         : _rawRiskTasks;
+
+      // [BUG-185] 클라이언트 2차 날짜 필터: planned_date 기준 (서버 start_date/end_date 필터 보완)
+      //   서버 필터가 누락되거나 다른 날짜 컬럼 기준으로 처리된 경우 클라이언트에서 재필터
+      const riskTaskList = _riskLguFiltered.filter(function(t) {
+        var pd = t.planned_date ? String(t.planned_date).slice(0, 10) : '';
+        if (dateFrom && pd && pd < dateFrom) return false;
+        if (dateTo   && pd && pd > dateTo)   return false;
+        return true;
+      });
 
       // ② tasks.gps_lat 없는 건들에 대해 checklist_assessments GPS 배치 조회
       const noTaskGpsIds = riskTaskList

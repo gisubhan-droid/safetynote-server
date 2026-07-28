@@ -5,6 +5,59 @@
 
 ---
 
+## [BUG-185] 현장위치 지도 위험성체크 탭 날짜 필터 미적용 (커밋 `TBD`)
+
+### 문제
+현장위치 지도 → 위험성체크 탭 선택 시 날짜 필터 범위(오늘/7일/30일/전체)가 무시되고
+전체 기간 데이터가 항상 반환됨. TBM/진행/완료 탭은 날짜 필터 정상 동작.
+
+### 원인
+`loadSiteMapMarkers` 내 위험성체크 분기에서 API 파라미터 구성 오류:
+
+```javascript
+// 기존 (날짜 누락)
+const rp = new URLSearchParams();
+rp.set('status', 'in_progress');
+if (userId) rp.set('user_id', userId);   // tasks API는 user_id 파라미터 미지원
+// → 날짜 파라미터 전혀 없음, 전체 기간 반환
+```
+
+추가 문제:
+- `user_id` 파라미터: tasks API는 `user_id` 미지원 → `supervisor_id` 파라미터를 사용해야 함
+- 클라이언트 2차 필터 없음: 서버 필터 누락 시 방어 로직 부재
+
+### 해결
+`public/static/app.js` — `loadSiteMapMarkers` 위험성체크 분기 수정:
+
+1. **서버 파라미터 수정**: tasks API 규격에 맞게 `start_date`/`end_date` 추가, `user_id` → `supervisor_id`
+2. **클라이언트 2차 필터 추가**: `planned_date` 기준으로 날짜 범위 재필터 (TBM/진행 탭과 동일 패턴)
+
+```javascript
+// 수정 후
+const rp = new URLSearchParams();
+rp.set('status', 'in_progress');
+if (dateFrom) rp.set('start_date', dateFrom);   // [BUG-185 신규]
+if (dateTo)   rp.set('end_date',   dateTo);     // [BUG-185 신규]
+if (userId)   rp.set('supervisor_id', userId);  // [BUG-185] user_id → supervisor_id
+
+// + 클라이언트 2차 필터 (planned_date 기준)
+const riskTaskList = _riskLguFiltered.filter(function(t) {
+  var pd = t.planned_date ? String(t.planned_date).slice(0, 10) : '';
+  if (dateFrom && pd && pd < dateFrom) return false;
+  if (dateTo   && pd && pd > dateTo)   return false;
+  return true;
+});
+```
+
+### 영향 범위
+- `public/static/app.js` — `loadSiteMapMarkers` 위험성체크(`filter === 'risk'`) 분기
+
+### 검증
+- `node --check app.js` ✅
+- `npm run build` ✅ (296.03 kB)
+
+---
+
 ## [BUG-182] TBM 결재 서명 후 서명요청 카드 "서명 필요" 잔존 (커밋 `8a1ac6e` / v2 `TBD`) — 세션 99 (2026-07-27) ✅ 수정 완료
 
 ### 증상

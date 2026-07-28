@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 106 — [SC-투표/서명요청] 투표 400 에러 수정 + 서명 요청 푸시 + ref_type=sc 처리)
-> **GitHub 최신 (safetynote-server): `d369b94`** — fix: [SC-투표/서명요청] 투표 400 에러 수정 + SC 서명요청 푸시(TBM 방식) + ref_type=sc 처리
-> **이전 커밋 (safetynote-server): `aa792f8`** — docs: [세션 105-2] PROJECT_HISTORY 커밋 해시 2c12724 반영
+> 최종 업데이트: 2026-07-28 (세션 106-2 — [SC-투표500/투표요청] votes FK 제거 + sc_vote push + 서명요청 카드 투표UI)
+> **GitHub 최신 (safetynote-server): `(세션 106-2)`** — fix: [SC-투표500/투표요청] patchSchema v0.189 + sc_vote push + 서명요청카드 투표UI
+> **이전 커밋 (safetynote-server): `5a68e78`** — docs: [세션 106] PROJECT_HISTORY 커밋 해시 d369b94 반영
 > **이전 커밋 (safetynote-server): `2c12724`** — fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정
 > **이전 커밋 (safetynote-server): `c76ea33`** — fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거
 > **이전 커밋 (safetynote-server): `40978c9`** — fix: [BUG-182b-v2] /meeting 단수 경로 호환을 node-server.ts 레벨로 이동
@@ -6231,6 +6231,37 @@ After: seq (||agenda_no), title, content, assignee_id, assignee_name, result (||
 - [x] safety-committee.ts PATCH /meetings/:id: 안건 INSERT 필드명 수정
 - [x] node --check ✅ / npm run build ✅
 - [x] git commit & push (`2c12724`)
+
+---
+
+## 세션 106-2 — 2026-07-28
+
+### [SC-투표500/투표요청] votes FK 제거 + sc_vote 투표요청 push + 서명요청 카드 투표UI
+
+**배경**: 투표 버튼 클릭 시 500 에러 + SC 메뉴 근로자 접근 불가로 투표 push 흐름 필요
+
+#### BUG-187a — patchSchema v0.189 + 투표 핸들러 강화
+- `safety_committee_votes` FK(`REFERENCES safety_committee_agendas`) + `voted_at` 부재 → 500
+- patchSchema v0.189: FK 없는 테이블 재생성, voted_at 컬럼 보장
+- 핸들러: `foreign_keys = OFF` → INSERT → `ON` 래핑
+
+#### BUG-187b — 투표 요청 push + sc_vote 처리
+- `_scSendVoteRequests()`: 투표 요청 버튼 → vote_enabled 안건 선택 + 대상자 → bulk push
+- `signature-requests.ts` ref_type='sc_vote': PATCH /sign → `safety_committee_votes` UPSERT
+- `_srVoteSubmit()`: 서명요청 카드에서 찬성/반대/기권 직접 투표
+
+#### BUG-187c — SR_META sc/sc_vote + 투표UI
+- SR_META에 sc/sc_vote 추가, 카드 배지/버튼 분기
+
+### 완료 항목
+- [x] patchSchema v0.189 (votes FK 제거)
+- [x] 투표 핸들러 FK OFF 래핑
+- [x] SR_META sc/sc_vote 추가
+- [x] _srVoteSubmit 신규
+- [x] _scSendVoteRequests 신규
+- [x] signature-requests.ts sc_vote 처리
+- [x] node --check ✅ / npm run build ✅ (296.03 kB)
+- [x] git commit & push
 
 ---
 

@@ -97,6 +97,53 @@ FK = ON 복원
 | safetynote-server | (세션 105) | fix: [SC-서명] 클릭=서명완료 방식 단순화 — signature_data 제거 |
 | safetynote-server | (세션 105-2) | fix: [SC-서명/안건] 자필패드 서명 방식 적용 + 안건 추가 500 에러 수정 |
 | safetynote-server | (세션 106) | fix: [SC-투표/서명요청] 투표 400 에러 수정 + SC 서명요청 푸시(TBM 방식) + ref_type=sc 처리 |
+| safetynote-server | (세션 106-2) | fix: [SC-투표500/투표요청] votes FK 제거(v0.189) + sc_vote ref_type 투표 push + 서명요청 카드 투표UI |
+
+---
+
+## [BUG-187] SC 투표 500 + 투표 요청 푸시 미구현 (세션 106-2)
+
+### 문제
+1. **BUG-187a**: 투표 클릭 시 500 에러 — `safety_committee_votes` 테이블에 FK 존재 (`agenda_id REFERENCES safety_committee_agendas`), `foreign_keys = ON` 환경에서 INSERT 500
+2. **BUG-187b**: SC 메뉴는 근로자 접근 불가 → 근로자가 안건 탭에서 직접 투표 불가 → 관리자가 투표 요청을 push해야 하는 구조 필요
+3. **BUG-187c**: 서명요청 목록(근로자 화면)에 SC 요청/투표요청이 표시 안 됨 (SR_META에 sc/sc_vote 없음)
+
+### 원인
+- `safety_committee_votes` 테이블 FK (`REFERENCES safety_committee_agendas(id) ON DELETE CASCADE`) → `foreign_keys=ON` INSERT 500
+- `voted_at` 컬럼 구 DB에 부재 → INSERT 컬럼 불일치 500
+- 근로자가 SC 메뉴 접근 불가하므로 안건 탭 투표 버튼 자체를 못 누름 → 투표 요청 push 흐름 필요
+
+### 해결
+
+#### BUG-187a — patchSchema v0.189 + 투표 핸들러 강화 (node-server.ts, safety-committee.ts)
+```
+patchSchema v0.189: safety_committee_votes FK 제약 제거
+  - FK 없는 새 테이블 재생성 (데이터 보존)
+  - voted_at 컬럼 보장
+
+투표 핸들러 (POST /agendas/:id/vote):
+  - 테이블 없으면 FK 없는 버전 자동 생성
+  - voted_at/meeting_id ADD COLUMN 방어 처리
+  - foreign_keys = OFF → INSERT → foreign_keys = ON 트랜잭션
+  - 에러 시 500 상세 메시지 반환
+```
+
+#### BUG-187b — 투표 요청 push 흐름 구현 (app.js, signature-requests.ts)
+- **`_scSendVoteRequests()` 신규**: 참석·서명·투표 탭 "투표 요청" 버튼 → vote_enabled 안건 선택 + 대상자 선택 → `signature-requests/bulk` (`ref_type:'sc_vote'`, `ref_sub_type:안건ID`) 전송
+- **`signature-requests.ts` ref_type='sc_vote' 처리**: PATCH /sign → `body.vote` 또는 `sign_data`에서 `agree|disagree|abstain` 추출 → `safety_committee_votes` UPSERT
+- **`_srVoteSubmit(reqId, vote)` 신규**: 서명요청 카드에서 찬성/반대/기권 버튼 클릭 → PATCH /sign 호출
+
+#### BUG-187c — SR_META sc/sc_vote 추가 (app.js)
+- SR_META에 `sc` (회의 서명), `sc_vote` (투표) 타입 추가
+- `_srRenderCard`: sc/sc_vote 내용보기 버튼 추가
+- 투표 카드 배지: "🔔 서명 필요" → "🗳️ 투표 필요"
+- 미처리 투표 카드: 서명하기 대신 찬성/반대/기권 버튼 표시
+
+### 수정 파일
+- `node-server.ts` — patchSchema v0.189: safety_committee_votes FK 제거 + voted_at 보장
+- `src/nas-routes/safety-committee.ts` — POST /agendas/:id/vote: FK OFF 드래핑 + 테이블 자동생성
+- `src/nas-routes/signature-requests.ts` — ref_type='sc_vote' 처리 + broadcast 메시지 분기
+- `public/static/app.js` — SR_META sc/sc_vote, _srVoteSubmit 신규, _scSendVoteRequests 신규, 투표요청 버튼, 카드 투표UI
 
 ---
 

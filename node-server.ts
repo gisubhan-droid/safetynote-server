@@ -3529,6 +3529,48 @@ function patchSchema() {
     try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
   }
 
+  // ─── patchSchema v0.189: safety_committee_votes FK 제거 + voted_at 컬럼 보장 ──
+  try {
+    const voteSql: string = (rawDb.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='safety_committee_votes'`).get() as any)?.sql || ''
+    if (voteSql.includes('REFERENCES') || voteSql.includes('FOREIGN KEY')) {
+      console.log('[patchSchema v0.189] safety_committee_votes FK 제약 제거 시작...')
+      const fixVoteTx = rawDb.transaction(() => {
+        rawDb.pragma('foreign_keys = OFF')
+        rawDb.exec(`
+          CREATE TABLE IF NOT EXISTS safety_committee_votes_new (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            agenda_id  INTEGER NOT NULL,
+            meeting_id INTEGER,
+            user_id    INTEGER NOT NULL,
+            vote       TEXT    NOT NULL DEFAULT 'agree',
+            voted_at   TEXT,
+            created_at TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(agenda_id, user_id)
+          )
+        `)
+        rawDb.exec(`
+          INSERT OR IGNORE INTO safety_committee_votes_new (id, agenda_id, meeting_id, user_id, vote, voted_at, created_at)
+          SELECT id, agenda_id, meeting_id, user_id, vote,
+                 COALESCE(voted_at, created_at),
+                 created_at
+          FROM safety_committee_votes
+        `)
+        rawDb.exec(`DROP TABLE safety_committee_votes`)
+        rawDb.exec(`ALTER TABLE safety_committee_votes_new RENAME TO safety_committee_votes`)
+        rawDb.pragma('foreign_keys = ON')
+      })
+      fixVoteTx()
+      console.log('[patchSchema v0.189] ✅ safety_committee_votes FK 제약 제거 완료')
+    } else {
+      // FK 없어도 voted_at 컬럼 보장
+      try { rawDb.exec(`ALTER TABLE safety_committee_votes ADD COLUMN voted_at TEXT`) } catch(_) {}
+      console.log('[patchSchema v0.189] safety_committee_votes FK 없음 (voted_at 컬럼만 보장)')
+    }
+  } catch(e: any) {
+    console.warn('[patchSchema v0.189] votes FK 제거 실패 (무시):', e.message)
+    try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+  }
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }

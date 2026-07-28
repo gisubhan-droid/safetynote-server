@@ -707,14 +707,40 @@ app.post('/agendas/:agendaId/vote', async (c) => {
   if (meeting?.confirmed === 1)
     return c.json({ error: '확정된 회의는 투표 변경 불가' }, 409)
 
-  // UPSERT (기존 투표 변경 허용)
-  // voted_at 컬럼이 구DB에 없을 수 있으므로 ADD COLUMN 방어 처리
+  // 테이블 없으면 FK 없는 버전으로 생성
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS safety_committee_votes (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        agenda_id  INTEGER NOT NULL,
+        meeting_id INTEGER,
+        user_id    INTEGER NOT NULL,
+        vote       TEXT    NOT NULL DEFAULT 'agree',
+        voted_at   TEXT,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        UNIQUE(agenda_id, user_id)
+      )
+    `)
+  } catch(_) {}
+
+  // voted_at / meeting_id 컬럼 보장
   try { rawDb.exec(`ALTER TABLE safety_committee_votes ADD COLUMN voted_at TEXT`) } catch(_) {}
-  rawDb.prepare(`
-    INSERT INTO safety_committee_votes (agenda_id, meeting_id, user_id, vote, voted_at)
-    VALUES (?, ?, ?, ?, datetime('now','localtime'))
-    ON CONFLICT(agenda_id, user_id) DO UPDATE SET vote=excluded.vote, voted_at=datetime('now','localtime')
-  `).run(agendaId, agenda.meeting_id, user.id, vote)
+  try { rawDb.exec(`ALTER TABLE safety_committee_votes ADD COLUMN meeting_id INTEGER`) } catch(_) {}
+
+  // UPSERT — FK OFF로 감싸서 구DB FK 제약 오류 방지
+  try {
+    rawDb.pragma('foreign_keys = OFF')
+    rawDb.prepare(`
+      INSERT INTO safety_committee_votes (agenda_id, meeting_id, user_id, vote, voted_at)
+      VALUES (?, ?, ?, ?, datetime('now','localtime'))
+      ON CONFLICT(agenda_id, user_id) DO UPDATE SET vote=excluded.vote, voted_at=datetime('now','localtime')
+    `).run(agendaId, agenda.meeting_id, user.id, vote)
+    rawDb.pragma('foreign_keys = ON')
+  } catch(e: any) {
+    try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+    console.error('[SC/vote] INSERT 실패:', e.message)
+    return c.json({ error: '투표 저장 실패: ' + e.message }, 500)
+  }
 
   // 현재 집계 반환
   const counts: any = rawDb.prepare(`

@@ -263,6 +263,44 @@ app.patch('/:id/sign', async (c) => {
         SET signature_data = ?, signed_at = datetime('now','localtime')
         WHERE meeting_id = ? AND user_id = ?
       `).run(signData || '', Number(req.ref_id), user.id)
+    } else if (req.ref_type === 'sc_vote') {
+      // 산업안전보건위원회 투표 요청 — sign_data 값이 vote(agree/disagree/abstain)
+      // ref_sub_type = agenda_id (bulk 전송 시 ref_sub_type 필드에 안건 ID 저장)
+      const voteValue = (body.vote || signData || '').trim()
+      const agendaId  = Number(req.ref_sub_type || req.ref_id)
+      const agenda: any = rawDb.prepare(`SELECT * FROM safety_committee_agendas WHERE id=?`).get(agendaId)
+      if (!agenda) {
+        return c.json({ error: '안건을 찾을 수 없습니다.' }, 404)
+      }
+      if (!['agree','disagree','abstain'].includes(voteValue)) {
+        return c.json({ error: '유효하지 않은 투표값 (agree|disagree|abstain 중 하나)' }, 400)
+      }
+      // votes 테이블 보장 (FK 없는 버전)
+      try {
+        rawDb.exec(`
+          CREATE TABLE IF NOT EXISTS safety_committee_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agenda_id INTEGER NOT NULL, meeting_id INTEGER,
+            user_id INTEGER NOT NULL, vote TEXT NOT NULL DEFAULT 'agree',
+            voted_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(agenda_id, user_id)
+          )
+        `)
+      } catch(_) {}
+      try { rawDb.exec(`ALTER TABLE safety_committee_votes ADD COLUMN voted_at TEXT`) } catch(_) {}
+      try { rawDb.exec(`ALTER TABLE safety_committee_votes ADD COLUMN meeting_id INTEGER`) } catch(_) {}
+      try {
+        rawDb.pragma('foreign_keys = OFF')
+        rawDb.prepare(`
+          INSERT INTO safety_committee_votes (agenda_id, meeting_id, user_id, vote, voted_at)
+          VALUES (?, ?, ?, ?, datetime('now','localtime'))
+          ON CONFLICT(agenda_id, user_id) DO UPDATE SET vote=excluded.vote, voted_at=datetime('now','localtime')
+        `).run(agendaId, agenda.meeting_id, user.id, voteValue)
+        rawDb.pragma('foreign_keys = ON')
+      } catch(ve: any) {
+        try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
+        return c.json({ error: '투표 저장 실패: ' + ve.message }, 500)
+      }
     } else if (req.ref_type === 'education') {
       rawDb.prepare(`
         UPDATE safety_education_attendees SET signature_data=? WHERE session_id=? AND user_id=?
@@ -271,14 +309,19 @@ app.patch('/:id/sign', async (c) => {
   } catch(e: any) { console.warn('[signature-request/sign] ref 반영 실패:', e.message) }
 
   broadcastToRoles(['admin','supervisor'], {
-    type: `${req.ref_type === 'tbm' ? 'tbm' : req.ref_type === 'risk_assessment' ? 'risk' : req.ref_type === 'sc' ? 'sc' : 'edu'}_sign`,
+    type: `${req.ref_type === 'tbm' ? 'tbm' : req.ref_type === 'risk_assessment' ? 'risk' : (req.ref_type === 'sc' || req.ref_type === 'sc_vote') ? 'sc' : 'edu'}_sign`,
     signer: user.name, title: req.title,
-    message: `[서명완료] ${user.name}님이 "${req.title}"에 서명했습니다`,
+    message: req.ref_type === 'sc_vote'
+      ? `[투표완료] ${user.name}님이 "${req.title}"에 투표했습니다`
+      : `[서명완료] ${user.name}님이 "${req.title}"에 서명했습니다`,
     ts: Date.now()
   })
   sendToUser(req.requester_id, {
-    type: 'sign_done', title: req.title, signer: user.name,
-    message: `[서명완료] ${user.name}님이 서명을 완료했습니다`,
+    type: req.ref_type === 'sc_vote' ? 'vote_done' : 'sign_done',
+    title: req.title, signer: user.name,
+    message: req.ref_type === 'sc_vote'
+      ? `[투표완료] ${user.name}님이 투표를 완료했습니다`
+      : `[서명완료] ${user.name}님이 서명을 완료했습니다`,
     ts: Date.now()
   })
   return c.json({ success: true })

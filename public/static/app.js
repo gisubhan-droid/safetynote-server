@@ -3250,8 +3250,8 @@ function navigateTo(page) {
     case 'edu-supervisor': renderEducationPage(content, 'supervisor');   break;
     case 'edu-stats':      renderEducationStatsPage(content);            break;
     case 'sign-requests':  renderSignatureRequestsPage(content);         break;
-    case 'sc-meetings':    renderSafetyCommitteePage(content);           break;
-    case 'sc-members':     renderSafetyCommitteeMembersPage(content);    break;
+    case 'sc-meetings':    renderSCMainPage(content, 'meetings');         break;
+    case 'sc-members':     renderSCMainPage(content, 'members');          break;
     default: content.innerHTML = '<p class="text-gray-500 p-4">페이지를 찾을 수 없습니다.</p>';
   }
   // 레일/플라이아웃 active 상태 동기화 (페이지 전환마다)
@@ -47262,7 +47262,384 @@ function _scUpload(url, formData) {
   return fetch(url, { method: 'POST', headers: headers, body: formData }).then(function(r){ return r.json(); });
 }
 
-// ─── 위원 관리 페이지 ─────────────────────────────────────────────────────────
+// ─── 산업안전보건위원회 통합 메인 (탭) ───────────────────────────────────────
+// tab: 'meetings' | 'members'
+var _scCurrentTab = 'meetings';
+
+function renderSCMainPage(container, tab) {
+  _scCurrentTab = tab || 'meetings';
+  container.innerHTML =
+    '<div class="page-container">' +
+      // ── 통합 헤더 ──
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:0">' +
+        '<div style="width:44px;height:44px;border-radius:14px;background:#EDE9F8;display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+          '<i class="fas fa-shield-alt" style="color:#7C3AED;font-size:20px"></i>' +
+        '</div>' +
+        '<div>' +
+          '<h2 style="font-size:18px;font-weight:700;color:#1E293B;margin:0">산업안전보건위원회</h2>' +
+          '<p style="font-size:12px;color:#64748B;margin:3px 0 0">산업안전보건법 제24조 — 분기 1회 이상 개최, 3년 보존 의무</p>' +
+        '</div>' +
+      '</div>' +
+      // ── 탭 바 ──
+      '<div style="display:flex;border-bottom:2px solid #E5E7EB;margin-top:16px;margin-bottom:0">' +
+        '<button id="sc-tab-meetings" onclick="_scSwitchMainTab(\'meetings\')" style="padding:10px 24px;font-size:14px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:3px solid ' + (_scCurrentTab === 'meetings' ? '#7C3AED' : 'transparent') + ';color:' + (_scCurrentTab === 'meetings' ? '#7C3AED' : '#64748B') + ';margin-bottom:-2px">' +
+          '<i class="fas fa-landmark" style="margin-right:6px"></i>회의록 관리' +
+        '</button>' +
+        '<button id="sc-tab-members" onclick="_scSwitchMainTab(\'members\')" style="padding:10px 24px;font-size:14px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:3px solid ' + (_scCurrentTab === 'members' ? '#7C3AED' : 'transparent') + ';color:' + (_scCurrentTab === 'members' ? '#7C3AED' : '#64748B') + ';margin-bottom:-2px">' +
+          '<i class="fas fa-users-cog" style="margin-right:6px"></i>위원 관리' +
+        '</button>' +
+      '</div>' +
+      // ── 탭 콘텐츠 영역 ──
+      '<div id="sc-tab-content" style="padding-top:16px"></div>' +
+    '</div>';
+
+  _scLoadTabContent(_scCurrentTab);
+}
+
+function _scSwitchMainTab(tab) {
+  _scCurrentTab = tab;
+  // 탭 버튼 스타일 업데이트
+  var btnM = document.getElementById('sc-tab-meetings');
+  var btnP = document.getElementById('sc-tab-members');
+  if (btnM) {
+    btnM.style.borderBottomColor = tab === 'meetings' ? '#7C3AED' : 'transparent';
+    btnM.style.color = tab === 'meetings' ? '#7C3AED' : '#64748B';
+  }
+  if (btnP) {
+    btnP.style.borderBottomColor = tab === 'members' ? '#7C3AED' : 'transparent';
+    btnP.style.color = tab === 'members' ? '#7C3AED' : '#64748B';
+  }
+  _scLoadTabContent(tab);
+}
+
+function _scLoadTabContent(tab) {
+  var area = document.getElementById('sc-tab-content');
+  if (!area) return;
+  area.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;padding:48px"><i class="fas fa-spinner fa-spin" style="color:#7C3AED;font-size:24px"></i></div>';
+  if (tab === 'meetings') {
+    _scFetch('/api/safety-committee/meetings').then(function(r){ return r.json(); }).then(function(res) {
+      var meetings = Array.isArray(res) ? res : (res.data || []);
+      _scRenderMeetingListInTab(area, meetings);
+    }).catch(function(e) {
+      area.innerHTML = '<p style="color:#EF4444;padding:16px"><i class="fas fa-exclamation-circle" style="margin-right:6px"></i>회의록 로드 실패: ' + e.message + '</p>';
+    });
+  } else {
+    Promise.all([
+      _scFetch('/api/safety-committee/members').then(function(r){ return r.json(); }),
+      _scFetch('/api/users?active=1').then(function(r){ return r.json(); })
+    ]).then(function(results) {
+      var members  = Array.isArray(results[0]) ? results[0] : (results[0].data || []);
+      var allUsers = Array.isArray(results[1]) ? results[1] : (results[1].data || []);
+      _scRenderMembersInTab(area, members, allUsers);
+    }).catch(function(e) {
+      area.innerHTML = '<p style="color:#EF4444;padding:16px"><i class="fas fa-exclamation-circle" style="margin-right:6px"></i>위원 로드 실패: ' + e.message + '</p>';
+    });
+  }
+}
+
+// 회의록 탭 내용 렌더 (통합 페이지 전용 — 헤더/통계/법령 포함)
+function _scRenderMeetingListInTab(container, meetings) {
+  // 통계
+  var totalMeetings  = meetings.length;
+  var confirmedCount = 0;
+  var nowYear  = new Date().getFullYear();
+  var nowQ     = Math.ceil((new Date().getMonth() + 1) / 3);
+  var thisQCount = 0;
+  var regularCount = 0;
+  var extraCount   = 0;
+  for (var si = 0; si < meetings.length; si++) {
+    var sm = meetings[si];
+    if (sm.confirmed === 1 || sm.confirmed === true) confirmedCount++;
+    if (sm.meeting_type === 'regular') regularCount++;
+    else if (sm.meeting_type === 'extraordinary') extraCount++;
+    if (sm.held_date) {
+      var hy = parseInt((sm.held_date || '').substring(0,4), 10);
+      var hm = parseInt((sm.held_date || '').substring(5,7), 10);
+      var hq = Math.ceil(hm / 3);
+      if (hy === nowYear && hq === nowQ) thisQCount++;
+    }
+  }
+  // 연도 옵션
+  var yearOpts = '<option value="">전체 연도</option>';
+  for (var y = nowYear + 1; y >= nowYear - 3; y--) {
+    yearOpts += '<option value="' + y + '"' + (y === nowYear ? ' selected' : '') + '>' + y + '년</option>';
+  }
+  // 회의 카드
+  var listHtml = '';
+  if (meetings.length === 0) {
+    listHtml = '<div style="text-align:center;padding:48px 20px;color:#9CA3AF">' +
+      '<i class="fas fa-landmark" style="font-size:36px;margin-bottom:12px;display:block;color:#D1D5DB"></i>' +
+      '<p style="font-size:15px;font-weight:600;margin:0 0 8px;color:#6B7280">등록된 회의록이 없습니다</p>' +
+      '<button onclick="_scCreateMeeting()" style="margin-top:12px;padding:9px 20px;background:#7C3AED;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer"><i class="fas fa-plus" style="margin-right:6px"></i>첫 번째 회의 생성</button>' +
+    '</div>';
+  } else {
+    for (var i = 0; i < meetings.length; i++) {
+      listHtml += _scBuildMeetingCard(meetings[i]);
+    }
+  }
+
+  container.innerHTML =
+    // 액션 버튼
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
+      '<button onclick="_scCreateMeeting()" style="display:flex;align-items:center;gap:6px;padding:9px 18px;background:#7C3AED;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(124,58,237,.25)">' +
+        '<i class="fas fa-plus"></i>회의 생성' +
+      '</button>' +
+    '</div>' +
+    // 통계 카드
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px">' +
+      '<div style="background:#fff;border-radius:14px;padding:14px 16px;border:1.5px solid #E5E7EB;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
+        '<div style="font-size:11px;color:#64748B;margin-bottom:6px"><i class="fas fa-landmark" style="color:#7C3AED;margin-right:4px"></i>전체 회의</div>' +
+        '<div style="font-size:26px;font-weight:800;color:#7C3AED">' + totalMeetings + '</div>' +
+      '</div>' +
+      '<div style="background:#fff;border-radius:14px;padding:14px 16px;border:1.5px solid #DDD6FE;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
+        '<div style="font-size:11px;color:#64748B;margin-bottom:6px"><i class="fas fa-calendar-check" style="color:#6D28D9;margin-right:4px"></i>' + nowQ + '분기</div>' +
+        '<div style="font-size:26px;font-weight:800;color:#6D28D9">' + thisQCount + '</div>' +
+      '</div>' +
+      '<div style="background:#fff;border-radius:14px;padding:14px 16px;border:1.5px solid #A7F3D0;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
+        '<div style="font-size:11px;color:#64748B;margin-bottom:6px"><i class="fas fa-check-double" style="color:#059669;margin-right:4px"></i>확정 완료</div>' +
+        '<div style="font-size:26px;font-weight:800;color:#059669">' + confirmedCount + '</div>' +
+      '</div>' +
+      '<div style="background:#fff;border-radius:14px;padding:14px 16px;border:1.5px solid #FDE68A;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
+        '<div style="font-size:11px;color:#64748B;margin-bottom:6px"><i class="fas fa-calendar-alt" style="color:#D97706;margin-right:4px"></i>정기/임시</div>' +
+        '<div style="font-size:22px;font-weight:800;color:#D97706">' + regularCount + '<span style="font-size:13px;color:#9CA3AF"> / ' + extraCount + '</span></div>' +
+      '</div>' +
+    '</div>' +
+    // 필터
+    '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">' +
+      '<select id="sc-meeting-year" onchange="_scFilterMeetings()" style="border:1.5px solid #E5E7EB;border-radius:9px;padding:8px 12px;font-size:13px;color:#374151;background:#fff">' + yearOpts + '</select>' +
+      '<select id="sc-meeting-quarter" onchange="_scFilterMeetings()" style="border:1.5px solid #E5E7EB;border-radius:9px;padding:8px 12px;font-size:13px;color:#374151;background:#fff">' +
+        '<option value="">전체 분기</option>' +
+        '<option value="1">1분기 (1~3월)</option>' +
+        '<option value="2">2분기 (4~6월)</option>' +
+        '<option value="3">3분기 (7~9월)</option>' +
+        '<option value="4">4분기 (10~12월)</option>' +
+      '</select>' +
+      '<select id="sc-meeting-type" onchange="_scFilterMeetings()" style="border:1.5px solid #E5E7EB;border-radius:9px;padding:8px 12px;font-size:13px;color:#374151;background:#fff">' +
+        '<option value="">전체 유형</option>' +
+        '<option value="regular">정기</option>' +
+        '<option value="extraordinary">임시</option>' +
+        '<option value="written">서면</option>' +
+      '</select>' +
+    '</div>' +
+    // 법령 카드
+    '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:12px;padding:12px 16px;margin-bottom:14px">' +
+      '<div style="display:flex;align-items:center;margin-bottom:4px">' +
+        '<i class="fas fa-balance-scale" style="color:#D97706;margin-right:8px;font-size:13px"></i>' +
+        '<span style="font-size:12px;font-weight:700;color:#92400E">산업안전보건법 제24조 — 회의 개최 의무 (분기 1회, 3년 보존)</span>' +
+      '</div>' +
+    '</div>' +
+    // 회의 목록
+    '<div id="sc-meeting-list" data-meetings=\'' + JSON.stringify(meetings).replace(/'/g, "&#39;") + '\'>' +
+      listHtml +
+    '</div>';
+}
+
+// 위원 탭 내용 렌더 (통합 페이지 전용)
+function _scRenderMembersInTab(container, members, allUsers) {
+  var memberUserIds = {};
+  for (var i = 0; i < members.length; i++) { memberUserIds[members[i].user_id] = true; }
+  var available = [];
+  for (var j = 0; j < allUsers.length; j++) {
+    if (!memberUserIds[allUsers[j].id]) available.push(allUsers[j]);
+  }
+  var totalCount    = members.length;
+  var employerCount = 0;
+  var workerCount   = 0;
+  var activeCount   = 0;
+  for (var si = 0; si < members.length; si++) {
+    if (members[si].side === 'employer') employerCount++;
+    else workerCount++;
+    if (members[si].is_active) activeCount++;
+  }
+  var balanced = (employerCount === workerCount && totalCount > 0);
+  var balanceBadge = balanced
+    ? '<span style="background:#D1FAE5;color:#065F46;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700"><i class="fas fa-check-circle" style="margin-right:3px"></i>동수 충족</span>'
+    : '<span style="background:#FEF3C7;color:#92400E;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700"><i class="fas fa-exclamation-triangle" style="margin-right:3px"></i>동수 불일치</span>';
+
+  var userOpts = '<option value="">-- 사용자 선택 --</option>';
+  for (var n = 0; n < available.length; n++) {
+    userOpts += '<option value="' + available[n].id + '">' + available[n].name + ' (' + (available[n].team_name || '') + ')</option>';
+  }
+
+  var cards = '';
+  if (members.length === 0) {
+    cards = '<div style="text-align:center;padding:40px 20px;color:#9CA3AF">' +
+      '<i class="fas fa-users" style="font-size:32px;margin-bottom:12px;display:block;color:#D1D5DB"></i>' +
+      '<p style="font-size:14px;font-weight:600;margin:0 0 6px;color:#6B7280">등록된 위원이 없습니다</p>' +
+      '<button onclick="_scShowAddMemberForm()" style="margin-top:12px;padding:9px 20px;background:#7C3AED;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer"><i class="fas fa-user-plus" style="margin-right:6px"></i>위원 추가</button>' +
+    '</div>';
+  } else {
+    for (var k = 0; k < members.length; k++) {
+      var m = members[k];
+      var sideLabel = m.side === 'employer' ? '사용자측' : '근로자측';
+      var sideBg    = m.side === 'employer' ? '#EDE9F8' : '#D1FAE5';
+      var sideBdr   = m.side === 'employer' ? '#C4B5FD' : '#6EE7B7';
+      var roleLabel = m.role_type === 'chair' ? '위원장' : m.role_type === 'vice_chair' ? '부위원장' : m.role_type === 'secretary' ? '간사' : '위원';
+      var roleIcon  = m.role_type === 'chair' ? 'fa-crown' : m.role_type === 'vice_chair' ? 'fa-user-tie' : m.role_type === 'secretary' ? 'fa-clipboard' : 'fa-user';
+      var roleIconCol = m.role_type === 'chair' ? '#F59E0B' : '#7C3AED';
+      var displayTitle = m.custom_title || roleLabel;
+      var isActive = m.is_active !== 0 && m.is_active !== false;
+      var statusBadge = isActive
+        ? '<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">재직중</span>'
+        : '<span style="background:#F3F4F6;color:#9CA3AF;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">해제됨</span>';
+      var appointedStr = (m.appointed_at || '').substring(0, 10);
+      cards +=
+        '<div style="background:#fff;border-radius:14px;border:1.5px solid ' + sideBdr + ';padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.04);transition:box-shadow .15s" ' +
+          'onmouseover="this.style.boxShadow=\'0 4px 16px rgba(124,58,237,.12)\'" ' +
+          'onmouseout="this.style.boxShadow=\'0 1px 4px rgba(0,0,0,.04)\'">' +
+          '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">' +
+            '<div style="display:flex;align-items:center;gap:10px">' +
+              '<div style="width:44px;height:44px;border-radius:50%;background:' + sideBg + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+                '<i class="fas ' + roleIcon + '" style="font-size:17px;color:' + roleIconCol + '"></i>' +
+              '</div>' +
+              '<div>' +
+                '<div style="font-weight:700;font-size:14px;color:#1E293B">' + (m.user_name || '') + '</div>' +
+                '<div style="font-size:12px;color:#7C3AED;font-weight:600">' + displayTitle + '</div>' +
+              '</div>' +
+            '</div>' +
+            '<span style="background:' + sideBg + ';color:' + (m.side === 'employer' ? '#4E3A63' : '#065F46') + ';padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700">' + sideLabel + '</span>' +
+          '</div>' +
+          '<div style="border-top:1px solid #F3F4F6;padding-top:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
+            '<div style="display:flex;align-items:center;gap:8px">' +
+              (appointedStr ? '<span style="font-size:11px;color:#64748B"><i class="fas fa-calendar-check" style="margin-right:3px;color:#A78BFA"></i>' + appointedStr + '</span>' : '') +
+              statusBadge +
+            '</div>' +
+            '<div style="display:flex;gap:6px">' +
+              '<button data-mid="' + m.id + '" data-name="' + (m.user_name || '') + '" data-title="' + (m.custom_title || '') + '" data-side="' + (m.side || 'employer') + '" onclick="_scEditMemberCard(this)" style="padding:4px 10px;border:1.5px solid #DDD6FE;border-radius:7px;font-size:11px;font-weight:600;color:#7C3AED;cursor:pointer;background:#F5F3FF">수정</button>' +
+              '<button data-mid="' + m.id + '" onclick="_scDeleteMember(this)" style="padding:4px 10px;border:1.5px solid #FCA5A5;border-radius:7px;font-size:11px;font-weight:600;color:#EF4444;cursor:pointer;background:#FFF5F5">해제</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+  }
+
+  container.innerHTML =
+    // 액션 버튼
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
+      '<button onclick="_scShowAddMemberForm()" style="display:flex;align-items:center;gap:6px;padding:9px 18px;background:#7C3AED;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(124,58,237,.25)">' +
+        '<i class="fas fa-user-plus"></i>위원 추가' +
+      '</button>' +
+    '</div>' +
+    // 통계
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px">' +
+      '<div style="background:#fff;border-radius:14px;padding:14px 16px;border:1.5px solid #E5E7EB">' +
+        '<div style="font-size:11px;color:#64748B;margin-bottom:6px"><i class="fas fa-users" style="color:#7C3AED;margin-right:4px"></i>전체 위원</div>' +
+        '<div style="font-size:26px;font-weight:800;color:#7C3AED">' + totalCount + '</div>' +
+        '<div style="font-size:11px;color:#9CA3AF">재직 ' + activeCount + '명</div>' +
+      '</div>' +
+      '<div style="background:#fff;border-radius:14px;padding:14px 16px;border:1.5px solid #DDD6FE">' +
+        '<div style="font-size:11px;color:#64748B;margin-bottom:6px"><i class="fas fa-user-tie" style="color:#6D28D9;margin-right:4px"></i>사용자측</div>' +
+        '<div style="font-size:26px;font-weight:800;color:#6D28D9">' + employerCount + '</div>' +
+      '</div>' +
+      '<div style="background:#fff;border-radius:14px;padding:14px 16px;border:1.5px solid #A7F3D0">' +
+        '<div style="font-size:11px;color:#64748B;margin-bottom:6px"><i class="fas fa-hard-hat" style="color:#059669;margin-right:4px"></i>근로자측</div>' +
+        '<div style="font-size:26px;font-weight:800;color:#059669">' + workerCount + '</div>' +
+      '</div>' +
+      '<div style="background:#fff;border-radius:14px;padding:14px 16px;border:1.5px solid #E5E7EB;display:flex;flex-direction:column;justify-content:center">' +
+        '<div style="font-size:11px;color:#64748B;margin-bottom:8px"><i class="fas fa-balance-scale" style="color:#F59E0B;margin-right:4px"></i>구성 현황</div>' +
+        balanceBadge +
+      '</div>' +
+    '</div>' +
+    // 법령 카드
+    '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:12px;padding:12px 16px;margin-bottom:14px">' +
+      '<div style="display:flex;align-items:center;margin-bottom:4px">' +
+        '<i class="fas fa-balance-scale" style="color:#D97706;margin-right:8px;font-size:13px"></i>' +
+        '<span style="font-size:12px;font-weight:700;color:#92400E">시행령 제35조 — 사용자측·근로자측 동수 구성 필수 (미이행 시 과태료 500만원)</span>' +
+      '</div>' +
+    '</div>' +
+    // 위원 추가 폼 (토글)
+    '<div id="sc-add-member-form" style="display:none;background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:14px;padding:16px;margin-bottom:14px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+        '<h3 style="font-size:14px;font-weight:700;color:#4E3A63;margin:0"><i class="fas fa-user-plus" style="margin-right:6px;color:#7C3AED"></i>신규 위원 추가</h3>' +
+        '<button onclick="_scHideAddMemberForm()" style="background:none;border:none;color:#9CA3AF;cursor:pointer;font-size:16px">✕</button>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px">' +
+        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">사용자 선택 *</label>' +
+          '<select id="sc-m-user" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;background:#fff">' + userOpts + '</select></div>' +
+        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">구분 *</label>' +
+          '<select id="sc-m-side" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;background:#fff">' +
+            '<option value="employer">사용자측</option><option value="worker">근로자측</option>' +
+          '</select></div>' +
+        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">직책 유형</label>' +
+          '<select id="sc-m-role" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;background:#fff">' +
+            '<option value="member">위원</option><option value="chair">위원장</option><option value="vice_chair">부위원장</option><option value="secretary">간사</option>' +
+          '</select></div>' +
+        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">직책 표시명</label>' +
+          '<input id="sc-m-title" type="text" placeholder="예: 안전보건관리책임자" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;box-sizing:border-box;background:#fff"></div>' +
+        '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">임명일</label>' +
+          '<input id="sc-m-date" type="date" style="width:100%;padding:8px;border:1.5px solid #C4BAD4;border-radius:8px;font-size:13px;box-sizing:border-box;background:#fff"></div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px">' +
+        '<button onclick="_scSubmitAddMember()" style="padding:8px 22px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer"><i class="fas fa-save" style="margin-right:5px"></i>등록</button>' +
+        '<button onclick="_scHideAddMemberForm()" style="padding:8px 16px;background:#fff;color:#64748B;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;cursor:pointer">취소</button>' +
+      '</div>' +
+    '</div>' +
+    // 위원 카드 그리드
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px">' +
+      cards +
+    '</div>';
+}
+
+// 회의 카드 빌더 (탭 버전)
+function _scBuildMeetingCard(m) {
+  var typeLabel = m.meeting_type === 'regular' ? '정기' : m.meeting_type === 'extraordinary' ? '임시' : '서면';
+  var typeBg    = m.meeting_type === 'regular'  ? '#EDE9F8' : m.meeting_type === 'extraordinary' ? '#FEF3C7' : '#D1FAE5';
+  var typeCol   = m.meeting_type === 'regular'  ? '#4E3A63' : m.meeting_type === 'extraordinary' ? '#92400E' : '#065F46';
+  var typeBdr   = m.meeting_type === 'regular'  ? '#C4B5FD' : m.meeting_type === 'extraordinary' ? '#FCD34D' : '#6EE7B7';
+  var isConfirmed = m.confirmed === 1 || m.confirmed === true;
+  var confirmBadge = isConfirmed
+    ? '<span style="background:#D1FAE5;color:#065F46;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700"><i class="fas fa-check-circle" style="margin-right:3px"></i>확정</span>'
+    : '<span style="background:#FEF3C7;color:#92400E;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700"><i class="fas fa-clock" style="margin-right:3px"></i>초안</span>';
+  var summaryStr = m.summary ? (m.summary.length > 60 ? m.summary.substring(0,60) + '...' : m.summary) : '';
+  var heldDateStr = (m.held_date || '').substring(0, 10);
+  return '<div style="background:#fff;border-radius:14px;border:1.5px solid ' + typeBdr + ';padding:14px;cursor:pointer;transition:all .15s;box-shadow:0 1px 4px rgba(0,0,0,.04);margin-bottom:10px" ' +
+    'data-mid="' + m.id + '" onclick="_scOpenMeeting(this)" ' +
+    'onmouseover="this.style.boxShadow=\'0 4px 16px rgba(124,58,237,.12)\';this.style.borderColor=\'#A78BFA\'" ' +
+    'onmouseout="this.style.boxShadow=\'0 1px 4px rgba(0,0,0,.04)\';this.style.borderColor=\'' + typeBdr + '\'">' +
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
+      '<div style="display:flex;align-items:flex-start;gap:10px;flex:1;min-width:0">' +
+        '<div style="width:42px;height:42px;border-radius:11px;background:' + typeBg + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+          '<i class="fas fa-landmark" style="color:#7C3AED;font-size:16px"></i>' +
+        '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:700;font-size:14px;color:#1E293B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (m.title || '회의') + '</div>' +
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:3px">' +
+            '<span style="font-size:12px;color:#64748B"><i class="fas fa-calendar-alt" style="margin-right:3px;color:#A78BFA"></i>' + heldDateStr + '</span>' +
+            (m.location ? '<span style="font-size:12px;color:#64748B"><i class="fas fa-map-marker-alt" style="margin-right:3px;color:#A78BFA"></i>' + m.location + '</span>' : '') +
+          '</div>' +
+          (summaryStr ? '<p style="font-size:12px;color:#94A3B8;margin:4px 0 0;line-height:1.4">' + summaryStr + '</p>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0">' +
+        '<span style="background:' + typeBg + ';color:' + typeCol + ';padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700">' + typeLabel + '</span>' +
+        confirmBadge +
+      '</div>' +
+    '</div>' +
+    '<div style="border-top:1px solid #F3F4F6;margin-top:10px;padding-top:8px;display:flex;align-items:center;justify-content:flex-end">' +
+      '<span style="font-size:11px;color:#94A3B8">클릭하여 상세보기 <i class="fas fa-chevron-right" style="font-size:10px;margin-left:2px"></i></span>' +
+    '</div>' +
+  '</div>';
+}
+
+// 카드 방식 위원 수정 버튼 핸들러 (data-* 활용, RULE-003 준수)
+function _scEditMemberCard(btn) {
+  var mid      = btn.getAttribute('data-mid');
+  var name     = btn.getAttribute('data-name') || '';
+  var curTitle = btn.getAttribute('data-title') || '';
+  var curSide  = btn.getAttribute('data-side') || 'employer';
+  var newTitle = prompt(name + '의 직책 표시명을 입력하세요:', curTitle);
+  if (newTitle === null) return;
+  var newSide = prompt('구분 입력 (employer=사용자측 / worker=근로자측):', curSide);
+  if (!newSide) return;
+  _scFetch('/api/safety-committee/members/' + mid, {
+    method: 'PATCH',
+    body: JSON.stringify({ custom_title: newTitle, side: newSide })
+  }).then(function(r){ return r.json(); }).then(function() {
+    _scLoadTabContent('members');
+  });
+}
+
+// ─── 위원 관리 페이지 (구버전 — navigateTo('sc-members') 호환) ─────────────
 function renderSafetyCommitteeMembersPage(container) {
   container.innerHTML = '<div class="flex items-center justify-center h-40"><i class="fas fa-spinner fa-spin text-purple-500 text-2xl"></i></div>';
   Promise.all([
@@ -47486,7 +47863,7 @@ function _scSubmitAddMember() {
     body: JSON.stringify({ user_id: parseInt(userId), side: side, role_type: role, custom_title: title, appointed_at: date })
   }).then(function(r){ return r.json(); }).then(function(res) {
     if (res.ok || res.id) {
-      renderSafetyCommitteeMembersPage(document.getElementById('main-content'));
+      _scLoadTabContent('members');
     } else {
       alert('등록 실패: ' + (res.error || JSON.stringify(res)));
     }
@@ -47495,15 +47872,15 @@ function _scSubmitAddMember() {
 
 function _scEditMember(btn) {
   var mid = btn.getAttribute('data-mid');
-  var row = btn.closest('tr');
-  var nameEl = row.querySelector('td:first-child div div:first-child');
-  var name = nameEl ? nameEl.textContent : '';
-  var newTitle = prompt(name + '의 직책 커스텀명을 입력하세요:', '');
+  var name = btn.getAttribute('data-name') || '';
+  var curTitle = btn.getAttribute('data-title') || '';
+  var curSide  = btn.getAttribute('data-side')  || 'employer';
+  var newTitle = prompt(name + '의 직책 커스텀명을 입력하세요:', curTitle);
   if (newTitle === null) return;
-  var newSide = prompt('구분 입력 (employer / worker):', 'employer');
+  var newSide = prompt('구분 입력 (employer / worker):', curSide);
   if (!newSide) return;
   _scFetch('/api/safety-committee/members/' + mid, { method: 'PATCH', body: JSON.stringify({ custom_title: newTitle, side: newSide }) }).then(function(r){ return r.json(); }).then(function() {
-    renderSafetyCommitteeMembersPage(document.getElementById('main-content'));
+    _scLoadTabContent('members');
   });
 }
 
@@ -47511,7 +47888,7 @@ function _scDeleteMember(btn) {
   var mid = btn.getAttribute('data-mid');
   if (!confirm('해당 위원을 해제하시겠습니까?')) return;
   _scFetch('/api/safety-committee/members/' + mid, { method: 'DELETE' })
-    .then(function(){ renderSafetyCommitteeMembersPage(document.getElementById('main-content')); });
+    .then(function(){ _scLoadTabContent('members'); });
 }
 
 // ─── 회의록 목록 페이지 ────────────────────────────────────────────────────────
@@ -47851,7 +48228,7 @@ function _scSubmitCreateMeeting() {
         _scCurrentMeetingId = res.id;
         renderSCMeetingDetail(document.getElementById('main-content'), res.id);
       } else {
-        renderSafetyCommitteePage(document.getElementById('main-content'));
+        _scLoadTabContent('meetings');
       }
     } else {
       alert('생성 실패: ' + (res.error || JSON.stringify(res)));
@@ -47878,7 +48255,7 @@ function _scRenderDetailShell(container, meeting) {
   container.innerHTML =
     '<div style="max-width:960px;margin:0 auto;padding:16px">' +
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
-        '<button onclick="renderSafetyCommitteePage(document.getElementById(\'main-content\'))" style="background:none;border:none;color:#7C3AED;cursor:pointer;font-size:13px;padding:4px 8px"><i class="fas fa-arrow-left" style="margin-right:4px"></i>목록</button>' +
+        '<button onclick="_scSwitchMainTab(\'meetings\')" style="background:none;border:none;color:#7C3AED;cursor:pointer;font-size:13px;padding:4px 8px"><i class="fas fa-arrow-left" style="margin-right:4px"></i>목록</button>' +
         '<div style="flex:1">' +
           '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
             '<h2 style="font-size:17px;font-weight:700;color:#1E293B;margin:0">' + (meeting.title || '회의') + '</h2>' +
@@ -48029,7 +48406,7 @@ function _scConfirmMeeting(mid) {
 function _scDeleteMeeting(mid) {
   if (!confirm('회의록을 삭제하시겠습니까? 모든 안건·참석자·사진·자료가 함께 삭제됩니다.')) return;
   _scFetch('/api/safety-committee/meetings/' + mid, { method: 'DELETE' })
-    .then(function(){ renderSafetyCommitteePage(document.getElementById('main-content')); });
+    .then(function(){ _scSwitchMainTab('meetings'); });
 }
 
 // ─ 탭2: 안건 ─────────────────────────────────────────────────────────────────

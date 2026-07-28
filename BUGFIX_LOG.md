@@ -5,6 +5,44 @@
 
 ---
 
+## [FEAT-180] 산업안전보건위원회 500 에러 수정 + 탭 통합 UI (세션 101)
+
+### 문제
+1. **500 Internal Server Error**: `/api/safety-committee/meetings` 및 `/api/safety-committee/members` 500 에러
+2. **화면 분리**: "회의록 관리"와 "위원 관리"가 별도 페이지로 분리되어 탭 이동 불가
+
+### 원인
+1. `safety-committee.ts`가 DB 실제 컬럼명과 다른 이름을 사용:
+   - `meeting_date` (없는 컬럼) → 실제: `held_date`
+   - `meeting_place` (없는 컬럼) → 실제: `location`
+   - `status` TEXT 'draft'/'confirmed' → 실제: `confirmed` INTEGER (0/1)
+   - `member_role`, `custom_role_label` → 실제: `role_type`, `custom_title`, `side`
+2. `year`/`quarter` 필터에 없는 컬럼(`m.year`, `m.quarter`) 직접 참조
+
+### 해결
+**`safety-committee.ts` 수정 (이전 세션에서 완료)**:
+- `GET /meetings`: `substr(m.held_date,1,4)` / `substr(m.held_date,6,2)` 방식으로 연도/분기 필터
+- `POST /meetings`: `held_date`, `meeting_type`, `location`, `summary` 사용
+- `PATCH /meetings/:id`: `held_date`, `location`, `confirmed` INTEGER 사용
+- `POST/PATCH /members`: `role_type`, `custom_title`, `side` 사용
+- `POST /attendees`: `role_type`, `custom_title`, `side`, `signature_data` 사용
+- vote check: `meeting?.confirmed === 1` (INTEGER 비교)
+
+**`app.js` 탭 통합 UI**:
+- `navigateTo` switch: `renderSCMainPage(content, tab)` 단일 진입점으로 변경
+- `renderSCMainPage` / `_scSwitchMainTab` / `_scLoadTabContent` 신규 추가
+- `_scRenderMeetingListInTab` / `_scRenderMembersInTab` 탭 내 렌더 함수 신규 추가
+- `_scBuildMeetingCard` / `_scEditMemberCard` 카드 빌더 헬퍼 신규 추가
+- 구버전 콜백 교체: `renderSafetyCommitteeMembersPage(...)` → `_scLoadTabContent('members')`
+- 구버전 콜백 교체: `renderSafetyCommitteePage(...)` → `_scSwitchMainTab('meetings')` / `_scLoadTabContent('meetings')`
+- `_scEditMember`: tr 기반 → data-* 속성 방식 (RULE-003 준수)
+
+### 영향 범위
+- `src/nas-routes/safety-committee.ts`
+- `public/static/app.js`
+
+---
+
 ## [FEAT-179] 산업안전보건위원회 UI 개선 + 401 인증 수정 (세션 100)
 
 ### 문제

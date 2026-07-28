@@ -86,24 +86,24 @@ app.post('/members', async (c) => {
     return c.json({ error: '권한 없음' }, 403)
 
   const body = await c.req.json().catch(() => ({})) as any
-  const { user_id, member_role, custom_role_label, appointed_at, note, sort_order } = body
+  // app.js 필드명: user_id, side, role_type, custom_title, appointed_at
+  const { user_id, side, role_type, custom_title, appointed_at } = body
 
-  if (!member_role)
-    return c.json({ error: 'member_role 필수' }, 400)
+  if (!user_id)
+    return c.json({ error: 'user_id 필수' }, 400)
 
   const info = rawDb.prepare(`
     INSERT INTO safety_committee_members
-      (user_id, member_role, custom_role_label, appointed_at, note, sort_order, is_active)
-    VALUES (?, ?, ?, ?, ?, ?, 1)
+      (user_id, role_type, custom_title, side, appointed_at, is_active)
+    VALUES (?, ?, ?, ?, ?, 1)
   `).run(
-    user_id ? Number(user_id) : null,
-    member_role,
-    custom_role_label || null,
-    appointed_at || null,
-    note || null,
-    sort_order != null ? Number(sort_order) : 0
+    Number(user_id),
+    role_type || 'member',
+    custom_title || null,
+    side || 'employer',
+    appointed_at || null
   )
-  return c.json({ success: true, id: info.lastInsertRowid })
+  return c.json({ ok: true, id: info.lastInsertRowid })
 })
 
 // PATCH /api/safety-committee/members/:id
@@ -116,29 +116,26 @@ app.patch('/members/:id', async (c) => {
 
   const id   = Number(c.req.param('id'))
   const body = await c.req.json().catch(() => ({})) as any
-  const { user_id, member_role, custom_role_label, appointed_at, note, sort_order, is_active } = body
+  // app.js 필드명: side, role_type, custom_title, appointed_at, is_active
+  const { side, role_type, custom_title, appointed_at, is_active } = body
 
   rawDb.prepare(`
     UPDATE safety_committee_members SET
-      user_id           = COALESCE(?, user_id),
-      member_role       = COALESCE(?, member_role),
-      custom_role_label = ?,
-      appointed_at      = COALESCE(?, appointed_at),
-      note              = COALESCE(?, note),
-      sort_order        = COALESCE(?, sort_order),
-      is_active         = COALESCE(?, is_active)
+      role_type    = COALESCE(?, role_type),
+      custom_title = COALESCE(?, custom_title),
+      side         = COALESCE(?, side),
+      appointed_at = COALESCE(?, appointed_at),
+      is_active    = COALESCE(?, is_active)
     WHERE id = ?
   `).run(
-    user_id != null ? Number(user_id) : null,
-    member_role || null,
-    custom_role_label != null ? custom_role_label : undefined,
+    role_type    || null,
+    custom_title != null ? custom_title : null,
+    side         || null,
     appointed_at || null,
-    note || null,
-    sort_order != null ? Number(sort_order) : null,
     is_active != null ? Number(is_active) : null,
     id
   )
-  return c.json({ success: true })
+  return c.json({ ok: true })
 })
 
 // DELETE /api/safety-committee/members/:id
@@ -165,24 +162,29 @@ app.get('/meetings', async (c) => {
   const year    = c.req.query('year')    || ''
   const quarter = c.req.query('quarter') || ''
 
+  // DB 컬럼: held_date (TEXT), meeting_type, confirmed
   let where = 'WHERE 1=1'
   const params: (string | number)[] = []
-  if (year)    { where += ' AND m.year = ?';    params.push(Number(year)) }
-  if (quarter) { where += ' AND m.quarter = ?'; params.push(Number(quarter)) }
+  if (year)    { where += " AND substr(m.held_date,1,4) = ?"; params.push(String(year)) }
+  if (quarter) {
+    const q = Number(quarter)
+    // quarter 1→월1~3, 2→4~6, 3→7~9, 4→10~12
+    const mStart = String((q - 1) * 3 + 1).padStart(2, '0')
+    const mEnd   = String(q * 3).padStart(2, '0')
+    where += ` AND substr(m.held_date,6,2) >= ? AND substr(m.held_date,6,2) <= ?`
+    params.push(mStart, mEnd)
+  }
 
   const rows = rawDb.prepare(`
     SELECT m.*,
            u.name as created_by_name,
-           chair.name as chairperson_name,
            (SELECT COUNT(*) FROM safety_committee_attendees WHERE meeting_id = m.id) as attendee_count,
-           (SELECT COUNT(*) FROM safety_committee_attendees WHERE meeting_id = m.id AND sign_data IS NOT NULL) as signed_count,
-           (SELECT COUNT(*) FROM safety_committee_agendas WHERE meeting_id = m.id) as agenda_count,
-           (SELECT COUNT(*) FROM safety_committee_docs WHERE meeting_id = m.id) as doc_count
+           (SELECT COUNT(*) FROM safety_committee_agendas   WHERE meeting_id = m.id) as agenda_count,
+           (SELECT COUNT(*) FROM safety_committee_docs      WHERE meeting_id = m.id) as doc_count
     FROM safety_committee_meetings m
     LEFT JOIN users u ON u.id = m.created_by
-    LEFT JOIN users chair ON chair.id = m.chairperson_id
     ${where}
-    ORDER BY m.meeting_date DESC
+    ORDER BY m.held_date DESC
   `).all(...params)
   return c.json(rows)
 })
@@ -196,27 +198,25 @@ app.post('/meetings', async (c) => {
     return c.json({ error: '권한 없음' }, 403)
 
   const body = await c.req.json().catch(() => ({})) as any
-  const { title, meeting_date, meeting_place, year, quarter, chairperson_id, agenda_summary, note } = body
+  // app.js 필드명: title, held_date, meeting_type, location, summary
+  const { title, held_date, meeting_type, location, summary } = body
 
-  if (!title || !meeting_date)
-    return c.json({ error: 'title, meeting_date 필수' }, 400)
+  if (!title || !held_date)
+    return c.json({ error: 'title, held_date 필수' }, 400)
 
   const info = rawDb.prepare(`
     INSERT INTO safety_committee_meetings
-      (title, meeting_date, meeting_place, year, quarter, chairperson_id,
-       agenda_summary, note, status, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+      (title, held_date, meeting_type, location, summary, confirmed, created_by)
+    VALUES (?, ?, ?, ?, ?, 0, ?)
   `).run(
-    title, meeting_date,
-    meeting_place || null,
-    year    ? Number(year)    : null,
-    quarter ? Number(quarter) : null,
-    chairperson_id ? Number(chairperson_id) : null,
-    agenda_summary || null,
-    note || null,
+    title,
+    held_date,
+    meeting_type || 'regular',
+    location || '',
+    summary  || '',
     user.id
   )
-  return c.json({ success: true, id: info.lastInsertRowid })
+  return c.json({ ok: true, id: info.lastInsertRowid })
 })
 
 // GET /api/safety-committee/meetings/:id
@@ -227,10 +227,9 @@ app.get('/meetings/:id', async (c) => {
 
   const id = Number(c.req.param('id'))
   const meeting: any = rawDb.prepare(`
-    SELECT m.*, u.name as created_by_name, chair.name as chairperson_name
+    SELECT m.*, u.name as created_by_name
     FROM safety_committee_meetings m
-    LEFT JOIN users u    ON u.id    = m.created_by
-    LEFT JOIN users chair ON chair.id = m.chairperson_id
+    LEFT JOIN users u ON u.id = m.created_by
     WHERE m.id = ?
   `).get(id)
   if (!meeting) return c.json({ error: '회의 없음' }, 404)
@@ -284,27 +283,29 @@ app.patch('/meetings/:id', async (c) => {
 
   const id   = Number(c.req.param('id'))
   const body = await c.req.json().catch(() => ({})) as any
-  const { title, meeting_date, meeting_place, year, quarter, chairperson_id,
-          agenda_summary, note, status } = body
+  // app.js 필드명: title, held_date, meeting_type, location, summary, confirmed, legal_items
+  const { title, held_date, meeting_type, location, summary, confirmed, legal_items } = body
 
   rawDb.prepare(`
     UPDATE safety_committee_meetings SET
-      title           = COALESCE(?, title),
-      meeting_date    = COALESCE(?, meeting_date),
-      meeting_place   = COALESCE(?, meeting_place),
-      year            = COALESCE(?, year),
-      quarter         = COALESCE(?, quarter),
-      chairperson_id  = COALESCE(?, chairperson_id),
-      agenda_summary  = COALESCE(?, agenda_summary),
-      note            = COALESCE(?, note),
-      status          = COALESCE(?, status)
+      title        = COALESCE(?, title),
+      held_date    = COALESCE(?, held_date),
+      meeting_type = COALESCE(?, meeting_type),
+      location     = COALESCE(?, location),
+      summary      = COALESCE(?, summary),
+      confirmed    = COALESCE(?, confirmed),
+      legal_items  = COALESCE(?, legal_items),
+      updated_at   = datetime('now','localtime')
     WHERE id = ?
   `).run(
-    title || null, meeting_date || null, meeting_place || null,
-    year    ? Number(year)    : null,
-    quarter ? Number(quarter) : null,
-    chairperson_id ? Number(chairperson_id) : null,
-    agenda_summary || null, note || null, status || null, id
+    title        || null,
+    held_date    || null,
+    meeting_type || null,
+    location     != null ? location     : null,
+    summary      != null ? summary      : null,
+    confirmed    != null ? Number(confirmed) : null,
+    legal_items  != null ? legal_items  : null,
+    id
   )
 
   // 안건 일괄 저장 (있을 경우)
@@ -372,7 +373,8 @@ app.post('/meetings/:id/attendees', async (c) => {
 
   const meetingId = Number(c.req.param('id'))
   const body = await c.req.json().catch(() => ({})) as any
-  const { user_id, name, role_label, is_chair } = body
+  // DB 컬럼: user_id, name, role_type, custom_title, side
+  const { user_id, name, role_type, custom_title, side } = body
 
   if (!name && !user_id)
     return c.json({ error: 'user_id 또는 name 필수' }, 400)
@@ -387,16 +389,17 @@ app.post('/meetings/:id/attendees', async (c) => {
 
   const info = rawDb.prepare(`
     INSERT INTO safety_committee_attendees
-      (meeting_id, user_id, name, role_label, is_chair)
-    VALUES (?, ?, ?, ?, ?)
+      (meeting_id, user_id, name, role_type, custom_title, side)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(
     meetingId,
     user_id ? Number(user_id) : null,
     name || null,
-    role_label || null,
-    is_chair ? 1 : 0
+    role_type    || 'member',
+    custom_title || null,
+    side         || 'employer'
   )
-  return c.json({ success: true, id: info.lastInsertRowid })
+  return c.json({ ok: true, id: info.lastInsertRowid })
 })
 
 // DELETE /api/safety-committee/meetings/:id/attendees/:aid
@@ -431,7 +434,7 @@ app.patch('/meetings/:id/attendees/:aid/sign', async (c) => {
 
   rawDb.prepare(`
     UPDATE safety_committee_attendees
-    SET sign_data = ?, signed_at = CURRENT_TIMESTAMP
+    SET signature_data = ?, signed_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(sign_data || null, aid)
   return c.json({ success: true })
@@ -457,8 +460,8 @@ app.post('/agendas/:agendaId/vote', async (c) => {
   if (!agenda.vote_enabled) return c.json({ error: '이 안건은 투표가 비활성화됨' }, 400)
 
   // 회의 상태 확인 — confirmed 이면 투표 마감
-  const meeting: any = rawDb.prepare(`SELECT status FROM safety_committee_meetings WHERE id=?`).get(agenda.meeting_id)
-  if (meeting?.status === 'confirmed')
+  const meeting: any = rawDb.prepare(`SELECT confirmed FROM safety_committee_meetings WHERE id=?`).get(agenda.meeting_id)
+  if (meeting?.confirmed === 1)
     return c.json({ error: '확정된 회의는 투표 변경 불가' }, 409)
 
   // UPSERT (기존 투표 변경 허용)

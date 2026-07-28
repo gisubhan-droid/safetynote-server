@@ -43251,6 +43251,45 @@ function _renderCableIncomingUI(container, items, initialTab) {
       '</button>' +
     '</div>' +
 
+    // ── [FEAT-통일] 공통 4탭 기간 필터 바 (3개 탭 전체 공유) ────
+    '<div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center mb-2" id="ci-filter-bar">' +
+      '<input type="hidden" id="ci-period-mode" value="' + _ciPeriod + '">' +
+      '<div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;flex-shrink:0">' +
+        [['yearly','년간'],['quarterly','분기별'],['monthly','월간'],['weekly','주간']].map(function(pair){
+          var p=pair[0], lbl=pair[1];
+          return '<button id="ci-tab-'+p+'" onclick="window._ciSetPeriod(\''+p+'\')"' +
+            ' style="padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;' +
+            'background:'+(p===_ciPeriod?'#685182':'#fff')+';color:'+(p===_ciPeriod?'#fff':'#6B7280')+';transition:all .15s">'+lbl+'</button>';
+        }).join('') +
+      '</div>' +
+      // 연도
+      '<select id="ci-period-year" onchange="window._ciApplyFilter()" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">' +
+        _ciYears.map(function(y){ return '<option value="'+y+'" '+(_ciYear===y?'selected':'')+'>'+y+'년</option>'; }).join('') +
+      '</select>' +
+      // 분기 (분기별 전용)
+      '<select id="ci-period-quarter" onchange="window._ciApplyFilter()" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none" style="display:' + (_ciPeriod==='quarterly'?'':'none') + '">' +
+        [1,2,3,4].map(function(q){ return '<option value="'+q+'" '+(_ciQuarter===q?'selected':'')+'>Q'+q+' ('+((q-1)*3+1)+'~'+(q*3)+'월)</option>'; }).join('') +
+      '</select>' +
+      // 월 (월간 전용)
+      '<input type="month" id="ci-period-month" value="'+_ciMonth+'" onchange="window._ciApplyFilter()"' +
+        ' style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;display:'+(_ciPeriod==='monthly'?'':'none')+'">' +
+      // 주간 이동 (주간 전용)
+      '<input type="hidden" id="ci-week-start" value="'+_ciWkStart+'">' +
+      '<div id="ci-week-nav" style="display:'+(_ciPeriod==='weekly'?'flex':'none')+';align-items:center;gap:6px">' +
+        '<button onclick="window._ciWeekShift(-1)" style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8249;</button>' +
+        '<span id="ci-week-label" style="font-size:12px;color:#374151;font-weight:600;white-space:nowrap">' +
+          (function(){ var d=new Date(_ciWkStart); var e=new Date(d); e.setDate(d.getDate()+6); return (d.getMonth()+1)+'/'+d.getDate()+' ~ '+(e.getMonth()+1)+'/'+e.getDate(); })() +
+        '</span>' +
+        '<button onclick="window._ciWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>' +
+      '</div>' +
+      '<button onclick="window._ciApplyFilter()" class="bg-blue-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-blue-600">' +
+        '<i class="fas fa-search mr-1"></i>조회' +
+      '</button>' +
+      '<button onclick="_downloadCableIncomingCSV()" class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">' +
+        '<i class="fas fa-file-excel mr-1"></i>엑셀' +
+      '</button>' +
+    '</div>' +
+
     // ── 탭 ───────────────────────────────────────────────────
     '<div class="flex gap-2 border-b border-gray-200 mb-0" id="ci-tabs">' +
       '<button class="ci-tab-btn ' + (_ciInitTab==='in-summary' ? 'ci-tab-active px-4 py-2 text-sm font-semibold border-b-2 border-blue-500 text-blue-600' : 'px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-blue-500') + '" data-tab="in-summary" onclick="_ciSwitchTab(this,\'in-summary\')"><i class="fas fa-chart-bar mr-1"></i>입고 현황</button>' +
@@ -43263,7 +43302,7 @@ function _renderCableIncomingUI(container, items, initialTab) {
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
           '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-chart-bar text-blue-400 mr-2"></i>제조사/규격/종류/자산구분별 입고 현황</span>' +
-          '<span class="text-xs text-gray-400">총 ' + inSummary.length + '개 항목</span>' +
+          '<span class="text-xs text-gray-400" id="ci-in-summary-count">총 ' + inSummary.length + '개 항목</span>' +
         '</div>' +
         '<div class="overflow-x-auto">' +
           '<table class="w-full text-sm">' +
@@ -43297,7 +43336,7 @@ function _renderCableIncomingUI(container, items, initialTab) {
     '<div id="ci-panel-hold-summary" class="ci-panel' + (_ciInitTab==='hold-summary' ? '' : ' hidden') + '">' +
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
-          '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-boxes text-green-400 mr-2"></i>제조사/규격/종류/자산구분별 보유 현황 <span class="text-xs text-gray-400">(입고량 − 사용량)</span></span>' +
+          '<span class="text-sm font-semibold text-gray-700"><i class="fas fa-boxes text-green-400 mr-2"></i>제조사/규격/종류/자산구분별 보유 현황 <span class="text-xs text-gray-400">(입고량 − 사용량 · 전체 누적 기준)</span></span>' +
           '<button onclick="_loadCableHoldingSummary()" class="text-xs text-blue-500 hover:underline"><i class="fas fa-sync-alt mr-1"></i>새로고침</button>' +
         '</div>' +
         '<div class="overflow-x-auto">' +
@@ -43319,46 +43358,8 @@ function _renderCableIncomingUI(container, items, initialTab) {
       '</div>' +
     '</div>' +
 
-    // ── 탭 패널: 날짜별 입고내역 (4탭 기간 필터 포함) ───────────
+    // ── 탭 패널: 날짜별 입고내역 ──────────────────────────────
     '<div id="ci-panel-in-list" class="ci-panel' + (_ciInitTab==='in-list' ? '' : ' hidden') + '">' +
-      // 4탭 필터 바
-      '<div class="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex gap-2 flex-wrap items-center mb-3">' +
-        '<input type="hidden" id="ci-period-mode" value="' + _ciPeriod + '">' +
-        '<div style="display:flex;gap:0;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;flex-shrink:0">' +
-          [['yearly','년간'],['quarterly','분기별'],['monthly','월간'],['weekly','주간']].map(function(pair){
-            var p=pair[0], lbl=pair[1];
-            return '<button id="ci-tab-'+p+'" onclick="window._ciSetPeriod(\''+p+'\')"' +
-              ' style="padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;' +
-              'background:'+(p===_ciPeriod?'#685182':'#fff')+';color:'+(p===_ciPeriod?'#fff':'#6B7280')+';transition:all .15s">'+lbl+'</button>';
-          }).join('') +
-        '</div>' +
-        // 연도
-        '<select id="ci-period-year" onchange="window._ciApplyFilter()" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none">' +
-          _ciYears.map(function(y){ return '<option value="'+y+'" '+(_ciYear===y?'selected':'')+'>'+y+'년</option>'; }).join('') +
-        '</select>' +
-        // 분기 (분기별 전용)
-        '<select id="ci-period-quarter" onchange="window._ciApplyFilter()" class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none" style="display:' + (_ciPeriod==='quarterly'?'':'none') + '">' +
-          [1,2,3,4].map(function(q){ return '<option value="'+q+'" '+(_ciQuarter===q?'selected':'')+'>Q'+q+' ('+((q-1)*3+1)+'~'+(q*3)+'월)</option>'; }).join('') +
-        '</select>' +
-        // 월 (월간 전용)
-        '<input type="month" id="ci-period-month" value="'+_ciMonth+'" onchange="window._ciApplyFilter()"' +
-          ' style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;display:'+(_ciPeriod==='monthly'?'':'none')+'">' +
-        // 주간 이동 (주간 전용)
-        '<input type="hidden" id="ci-week-start" value="'+_ciWkStart+'">' +
-        '<div id="ci-week-nav" style="display:'+(_ciPeriod==='weekly'?'flex':'none')+';align-items:center;gap:6px">' +
-          '<button onclick="window._ciWeekShift(-1)" style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8249;</button>' +
-          '<span id="ci-week-label" style="font-size:12px;color:#374151;font-weight:600;white-space:nowrap">' +
-            (function(){ var d=new Date(_ciWkStart); var e=new Date(d); e.setDate(d.getDate()+6); return (d.getMonth()+1)+'/'+d.getDate()+' ~ '+(e.getMonth()+1)+'/'+e.getDate(); })() +
-          '</span>' +
-          '<button onclick="window._ciWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>' +
-        '</div>' +
-        '<button onclick="window._ciApplyFilter()" class="bg-blue-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-blue-600">' +
-          '<i class="fas fa-search mr-1"></i>조회' +
-        '</button>' +
-        '<button onclick="_downloadCableIncomingCSV()" class="bg-green-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-green-600">' +
-          '<i class="fas fa-file-excel mr-1"></i>엑셀' +
-        '</button>' +
-      '</div>' +
       // 결과 테이블
       '<div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">' +
         '<div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">' +
@@ -43494,37 +43495,68 @@ function _renderCableIncomingUI(container, items, initialTab) {
       ? all.filter(function(it) { return it.in_date >= from && it.in_date <= to; })
       : all;
 
+    // ── ① 날짜별 입고내역 탭 갱신 ─────────────────────────────
     // 건수 표시 갱신
     var cntEl = document.getElementById('ci-list-count');
     if (cntEl) cntEl.textContent = '총 ' + filtered.length + '건';
 
     // tbody 갱신
     var tbody = document.getElementById('ci-list-tbody');
-    if (!tbody) return;
-    if (filtered.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-gray-400">해당 기간 입고 내역이 없습니다</td></tr>';
-      return;
+    if (tbody) {
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-gray-400">해당 기간 입고 내역이 없습니다</td></tr>';
+      } else {
+        tbody.innerHTML = filtered.map(function(it) {
+          var assetBadge = it.asset_type
+            ? '<span class="px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs">' + it.asset_type + '</span>'
+            : '<span class="text-gray-300 text-xs">-</span>';
+          return '<tr class="border-t border-gray-100 hover:bg-indigo-50">' +
+            '<td class="px-3 py-2 text-center text-xs font-mono">' + (it.in_date||'-') + '</td>' +
+            '<td class="px-3 py-2 text-center text-xs">' + (it.lot_no||'-') + '</td>' +
+            '<td class="px-3 py-2 text-center">' + (it.spec||'-') + '</td>' +
+            '<td class="px-3 py-2 text-center">' + (it.maker||'-') + '</td>' +
+            '<td class="px-3 py-2 text-center">' + (it.mfg_year||'-') + '</td>' +
+            '<td class="px-3 py-2 text-center">' + (it.cable_kind||'-') + '</td>' +
+            '<td class="px-3 py-2 text-center bg-teal-50">' + assetBadge + '</td>' +
+            '<td class="px-3 py-2 text-right font-semibold text-blue-600">' + (it.qty_m||0).toLocaleString() + 'M</td>' +
+            '<td class="px-3 py-2 text-center text-xs text-gray-500">' + (it.remark||'') + '</td>' +
+            '<td class="px-3 py-2 text-center whitespace-nowrap">' +
+              '<button onclick="_editCableIncoming(' + it.id + ')" class="text-blue-300 hover:text-blue-600 text-xs px-1 mr-1" title="수정"><i class="fas fa-edit"></i></button>' +
+              '<button onclick="_deleteCableIncoming(' + it.id + ')" class="text-red-300 hover:text-red-500 text-xs px-1" title="삭제"><i class="fas fa-trash"></i></button>' +
+            '</td>' +
+          '</tr>';
+        }).join('');
+      }
     }
-    tbody.innerHTML = filtered.map(function(it) {
-      var assetBadge = it.asset_type
-        ? '<span class="px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs">' + it.asset_type + '</span>'
-        : '<span class="text-gray-300 text-xs">-</span>';
-      return '<tr class="border-t border-gray-100 hover:bg-indigo-50">' +
-        '<td class="px-3 py-2 text-center text-xs font-mono">' + (it.in_date||'-') + '</td>' +
-        '<td class="px-3 py-2 text-center text-xs">' + (it.lot_no||'-') + '</td>' +
-        '<td class="px-3 py-2 text-center">' + (it.spec||'-') + '</td>' +
-        '<td class="px-3 py-2 text-center">' + (it.maker||'-') + '</td>' +
-        '<td class="px-3 py-2 text-center">' + (it.mfg_year||'-') + '</td>' +
-        '<td class="px-3 py-2 text-center">' + (it.cable_kind||'-') + '</td>' +
-        '<td class="px-3 py-2 text-center bg-teal-50">' + assetBadge + '</td>' +
-        '<td class="px-3 py-2 text-right font-semibold text-blue-600">' + (it.qty_m||0).toLocaleString() + 'M</td>' +
-        '<td class="px-3 py-2 text-center text-xs text-gray-500">' + (it.remark||'') + '</td>' +
-        '<td class="px-3 py-2 text-center whitespace-nowrap">' +
-          '<button onclick="_editCableIncoming(' + it.id + ')" class="text-blue-300 hover:text-blue-600 text-xs px-1 mr-1" title="수정"><i class="fas fa-edit"></i></button>' +
-          '<button onclick="_deleteCableIncoming(' + it.id + ')" class="text-red-300 hover:text-red-500 text-xs px-1" title="삭제"><i class="fas fa-trash"></i></button>' +
-        '</td>' +
-      '</tr>';
-    }).join('');
+
+    // ── ② 입고 현황 탭 재집계 갱신 ────────────────────────────
+    var inSumBody = document.getElementById('ci-in-summary-body');
+    var inSumCnt  = document.getElementById('ci-in-summary-count');
+    if (inSumBody) {
+      var inMap2 = {};
+      filtered.forEach(function(it) {
+        var k = (it.maker||'-') + '|' + (it.spec||'-') + '|' + (it.cable_kind||'-') + '|' + (it.asset_type||'-');
+        if (!inMap2[k]) inMap2[k] = { maker: it.maker||'-', spec: it.spec||'-', kind: it.cable_kind||'-', asset_type: it.asset_type||'-', qty: 0 };
+        inMap2[k].qty += (it.qty_m || 0);
+      });
+      var inSummary2 = Object.values(inMap2).sort(function(a,b){
+        return (a.maker+a.spec+a.kind+a.asset_type).localeCompare(b.maker+b.spec+b.kind+b.asset_type);
+      });
+      if (inSumCnt) inSumCnt.textContent = '총 ' + inSummary2.length + '개 항목';
+      if (inSummary2.length === 0) {
+        inSumBody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-400">해당 기간 입고 데이터가 없습니다</td></tr>';
+      } else {
+        inSumBody.innerHTML = inSummary2.map(function(r) {
+          return '<tr class="border-t border-gray-100 hover:bg-blue-50">' +
+            '<td class="px-4 py-2 text-center">' + r.maker + '</td>' +
+            '<td class="px-4 py-2 text-center">' + r.spec + '</td>' +
+            '<td class="px-4 py-2 text-center">' + r.kind + '</td>' +
+            '<td class="px-4 py-2 text-center">' + (r.asset_type||'-') + '</td>' +
+            '<td class="px-4 py-2 text-right font-semibold text-blue-600">' + (r.qty||0).toLocaleString() + 'M</td>' +
+          '</tr>';
+        }).join('');
+      }
+    }
   };
 }
 

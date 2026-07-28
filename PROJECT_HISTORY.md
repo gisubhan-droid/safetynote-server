@@ -1,7 +1,7 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
 > 최종 업데이트: 2026-07-28 (세션 104 — [BUG-185b-v2] 위험성평가 서명 500 근본 원인(FK 제약) 수정)
-> **GitHub 최신 (safetynote-server): `TBD`** — fix: [BUG-185b-v2] risk_assessment_signatures FK 제약 제거 + POST /risk/signatures 핸들러 재작성
+> **GitHub 최신 (safetynote-server): `49f3bd8`** — fix: [BUG-185b-v2] risk_assessment_signatures FK 제약 제거 + POST /risk/signatures 핸들러 재작성
 > **이전 커밋 (safetynote-server): `3db29f1`** — fix: [BUG-183] SC 회의록 삭제 무반응 + 출력 빈칸 2종 수정
 > **이전 커밋 (safetynote-server): `40978c9`** — fix: [BUG-182b-v2] /meeting 단수 경로 호환을 node-server.ts 레벨로 이동
 > **이전 커밋 (safetynote-server): `586022c`** — fix: [BUG-182b] 회의 상세 500 에러 — /meeting 단수 경로 호환 라우트 추가

@@ -296,14 +296,14 @@ const MENU_DEFINITIONS = [
   { id:'dashboard',        label:'작업현황',         icon:'fas fa-tasks',             group:'메인' },
   { id:'tasks',            label:'작업관리',         icon:'fas fa-clipboard-list',    group:'메인' },
   { id:'inspections',      label:'현장점검',         icon:'fas fa-search',            group:'메인' },
-  { id:'risk-periodic',    label:'정기 위험성평가',   icon:'fas fa-calendar-check',    group:'위험성평가' },
-  { id:'risk-adhoc',       label:'수시 위험성평가',   icon:'fas fa-bolt',              group:'위험성평가' },
-  { id:'risk-manage',      label:'항목관리',              icon:'fas fa-folder-open',       group:'항목관리' },
+  { id:'risk-periodic',    label:'정기 위험성평가',   icon:'fas fa-calendar-check',    group:'안전관리' },
+  { id:'risk-adhoc',       label:'수시 위험성평가',   icon:'fas fa-bolt',              group:'안전관리' },
+  { id:'risk-manage',      label:'항목관리',              icon:'fas fa-folder-open',       group:'안전관리' },
   { id:'hazards',          label:'위험(아차사고)신고',    icon:'fas fa-exclamation-triangle',group:'안전' },
-  { id:'work-stops',       label:'작업중지현황',         icon:'fas fa-hand-paper',           group:'안전' },
+  { id:'work-stops',       label:'작업중지현황',         icon:'fas fa-hand-paper',           group:'안전점검' },
   { id:'stats-task',          label:'작업통계',            icon:'fas fa-tasks',              group:'안전현황' },
-  { id:'stats-inspection',    label:'현장점검 통계',       icon:'fas fa-clipboard-check',    group:'안전현황' },
-  { id:'stats-worker-safety', label:'근로자 안전준수 현황', icon:'fas fa-user-shield',         group:'안전현황' },
+  { id:'stats-inspection',    label:'현장점검 통계',       icon:'fas fa-clipboard-check',    group:'안전점검' },
+  { id:'stats-worker-safety', label:'근로자 안전준수 현황', icon:'fas fa-user-shield',         group:'안전점검' },
   { id:'users',            label:'업무중사용자',       icon:'fas fa-id-badge',          group:'사용자관리' },
   { id:'suspended-users',  label:'업무중지사용자',         icon:'fas fa-user-slash',        group:'사용자관리' },
   { id:'sys-user-mgmt',    label:'계정관리',    icon:'fas fa-user-shield',       group:'사용자관리' },
@@ -2309,23 +2309,19 @@ function renderApp() {
     {
       id: 'safety', icon: 'fas fa-shield-alt', label: '안전점검', color: '#f87171',
       items: [
+        { id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
+          { id:'stats-inspection',    icon:'fas fa-clipboard-check', label:'현장점검 통계' },
+          { id:'stats-worker-safety', icon:'fas fa-user-shield',     label:'근로자 안전준수 현황' },
+          { id:'work-stops',          icon:'fas fa-hand-paper',      label:'작업중지현황' },
+        ]},
         { id:'inspections', icon:'fas fa-search',               label:'현장점검' },
         { id:'hazards',     icon:'fas fa-exclamation-triangle', label:'위험신고' },
-        { id:'risk', icon:'fas fa-shield-alt', label:'위험성평가', children: [
-          { id:'risk-periodic',   icon:'fas fa-calendar-check', label:'정기 위험성평가' },
-          { id:'risk-adhoc',      icon:'fas fa-bolt',           label:'수시 위험성평가' },
-        ]},
-        { id:'risk-manage', icon:'fas fa-folder-open', label:'항목관리' },
       ]
     },
     {
       id: 'edu', icon: 'fas fa-clipboard-check', label: '안전관리', color: '#a78bfa',
       items: [
-        { id:'stats', icon:'fas fa-chart-bar', label:'안전현황', children: [
-          { id:'stats-inspection',    icon:'fas fa-clipboard-check',label:'현장점검 통계' },
-          { id:'stats-worker-safety', icon:'fas fa-user-shield',    label:'근로자 안전준수 현황' },
-          { id:'work-stops',          icon:'fas fa-hand-paper',     label:'작업중지현황' },
-        ]},
+        { id:'sign-requests', icon:'fas fa-pen-fancy',      label:'서명요청' },
         { id:'edu', icon:'fas fa-graduation-cap', label:'안전교육', children: [
           { id:'edu-periodic',   icon:'fas fa-chalkboard-teacher', label:'정기안전교육' },
           { id:'edu-hire',       icon:'fas fa-user-plus',          label:'채용시안전교육' },
@@ -2334,8 +2330,12 @@ function renderApp() {
           { id:'edu-supervisor', icon:'fas fa-user-tie',           label:'관리감독자교육' },
           { id:'edu-stats',      icon:'fas fa-chart-bar',          label:'교육현황통계' },
         ]},
-        { id:'sign-requests', icon:'fas fa-pen-fancy', label:'서명요청' },
-        { id:'sc-meetings',  icon:'fas fa-landmark', label:'산업안전보건위원회' },
+        { id:'sc-meetings',  icon:'fas fa-landmark',        label:'산업안전보건위원회' },
+        { id:'risk', icon:'fas fa-shield-alt', label:'위험성평가', children: [
+          { id:'risk-periodic', icon:'fas fa-calendar-check', label:'정기 위험성평가' },
+          { id:'risk-adhoc',    icon:'fas fa-bolt',           label:'수시 위험성평가' },
+        ]},
+        { id:'risk-manage', icon:'fas fa-folder-open', label:'항목관리' },
       ]
     },
     {

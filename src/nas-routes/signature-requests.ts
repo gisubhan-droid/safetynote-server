@@ -119,17 +119,33 @@ app.post('/bulk', async (c) => {
     return c.json({ error: '필수 필드 누락' }, 400)
 
   const stmt = rawDb.prepare(`
-    INSERT OR IGNORE INTO signature_requests (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id, expires_at)
+    INSERT INTO signature_requests (ref_type, ref_id, ref_sub_type, title, description, requester_id, target_user_id, expires_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `)
+  // [BUG-FIX] risk_assessment의 경우 이미 실제 서명(risk_assessment_signatures)한 사용자 목록 취득
+  let actuallySignedUserIds = new Set<number>()
+  if (ref_type === 'risk_assessment') {
+    try {
+      const rasSigned: any[] = rawDb.prepare(
+        `SELECT DISTINCT user_id FROM risk_assessment_signatures WHERE assessment_id=?`
+      ).all(Number(ref_id))
+      rasSigned.forEach((r: any) => actuallySignedUserIds.add(Number(r.user_id)))
+    } catch(_) { /* 테이블 없으면 무시 */ }
+  }
+
+  const newlyNotifiedUids: number[] = []
   const insert = rawDb.transaction(() => {
     let created = 0
     for (const uid of target_user_ids) {
+      // [BUG-FIX] 이미 실제 서명한 사용자는 중복 요청 생성 완전 차단
+      if (actuallySignedUserIds.has(Number(uid))) continue
+
       const existing: any = rawDb.prepare(
         `SELECT id FROM signature_requests WHERE ref_type=? AND ref_id=? AND ref_sub_type IS ? AND target_user_id=? AND status='pending'`
       ).get(ref_type, Number(ref_id), ref_sub_type || null, Number(uid))
       if (!existing) {
         stmt.run(ref_type, Number(ref_id), ref_sub_type || null, title, description || null, user.id, Number(uid), expires_at || null)
+        newlyNotifiedUids.push(Number(uid))
         created++
       }
     }
@@ -137,8 +153,10 @@ app.post('/bulk', async (c) => {
   })
   const created = insert()
 
-  for (const uid of target_user_ids) {
-    sendToUser(Number(uid), {
+  // [BUG-FIX] 새로 생성된 요청(newlyNotifiedUids)에게만 SSE/FCM 발송 (기존 pending 중복 알림 방지)
+  const notifyUids = newlyNotifiedUids.length > 0 ? newlyNotifiedUids : []
+  for (const uid of notifyUids) {
+    sendToUser(uid, {
       type: 'sign_request',
       title, description: description || '',
       requester: user.name, ref_type,
@@ -146,11 +164,13 @@ app.post('/bulk', async (c) => {
       ts: Date.now()
     })
   }
-  sendFcmToUsers(target_user_ids.map(Number), {
-    title: `[서명 요청] ${title}`,
-    body: `${user.name}님이 서명을 요청했습니다`,
-    data: { type: 'sign_request', ref_type, ref_id: String(ref_id) }
-  }).catch(() => {})
+  if (notifyUids.length > 0) {
+    sendFcmToUsers(notifyUids, {
+      title: `[서명 요청] ${title}`,
+      body: `${user.name}님이 서명을 요청했습니다`,
+      data: { type: 'sign_request', ref_type, ref_id: String(ref_id) }
+    }).catch(() => {})
+  }
   return c.json({ success: true, created })
 })
 
@@ -168,9 +188,13 @@ app.patch('/:id/sign', async (c) => {
 
   const body = await c.req.json().catch(() => ({})) as any
   const signData = body.sign_data || null
+  // [BUG-FIX] 중복 pending 레코드 일괄 처리:
+  // 같은 ref_type + ref_id + target_user_id 조합으로 중복 발송된 pending 요청을 모두 signed로 갱신
   rawDb.prepare(`
-    UPDATE signature_requests SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP WHERE id=?
-  `).run(signData, id)
+    UPDATE signature_requests
+    SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP
+    WHERE ref_type=? AND ref_id=? AND target_user_id=? AND status='pending'
+  `).run(signData, req.ref_type, req.ref_id, user.id)
 
   try {
     if (req.ref_type === 'tbm') {
@@ -258,19 +282,19 @@ app.patch('/:id/sign', async (c) => {
       // ── 모든 위원 서명 완료 시 자동 평가완료(completed) 전환 ──────────────
       try {
         const raRow: any = rawDb.prepare(`SELECT status FROM risk_assessments WHERE id=?`).get(req.ref_id)
+        // measures_done 상태에서 서명 완료 → completed 자동 전환
         if (raRow && raRow.status === 'measures_done') {
           // 등록된 평가위원 수
           const memberCount: any = rawDb.prepare(
             `SELECT COUNT(*) as cnt FROM risk_assessment_members WHERE assessment_id=?`
           ).get(req.ref_id)
-          // 서명 완료한 위원 수 (pending 서명요청 기준)
+          // [BUG-FIX] 실제 서명된 위원 수: signature_requests(중복 가능) 대신
+          // risk_assessment_signatures(실제 서명 테이블, DISTINCT user_id)로 카운팅
           const signedCount: any = rawDb.prepare(
-            `SELECT COUNT(*) as cnt FROM signature_requests
-             WHERE ref_type='risk_assessment' AND ref_id=? AND status='signed'`
+            `SELECT COUNT(DISTINCT user_id) as cnt FROM risk_assessment_signatures WHERE assessment_id=?`
           ).get(req.ref_id)
           const totalMembers = memberCount?.cnt || 0
-          // 현재 서명(방금 처리된 건 포함)
-          const totalSigned = (signedCount?.cnt || 0)
+          const totalSigned  = signedCount?.cnt  || 0
           if (totalMembers > 0 && totalSigned >= totalMembers) {
             rawDb.prepare(`UPDATE risk_assessments SET status='completed' WHERE id=?`).run(req.ref_id)
           }

@@ -33595,6 +33595,20 @@ function _signReqOpenRisk(riskId) {
   showRiskDetail(Number(riskId));
 }
 
+// ======= 서명요청 내용 보기 헬퍼 (산업안전보건위원회 회의 직접 열기) =======
+function _signReqOpenSc(meetingId) {
+  // sc-meetings 페이지로 이동 후 해당 회의 자동 열기
+  safeNavigateTo('sc-meetings');
+  // 페이지 로드 완료 후 해당 회의 상세 오픈 (renderSCMainPage 비동기 완료 대기)
+  setTimeout(function() {
+    _scCurrentMeetingId = Number(meetingId);
+    var container = _scGetDetailContainer ? _scGetDetailContainer() : document.getElementById('page-content');
+    if (container && typeof renderSCMeetingDetail === 'function') {
+      renderSCMeetingDetail(container, Number(meetingId));
+    }
+  }, 500);
+}
+
 // ======= 서명 요청 페이지 (모든 역할 공통) =======
 // 전역: 처리완료 전체 목록 캐시 (월별 필터링용)
 var _srAllDone = [];
@@ -33821,7 +33835,8 @@ function _srRenderCard(req, isDone, META) {
     var _eduSubType = req.ref_sub_type || 'periodic';
     _viewBtn = '<div style="margin-top:10px"><button onclick="showEduDetailModal(' + req.ref_id + ',\'' + _eduSubType + '\')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 안전교육 내용 보기</button></div>';
   } else if (req.ref_type === 'sc' || req.ref_type === 'sc_vote') {
-    _viewBtn = '<div style="margin-top:10px"><span style="font-size:11px;color:#9CA3AF"><i class="fas fa-building-shield" style="margin-right:4px"></i>산업안전보건위원회 회의 #' + req.ref_id + '</span></div>';
+    // [BUG-FIX] 텍스트만 표시하던 SC 내용보기를 클릭 가능한 버튼으로 개선
+    _viewBtn = '<div style="margin-top:10px"><button onclick="_signReqOpenSc(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 위원회 회의 보기</button></div>';
   }
 
   // 서명/거부/투표 버튼 (미처리만)

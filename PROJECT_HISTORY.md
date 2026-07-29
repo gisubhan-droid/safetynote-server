@@ -11449,3 +11449,36 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | fix: [BUG-EXCEL-2] 엑셀 누락 컬럼 추가 — 작업관리(공사담당자,작업예정일) + 공사현황(시공통보일,완료예정일,시공통보금액) |
+
+---
+
+## 세션 119 (2026-07-29)
+
+### 작업 — FEAT-CABLE-PAGE
+
+#### FEAT-CABLE-PAGE — 광케이블 사용량 케이블 상세 내역 페이지네이션 추가
+
+**요구사항**:
+1. 케이블 상세 내역 페이지당 건수 선택: 15/20/25/50건
+2. 건수 초과 시 작업관리/공사현황 방식 페이지네이션 표시
+3. 엑셀 다운로드: 페이지네이션 무관 전체 데이터 다운로드 유지
+
+**수정 내용 (`public/static/app.js`)**:
+- 전역 `var _cdPage=1`, `var _cdLimit=20` 추가 (RULE-001 준수)
+- 툴바 필터 바에 건수 선택 `<select>` 추가 (15/20/25/50건, 조회 버튼 앞)
+- 케이블 상세 내역 테이블: `id="cd-detail-info"` (건수 표시), `id="cd-detail-tbody"` (페이지 슬라이싱), `id="cd-detail-pager"` (페이저 영역) 추가
+- 초기 렌더: `_cdLimit` 기준 첫 페이지 슬라이싱 (IIFE 방식)
+- `requestAnimationFrame` → `window._cdGoPage()` 호출로 페이저 초기 생성
+- `window._cdGoPage()` 함수 추가: 캐시 슬라이싱, tbody/info/pager DOM 교체, `con-pager` CSS 재사용
+- `downloadCableDetailCSV()`: 주석 보완 (`_cableDetailCache` = 전체 데이터 명시)
+
+**충돌 점검**: `_cdPage/_cdLimit/_cdGoPage` 신규 — 기존 코드 충돌 없음 ✅  
+**규칙 준수**: RULE-001(전역 var) / RULE-003(onclick 따옴표 중첩 금지) ✅
+
+**검증**: `node --check` ✅ + `npm run build` ✅ (296.86 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | feat: [FEAT-CABLE-PAGE] 광케이블 사용량 케이블 상세 내역 페이지네이션 추가 (15/20/25/50건 선택) |

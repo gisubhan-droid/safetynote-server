@@ -7193,3 +7193,54 @@ const limitNum = Math.min(isExport ? 10000 : 500, Math.max(0, parseInt(limitStr 
 ### 검증
 - `node --check public/static/app.js` ✅ 문법 오류 없음
 - `npm run build` ✅ (296.86 kB)
+
+---
+
+## FEAT-CABLE-PAGE — 광케이블 사용량 케이블 상세 내역 페이지네이션 추가
+
+**구현 일시**: 2026-07-29  
+**커밋**: (이번 세션)
+
+### 요구사항
+1. 케이블 상세 내역 — 페이지당 건수 선택 (15/20/25/50건)
+2. 조회 건수 초과 시 작업관리/공사현황 방식 페이지네이션 적용
+3. 엑셀 다운로드 — 페이지네이션과 무관하게 전체 데이터 다운로드 유지
+
+### 수정 내용 — `public/static/app.js`
+
+#### 전역 변수 추가 (RULE-001: var 사용)
+```javascript
+var _cdPage  = 1;   // 케이블 상세 내역 현재 페이지
+var _cdLimit = 20;  // 페이지당 건수 (15/20/25/50)
+```
+
+#### 툴바 건수 선택 select 추가
+- 조회 버튼 앞에 `<select>` 삽입 (15건/20건/25건/50건)
+- `onchange`: `_cdLimit` 갱신 → `_cdPage=1` 리셋 → `window._cdGoPage()` 호출
+
+#### 케이블 상세 내역 테이블 수정
+| 항목 | 변경 내용 |
+|------|-----------|
+| 헤더 건수 표시 | `id="cd-detail-info"` 추가, `총 N건 / start-end건 표시` 동적 갱신 |
+| tbody | `id="cd-detail-tbody"` 추가, 초기 렌더 시 `_cdLimit` 기준 슬라이싱 |
+| 하단 페이저 영역 | `id="cd-detail-pager"` div 추가 |
+| 초기 렌더 후처리 | `requestAnimationFrame` → `window._cdGoPage()` 호출 |
+
+#### `window._cdGoPage()` 함수 추가
+- `_cableDetailCache` 슬라이싱 (서버 재호출 없음)
+- tbody 교체, 헤더 건수 정보 갱신, 페이저 HTML 생성
+- 페이저 스타일: `con-pager` / `con-page-btn` CSS 재사용 (style.css 기존 정의)
+- RULE-003 준수: onclick 내 따옴표 중첩 없이 문자열 연결 방식
+
+#### `downloadCableDetailCSV()` — 변경 없음
+- `_cableDetailCache` = 항상 전체 조회 데이터 → 페이지네이션과 무관하게 전체 다운로드
+
+### 충돌 점검 결과
+- `_cdPage`, `_cdLimit`, `window._cdGoPage` — 기존 코드에 없음 ✅
+- `window._cdSetPeriod`, `window._cdWeekShift` 등 기존 `window._cd*` 이름 충돌 없음 ✅
+- `con-pager` / `con-page-btn` CSS — style.css에 기존 정의 재사용 ✅
+- RULE-001 (전역 var) / RULE-003 (onclick 따옴표 중첩 금지) 준수 ✅
+
+### 검증
+- `node --check public/static/app.js` ✅ 문법 오류 없음
+- `npm run build` ✅ (296.86 kB)

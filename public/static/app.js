@@ -43313,6 +43313,8 @@ function printVolumeStats() {
 // 광케이블 현황 페이지 (물량통계 > 광케이블 현황)
 // ═══════════════════════════════════════════════════════════════
 let _cableDetailCache = [];
+var _cdPage  = 1;   // 케이블 상세 내역 현재 페이지
+var _cdLimit = 20;  // 케이블 상세 내역 페이지당 건수 (15/20/25/50)
 
 async function renderCableDetailPage(container) {
   container.innerHTML = `<div class="page-container"><div class="flex justify-center py-10"><i class="fas fa-spinner fa-spin text-blue-400 text-2xl"></i></div></div>`;
@@ -43468,6 +43470,14 @@ async function renderCableDetailPage(container) {
           <span id="cd-week-label" style="font-size:12px;color:#374151;font-weight:600;white-space:nowrap">${cdWeekRange(savedWkStart)}</span>
           <button onclick="window._cdWeekShift(1)"  style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">&#8250;</button>
         </div>
+        <!-- 페이지당 건수 선택 -->
+        <select onchange="_cdLimit=parseInt(this.value);_cdPage=1;window._cdGoPage&&window._cdGoPage()"
+          style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;color:#374151;cursor:pointer">
+          <option value="15"  ${_cdLimit===15 ?'selected':''}>15건</option>
+          <option value="20"  ${_cdLimit===20 ?'selected':''}>20건</option>
+          <option value="25"  ${_cdLimit===25 ?'selected':''}>25건</option>
+          <option value="50"  ${_cdLimit===50 ?'selected':''}>50건</option>
+        </select>
         <!-- 조회 버튼 -->
         <button onclick="renderCableDetailPage(document.getElementById('page-content'))"
           style="padding:7px 18px;background:#685182;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">
@@ -43576,7 +43586,7 @@ async function renderCableDetailPage(container) {
         <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-2">
             <i class="fas fa-list text-blue-400"></i> 케이블 상세 내역
-            <span class="text-xs text-gray-400 font-normal">(총 ${cables.length}건)</span>
+            <span class="text-xs text-gray-400 font-normal" id="cd-detail-info">(총 ${cables.length}건)</span>
           </h3>
         </div>
         <div class="overflow-x-auto">
@@ -43601,46 +43611,48 @@ async function renderCableDetailPage(container) {
                 <th class="border border-gray-200 px-2 py-2 text-center">일보상태</th>
               </tr>
             </thead>
-            <tbody>
-              ${cables.length === 0
-                ? `<tr><td colspan="16" class="text-center py-8 text-gray-400">데이터 없음</td></tr>`
-                : cables.map(cb => {
-                    const procColor = cb.proc==='신설' ? 'bg-blue-50 text-blue-700'
-                                    : _isRemove(cb.proc) ? 'bg-red-50 text-red-700'  // [FEAT-176]
-                                    : cb.proc==='이설' ? 'bg-purple-50 text-purple-700' : '';
-                    const assetLabel = cb.asset_type || '-';
-                    const assetCls   = cb.asset_type === 'N-1' ? 'bg-teal-100 text-teal-700'
-                                     : cb.asset_type === 'N-2' ? 'bg-orange-100 text-orange-700'
-                                     : 'bg-gray-100 text-gray-400';
-                    const statusLabel = cb.status === 'confirmed' ? '확정'
-                                      : cb.status === 'submitted' ? '제출'
-                                      : cb.status === 'draft'     ? '임시'
-                                      : (cb.status || '-');
-                    const statusCls   = cb.status === 'confirmed' ? 'bg-green-100 text-green-700'
-                                      : cb.status === 'submitted' ? 'bg-blue-100 text-blue-700'
-                                      : cb.status === 'draft'     ? 'bg-gray-100 text-gray-500'
-                                      : '';
-                    return `
-                    <tr class="hover:bg-gray-50 border-b border-gray-100">
-                      <td class="border border-gray-100 px-2 py-1.5 text-center">${(cb.work_date||'').slice(0,10)||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.worker_team||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.request_no||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.work_class||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center font-mono text-xs">${cb.lot_no||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.spec||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.maker||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.mfg_year||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center">${cb.cable_kind||'-'}</td>  <!-- [BUG-176] cable_type→cable_kind -->
-                      <td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded text-xs ${procColor}">${cb.proc||'-'}</span></td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.start_point||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-right">${cb.end_point||'-'}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center bg-teal-50"><span class="px-1.5 py-0.5 rounded-full text-xs ${assetCls}">${assetLabel}</span></td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-right bg-yellow-50 font-semibold">${fmtMZ(cb.usage_m)}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center text-gray-400">${cb.special_note||''}</td>
-                      <td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full text-xs ${statusCls}">${statusLabel}</span></td>
-                    </tr>`;
-                  }).join('')
-              }
+            <tbody id="cd-detail-tbody">
+              ${(function() {
+                // 초기 렌더: _cdPage=1 기준 슬라이싱
+                _cdPage = 1;
+                var _cdInitSlice = cables.slice(0, _cdLimit);
+                if (_cdInitSlice.length === 0) return '<tr><td colspan="16" class="text-center py-8 text-gray-400">데이터 없음</td></tr>';
+                return _cdInitSlice.map(function(cb) {
+                    var procColor = cb.proc==='신설' ? 'bg-blue-50 text-blue-700'
+                                  : (cb.proc==='철거'||cb.proc==='철거(불용)'||cb.proc==='철거(폐기)') ? 'bg-red-50 text-red-700'
+                                  : cb.proc==='이설' ? 'bg-purple-50 text-purple-700' : '';
+                    var assetLabel = cb.asset_type || '-';
+                    var assetCls   = cb.asset_type === 'N-1' ? 'bg-teal-100 text-teal-700'
+                                   : cb.asset_type === 'N-2' ? 'bg-orange-100 text-orange-700'
+                                   : 'bg-gray-100 text-gray-400';
+                    var statusLabel = cb.status === 'confirmed' ? '확정'
+                                    : cb.status === 'submitted' ? '제출'
+                                    : cb.status === 'draft'     ? '임시'
+                                    : (cb.status || '-');
+                    var statusCls   = cb.status === 'confirmed' ? 'bg-green-100 text-green-700'
+                                    : cb.status === 'submitted' ? 'bg-blue-100 text-blue-700'
+                                    : cb.status === 'draft'     ? 'bg-gray-100 text-gray-500'
+                                    : '';
+                    return '<tr class="hover:bg-gray-50 border-b border-gray-100">' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + ((cb.work_date||'').slice(0,10)||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.worker_team||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.request_no||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.work_class||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center font-mono text-xs">' + (cb.lot_no||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.spec||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.maker||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.mfg_year||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.cable_kind||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded text-xs ' + procColor + '">' + (cb.proc||'-') + '</span></td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-right">' + (cb.start_point||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-right">' + (cb.end_point||'-') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center bg-teal-50"><span class="px-1.5 py-0.5 rounded-full text-xs ' + assetCls + '">' + assetLabel + '</span></td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-right bg-yellow-50 font-semibold">' + fmtMZ(cb.usage_m) + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center text-gray-400">' + (cb.special_note||'') + '</td>' +
+                      '<td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full text-xs ' + statusCls + '">' + statusLabel + '</span></td>' +
+                      '</tr>';
+                }).join('');
+              })()}
             </tbody>
             ${cables.length > 0 ? `
             <tfoot>
@@ -43653,9 +43665,13 @@ async function renderCableDetailPage(container) {
             </tfoot>` : ''}
           </table>
         </div>
+        <!-- 케이블 상세 내역 페이지네이션 -->
+        <div id="cd-detail-pager" style="padding:10px 8px 4px"></div>
       </div>
       <p class="text-xs text-gray-400 text-right">* 임시저장 포함 모든 작성 일보의 케이블 내역이 표시됩니다</p>
     </div>`;
+    // 초기 렌더 후 페이저 생성 (DOM이 삽입된 뒤 실행)
+    requestAnimationFrame(function() { if (window._cdGoPage) window._cdGoPage(); });
   } catch(e) {
     container.innerHTML = `<div class="p-4 text-red-500">로드 실패: ${e.message}</div>`;
   }
@@ -43701,6 +43717,111 @@ window._cdWeekShift = function(delta) {
   }
 };
 
+// ─── 케이블 상세 내역 페이지네이션 (캐시 슬라이싱, 서버 재호출 없음) ────────
+window._cdGoPage = function() {
+  var src   = _cableDetailCache || [];
+  var total = src.length;
+  var lim   = _cdLimit || 20;
+  var totalPages = Math.ceil(total / lim) || 1;
+  if (_cdPage > totalPages) _cdPage = totalPages;
+  if (_cdPage < 1)          _cdPage = 1;
+
+  // ── 행 빌더 (RULE-001: var 사용, _isRemove 참조)
+  var _isRm = function(p){ return p==='철거'||p==='철거(불용)'||p==='철거(폐기)'; };
+  var buildRow = function(cb) {
+    var procColor = cb.proc==='신설' ? 'bg-blue-50 text-blue-700'
+                  : _isRm(cb.proc)   ? 'bg-red-50 text-red-700'
+                  : cb.proc==='이설' ? 'bg-purple-50 text-purple-700' : '';
+    var assetLabel = cb.asset_type || '-';
+    var assetCls   = cb.asset_type === 'N-1' ? 'bg-teal-100 text-teal-700'
+                   : cb.asset_type === 'N-2' ? 'bg-orange-100 text-orange-700'
+                   : 'bg-gray-100 text-gray-400';
+    var statusLabel = cb.status === 'confirmed' ? '확정'
+                    : cb.status === 'submitted' ? '제출'
+                    : cb.status === 'draft'     ? '임시'
+                    : (cb.status || '-');
+    var statusCls   = cb.status === 'confirmed' ? 'bg-green-100 text-green-700'
+                    : cb.status === 'submitted' ? 'bg-blue-100 text-blue-700'
+                    : cb.status === 'draft'     ? 'bg-gray-100 text-gray-500'
+                    : '';
+    return '<tr class="hover:bg-gray-50 border-b border-gray-100">' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + ((cb.work_date||'').slice(0,10)||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.worker_team||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.request_no||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.work_class||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center font-mono text-xs">' + (cb.lot_no||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.spec||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.maker||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.mfg_year||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center">' + (cb.cable_kind||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded text-xs ' + procColor + '">' + (cb.proc||'-') + '</span></td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-right">' + (cb.start_point||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-right">' + (cb.end_point||'-') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center bg-teal-50"><span class="px-1.5 py-0.5 rounded-full text-xs ' + assetCls + '">' + assetLabel + '</span></td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-right bg-yellow-50 font-semibold">' + (typeof fmtMZ==='function'?fmtMZ(cb.usage_m):(cb.usage_m||0).toFixed(1)) + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center text-gray-400">' + (cb.special_note||'') + '</td>' +
+      '<td class="border border-gray-100 px-2 py-1.5 text-center"><span class="px-1.5 py-0.5 rounded-full text-xs ' + statusCls + '">' + statusLabel + '</span></td>' +
+      '</tr>';
+  };
+
+  // ── tbody 교체
+  var tbody = document.getElementById('cd-detail-tbody');
+  if (tbody) {
+    var sliced = src.slice((_cdPage - 1) * lim, _cdPage * lim);
+    tbody.innerHTML = sliced.length > 0
+      ? sliced.map(buildRow).join('')
+      : '<tr><td colspan="16" class="text-center py-8 text-gray-400">데이터 없음</td></tr>';
+  }
+
+  // ── 헤더 건수 정보 교체
+  var info = document.getElementById('cd-detail-info');
+  if (info) {
+    var start = ((_cdPage - 1) * lim) + 1;
+    var end   = Math.min(_cdPage * lim, total);
+    info.textContent = total > lim
+      ? '(총 ' + total + '건 / ' + start + '-' + end + '건 표시)'
+      : '(총 ' + total + '건)';
+  }
+
+  // ── 페이저 교체 (con-pager CSS 재사용)
+  var pager = document.getElementById('cd-detail-pager');
+  if (!pager) return;
+  if (total <= lim) { pager.innerHTML = ''; return; }
+
+  var pages = [];
+  if (totalPages <= 7) {
+    for (var i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    var lo = Math.max(2, _cdPage - 2);
+    var hi = Math.min(totalPages - 1, _cdPage + 2);
+    if (lo > 2) pages.push('…');
+    for (var j = lo; j <= hi; j++) pages.push(j);
+    if (hi < totalPages - 1) pages.push('…');
+    pages.push(totalPages);
+  }
+
+  var html = '<div class="con-pager">';
+  // 이전 버튼 — RULE-003: onclick 내 따옴표 중첩 금지 → 문자열 연결
+  html += '<button class="con-page-btn' + (_cdPage <= 1 ? ' disabled' : '') + '" ' +
+    (_cdPage > 1 ? 'onclick="_cdPage=' + (_cdPage - 1) + ';window._cdGoPage()"' : 'disabled') + '>&#8249;</button>';
+  for (var k = 0; k < pages.length; k++) {
+    var p = pages[k];
+    if (p === '…') {
+      html += '<span class="con-pager-ellipsis">…</span>';
+    } else {
+      html += '<button class="con-page-btn' + (p === _cdPage ? ' active' : '') + '" ' +
+        'onclick="_cdPage=' + p + ';window._cdGoPage()">' + p + '</button>';
+    }
+  }
+  // 다음 버튼
+  html += '<button class="con-page-btn' + (_cdPage >= totalPages ? ' disabled' : '') + '" ' +
+    (_cdPage < totalPages ? 'onclick="_cdPage=' + (_cdPage + 1) + ';window._cdGoPage()"' : 'disabled') + '>&#8250;</button>';
+  html += '<span class="con-pager-info">' + _cdPage + ' / ' + totalPages + ' 페이지</span>';
+  html += '</div>';
+  pager.innerHTML = html;
+};
+
 // ─── 광케이블 현황 엑셀 다운로드 ────────────────────────────────────────────
 // ─── 케이블 요약 공정 필터 ───────────────────────────────────────────────────
 function _filterCableSummary() {
@@ -43723,6 +43844,8 @@ function _filterCableSummary() {
   if (emptyMsg) emptyMsg.classList.toggle('hidden', visible > 0);
 }
 
+// [FEAT-CABLE-PAGE] _cableDetailCache = 조회 조건 기준 전체 데이터
+// 페이지네이션과 무관하게 항상 전체 데이터 다운로드
 function downloadCableDetailCSV() {
   if (!_cableDetailCache || _cableDetailCache.length === 0) {
     alert('다운로드할 데이터가 없습니다. 먼저 조회해 주세요.');

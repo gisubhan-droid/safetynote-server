@@ -7155,3 +7155,41 @@ const limitNum = Math.min(isExport ? 10000 : 500, Math.max(0, parseInt(limitStr 
 ### 검증
 - `node --check public/static/app.js` ✅ 문법 오류 없음
 - `npm run build` ✅ (296.86 kB)
+
+---
+
+## BUG-EXCEL-2 — 엑셀 다운로드 누락 컬럼 추가
+
+**구현 일시**: 2026-07-29  
+**커밋**: (이번 세션)
+
+### 문제
+
+1. **작업관리 엑셀**: `공사담당자` 컬럼 누락 / `작업일자` 라벨이 `작업(예정)일`이 아닌 오표기
+2. **공사현황 엑셀**: `시공통보일`, `완료예정일`, `시공통보금액` 컬럼 3개 누락
+
+### 수정 내용 — `public/static/app.js`
+
+#### `downloadTaskListCSV()` — 헤더/rows 수정
+| 항목 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| headers | `'작업일자'` (공사담당자 없음) | `'공사담당자'` 추가, `'작업(예정)일'`로 라벨 수정 |
+| rows | 공사담당자 컬럼 없음 | `t.con_manager_display_name` 추가 |
+
+수정 후 헤더 12개:
+`작업번호, 요청번호, 공사종류, 공사담당자, 작업종류, 상세분류, 공사명, 위험도, 진행단계, 작업(예정)일, 담당자/팀, 작업지시주소`
+
+#### `exportConstructionsExcel()` — 헤더/rows 수정
+| 항목 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| headers | 9개 (`시공통보일`, `완료예정일`, `시공통보금액` 없음) | 3개 추가 → 12개 |
+| rows | 해당 필드 없음 | `c.notification_date`, `c.completion_date`, `c.notification_amount` 추가 |
+
+수정 후 헤더 12개:
+`공사요청번호, 작업번호, 공사명, 작업지시주소, 공사담당자, 공사감독자, 진행상태, 시공통보일, 완료예정일, 시공통보금액, 등록작업건, 작업(완료)`
+
+> `notification_amount` — 숫자형 그대로 출력 (엑셀에서 숫자 서식 적용 가능하도록)
+
+### 검증
+- `node --check public/static/app.js` ✅ 문법 오류 없음
+- `npm run build` ✅ (296.86 kB)

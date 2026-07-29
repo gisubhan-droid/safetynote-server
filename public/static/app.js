@@ -3856,7 +3856,7 @@ function _initTaskColResize() {
 // 공사현황 엑셀 다운로드
 function exportConstructionsExcel(list) {
   const statusLabel = { registered:'등록', in_progress:'진행중', completed:'완료', settlement_requested:'정산요청', settled:'정산완료' };
-  const headers = ['공사요청번호','작업번호','공사명','작업지시주소','공사담당자','공사감독자','진행상태','등록작업건','작업(완료)'];
+  const headers = ['공사요청번호','작업번호','공사명','작업지시주소','공사담당자','공사감독자','진행상태','시공통보일','완료예정일','시공통보금액','등록작업건','작업(완료)'];
   const rows = list.map(c => [
     c.request_no || '',
     c.work_number || '',
@@ -3865,6 +3865,9 @@ function exportConstructionsExcel(list) {
     c.manager_display_name || c.manager_name || '',
     c.supervisor_name || '',
     statusLabel[c.status] || c.status || '',
+    c.notification_date ? c.notification_date.slice(0, 10) : '',
+    c.completion_date ? c.completion_date.slice(0, 10) : '',
+    c.notification_amount != null ? Number(c.notification_amount) : '',
     c.task_total || 0,
     c.task_completed || 0,
   ]);
@@ -7109,8 +7112,8 @@ async function downloadTaskListCSV() {
     }
 
     var headers = [
-      '작업번호', '요청번호', '공사종류', '작업종류', '상세분류', '공사명',
-      '위험도', '진행단계', '작업일자', '담당자/팀', '작업지시주소'
+      '작업번호', '요청번호', '공사종류', '공사담당자', '작업종류', '상세분류', '공사명',
+      '위험도', '진행단계', '작업(예정)일', '담당자/팀', '작업지시주소'
     ];
     var rows = allTasks.map(function(t) {
       // 사용자 표시용 작업번호: work_number(공사번호) + sub_task_number(작업서브번호) 조합
@@ -7130,6 +7133,7 @@ async function downloadTaskListCSV() {
         taskNumStr,
         t.request_no || '',
         t.construction_type || '',
+        t.con_manager_display_name || '',
         wcMap[t.work_class] || t.work_class || '',
         getWorkSubLabel(t.work_class, t.work_sub_class) || '',
         t.title || '',

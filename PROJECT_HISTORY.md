@@ -11425,3 +11425,27 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | fix: [BUG-EXCEL] 작업관리 엑셀 전체 다운로드 — 서버 limit 500 하드캡 해제(export=1) + 작업번호 조합 수정 |
+
+---
+
+## 세션 118 (2026-07-29)
+
+### 작업 — BUG-EXCEL-2
+
+#### BUG-EXCEL-2 — 엑셀 다운로드 누락 컬럼 추가
+
+**문제**:
+1. 작업관리 엑셀: `공사담당자` 컬럼 누락, `작업일자` → `작업(예정)일` 라벨 오표기
+2. 공사현황 엑셀: `시공통보일`, `완료예정일`, `시공통보금액` 3개 컬럼 누락
+
+**수정 내용 (`public/static/app.js`)**:
+- `downloadTaskListCSV()` — headers에 `'공사담당자'` 추가, `'작업(예정)일'` 라벨 수정, rows에 `t.con_manager_display_name` 추가 → 헤더 11 → 12개
+- `exportConstructionsExcel()` — headers에 `'시공통보일'`, `'완료예정일'`, `'시공통보금액'` 추가, rows에 `c.notification_date`, `c.completion_date`, `c.notification_amount` 추가 → 헤더 9 → 12개
+
+**검증**: `node --check` ✅ + `npm run build` ✅ (296.86 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | fix: [BUG-EXCEL-2] 엑셀 누락 컬럼 추가 — 작업관리(공사담당자,작업예정일) + 공사현황(시공통보일,완료예정일,시공통보금액) |

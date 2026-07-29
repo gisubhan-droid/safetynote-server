@@ -6838,3 +6838,78 @@ API.get('/tasks', { params: _taskParams })
 ### 검증
 - `node --check public/static/app.js` ✅
 - `npm run build` ✅ (296.03 kB)
+
+---
+
+## FEAT-194b — 항목관리 3탭 통합 페이지 구현
+
+**커밋**: `d95aa0d`
+**날짜**: 2026-07-29
+
+### 개요
+기존 개별 메뉴로 흩어진 위험유형관리·작업유형관리·부서팀관리를 단일 `renderRiskManagePage()` 함수 기반 3탭 UI로 통합.
+
+### 변경 내역
+| 파일 | 변경 내용 |
+|------|----------|
+| `app.js` | `renderRiskManagePage()` 신규 구현 (3탭: 위험유형/작업유형/부서팀) |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅
+
+---
+
+## FEAT-195 — 메뉴 이동 (위험성평가/항목관리 → 안전관리, 안전현황 → 안전점검 상단)
+
+**커밋**: `8f5eb61`
+**날짜**: 2026-07-29
+
+### 개요
+사이드바 메뉴 배열 재배치: 위험성평가·항목관리를 안전관리 그룹으로 이동, 안전현황을 안전점검 그룹 상단으로 이동.
+
+### 변경 내역
+| 파일 | 변경 내용 |
+|------|----------|
+| `app.js` | 사이드바 배열 순서 재배치 + flat 배열 group 값 갱신 |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅
+
+---
+
+## FEAT-196 — NAS 파일 저장 + 안전건의사항 탭 + 출력 기능
+
+**커밋**: (이번 세션 신규)
+**날짜**: 2026-07-29
+
+### 개요
+1. 위험신고 탭에 **안전건의사항(탭3)** 추가 (`report_type='suggestion'`, 기존 `hazard_reports` 재사용)
+2. 위험신고·아차사고 사진을 **NAS 파일 저장**으로 변경 (base64 inline → multipart 업로드, 레거시 fallback 유지)
+3. 위험신고·아차사고·안전건의사항 **인쇄/PDF 출력** 기능 추가
+
+### 변경 내역
+| 파일 | 변경 내용 |
+|------|----------|
+| `src/nas-routes/hazards-nas.ts` | 신규 생성 — 9개 엔드포인트(신고사진/처리사진/첨부파일 CRUD), 폴더 헬퍼, DB 자동생성 |
+| `src/routes/hazards.ts` | GET /:id 단건 조회 추가, POST에 suggestion 필드 4개 추가 |
+| `node-server.ts` | hazardNasRoutes import + `/api/hazard-reports` 마운트 + patchSchema v0.190/190b |
+| `app.js` | `var _hazardTab`, `renderHazardsPage` 3탭 UI, RULE-003 helper 3개 |
+| `app.js` | `submitHazardReport()` — multipart 사진 업로드 방식으로 교체 (RULE-001) |
+| `app.js` | `showHazardDetail()` — NAS URL + base64 fallback + RULE-003 출력·처리완료 버튼 |
+| `app.js` | `_submitResolveHazard()` — multipart 처리사진 업로드 방식으로 교체 |
+| `app.js` | `showSuggestionForm()` + `_submitSuggestion()` 신규 추가 |
+| `app.js` | `showSuggestionDetail()` + `_suggDetailPrintBtn()` 신규 추가 |
+| `app.js` | `printHazardDetail(id)` + `printSuggestionDetail(id)` 신규 추가 |
+
+### 규칙 준수
+| 규칙 | 처리 |
+|------|------|
+| RULE-001 (var 전용) | 모든 신규/교체 함수에서 `var` 사용 |
+| RULE-002 (NAS 라우트 순서) | `/api/hazard-reports` → `/api/hazards` 순서 보장 |
+| RULE-003 (onclick 따옴표 중첩 금지) | `data-hid`/`data-sid` 속성 + 전역 wrapper 함수 사용 |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (296.84 kB)

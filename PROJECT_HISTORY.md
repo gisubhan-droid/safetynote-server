@@ -11232,3 +11232,44 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 3. **API 4회 재호출**: `_signReqSign` 완료 후 count 포함 데이터 중복 조회
 
 → 사용자 모니터링 후 개선 결정 예정 (PENDING_TASKS.md PERF-001 항목 참고)
+
+---
+
+## 세션 113 (2026-07-29)
+
+### 작업 — FEAT-194b / FEAT-195 / FEAT-196
+
+#### FEAT-194b — 항목관리 3탭 통합 (이전 세션 완료, 문서 미반영)
+- `renderRiskManagePage()` 신규 구현 (위험유형·작업유형·부서팀 3탭)
+- 커밋: `d95aa0d`
+
+#### FEAT-195 — 메뉴 이동 (이전 세션 완료, 문서 미반영)
+- 사이드바 배열 재배치: 위험성평가·항목관리 → 안전관리, 안전현황 → 안전점검 상단
+- 커밋: `8f5eb61`
+
+#### FEAT-196 — NAS 파일 저장 + 안전건의사항 탭3 + 출력 기능
+
+**구현 내용**:
+1. `src/nas-routes/hazards-nas.ts` 신규 생성 — 신고사진/처리사진/첨부파일 9개 엔드포인트, `getHazardUploadDir()` 폴더 헬퍼, `ensureHazardNasTables()` DB 자동생성
+2. `src/routes/hazards.ts` 수정 — GET /:id 단건 조회, POST에 suggestion 필드 4개 추가
+3. `node-server.ts` 수정 — hazardNasRoutes import + `/api/hazard-reports` 마운트 + patchSchema v0.190(테이블)/v0.190b(컬럼)
+4. `app.js` 교체/신규 함수:
+   - `submitHazardReport()` — multipart 사진 업로드 (base64 제거, RULE-001)
+   - `showHazardDetail()` — NAS URL 우선 + base64 fallback, RULE-003 출력·처리완료 버튼
+   - `_submitResolveHazard()` — multipart 처리사진 업로드
+   - `showSuggestionForm()` + `_submitSuggestion()` — 안전건의사항 등록 모달
+   - `showSuggestionDetail()` — 안전건의사항 상세 모달 (출력 포함)
+   - `printHazardDetail(id)` — 위험신고·아차사고 인쇄/PDF 출력
+   - `printSuggestionDetail(id)` — 안전건의사항 인쇄/PDF 출력
+   - `_hazardDetailResolveBtn()` / `_hazardDetailPrintBtn()` / `_suggDetailPrintBtn()` — RULE-003 wrapper
+
+**검증**:
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (296.84 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | feat: [FEAT-196] NAS 파일 저장 + 안전건의사항 탭3 + 출력 기능 |
+| safetynote-server | (이번 세션) | docs: [세션113] FEAT-194b/195/196 반영 |

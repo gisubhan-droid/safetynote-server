@@ -36,7 +36,9 @@ app.post('/', async (c) => {
   const {
     task_id, location, hazard_type, hazard_description, risk_level,
     immediate_action, photo_data,
-    report_type, near_miss_cause, recurrence_prevention
+    report_type, near_miss_cause, recurrence_prevention,
+    // [FEAT-196] 안전건의사항 전용 필드
+    suggestion_location, suggestion_hazard, suggestion_improvement, suggestion_effect
   } = body
 
   if (!location || !hazard_description) return c.json({ error: '필수 항목을 입력하세요.' }, 400)
@@ -44,8 +46,9 @@ app.post('/', async (c) => {
   const result = await c.env.DB.prepare(
     `INSERT INTO hazard_reports
       (reporter_id, task_id, location, hazard_type, hazard_description, risk_level,
-       immediate_action, photo_data, report_type, near_miss_cause, recurrence_prevention)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       immediate_action, photo_data, report_type, near_miss_cause, recurrence_prevention,
+       suggestion_location, suggestion_hazard, suggestion_improvement, suggestion_effect)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     user.id, task_id || null, location,
     hazard_type || '기타', hazard_description,
@@ -53,7 +56,11 @@ app.post('/', async (c) => {
     immediate_action || null, photo_data || null,
     report_type || 'danger',
     near_miss_cause || null,
-    recurrence_prevention || null
+    recurrence_prevention || null,
+    suggestion_location || null,
+    suggestion_hazard || null,
+    suggestion_improvement || null,
+    suggestion_effect || null
   ).run()
 
   const newId = result.meta.last_row_id as number
@@ -75,6 +82,24 @@ app.post('/', async (c) => {
   })
 
   return c.json({ success: true, id: newId })
+})
+
+// [FEAT-196] 단건 조회 (NAS 라우트가 없는 환경 호환용)
+app.get('/:id', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  const id = c.req.param('id')
+  const q = `SELECT hr.*, u.name as reporter_name, t.title as task_title,
+    ru.name as resolved_by_name
+    FROM hazard_reports hr
+    LEFT JOIN users u ON u.id = hr.reporter_id
+    LEFT JOIN tasks t ON t.id = hr.task_id
+    LEFT JOIN users ru ON ru.id = hr.resolved_by
+    WHERE hr.id = ?`
+  const row = await c.env.DB.prepare(q).bind(id).first<any>()
+  if (!row) return c.json({ error: '신고 없음' }, 404)
+  if (user.role === 'worker' && row.reporter_id !== user.id) return c.json({ error: '권한 없음' }, 403)
+  return c.json(row)
 })
 
 // 위험 상황 처리 (BUG-055: resolve_photo_data 저장 추가)

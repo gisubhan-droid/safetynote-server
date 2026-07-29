@@ -96,6 +96,8 @@ import signatureRequestsRoutes from './src/nas-routes/signature-requests'
 import legalNoticesNasRoutes from './src/nas-routes/legal-notices'
 import geocodeRoutes from './src/nas-routes/geocode'
 import safetyCommitteeRoutes from './src/nas-routes/safety-committee'
+// [FEAT-196] 위험신고·아차사고·안전건의사항 NAS 파일 저장 라우트
+import hazardNasRoutes from './src/nas-routes/hazards-nas'
 import photosRoutes from './src/routes/photos'
 import {
   kstDateStr, kstDateTimeStr, kstYear, kstMonth, kstTimeStr,
@@ -3572,6 +3574,61 @@ function patchSchema() {
     try { rawDb.pragma('foreign_keys = ON') } catch(_) {}
   }
 
+  // ─── patchSchema v0.190: hazard_report_photos / hazard_report_docs 테이블 ──
+  // [FEAT-196] 위험신고·아차사고·안전건의사항 NAS 파일 저장 테이블
+  try {
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS hazard_report_photos (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id   INTEGER NOT NULL,
+        photo_type  TEXT    NOT NULL DEFAULT 'report',
+        file_path   TEXT    NOT NULL DEFAULT '',
+        file_name   TEXT    NOT NULL DEFAULT '',
+        mime_type   TEXT    NOT NULL DEFAULT 'image/jpeg',
+        file_size   INTEGER NOT NULL DEFAULT 0,
+        caption     TEXT    NOT NULL DEFAULT '',
+        created_by  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+      )
+    `)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_hrp_report_id ON hazard_report_photos(report_id, photo_type)`)
+    rawDb.exec(`
+      CREATE TABLE IF NOT EXISTS hazard_report_docs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id   INTEGER NOT NULL,
+        file_path   TEXT    NOT NULL DEFAULT '',
+        file_name   TEXT    NOT NULL DEFAULT '',
+        orig_name   TEXT    NOT NULL DEFAULT '',
+        mime_type   TEXT    NOT NULL DEFAULT 'application/octet-stream',
+        file_size   INTEGER NOT NULL DEFAULT 0,
+        created_by  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+      )
+    `)
+    rawDb.exec(`CREATE INDEX IF NOT EXISTS idx_hrd_report_id ON hazard_report_docs(report_id)`)
+    console.log('[patchSchema v0.190] ✅ hazard_report_photos / hazard_report_docs 테이블 생성 완료')
+  } catch(e: any) {
+    if (e.message?.includes('already exists')) {
+      console.log('[patchSchema v0.190] 테이블 이미 존재 — 스킵')
+    } else {
+      console.warn('[patchSchema v0.190] 테이블 생성 실패 (무시):', e.message)
+    }
+  }
+
+  // ─── patchSchema v0.190b: hazard_reports suggestion 필드 추가 ────────────
+  // [FEAT-196] 안전건의사항 전용 컬럼
+  const safeAlter190 = (sql: string) => {
+    try { rawDb.exec(sql) }
+    catch(e: any) {
+      if (!e.message?.includes('duplicate column')) console.warn('[patchSchema v0.190b]', e.message)
+    }
+  }
+  safeAlter190(`ALTER TABLE hazard_reports ADD COLUMN suggestion_location TEXT DEFAULT NULL`)
+  safeAlter190(`ALTER TABLE hazard_reports ADD COLUMN suggestion_hazard TEXT DEFAULT NULL`)
+  safeAlter190(`ALTER TABLE hazard_reports ADD COLUMN suggestion_improvement TEXT DEFAULT NULL`)
+  safeAlter190(`ALTER TABLE hazard_reports ADD COLUMN suggestion_effect TEXT DEFAULT NULL`)
+  console.log('[patchSchema v0.190b] ✅ hazard_reports suggestion 컬럼 보장 완료')
+
   })()
   // ─────────────────────────────────────────────────────────────────────────────
 }
@@ -5824,6 +5881,9 @@ app.patch('/api/inspections/:id/status', async (c) => {
 })
 
 app.route('/api/inspections', inspectionRoutes)
+// [FEAT-196] RULE-002: hazardNasRoutes(/api/hazard-reports) 는 hazardRoutes(/api/hazards) 앞에 등록
+// 경로가 달라 충돌 없음 — /api/hazard-reports/* vs /api/hazards/*
+app.route('/api/hazard-reports', hazardNasRoutes)
 app.route('/api/hazards', hazardRoutes)
 app.route('/api/worklogs', worklogRoutes)
 

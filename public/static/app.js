@@ -19416,130 +19416,122 @@ function _applyInsStatusSelStyle(sel, status) {
 }
 
 // ======= 위험(아차사고)신고 =======
-let _hazardTab = 'danger'; // 'danger' | 'nearmiss'
+var _hazardTab = 'danger'; // 'danger' | 'nearmiss' | 'suggestion'
 async function renderHazardsPage(container) {
   try {
-    const res = await API.get('/hazards');
-    const all = res.data || [];
+    var res = await API.get('/hazards');
+    var all = res.data || [];
 
-    // 신고 유형 분류: report_type 컬럼 없으면 hazard_type으로 구분
-    const dangerList  = all.filter(h => !h.report_type || h.report_type === 'danger');
-    const nearmissList = all.filter(h => h.report_type === 'nearmiss');
+    var dangerList     = all.filter(function(h) { return !h.report_type || h.report_type === 'danger'; });
+    var nearmissList   = all.filter(function(h) { return h.report_type === 'nearmiss'; });
+    var suggestionList = all.filter(function(h) { return h.report_type === 'suggestion'; });
 
-    const tab = _hazardTab;
-    const list = tab === 'nearmiss' ? nearmissList : dangerList;
+    var tab  = _hazardTab;
+    var list = tab === 'nearmiss' ? nearmissList : tab === 'suggestion' ? suggestionList : dangerList;
 
-    container.innerHTML = `
-    <div class="page-container">
+    // RULE-003: onclick 따옴표 중첩 금지 — _hazardAddBtnClick() 전역 함수 사용
+    var addBtnHtml = tab === 'suggestion'
+      ? '<button onclick="_hazardAddBtnClick()" class="btn text-sm py-2" style="background:#2E7D32;color:#fff"><i class="fas fa-plus mr-1"></i> 건의 등록</button>'
+      : '<button onclick="_hazardAddBtnClick()" class="btn btn-danger text-sm py-2"><i class="fas fa-plus mr-1"></i> 신고 등록</button>';
 
-      <!-- 상단 안내 배너 -->
-      <div class="rounded-2xl p-4 mb-4 flex items-start gap-3"
-           style="background:linear-gradient(135deg,#FDE8F3 0%,#EDE7F6 100%);border:1.5px solid #FF349E">
-        <div class="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center" style="background:#D70072">
-          <i class="fas fa-shield-alt text-white text-lg"></i>
-        </div>
-        <div>
-          <p class="font-bold text-sm" style="color:#A8005A">위험신고 · 아차사고(Near Miss) 신고</p>
-          <p class="text-xs mt-0.5" style="color:#685182">
-            <strong>위험신고</strong>는 즉각적인 위험상황 발견 시, <strong>아차사고 신고</strong>는 사고가 날 뻔한 상황(인적·물적 피해 없음)을 신고합니다.<br>
-            <span style="color:#D70072">하인리히 법칙: 중대재해 1건 전에 아차사고 300건이 선행됩니다.</span>
-          </p>
-        </div>
-      </div>
+    var tabBanner;
+    if (tab === 'suggestion') {
+      tabBanner = '<div class="rounded-xl p-3 mb-3 text-xs flex items-center gap-2" style="background:#E8F5E9;border:1px solid #66BB6A;color:#1B5E20"><i class="fas fa-lightbulb flex-shrink-0"></i><span><strong>안전건의사항</strong>: 현장의 안전을 개선할 수 있는 아이디어나 개선 제안을 자유롭게 등록하세요. 모든 건의사항은 안전관리자가 검토하여 반영합니다.</span></div>';
+    } else if (tab === 'nearmiss') {
+      tabBanner = '<div class="rounded-xl p-3 mb-3 text-xs flex items-center gap-2" style="background:#EDE7F6;border:1px solid #8E72A8;color:#4E3A63"><i class="fas fa-bell flex-shrink-0"></i><span><strong>아차사고(Near Miss)</strong>: 사고가 날 뻔했으나 인적·물적 피해 없이 종료된 상황. 발굴·신고하면 위험성평가에 반영되어 중대재해를 예방합니다.</span></div>';
+    } else {
+      tabBanner = '<div class="rounded-xl p-3 mb-3 text-xs flex items-center gap-2" style="background:#FDE8F3;border:1px solid #FF349E;color:#A8005A"><i class="fas fa-exclamation-circle flex-shrink-0"></i><span><strong>위험신고</strong>: 추락·감전·화재 등 즉각 대응이 필요한 위험상황 신고. 산안법 제52조에 따라 근로자는 급박한 위험 시 작업을 중지하고 대피할 권리가 있습니다.</span></div>';
+    }
 
-      <!-- 탭 + 신고 버튼 -->
-      <div class="flex items-center justify-between mb-3">
-        <div class="flex gap-1 p-1 rounded-xl" style="background:#F5F0F8">
-          <button onclick="_switchHazardTab('danger')" id="tabDanger"
-            class="px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab==='danger'?'text-white shadow':'text-gray-500'}"
-            style="${tab==='danger'?'background:#D70072':''}">
-            <i class="fas fa-exclamation-triangle mr-1"></i>위험신고
-            <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full ${tab==='danger'?'bg-white':'bg-gray-200'}"
-                  style="${tab==='danger'?'color:#D70072':'color:#888'}">${dangerList.length}</span>
-          </button>
-          <button onclick="_switchHazardTab('nearmiss')" id="tabNearmiss"
-            class="px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab==='nearmiss'?'text-white shadow':'text-gray-500'}"
-            style="${tab==='nearmiss'?'background:#685182':''}">
-            <i class="fas fa-bell mr-1"></i>아차사고
-            <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full ${tab==='nearmiss'?'bg-white':'bg-gray-200'}"
-                  style="${tab==='nearmiss'?'color:#685182':'color:#888'}">${nearmissList.length}</span>
-          </button>
-        </div>
-        <button onclick="showHazardReportForm('${tab}')" class="btn btn-danger text-sm py-2">
-          <i class="fas fa-plus mr-1"></i> 신고 등록
-        </button>
-      </div>
+    var listHtml;
+    if (list.length === 0) {
+      var emptyMsg   = tab === 'suggestion' ? '등록된 안전건의사항이 없습니다.' : tab === 'nearmiss' ? '신고된 아차사고가 없습니다.' : '등록된 위험신고가 없습니다.';
+      var emptyIcon  = tab === 'suggestion' ? 'fa-lightbulb' : 'fa-shield-alt';
+      var emptyColor = tab === 'suggestion' ? '#2E7D32' : tab === 'nearmiss' ? '#9C82AF' : '#66BB6A';
+      listHtml = '<div class="card text-center py-12 text-gray-400"><i class="fas '+emptyIcon+' text-5xl mb-3" style="color:'+emptyColor+'"></i><p class="font-medium" style="color:'+emptyColor+'">'+emptyMsg+'</p><p class="text-xs text-gray-400 mt-1">위험을 발견하면 즉시 신고해 주세요.</p></div>';
+    } else {
+      listHtml = list.map(function(h) {
+        var borderColor;
+        if (h.report_type === 'suggestion') {
+          borderColor = '#2E7D32';
+        } else if (h.report_type === 'nearmiss') {
+          borderColor = h.risk_level === 'critical' ? '#685182' : h.risk_level === 'high' ? '#8E72A8' : h.risk_level === 'medium' ? '#9C82AF' : '#C6C6C6';
+        } else {
+          borderColor = h.risk_level === 'critical' ? '#D70072' : h.risk_level === 'high' ? '#FF349E' : h.risk_level === 'medium' ? '#685182' : '#C6C6C6';
+        }
+        var statusLabel = h.status === 'resolved' ? '조치완료' : h.status === 'reviewing' ? '검토중' : '미처리';
+        var statusStyle = h.status === 'resolved' ? 'background:#EDE7F6;color:#685182' : h.status === 'reviewing' ? 'background:#FDE8F3;color:#D70072' : 'background:#D70072;color:#fff';
+        var riskLabel   = h.risk_level === 'critical' ? '긴급' : h.risk_level === 'high' ? '높음' : h.risk_level === 'medium' ? '보통' : '낮음';
+        var riskClass   = h.risk_level === 'critical' ? 'risk-critical' : h.risk_level === 'high' ? 'risk-high' : h.risk_level === 'medium' ? 'risk-medium' : 'risk-low';
+        var typeBadge = h.report_type === 'nearmiss'
+          ? '<span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:#EDE7F6;color:#685182"><i class="fas fa-bell mr-1"></i>아차사고</span>'
+          : h.report_type === 'suggestion'
+          ? '<span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:#E8F5E9;color:#2E7D32"><i class="fas fa-lightbulb mr-1"></i>안전건의</span>'
+          : '';
+        var mainDesc = h.report_type === 'suggestion'
+          ? (h.suggestion_improvement || h.hazard_description || '')
+          : (h.hazard_description || '');
+        var detailFn  = h.report_type === 'suggestion' ? 'showSuggestionDetail('+h.id+')' : 'showHazardDetail('+h.id+')';
+        var printFn   = h.report_type === 'suggestion' ? 'printSuggestionDetail('+h.id+')' : 'printHazardDetail('+h.id+')';
+        var printBtn  = '<button onclick="event.stopPropagation();'+printFn+'" class="btn btn-outline text-xs py-1" style="border-color:#9C82AF;color:#685182"><i class="fas fa-print mr-1"></i> 출력</button>';
+        var resolveBtn = (h.status !== 'resolved' && currentUser.role !== 'worker' && h.report_type !== 'suggestion')
+          ? '<button onclick="resolveHazard('+h.id+')" class="btn btn-primary text-xs py-1"><i class="fas fa-check-circle mr-1"></i> 처리 완료</button>'
+          : '';
+        var detailBtn = '<button onclick="'+detailFn+'" class="btn btn-outline text-xs py-1"><i class="fas fa-eye mr-1"></i> 상세보기</button>';
+        return '<div class="card" style="border-left:4px solid '+borderColor+';cursor:pointer" onclick="'+detailFn+'">'
+          + '<div class="flex justify-between items-start mb-2">'
+          + '<div class="flex-1"><div class="flex items-center gap-2 mb-1 flex-wrap">'+typeBadge
+          + (h.report_type !== 'suggestion' ? '<span class="font-bold text-sm" style="color:#4E3A63">'+(h.hazard_type||'')+'</span><span class="badge '+riskClass+'">'+riskLabel+'</span>' : '')
+          + '</div>'
+          + '<p class="text-xs" style="color:#C6C6C6">'+(h.reporter_name||'-')+' · '+(h.location||'-')+' · '+formatDateTime(h.report_date)+'</p></div>'
+          + '<span class="badge flex-shrink-0" style="'+statusStyle+'">'+statusLabel+'</span></div>'
+          + '<p class="text-sm mb-2" style="color:#4E3A63">'+mainDesc+'</p>'
+          + (h.near_miss_cause ? '<p class="text-xs mb-1 px-2 py-1 rounded-lg" style="background:#EDE7F6;color:#4E3A63"><i class="fas fa-search mr-1" style="color:#685182"></i><strong>발생 원인:</strong> '+h.near_miss_cause+'</p>' : '')
+          + (h.recurrence_prevention ? '<p class="text-xs mb-1 px-2 py-1 rounded-lg" style="background:#F5F0F8;color:#685182"><i class="fas fa-shield-alt mr-1"></i><strong>재발방지:</strong> '+h.recurrence_prevention+'</p>' : '')
+          + (h.immediate_action ? '<p class="text-xs mb-2" style="color:#685182"><i class="fas fa-bolt mr-1"></i>즉각조치: '+h.immediate_action+'</p>' : '')
+          + (h.resolution_notes ? '<p class="text-xs px-3 py-2 rounded-lg mb-2" style="background:#EDE7F6;color:#685182"><i class="fas fa-clipboard-check mr-1"></i>처리내용: '+h.resolution_notes+'</p>' : '')
+          + '<div class="flex gap-2 mt-2" onclick="event.stopPropagation()">'+resolveBtn+detailBtn+printBtn+'</div>'
+          + '</div>';
+      }).join('');
+    }
 
-      <!-- 탭별 설명 -->
-      ${tab === 'danger' ? `
-      <div class="rounded-xl p-3 mb-3 text-xs flex items-center gap-2" style="background:#FDE8F3;border:1px solid #FF349E;color:#A8005A">
-        <i class="fas fa-exclamation-circle flex-shrink-0"></i>
-        <span><strong>위험신고</strong>: 추락·감전·화재 등 즉각 대응이 필요한 위험상황 신고. 산안법 제52조에 따라 근로자는 급박한 위험 시 작업을 중지하고 대피할 권리가 있습니다.</span>
-      </div>` : `
-      <div class="rounded-xl p-3 mb-3 text-xs flex items-center gap-2" style="background:#EDE7F6;border:1px solid #8E72A8;color:#4E3A63">
-        <i class="fas fa-bell flex-shrink-0"></i>
-        <span><strong>아차사고(Near Miss)</strong>: 사고가 날 뻔했으나 인적·물적 피해 없이 종료된 상황. 발굴·신고하면 위험성평가에 반영되어 중대재해를 예방합니다.</span>
-      </div>`}
-
-      <!-- 목록 -->
-      <div class="space-y-3">
-        ${list.length === 0 ? `
-          <div class="card text-center py-12 text-gray-400">
-            <i class="fas fa-shield-alt text-5xl mb-3 ${tab==='nearmiss'?'text-purple-200':'text-green-300'}"></i>
-            <p class="${tab==='nearmiss'?'text-purple-500':'text-green-600'} font-medium">
-              ${tab==='nearmiss'?'신고된 아차사고가 없습니다.':'등록된 위험신고가 없습니다.'}
-            </p>
-            <p class="text-xs text-gray-400 mt-1">위험을 발견하면 즉시 신고해 주세요.</p>
-          </div>` :
-          list.map(h => {
-            const riskBorder = h.risk_level==='critical'?'border-l-4':'border-l-4';
-            const borderColor = h.report_type==='nearmiss'
-              ? (h.risk_level==='critical'?'#685182':h.risk_level==='high'?'#8E72A8':h.risk_level==='medium'?'#9C82AF':'#C6C6C6')
-              : (h.risk_level==='critical'?'#D70072':h.risk_level==='high'?'#FF349E':h.risk_level==='medium'?'#685182':'#C6C6C6');
-            const statusLabel = h.status==='resolved'?'조치완료':h.status==='reviewing'?'검토중':'미처리';
-            const statusStyle = h.status==='resolved'?'background:#EDE7F6;color:#685182'
-              :h.status==='reviewing'?'background:#FDE8F3;color:#D70072':'background:#D70072;color:#fff';
-            const riskLabel = h.risk_level==='critical'?'긴급':h.risk_level==='high'?'높음':h.risk_level==='medium'?'보통':'낮음';
-            const riskClass = h.risk_level==='critical'?'risk-critical':h.risk_level==='high'?'risk-high':h.risk_level==='medium'?'risk-medium':'risk-low';
-            return `
-            <div class="card" style="border-left:4px solid ${borderColor};cursor:pointer" onclick="showHazardDetail(${h.id})">
-              <div class="flex justify-between items-start mb-2">
-                <div class="flex-1">
-                  <div class="flex items-center gap-2 mb-1 flex-wrap">
-                    ${h.report_type==='nearmiss'?`<span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:#EDE7F6;color:#685182"><i class="fas fa-bell mr-1"></i>아차사고</span>`:''}
-                    <span class="font-bold text-sm" style="color:#4E3A63">${h.hazard_type}</span>
-                    <span class="badge ${riskClass}">${riskLabel}</span>
-                  </div>
-                  <p class="text-xs" style="color:#C6C6C6">${h.reporter_name||'-'} · ${h.location||'-'} · ${formatDateTime(h.report_date)}</p>
-                </div>
-                <span class="badge flex-shrink-0" style="${statusStyle}">${statusLabel}</span>
-              </div>
-              <p class="text-sm mb-2" style="color:#4E3A63">${h.hazard_description||''}</p>
-              ${h.near_miss_cause ? `<p class="text-xs mb-1 px-2 py-1 rounded-lg" style="background:#EDE7F6;color:#4E3A63"><i class="fas fa-search mr-1" style="color:#685182"></i><strong>발생 원인:</strong> ${h.near_miss_cause}</p>` : ''}
-              ${h.recurrence_prevention ? `<p class="text-xs mb-1 px-2 py-1 rounded-lg" style="background:#F5F0F8;color:#685182"><i class="fas fa-shield-alt mr-1"></i><strong>재발방지:</strong> ${h.recurrence_prevention}</p>` : ''}
-              ${h.immediate_action ? `<p class="text-xs mb-2" style="color:#685182"><i class="fas fa-bolt mr-1"></i>즉각조치: ${h.immediate_action}</p>` : ''}
-              ${h.resolution_notes ? `<p class="text-xs px-3 py-2 rounded-lg mb-2" style="background:#EDE7F6;color:#685182"><i class="fas fa-clipboard-check mr-1"></i>처리내용: ${h.resolution_notes}</p>` : ''}
-              <div class="flex gap-2 mt-2" onclick="event.stopPropagation()">
-                ${h.status !== 'resolved' && currentUser.role !== 'worker' ? `
-                <button onclick="resolveHazard(${h.id})" class="btn btn-primary text-xs py-1">
-                  <i class="fas fa-check-circle mr-1"></i> 처리 완료
-                </button>` : ''}
-                <button onclick="showHazardDetail(${h.id})" class="btn btn-outline text-xs py-1">
-                  <i class="fas fa-eye mr-1"></i> 상세보기
-                </button>
-              </div>
-            </div>`;
-          }).join('')}
-      </div>
-    </div>`;
+    container.innerHTML = '<div class="page-container">'
+      + '<div class="rounded-2xl p-4 mb-4 flex items-start gap-3" style="background:linear-gradient(135deg,#FDE8F3 0%,#EDE7F6 100%);border:1.5px solid #FF349E">'
+      + '<div class="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center" style="background:#D70072"><i class="fas fa-shield-alt text-white text-lg"></i></div>'
+      + '<div><p class="font-bold text-sm" style="color:#A8005A">위험신고 · 아차사고 · 안전건의사항</p>'
+      + '<p class="text-xs mt-0.5" style="color:#685182">위험신고는 즉각적인 위험상황, 아차사고는 사고 날 뻔한 상황, 안전건의사항은 개선 제안을 등록합니다.</p></div></div>'
+      + '<div class="flex items-center justify-between mb-3">'
+      + '<div class="flex gap-1 p-1 rounded-xl" style="background:#F5F0F8">'
+      + '<button data-htab="danger" onclick="_switchHazardTabBtn(this)" class="px-3 py-2 rounded-lg text-sm font-bold transition-all '+(tab==='danger'?'text-white shadow':'text-gray-500')+'" style="'+(tab==='danger'?'background:#D70072':'')+'"><i class="fas fa-exclamation-triangle mr-1"></i>위험신고<span class="ml-1 text-xs px-1.5 py-0.5 rounded-full '+(tab==='danger'?'bg-white':'bg-gray-200')+'" style="'+(tab==='danger'?'color:#D70072':'color:#888')+'">'+dangerList.length+'</span></button>'
+      + '<button data-htab="nearmiss" onclick="_switchHazardTabBtn(this)" class="px-3 py-2 rounded-lg text-sm font-bold transition-all '+(tab==='nearmiss'?'text-white shadow':'text-gray-500')+'" style="'+(tab==='nearmiss'?'background:#685182':'')+'"><i class="fas fa-bell mr-1"></i>아차사고<span class="ml-1 text-xs px-1.5 py-0.5 rounded-full '+(tab==='nearmiss'?'bg-white':'bg-gray-200')+'" style="'+(tab==='nearmiss'?'color:#685182':'color:#888')+'">'+nearmissList.length+'</span></button>'
+      + '<button data-htab="suggestion" onclick="_switchHazardTabBtn(this)" class="px-3 py-2 rounded-lg text-sm font-bold transition-all '+(tab==='suggestion'?'text-white shadow':'text-gray-500')+'" style="'+(tab==='suggestion'?'background:#2E7D32':'')+'"><i class="fas fa-lightbulb mr-1"></i>안전건의<span class="ml-1 text-xs px-1.5 py-0.5 rounded-full '+(tab==='suggestion'?'bg-white':'bg-gray-200')+'" style="'+(tab==='suggestion'?'color:#2E7D32':'color:#888')+'">'+suggestionList.length+'</span></button>'
+      + '</div>'
+      + addBtnHtml
+      + '</div>'
+      + tabBanner
+      + '<div class="space-y-3">'+listHtml+'</div>'
+      + '</div>';
   } catch(e) {
-    container.innerHTML = `<p class="text-red-500 p-4">로드 실패</p>`;
+    container.innerHTML = '<p class="text-red-500 p-4">로드 실패</p>';
   }
 }
 function _switchHazardTab(tab) {
   _hazardTab = tab;
-  const content = document.getElementById('page-content') || document.getElementById('main-content');
+  var content = document.getElementById('page-content') || document.getElementById('main-content');
   if (content) renderHazardsPage(content);
+}
+// RULE-003: data-htab 속성으로 탭 타입 전달 (onclick 따옴표 중첩 방지)
+function _switchHazardTabBtn(btn) {
+  var tab = btn.dataset.htab;
+  if (tab) _switchHazardTab(tab);
+}
+// RULE-003: 신고/건의 등록 버튼 핸들러 (탭 상태 기반)
+function _hazardAddBtnClick() {
+  if (_hazardTab === 'suggestion') {
+    showSuggestionForm();
+  } else {
+    showHazardReportForm(_hazardTab || 'danger');
+  }
 }
 
 function showHazardReportForm(defaultType) {
@@ -19780,172 +19772,540 @@ function previewHazPhoto(input) {
 }
 
 async function submitHazardReport() {
-  const location = document.getElementById('hazLocation').value.trim();
-  const desc     = document.getElementById('hazDesc').value.trim();
-  const reportType = document.getElementById('hazReportType')?.value || 'danger';
+  var location   = document.getElementById('hazLocation').value.trim();
+  var desc       = document.getElementById('hazDesc').value.trim();
+  var reportType = document.getElementById('hazReportType')?.value || 'danger';
 
   if (!location || !desc) { toast('위치와 위험 내용을 입력하세요.', 'error'); return; }
 
-  // 아차사고: 원인/재발방지 필수
   if (reportType === 'nearmiss') {
-    const cause = document.getElementById('hazNearMissCause')?.value.trim();
-    const recurrence = document.getElementById('hazRecurrence')?.value.trim();
+    var recurrence = document.getElementById('hazRecurrence')?.value.trim();
     if (!recurrence) { toast('재발 방지 제안을 입력하세요.', 'error'); return; }
   }
 
-  let photoData = null;
-  const input = document.getElementById('hazPhotoInput');
-  if (input && input.files.length > 0) {
-    photoData = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(input.files[0]);
-    });
-  }
+  var btn = document.querySelector('.modal-overlay .btn-primary');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>저장 중...'; }
 
   try {
-    await API.post('/hazards', {
-      location,
-      hazard_type:          document.getElementById('hazType').value,
-      hazard_description:   desc,
-      risk_level:           document.getElementById('hazLevel').value,
-      immediate_action:     document.getElementById('hazAction')?.value || null,
-      photo_data:           photoData,
-      // 신규 필드
-      report_type:          reportType,
-      near_miss_cause:      (document.getElementById('hazCauseType')?.value || '') +
-                            (document.getElementById('hazNearMissCause')?.value ? ' — ' + document.getElementById('hazNearMissCause').value : ''),
+    var postBody = {
+      location:              location,
+      hazard_type:           document.getElementById('hazType').value,
+      hazard_description:    desc,
+      risk_level:            document.getElementById('hazLevel').value,
+      immediate_action:      document.getElementById('hazAction')?.value || null,
+      report_type:           reportType,
+      near_miss_cause:       (document.getElementById('hazCauseType')?.value || '') +
+                             (document.getElementById('hazNearMissCause')?.value ? ' — ' + document.getElementById('hazNearMissCause').value : ''),
       recurrence_prevention: document.getElementById('hazRecurrence')?.value || null,
-    });
+    };
+    var res = await API.post('/hazards', postBody);
+    var newId = res.data?.id;
+
+    // NAS 사진 업로드 (파일이 선택된 경우)
+    var photoInput = document.getElementById('hazPhotoInput');
+    if (newId && photoInput && photoInput.files.length > 0) {
+      var fd = new FormData();
+      fd.append('photo', photoInput.files[0]);
+      try {
+        await fetch('/api/hazard-reports/' + newId + '/photos', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + getToken() },
+          body: fd
+        });
+      } catch(pe) {
+        console.warn('[submitHazardReport] 사진 업로드 실패 (무시):', pe);
+      }
+    }
+
     toast(reportType === 'nearmiss' ? '아차사고가 신고되었습니다.' : '위험신고가 접수되었습니다.');
     document.querySelector('.modal-overlay')?.remove();
-    const cont = document.getElementById('page-content') || document.getElementById('main-content');
+    var cont = document.getElementById('page-content') || document.getElementById('main-content');
     if (cont) renderHazardsPage(cont);
   } catch(e) {
     toast(e.response?.data?.error || '신고 실패', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane mr-1"></i> 신고 접수'; }
   }
 }
 
-// ── BUG-053·054: 위험신고·아차사고 상세 모달 (사진 포함) ─────────────────────
+
+// ── FEAT-196: 위험신고·아차사고 상세 모달 (NAS 사진 URL + base64 fallback) ──────
 async function showHazardDetail(id) {
   try {
-    const res = await API.get('/hazards');
-    const all = res.data || [];
-    const h = all.find(x => x.id === id);
+    // NAS 단건 조회 우선 시도
+    var h = null;
+    try {
+      var nasRes = await fetch('/api/hazard-reports/' + id, {
+        headers: { 'Authorization': 'Bearer ' + getToken() }
+      });
+      if (nasRes.ok) {
+        h = await nasRes.json();
+      }
+    } catch(ne) { /* NAS 실패 시 목록 fallback */ }
+
+    if (!h) {
+      var listRes = await API.get('/hazards');
+      var all = listRes.data || [];
+      h = all.find(function(x) { return x.id === id; });
+    }
     if (!h) { toast('상세 정보를 불러올 수 없습니다.', 'error'); return; }
 
-    const statusLabel = h.status==='resolved'?'조치완료':h.status==='reviewing'?'검토중':'미처리';
-    const statusStyle = h.status==='resolved'?'background:#EDE7F6;color:#685182'
+    var statusLabel = h.status==='resolved'?'조치완료':h.status==='reviewing'?'검토중':'미처리';
+    var statusStyle = h.status==='resolved'?'background:#EDE7F6;color:#685182'
       :h.status==='reviewing'?'background:#FDE8F3;color:#D70072':'background:#D70072;color:#fff';
-    const riskLabel = h.risk_level==='critical'?'긴급':h.risk_level==='high'?'높음':h.risk_level==='medium'?'보통':'낮음';
-    const riskClass = h.risk_level==='critical'?'risk-critical':h.risk_level==='high'?'risk-high':h.risk_level==='medium'?'risk-medium':'risk-low';
+    var riskLabel = h.risk_level==='critical'?'긴급':h.risk_level==='high'?'높음':h.risk_level==='medium'?'보통':'낮음';
+    var riskClass = h.risk_level==='critical'?'risk-critical':h.risk_level==='high'?'risk-high':h.risk_level==='medium'?'risk-medium':'risk-low';
 
-    const overlay = document.createElement('div');
+    // 사진 HTML 생성 — NAS URL 우선, base64 fallback
+    var reportPhotosHtml = '';
+    if (h.report_photos && h.report_photos.length > 0) {
+      reportPhotosHtml = '<div>';
+      reportPhotosHtml += '<p class="text-xs font-bold mb-2" style="color:#685182"><i class="fas fa-camera mr-1"></i>신고 사진</p>';
+      for (var i = 0; i < h.report_photos.length; i++) {
+        var ph = h.report_photos[i];
+        reportPhotosHtml += '<img src="/api/hazard-reports/photos/' + ph.id + '/img" alt="신고 사진"';
+        reportPhotosHtml += ' style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;border:1px solid #D8D0DC;margin-bottom:6px"';
+        reportPhotosHtml += ' onclick="this.requestFullscreen?.()">';
+      }
+      reportPhotosHtml += '</div>';
+    } else if (h.photo_data) {
+      // base64 레거시 fallback
+      reportPhotosHtml = '<div>';
+      reportPhotosHtml += '<p class="text-xs font-bold mb-2" style="color:#685182"><i class="fas fa-camera mr-1"></i>신고 사진</p>';
+      reportPhotosHtml += '<img src="data:image/jpeg;base64,' + h.photo_data + '" alt="신고 사진"';
+      reportPhotosHtml += ' style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;border:1px solid #D8D0DC"';
+      reportPhotosHtml += ' onclick="this.requestFullscreen?.()">';
+      reportPhotosHtml += '</div>';
+    }
+
+    var resolvePhotosHtml = '';
+    if (h.resolve_photos && h.resolve_photos.length > 0) {
+      resolvePhotosHtml = '<div class="mt-2">';
+      resolvePhotosHtml += '<p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-camera mr-1"></i>처리 사진</p>';
+      for (var j = 0; j < h.resolve_photos.length; j++) {
+        var rph = h.resolve_photos[j];
+        resolvePhotosHtml += '<img src="/api/hazard-reports/resolve-photos/' + rph.id + '/img" alt="처리 사진"';
+        resolvePhotosHtml += ' style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;border:1px solid #D8D0DC;margin-bottom:6px"';
+        resolvePhotosHtml += ' onclick="this.requestFullscreen?.()">';
+      }
+      resolvePhotosHtml += '</div>';
+    } else if (h.resolve_photo_data) {
+      resolvePhotosHtml = '<div class="mt-2">';
+      resolvePhotosHtml += '<p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-camera mr-1"></i>처리 사진</p>';
+      resolvePhotosHtml += '<img src="data:image/jpeg;base64,' + h.resolve_photo_data + '" alt="처리 사진"';
+      resolvePhotosHtml += ' style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;border:1px solid #D8D0DC"';
+      resolvePhotosHtml += ' onclick="this.requestFullscreen?.()">';
+      resolvePhotosHtml += '</div>';
+    }
+
+    var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.innerHTML = `
-    <div class="modal" style="max-width:520px">
-      <div class="modal-header">
-        <div class="flex items-center gap-2">
-          <span style="width:36px;height:36px;border-radius:50%;background:#FDE8F3;display:flex;align-items:center;justify-content:center">
-            <i class="fas fa-exclamation-triangle" style="color:#D70072;font-size:16px"></i>
-          </span>
-          <h3 class="font-bold text-base" style="color:#D70072">
-            ${h.report_type==='nearmiss'?'아차사고 상세':'위험신고 상세'}
-          </h3>
-        </div>
-        <button onclick="this.closest('.modal-overlay').remove()" class="text-xl" style="color:#C6C6C6"><i class="fas fa-times"></i></button>
-      </div>
-      <div class="modal-body space-y-3">
+    var titleLabel = h.report_type==='nearmiss' ? '아차사고 상세' : '위험신고 상세';
 
-        <!-- 상태·위험도 -->
-        <div class="flex items-center gap-2 flex-wrap">
-          ${h.report_type==='nearmiss'?`<span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:#EDE7F6;color:#685182"><i class="fas fa-bell mr-1"></i>아차사고</span>`:''}
-          <span class="badge ${riskClass}">${riskLabel}</span>
-          <span class="badge" style="${statusStyle}">${statusLabel}</span>
-          <span class="text-xs ml-auto" style="color:#C6C6C6">${formatDateTime(h.report_date)}</span>
-        </div>
-
-        <!-- 기본 정보 -->
-        <div class="rounded-xl p-3 space-y-2" style="background:#F5F0F8">
-          <div class="flex gap-2 text-xs">
-            <span style="color:#685182;min-width:60px"><i class="fas fa-tag mr-1"></i>유형</span>
-            <span style="color:#4E3A63;font-weight:600">${h.hazard_type||'-'}</span>
-          </div>
-          <div class="flex gap-2 text-xs">
-            <span style="color:#685182;min-width:60px"><i class="fas fa-map-marker-alt mr-1"></i>위치</span>
-            <span style="color:#4E3A63">${h.location||'-'}</span>
-          </div>
-          <div class="flex gap-2 text-xs">
-            <span style="color:#685182;min-width:60px"><i class="fas fa-user mr-1"></i>신고자</span>
-            <span style="color:#4E3A63">${h.reporter_name||'-'}</span>
-          </div>
-        </div>
-
-        <!-- 위험 내용 -->
-        <div>
-          <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-exclamation-circle mr-1"></i>위험 내용</p>
-          <p class="text-sm p-3 rounded-xl" style="background:#FDE8F3;color:#4E3A63">${h.hazard_description||'-'}</p>
-        </div>
-
-        <!-- 즉각 조치 -->
-        ${h.immediate_action ? `
-        <div>
-          <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-bolt mr-1"></i>즉각 조치</p>
-          <p class="text-sm p-3 rounded-xl" style="background:#F5F0F8;color:#4E3A63">${h.immediate_action}</p>
-        </div>` : ''}
-
-        <!-- 아차사고 전용 -->
-        ${h.near_miss_cause ? `
-        <div>
-          <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-search mr-1"></i>발생 원인</p>
-          <p class="text-sm p-3 rounded-xl" style="background:#EDE7F6;color:#4E3A63">${h.near_miss_cause}</p>
-        </div>` : ''}
-        ${h.recurrence_prevention ? `
-        <div>
-          <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-shield-alt mr-1"></i>재발 방지</p>
-          <p class="text-sm p-3 rounded-xl" style="background:#EDE7F6;color:#4E3A63">${h.recurrence_prevention}</p>
-        </div>` : ''}
-
-        <!-- BUG-054: 등록 사진 표시 -->
-        ${h.photo_data ? `
-        <div>
-          <p class="text-xs font-bold mb-2" style="color:#685182"><i class="fas fa-camera mr-1"></i>신고 사진</p>
-          <img src="data:image/jpeg;base64,${h.photo_data}" alt="신고 사진"
-               style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;border:1px solid #D8D0DC"
-               onclick="this.requestFullscreen?.()">
-        </div>` : ''}
-
-        <!-- 처리 정보 (resolved) -->
-        ${h.status==='resolved' ? `
-        <div class="rounded-xl p-3 space-y-2" style="background:#EDE7F6;border:1px solid #8E72A8">
-          <p class="text-xs font-bold" style="color:#685182"><i class="fas fa-clipboard-check mr-1"></i>처리 완료 정보</p>
-          <p class="text-sm" style="color:#4E3A63">${h.resolution_notes||'-'}</p>
-          ${h.resolved_by_name ? `<p class="text-xs" style="color:#685182">처리자: <strong>${h.resolved_by_name}</strong> · ${h.resolved_at?formatDateTime(h.resolved_at):''}</p>` : ''}
-          <!-- BUG-054: 처리 사진 표시 -->
-          ${h.resolve_photo_data ? `
-          <div class="mt-2">
-            <p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-camera mr-1"></i>처리 사진</p>
-            <img src="data:image/jpeg;base64,${h.resolve_photo_data}" alt="처리 사진"
-                 style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;border:1px solid #D8D0DC"
-                 onclick="this.requestFullscreen?.()">
-          </div>` : ''}
-        </div>` : ''}
-
-      </div>
-      <div class="modal-footer">
-        <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-outline">닫기</button>
-        ${h.status !== 'resolved' && currentUser.role !== 'worker' ? `
-        <button onclick="this.closest('.modal-overlay').remove();resolveHazard(${h.id})" class="btn btn-primary">
-          <i class="fas fa-check-circle mr-1"></i> 처리 완료
-        </button>` : ''}
-      </div>
-    </div>`;
+    overlay.innerHTML = '<div class="modal" style="max-width:520px">'
+      + '<div class="modal-header">'
+      + '<div class="flex items-center gap-2">'
+      + '<span style="width:36px;height:36px;border-radius:50%;background:#FDE8F3;display:flex;align-items:center;justify-content:center">'
+      + '<i class="fas fa-exclamation-triangle" style="color:#D70072;font-size:16px"></i></span>'
+      + '<h3 class="font-bold text-base" style="color:#D70072">' + titleLabel + '</h3>'
+      + '</div>'
+      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-xl" style="color:#C6C6C6"><i class="fas fa-times"></i></button>'
+      + '</div>'
+      + '<div class="modal-body space-y-3">'
+      + '<div class="flex items-center gap-2 flex-wrap">'
+      + (h.report_type==='nearmiss' ? '<span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:#EDE7F6;color:#685182"><i class="fas fa-bell mr-1"></i>아차사고</span>' : '')
+      + '<span class="badge ' + riskClass + '">' + riskLabel + '</span>'
+      + '<span class="badge" style="' + statusStyle + '">' + statusLabel + '</span>'
+      + '<span class="text-xs ml-auto" style="color:#C6C6C6">' + formatDateTime(h.report_date) + '</span>'
+      + '</div>'
+      + '<div class="rounded-xl p-3 space-y-2" style="background:#F5F0F8">'
+      + '<div class="flex gap-2 text-xs"><span style="color:#685182;min-width:60px"><i class="fas fa-tag mr-1"></i>유형</span><span style="color:#4E3A63;font-weight:600">' + (h.hazard_type||'-') + '</span></div>'
+      + '<div class="flex gap-2 text-xs"><span style="color:#685182;min-width:60px"><i class="fas fa-map-marker-alt mr-1"></i>위치</span><span style="color:#4E3A63">' + (h.location||'-') + '</span></div>'
+      + '<div class="flex gap-2 text-xs"><span style="color:#685182;min-width:60px"><i class="fas fa-user mr-1"></i>신고자</span><span style="color:#4E3A63">' + (h.reporter_name||'-') + '</span></div>'
+      + '</div>'
+      + '<div><p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-exclamation-circle mr-1"></i>위험 내용</p>'
+      + '<p class="text-sm p-3 rounded-xl" style="background:#FDE8F3;color:#4E3A63">' + (h.hazard_description||'-') + '</p></div>'
+      + (h.immediate_action ? '<div><p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-bolt mr-1"></i>즉각 조치</p><p class="text-sm p-3 rounded-xl" style="background:#F5F0F8;color:#4E3A63">' + h.immediate_action + '</p></div>' : '')
+      + (h.near_miss_cause ? '<div><p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-search mr-1"></i>발생 원인</p><p class="text-sm p-3 rounded-xl" style="background:#EDE7F6;color:#4E3A63">' + h.near_miss_cause + '</p></div>' : '')
+      + (h.recurrence_prevention ? '<div><p class="text-xs font-bold mb-1" style="color:#685182"><i class="fas fa-shield-alt mr-1"></i>재발 방지</p><p class="text-sm p-3 rounded-xl" style="background:#EDE7F6;color:#4E3A63">' + h.recurrence_prevention + '</p></div>' : '')
+      + reportPhotosHtml
+      + (h.status==='resolved' ? '<div class="rounded-xl p-3 space-y-2" style="background:#EDE7F6;border:1px solid #8E72A8">'
+        + '<p class="text-xs font-bold" style="color:#685182"><i class="fas fa-clipboard-check mr-1"></i>처리 완료 정보</p>'
+        + '<p class="text-sm" style="color:#4E3A63">' + (h.resolution_notes||'-') + '</p>'
+        + (h.resolved_by_name ? '<p class="text-xs" style="color:#685182">처리자: <strong>' + h.resolved_by_name + '</strong> · ' + (h.resolved_at?formatDateTime(h.resolved_at):'') + '</p>' : '')
+        + resolvePhotosHtml
+        + '</div>' : '')
+      + '</div>'
+      + '<div class="modal-footer">'
+      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="btn btn-outline">닫기</button>'
+      + (h.status !== 'resolved' && currentUser.role !== 'worker'
+        ? '<button data-hid="' + h.id + '" onclick="_hazardDetailResolveBtn(this)" class="btn btn-primary"><i class="fas fa-check-circle mr-1"></i> 처리 완료</button>'
+        : '')
+      + '<button data-hid="' + h.id + '" data-htype="' + (h.report_type||'danger') + '" onclick="_hazardDetailPrintBtn(this)" class="btn btn-outline" style="color:#685182;border-color:#685182"><i class="fas fa-print mr-1"></i> 출력</button>'
+      + '</div>'
+      + '</div>';
     document.body.appendChild(overlay);
   } catch(e) {
     toast('상세 정보를 불러오는 중 오류가 발생했습니다.', 'error');
   }
 }
+
+// RULE-003: 처리완료 버튼 (data-hid 속성 사용)
+function _hazardDetailResolveBtn(btn) {
+  var hid = parseInt(btn.dataset.hid);
+  btn.closest('.modal-overlay')?.remove();
+  resolveHazard(hid);
+}
+// RULE-003: 출력 버튼 (data-hid 속성 사용)
+function _hazardDetailPrintBtn(btn) {
+  var hid = parseInt(btn.dataset.hid);
+  printHazardDetail(hid);
+}
+
+// ── FEAT-196: 안전건의사항 등록 모달 ────────────────────────────────────────
+function showSuggestionForm() {
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = '<div class="modal" style="max-width:520px">'
+    + '<div class="modal-header">'
+    + '<div class="flex items-center gap-2">'
+    + '<span style="width:36px;height:36px;border-radius:50%;background:#E8F5E9;display:flex;align-items:center;justify-content:center">'
+    + '<i class="fas fa-lightbulb" style="color:#2E7D32;font-size:16px"></i></span>'
+    + '<h3 class="font-bold text-base" style="color:#2E7D32">안전건의사항 등록</h3>'
+    + '</div>'
+    + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-xl" style="color:#C6C6C6"><i class="fas fa-times"></i></button>'
+    + '</div>'
+    + '<div class="modal-body space-y-3">'
+    + '<div class="form-group">'
+    + '<label class="form-label">건의 위치 <span style="color:#D70072">*</span></label>'
+    + '<input type="text" id="sugLocation" class="form-control" placeholder="예) 1공장 출입구, 3층 계단 등">'
+    + '</div>'
+    + '<div class="form-group">'
+    + '<label class="form-label">현재 위험 사항 <span style="color:#D70072">*</span></label>'
+    + '<textarea id="sugHazard" class="form-control" rows="2" placeholder="현재 어떤 위험 또는 불편 사항이 있는지 설명해 주세요."></textarea>'
+    + '</div>'
+    + '<div class="form-group">'
+    + '<label class="form-label">개선 방안 <span style="color:#D70072">*</span></label>'
+    + '<textarea id="sugImprovement" class="form-control" rows="3" placeholder="어떻게 개선하면 좋을지 구체적으로 작성해 주세요."></textarea>'
+    + '</div>'
+    + '<div class="form-group">'
+    + '<label class="form-label">기대 효과</label>'
+    + '<textarea id="sugEffect" class="form-control" rows="2" placeholder="개선 시 예상되는 효과를 적어주세요. (선택)"></textarea>'
+    + '</div>'
+    + '<div class="form-group">'
+    + '<label class="form-label"><i class="fas fa-camera mr-1"></i>첨부 사진 <span class="text-xs font-normal" style="color:#C6C6C6">(선택)</span></label>'
+    + '<div class="upload-zone" onclick="document.getElementById(\'sugPhotoInput\').click()"'
+    + ' style="border:2px dashed #D8D0DC;border-radius:10px;padding:16px;text-align:center;cursor:pointer;background:#F9FBF9">'
+    + '<i class="fas fa-camera text-2xl mb-1" style="color:#4CAF50"></i>'
+    + '<p class="text-xs" style="color:#C6C6C6">클릭하여 사진 선택</p>'
+    + '<p id="sugPhotoName" class="text-xs mt-1 font-bold" style="color:#2E7D32"></p>'
+    + '</div>'
+    + '<input type="file" id="sugPhotoInput" accept="image/*" style="display:none" onchange="document.getElementById(\'sugPhotoName\').textContent=this.files[0]?.name||\'\'">'
+    + '</div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+    + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="btn btn-outline">취소</button>'
+    + '<button onclick="_submitSuggestion()" class="btn btn-primary" style="background:#2E7D32;border-color:#2E7D32">'
+    + '<i class="fas fa-paper-plane mr-1"></i> 건의 제출</button>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(overlay);
+}
+
+async function _submitSuggestion() {
+  var location    = document.getElementById('sugLocation')?.value.trim();
+  var hazard      = document.getElementById('sugHazard')?.value.trim();
+  var improvement = document.getElementById('sugImprovement')?.value.trim();
+  var effect      = document.getElementById('sugEffect')?.value.trim();
+
+  if (!location || !hazard || !improvement) {
+    toast('건의 위치, 위험 사항, 개선 방안은 필수 입력 항목입니다.', 'error');
+    return;
+  }
+
+  var sbtn = document.querySelector('.modal-overlay .btn-primary');
+  if (sbtn) { sbtn.disabled = true; sbtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>저장 중...'; }
+
+  try {
+    var sRes = await API.post('/hazards', {
+      location:               location,
+      hazard_type:            '안전건의',
+      hazard_description:     hazard,
+      risk_level:             'low',
+      report_type:            'suggestion',
+      suggestion_location:    location,
+      suggestion_hazard:      hazard,
+      suggestion_improvement: improvement,
+      suggestion_effect:      effect || null,
+    });
+    var newSugId = sRes.data?.id;
+
+    var sugPhotoInput = document.getElementById('sugPhotoInput');
+    if (newSugId && sugPhotoInput && sugPhotoInput.files.length > 0) {
+      var sfp = new FormData();
+      sfp.append('photo', sugPhotoInput.files[0]);
+      try {
+        await fetch('/api/hazard-reports/' + newSugId + '/photos', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + getToken() },
+          body: sfp
+        });
+      } catch(spe) {
+        console.warn('[_submitSuggestion] 사진 업로드 실패 (무시):', spe);
+      }
+    }
+
+    toast('안전건의사항이 등록되었습니다.');
+    document.querySelector('.modal-overlay')?.remove();
+    var scont = document.getElementById('page-content') || document.getElementById('main-content');
+    if (scont) renderHazardsPage(scont);
+  } catch(se) {
+    toast(se.response?.data?.error || '등록 실패', 'error');
+    if (sbtn) { sbtn.disabled = false; sbtn.innerHTML = '<i class="fas fa-paper-plane mr-1"></i> 건의 제출'; }
+  }
+}
+
+// ── FEAT-196: 안전건의사항 상세 모달 ─────────────────────────────────────────
+async function showSuggestionDetail(id) {
+  try {
+    var h = null;
+    try {
+      var nasRes2 = await fetch('/api/hazard-reports/' + id, {
+        headers: { 'Authorization': 'Bearer ' + getToken() }
+      });
+      if (nasRes2.ok) h = await nasRes2.json();
+    } catch(ne2) {}
+
+    if (!h) {
+      var listRes2 = await API.get('/hazards');
+      var all2 = listRes2.data || [];
+      h = all2.find(function(x) { return x.id === id; });
+    }
+    if (!h) { toast('상세 정보를 불러올 수 없습니다.', 'error'); return; }
+
+    var statusLabel2 = h.status==='resolved'?'검토완료':h.status==='reviewing'?'검토중':'미처리';
+    var statusStyle2 = h.status==='resolved'?'background:#E8F5E9;color:#2E7D32'
+      :h.status==='reviewing'?'background:#FFF9C4;color:#F57F17':'background:#F5F5F5;color:#666';
+
+    var sugPhotosHtml = '';
+    if (h.report_photos && h.report_photos.length > 0) {
+      sugPhotosHtml = '<div>';
+      sugPhotosHtml += '<p class="text-xs font-bold mb-2" style="color:#2E7D32"><i class="fas fa-camera mr-1"></i>첨부 사진</p>';
+      for (var k = 0; k < h.report_photos.length; k++) {
+        var sph = h.report_photos[k];
+        sugPhotosHtml += '<img src="/api/hazard-reports/photos/' + sph.id + '/img" alt="건의 사진"';
+        sugPhotosHtml += ' style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;border:1px solid #C8E6C9;margin-bottom:6px"';
+        sugPhotosHtml += ' onclick="this.requestFullscreen?.()">';
+      }
+      sugPhotosHtml += '</div>';
+    } else if (h.photo_data) {
+      sugPhotosHtml = '<div>';
+      sugPhotosHtml += '<p class="text-xs font-bold mb-2" style="color:#2E7D32"><i class="fas fa-camera mr-1"></i>첨부 사진</p>';
+      sugPhotosHtml += '<img src="data:image/jpeg;base64,' + h.photo_data + '" alt="건의 사진"';
+      sugPhotosHtml += ' style="width:100%;max-height:240px;object-fit:contain;border-radius:10px;border:1px solid #C8E6C9"';
+      sugPhotosHtml += ' onclick="this.requestFullscreen?.()">';
+      sugPhotosHtml += '</div>';
+    }
+
+    var overlay2 = document.createElement('div');
+    overlay2.className = 'modal-overlay';
+    overlay2.innerHTML = '<div class="modal" style="max-width:520px">'
+      + '<div class="modal-header">'
+      + '<div class="flex items-center gap-2">'
+      + '<span style="width:36px;height:36px;border-radius:50%;background:#E8F5E9;display:flex;align-items:center;justify-content:center">'
+      + '<i class="fas fa-lightbulb" style="color:#2E7D32;font-size:16px"></i></span>'
+      + '<h3 class="font-bold text-base" style="color:#2E7D32">안전건의사항 상세</h3>'
+      + '</div>'
+      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="text-xl" style="color:#C6C6C6"><i class="fas fa-times"></i></button>'
+      + '</div>'
+      + '<div class="modal-body space-y-3">'
+      + '<div class="flex items-center gap-2 flex-wrap">'
+      + '<span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:#E8F5E9;color:#2E7D32"><i class="fas fa-lightbulb mr-1"></i>안전건의</span>'
+      + '<span class="badge" style="' + statusStyle2 + '">' + statusLabel2 + '</span>'
+      + '<span class="text-xs ml-auto" style="color:#C6C6C6">' + formatDateTime(h.report_date) + '</span>'
+      + '</div>'
+      + '<div class="rounded-xl p-3 space-y-2" style="background:#F1F8E9">'
+      + '<div class="flex gap-2 text-xs"><span style="color:#2E7D32;min-width:70px"><i class="fas fa-map-marker-alt mr-1"></i>건의 위치</span><span style="color:#1B5E20;font-weight:600">' + (h.suggestion_location||h.location||'-') + '</span></div>'
+      + '<div class="flex gap-2 text-xs"><span style="color:#2E7D32;min-width:70px"><i class="fas fa-user mr-1"></i>건의자</span><span style="color:#1B5E20">' + (h.reporter_name||'-') + '</span></div>'
+      + '</div>'
+      + '<div>'
+      + '<p class="text-xs font-bold mb-1" style="color:#2E7D32"><i class="fas fa-exclamation-circle mr-1"></i>현재 위험 사항</p>'
+      + '<p class="text-sm p-3 rounded-xl" style="background:#FFF9C4;color:#333">' + (h.suggestion_hazard||h.hazard_description||'-') + '</p>'
+      + '</div>'
+      + '<div>'
+      + '<p class="text-xs font-bold mb-1" style="color:#2E7D32"><i class="fas fa-tools mr-1"></i>개선 방안</p>'
+      + '<p class="text-sm p-3 rounded-xl" style="background:#E8F5E9;color:#1B5E20">' + (h.suggestion_improvement||'-') + '</p>'
+      + '</div>'
+      + (h.suggestion_effect ? '<div>'
+        + '<p class="text-xs font-bold mb-1" style="color:#2E7D32"><i class="fas fa-star mr-1"></i>기대 효과</p>'
+        + '<p class="text-sm p-3 rounded-xl" style="background:#F1F8E9;color:#2E7D32">' + h.suggestion_effect + '</p>'
+        + '</div>' : '')
+      + sugPhotosHtml
+      + (h.status==='resolved' ? '<div class="rounded-xl p-3 space-y-2" style="background:#E8F5E9;border:1px solid #66BB6A">'
+        + '<p class="text-xs font-bold" style="color:#2E7D32"><i class="fas fa-clipboard-check mr-1"></i>검토 완료 내용</p>'
+        + '<p class="text-sm" style="color:#1B5E20">' + (h.resolution_notes||'-') + '</p>'
+        + (h.resolved_by_name ? '<p class="text-xs" style="color:#2E7D32">처리자: <strong>' + h.resolved_by_name + '</strong> · ' + (h.resolved_at?formatDateTime(h.resolved_at):'') + '</p>' : '')
+        + '</div>' : '')
+      + '</div>'
+      + '<div class="modal-footer">'
+      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="btn btn-outline">닫기</button>'
+      + '<button data-sid="' + h.id + '" onclick="_suggDetailPrintBtn(this)" class="btn btn-outline" style="color:#2E7D32;border-color:#2E7D32"><i class="fas fa-print mr-1"></i> 출력</button>'
+      + (h.status !== 'resolved' && currentUser.role !== 'worker'
+        ? '<button onclick="this.closest(\'.modal-overlay\').remove();resolveHazard(' + h.id + ')" class="btn btn-primary" style="background:#2E7D32;border-color:#2E7D32"><i class="fas fa-check-circle mr-1"></i> 검토 완료</button>'
+        : '')
+      + '</div>'
+      + '</div>';
+    document.body.appendChild(overlay2);
+  } catch(e2) {
+    toast('상세 정보를 불러오는 중 오류가 발생했습니다.', 'error');
+  }
+}
+
+// RULE-003: 건의사항 출력 버튼
+function _suggDetailPrintBtn(btn) {
+  var sid = parseInt(btn.dataset.sid);
+  printSuggestionDetail(sid);
+}
+
+// ── FEAT-196: 위험신고·아차사고 출력 (인쇄/PDF) ──────────────────────────────
+async function printHazardDetail(id) {
+  var h = null;
+  try {
+    var pnasRes = await fetch('/api/hazard-reports/' + id, {
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    if (pnasRes.ok) h = await pnasRes.json();
+  } catch(pne) {}
+  if (!h) {
+    try {
+      var plistRes = await API.get('/hazards');
+      var pall = plistRes.data || [];
+      h = pall.find(function(x) { return x.id === id; });
+    } catch(ple) {}
+  }
+  if (!h) { toast('출력할 데이터를 불러올 수 없습니다.', 'error'); return; }
+
+  var typeLabel = h.report_type === 'nearmiss' ? '아차사고 보고서' : '위험신고 보고서';
+  var riskLabel2 = h.risk_level==='critical'?'긴급':h.risk_level==='high'?'높음':h.risk_level==='medium'?'보통':'낮음';
+  var statusLabel3 = h.status==='resolved'?'조치완료':h.status==='reviewing'?'검토중':'미처리';
+
+  var photosSection = '';
+  if (h.report_photos && h.report_photos.length > 0) {
+    photosSection += '<h3 style="color:#D70072;font-size:14px;margin:16px 0 8px">신고 사진</h3>';
+    for (var pi = 0; pi < h.report_photos.length; pi++) {
+      photosSection += '<img src="/api/hazard-reports/photos/' + h.report_photos[pi].id + '/img" style="max-width:100%;max-height:300px;object-fit:contain;border:1px solid #ddd;border-radius:8px;margin-bottom:8px">';
+    }
+  } else if (h.photo_data) {
+    photosSection += '<h3 style="color:#D70072;font-size:14px;margin:16px 0 8px">신고 사진</h3>';
+    photosSection += '<img src="data:image/jpeg;base64,' + h.photo_data + '" style="max-width:100%;max-height:300px;object-fit:contain;border:1px solid #ddd;border-radius:8px">';
+  }
+  if (h.resolve_photos && h.resolve_photos.length > 0) {
+    photosSection += '<h3 style="color:#685182;font-size:14px;margin:16px 0 8px">처리 사진</h3>';
+    for (var ri = 0; ri < h.resolve_photos.length; ri++) {
+      photosSection += '<img src="/api/hazard-reports/resolve-photos/' + h.resolve_photos[ri].id + '/img" style="max-width:100%;max-height:300px;object-fit:contain;border:1px solid #ddd;border-radius:8px;margin-bottom:8px">';
+    }
+  } else if (h.resolve_photo_data) {
+    photosSection += '<h3 style="color:#685182;font-size:14px;margin:16px 0 8px">처리 사진</h3>';
+    photosSection += '<img src="data:image/jpeg;base64,' + h.resolve_photo_data + '" style="max-width:100%;max-height:300px;object-fit:contain;border:1px solid #ddd;border-radius:8px">';
+  }
+
+  var printWin = window.open('', '_blank', 'width=700,height=900');
+  printWin.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<title>' + typeLabel + '</title>'
+    + '<style>'
+    + 'body{font-family:"Noto Sans KR",Arial,sans-serif;margin:0;padding:24px;color:#333;font-size:13px}'
+    + 'h1{font-size:22px;color:#D70072;border-bottom:2px solid #D70072;padding-bottom:8px;margin-bottom:16px}'
+    + 'h2{font-size:15px;color:#4E3A63;margin:14px 0 6px}'
+    + '.row{display:flex;gap:8px;margin-bottom:6px}'
+    + '.label{min-width:80px;color:#685182;font-weight:600}'
+    + '.val{color:#333}'
+    + '.box{background:#F9F5FC;border:1px solid #D8D0DC;border-radius:8px;padding:10px;margin:8px 0}'
+    + '.resolved{background:#EDE7F6;border:1px solid #8E72A8;border-radius:8px;padding:10px;margin:8px 0}'
+    + '.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:700}'
+    + '@media print{body{padding:12px}button{display:none}}'
+    + '</style></head><body>'
+    + '<h1>' + typeLabel + '</h1>'
+    + '<div class="row"><span class="label">신고일시</span><span class="val">' + formatDateTime(h.report_date) + '</span></div>'
+    + '<div class="row"><span class="label">신고자</span><span class="val">' + (h.reporter_name||'-') + '</span></div>'
+    + '<div class="row"><span class="label">위험 유형</span><span class="val">' + (h.hazard_type||'-') + '</span></div>'
+    + '<div class="row"><span class="label">위험 위치</span><span class="val">' + (h.location||'-') + '</span></div>'
+    + '<div class="row"><span class="label">위험도</span><span class="val">' + riskLabel2 + '</span></div>'
+    + '<div class="row"><span class="label">상태</span><span class="val">' + statusLabel3 + '</span></div>'
+    + '<h2>위험 내용</h2><div class="box">' + (h.hazard_description||'-') + '</div>'
+    + (h.immediate_action ? '<h2>즉각 조치</h2><div class="box">' + h.immediate_action + '</div>' : '')
+    + (h.near_miss_cause ? '<h2>발생 원인</h2><div class="box">' + h.near_miss_cause + '</div>' : '')
+    + (h.recurrence_prevention ? '<h2>재발 방지</h2><div class="box">' + h.recurrence_prevention + '</div>' : '')
+    + photosSection
+    + (h.status==='resolved' ? '<div class="resolved"><h2 style="margin-top:0;color:#4E3A63">처리 완료 정보</h2>'
+      + '<p>' + (h.resolution_notes||'-') + '</p>'
+      + (h.resolved_by_name ? '<p style="font-size:12px;color:#685182">처리자: ' + h.resolved_by_name + ' · ' + (h.resolved_at?formatDateTime(h.resolved_at):'') + '</p>' : '')
+      + '</div>' : '')
+    + '<div style="margin-top:20px;text-align:right">'
+    + '<button onclick="window.print()" style="padding:8px 20px;background:#D70072;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">인쇄 / PDF 저장</button>'
+    + '</div>'
+    + '</body></html>');
+  printWin.document.close();
+}
+
+// ── FEAT-196: 안전건의사항 출력 ───────────────────────────────────────────────
+async function printSuggestionDetail(id) {
+  var h = null;
+  try {
+    var pnasRes2 = await fetch('/api/hazard-reports/' + id, {
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    if (pnasRes2.ok) h = await pnasRes2.json();
+  } catch(pne2) {}
+  if (!h) {
+    try {
+      var plistRes2 = await API.get('/hazards');
+      var pall2 = plistRes2.data || [];
+      h = pall2.find(function(x) { return x.id === id; });
+    } catch(ple2) {}
+  }
+  if (!h) { toast('출력할 데이터를 불러올 수 없습니다.', 'error'); return; }
+
+  var sPhotosHtml = '';
+  if (h.report_photos && h.report_photos.length > 0) {
+    sPhotosHtml += '<h2>첨부 사진</h2>';
+    for (var spi = 0; spi < h.report_photos.length; spi++) {
+      sPhotosHtml += '<img src="/api/hazard-reports/photos/' + h.report_photos[spi].id + '/img" style="max-width:100%;max-height:300px;object-fit:contain;border:1px solid #ddd;border-radius:8px;margin-bottom:8px">';
+    }
+  } else if (h.photo_data) {
+    sPhotosHtml += '<h2>첨부 사진</h2><img src="data:image/jpeg;base64,' + h.photo_data + '" style="max-width:100%;max-height:300px;object-fit:contain;border:1px solid #ddd;border-radius:8px">';
+  }
+
+  var printWin2 = window.open('', '_blank', 'width=700,height=900');
+  printWin2.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<title>안전건의사항 보고서</title>'
+    + '<style>'
+    + 'body{font-family:"Noto Sans KR",Arial,sans-serif;margin:0;padding:24px;color:#333;font-size:13px}'
+    + 'h1{font-size:22px;color:#2E7D32;border-bottom:2px solid #2E7D32;padding-bottom:8px;margin-bottom:16px}'
+    + 'h2{font-size:15px;color:#1B5E20;margin:14px 0 6px}'
+    + '.row{display:flex;gap:8px;margin-bottom:6px}'
+    + '.label{min-width:80px;color:#2E7D32;font-weight:600}'
+    + '.box{background:#F1F8E9;border:1px solid #C8E6C9;border-radius:8px;padding:10px;margin:8px 0}'
+    + '.resolved{background:#E8F5E9;border:1px solid #66BB6A;border-radius:8px;padding:10px;margin:8px 0}'
+    + '@media print{body{padding:12px}button{display:none}}'
+    + '</style></head><body>'
+    + '<h1>안전건의사항 보고서</h1>'
+    + '<div class="row"><span class="label">건의일시</span><span>' + formatDateTime(h.report_date) + '</span></div>'
+    + '<div class="row"><span class="label">건의자</span><span>' + (h.reporter_name||'-') + '</span></div>'
+    + '<div class="row"><span class="label">건의 위치</span><span>' + (h.suggestion_location||h.location||'-') + '</span></div>'
+    + '<h2>현재 위험 사항</h2><div class="box">' + (h.suggestion_hazard||h.hazard_description||'-') + '</div>'
+    + '<h2>개선 방안</h2><div class="box">' + (h.suggestion_improvement||'-') + '</div>'
+    + (h.suggestion_effect ? '<h2>기대 효과</h2><div class="box">' + h.suggestion_effect + '</div>' : '')
+    + sPhotosHtml
+    + (h.status==='resolved' ? '<div class="resolved"><h2 style="margin-top:0">검토 완료 내용</h2>'
+      + '<p>' + (h.resolution_notes||'-') + '</p>'
+      + (h.resolved_by_name ? '<p style="font-size:12px;color:#2E7D32">처리자: ' + h.resolved_by_name + ' · ' + (h.resolved_at?formatDateTime(h.resolved_at):'') + '</p>' : '')
+      + '</div>' : '')
+    + '<div style="margin-top:20px;text-align:right">'
+    + '<button onclick="window.print()" style="padding:8px 20px;background:#2E7D32;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">인쇄 / PDF 저장</button>'
+    + '</div>'
+    + '</body></html>');
+  printWin2.document.close();
+}
+
 
 async function resolveHazard(id) {
   const overlay = document.createElement('div');
@@ -20085,43 +20445,47 @@ function previewResolvePhoto(input) {
 }
 
 async function _submitResolveHazard(id) {
-  // hidden input에서 선택값 읽기 (radio 방식 제거됨)
-  const typeValEl = document.getElementById('resolveTypeVal');
-  const notesEl   = document.getElementById('resolveNotes');
-  const typeVal   = typeValEl?.value?.trim() || '';
+  var typeValEl = document.getElementById('resolveTypeVal');
+  var notesEl   = document.getElementById('resolveNotes');
+  var typeVal   = typeValEl?.value?.trim() || '';
   if (!typeVal) { toast('처리 결과를 선택하세요.', 'error'); return; }
-  const notes = notesEl?.value?.trim();
+  var notes = notesEl?.value?.trim();
   if (!notes || notes === typeVal + ':') { toast('처리 내용을 입력하세요.', 'error'); return; }
 
-  // BUG-055: 처리 사진 base64 추출
-  let resolvePhotoData = null;
-  const photoInput = document.getElementById('resolvePhotoInput');
-  if (photoInput && photoInput.files.length > 0) {
-    resolvePhotoData = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(photoInput.files[0]);
-    });
-  }
-
-  const btn = document.getElementById('resolveSubmitBtn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>처리 중...'; }
+  var btn2 = document.getElementById('resolveSubmitBtn');
+  if (btn2) { btn2.disabled = true; btn2.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>처리 중...'; }
 
   try {
-    await API.patch(`/hazards/${id}/resolve`, {
-      resolution_notes: `[${typeVal}] ${notes}`,
-      status: 'resolved',
-      resolve_photo_data: resolvePhotoData
+    await API.patch('/hazards/' + id + '/resolve', {
+      resolution_notes:  '[' + typeVal + '] ' + notes,
+      status:            'resolved',
     });
+
+    // NAS 처리사진 업로드 (파일이 선택된 경우)
+    var resolvePhotoInput = document.getElementById('resolvePhotoInput');
+    if (resolvePhotoInput && resolvePhotoInput.files.length > 0) {
+      var fd2 = new FormData();
+      fd2.append('photo', resolvePhotoInput.files[0]);
+      try {
+        await fetch('/api/hazard-reports/' + id + '/resolve-photos', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + getToken() },
+          body: fd2
+        });
+      } catch(pe2) {
+        console.warn('[_submitResolveHazard] 처리사진 업로드 실패 (무시):', pe2);
+      }
+    }
+
     document.querySelector('.modal-overlay')?.remove();
     toast('처리 완료되었습니다.');
     renderHazardsPage(document.getElementById('page-content'));
   } catch(e) {
     toast(e.response?.data?.error || '처리 실패', 'error');
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle mr-1"></i> 처리 완료 확정'; }
+    if (btn2) { btn2.disabled = false; btn2.innerHTML = '<i class="fas fa-check-circle mr-1"></i> 처리 완료 확정'; }
   }
 }
+
 
 // ======= 통계 페이지 (관리자용) =======
 async function renderStatsPage(container) {

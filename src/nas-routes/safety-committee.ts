@@ -855,17 +855,23 @@ app.get('/photos/:photoId/img', async (c) => {
   if (!user) return c.json({ error: '인증 필요' }, 401)
 
   const id = Number(c.req.param('photoId'))
-  const row: any = rawDb.prepare(
-    `SELECT file_path, file_data, mime_type, file_name FROM safety_committee_photos WHERE id=?`
-  ).get(id)
+  // [BUG-196c-2] file_data 컬럼은 safety_committee_photos 테이블에 없음 → SELECT에서 제외
+  let row: any = null
+  try {
+    row = rawDb.prepare(
+      `SELECT file_path, mime_type, file_name FROM safety_committee_photos WHERE id=?`
+    ).get(id)
+  } catch(e: any) {
+    console.error('[SC photos/img] SELECT 오류:', e.message)
+    return c.json({ error: 'DB 조회 실패: ' + e.message }, 500)
+  }
   if (!row) return c.json({ error: '사진 없음' }, 404)
 
   let buf: Buffer | null = null
   if (row.file_path && existsSync(row.file_path)) {
-    try { buf = readFileSync(row.file_path) } catch(_) {}
-  }
-  if (!buf && row.file_data) {
-    buf = Buffer.from(row.file_data)
+    try { buf = readFileSync(row.file_path) } catch(e: any) {
+      console.error('[SC photos/img] 파일 읽기 실패:', row.file_path, e.message)
+    }
   }
   if (!buf) return c.json({ error: '파일 없음' }, 404)
 

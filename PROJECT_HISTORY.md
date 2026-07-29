@@ -11273,3 +11273,30 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 |------|--------|------|
 | safetynote-server | (이번 세션) | feat: [FEAT-196] NAS 파일 저장 + 안전건의사항 탭3 + 출력 기능 |
 | safetynote-server | (이번 세션) | docs: [세션113] FEAT-194b/195/196 반영 |
+
+---
+
+## 세션 114 (2026-07-29)
+
+### 작업 — BUG-196c
+
+#### BUG-196c — 산업안전보건위원회 회의 사진 업로드 500 에러 수정
+
+**증상**: `POST /api/safety-committee/meetings/:id/photos` → 500 + `SyntaxError: Unexpected token 'I'`
+
+**원인 (3중)**:
+1. 서버: `caption = null` → `safety_committee_photos.caption TEXT NOT NULL` 위반 → SQLite 500
+2. 클라이언트: `_scUpload` `r.ok` 체크 없음 → 500 HTML 응답을 `.json()` 파싱 → SyntaxError
+3. 클라이언트: `_scUploadPhotos`/`_scUploadDocs`에서 `_scUpload` 반환값(이미 파싱된 객체)에 `.json()` 재호출 → TypeError
+
+**수정 파일**:
+- `src/nas-routes/safety-committee.ts` — `caption = ''` 처리 + INSERT try/catch + 에러 로그
+- `public/static/app.js` — `_scUpload` r.ok 체크 + `_scUploadPhotos`/`_scUploadDocs` 이중 `.json()` 제거 + IIFE closure + `.catch()` 에러 핸들링
+
+**검증**: `node --check` ✅ + `npm run build` ✅ (296.84 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | fix: [BUG-196c] SC 사진 업로드 500 — caption NOT NULL 위반 + _scUpload r.ok 체크 + 이중 json() 제거 |

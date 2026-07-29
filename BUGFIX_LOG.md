@@ -6913,3 +6913,36 @@ API.get('/tasks', { params: _taskParams })
 ### 검증
 - `node --check public/static/app.js` ✅
 - `npm run build` ✅ (296.84 kB)
+
+---
+
+## BUG-196c — 산업안전보건위원회 회의 사진 업로드 500 에러
+
+**발생 일시**: 2026-07-29
+**커밋**: (이번 세션)
+
+### 증상
+- `POST /api/safety-committee/meetings/:id/photos` → **500 Internal Server Error**
+- `SyntaxError: Unexpected token 'I', "Internal S"... is not valid JSON`
+- 발생 위치: `app.js:47898` (`_scUpload` 함수 내 `.json()` 호출)
+
+### 원인 분석
+
+| 레이어 | 원인 | 설명 |
+|--------|------|------|
+| **서버 (1차)** | `caption NOT NULL` 위반 | `INSERT INTO safety_committee_photos` 시 `caption = null` 전달 → `TEXT NOT NULL DEFAULT ''` 제약 위반 → SQLite 500 |
+| **클라이언트 (2차)** | `_scUpload` r.ok 체크 없음 | 500 응답(HTML)을 `.json()`으로 파싱 시도 → `SyntaxError` |
+| **클라이언트 (3차)** | `_scUploadPhotos` 이중 `.json()` | `_scUpload` 반환값(이미 파싱된 객체)에 `.then(r => r.json())` 재호출 → `TypeError: r.json is not a function` |
+
+### 수정 내역
+
+| 파일 | 수정 내용 |
+|------|----------|
+| `src/nas-routes/safety-committee.ts` | `caption = null` → `caption = ''` (line ~808) + INSERT try/catch + 에러 로그 추가 |
+| `public/static/app.js` | `_scUpload` — `r.ok` 체크 + 비-JSON 응답 graceful 처리 (line 47894) |
+| `public/static/app.js` | `_scUploadPhotos` — 이중 `.json()` 제거, IIFE closure로 loop 변수 캡처, `.catch()` 에러 알림 추가 (line 50703) |
+| `public/static/app.js` | `_scUploadDocs` — 동일 패턴으로 이중 `.json()` 제거, IIFE closure, `.catch()` 추가 (line 50728) |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (296.84 kB)

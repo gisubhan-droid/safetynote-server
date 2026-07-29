@@ -805,7 +805,8 @@ app.post('/meetings/:id/photos', async (c) => {
   try { formData = await c.req.formData() }
   catch(_) { return c.json({ error: '파일 파싱 실패' }, 400) }
 
-  const caption = (formData.get('caption') as string) || null
+  // [BUG-196c] caption null → '' 처리 (NOT NULL DEFAULT '' 제약 위반 방지)
+  const caption = (formData.get('caption') as string) || ''
   const file    = formData.get('file') as File | null
   if (!file) return c.json({ error: 'file 필드 필수' }, 400)
 
@@ -817,10 +818,16 @@ app.post('/meetings/:id/photos', async (c) => {
   const buf = await file.arrayBuffer()
   writeFileSync(filePath, Buffer.from(buf))
 
-  const info = rawDb.prepare(`
-    INSERT INTO safety_committee_photos (meeting_id, file_name, file_path, mime_type, caption)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(meetingId, file.name, filePath, file.type || `image/${ext}`, caption)
+  let info: any
+  try {
+    info = rawDb.prepare(`
+      INSERT INTO safety_committee_photos (meeting_id, file_name, file_path, mime_type, caption)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(meetingId, file.name, filePath, file.type || `image/${ext}`, caption)
+  } catch(dbErr: any) {
+    console.error('[SC photos] INSERT 오류:', dbErr.message)
+    return c.json({ error: 'DB 저장 실패: ' + dbErr.message }, 500)
+  }
   return c.json({ success: true, id: info.lastInsertRowid })
 })
 

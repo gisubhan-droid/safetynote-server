@@ -47895,7 +47895,11 @@ function _scUpload(url, formData) {
   var token = localStorage.getItem('token');
   var headers = {};
   if (token) headers['Authorization'] = 'Bearer ' + token;
-  return fetch(url, { method: 'POST', headers: headers, body: formData }).then(function(r){ return r.json(); });
+  // [BUG-196c] r.ok 체크 추가 — 500 에러 시 HTML 응답을 JSON 파싱 시도하여 SyntaxError 발생 방지
+  return fetch(url, { method: 'POST', headers: headers, body: formData }).then(function(r) {
+    if (!r.ok) return r.text().then(function(t) { throw new Error(t || String(r.status)); });
+    return r.json();
+  });
 }
 
 // ─── 산업안전보건위원회 통합 메인 (탭) ───────────────────────────────────────
@@ -50702,13 +50706,21 @@ function _scUploadPhotos(input) {
   var mid = _scCurrentMeetingId;
   var pending = files.length;
   for (var i = 0; i < files.length; i++) {
-    var fd = new FormData();
-    fd.append('file', files[i]);
-    _scUpload('/api/safety-committee/meetings/' + mid + '/photos', fd)
-      .then(function(r){ return r.json(); }).then(function() {
-        pending--;
-        if (pending === 0) { _scLoadMediaTab(document.getElementById('sc-detail-body')); }
-      });
+    (function(file) {
+      var fd = new FormData();
+      fd.append('file', file);
+      // [BUG-196c] _scUpload이 이미 r.json()을 반환 → 이중 .json() 호출 제거
+      _scUpload('/api/safety-committee/meetings/' + mid + '/photos', fd)
+        .then(function() {
+          pending--;
+          if (pending === 0) { _scLoadMediaTab(document.getElementById('sc-detail-body')); }
+        })
+        .catch(function(err) {
+          pending--;
+          alert('사진 업로드 실패: ' + (err.message || err));
+          if (pending === 0) { _scLoadMediaTab(document.getElementById('sc-detail-body')); }
+        });
+    })(files[i]);
   }
   input.value = '';
 }
@@ -50719,14 +50731,22 @@ function _scUploadDocs(input) {
   var mid = _scCurrentMeetingId;
   var pending = files.length;
   for (var i = 0; i < files.length; i++) {
-    var fd = new FormData();
-    fd.append('file', files[i]);
-    _scUpload('/api/safety-committee/meetings/' + mid + '/docs', fd)
-      .then(function(r){ return r.json(); }).then(function(res) {
-        pending--;
-        if (res.error) alert('자료 첨부 실패: ' + res.error);
-        if (pending === 0) { _scLoadMediaTab(document.getElementById('sc-detail-body')); }
-      });
+    (function(file) {
+      var fd = new FormData();
+      fd.append('file', file);
+      // [BUG-196c] _scUpload이 이미 r.json()을 반환 → 이중 .json() 호출 제거
+      _scUpload('/api/safety-committee/meetings/' + mid + '/docs', fd)
+        .then(function(res) {
+          pending--;
+          if (res && res.error) alert('자료 첨부 실패: ' + res.error);
+          if (pending === 0) { _scLoadMediaTab(document.getElementById('sc-detail-body')); }
+        })
+        .catch(function(err) {
+          pending--;
+          alert('자료 첨부 실패: ' + (err.message || err));
+          if (pending === 0) { _scLoadMediaTab(document.getElementById('sc-detail-body')); }
+        });
+    })(files[i]);
   }
   input.value = '';
 }

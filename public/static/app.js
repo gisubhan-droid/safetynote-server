@@ -298,8 +298,8 @@ const MENU_DEFINITIONS = [
   { id:'inspections',      label:'현장점검',         icon:'fas fa-search',            group:'메인' },
   { id:'risk-periodic',    label:'정기 위험성평가',   icon:'fas fa-calendar-check',    group:'위험성평가' },
   { id:'risk-adhoc',       label:'수시 위험성평가',   icon:'fas fa-bolt',              group:'위험성평가' },
-  { id:'risk-items',       label:'분류별 항목 관리',  icon:'fas fa-list-check',        group:'위험성평가' },
-  { id:'safety-settings',  label:'안전설정 관리',      icon:'fas fa-shield-check',      group:'위험성평가' },
+  { id:'risk-items',       label:'위험성평가표관리',       icon:'fas fa-list-check',        group:'항목관리' },
+  { id:'safety-settings',  label:'안전설정',              icon:'fas fa-shield-check',      group:'항목관리' },
   { id:'hazards',          label:'위험(아차사고)신고',    icon:'fas fa-exclamation-triangle',group:'안전' },
   { id:'work-stops',       label:'작업중지현황',         icon:'fas fa-hand-paper',           group:'안전' },
   { id:'stats-task',          label:'작업통계',            icon:'fas fa-tasks',              group:'안전현황' },
@@ -2315,8 +2315,10 @@ function renderApp() {
         { id:'risk', icon:'fas fa-shield-alt', label:'위험성평가', children: [
           { id:'risk-periodic',   icon:'fas fa-calendar-check', label:'정기 위험성평가' },
           { id:'risk-adhoc',      icon:'fas fa-bolt',           label:'수시 위험성평가' },
-          { id:'risk-items',      icon:'fas fa-list-check',     label:'분류별 항목 관리' },
-          { id:'safety-settings', icon:'fas fa-shield-check',   label:'안전설정 관리' },
+        ]},
+        { id:'risk-manage', icon:'fas fa-folder-open', label:'항목관리', children: [
+          { id:'risk-items',      icon:'fas fa-list-check',     label:'위험성평가표관리' },
+          { id:'safety-settings', icon:'fas fa-shield-check',   label:'안전설정' },
         ]},
       ]
     },
@@ -3081,10 +3083,11 @@ function getPageTitle(page) {
     users: '업무중사용자', 'suspended-users': '업무중지사용자', 'my-stats': '내 작업통계', 'hazard-report': '위험신고',
     'admin-settings': '시스템 설정',
     'legal-notices': '법령안내 관리',
-    'risk': '위험성평가', 'risk-periodic': '정기 위험성평가', 'risk-adhoc': '수시 위험성평가', 'risk-items': '분류별 항목 관리',
-    'wt-safety': '작업유형 안전내용 관리',
-    'checklist-items': '체크리스트 항목 관리',
-    'safety-settings': '안전설정 관리',
+    'risk': '위험성평가', 'risk-periodic': '정기 위험성평가', 'risk-adhoc': '수시 위험성평가', 'risk-items': '위험성평가표관리',
+    'wt-safety': '위험성(체크리스)평가설정',
+    'checklist-items': 'TBM 사진촬영대상설정',
+    'safety-settings': '항목관리',
+    'risk-manage': '항목관리',
     'periodic-risk': '위험성평가', 'checklist-risk': '작업 위험성평가(체크리스트)',
     'teams': '현장팀관리',
     'sys-user-mgmt': '계정관리',
@@ -3224,6 +3227,7 @@ function navigateTo(page) {
     case 'risk-periodic': renderRiskPeriodicPage(content); break;
     case 'risk-adhoc': renderRiskAdhocPage(content); break;
     case 'risk-items': renderRiskItemsPage(content); break;
+    case 'risk-manage': navigateTo('risk-items'); return;  // 항목관리 그룹 클릭 시 첫 번째 항목으로
     case 'wt-safety':        _safetySettingsActiveTab = 'wt-safety';       navigateTo('safety-settings'); return;
     case 'checklist-items':  _safetySettingsActiveTab = 'checklist-items'; navigateTo('safety-settings'); return;
     case 'safety-settings':  renderSafetySettingsPage(content);  break;
@@ -25061,7 +25065,7 @@ async function renderRiskPage(container, mode) {
           <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full" style="background:${modeLighter};color:${modeText}">${allRisks.length}</span>
         </div>
         ${!isWorker ? `<button onclick="navigateTo('risk-items')" class="ml-auto px-3 py-2 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
-          <i class="fas fa-list-check"></i> 분류별 항목 관리
+          <i class="fas fa-list-check"></i> 위험성평가표관리
         </button>` : ''}
       </div>
 
@@ -25335,7 +25339,7 @@ async function showRiskWorkTypeModal() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// FEAT-046: 분류별 항목 관리 페이지
+// FEAT-046: 위험성평가표관리 페이지 (구 분류별 항목 관리)
 // ─────────────────────────────────────────────────────────────
 async function renderRiskItemsPage(container) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
@@ -25361,7 +25365,7 @@ async function renderRiskItemsPage(container) {
       <div class="page-container space-y">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-            <i class="fas fa-list-check text-blue-500"></i>분류별 항목 관리
+            <i class="fas fa-list-check text-blue-500"></i>위험성평가표관리
           </h2>
           ${canEdit ? `<button onclick="showRiskWorkTypeModal()" class="btn btn-outline text-xs px-3 py-1.5 flex items-center gap-1">
             <i class="fas fa-cog"></i>작업유형 관리
@@ -45766,7 +45770,7 @@ function _renderSafetySettingsTabContent(container) {
         ? ' border-purple-600 text-purple-700 bg-purple-50'
         : ' border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300')
     +   '" onclick="_switchSafetySettingsTab(\'wt-safety\')">'
-    +   '<i class="fas fa-hard-hat mr-1.5"></i>작업유형 안전내용 관리'
+    +   '<i class="fas fa-hard-hat mr-1.5"></i>위험성(체크리스)평가설정'
     + '</button>'
     + '<button type="button"'
     +   ' class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors'
@@ -45774,7 +45778,7 @@ function _renderSafetySettingsTabContent(container) {
         ? ' border-indigo-600 text-indigo-700 bg-indigo-50'
         : ' border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300')
     +   '" onclick="_switchSafetySettingsTab(\'checklist-items\')">'
-    +   '<i class="fas fa-tasks mr-1.5"></i>체크리스트 항목 관리'
+    +   '<i class="fas fa-tasks mr-1.5"></i>TBM 사진촬영대상설정'
     + '</button>'
     + '</nav>'
     + '</div>';
@@ -45959,7 +45963,7 @@ function _renderClItemsPage(container) {
   var html = '<div class="p-4 space-y-4">';
   html += '<div class="flex items-center justify-between">';
   html += '<div>';
-  html += '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-tasks text-indigo-500 mr-2"></i>체크리스트 항목 관리</h2>';
+  html += '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-tasks text-indigo-500 mr-2"></i>TBM 사진촬영대상설정</h2>';
   html += '<p class="text-xs text-gray-500 mt-0.5">위험성평가 체크리스트의 필수/작업유형별 점검 항목을 추가·수정·삭제합니다.</p>';
   html += '</div>';
   html += '<div class="flex items-center gap-2">';
@@ -46488,7 +46492,7 @@ function _buildWtSafetyListHtml(list) {
   return '<div class="p-4 space-y-4">'
     + '<div class="flex items-center justify-between">'
     +   '<div>'
-    +     '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-hard-hat text-purple-500 mr-2"></i>작업유형별 안전내용 관리</h2>'
+    +     '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-hard-hat text-purple-500 mr-2"></i>위험성(체크리스)평가설정</h2>'
     +     '<p class="text-xs text-gray-500 mt-0.5">위험성평가 체크리스트 작업유형의 안전교육·TBM항목·주의사항·필수사진을 관리합니다.</p>'
     +   '</div>'
     +   '<button class="btn btn-primary text-sm" onclick="_showWtSafetyEditModal(null)">'

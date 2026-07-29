@@ -298,8 +298,7 @@ const MENU_DEFINITIONS = [
   { id:'inspections',      label:'현장점검',         icon:'fas fa-search',            group:'메인' },
   { id:'risk-periodic',    label:'정기 위험성평가',   icon:'fas fa-calendar-check',    group:'위험성평가' },
   { id:'risk-adhoc',       label:'수시 위험성평가',   icon:'fas fa-bolt',              group:'위험성평가' },
-  { id:'risk-items',       label:'위험성평가표관리',       icon:'fas fa-list-check',        group:'항목관리' },
-  { id:'safety-settings',  label:'안전설정',              icon:'fas fa-shield-check',      group:'항목관리' },
+  { id:'risk-manage',      label:'항목관리',              icon:'fas fa-folder-open',       group:'항목관리' },
   { id:'hazards',          label:'위험(아차사고)신고',    icon:'fas fa-exclamation-triangle',group:'안전' },
   { id:'work-stops',       label:'작업중지현황',         icon:'fas fa-hand-paper',           group:'안전' },
   { id:'stats-task',          label:'작업통계',            icon:'fas fa-tasks',              group:'안전현황' },
@@ -2316,10 +2315,7 @@ function renderApp() {
           { id:'risk-periodic',   icon:'fas fa-calendar-check', label:'정기 위험성평가' },
           { id:'risk-adhoc',      icon:'fas fa-bolt',           label:'수시 위험성평가' },
         ]},
-        { id:'risk-manage', icon:'fas fa-folder-open', label:'항목관리', children: [
-          { id:'risk-items',      icon:'fas fa-list-check',     label:'위험성평가표관리' },
-          { id:'safety-settings', icon:'fas fa-shield-check',   label:'안전설정' },
-        ]},
+        { id:'risk-manage', icon:'fas fa-folder-open', label:'항목관리' },
       ]
     },
     {
@@ -3226,11 +3222,11 @@ function navigateTo(page) {
     case 'risk': navigateTo('risk-periodic'); return;
     case 'risk-periodic': renderRiskPeriodicPage(content); break;
     case 'risk-adhoc': renderRiskAdhocPage(content); break;
-    case 'risk-items': renderRiskItemsPage(content); break;
-    case 'risk-manage': navigateTo('risk-items'); return;  // 항목관리 그룹 클릭 시 첫 번째 항목으로
-    case 'wt-safety':        _safetySettingsActiveTab = 'wt-safety';       navigateTo('safety-settings'); return;
-    case 'checklist-items':  _safetySettingsActiveTab = 'checklist-items'; navigateTo('safety-settings'); return;
-    case 'safety-settings':  renderSafetySettingsPage(content);  break;
+    case 'risk-manage': renderRiskManagePage(content); break;  // 항목관리 3탭 통합 페이지
+    case 'risk-items':        _riskManageActiveTab = 'risk-items';        navigateTo('risk-manage'); return;
+    case 'wt-safety':         _riskManageActiveTab = 'wt-safety';         navigateTo('risk-manage'); return;
+    case 'checklist-items':   _riskManageActiveTab = 'checklist-items';   navigateTo('risk-manage'); return;
+    case 'safety-settings':   _riskManageActiveTab = 'wt-safety';         navigateTo('risk-manage'); return;  // 구 경로 호환
     case 'work-stops': renderWorkStopsPage(content); break;
     case 'periodic-risk': renderRiskPeriodicPage(content); break;
     case 'checklist-risk': renderChecklistRiskPage(content); break;
@@ -45729,6 +45725,84 @@ async function copyTask(taskId) {
     } catch(_) {}
   }
   toast('작업 데이터를 복사했습니다. 내용을 확인 후 등록하세요.', 'info');
+}
+
+// ============================================================================
+// [FEAT-194] 항목관리 3탭 통합 페이지 (세션 112)
+// 위험성평가표관리 / 위험성(체크리스)평가설정 / TBM 사진촬영대상설정
+// ============================================================================
+
+// 활성 탭 상태 전역 변수
+var _riskManageActiveTab = 'risk-items';  // 'risk-items' | 'wt-safety' | 'checklist-items'
+
+// 탭 전환 함수 (RULE-003)
+async function _switchRiskManageTab(tab) {
+  _riskManageActiveTab = tab;
+  var content = document.getElementById('page-content');
+  if (!content) return;
+  // checklist-items 탭 전환 시 wt-safety 캐시 최신화 (작업유형 추가/삭제 반영)
+  if (tab === 'checklist-items') {
+    await _loadWtSafetySettings().catch(function(){});
+  }
+  _renderRiskManageTabContent(content);
+}
+
+// 탭 UI + 내용 렌더링
+async function renderRiskManagePage(container) {
+  _renderRiskManageTabContent(container);
+}
+
+function _renderRiskManageTabContent(container) {
+  var tabRI = _riskManageActiveTab === 'risk-items';
+  var tabWT = _riskManageActiveTab === 'wt-safety';
+  var tabCL = _riskManageActiveTab === 'checklist-items';
+
+  var activeClass   = ' border-b-2 font-semibold ';
+  var inactiveClass = ' border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 ';
+
+  var tabHeaderHtml = '<div class="border-b border-gray-200 mb-0 bg-white sticky top-0 z-10">'
+    + '<nav class="flex px-4 pt-3 gap-1" aria-label="항목관리 탭">'
+    + '<button type="button"'
+    +   ' class="px-4 py-2.5 text-sm rounded-t-lg transition-colors'
+    +   (tabRI
+        ? activeClass + 'border-blue-600 text-blue-700 bg-blue-50'
+        : inactiveClass)
+    +   '" onclick="_switchRiskManageTab(\'risk-items\')">'
+    +   '<i class="fas fa-list-check mr-1.5"></i>위험성평가표관리'
+    + '</button>'
+    + '<button type="button"'
+    +   ' class="px-4 py-2.5 text-sm rounded-t-lg transition-colors'
+    +   (tabWT
+        ? activeClass + 'border-purple-600 text-purple-700 bg-purple-50'
+        : inactiveClass)
+    +   '" onclick="_switchRiskManageTab(\'wt-safety\')">'
+    +   '<i class="fas fa-hard-hat mr-1.5"></i>위험성(체크리스)평가설정'
+    + '</button>'
+    + '<button type="button"'
+    +   ' class="px-4 py-2.5 text-sm rounded-t-lg transition-colors'
+    +   (tabCL
+        ? activeClass + 'border-indigo-600 text-indigo-700 bg-indigo-50'
+        : inactiveClass)
+    +   '" onclick="_switchRiskManageTab(\'checklist-items\')">'
+    +   '<i class="fas fa-tasks mr-1.5"></i>TBM 사진촬영대상설정'
+    + '</button>'
+    + '</nav>'
+    + '</div>';
+
+  var bodyId = 'risk-manage-tab-body';
+  container.innerHTML = tabHeaderHtml
+    + '<div id="' + bodyId + '" class="risk-manage-tab-body"></div>';
+
+  var body = document.getElementById(bodyId);
+  if (!body) return;
+
+  if (tabRI) {
+    renderRiskItemsPage(body);
+  } else if (tabWT) {
+    renderWtSafetyPage(body);
+  } else {
+    renderChecklistItemsPage(body);
+  }
 }
 
 // ============================================================================

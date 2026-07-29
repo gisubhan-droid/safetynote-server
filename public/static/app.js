@@ -33832,7 +33832,9 @@ function _srRenderCard(req, isDone, META) {
   } else if (req.ref_type === 'risk_assessment') {
     _viewBtn = '<div style="margin-top:10px"><button onclick="_signReqOpenRisk(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 위험성평가 내용 보기</button></div>';
   } else if (req.ref_type === 'education') {
-    var _eduSubType = req.ref_sub_type || 'periodic';
+    // [BUG-FIX] EDU_TYPE_META에 없는 값이면 빈문자열로 전달 → showEduDetailModal 내부에서 세션 API로 자동 보정
+    var _validEduTypes = ['periodic','hire','job_change','special','supervisor'];
+    var _eduSubType = (_validEduTypes.indexOf(req.ref_sub_type) !== -1) ? req.ref_sub_type : '';
     _viewBtn = '<div style="margin-top:10px"><button onclick="showEduDetailModal(' + req.ref_id + ',\'' + _eduSubType + '\')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 안전교육 내용 보기</button></div>';
   } else if (req.ref_type === 'sc' || req.ref_type === 'sc_vote') {
     // [BUG-FIX] 텍스트만 표시하던 SC 내용보기를 클릭 가능한 버튼으로 개선
@@ -36464,7 +36466,18 @@ async function _eduAttendeeUnsign(attendeeId, sessionId, eduType) {
 }
 
 async function showEduDetailModal(sessionId, eduType) {
-  const meta = EDU_TYPE_META[eduType];
+  // [BUG-FIX] eduType 이 없거나 EDU_TYPE_META 에 없는 값이면 세션에서 직접 조회 후 fallback
+  var _resolvedEduType = eduType;
+  if (!_resolvedEduType || !EDU_TYPE_META[_resolvedEduType]) {
+    // eduType 이 비어있거나 알 수 없는 값 → 세션 API 에서 실제 edu_type 조회
+    try {
+      var _typeRes = await API.get('/education/sessions/' + sessionId);
+      _resolvedEduType = (_typeRes.data && _typeRes.data.session && _typeRes.data.session.edu_type) || 'periodic';
+    } catch(_) { _resolvedEduType = 'periodic'; }
+  }
+  var meta = EDU_TYPE_META[_resolvedEduType] || EDU_TYPE_META['periodic'];
+  // 이후 코드에서도 eduType 대신 _resolvedEduType 사용
+  eduType = _resolvedEduType;
   let session, attendees = [], photos = [], eduApproval = { approval_safety: null, approval_general: null }, materials = [];
   try {
     const [sRes, pRes, aRes, mRes] = await Promise.all([

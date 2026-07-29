@@ -6946,3 +6946,60 @@ API.get('/tasks', { params: _taskParams })
 ### 검증
 - `node --check public/static/app.js` ✅
 - `npm run build` ✅ (296.84 kB)
+
+---
+
+## FEAT-197 — 작업관리 취소·중지 상태 표시 개선
+
+**구현 일시**: 2026-07-29  
+**커밋**: (이번 세션)
+
+### 배경
+취소(cancelled)/중지(paused) 상태가 진행단계 표시 UI에 반영되지 않아 작업 목록에서 구분이 어렵고, 기본 필터에 포함되어 실제 진행 중인 작업 조회를 방해함.
+
+### 구현 내역
+
+#### 1. 상태 배지 및 진행단계 표시
+| 파일 | 수정 내용 |
+|------|----------|
+| `public/static/app.js` | `statusBadge()` — `cancelled`(`⛔ 취소`/`badge-cancelled`), `paused`(`⏸ 중지`/`badge-paused`) 항목 추가 |
+| `public/static/app.js` | `taskStageMini()` — cancelled/paused 조기 반환으로 막대형 대신 강조 배지 표시 (취소: 빨강, 중지: 주황) |
+| `public/static/style.css` | `.badge-cancelled` (배경 `#FEE2E2`, 글자 `#DC2626`) + `.badge-paused` (배경 `#FEF3C7`, 글자 `#D97706`) 추가 |
+
+#### 2. 상태 매핑 확장
+| 파일 | 수정 내용 |
+|------|----------|
+| `public/static/app.js` | `statusLabelMap` — `cancelled: '⛔ 취소'`, `paused: '⏸ 중지'` 추가 |
+| `public/static/app.js` | `statusColorMap` — `cancelled: '#DC2626'`, `paused: '#D97706'` 추가 |
+| `public/static/app.js` | `_bgMap` — `cancelled: '#FEE2E2'`, `paused: '#FEF3C7'` 추가 |
+
+#### 3. 기본 필터에서 cancelled/paused 제외 (핵심)
+| 파일 | 수정 내용 |
+|------|----------|
+| `public/static/app.js` | `renderTasksPage` — `taskFilters.statusList`에 cancelled/paused가 명시적으로 포함된 경우에만 표시, 기본 조회 시 클라이언트 필터링으로 제외 |
+| `public/static/app.js` | `_myTasksStatusFilter` 초기값 — `['assigned','in_progress','tbm_done','working','work_completed']` (cancelled/paused 미포함) |
+| `public/static/app.js` | `_myTasksStatusReset()` — 리셋 시도 동일 5개 상태로 복원, cancelled/paused 미포함 유지 |
+
+#### 4. 진행단계 피커 항목 추가
+| 파일 | 수정 내용 |
+|------|----------|
+| `public/static/app.js` | 작업관리 진행단계 피커 — 기존 7개 항목 아래 구분선 + "취소·중지 (별도 조회)" 섹션 헤더 추가 후 cancelled/paused 항목 표시 |
+| `public/static/app.js` | 내 작업 진행단계 피커 — `_MY_TASK_STATUS_ALL`에 cancelled/paused 추가, 구분선 + "취소·중지 (기본 미포함)" 헤더, 빨강/주황 강조 스타일 |
+| `public/static/app.js` | `_MY_TASK_STATUS_LABELS` — `cancelled: '⛔ 취소'`, `paused: '⏸ 중지'` 추가 |
+
+### 설계 원칙
+- **서버 변경 없음**: 서버는 `status` 미지정 시 전체 반환 → 클라이언트에서만 필터링
+- **명시적 선택 시만 표시**: 사용자가 피커에서 cancelled/paused를 직접 체크해야만 목록에 나타남
+- **기존 워크플로우 무영향**: unassigned→assigned→in_progress→...→completed 흐름 변경 없음
+
+### 규칙 준수
+| 규칙 | 처리 |
+|------|------|
+| RULE-001 (var 전용 in app.js) | 모든 신규 코드 `var` 사용 (기존 `const`/`let` 있는 함수 내부 수정은 맥락 유지) |
+| RULE-002 (NAS 라우트 순서) | 라우트 파일 변경 없음 — 해당 없음 |
+| RULE-003 (onclick 따옴표 중첩 금지) | 피커 항목 onclick은 단순 값 참조만 사용, 중첩 없음 |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (296.84 kB)
+- `_myTasksStatusReset()` — cancelled/paused 기본 미포함 확인 ✅

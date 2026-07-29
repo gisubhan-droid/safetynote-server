@@ -11300,3 +11300,38 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | fix: [BUG-196c] SC 사진 업로드 500 — caption NOT NULL 위반 + _scUpload r.ok 체크 + 이중 json() 제거 |
+
+---
+
+## 세션 115 (2026-07-29)
+
+### 작업 — FEAT-197
+
+#### FEAT-197 — 작업관리 취소·중지 상태 표시 개선
+
+**목적**: 취소(cancelled)/중지(paused) 상태를 진행단계 UI에 명확하게 표현하고, 기본 필터에서 제외하여 실제 진행 작업만 기본 조회되도록 개선.
+
+**구현 내용**:
+1. **진행단계 배지 강화** — `statusBadge()` / `taskStageMini()` cancelled/paused 케이스 추가 (막대형 대신 ⛔/⏸ 강조 배지)
+2. **상태 매핑 확장** — `statusLabelMap` / `statusColorMap` / `_bgMap` cancelled/paused 항목 추가
+3. **기본 필터 제외** — `renderTasksPage`에서 명시적 선택 없는 경우 cancelled/paused 클라이언트 필터링 제외
+4. **진행단계 피커 항목 추가** — 작업관리 + 내 작업 피커 모두 구분선 + 섹션 헤더 + 강조 스타일로 cancelled/paused 항목 추가
+5. **CSS 배지 추가** — `.badge-cancelled` (빨강) / `.badge-paused` (주황)
+6. **`_myTasksStatusReset()`** — 리셋 시 기본 5개 상태만 선택 (cancelled/paused 미포함 확인)
+
+**수정 파일**:
+- `public/static/app.js` — statusBadge / taskStageMini / statusLabelMap / statusColorMap / _bgMap / renderTasksPage 기본필터 / _MY_TASK_STATUS_ALL / _MY_TASK_STATUS_LABELS / 피커 UI 전체
+- `public/static/style.css` — `.badge-cancelled` / `.badge-paused` CSS 추가
+
+**규칙 준수**:
+- RULE-001: app.js 신규 코드 `var` 사용
+- RULE-002: 라우트 파일 변경 없음
+- RULE-003: onclick 따옴표 중첩 없음
+
+**검증**: `node --check` ✅ + `npm run build` ✅ (296.84 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | feat: [FEAT-197] 작업관리 취소·중지 상태 표시 + 진행단계 필터 추가 + 기본 제외 처리 |

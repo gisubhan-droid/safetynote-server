@@ -1249,21 +1249,36 @@ function _mapBtnHtml(getAddrExpr) {
 function statusBadge(status) {
   // 워크플로우: 미배정→작업자배정→체크리스트→TBM→작업개시→작업완료→일지작성→완료
   const map = {
-    unassigned:     ['미배정',     'badge-unassigned'],
-    assigned:       ['작업자배정', 'badge-assigned'],
+    unassigned:     ['미배정',       'badge-unassigned'],
+    assigned:       ['작업자배정',   'badge-assigned'],
     in_progress:    ['체크리스트완료','badge-in_progress'],
-    tbm_done:       ['TBM완료',   'badge-tbm_done'],
-    working:        ['작업진행중', 'badge-working'],
-    work_completed: ['작업완료',  'badge-work_completed'],
-    completed:      ['일지작성완료','badge-completed'],
-    cancelled:      ['취소',      'badge-cancelled']
+    tbm_done:       ['TBM완료',     'badge-tbm_done'],
+    working:        ['작업진행중',   'badge-working'],
+    work_completed: ['작업완료',     'badge-work_completed'],
+    completed:      ['일지작성완료', 'badge-completed'],
+    cancelled:      ['⛔ 취소',     'badge-cancelled'],
+    paused:         ['⏸ 중지',     'badge-paused']
   };
   const [label, cls] = map[status] || [status, 'badge-unassigned'];
   return `<span class="badge ${cls}">${label}</span>`;
 }
 
 // 리스트용 미니 막대형 진행단계 인디케이터
+// [FEAT-197] cancelled(취소)/paused(중지) — 막대 대신 명확한 상태 배지 반환
 function taskStageMini(status) {
+  // 취소/중지는 별도 배지로 강조 표시
+  if (status === 'cancelled') {
+    return '<div style="min-width:132px;max-width:180px;text-align:center">' +
+      '<div style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;' +
+      'background:#FEE2E2;color:#DC2626;border:1.5px solid #FCA5A5;white-space:nowrap">' +
+      '<i class="fas fa-ban" style="margin-right:3px;font-size:9px"></i>작업 취소</div></div>';
+  }
+  if (status === 'paused') {
+    return '<div style="min-width:132px;max-width:180px;text-align:center">' +
+      '<div style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;' +
+      'background:#FEF3C7;color:#D97706;border:1.5px solid #FCD34D;white-space:nowrap">' +
+      '<i class="fas fa-pause-circle" style="margin-right:3px;font-size:9px"></i>작업 중지</div></div>';
+  }
   const stages = [
     { key: 'unassigned',     label: '작업지시' },
     { key: 'assigned',       label: '작업등록' },
@@ -1283,15 +1298,14 @@ function taskStageMini(status) {
     } else if (i === curIdx) {
       bg = i >= purpleFromIdx ? '#685182' : '#D70072'; // 현재: 동일 규칙
     }
-    return `<div style="flex:1;height:5px;border-radius:3px;background:${bg}"></div>`;
+    return '<div style="flex:1;height:5px;border-radius:3px;background:' + bg + '"></div>';
   }).join('');
-  const curLabel = stages[curIdx]?.label || status;
+  const curLabel = stages[curIdx] ? stages[curIdx].label : status;
   const labelColor = curIdx >= purpleFromIdx ? '#685182' : (curIdx >= 0 ? '#D70072' : '#C6C6C6');
-  return `
-    <div style="min-width:132px;max-width:180px">
-      <div style="display:flex;gap:2px;margin-bottom:4px">${pills}</div>
-      <div style="font-size:10px;font-weight:700;color:${labelColor};text-align:center">${curLabel}</div>
-    </div>`;
+  return '<div style="min-width:132px;max-width:180px">' +
+    '<div style="display:flex;gap:2px;margin-bottom:4px">' + pills + '</div>' +
+    '<div style="font-size:10px;font-weight:700;color:' + labelColor + ';text-align:center">' + curLabel + '</div>' +
+    '</div>';
 }
 
 // 위험성평가 결과 배지 (낮음/보통/높음/중대 — 한글 값)
@@ -6496,6 +6510,17 @@ async function renderTasksPage(container) {
     let newTasks = _taskIsLguPlus
       ? _rawNewTasks.filter(function(t) { return t.is_auto_request_no === 0; })
       : _rawNewTasks;
+    // [FEAT-197] 기본 필터: statusList에 cancelled/paused가 명시적으로 선택되지 않은 경우 제외
+    // statusList가 비어있거나(전체 조회) cancelled/paused를 포함하지 않으면 자동 제외
+    var _stListNow = taskFilters.statusList || [];
+    var _hasCancelledFilter = _stListNow.indexOf('cancelled') !== -1;
+    var _hasPausedFilter    = _stListNow.indexOf('paused')    !== -1;
+    if (!_hasCancelledFilter) {
+      newTasks = newTasks.filter(function(t) { return t.status !== 'cancelled'; });
+    }
+    if (!_hasPausedFilter) {
+      newTasks = newTasks.filter(function(t) { return t.status !== 'paused'; });
+    }
 
     // ── 연도 다중선택 클라이언트 필터 (2개 이상일 때 정밀 필터) ──────────────
     if (_tYrListNow.length > 1) {
@@ -6662,13 +6687,16 @@ async function renderTasksPage(container) {
     };
 
     // ── PC 테이블 렌더러 ──────────────────────────────────────────────────────
+    // [FEAT-197] cancelled(취소)/paused(중지) 추가
     const statusLabelMap = {
       unassigned: '미배정', assigned: '작업자배정', in_progress: '체크리스트완료',
-      tbm_done: 'TBM완료', working: '작업진행중', work_completed: '작업완료(일지대기)', completed: '일지작성완료'
+      tbm_done: 'TBM완료', working: '작업진행중', work_completed: '작업완료(일지대기)', completed: '일지작성완료',
+      cancelled: '⛔ 취소', paused: '⏸ 중지'
     };
     const statusColorMap = {
       unassigned: '#9CA3AF', assigned: '#6B7280', in_progress: '#9B59B6',
-      tbm_done: '#8B6BA8', working: '#D70072', work_completed: '#685182', completed: '#22c55e'
+      tbm_done: '#8B6BA8', working: '#D70072', work_completed: '#685182', completed: '#22c55e',
+      cancelled: '#DC2626', paused: '#D97706'
     };
     const rlLabelMap2 = { high: '고위험', medium: '중위험', normal: '일반' };
     const rlColorMap2 = { high: '#D70072', medium: '#9B59B6', normal: '#685182' };
@@ -6739,9 +6767,11 @@ async function renderTasksPage(container) {
             <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
               ${(() => {
                 // 단계별 배경색/텍스트색 매핑
+                // [FEAT-197] cancelled/paused 배경색 추가
                 const _bgMap = {
                   unassigned:'#F3F4F6', assigned:'#EFF6FF', in_progress:'#F3E8FF',
-                  tbm_done:'#EDE9FE', working:'#FDE8F3', work_completed:'#F5F0F8', completed:'#DCFCE7'
+                  tbm_done:'#EDE9FE', working:'#FDE8F3', work_completed:'#F5F0F8', completed:'#DCFCE7',
+                  cancelled:'#FEE2E2', paused:'#FEF3C7'
                 };
                 const _bg  = _bgMap[st] || '#F9FAFB';
                 const _bd  = stColor;   // 테두리 = statusColorMap 색상
@@ -6885,36 +6915,48 @@ async function renderTasksPage(container) {
       <!-- 1줄 통합 툴바: 진행단계·위험도·담당자·연도·월·검색타입·키워드·페이지당·엑셀·작업생성 -->
       <div class="flex flex-wrap items-center gap-2">
 
-        <!-- ① 진행단계 드롭다운 다중선택 -->
+        <!-- ① 진행단계 드롭다운 다중선택 [FEAT-197] cancelled/paused 추가 -->
         <div style="position:relative">
           <button id="taskStatusBtn" onclick="_taskOpenStatusPicker()"
             class="form-control" style="min-width:110px;max-width:180px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${taskFilters.statusList&&taskFilters.statusList.length?'#685182':'#D1D5DB'};border-radius:8px;font-size:12px;color:${taskFilters.statusList&&taskFilters.statusList.length?'#685182':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
             <i class="fas fa-tasks" style="font-size:10px;flex-shrink:0"></i>
-            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${taskFilters.statusList&&taskFilters.statusList.length ? taskFilters.statusList.map(v=>({'unassigned':'미배정','assigned':'작업자배정','in_progress':'체크완료','tbm_done':'TBM완료','working':'진행중','work_completed':'완료대기','completed':'일지완료'}[v]||v)).join(', ') : '진행단계'}</span>
-            ${taskFilters.statusList&&taskFilters.statusList.length ? `<span style="background:#685182;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${taskFilters.statusList.length}</span>` : ''}
+            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${taskFilters.statusList&&taskFilters.statusList.length ? taskFilters.statusList.map(function(v){return({'unassigned':'미배정','assigned':'작업자배정','in_progress':'체크완료','tbm_done':'TBM완료','working':'진행중','work_completed':'완료대기','completed':'일지완료','cancelled':'⛔취소','paused':'⏸중지'}[v]||v);}).join(', ') : '진행단계'}</span>
+            ${taskFilters.statusList&&taskFilters.statusList.length ? '<span style="background:#685182;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">'+taskFilters.statusList.length+'</span>' : ''}
           </button>
           ${taskFilters.statusList&&taskFilters.statusList.length
-            ? `<span onclick="event.stopPropagation();_taskClearStatusFilter()" title="선택 초기화"
-                style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#685182;font-size:13px;z-index:1;font-weight:700">✕</span>`
-            : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
-          <div id="taskStatusPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:170px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
+            ? '<span onclick="event.stopPropagation();_taskClearStatusFilter()" title="선택 초기화" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#685182;font-size:13px;z-index:1;font-weight:700">✕</span>'
+            : '<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>'}
+          <div id="taskStatusPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:180px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F3F0FA;background:#FAFAFE">
               <span style="font-size:11px;font-weight:700;color:#685182">진행단계 선택</span>
               <span id="taskStPickerCount" style="font-size:11px;color:#685182;font-weight:600">${taskFilters.statusList&&taskFilters.statusList.length ? taskFilters.statusList.length+'개 선택' : ''}</span>
             </div>
-            <div style="max-height:220px;overflow-y:auto;padding:4px 0">
+            <div style="max-height:260px;overflow-y:auto;padding:4px 0">
               ${[
-                {value:'unassigned',  label:'미배정'},
-                {value:'assigned',    label:'작업자배정'},
-                {value:'in_progress', label:'체크리스트완료'},
-                {value:'tbm_done',    label:'TBM완료'},
-                {value:'working',     label:'작업진행중'},
+                {value:'unassigned',     label:'미배정'},
+                {value:'assigned',       label:'작업자배정'},
+                {value:'in_progress',    label:'체크리스트완료'},
+                {value:'tbm_done',       label:'TBM완료'},
+                {value:'working',        label:'작업진행중'},
                 {value:'work_completed', label:'작업완료(일지대기)'},
-                {value:'completed',   label:'일지작성완료'}
+                {value:'completed',      label:'일지작성완료'}
               ].map(t => {
                 const checked = taskFilters.statusList && taskFilters.statusList.includes(t.value);
                 return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:12px;color:#374151;transition:background .1s"
                   onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
+                  <input type="checkbox" id="taskStCb_${t.value}" ${checked?'checked':''} onchange="_taskToggleStatus('${t.value}')">
+                  <span>${t.label}</span>
+                </label>`;
+              }).join('')}
+              <div style="margin:4px 14px;border-top:1px dashed #E5DAF5"></div>
+              <div style="padding:3px 14px 2px;font-size:10px;color:#9CA3AF;font-weight:600">취소·중지 (별도 조회)</div>
+              ${[
+                {value:'cancelled', label:'⛔ 취소된 작업', color:'#DC2626'},
+                {value:'paused',    label:'⏸ 중지된 작업', color:'#D97706'}
+              ].map(t => {
+                const checked = taskFilters.statusList && taskFilters.statusList.includes(t.value);
+                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:12px;color:${t.color};font-weight:600;transition:background .1s"
+                  onmouseover="this.style.background='#FFF8F8'" onmouseout="this.style.background=''">
                   <input type="checkbox" id="taskStCb_${t.value}" ${checked?'checked':''} onchange="_taskToggleStatus('${t.value}')">
                   <span>${t.label}</span>
                 </label>`;
@@ -16072,7 +16114,8 @@ let _myTasksSearchKw = '';  // 검색 키워드 (등록건명 or 공사담당자
 
 // ─── 내 작업목록 진행단계 다중선택 필터 ──────────────────────────────────────
 // 기본값: 미배정(unassigned), 일지작성완료(completed) 제외 5개 선택
-var _MY_TASK_STATUS_ALL = ['unassigned','assigned','in_progress','tbm_done','working','work_completed','completed'];
+// [FEAT-197] cancelled/paused 추가 (내 작업 진행단계 필터)
+var _MY_TASK_STATUS_ALL = ['unassigned','assigned','in_progress','tbm_done','working','work_completed','completed','cancelled','paused'];
 var _MY_TASK_STATUS_LABELS = {
   unassigned:     '미배정',
   assigned:       '작업자배정',
@@ -16080,9 +16123,11 @@ var _MY_TASK_STATUS_LABELS = {
   tbm_done:       'TBM완료',
   working:        '작업진행중',
   work_completed: '작업완료(일지대기)',
-  completed:      '일지작성완료'
+  completed:      '일지작성완료',
+  cancelled:      '⛔ 취소',
+  paused:         '⏸ 중지'
 };
-// 기본 선택: unassigned·completed 제외
+// 기본 선택: unassigned·completed·cancelled·paused 제외 (취소·중지는 명시적 선택 시만 표시)
 var _myTasksStatusFilter = ['assigned','in_progress','tbm_done','working','work_completed'];
 var _myTasksStatusPickerOpen = false;
 
@@ -16465,20 +16510,42 @@ async function renderMyTasksPage(container) {
           <div style="padding:10px 14px 6px;border-bottom:1px solid #F3F4F6">
             <span style="font-size:12px;font-weight:700;color:#685182">진행단계 선택</span>
           </div>
-          <div style="max-height:260px;overflow-y:auto;padding:6px 0">
-            ${_MY_TASK_STATUS_ALL.map(function(v) {
-              var checked = _myTasksStatusFilter.indexOf(v) !== -1;
-              var lbl = _MY_TASK_STATUS_LABELS[v] || v;
-              return '<label style="display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;'
-                + (checked ? 'background:#FAF7FF' : '')
-                + '" onmouseover="this.style.background=\'#F5F0F9\'" onmouseout="this.style.background=\'' + (checked ? '#FAF7FF' : '#fff') + '\'">'
-                + '<input type="checkbox" id="myTasksStCb_' + v + '"'
-                + ' onchange="_myTasksToggleStatus(\'' + v + '\')"'
-                + ' ' + (checked ? 'checked' : '')
-                + ' style="width:16px;height:16px;accent-color:#685182;cursor:pointer;flex-shrink:0">'
-                + '<span style="font-size:13px;color:#374151;font-weight:' + (checked ? '600' : '400') + '">' + lbl + '</span>'
-                + '</label>';
-            }).join('')}
+          <div style="max-height:300px;overflow-y:auto;padding:6px 0">
+            ${(function() {
+              var normalStatuses = ['unassigned','assigned','in_progress','tbm_done','working','work_completed','completed'];
+              var specialStatuses = ['cancelled','paused'];
+              var specialColors = { cancelled:'#DC2626', paused:'#D97706' };
+              var normalHtml = normalStatuses.map(function(v) {
+                var checked = _myTasksStatusFilter.indexOf(v) !== -1;
+                var lbl = _MY_TASK_STATUS_LABELS[v] || v;
+                return '<label style="display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;'
+                  + (checked ? 'background:#FAF7FF' : '')
+                  + '" onmouseover="this.style.background=\'#F5F0F9\'" onmouseout="this.style.background=\'' + (checked ? '#FAF7FF' : '#fff') + '\'">'
+                  + '<input type="checkbox" id="myTasksStCb_' + v + '"'
+                  + ' onchange="_myTasksToggleStatus(\'' + v + '\')"'
+                  + ' ' + (checked ? 'checked' : '')
+                  + ' style="width:16px;height:16px;accent-color:#685182;cursor:pointer;flex-shrink:0">'
+                  + '<span style="font-size:13px;color:#374151;font-weight:' + (checked ? '600' : '400') + '">' + lbl + '</span>'
+                  + '</label>';
+              }).join('');
+              var divider = '<div style="margin:4px 14px;border-top:1px dashed #E5E7EB"></div>'
+                + '<div style="padding:3px 16px 2px;font-size:10px;color:#9CA3AF;font-weight:600">취소·중지 (기본 미포함)</div>';
+              var specialHtml = specialStatuses.map(function(v) {
+                var checked = _myTasksStatusFilter.indexOf(v) !== -1;
+                var lbl = _MY_TASK_STATUS_LABELS[v] || v;
+                var clr = specialColors[v] || '#374151';
+                return '<label style="display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;'
+                  + (checked ? 'background:#FFF8F8' : '')
+                  + '" onmouseover="this.style.background=\'#FFF8F8\'" onmouseout="this.style.background=\'' + (checked ? '#FFF8F8' : '#fff') + '\'">'
+                  + '<input type="checkbox" id="myTasksStCb_' + v + '"'
+                  + ' onchange="_myTasksToggleStatus(\'' + v + '\')"'
+                  + ' ' + (checked ? 'checked' : '')
+                  + ' style="width:16px;height:16px;accent-color:' + clr + ';cursor:pointer;flex-shrink:0">'
+                  + '<span style="font-size:13px;color:' + clr + ';font-weight:600">' + lbl + '</span>'
+                  + '</label>';
+              }).join('');
+              return normalHtml + divider + specialHtml;
+            })()}
           </div>
           <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid #F3F4F6">
             <button onclick="_myTasksApplyStatusFilter()"

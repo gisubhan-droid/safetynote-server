@@ -6077,7 +6077,8 @@ function onDashRangeApply() {
 }
 
 // ======= 작업 관리 (관리감독자) =======
-let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [], year: getKSTYear(), month: getKSTMonth(), yearList: [], monthList: [], statusList: [], riskList: [], workClassList: [] };
+// [FEAT-197] 기본 필터: 진행 중 작업만 표시 (unassigned·completed·cancelled·paused 기본 제외)
+let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [], year: getKSTYear(), month: getKSTMonth(), yearList: [], monthList: [], statusList: ['assigned','in_progress','tbm_done','working','work_completed'], riskList: [], workClassList: [] };
 let _taskManagerDefaultApplied = false; // 작업관리 담당자 기본값 1회 적용 플래그
 let _taskUserList = []; // 작업관리 담당자 선택용 사용자 목록 (전역 캐시)
 
@@ -6169,11 +6170,16 @@ function _taskApplyStatusFilter() {
   renderTasksPage(document.getElementById('page-content'));
 }
 function _taskClearStatusFilter() {
-  taskFilters.statusList = [];
+  // [FEAT-197] 초기화 = 기본 5개(진행중 상태)로 복원. unassigned·completed·cancelled·paused 제외
+  var _DEFAULT_TASK_STATUS = ['assigned','in_progress','tbm_done','working','work_completed'];
+  taskFilters.statusList = _DEFAULT_TASK_STATUS.slice();
   taskFilters.status = '';
-  document.querySelectorAll('[id^="taskStCb_"]').forEach(cb => cb.checked = false);
-  const countEl = document.getElementById('taskStPickerCount');
-  if (countEl) countEl.textContent = '';
+  document.querySelectorAll('[id^="taskStCb_"]').forEach(function(cb) {
+    var v = cb.id.replace('taskStCb_','');
+    cb.checked = taskFilters.statusList.indexOf(v) !== -1;
+  });
+  var countEl = document.getElementById('taskStPickerCount');
+  if (countEl) countEl.textContent = taskFilters.statusList.length + '개 선택';
   taskFilters.page = 1;
   _taskCloseStatusPicker();
   renderTasksPage(document.getElementById('page-content'));
@@ -6510,16 +6516,12 @@ async function renderTasksPage(container) {
     let newTasks = _taskIsLguPlus
       ? _rawNewTasks.filter(function(t) { return t.is_auto_request_no === 0; })
       : _rawNewTasks;
-    // [FEAT-197] 기본 필터: statusList에 cancelled/paused가 명시적으로 선택되지 않은 경우 제외
-    // statusList가 비어있거나(전체 조회) cancelled/paused를 포함하지 않으면 자동 제외
+    // [FEAT-197] statusList 기반 클라이언트 필터링
+    // 기본값이 5개(assigned~work_completed)이므로, statusList가 있으면 해당 항목만 표시
+    // statusList가 비어있을 때만 전체 표시 (명시적 전체 선택 케이스)
     var _stListNow = taskFilters.statusList || [];
-    var _hasCancelledFilter = _stListNow.indexOf('cancelled') !== -1;
-    var _hasPausedFilter    = _stListNow.indexOf('paused')    !== -1;
-    if (!_hasCancelledFilter) {
-      newTasks = newTasks.filter(function(t) { return t.status !== 'cancelled'; });
-    }
-    if (!_hasPausedFilter) {
-      newTasks = newTasks.filter(function(t) { return t.status !== 'paused'; });
+    if (_stListNow.length > 0) {
+      newTasks = newTasks.filter(function(t) { return _stListNow.indexOf(t.status) !== -1; });
     }
 
     // ── 연도 다중선택 클라이언트 필터 (2개 이상일 때 정밀 필터) ──────────────

@@ -2,6 +2,78 @@
 
 ---
 
+## [FEAT-193] 위험성평가 서명요청 — 전원 서명 완료 후 미처리에서 사라지도록 변경 (세션 112)
+
+### 요구사항
+- **기존 동작**: 본인 서명 완료 즉시 미처리 목록에서 사라짐
+- **의도된 동작**: 모든 평가위원 전원 서명 완료 후에만 미처리 목록에서 사라짐
+- 본인 서명 완료 후 다른 위원이 아직 서명하지 않은 상태 → 카드는 유지되되 상태 표시 변경
+
+### 구현 내용
+
+#### 백엔드 — `signature-requests.ts`
+
+**GET / — 위험성평가 pending 레코드에 서명 현황 필드 추가**
+```typescript
+// pending 레코드 중 ref_type='risk_assessment'인 경우 추가 필드 주입:
+// ra_my_signed    : 본인이 risk_assessment_signatures에 실제 서명했는지 여부
+// ra_signed_count : 현재까지 서명한 위원 수 (DISTINCT user_id)
+// ra_member_count : 전체 평가위원 수 (risk_assessment_members)
+```
+
+**GET /count — 배지 카운트 개선**
+```typescript
+// 기존: signature_requests pending 전체 카운트
+// 변경: 위험성평가는 본인이 아직 실제 서명 안 한 건만 카운트
+//       → 본인 서명 완료 후 대기중인 건은 배지에서 제외
+```
+
+#### 프론트엔드 — `app.js`
+
+**`_srRenderCard` — 위험성평가 카드 상태 분기 추가**
+```
+본인 서명 완료(ra_my_signed=true):
+  - 헤더 배지: "✅ 서명완료 · 대기중" (초록색)
+  - 하단 버튼: 서명하기 버튼 → "내 서명 완료 / 전체 N명 중 N명 서명" 안내 박스로 교체
+  - 카드는 미처리 목록에 유지 (전원 서명 완료 시 자동 사라짐)
+
+본인 미서명:
+  - 기존과 동일 — "🔔 서명 필요" + 서명하기 버튼
+```
+
+**미처리 탭 카운트 — 실제 서명 필요 건만 카운트**
+```javascript
+// 위험성평가 본인 서명 완료 건은 탭 카운트에서 제외
+var _srPendingActionCnt = pending.filter(function(r) {
+  if (r.ref_type !== 'risk_assessment') return true;
+  return !r.ra_my_signed;
+}).length;
+```
+
+### 전체 서명 완료 시 자동 처리
+- 마지막 위원 서명 → `PATCH /:id/sign` 호출 → `risk_assessments.status = 'completed'` 자동 전환 (기존 세션111 로직 유지)
+- `completed` 전환 후 `renderSignatureRequestsPage` 재조회 → pending 레코드 더 이상 표시 안 됨 (전원 서명 완료 = `ra_signed_count >= ra_member_count` → 해당 시점에 이미 status=completed로 자동 전환)
+
+### 규칙 준수
+| 규칙 | 처리 |
+|------|------|
+| RULE-001 (var 전용) | `_raMySign`, `_raSignedCnt`, `_raMemberCnt`, `_srPendingActionCnt` 모두 `var` 사용 |
+| RULE-003 (onclick 따옴표) | 새 버튼 없음 — 기존 패턴 유지 |
+| KST-001/002 | 해당 없음 |
+
+### 변경 파일
+| 파일 | 변경 내용 |
+|------|----------|
+| `src/nas-routes/signature-requests.ts` | GET /: ra_my_signed/ra_signed_count/ra_member_count 필드 추가 / GET /count: RA 본인 미서명 건만 카운트 |
+| `public/static/app.js` | _srRenderCard: RA 본인 서명완료 시 대기중 안내 박스 표시 / 헤더 배지 분기 / 탭 카운트 개선 |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npx tsc --noEmit` (signature-requests.ts 신규 에러 없음) ✅
+- `npm run build` ✅ (296.05 kB)
+
+---
+
 ## [BUG-192] 서명요청 연결 오류 3건 수정 (세션 111)
 
 ### 문제

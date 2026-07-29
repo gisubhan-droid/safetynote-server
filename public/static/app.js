@@ -33657,12 +33657,18 @@ async function renderSignatureRequestsPage(container) {
       _srMonthOpts += '<option value="' + _mo + '"' + (_mo === _srInitMonth ? ' selected' : '') + '>' + _mo + '월</option>';
     }
 
+    // [FEAT-193] 미처리 탭 카운트 — 위험성평가 본인 서명 완료 건은 "서명 필요" 건에서 제외
+    var _srPendingActionCnt = pending.filter(function(r) {
+      if (r.ref_type !== 'risk_assessment') return true;
+      return !r.ra_my_signed;
+    }).length;
+
     container.innerHTML = '<div class="page-container">' +
       '<!-- 탭 -->' +
       '<div class="tab-bar mb-4">' +
         '<div class="tab-item active" id="srtab-pending" onclick="_srPageSwitchTab(\'pending\')">' +
           '미처리' +
-          (pending.length > 0 ? '<span class="ml-1 font-bold" style="color:#D70072">(' + pending.length + ')</span>' : '') +
+          (_srPendingActionCnt > 0 ? '<span class="ml-1 font-bold" style="color:#D70072">(' + _srPendingActionCnt + ')</span>' : '') +
         '</div>' +
         '<div class="tab-item" id="srtab-done" onclick="_srPageSwitchTab(\'done\')">' +
           '처리완료 <span id="srtab-done-count" style="color:#6B7280;font-weight:400;font-size:12px">(' + done.length + ')</span>' +
@@ -33841,6 +33847,14 @@ function _srRenderCard(req, isDone, META) {
     _viewBtn = '<div style="margin-top:10px"><button onclick="_signReqOpenSc(' + req.ref_id + ')" style="' + _btnStyle + '"><i class="fas fa-external-link-alt"></i> 위원회 회의 보기</button></div>';
   }
 
+  // [FEAT-193] 위험성평가 — 본인 서명 완료 여부 및 전체 서명 현황
+  // ra_my_signed    : 본인이 이미 실제 서명했는지 (백엔드에서 주입)
+  // ra_signed_count : 현재까지 서명한 위원 수
+  // ra_member_count : 전체 평가위원 수
+  var _raMySign    = req.ref_type === 'risk_assessment' && req.ra_my_signed;
+  var _raSignedCnt = req.ra_signed_count || 0;
+  var _raMemberCnt = req.ra_member_count || 0;
+
   // 서명/거부/투표 버튼 (미처리만)
   var actionBtns = '';
   if (!isDone) {
@@ -33854,6 +33868,21 @@ function _srRenderCard(req, isDone, META) {
           '<button onclick="_srVoteSubmit(' + req.id + ',\'abstain\')" style="flex:1;padding:9px 0;background:#4B5563;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer"><i class="fas fa-minus" style="margin-right:5px"></i>기권</button>' +
         '</div>' +
         '<button onclick="_signReqReject(' + req.id + ')" style="width:100%;margin-top:6px;padding:7px 0;background:#fff;color:#6B7280;border:1.5px solid #D1D5DB;border-radius:8px;font-size:12px;cursor:pointer"><i class="fas fa-times" style="margin-right:4px"></i>거부</button>' +
+      '</div>';
+    } else if (req.ref_type === 'risk_assessment' && _raMySign) {
+      // [FEAT-193] 위험성평가 — 본인 서명 완료, 다른 위원 서명 대기 중
+      actionBtns = '<div style="padding:0 16px 14px">' +
+        '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#F0FDF4;border:1.5px solid #6EE7B7;border-radius:10px">' +
+          '<i class="fas fa-check-circle" style="color:#059669;font-size:18px;flex-shrink:0"></i>' +
+          '<div>' +
+            '<div style="font-size:13px;font-weight:700;color:#065F46">내 서명 완료</div>' +
+            '<div style="font-size:11px;color:#047857;margin-top:2px">' +
+              (_raMemberCnt > 0
+                ? '전체 ' + _raMemberCnt + '명 중 ' + _raSignedCnt + '명 서명 완료 — 나머지 위원 서명 대기중'
+                : '다른 평가위원 서명 대기중') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
       '</div>';
     } else {
       actionBtns = '<div style="display:flex;gap:8px;padding:0 16px 14px">' +
@@ -33883,7 +33912,9 @@ function _srRenderCard(req, isDone, META) {
       '</div>' +
       (isDone ? statusBadge : (req.ref_type === 'sc_vote'
         ? '<span style="font-size:10px;color:#065F46;font-weight:700;background:#F0FDF4;padding:2px 8px;border-radius:12px;border:1px solid #A7F3D0">🗳️ 투표 필요</span>'
-        : '<span style="font-size:10px;color:#D70072;font-weight:700;background:#FFF0F7;padding:2px 8px;border-radius:12px;border:1px solid #FBCFE8">🔔 서명 필요</span>')) +
+        : (req.ref_type === 'risk_assessment' && _raMySign
+          ? '<span style="font-size:10px;color:#059669;font-weight:700;background:#F0FDF4;padding:2px 8px;border-radius:12px;border:1px solid #6EE7B7">✅ 서명완료 · 대기중</span>'
+          : '<span style="font-size:10px;color:#D70072;font-weight:700;background:#FFF0F7;padding:2px 8px;border-radius:12px;border:1px solid #FBCFE8">🔔 서명 필요</span>'))) +
     '</div>' +
     '<!-- 본문 -->' +
     '<div class="px-4 py-3">' +

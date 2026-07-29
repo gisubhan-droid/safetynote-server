@@ -59,18 +59,64 @@ app.get('/', async (c) => {
     ORDER BY sr.${isDone ? 'signed_at' : 'created_at'} DESC
     LIMIT 200
   `).all(user.id, status, ...dateParams)
-  return c.json(rows)
+
+  // [FEAT-193] 위험성평가 pending 레코드에 서명 현황 정보 추가
+  // - my_signed     : 본인이 이미 실제 서명(risk_assessment_signatures)했는지 여부
+  // - signed_count  : 현재까지 서명한 위원 수
+  // - member_count  : 전체 평가위원 수
+  // → 프론트에서 "내 서명 완료 — 다른 위원 대기중" 상태 카드 표시에 사용
+  const enriched = rows.map((row: any) => {
+    if (row.ref_type !== 'risk_assessment' || status !== 'pending') return row
+    try {
+      const mySigned: any = rawDb.prepare(
+        `SELECT COUNT(*) as cnt FROM risk_assessment_signatures WHERE assessment_id=? AND user_id=?`
+      ).get(Number(row.ref_id), user.id)
+      const signedCount: any = rawDb.prepare(
+        `SELECT COUNT(DISTINCT user_id) as cnt FROM risk_assessment_signatures WHERE assessment_id=?`
+      ).get(Number(row.ref_id))
+      const memberCount: any = rawDb.prepare(
+        `SELECT COUNT(*) as cnt FROM risk_assessment_members WHERE assessment_id=?`
+      ).get(Number(row.ref_id))
+      return {
+        ...row,
+        ra_my_signed:    (mySigned?.cnt  || 0) > 0,
+        ra_signed_count: signedCount?.cnt  || 0,
+        ra_member_count: memberCount?.cnt  || 0,
+      }
+    } catch(_) { return row }
+  })
+
+  return c.json(enriched)
 })
 
 // GET /api/signature-requests/count — 미처리 건수 (배지용)
+// [FEAT-193] 위험성평가는 본인이 아직 서명 안 한 건만 카운트
+//   → 본인 서명 완료 후 다른 위원 대기중인 건은 배지에서 제외 (서명할 게 없으므로)
 app.get('/count', async (c) => {
   const rawDb = getRawDb()
   const user = getUser(c)
   if (!user) return c.json({ error: '인증 필요' }, 401)
-  const row: any = rawDb.prepare(
-    `SELECT COUNT(*) as cnt FROM signature_requests WHERE target_user_id = ? AND status = 'pending'`
+
+  // 위험성평가 제외한 일반 pending 건수
+  const otherRow: any = rawDb.prepare(
+    `SELECT COUNT(*) as cnt FROM signature_requests WHERE target_user_id = ? AND status = 'pending' AND ref_type != 'risk_assessment'`
   ).get(user.id)
-  return c.json({ count: row?.cnt || 0 })
+
+  // 위험성평가 pending 중 본인이 아직 실제 서명(risk_assessment_signatures)하지 않은 건수
+  let raCount = 0
+  try {
+    const raPending: any[] = rawDb.prepare(
+      `SELECT DISTINCT ref_id FROM signature_requests WHERE target_user_id = ? AND status = 'pending' AND ref_type = 'risk_assessment'`
+    ).all(user.id)
+    for (const ra of raPending) {
+      const mySigned: any = rawDb.prepare(
+        `SELECT COUNT(*) as cnt FROM risk_assessment_signatures WHERE assessment_id=? AND user_id=?`
+      ).get(Number(ra.ref_id), user.id)
+      if ((mySigned?.cnt || 0) === 0) raCount++
+    }
+  } catch(_) {}
+
+  return c.json({ count: (otherRow?.cnt || 0) + raCount })
 })
 
 // POST /api/signature-requests — 요청 생성

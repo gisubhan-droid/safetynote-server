@@ -236,11 +236,22 @@ app.patch('/:id/sign', async (c) => {
   const signData = body.sign_data || null
   // [BUG-FIX] 중복 pending 레코드 일괄 처리:
   // 같은 ref_type + ref_id + target_user_id 조합으로 중복 발송된 pending 요청을 모두 signed로 갱신
-  rawDb.prepare(`
-    UPDATE signature_requests
-    SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP
-    WHERE ref_type=? AND ref_id=? AND target_user_id=? AND status='pending'
-  `).run(signData, req.ref_type, req.ref_id, user.id)
+  // [BUG-198] sc_vote는 ref_sub_type=agenda_id 로 안건마다 별도 레코드이므로
+  //   ref_sub_type 까지 일치하는 것만 처리해야 함.
+  //   ref_sub_type 없는 다른 ref_type은 기존과 동일하게 ref_id 범위로 일괄 처리.
+  if (req.ref_type === 'sc_vote') {
+    rawDb.prepare(`
+      UPDATE signature_requests
+      SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP
+      WHERE ref_type=? AND ref_id=? AND ref_sub_type IS ? AND target_user_id=? AND status='pending'
+    `).run(signData, req.ref_type, req.ref_id, req.ref_sub_type || null, user.id)
+  } else {
+    rawDb.prepare(`
+      UPDATE signature_requests
+      SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP
+      WHERE ref_type=? AND ref_id=? AND target_user_id=? AND status='pending'
+    `).run(signData, req.ref_type, req.ref_id, user.id)
+  }
 
   try {
     if (req.ref_type === 'tbm') {

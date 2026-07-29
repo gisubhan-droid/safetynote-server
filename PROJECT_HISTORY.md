@@ -11335,3 +11335,28 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | feat: [FEAT-197] 작업관리 취소·중지 상태 표시 + 진행단계 필터 추가 + 기본 제외 처리 |
+
+---
+
+## 세션 116 (2026-07-29)
+
+### 작업 — BUG-198
+
+#### BUG-198 — 산업안전보건위원회 투표 요청 1건 처리 시 나머지 투표 요청 전체 사라짐
+
+**증상**: 투표 활성화 안건 2건에 투표 요청 발송 후, 1건만 투표하면 나머지 1건 투표 요청도 `signed` 처리되어 목록에서 사라짐
+
+**원인**:  
+`PATCH /api/signature-requests/:id/sign` 공통 UPDATE 쿼리가 `ref_sub_type` 조건 없이 `ref_type + ref_id + target_user_id`만으로 pending 전체를 일괄 signed 처리함.  
+`sc_vote`는 안건별로 `ref_sub_type = agenda_id`가 다른 별도 레코드인데 이 조건이 누락되어 한 안건 투표 시 동일 회의의 모든 투표 요청이 소멸됨.
+
+**수정 파일**:
+- `src/nas-routes/signature-requests.ts` — `sc_vote`만 분기하여 `ref_sub_type` 조건 추가, 나머지 ref_type은 기존 로직 유지
+
+**검증**: `npm run build` ✅ (296.84 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | fix: [BUG-198] SC 투표 요청 1건 처리 시 나머지 소멸 — sc_vote ref_sub_type 조건 추가 |

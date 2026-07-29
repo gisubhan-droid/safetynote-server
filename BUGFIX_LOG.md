@@ -7003,3 +7003,55 @@ API.get('/tasks', { params: _taskParams })
 - `node --check public/static/app.js` ✅
 - `npm run build` ✅ (296.84 kB)
 - `_myTasksStatusReset()` — cancelled/paused 기본 미포함 확인 ✅
+
+---
+
+## BUG-198 — 투표 요청 1건 처리 시 나머지 투표 요청 전체 사라짐
+
+**발생 일시**: 2026-07-29  
+**커밋**: (이번 세션)
+
+### 증상
+- 투표 활성화된 안건 2건에 대해 투표 요청 발송 후, 1건만 투표해도 나머지 1건의 투표 요청도 목록에서 사라짐
+- 투표 요청이 `pending` → `signed` 로 전환되어 서명요청 목록에서 제거됨
+
+### 원인 분석
+
+`PATCH /api/signature-requests/:id/sign` — 서명/투표 처리 공통 로직 (line 239-243)
+
+```sql
+-- 수정 전: ref_sub_type 조건 없이 ref_type + ref_id 범위로 일괄 처리
+UPDATE signature_requests
+SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP
+WHERE ref_type=? AND ref_id=? AND target_user_id=? AND status='pending'
+```
+
+**sc_vote 투표 요청은 안건별로 `ref_sub_type = agenda_id` 가 다른 별도 레코드**  
+예) 2개 안건 → 레코드 2개 (`ref_sub_type='101'`, `ref_sub_type='102'`, `ref_id=같은 meeting_id`)
+
+그런데 위 UPDATE는 `ref_sub_type` 조건 없이 같은 `ref_type='sc_vote' + ref_id(meeting_id)`인 **모든 pending을 일괄 signed 처리** → 안건 1 투표 시 안건 2 요청까지 소멸
+
+### 수정 내역
+
+`src/nas-routes/signature-requests.ts` — PATCH `/:id/sign` (line ~239)
+
+```typescript
+// 수정 후: sc_vote는 ref_sub_type 까지 일치하는 레코드만 처리
+if (req.ref_type === 'sc_vote') {
+  rawDb.prepare(`
+    UPDATE signature_requests
+    SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP
+    WHERE ref_type=? AND ref_id=? AND ref_sub_type IS ? AND target_user_id=? AND status='pending'
+  `).run(signData, req.ref_type, req.ref_id, req.ref_sub_type || null, user.id)
+} else {
+  // 기존 로직 유지: 다른 ref_type은 ref_id 범위로 중복 레코드 일괄 처리
+  rawDb.prepare(`
+    UPDATE signature_requests
+    SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP
+    WHERE ref_type=? AND ref_id=? AND target_user_id=? AND status='pending'
+  `).run(signData, req.ref_type, req.ref_id, user.id)
+}
+```
+
+### 검증
+- `npm run build` ✅ (296.84 kB)

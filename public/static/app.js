@@ -3510,8 +3510,16 @@ async function _autoFillSubTaskNo(constructionId, forceOverwrite = false) {
   } catch(_) { /* 자동입력 실패 시 조용히 무시 */ }
 }
 
-// 공사현황 필터 상태
-let _conFilters = { status:'', statusList:[], year: getKSTYear(), month: getKSTMonth(), yearList:[], monthList:[], keyword:'', manager_names:[], page:1, limit:20 };
+// 공사현황 필터 상태 [FEAT-199] year/month/yearList/monthList 제거 → start_date/end_date 기간 필터
+function _conDefaultDateRange() {
+  var today = getKSTDate();
+  var d = getKSTNow();
+  d.setUTCDate(d.getUTCDate() - 15);
+  var from = d.toISOString().slice(0, 10);
+  return { start: from, end: today };
+}
+var _conDefRange = _conDefaultDateRange();
+let _conFilters = { status:'', statusList:[], start_date: _conDefRange.start, end_date: _conDefRange.end, keyword:'', manager_names:[], page:1, limit:20 };
 let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 적용 플래그
 
 // ── 담당자 팝업 외부클릭 닫기 (공사현황·작업관리 공용) ─────────────────────
@@ -3555,38 +3563,6 @@ let _conManagerDefaultApplied = false; // 공사현황 담당자 기본값 1회 
     if (taskRkPicker && taskRkPicker.style.display !== 'none') {
       if (!taskRkPicker.contains(e.target) && e.target !== taskRkBtn && !taskRkBtn?.contains(e.target)) {
         taskRkPicker.style.display = 'none';
-      }
-    }
-    // 공사현황 연도 팝업
-    const conYrPicker = document.getElementById('conYearPicker');
-    const conYrBtn    = document.getElementById('conYearBtn');
-    if (conYrPicker && conYrPicker.style.display !== 'none') {
-      if (!conYrPicker.contains(e.target) && e.target !== conYrBtn && !conYrBtn?.contains(e.target)) {
-        conYrPicker.style.display = 'none';
-      }
-    }
-    // 공사현황 월 팝업
-    const conMoPicker = document.getElementById('conMonthPicker');
-    const conMoBtn    = document.getElementById('conMonthBtn');
-    if (conMoPicker && conMoPicker.style.display !== 'none') {
-      if (!conMoPicker.contains(e.target) && e.target !== conMoBtn && !conMoBtn?.contains(e.target)) {
-        conMoPicker.style.display = 'none';
-      }
-    }
-    // 작업관리 연도 팝업
-    const taskYrPicker = document.getElementById('taskYearPicker');
-    const taskYrBtn    = document.getElementById('taskYearBtn');
-    if (taskYrPicker && taskYrPicker.style.display !== 'none') {
-      if (!taskYrPicker.contains(e.target) && e.target !== taskYrBtn && !taskYrBtn?.contains(e.target)) {
-        taskYrPicker.style.display = 'none';
-      }
-    }
-    // 작업관리 월 팝업
-    const taskMoPicker = document.getElementById('taskMonthPicker');
-    const taskMoBtn    = document.getElementById('taskMonthBtn');
-    if (taskMoPicker && taskMoPicker.style.display !== 'none') {
-      if (!taskMoPicker.contains(e.target) && e.target !== taskMoBtn && !taskMoBtn?.contains(e.target)) {
-        taskMoPicker.style.display = 'none';
       }
     }
   });
@@ -3684,81 +3660,32 @@ function _conClearStatusFilter() {
   renderConstructionsPage(document.getElementById('page-content'));
 }
 
-// ── 공사현황 연도 드롭다운 다중선택 헬퍼 ────────────────────────────────────
-function _conOpenYearPicker() {
-  const pop = document.getElementById('conYearPicker');
-  if (!pop) return;
-  const isOpen = pop.style.display === 'block';
-  ['conManagerPicker','conStatusPicker','conMonthPicker'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.style.display = 'none';
-  });
-  pop.style.display = isOpen ? 'none' : 'block';
-}
-function _conCloseYearPicker() {
-  const pop = document.getElementById('conYearPicker'); if (pop) pop.style.display = 'none';
-}
-function _conToggleYear(val) {
-  if (!_conFilters.yearList) _conFilters.yearList = [];
-  const idx = _conFilters.yearList.indexOf(val);
-  if (idx === -1) _conFilters.yearList.push(val);
-  else _conFilters.yearList.splice(idx, 1);
-  const cb = document.getElementById('conYrCb_' + val);
-  if (cb) cb.checked = _conFilters.yearList.includes(val);
-  const countEl = document.getElementById('conYrPickerCount');
-  if (countEl) countEl.textContent = _conFilters.yearList.length ? _conFilters.yearList.length+'개 선택' : '';
-}
-function _conApplyYearFilter() {
-  _conFilters.yearList.sort((a,b) => a-b);
+// ── [FEAT-199] 공사현황 기간 필터 헬퍼 ──────────────────────────────────────
+function _conApplyDateRange() {
+  var s = document.getElementById('conDateStart');
+  var e = document.getElementById('conDateEnd');
+  if (!s || !e) return;
+  var sv = s.value, ev = e.value;
+  if (sv && ev) {
+    var diffMs = new Date(ev).getTime() - new Date(sv).getTime();
+    var diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays > 184) { alert('조회 기간은 최대 6개월(약 184일)까지 선택 가능합니다.'); return; }
+    if (diffDays < 0)   { alert('종료일이 시작일보다 이전입니다.'); return; }
+  }
+  _conFilters.start_date = sv || '';
+  _conFilters.end_date   = ev || '';
   _conFilters.page = 1;
-  _conCloseYearPicker();
   renderConstructionsPage(document.getElementById('page-content'));
 }
-function _conClearYearFilter() {
-  _conFilters.yearList = [];
-  document.querySelectorAll('[id^="conYrCb_"]').forEach(cb => cb.checked = false);
-  const countEl = document.getElementById('conYrPickerCount');
-  if (countEl) countEl.textContent = '';
+function _conDateReset() {
+  var dr = _conDefaultDateRange();
+  _conFilters.start_date = dr.start;
+  _conFilters.end_date   = dr.end;
   _conFilters.page = 1;
-  _conCloseYearPicker();
-  renderConstructionsPage(document.getElementById('page-content'));
-}
-
-// ── 공사현황 월 드롭다운 다중선택 헬퍼 ──────────────────────────────────────
-function _conOpenMonthPicker() {
-  const pop = document.getElementById('conMonthPicker');
-  if (!pop) return;
-  const isOpen = pop.style.display === 'block';
-  ['conManagerPicker','conStatusPicker','conYearPicker'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.style.display = 'none';
-  });
-  pop.style.display = isOpen ? 'none' : 'block';
-}
-function _conCloseMonthPicker() {
-  const pop = document.getElementById('conMonthPicker'); if (pop) pop.style.display = 'none';
-}
-function _conToggleMonth(val) {
-  if (!_conFilters.monthList) _conFilters.monthList = [];
-  const idx = _conFilters.monthList.indexOf(val);
-  if (idx === -1) _conFilters.monthList.push(val);
-  else _conFilters.monthList.splice(idx, 1);
-  const cb = document.getElementById('conMoCb_' + val);
-  if (cb) cb.checked = _conFilters.monthList.includes(val);
-  const countEl = document.getElementById('conMoPickerCount');
-  if (countEl) countEl.textContent = _conFilters.monthList.length ? _conFilters.monthList.length+'개 선택' : '';
-}
-function _conApplyMonthFilter() {
-  _conFilters.monthList.sort((a,b) => a-b);
-  _conFilters.page = 1;
-  _conCloseMonthPicker();
-  renderConstructionsPage(document.getElementById('page-content'));
-}
-function _conClearMonthFilter() {
-  _conFilters.monthList = [];
-  document.querySelectorAll('[id^="conMoCb_"]').forEach(cb => cb.checked = false);
-  const countEl = document.getElementById('conMoPickerCount');
-  if (countEl) countEl.textContent = '';
-  _conFilters.page = 1;
-  _conCloseMonthPicker();
+  var s = document.getElementById('conDateStart');
+  var e = document.getElementById('conDateEnd');
+  if (s) s.value = dr.start;
+  if (e) e.value = dr.end;
   renderConstructionsPage(document.getElementById('page-content'));
 }
 
@@ -4006,17 +3933,9 @@ async function renderConstructionsPage(container) {
       : `${_stList.length}개 선택`;
   const _stActive = _stList.length > 0;
 
-  // 연도/월 버튼 레이블 계산
-  const _yrList = _conFilters.yearList || [];
-  const _yrLabel = _yrList.length === 0 ? `${_conFilters.year||getKSTYear()}년`
-    : _yrList.length === 1 ? `${_yrList[0]}년`
-    : `${_yrList.length}개 연도`;
-  const _yrActive = _yrList.length > 0;
-  const _moList = _conFilters.monthList || [];
-  const _moLabel = _moList.length === 0 ? (_conFilters.month ? `${_conFilters.month}월` : '전체월')
-    : _moList.length === 1 ? `${_moList[0]}월`
-    : `${_moList.length}개 월`;
-  const _moActive = _moList.length > 0;
+  // [FEAT-199] 기간 필터 표시값 계산
+  var _conDateStart = _conFilters.start_date || '';
+  var _conDateEnd   = _conFilters.end_date   || '';
 
   container.innerHTML = `
   <div class="con-list-root">
@@ -4024,7 +3943,7 @@ async function renderConstructionsPage(container) {
     <!-- ── sticky 툴바 래퍼 ─────────────────────────────────────────── -->
     <div class="con-toolbar-sticky">
 
-    <!-- 1줄 통합 서브 툴바: 진행상태·담당자·연도·월·검색·페이지당·버튼 -->
+    <!-- 1줄 통합 서브 툴바: 진행상태·담당자·기간·검색·페이지당·버튼 -->
     <div class="flex flex-wrap items-center gap-2">
 
       <!-- ① 진행상태 다중선택 드롭다운 (담당자와 동일 패턴) -->
@@ -4112,81 +4031,25 @@ async function renderConstructionsPage(container) {
         </div>
       </div>
 
-      <!-- ③ 연도 다중선택 드롭다운 -->
-      <div style="position:relative">
-        <button id="conYearBtn" onclick="_conOpenYearPicker()"
-          class="form-control" style="min-width:90px;max-width:150px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${_yrActive?'#685182':'#D1D5DB'};border-radius:8px;font-size:13px;color:${_yrActive?'#685182':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
-          <i class="fas fa-calendar-alt" style="font-size:11px;flex-shrink:0"></i>
-          <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${_yrLabel}</span>
-          ${_yrActive ? `<span style="background:#685182;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${_yrList.length}</span>` : ''}
+      <!-- ③ [FEAT-199] 기간 날짜 입력 (달력+직접입력, YYYY-MM-DD) -->
+      <div style="display:inline-flex;align-items:center;gap:4px;flex-shrink:0">
+        <i class="fas fa-calendar-range" style="font-size:11px;color:#685182;flex-shrink:0"></i>
+        <input type="date" id="conDateStart"
+          value="${_conDateStart}"
+          style="font-size:13px;padding:5px 8px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#374151;cursor:pointer;min-width:128px"
+          onchange="_conApplyDateRange()"
+          title="조회 시작일">
+        <span style="font-size:13px;color:#9CA3AF;flex-shrink:0">~</span>
+        <input type="date" id="conDateEnd"
+          value="${_conDateEnd}"
+          style="font-size:13px;padding:5px 8px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#374151;cursor:pointer;min-width:128px"
+          onchange="_conApplyDateRange()"
+          title="조회 종료일">
+        <button onclick="_conDateReset()" title="기간 초기화 (15일전~오늘)"
+          style="padding:5px 9px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#9CA3AF;font-size:11px;cursor:pointer;flex-shrink:0;white-space:nowrap"
+          onmouseover="this.style.background='#F5F0F8';this.style.color='#685182'" onmouseout="this.style.background='#fff';this.style.color='#9CA3AF'">
+          <i class="fas fa-undo-alt"></i>
         </button>
-        ${_yrActive
-          ? `<span onclick="event.stopPropagation();_conClearYearFilter()" title="선택 초기화"
-              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#685182;font-size:13px;z-index:1;font-weight:700">✕</span>`
-          : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
-        <div id="conYearPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:140px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F3F0FA;background:#FAFAFE">
-            <span style="font-size:11px;font-weight:700;color:#685182">연도 선택</span>
-            <span id="conYrPickerCount" style="font-size:11px;color:#685182;font-weight:600">${_yrList.length ? _yrList.length+'개 선택' : ''}</span>
-          </div>
-          <div style="padding:4px 0">
-            ${[2023,2024,2025,2026].map(y => {
-              const checked = _yrList.includes(y);
-              return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:#374151;transition:background .1s"
-                onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
-                <input type="checkbox" id="conYrCb_${y}" ${checked?'checked':''} onchange="_conToggleYear(${y})">
-                <span>${y}년</span>
-              </label>`;
-            }).join('')}
-          </div>
-          <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #F3F0FA;background:#FAFAFE">
-            <button onclick="_conApplyYearFilter()"
-              style="flex:1;padding:7px 0;border-radius:8px;background:#685182;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer">
-              <i class="fas fa-check mr-1"></i>적용</button>
-            <button onclick="_conClearYearFilter()"
-              style="flex:1;padding:7px 0;border-radius:8px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;font-size:12px;cursor:pointer">
-              전체 초기화</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ④ 월 다중선택 드롭다운 -->
-      <div style="position:relative">
-        <button id="conMonthBtn" onclick="_conOpenMonthPicker()"
-          class="form-control" style="min-width:80px;max-width:140px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${_moActive?'#685182':'#D1D5DB'};border-radius:8px;font-size:13px;color:${_moActive?'#685182':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
-          <i class="fas fa-calendar-day" style="font-size:11px;flex-shrink:0"></i>
-          <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${_moLabel}</span>
-          ${_moActive ? `<span style="background:#685182;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${_moList.length}</span>` : ''}
-        </button>
-        ${_moActive
-          ? `<span onclick="event.stopPropagation();_conClearMonthFilter()" title="선택 초기화"
-              style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#685182;font-size:13px;z-index:1;font-weight:700">✕</span>`
-          : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
-        <div id="conMonthPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:130px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F3F0FA;background:#FAFAFE">
-            <span style="font-size:11px;font-weight:700;color:#685182">월 선택</span>
-            <span id="conMoPickerCount" style="font-size:11px;color:#685182;font-weight:600">${_moList.length ? _moList.length+'개 선택' : ''}</span>
-          </div>
-          <div style="max-height:220px;overflow-y:auto;padding:4px 0">
-            ${[...Array(12)].map((_,i) => {
-              const m = i+1;
-              const checked = _moList.includes(m);
-              return `<label style="display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;font-size:13px;color:#374151;transition:background .1s"
-                onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
-                <input type="checkbox" id="conMoCb_${m}" ${checked?'checked':''} onchange="_conToggleMonth(${m})">
-                <span>${m}월</span>
-              </label>`;
-            }).join('')}
-          </div>
-          <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #F3F0FA;background:#FAFAFE">
-            <button onclick="_conApplyMonthFilter()"
-              style="flex:1;padding:7px 0;border-radius:8px;background:#685182;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer">
-              <i class="fas fa-check mr-1"></i>적용</button>
-            <button onclick="_conClearMonthFilter()"
-              style="flex:1;padding:7px 0;border-radius:8px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;font-size:12px;cursor:pointer">
-              전체 초기화</button>
-          </div>
-        </div>
       </div>
 
       <!-- ⑤ 키워드 검색 -->
@@ -4230,21 +4093,10 @@ async function renderConstructionsPage(container) {
   </div>`;
 
   try {
-    // yearList 다중선택 시: 가장 이른 연도~가장 늦은 연도 범위로 서버 요청 후 클라이언트 필터
-    // yearList 미선택 시: 기존 단일 year 사용
-    const _yrListNow  = _conFilters.yearList || [];
-    const _moListNow  = _conFilters.monthList || [];
-    const params = {};
-    if (_yrListNow.length > 0) {
-      params.year = Math.min(..._yrListNow); // 서버는 단일 year 지원 → 최솟값으로 호출, 클라이언트서 필터
-    } else {
-      params.year = _conFilters.year;
-    }
-    if (_moListNow.length === 1) {
-      params.month = _moListNow[0]; // 1개 선택 → 서버 param
-    } else if (_moListNow.length === 0 && _conFilters.month) {
-      params.month = _conFilters.month;
-    }
+    // [FEAT-199] start_date/end_date 기간 파라미터로 서버 요청
+    var params = {};
+    if (_conFilters.start_date) params.start_date = _conFilters.start_date;
+    if (_conFilters.end_date)   params.end_date   = _conFilters.end_date;
     // statusList가 1개일 때만 서버 param으로 전송 (서버는 단일 status만 지원)
     // 다중 선택 시에는 서버에서 전체 조회 후 클라이언트에서 필터링
     if (_conFilters.statusList && _conFilters.statusList.length === 1) {
@@ -4255,11 +4107,9 @@ async function renderConstructionsPage(container) {
       params.manager_names = _conFilters.manager_names; // 배열 → paramsSerializer가 반복키로 직렬화
     }
 
-    const res = await API.get('/constructions', { params });
+    var res = await API.get('/constructions', { params: params });
     var rawList = res.data || [];
     // BUG-040→FEAT-027 단순화: is_auto_request_no === 0 인 경우만 LGU+ 허용
-    //   null/undefined → false ✅  0 → true ✅  1 → false ✅
-    //   (null !== 1 → true 오필터링 취약점 완전 제거)
     var myUiRoleForCon = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
     var isLguPlusUser = (myUiRoleForCon === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
     var list = isLguPlusUser
@@ -4269,20 +4119,6 @@ async function renderConstructionsPage(container) {
     // ── 진행상태 다중선택 클라이언트 필터 (statusList가 2개 이상일 때) ──────
     if (_conFilters.statusList && _conFilters.statusList.length > 1) {
       list = list.filter(function(con) { return _conFilters.statusList.includes(con.status); });
-    }
-    // ── 연도 다중선택 클라이언트 필터 (2개 이상일 때) ───────────────────────
-    if (_yrListNow.length > 1) {
-      list = list.filter(function(con) {
-        const y = con.created_at ? parseInt(con.created_at.slice(0,4)) : null;
-        return y && _yrListNow.includes(y);
-      });
-    }
-    // ── 월 다중선택 클라이언트 필터 (2개 이상일 때) ─────────────────────────
-    if (_moListNow.length > 1) {
-      list = list.filter(function(con) {
-        const m = con.created_at ? parseInt(con.created_at.slice(5,7)) : null;
-        return m && _moListNow.includes(m);
-      });
     }
 
     window._conListCache = list;   // 엑셀 다운로드용 캐시
@@ -6077,8 +5913,18 @@ function onDashRangeApply() {
 }
 
 // ======= 작업 관리 (관리감독자) =======
+// [FEAT-199] 기간 필터 기본값 계산: 15일 전 ~ 오늘
+function _taskDefaultDateRange() {
+  var today = getKSTDate();
+  var d = getKSTNow();
+  d.setUTCDate(d.getUTCDate() - 15);
+  var from = d.toISOString().slice(0, 10);
+  return { start: from, end: today };
+}
+var _taskDefRange = _taskDefaultDateRange();
 // [FEAT-197] 기본 필터: 진행 중 작업만 표시 (unassigned·completed·cancelled·paused 기본 제외)
-let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: '', end_date: '', page: 1, limit: 20, con_manager_names: [], year: getKSTYear(), month: getKSTMonth(), yearList: [], monthList: [], statusList: ['assigned','in_progress','tbm_done','working','work_completed'], riskList: [], workClassList: [] };
+// [FEAT-199] 년도/월 피커 제거 → start_date/end_date 기간 필터로 교체 (기본: 15일전~오늘)
+let taskFilters = { status: '', risk_level: '', date: '', search_type: 'title', keyword: '', start_date: _taskDefRange.start, end_date: _taskDefRange.end, page: 1, limit: 20, con_manager_names: [], statusList: ['assigned','in_progress','tbm_done','working','work_completed'], riskList: [], workClassList: [] };
 let _taskManagerDefaultApplied = false; // 작업관리 담당자 기본값 1회 적용 플래그
 let _taskUserList = []; // 작업관리 담당자 선택용 사용자 목록 (전역 캐시)
 
@@ -6269,89 +6115,33 @@ function _taskClearWorkClassFilter() {
   renderTasksPage(document.getElementById('page-content'));
 }
 
-// ── 작업관리 연도 드롭다운 다중선택 헬퍼 ────────────────────────────────────
-function _taskOpenYearPicker() {
-  const pop = document.getElementById('taskYearPicker');
-  if (!pop) return;
-  const isOpen = pop.style.display === 'block';
-  ['taskManagerPicker','taskStatusPicker','taskRiskPicker','taskWorkClassPicker','taskMonthPicker'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.style.display = 'none';
-  });
-  pop.style.display = isOpen ? 'none' : 'block';
-}
-function _taskCloseYearPicker() {
-  const pop = document.getElementById('taskYearPicker'); if (pop) pop.style.display = 'none';
-}
-function _taskToggleYear(val) {
-  if (!taskFilters.yearList) taskFilters.yearList = [];
-  const idx = taskFilters.yearList.indexOf(val);
-  if (idx === -1) taskFilters.yearList.push(val);
-  else taskFilters.yearList.splice(idx, 1);
-  const cb = document.getElementById('taskYrCb_' + val);
-  if (cb) cb.checked = taskFilters.yearList.includes(val);
-  const countEl = document.getElementById('taskYrPickerCount');
-  if (countEl) countEl.textContent = taskFilters.yearList.length ? taskFilters.yearList.length+'개 선택' : '';
-}
-function _taskApplyYearFilter() {
-  taskFilters.yearList.sort((a,b) => a-b);
-  taskFilters.start_date = '';
-  taskFilters.end_date   = '';
+// ── [FEAT-199] 작업관리 기간 필터 헬퍼 ──────────────────────────────────────
+function _taskApplyDateRange() {
+  var s = document.getElementById('taskDateStart');
+  var e = document.getElementById('taskDateEnd');
+  if (!s || !e) return;
+  var sv = s.value, ev = e.value;
+  // 최대 6개월 제한
+  if (sv && ev) {
+    var diffMs = new Date(ev).getTime() - new Date(sv).getTime();
+    var diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays > 184) { alert('조회 기간은 최대 6개월(약 184일)까지 선택 가능합니다.'); return; }
+    if (diffDays < 0)   { alert('종료일이 시작일보다 이전입니다.'); return; }
+  }
+  taskFilters.start_date = sv || '';
+  taskFilters.end_date   = ev || '';
   taskFilters.page = 1;
-  _taskCloseYearPicker();
   renderTasksPage(document.getElementById('page-content'));
 }
-function _taskClearYearFilter() {
-  taskFilters.yearList = [];
-  document.querySelectorAll('[id^="taskYrCb_"]').forEach(cb => cb.checked = false);
-  const countEl = document.getElementById('taskYrPickerCount');
-  if (countEl) countEl.textContent = '';
-  taskFilters.start_date = '';
-  taskFilters.end_date   = '';
+function _taskDateReset() {
+  var dr = _taskDefaultDateRange();
+  taskFilters.start_date = dr.start;
+  taskFilters.end_date   = dr.end;
   taskFilters.page = 1;
-  _taskCloseYearPicker();
-  renderTasksPage(document.getElementById('page-content'));
-}
-
-// ── 작업관리 월 드롭다운 다중선택 헬퍼 ──────────────────────────────────────
-function _taskOpenMonthPicker() {
-  const pop = document.getElementById('taskMonthPicker');
-  if (!pop) return;
-  const isOpen = pop.style.display === 'block';
-  ['taskManagerPicker','taskStatusPicker','taskRiskPicker','taskWorkClassPicker','taskYearPicker'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.style.display = 'none';
-  });
-  pop.style.display = isOpen ? 'none' : 'block';
-}
-function _taskCloseMonthPicker() {
-  const pop = document.getElementById('taskMonthPicker'); if (pop) pop.style.display = 'none';
-}
-function _taskToggleMonth(val) {
-  if (!taskFilters.monthList) taskFilters.monthList = [];
-  const idx = taskFilters.monthList.indexOf(val);
-  if (idx === -1) taskFilters.monthList.push(val);
-  else taskFilters.monthList.splice(idx, 1);
-  const cb = document.getElementById('taskMoCb_' + val);
-  if (cb) cb.checked = taskFilters.monthList.includes(val);
-  const countEl = document.getElementById('taskMoPickerCount');
-  if (countEl) countEl.textContent = taskFilters.monthList.length ? taskFilters.monthList.length+'개 선택' : '';
-}
-function _taskApplyMonthFilter() {
-  taskFilters.monthList.sort((a,b) => a-b);
-  taskFilters.start_date = '';
-  taskFilters.end_date   = '';
-  taskFilters.page = 1;
-  _taskCloseMonthPicker();
-  renderTasksPage(document.getElementById('page-content'));
-}
-function _taskClearMonthFilter() {
-  taskFilters.monthList = [];
-  document.querySelectorAll('[id^="taskMoCb_"]').forEach(cb => cb.checked = false);
-  const countEl = document.getElementById('taskMoPickerCount');
-  if (countEl) countEl.textContent = '';
-  taskFilters.start_date = '';
-  taskFilters.end_date   = '';
-  taskFilters.page = 1;
-  _taskCloseMonthPicker();
+  var s = document.getElementById('taskDateStart');
+  var e = document.getElementById('taskDateEnd');
+  if (s) s.value = dr.start;
+  if (e) e.value = dr.end;
   renderTasksPage(document.getElementById('page-content'));
 }
 
@@ -6476,28 +6266,10 @@ async function renderTasksPage(container) {
     // catsRes: 미사용이므로 제거 / teams API: task.team_name 직접 사용으로 제거
     const _curLimit = taskFilters.limit || 20;
 
-    // yearList/monthList 다중선택 → start_date/end_date 범위 자동계산
-    // navigateToTasksWithFilter 에서 직접 start_date/end_date를 설정한 경우 그것을 우선 사용
-    let _finalStart = taskFilters.start_date || '';
-    let _finalEnd   = taskFilters.end_date   || '';
-    const _tYrListNow = taskFilters.yearList || [];
-    const _tMoListNow = taskFilters.monthList || [];
-    if (!_finalStart && !_finalEnd) {
-      // yearList 선택 시: 가장 이른 연도~가장 늦은 연도 전체 범위로 서버 요청
-      const _taskYear  = _tYrListNow.length > 0 ? Math.min(..._tYrListNow) : (taskFilters.year || getKSTYear());
-      const _taskYearEnd = _tYrListNow.length > 0 ? Math.max(..._tYrListNow) : _taskYear;
-      // monthList 선택 시: 가장 이른 월~가장 늦은 월 범위
-      const _taskMonth    = _tMoListNow.length > 0 ? Math.min(..._tMoListNow) : (taskFilters.month || null);
-      const _taskMonthEnd = _tMoListNow.length > 0 ? Math.max(..._tMoListNow) : _taskMonth;
-      if (_taskMonth) {
-        const _lastDay = new Date(_taskYearEnd, _taskMonthEnd, 0).getDate();
-        _finalStart = `${_taskYear}-${String(_taskMonth).padStart(2,'0')}-01`;
-        _finalEnd   = `${_taskYearEnd}-${String(_taskMonthEnd).padStart(2,'0')}-${String(_lastDay).padStart(2,'0')}`;
-      } else {
-        _finalStart = `${_taskYear}-01-01`;
-        _finalEnd   = `${_taskYearEnd}-12-31`;
-      }
-    }
+    // [FEAT-199] start_date/end_date 직접 사용 (yearList/monthList 제거)
+    // navigateToTasksWithFilter 에서 직접 start_date/end_date를 설정한 경우도 그대로 사용
+    var _finalStart = taskFilters.start_date || '';
+    var _finalEnd   = taskFilters.end_date   || '';
 
     const tasksRes = await API.get('/tasks', { params: {
       ...(taskFilters.status                 ? { status:      taskFilters.status                                    } : {}),
@@ -6524,23 +6296,6 @@ async function renderTasksPage(container) {
       newTasks = newTasks.filter(function(t) { return _stListNow.indexOf(t.status) !== -1; });
     }
 
-    // ── 연도 다중선택 클라이언트 필터 (2개 이상일 때 정밀 필터) ──────────────
-    if (_tYrListNow.length > 1) {
-      newTasks = newTasks.filter(function(t) {
-        const d = t.planned_date || t.created_at || '';
-        const y = d ? parseInt(d.slice(0,4)) : null;
-        return y && _tYrListNow.includes(y);
-      });
-    }
-    // ── 월 다중선택 클라이언트 필터 (2개 이상일 때) ──────────────────────────
-    if (_tMoListNow.length > 1) {
-      newTasks = newTasks.filter(function(t) {
-        const d = t.planned_date || t.created_at || '';
-        const m = d ? parseInt(d.slice(5,7)) : null;
-        return m && _tMoListNow.includes(m);
-      });
-    }
-
     // ── 작업종류 다중선택 클라이언트 필터 (FEAT-109) ─────────────────────────
     if (taskFilters.workClassList && taskFilters.workClassList.length > 0) {
       newTasks = newTasks.filter(function(t) {
@@ -6550,8 +6305,8 @@ async function renderTasksPage(container) {
       });
     }
 
-    // LGU+ 필터 적용 시 total도 필터된 건수로 보정
-    _taskListTotal = (_taskIsLguPlus || _tYrListNow.length > 1 || _tMoListNow.length > 1 || (taskFilters.workClassList && taskFilters.workClassList.length > 0))
+    // LGU+ / 작업종류 클라이언트 필터 적용 시 total도 필터된 건수로 보정
+    _taskListTotal = (_taskIsLguPlus || (taskFilters.workClassList && taskFilters.workClassList.length > 0))
       ? newTasks.length
       : (tasksRes.data.total ?? newTasks.length);
     // 전체 페이지 수 계산
@@ -6852,17 +6607,9 @@ async function renderTasksPage(container) {
       });
     };
 
-    // 연도/월 버튼 레이블 계산
-    const _tYrList = taskFilters.yearList || [];
-    const _tYrLabel = _tYrList.length === 0
-      ? `${taskFilters.year||getKSTYear()}년`
-      : _tYrList.length === 1 ? `${_tYrList[0]}년` : `${_tYrList.length}개 연도`;
-    const _tYrActive = _tYrList.length > 0;
-    const _tMoList = taskFilters.monthList || [];
-    const _tMoLabel = _tMoList.length === 0
-      ? (taskFilters.month ? `${taskFilters.month}월` : '전체월')
-      : _tMoList.length === 1 ? `${_tMoList[0]}월` : `${_tMoList.length}개 월`;
-    const _tMoActive = _tMoList.length > 0;
+    // [FEAT-199] 기간 필터 표시값 계산
+    var _tDateStart = taskFilters.start_date || '';
+    var _tDateEnd   = taskFilters.end_date   || '';
 
     // 필터 배너 레이블 계산
     const filterBannerHtml = (() => {
@@ -7096,81 +6843,25 @@ async function renderTasksPage(container) {
           </div>
         </div>
 
-        <!-- ④ 연도 다중선택 드롭다운 -->
-        <div style="position:relative">
-          <button id="taskYearBtn" onclick="_taskOpenYearPicker()"
-            class="form-control" style="min-width:88px;max-width:150px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${_tYrActive?'#685182':'#D1D5DB'};border-radius:8px;font-size:12px;color:${_tYrActive?'#685182':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
-            <i class="fas fa-calendar-alt" style="font-size:10px;flex-shrink:0"></i>
-            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${_tYrLabel}</span>
-            ${_tYrActive ? `<span style="background:#685182;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${_tYrList.length}</span>` : ''}
+        <!-- ④ [FEAT-199] 기간 날짜 입력 (달력+직접입력, YYYY-MM-DD) -->
+        <div style="display:inline-flex;align-items:center;gap:4px;flex-shrink:0">
+          <i class="fas fa-calendar-range" style="font-size:10px;color:#685182;flex-shrink:0"></i>
+          <input type="date" id="taskDateStart"
+            value="${_tDateStart}"
+            style="font-size:12px;padding:5px 8px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#374151;cursor:pointer;min-width:120px"
+            onchange="_taskApplyDateRange()"
+            title="조회 시작일">
+          <span style="font-size:12px;color:#9CA3AF;flex-shrink:0">~</span>
+          <input type="date" id="taskDateEnd"
+            value="${_tDateEnd}"
+            style="font-size:12px;padding:5px 8px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#374151;cursor:pointer;min-width:120px"
+            onchange="_taskApplyDateRange()"
+            title="조회 종료일">
+          <button onclick="_taskDateReset()" title="기간 초기화 (15일전~오늘)"
+            style="padding:5px 9px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#9CA3AF;font-size:11px;cursor:pointer;flex-shrink:0;white-space:nowrap"
+            onmouseover="this.style.background='#F5F0F8';this.style.color='#685182'" onmouseout="this.style.background='#fff';this.style.color='#9CA3AF'">
+            <i class="fas fa-undo-alt"></i>
           </button>
-          ${_tYrActive
-            ? `<span onclick="event.stopPropagation();_taskClearYearFilter()" title="선택 초기화"
-                style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#685182;font-size:13px;z-index:1;font-weight:700">✕</span>`
-            : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
-          <div id="taskYearPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:140px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F3F0FA;background:#FAFAFE">
-              <span style="font-size:11px;font-weight:700;color:#685182">연도 선택</span>
-              <span id="taskYrPickerCount" style="font-size:11px;color:#685182;font-weight:600">${_tYrList.length ? _tYrList.length+'개 선택' : ''}</span>
-            </div>
-            <div style="padding:4px 0">
-              ${[2023,2024,2025,2026].map(y => {
-                const checked = _tYrList.includes(y);
-                return `<label style="display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:12px;color:#374151;transition:background .1s"
-                  onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
-                  <input type="checkbox" id="taskYrCb_${y}" ${checked?'checked':''} onchange="_taskToggleYear(${y})">
-                  <span>${y}년</span>
-                </label>`;
-              }).join('')}
-            </div>
-            <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #F3F0FA;background:#FAFAFE">
-              <button onclick="_taskApplyYearFilter()"
-                style="flex:1;padding:7px 0;border-radius:8px;background:#685182;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer">
-                <i class="fas fa-check mr-1"></i>적용</button>
-              <button onclick="_taskClearYearFilter()"
-                style="flex:1;padding:7px 0;border-radius:8px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;font-size:12px;cursor:pointer">
-                전체 초기화</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- ⑤ 월 다중선택 드롭다운 -->
-        <div style="position:relative">
-          <button id="taskMonthBtn" onclick="_taskOpenMonthPicker()"
-            class="form-control" style="min-width:76px;max-width:130px;text-align:left;display:inline-flex;align-items:center;gap:5px;cursor:pointer;background:#fff;border:1px solid ${_tMoActive?'#685182':'#D1D5DB'};border-radius:8px;font-size:12px;color:${_tMoActive?'#685182':'#9CA3AF'};padding:5px 26px 5px 10px;white-space:nowrap;overflow:hidden">
-            <i class="fas fa-calendar-day" style="font-size:10px;flex-shrink:0"></i>
-            <span style="overflow:hidden;text-overflow:ellipsis;flex:1">${_tMoLabel}</span>
-            ${_tMoActive ? `<span style="background:#685182;color:#fff;border-radius:9px;padding:0 5px;font-size:10px;font-weight:700;flex-shrink:0">${_tMoList.length}</span>` : ''}
-          </button>
-          ${_tMoActive
-            ? `<span onclick="event.stopPropagation();_taskClearMonthFilter()" title="선택 초기화"
-                style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#685182;font-size:13px;z-index:1;font-weight:700">✕</span>`
-            : `<i class="fas fa-chevron-down" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:10px;pointer-events:none"></i>`}
-          <div id="taskMonthPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:130px;background:#fff;border:1px solid #E5DAF5;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.13);z-index:1000;overflow:hidden">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;border-bottom:1px solid #F3F0FA;background:#FAFAFE">
-              <span style="font-size:11px;font-weight:700;color:#685182">월 선택</span>
-              <span id="taskMoPickerCount" style="font-size:11px;color:#685182;font-weight:600">${_tMoList.length ? _tMoList.length+'개 선택' : ''}</span>
-            </div>
-            <div style="max-height:220px;overflow-y:auto;padding:4px 0">
-              ${[...Array(12)].map((_,i) => {
-                const m = i+1;
-                const checked = _tMoList.includes(m);
-                return `<label style="display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;font-size:12px;color:#374151;transition:background .1s"
-                  onmouseover="this.style.background='#F5F0F8'" onmouseout="this.style.background=''">
-                  <input type="checkbox" id="taskMoCb_${m}" ${checked?'checked':''} onchange="_taskToggleMonth(${m})">
-                  <span>${m}월</span>
-                </label>`;
-              }).join('')}
-            </div>
-            <div style="display:flex;gap:6px;padding:8px 10px;border-top:1px solid #F3F0FA;background:#FAFAFE">
-              <button onclick="_taskApplyMonthFilter()"
-                style="flex:1;padding:7px 0;border-radius:8px;background:#685182;color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer">
-                <i class="fas fa-check mr-1"></i>적용</button>
-              <button onclick="_taskClearMonthFilter()"
-                style="flex:1;padding:7px 0;border-radius:8px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;font-size:12px;cursor:pointer">
-                전체 초기화</button>
-            </div>
-          </div>
         </div>
 
         <!-- ⑥ 검색타입 + 키워드 + 검색버튼 — 남은 공간 꽉 채움 -->
@@ -7366,21 +7057,88 @@ async function renderTasksPage(container) {
   }
 }
 
-// 작업목록 엑셀(CSV) 다운로드
-function downloadTaskListCSV() {
-  const headers = ['요청번호','공사종류','작업종류','상세분류','공사명','위험도','진행단계','작업지시주소'];
-  const wcMap = { cable_install:'외선', cable_splice:'접속', equipment_other:'장비', conduit:'관로' };
-  const rlMap = { high:'고위험', medium:'중위험', normal:'일반' };
-  const stMap = { unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료', tbm_done:'TBM완료', working:'작업진행중', completed:'작업완료' };
-  const rows = _taskListData.map(t => [
-    t.request_no||'', t.construction_type||'',
-    wcMap[t.work_class]||t.work_class||'',
-    getWorkSubLabel(t.work_class, t.work_sub_class)||'',
-    t.title||'', rlMap[t.risk_level]||'일반',
-    stMap[t.status]||t.status||'',
-    t.location||''
-  ]);
-  downloadCSV(`작업목록_${kstDateStr()}.csv`, headers, rows);
+// [FEAT-199] 작업목록 엑셀(CSV) 다운로드 — 조회 조건 기준 전체 데이터 (최대 6개월)
+async function downloadTaskListCSV() {
+  var wcMap = { cable_install:'외선', cable_splice:'접속', equipment_other:'장비', conduit:'관로' };
+  var rlMap = { high:'고위험', medium:'중위험', normal:'일반' };
+  var stMap = {
+    unassigned:'미배정', assigned:'작업자배정', in_progress:'체크리스트완료',
+    tbm_done:'TBM완료', working:'작업진행중', work_completed:'작업완료(일지대기)',
+    completed:'일지작성완료', cancelled:'취소', paused:'중지'
+  };
+
+  // 버튼 비활성화 (중복 클릭 방지)
+  var excelBtn = document.querySelector('button[onclick="downloadTaskListCSV()"]');
+  if (excelBtn) { excelBtn.disabled = true; excelBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 조회중...'; }
+
+  try {
+    // 현재 필터 조건으로 전체 데이터 재조회 (limit:9999)
+    var params = { limit: 9999, page: 1 };
+    if (taskFilters.status)               params.status        = taskFilters.status;
+    if (taskFilters.risk_level)           params.risk_level    = taskFilters.risk_level;
+    if (taskFilters.keyword)              { params.keyword = taskFilters.keyword; params.search_type = taskFilters.search_type; }
+    if (taskFilters.start_date)           params.start_date    = taskFilters.start_date;
+    if (taskFilters.end_date)             params.end_date      = taskFilters.end_date;
+    if (taskFilters.con_manager_names && taskFilters.con_manager_names.length) {
+      params.con_manager_names = taskFilters.con_manager_names;
+    }
+
+    var res = await API.get('/tasks', { params: params });
+    var allTasks = res.data.tasks || res.data || [];
+
+    // statusList 클라이언트 필터 적용
+    var stListNow = taskFilters.statusList || [];
+    if (stListNow.length > 0) {
+      allTasks = allTasks.filter(function(t) { return stListNow.indexOf(t.status) !== -1; });
+    }
+    // workClassList 클라이언트 필터 적용
+    if (taskFilters.workClassList && taskFilters.workClassList.length > 0) {
+      allTasks = allTasks.filter(function(t) {
+        var wc = t.work_class || 'other';
+        return taskFilters.workClassList.indexOf(wc) !== -1;
+      });
+    }
+    // LGU+ 필터
+    var _csvUiRole = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
+    var _csvIsLgu = (_csvUiRole === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu');
+    if (_csvIsLgu) {
+      allTasks = allTasks.filter(function(t) { return t.is_auto_request_no === 0; });
+    }
+
+    var headers = [
+      '작업번호','요청번호','공사종류','작업종류','상세분류','공사명',
+      '위험도','진행단계','작업일자','담당자/팀','작업지시주소'
+    ];
+    var rows = allTasks.map(function(t) {
+      var workerStr = '';
+      if (t.team_name) {
+        workerStr = t.team_name;
+      } else if (t.assigned_workers && t.assigned_workers.length) {
+        workerStr = t.assigned_workers.map(function(w) { return w.name; }).join(', ');
+      }
+      return [
+        t.task_number||'',
+        t.request_no||'',
+        t.construction_type||'',
+        wcMap[t.work_class]||t.work_class||'',
+        getWorkSubLabel(t.work_class, t.work_sub_class)||'',
+        t.title||'',
+        rlMap[t.risk_level]||'일반',
+        stMap[t.status]||t.status||'',
+        t.planned_date ? t.planned_date.slice(0,10) : '',
+        workerStr,
+        t.location||''
+      ];
+    });
+
+    downloadCSV('\uc791\uc5c5\ubaa9\ub85d_' + kstDateStr() + '.csv', headers, rows);
+    toast('\uc804\uccb4 ' + allTasks.length + '\uac74 \ub2e4\uc6b4\ub85c\ub4dc \uc644\ub8cc', 'success');
+  } catch(err) {
+    console.error('downloadTaskListCSV error:', err);
+    toast('\uc5d1\uc140 \ub2e4\uc6b4\ub85c\ub4dc \uc2e4\ud328: ' + (err.message||err), 'error');
+  } finally {
+    if (excelBtn) { excelBtn.disabled = false; excelBtn.innerHTML = '<i class="fas fa-file-excel"></i> \uc5d1\uc140'; }
+  }
 }
 
 // 작업 분류 배지 (4종)

@@ -7055,3 +7055,52 @@ if (req.ref_type === 'sc_vote') {
 
 ### 검증
 - `npm run build` ✅ (296.84 kB)
+
+---
+
+## FEAT-199 — 조회 필터 기간 전환 + 작업관리 엑셀 전체 다운로드
+
+**구현 일시**: 2026-07-29  
+**커밋**: (이번 세션)
+
+### 요구사항
+
+1. **작업관리 + 공사현황 공통** — 연도/월 드롭다운 피커 완전 제거 → 기간 date input 2개로 교체  
+   - 형식: `YYYY-MM-DD` (브라우저 달력 클릭 + 직접 입력)  
+   - 기본값: 15일 전 ~ 오늘 (앱 로드 시 자동 설정)  
+   - 최대 6개월(184일) 제한, 위반 시 alert 표시
+
+2. **작업관리 엑셀 다운로드** — 현재 페이지 데이터만 내려받던 문제 수정  
+   - 조회 조건 기준 전체 데이터 `limit:9999` 재요청  
+   - 누락 헤더 추가: 작업번호·작업일자·담당자/팀  
+   - 완전한 `stMap` (work_completed·cancelled·paused 포함)
+
+### 수정 파일: `public/static/app.js`
+
+#### 작업관리 (`taskFilters`)
+| 수정 내용 | 위치 |
+|-----------|------|
+| `_taskDefaultDateRange()` 헬퍼 추가 | line ~6081 |
+| `taskFilters` 초기값 — year/month/yearList/monthList 제거, start_date/end_date 추가 | line ~6091 |
+| 연도/월 헬퍼 함수 10개 제거 → `_taskApplyDateRange()` + `_taskDateReset()` 추가 | line ~6283 |
+| `renderTasksPage` — yearList/monthList 변환 로직 + 클라이언트 필터 제거, start_date/end_date 직접 사용 | line ~6435 |
+| 연도/월 버튼 레이블 계산 제거 → `_tDateStart/_tDateEnd` 변수 사용 | line ~6820 |
+| 툴바 UI — 연도/월 드롭다운 2개 → `<input type="date">` 2개 + 초기화 버튼 | line ~7053 |
+| `downloadTaskListCSV()` — 전체 데이터 재조회(limit:9999) + 헤더 11개로 보완 | line ~7324 |
+
+#### 공사현황 (`_conFilters`)
+| 수정 내용 | 위치 |
+|-----------|------|
+| `_conDefaultDateRange()` 헬퍼 추가, `_conFilters` — year/month/yearList/monthList 제거 | line ~3514 |
+| 연도/월 헬퍼 함수 8개 제거 → `_conApplyDateRange()` + `_conDateReset()` 추가 | line ~3679 |
+| `renderConstructionsPage` — 연도/월 레이블 계산 제거, `_conDateStart/_conDateEnd` 변수 사용 | line ~3952 |
+| 툴바 UI — 연도/월 드롭다운 2개 → `<input type="date">` 2개 + 초기화 버튼 | line ~4115 |
+| 서버 호출 — `params.year/month` 제거 → `params.start_date/end_date` 사용 | line ~4232 |
+| yearList/monthList 클라이언트 필터 블록 제거 | line ~4274 |
+
+#### 공통
+- 외부클릭 핸들러 — conYearPicker/conMonthPicker/taskYearPicker/taskMonthPicker 참조 4건 제거
+
+### 검증
+- `node --check public/static/app.js` ✅ 문법 오류 없음
+- `npm run build` ✅ (296.84 kB)

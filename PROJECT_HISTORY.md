@@ -11360,3 +11360,36 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | fix: [BUG-198] SC 투표 요청 1건 처리 시 나머지 소멸 — sc_vote ref_sub_type 조건 추가 |
+
+---
+
+## 세션 117 (2026-07-29)
+
+### 작업 — FEAT-199
+
+#### FEAT-199 — 작업관리/공사현황 기간 필터 전환 + 작업관리 엑셀 전체 다운로드
+
+**요구사항**:
+1. 작업관리·공사현황 연도/월 드롭다운 피커 완전 제거 → 기간 date input (YYYY-MM-DD) 2개로 교체, 기본값 15일 전~오늘
+2. 작업관리 엑셀 다운로드 — 현재 페이지만 내려받던 문제 → 조회 조건 기준 전체 데이터(limit:9999) 재조회 후 다운로드, 누락 헤더(작업번호·작업일자·담당자/팀) 추가
+
+**수정 내용 (`public/static/app.js`)**:
+- `_taskDefaultDateRange()` 헬퍼 추가, `taskFilters` 초기값 year/month/yearList/monthList 제거 → start_date/end_date 기본값
+- 연도/월 헬퍼 함수 10개 제거 → `_taskApplyDateRange()` + `_taskDateReset()` 추가
+- `renderTasksPage` yearList/monthList 변환·클라이언트 필터 블록 제거, start_date/end_date 직접 사용
+- 작업관리 툴바 UI — 연도/월 드롭다운 2개 → `<input type="date">` 2개 + 초기화 버튼
+- `downloadTaskListCSV()` 비동기화 — limit:9999 재조회, 헤더 8→11개(작업번호·작업일자·담당자/팀 추가), stMap 완전판
+- `_conDefaultDateRange()` 헬퍼 추가, `_conFilters` 초기값 year/month/yearList/monthList 제거 → start_date/end_date
+- 공사현황 연도/월 헬퍼 함수 8개 제거 → `_conApplyDateRange()` + `_conDateReset()` 추가
+- `renderConstructionsPage` 연도/월 레이블 계산 제거, 서버 호출 year/month → start_date/end_date 파라미터
+- 공사현황 툴바 UI — 연도/월 드롭다운 2개 → `<input type="date">` 2개 + 초기화 버튼
+- yearList/monthList 클라이언트 필터 블록 제거 (공사현황)
+- 외부클릭 핸들러 — 연도/월 피커 참조 4건 제거
+
+**검증**: `node --check` ✅ + `npm run build` ✅ (296.84 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | feat: [FEAT-199] 작업관리/공사현황 기간 필터 전환 + 엑셀 전체 다운로드 |

@@ -2,6 +2,104 @@
 
 ---
 
+## [FEAT-194] 메뉴 구조 변경 — 항목관리 그룹 신설 + 3개 메뉴 명칭 변경 (세션 112)
+
+### 요구사항
+
+| 기존 명칭 | 변경 명칭 | 비고 |
+|-----------|-----------|------|
+| 분류별 항목 관리 | 위험성평가표관리 | id: `risk-items` 유지 |
+| 작업유형별 안전내용 관리 (탭) | 위험성(체크리스)평가설정 | safety-settings 내 탭 |
+| 체크리스트 항목 관리 (탭) | TBM 사진촬영대상설정 | safety-settings 내 탭 |
+
+**새 메뉴 구조:**
+```
+안전점검
+  └─ 항목관리 (신설 — id: risk-manage)
+       ├─ 위험성평가표관리  (id: risk-items)
+       ├─ 위험성(체크리스)평가설정  (safety-settings > wt-safety 탭)
+       └─ TBM 사진촬영대상설정  (safety-settings > checklist-items 탭)
+```
+
+### 구현 내용
+
+#### `public/static/app.js` 변경사항 7곳
+
+**1. flat 메뉴 배열 (line ~301~302)**
+```javascript
+// 변경 전
+{ id:'risk-items',      label:'분류별 항목 관리',  group:'위험성평가' },
+{ id:'safety-settings', label:'안전설정 관리',       group:'위험성평가' },
+
+// 변경 후
+{ id:'risk-items',      label:'위험성평가표관리', group:'항목관리' },
+{ id:'safety-settings', label:'안전설정',          group:'항목관리' },
+```
+
+**2. 사이드바 계층 메뉴 구조 (line ~2319)**
+```javascript
+// 변경 전: 위험성평가 children 안에 risk-items, safety-settings 포함
+// 변경 후: risk-manage 그룹 신설, 하위로 이동
+{ id:'risk-manage', icon:'fas fa-folder-open', label:'항목관리', children: [
+  { id:'risk-items',      icon:'fas fa-list-check',  label:'위험성평가표관리' },
+  { id:'safety-settings', icon:'fas fa-shield-check', label:'안전설정' },
+]},
+```
+
+**3. breadcrumb/타이틀 맵 (line ~3086~3090)**
+```javascript
+'risk-items':       '위험성평가표관리',
+'wt-safety':        '위험성(체크리스)평가설정',
+'checklist-items':  'TBM 사진촬영대상설정',
+'safety-settings':  '항목관리',
+'risk-manage':      '항목관리',
+```
+
+**4. 라우팅 case 추가 (line ~3230)**
+```javascript
+case 'risk-manage': navigateTo('risk-items'); return;  // 항목관리 그룹 클릭 시 첫 항목으로
+```
+
+**5. safety-settings 탭 버튼 텍스트 변경**
+```javascript
+// 변경 전
+'작업유형별 안전내용 관리'
+'체크리스트 항목 관리'
+
+// 변경 후
+'<i class="fas fa-hard-hat mr-1.5"></i>위험성(체크리스)평가설정'
+'<i class="fas fa-tasks mr-1.5"></i>TBM 사진촬영대상설정'
+```
+
+**6. risk-items 페이지 내부 헤딩 변경**
+```html
+<!-- 변경 전 --> 분류별 항목 관리
+<!-- 변경 후 --> 위험성평가표관리
+```
+
+**7. checklist-items / wt-safety 페이지 내부 헤딩 변경**
+```html
+<!-- checklist-items: 변경 전 --> 체크리스트 항목 관리
+<!-- checklist-items: 변경 후 --> TBM 사진촬영대상설정
+<!-- wt-safety: 변경 전 --> 작업유형별 안전내용 관리
+<!-- wt-safety: 변경 후 --> 위험성(체크리스)평가설정
+```
+
+### 충돌 체크 & 규칙 준수
+
+| 규칙 | 처리 방법 |
+|------|----------|
+| RULE-001 (var 전용) | 신규 코드 없음 — 기존 구조 값만 변경, 해당 없음 |
+| id 변경 여부 | `risk-items`, `safety-settings` id 유지 — 기존 라우팅/로직 영향 없음 |
+| safety-settings 탭 상태 | `_safetySettingsActiveTab` 전역변수 유지 — 탭 id(`wt-safety`/`checklist-items`) 변경 없음 |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (296.05 kB, 1.29s)
+- 커밋: `5afe597` — feat: [FEAT-194] 메뉴 구조 변경 — 항목관리 그룹 신설 + 3개 메뉴 명칭 변경
+
+---
+
 ## [FEAT-193] 위험성평가 서명요청 — 전원 서명 완료 후 미처리에서 사라지도록 변경 (세션 112)
 
 ### 요구사항

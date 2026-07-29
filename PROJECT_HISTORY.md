@@ -1,7 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-29 (세션 112 — FEAT-193 위험성평가 서명요청 전원 서명 완료 후 사라짐)
-> **GitHub 최신 (safetynote-server): `7487748`** — feat: [FEAT-193] 위험성평가 서명요청 — 전원 서명 완료 후 미처리에서 사라지도록 변경
+> 최종 업데이트: 2026-07-29 (세션 112 — FEAT-194 메뉴 구조 변경 및 명칭 변경)
+> **GitHub 최신 (safetynote-server): `5afe597`** — feat: [FEAT-194] 메뉴 구조 변경 — 항목관리 그룹 신설 + 3개 메뉴 명칭 변경
+> **이전 커밋 (safetynote-server): `7487748`** — feat: [FEAT-193] 위험성평가 서명요청 — 전원 서명 완료 후 미처리에서 사라지도록 변경
 > **이전 커밋 (safetynote-server): `ddccb08`** — fix: [BUG-192d] 안전교육 서명요청 내용보기 TypeError(meta.bg) — eduType 무효값 방어코드 추가
 > **이전 커밋 (safetynote-server): `5a12fa9`** — fix: [세션111] 서명요청 버그 3건 수정 — 중복pending 일괄처리/자동completed조건 개선/SC내용보기 버튼화
 > **이전 커밋 (safetynote-server): `01cab28`** — feat: [세션111] 시스템설정 파일저장경로 UI에 안전교육/산업안전보건위원회/위험성평가 폴더구조 표시 추가

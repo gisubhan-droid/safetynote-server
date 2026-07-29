@@ -11393,3 +11393,35 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | feat: [FEAT-199] 작업관리/공사현황 기간 필터 전환 + 엑셀 전체 다운로드 |
+
+### 작업 — BUG-EXCEL
+
+#### BUG-EXCEL — 작업관리 엑셀 전체 다운로드 (서버 limit 하드캡 해제)
+
+**문제**:
+1. `src/routes/tasks.ts:58` `Math.min(500, ...)` 하드캡 → 엑셀 전용 전체 조회 불가
+2. `downloadTaskListCSV()` 가 현재 페이지 캐시(`_taskListData`)만 사용 → 페이지네이션 데이터 누락
+3. `t.task_number`(내부 시스템 타임스탬프) 를 표시용 작업번호로 사용 → 오표시
+
+**수정 내용**:
+
+`src/routes/tasks.ts`:
+- `export` 쿼리 파라미터 추출 (`exportFlag`)
+- `isExport = exportFlag === '1'` 조건 분기
+- `limitNum = Math.min(isExport ? 10000 : 500, ...)` — export=1 시 상한 10,000으로 조건부 해제
+
+`public/static/app.js`:
+- 엑셀 버튼 `id="taskExcelBtn"` 부여 → `getElementById` 방식으로 안전하게 조회
+- `downloadTaskListCSV()` 완전 재작성:
+  - `params.export = '1'`, `params.limit = 9999` 추가 → 서버 전체 데이터 단일 요청
+  - 작업번호: `work_number + '-' + sub_task_number` 조합 (내부 시스템번호 `task_number` 제거)
+  - `statusList`, `workClassList`, LGU+ 클라이언트 필터 동일 적용
+  - `stMap` 9개 상태 완성 (`work_completed`, `cancelled`, `paused` 포함)
+
+**검증**: `node --check public/static/app.js` ✅ + `npm run build` ✅ (296.86 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | fix: [BUG-EXCEL] 작업관리 엑셀 전체 다운로드 — 서버 limit 500 하드캡 해제(export=1) + 작업번호 조합 수정 |

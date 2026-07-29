@@ -7104,3 +7104,54 @@ if (req.ref_type === 'sc_vote') {
 ### 검증
 - `node --check public/static/app.js` ✅ 문법 오류 없음
 - `npm run build` ✅ (296.84 kB)
+
+---
+
+## BUG-EXCEL — 작업관리 엑셀 전체 다운로드 (서버 limit 하드캡 해제)
+
+**구현 일시**: 2026-07-29  
+**커밋**: (이번 세션)
+
+### 문제
+
+1. **서버 하드캡**: `src/routes/tasks.ts:58` — `Math.min(500, ...)` 로 모든 조회 결과 최대 500건 차단  
+   → 엑셀 다운로드 시 전체 데이터 불러오기 불가
+2. **현재 페이지만 다운로드**: `downloadTaskListCSV()` 가 `_taskListData`(현재 페이지 캐시)를 그대로 사용  
+   → 페이지네이션으로 숨겨진 데이터 누락
+3. **작업번호 오류**: `t.task_number`(내부 시스템 타임스탬프) 를 표시용으로 사용  
+   → 사용자 표시용 번호는 `work_number + '-' + sub_task_number` 조합이 정확함
+
+### 근본 원인
+
+`tasks.ts` line 58:
+```typescript
+// 수정 전 — export 여부 무관하게 500건 상한 고정
+const limitNum = Math.min(500, Math.max(0, parseInt(limitStr || '0') || 0))
+```
+
+### 수정 내용
+
+#### `src/routes/tasks.ts`
+- `exportFlag` 파라미터(`export`) 추출 추가
+- `isExport` 조건 분기: `export=1` 요청 시 상한 10,000 / 일반 조회 시 500 유지
+
+```typescript
+// 수정 후
+const { ..., export: exportFlag } = c.req.query()
+const isExport = exportFlag === '1'
+const limitNum = Math.min(isExport ? 10000 : 500, Math.max(0, parseInt(limitStr || '0') || 0))
+```
+
+#### `public/static/app.js` — `downloadTaskListCSV()` 재작성
+| 수정 내용 | 상세 |
+|-----------|------|
+| 엑셀 버튼 `id="taskExcelBtn"` 부여 | `querySelector` → `getElementById` 로 안전하게 변경 |
+| `export: '1'` 파라미터 추가 | 서버 limit 10,000 해제 트리거 |
+| `limit: 9999` 파라미터 추가 | 전체 데이터 단일 요청 |
+| 작업번호 조합 수정 | `t.task_number` 제거 → `work_number + '-' + sub_task_number` |
+| 클라이언트 필터 동일 적용 | `statusList`, `workClassList`, LGU+ 필터 재적용 |
+| `stMap` 완성 | `work_completed`, `cancelled`, `paused` 포함 9개 상태 |
+
+### 검증
+- `node --check public/static/app.js` ✅ 문법 오류 없음
+- `npm run build` ✅ (296.86 kB)

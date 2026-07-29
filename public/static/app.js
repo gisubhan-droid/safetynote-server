@@ -6902,7 +6902,7 @@ async function renderTasksPage(container) {
         </select>
 
         <!-- ⑧ 엑셀 다운로드 -->
-        <button onclick="downloadTaskListCSV()" class="btn btn-secondary" style="color:#059669;border-color:#059669;font-size:12px" title="엑셀 다운로드">
+        <button id="taskExcelBtn" onclick="downloadTaskListCSV()" class="btn btn-secondary" style="color:#059669;border-color:#059669;font-size:12px" title="엑셀 다운로드">
           <i class="fas fa-file-excel"></i> 엑셀
         </button>
 
@@ -7057,7 +7057,10 @@ async function renderTasksPage(container) {
   }
 }
 
-// [FEAT-199] 작업목록 엑셀(CSV) 다운로드 — 조회 조건 기준 전체 데이터 (최대 6개월)
+// [FEAT-199 / BUG-EXCEL] 작업목록 엑셀(CSV) 다운로드
+// - export=1 파라미터로 서버 limit 상한 500 → 10,000 해제
+// - 작업번호: work_number + sub_task_number 조합 (t.task_number는 내부 시스템번호)
+// - 전체 필터 조건 동일 적용 후 재조회
 async function downloadTaskListCSV() {
   var wcMap = { cable_install:'외선', cable_splice:'접속', equipment_other:'장비', conduit:'관로' };
   var rlMap = { high:'고위험', medium:'중위험', normal:'일반' };
@@ -7067,18 +7070,18 @@ async function downloadTaskListCSV() {
     completed:'일지작성완료', cancelled:'취소', paused:'중지'
   };
 
-  // 버튼 비활성화 (중복 클릭 방지)
-  var excelBtn = document.querySelector('button[onclick="downloadTaskListCSV()"]');
+  // 버튼 비활성화 (중복 클릭 방지) — id 기반으로 안전하게 조회
+  var excelBtn = document.getElementById('taskExcelBtn');
   if (excelBtn) { excelBtn.disabled = true; excelBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 조회중...'; }
 
   try {
-    // 현재 필터 조건으로 전체 데이터 재조회 (limit:9999)
-    var params = { limit: 9999, page: 1 };
-    if (taskFilters.status)               params.status        = taskFilters.status;
-    if (taskFilters.risk_level)           params.risk_level    = taskFilters.risk_level;
-    if (taskFilters.keyword)              { params.keyword = taskFilters.keyword; params.search_type = taskFilters.search_type; }
-    if (taskFilters.start_date)           params.start_date    = taskFilters.start_date;
-    if (taskFilters.end_date)             params.end_date      = taskFilters.end_date;
+    // export=1: 서버 limit 상한 10,000으로 해제 / limit:9999 로 전체 요청
+    var params = { limit: 9999, page: 1, export: '1' };
+    if (taskFilters.status)     params.status      = taskFilters.status;
+    if (taskFilters.risk_level) params.risk_level  = taskFilters.risk_level;
+    if (taskFilters.keyword)    { params.keyword = taskFilters.keyword; params.search_type = taskFilters.search_type; }
+    if (taskFilters.start_date) params.start_date  = taskFilters.start_date;
+    if (taskFilters.end_date)   params.end_date    = taskFilters.end_date;
     if (taskFilters.con_manager_names && taskFilters.con_manager_names.length) {
       params.con_manager_names = taskFilters.con_manager_names;
     }
@@ -7086,12 +7089,12 @@ async function downloadTaskListCSV() {
     var res = await API.get('/tasks', { params: params });
     var allTasks = res.data.tasks || res.data || [];
 
-    // statusList 클라이언트 필터 적용
+    // statusList 클라이언트 필터 (화면 필터와 동일하게 적용)
     var stListNow = taskFilters.statusList || [];
     if (stListNow.length > 0) {
       allTasks = allTasks.filter(function(t) { return stListNow.indexOf(t.status) !== -1; });
     }
-    // workClassList 클라이언트 필터 적용
+    // workClassList 클라이언트 필터
     if (taskFilters.workClassList && taskFilters.workClassList.length > 0) {
       allTasks = allTasks.filter(function(t) {
         var wc = t.work_class || 'other';
@@ -7106,38 +7109,45 @@ async function downloadTaskListCSV() {
     }
 
     var headers = [
-      '작업번호','요청번호','공사종류','작업종류','상세분류','공사명',
-      '위험도','진행단계','작업일자','담당자/팀','작업지시주소'
+      '작업번호', '요청번호', '공사종류', '작업종류', '상세분류', '공사명',
+      '위험도', '진행단계', '작업일자', '담당자/팀', '작업지시주소'
     ];
     var rows = allTasks.map(function(t) {
+      // 사용자 표시용 작업번호: work_number(공사번호) + sub_task_number(작업서브번호) 조합
+      // t.task_number 는 내부 시스템 타임스탬프 번호이므로 사용 안 함
+      var wn = t.work_number || '';
+      var sn = t.sub_task_number || '';
+      var taskNumStr = wn && sn ? (wn + '-' + sn) : (wn || sn || '');
+
       var workerStr = '';
       if (t.team_name) {
         workerStr = t.team_name;
       } else if (t.assigned_workers && t.assigned_workers.length) {
         workerStr = t.assigned_workers.map(function(w) { return w.name; }).join(', ');
       }
+
       return [
-        t.task_number||'',
-        t.request_no||'',
-        t.construction_type||'',
-        wcMap[t.work_class]||t.work_class||'',
-        getWorkSubLabel(t.work_class, t.work_sub_class)||'',
-        t.title||'',
-        rlMap[t.risk_level]||'일반',
-        stMap[t.status]||t.status||'',
-        t.planned_date ? t.planned_date.slice(0,10) : '',
+        taskNumStr,
+        t.request_no || '',
+        t.construction_type || '',
+        wcMap[t.work_class] || t.work_class || '',
+        getWorkSubLabel(t.work_class, t.work_sub_class) || '',
+        t.title || '',
+        rlMap[t.risk_level] || '일반',
+        stMap[t.status] || t.status || '',
+        t.planned_date ? t.planned_date.slice(0, 10) : '',
         workerStr,
-        t.location||''
+        t.location || ''
       ];
     });
 
-    downloadCSV('\uc791\uc5c5\ubaa9\ub85d_' + kstDateStr() + '.csv', headers, rows);
-    toast('\uc804\uccb4 ' + allTasks.length + '\uac74 \ub2e4\uc6b4\ub85c\ub4dc \uc644\ub8cc', 'success');
+    downloadCSV('작업목록_' + kstDateStr() + '.csv', headers, rows);
+    toast('전체 ' + allTasks.length + '건 다운로드 완료', 'success');
   } catch(err) {
     console.error('downloadTaskListCSV error:', err);
-    toast('\uc5d1\uc140 \ub2e4\uc6b4\ub85c\ub4dc \uc2e4\ud328: ' + (err.message||err), 'error');
+    toast('엑셀 다운로드 실패: ' + (err.message || err), 'error');
   } finally {
-    if (excelBtn) { excelBtn.disabled = false; excelBtn.innerHTML = '<i class="fas fa-file-excel"></i> \uc5d1\uc140'; }
+    if (excelBtn) { excelBtn.disabled = false; excelBtn.innerHTML = '<i class="fas fa-file-excel"></i> 엑셀'; }
   }
 }
 

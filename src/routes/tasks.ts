@@ -50,12 +50,14 @@ app.get('/', async (c) => {
 
   const { status, date, start_date, end_date, worker_id, supervisor_id, risk_level, search_type, keyword,
           construction_id: constructionIdStr,
-          page: pageStr, limit: limitStr } = c.req.query()
+          page: pageStr, limit: limitStr, export: exportFlag } = c.req.query()
   // 다중 공사담당자: con_manager_names[] 배열 파라미터
   const rawConMgrNames = c.req.queries('con_manager_names') || []
   const conManagerNames = rawConMgrNames.flatMap((n: string) => n.split(',').map((s: string) => s.trim())).filter(Boolean)
   // 페이지네이션 파라미터 (기본: limit=0 → 전체, limit>0 → 페이징)
-  const limitNum = Math.min(500, Math.max(0, parseInt(limitStr || '0') || 0))
+  // [FEAT-199] export=1 (엑셀 다운로드 전용): 상한 10,000으로 상향 / 일반 조회: 500 유지
+  const isExport = exportFlag === '1'
+  const limitNum = Math.min(isExport ? 10000 : 500, Math.max(0, parseInt(limitStr || '0') || 0))
   const pageNum  = Math.max(1, parseInt(pageStr  || '1') || 1)
   const offset   = limitNum > 0 ? (pageNum - 1) * limitNum : 0
   let query = `SELECT t.*, COALESCE(t.work_class_new, t.work_class, 'cable_install') as work_class, t.work_sub_class, wc.name as category_name, wt.name as work_type_name,

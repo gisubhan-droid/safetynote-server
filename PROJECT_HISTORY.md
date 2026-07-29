@@ -1,9 +1,9 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-28 (세션 110 — FEAT-191 파일 저장 구조 체계화 + 기존 파일 마이그레이션)
-> **GitHub 최신 (safetynote-server): `caacebc`** — feat: [세션 110] 파일 저장 체계화 — 안전교육·SC회의 폴더구조 변경 + 마이그레이션 API
-> **이전 커밋 (safetynote-server): `2f98cec`** — fix: [BUG-190] 시스템관리자 위험성평가·SC회의 처리단계 구분없이 삭제 허용
-> **이전 커밋 (safetynote-server): `cea7523`** — docs: [세션 109] BUG-190 커밋 해시 2f98cec 반영
+> 최종 업데이트: 2026-07-29 (세션 111 — BUG-192 서명요청 버그 3건 수정)
+> **GitHub 최신 (safetynote-server): `5a12fa9`** — fix: [세션111] 서명요청 버그 3건 수정 — 중복pending 일괄처리/자동completed조건 개선/SC내용보기 버튼화
+> **이전 커밋 (safetynote-server): `01cab28`** — feat: [세션111] 시스템설정 파일저장경로 UI에 안전교육/산업안전보건위원회/위험성평가 폴더구조 표시 추가
+> **이전 커밋 (safetynote-server): `caacebc`** — feat: [세션 110] 파일 저장 체계화 — 안전교육·SC회의 폴더구조 변경 + 마이그레이션 API
 > **이전 커밋 (safetynote-server): `91c7be2`** — fix: BUG-1 감소대책저장 후 상태미전환, BUG-2 서명화면 잘못된내용, 근로자 위험성평가 메뉴추가
 > **이전 커밋 (safetynote-server): `7cae5e0`** — fix: [SC-투표500/투표요청] patchSchema v0.189 + sc_vote push + 서명요청카드 투표UI
 > **이전 커밋 (safetynote-server): `5a68e78`** — docs: [세션 106] PROJECT_HISTORY 커밋 해시 d369b94 반영

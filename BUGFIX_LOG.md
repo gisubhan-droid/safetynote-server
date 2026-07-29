@@ -2,6 +2,79 @@
 
 ---
 
+## [BUG-192] 서명요청 연결 오류 3건 수정 (세션 111)
+
+### 문제
+1. **BUG-192a**: 서명 완료한 건이 계속 미처리(pending)로 남는 문제
+2. **BUG-192b**: 위험성평가 서명 자동 completed 전환 미작동
+3. **BUG-192c**: 산업안전보건위원회 서명요청 내용보기가 텍스트만 표시되어 클릭 불가
+
+### 원인 분석
+
+#### BUG-192a — 중복 pending 레코드
+- `signature_requests` 테이블에 UNIQUE 제약 없음
+- `_saveRiskFinalScores`(최종위험도 저장) 시 자동 bulk 서명요청 발송
+- 이후 수동으로 재발송하면 **같은 위원에게 중복 pending 레코드** 생성
+- 서명 처리 시 `UPDATE ... WHERE id=?` 로 ID 1건만 `signed` 처리
+- 중복으로 생긴 나머지 pending 레코드는 계속 미처리로 표시
+
+#### BUG-192b — 자동 completed 전환 조건 부정확
+- 전환 조건: `signedCount(signature_requests WHERE status='signed') >= memberCount`
+- `signature_requests`는 중복 생성 가능 → signed 카운트 오염
+- 실제 서명 테이블(`risk_assessment_signatures`)이 아닌 요청 테이블 기준으로 카운팅하여 부정확
+
+#### BUG-192c — SC 서명요청 내용보기 미연결
+- `_srRenderCard` 함수에서 `sc`/`sc_vote` ref_type의 viewBtn이 `<span>`(텍스트)으로만 구현
+- 클릭 이벤트 없어 회의 내용을 열 수 없음
+
+### 해결
+
+#### BUG-192a — `signature-requests.ts` PATCH /:id/sign 수정
+```typescript
+// Before: 해당 ID 1건만 signed 처리
+UPDATE signature_requests SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP WHERE id=?
+
+// After: 동일 ref+user 의 모든 pending 레코드 일괄 signed 처리
+UPDATE signature_requests
+SET status='signed', sign_data=?, signed_at=CURRENT_TIMESTAMP
+WHERE ref_type=? AND ref_id=? AND target_user_id=? AND status='pending'
+```
+
+#### BUG-192b — 자동 completed 전환 카운팅 기준 변경
+```typescript
+// Before: signature_requests(중복 가능) 기준
+SELECT COUNT(*) as cnt FROM signature_requests WHERE ref_type='risk_assessment' AND ref_id=? AND status='signed'
+
+// After: risk_assessment_signatures(실제 서명 테이블, DISTINCT) 기준
+SELECT COUNT(DISTINCT user_id) as cnt FROM risk_assessment_signatures WHERE assessment_id=?
+```
+
+#### BUG-192b(추가) — bulk 생성 시 이미 서명한 사용자 차단
+- `risk_assessment_signatures` 에서 이미 서명한 `user_id` 목록 취득
+- 해당 사용자는 bulk 요청 생성 완전 차단
+- 새로 생성된 요청(`newlyNotifiedUids`)에게만 SSE/FCM 알림 발송
+
+#### BUG-192c — `app.js` SC 서명요청 viewBtn 개선
+- `_signReqOpenSc(meetingId)` 헬퍼 함수 추가
+  - `safeNavigateTo('sc-meetings')` 로 이동 후 500ms 대기
+  - `renderSCMeetingDetail(container, meetingId)` 호출
+- SC/SC_VOTE viewBtn: `<span>` 텍스트 → `<button onclick="_signReqOpenSc(...)">` 버튼으로 교체
+
+### 변경 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `src/nas-routes/signature-requests.ts` | PATCH sign: 중복 pending 일괄처리 / bulk: 이미서명자 차단 + 신규만 알림 / 자동completed: signatures 기준 카운팅 |
+| `public/static/app.js` | `_signReqOpenSc()` 헬퍼 추가 / SC viewBtn 클릭가능 버튼으로 교체 |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npx tsc --noEmit` (signature-requests.ts 에러 없음) ✅
+- `npm run build` ✅ (296.05 kB)
+- 커밋: `5a12fa9`
+
+---
+
 ## [FEAT-191] 파일 저장 구조 체계화 + 기존 파일 마이그레이션 (세션 110)
 
 ### 요구사항

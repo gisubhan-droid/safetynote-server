@@ -3080,8 +3080,8 @@ function getPageTitle(page) {
     'admin-settings': '시스템 설정',
     'legal-notices': '법령안내 관리',
     'risk': '위험성평가', 'risk-periodic': '정기 위험성평가', 'risk-adhoc': '수시 위험성평가', 'risk-items': '위험성평가표관리',
-    'wt-safety': '위험성(체크리스)평가설정',
-    'checklist-items': 'TBM 사진촬영대상설정',
+    'wt-safety': 'TBM 회의및필수사진설정',
+    'checklist-items': '위험성체크리스트항목설정',
     'safety-settings': '항목관리',
     'risk-manage': '항목관리',
     'periodic-risk': '위험성평가', 'checklist-risk': '작업 위험성평가(체크리스트)',
@@ -46105,7 +46105,7 @@ async function copyTask(taskId) {
 
 // ============================================================================
 // [FEAT-194] 항목관리 3탭 통합 페이지 (세션 112)
-// 위험성평가표관리 / 위험성(체크리스)평가설정 / TBM 사진촬영대상설정
+// 위험성평가표관리 / TBM 회의및필수사진설정 / 위험성체크리스트항목설정
 // ============================================================================
 
 // 활성 탭 상태 전역 변수
@@ -46152,7 +46152,7 @@ function _renderRiskManageTabContent(container) {
         ? activeClass + 'border-purple-600 text-purple-700 bg-purple-50'
         : inactiveClass)
     +   '" onclick="_switchRiskManageTab(\'wt-safety\')">'
-    +   '<i class="fas fa-hard-hat mr-1.5"></i>위험성(체크리스)평가설정'
+    +   '<i class="fas fa-hard-hat mr-1.5"></i>TBM 회의및필수사진설정'
     + '</button>'
     + '<button type="button"'
     +   ' class="px-4 py-2.5 text-sm rounded-t-lg transition-colors'
@@ -46160,7 +46160,7 @@ function _renderRiskManageTabContent(container) {
         ? activeClass + 'border-indigo-600 text-indigo-700 bg-indigo-50'
         : inactiveClass)
     +   '" onclick="_switchRiskManageTab(\'checklist-items\')">'
-    +   '<i class="fas fa-tasks mr-1.5"></i>TBM 사진촬영대상설정'
+    +   '<i class="fas fa-tasks mr-1.5"></i>위험성체크리스트항목설정'
     + '</button>'
     + '</nav>'
     + '</div>';
@@ -46220,7 +46220,7 @@ function _renderSafetySettingsTabContent(container) {
         ? ' border-purple-600 text-purple-700 bg-purple-50'
         : ' border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300')
     +   '" onclick="_switchSafetySettingsTab(\'wt-safety\')">'
-    +   '<i class="fas fa-hard-hat mr-1.5"></i>위험성(체크리스)평가설정'
+    +   '<i class="fas fa-hard-hat mr-1.5"></i>TBM 회의및필수사진설정'
     + '</button>'
     + '<button type="button"'
     +   ' class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors'
@@ -46228,7 +46228,7 @@ function _renderSafetySettingsTabContent(container) {
         ? ' border-indigo-600 text-indigo-700 bg-indigo-50'
         : ' border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300')
     +   '" onclick="_switchSafetySettingsTab(\'checklist-items\')">'
-    +   '<i class="fas fa-tasks mr-1.5"></i>TBM 사진촬영대상설정'
+    +   '<i class="fas fa-tasks mr-1.5"></i>위험성체크리스트항목설정'
     + '</button>'
     + '</nav>'
     + '</div>';
@@ -46413,7 +46413,7 @@ function _renderClItemsPage(container) {
   var html = '<div class="p-4 space-y-4">';
   html += '<div class="flex items-center justify-between">';
   html += '<div>';
-  html += '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-tasks text-indigo-500 mr-2"></i>TBM 사진촬영대상설정</h2>';
+  html += '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-tasks text-indigo-500 mr-2"></i>위험성체크리스트항목설정</h2>';
   html += '<p class="text-xs text-gray-500 mt-0.5">위험성평가 체크리스트의 필수/작업유형별 점검 항목을 추가·수정·삭제합니다.</p>';
   html += '</div>';
   html += '<div class="flex items-center gap-2">';
@@ -46942,7 +46942,7 @@ function _buildWtSafetyListHtml(list) {
   return '<div class="p-4 space-y-4">'
     + '<div class="flex items-center justify-between">'
     +   '<div>'
-    +     '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-hard-hat text-purple-500 mr-2"></i>위험성(체크리스)평가설정</h2>'
+    +     '<h2 class="text-lg font-bold text-gray-800"><i class="fas fa-hard-hat text-purple-500 mr-2"></i>TBM 회의및필수사진설정</h2>'
     +     '<p class="text-xs text-gray-500 mt-0.5">위험성평가 체크리스트 작업유형의 안전교육·TBM항목·주의사항·필수사진을 관리합니다.</p>'
     +   '</div>'
     +   '<button class="btn btn-primary text-sm" onclick="_showWtSafetyEditModal(null)">'

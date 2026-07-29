@@ -50630,12 +50630,17 @@ function _scLoadMediaTab(body) {
     var m = res.meeting || res.data || res;
     var photos = res.photos || m.photos || [];
     var docs   = res.docs   || m.docs   || [];
+    // [BUG-196c] <img src>는 Authorization 헤더 불가 → ?token= 쿼리 방식 사용 (photoImgSrc 패턴)
+    var _scPhotoToken = localStorage.getItem('token') || '';
 
     var photoHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px">';
     for (var pi = 0; pi < photos.length; pi++) {
       var ph = photos[pi];
+      // [BUG-196c] 401 방지: ?token= 쿼리 추가 / onerror SVG 특수문자 → 단순 배경 처리
+      var phSrc = '/api/safety-committee/photos/' + ph.id + '/img'
+        + (_scPhotoToken ? '?token=' + encodeURIComponent(_scPhotoToken) : '');
       photoHtml += '<div style="position:relative;border:1.5px solid #E5E7EB;border-radius:10px;overflow:hidden;background:#F9FAFB">' +
-        '<img src="/api/safety-committee/photos/' + ph.id + '/img" alt="' + (ph.file_name||'') + '" style="width:100%;height:100px;object-fit:cover" onerror="this.src=\'data:image/svg+xml,<svg xmlns=\\\"http://www.w3.org/2000/svg\\\" width=\\\"80\\\" height=\\\"80\\\"><rect width=\\\"80\\\" height=\\\"80\\\" fill=\\\"#EDE9F8\\\"/><text x=\\\"50%\\\" y=\\\"50%\\\" dominant-baseline=\\\"middle\\\" text-anchor=\\\"middle\\\" font-size=\\\"12\\\" fill=\\\"#7C3AED\\\">이미지</text></svg>\'">' +
+        '<img src="' + phSrc + '" alt="' + (ph.file_name||'').replace(/"/g,'') + '" style="width:100%;height:100px;object-fit:cover" onerror="this.style.background=\'#EDE9F8\';this.style.minHeight=\'60px\';this.removeAttribute(\'src\')">' +
         (ph.caption ? '<div style="padding:4px 6px;font-size:10px;color:#64748B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + ph.caption + '</div>' : '') +
         '<button data-phid="' + ph.id + '" onclick="_scDeletePhoto(this.getAttribute(\'data-phid\'))" style="position:absolute;top:4px;right:4px;background:rgba(239,68,68,.85);border:none;border-radius:50%;width:20px;height:20px;color:#fff;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="fas fa-times"></i></button>' +
       '</div>';

@@ -2315,7 +2315,7 @@ function renderApp() {
           { id:'work-stops',          icon:'fas fa-hand-paper',      label:'작업중지현황' },
         ]},
         { id:'inspections', icon:'fas fa-search',               label:'현장점검' },
-        { id:'hazards',     icon:'fas fa-exclamation-triangle', label:'위험신고' },
+        { id:'hazards',     icon:'fas fa-exclamation-triangle', label:'위험신고및건의' },
       ]
     },
     {
@@ -2384,7 +2384,7 @@ function renderApp() {
     {
       id: 'wsafety', icon: 'fas fa-shield-alt', label: '안전', color: '#f87171',
       items: [
-        { id:'hazard-report', icon:'fas fa-exclamation-triangle', label:'위험신고' },
+        { id:'hazard-report', icon:'fas fa-exclamation-triangle', label:'위험신고및건의' },
         { id:'sign-requests', icon:'fas fa-pen-fancy',            label:'서명요청' },
         // [검증-3 FIX] 근로자도 위험성평가 열람 가능 (평가위원 서명 포함)
         { id:'risk-periodic', icon:'fas fa-calendar-check',       label:'정기 위험성평가' },
@@ -3076,7 +3076,7 @@ function getPageTitle(page) {
     constructions: '공사현황', dashboard: '작업현황', tasks: '작업관리', 'my-tasks': '내 작업목록',
     inspections: '현장점검', hazards: '위험(아차사고)신고', stats: '안전현황',
     'con-stats': '공사통계', 'stats-task': '작업통계', 'stats-inspection': '현장점검 통계', 'stats-worker-safety': '근로자 안전준수 현황',
-    users: '업무중사용자', 'suspended-users': '업무중지사용자', 'my-stats': '내 작업통계', 'hazard-report': '위험신고',
+    users: '업무중사용자', 'suspended-users': '업무중지사용자', 'my-stats': '내 작업통계', 'hazard-report': '위험신고및건의',
     'admin-settings': '시스템 설정',
     'legal-notices': '법령안내 관리',
     'risk': '위험성평가', 'risk-periodic': '정기 위험성평가', 'risk-adhoc': '수시 위험성평가', 'risk-items': '위험성평가표관리',
@@ -5933,7 +5933,7 @@ async function _renderDashboardInner(container) {
           </button>
           <button onclick="navigateTo('hazards')" class="btn btn-outline justify-center py-3 flex-col gap-1">
             <i class="fas fa-exclamation-triangle text-xl text-red-500"></i>
-            <span class="text-xs">위험신고</span>
+            <span class="text-xs">위험신고및건의</span>
           </button>
           <button onclick="navigateTo('stats')" class="btn btn-outline justify-center py-3 flex-col gap-1">
             <i class="fas fa-chart-bar text-xl text-purple-500"></i>
@@ -19440,12 +19440,12 @@ async function renderHazardsPage(container) {
     } else if (tab === 'nearmiss') {
       tabBanner = '<div class="rounded-xl p-3 mb-3 text-xs flex items-center gap-2" style="background:#EDE7F6;border:1px solid #8E72A8;color:#4E3A63"><i class="fas fa-bell flex-shrink-0"></i><span><strong>아차사고(Near Miss)</strong>: 사고가 날 뻔했으나 인적·물적 피해 없이 종료된 상황. 발굴·신고하면 위험성평가에 반영되어 중대재해를 예방합니다.</span></div>';
     } else {
-      tabBanner = '<div class="rounded-xl p-3 mb-3 text-xs flex items-center gap-2" style="background:#FDE8F3;border:1px solid #FF349E;color:#A8005A"><i class="fas fa-exclamation-circle flex-shrink-0"></i><span><strong>위험신고</strong>: 추락·감전·화재 등 즉각 대응이 필요한 위험상황 신고. 산안법 제52조에 따라 근로자는 급박한 위험 시 작업을 중지하고 대피할 권리가 있습니다.</span></div>';
+      tabBanner = '<div class="rounded-xl p-3 mb-3 text-xs flex items-center gap-2" style="background:#FDE8F3;border:1px solid #FF349E;color:#A8005A"><i class="fas fa-exclamation-circle flex-shrink-0"></i><span><strong>위험신고및건의</strong>: 추락·감전·화재 등 즉각 대응이 필요한 위험상황 신고. 산안법 제52조에 따라 근로자는 급박한 위험 시 작업을 중지하고 대피할 권리가 있습니다.</span></div>';
     }
 
     var listHtml;
     if (list.length === 0) {
-      var emptyMsg   = tab === 'suggestion' ? '등록된 안전건의사항이 없습니다.' : tab === 'nearmiss' ? '신고된 아차사고가 없습니다.' : '등록된 위험신고가 없습니다.';
+      var emptyMsg   = tab === 'suggestion' ? '등록된 안전건의사항이 없습니다.' : tab === 'nearmiss' ? '신고된 아차사고가 없습니다.' : '등록된 위험신고및건의가 없습니다.';
       var emptyIcon  = tab === 'suggestion' ? 'fa-lightbulb' : 'fa-shield-alt';
       var emptyColor = tab === 'suggestion' ? '#2E7D32' : tab === 'nearmiss' ? '#9C82AF' : '#66BB6A';
       listHtml = '<div class="card text-center py-12 text-gray-400"><i class="fas '+emptyIcon+' text-5xl mb-3" style="color:'+emptyColor+'"></i><p class="font-medium" style="color:'+emptyColor+'">'+emptyMsg+'</p><p class="text-xs text-gray-400 mt-1">위험을 발견하면 즉시 신고해 주세요.</p></div>';
@@ -19498,11 +19498,11 @@ async function renderHazardsPage(container) {
     container.innerHTML = '<div class="page-container">'
       + '<div class="rounded-2xl p-4 mb-4 flex items-start gap-3" style="background:linear-gradient(135deg,#FDE8F3 0%,#EDE7F6 100%);border:1.5px solid #FF349E">'
       + '<div class="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center" style="background:#D70072"><i class="fas fa-shield-alt text-white text-lg"></i></div>'
-      + '<div><p class="font-bold text-sm" style="color:#A8005A">위험신고 · 아차사고 · 안전건의사항</p>'
-      + '<p class="text-xs mt-0.5" style="color:#685182">위험신고는 즉각적인 위험상황, 아차사고는 사고 날 뻔한 상황, 안전건의사항은 개선 제안을 등록합니다.</p></div></div>'
+      + '<div><p class="font-bold text-sm" style="color:#A8005A">위험신고및건의 · 아차사고 · 안전건의사항</p>'
+      + '<p class="text-xs mt-0.5" style="color:#685182">위험신고및건의는 즉각적인 위험상황, 아차사고는 사고 날 뻔한 상황, 안전건의사항은 개선 제안을 등록합니다.</p></div></div>'
       + '<div class="flex items-center justify-between mb-3">'
       + '<div class="flex gap-1 p-1 rounded-xl" style="background:#F5F0F8">'
-      + '<button data-htab="danger" onclick="_switchHazardTabBtn(this)" class="px-3 py-2 rounded-lg text-sm font-bold transition-all '+(tab==='danger'?'text-white shadow':'text-gray-500')+'" style="'+(tab==='danger'?'background:#D70072':'')+'"><i class="fas fa-exclamation-triangle mr-1"></i>위험신고<span class="ml-1 text-xs px-1.5 py-0.5 rounded-full '+(tab==='danger'?'bg-white':'bg-gray-200')+'" style="'+(tab==='danger'?'color:#D70072':'color:#888')+'">'+dangerList.length+'</span></button>'
+      + '<button data-htab="danger" onclick="_switchHazardTabBtn(this)" class="px-3 py-2 rounded-lg text-sm font-bold transition-all '+(tab==='danger'?'text-white shadow':'text-gray-500')+'" style="'+(tab==='danger'?'background:#D70072':'')+'"><i class="fas fa-exclamation-triangle mr-1"></i>위험신고및건의<span class="ml-1 text-xs px-1.5 py-0.5 rounded-full '+(tab==='danger'?'bg-white':'bg-gray-200')+'" style="'+(tab==='danger'?'color:#D70072':'color:#888')+'">'+dangerList.length+'</span></button>'
       + '<button data-htab="nearmiss" onclick="_switchHazardTabBtn(this)" class="px-3 py-2 rounded-lg text-sm font-bold transition-all '+(tab==='nearmiss'?'text-white shadow':'text-gray-500')+'" style="'+(tab==='nearmiss'?'background:#685182':'')+'"><i class="fas fa-bell mr-1"></i>아차사고<span class="ml-1 text-xs px-1.5 py-0.5 rounded-full '+(tab==='nearmiss'?'bg-white':'bg-gray-200')+'" style="'+(tab==='nearmiss'?'color:#685182':'color:#888')+'">'+nearmissList.length+'</span></button>'
       + '<button data-htab="suggestion" onclick="_switchHazardTabBtn(this)" class="px-3 py-2 rounded-lg text-sm font-bold transition-all '+(tab==='suggestion'?'text-white shadow':'text-gray-500')+'" style="'+(tab==='suggestion'?'background:#2E7D32':'')+'"><i class="fas fa-lightbulb mr-1"></i>안전건의<span class="ml-1 text-xs px-1.5 py-0.5 rounded-full '+(tab==='suggestion'?'bg-white':'bg-gray-200')+'" style="'+(tab==='suggestion'?'color:#2E7D32':'color:#888')+'">'+suggestionList.length+'</span></button>'
       + '</div>'
@@ -19546,7 +19546,7 @@ function showHazardReportForm(defaultType) {
         <span style="width:36px;height:36px;border-radius:50%;background:#FDE8F3;display:flex;align-items:center;justify-content:center">
           <i class="fas fa-exclamation-triangle" style="color:#D70072;font-size:16px"></i>
         </span>
-        <h3 class="font-bold text-base" style="color:#D70072">위험신고 / 아차사고 신고</h3>
+        <h3 class="font-bold text-base" style="color:#D70072">위험신고및건의 / 아차사고 신고</h3>
       </div>
       <button onclick="this.closest('.modal-overlay').remove()" class="text-xl" style="color:#C6C6C6"><i class="fas fa-times"></i></button>
     </div>
@@ -19563,7 +19563,7 @@ function showHazardReportForm(defaultType) {
               <i class="fas fa-exclamation-triangle" style="color:${initType==='danger'?'#fff':'#685182'};font-size:13px"></i>
             </span>
             <span>
-              <div class="text-xs font-bold" style="color:${initType==='danger'?'#D70072':'#4E3A63'}">위험신고</div>
+              <div class="text-xs font-bold" style="color:${initType==='danger'?'#D70072':'#4E3A63'}">위험신고및건의</div>
               <div class="text-xs" style="color:#C6C6C6">즉각 위험 발견</div>
             </span>
           </label>
@@ -19771,6 +19771,19 @@ function previewHazPhoto(input) {
   reader.readAsDataURL(file);
 }
 
+function previewSugPhoto(input) {
+  var file2 = input.files[0];
+  if (!file2) return;
+  var reader2 = new FileReader();
+  reader2.onload = function(e2) {
+    document.getElementById('sugPhotoPreview').innerHTML =
+      '<div class="mt-2 photo-thumb" style="width:100px;height:100px;display:inline-block">'
+      + '<img src="' + e2.target.result + '" alt="첨부사진">'
+      + '</div>';
+  };
+  reader2.readAsDataURL(file2);
+}
+
 async function submitHazardReport() {
   var location   = document.getElementById('hazLocation').value.trim();
   var desc       = document.getElementById('hazDesc').value.trim();
@@ -19817,7 +19830,7 @@ async function submitHazardReport() {
       }
     }
 
-    toast(reportType === 'nearmiss' ? '아차사고가 신고되었습니다.' : '위험신고가 접수되었습니다.');
+    toast(reportType === 'nearmiss' ? '아차사고가 신고되었습니다.' : '위험신고및건의가 접수되었습니다.');
     document.querySelector('.modal-overlay')?.remove();
     var cont = document.getElementById('page-content') || document.getElementById('main-content');
     if (cont) renderHazardsPage(cont);
@@ -19899,7 +19912,7 @@ async function showHazardDetail(id) {
 
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    var titleLabel = h.report_type==='nearmiss' ? '아차사고 상세' : '위험신고 상세';
+    var titleLabel = h.report_type==='nearmiss' ? '아차사고 상세' : '위험신고및건의 상세';
 
     overlay.innerHTML = '<div class="modal" style="max-width:520px">'
       + '<div class="modal-header">'
@@ -19993,13 +20006,12 @@ function showSuggestionForm() {
     + '</div>'
     + '<div class="form-group">'
     + '<label class="form-label"><i class="fas fa-camera mr-1"></i>첨부 사진 <span class="text-xs font-normal" style="color:#C6C6C6">(선택)</span></label>'
-    + '<div class="upload-zone" onclick="document.getElementById(\'sugPhotoInput\').click()"'
-    + ' style="border:2px dashed #D8D0DC;border-radius:10px;padding:16px;text-align:center;cursor:pointer;background:#F9FBF9">'
-    + '<i class="fas fa-camera text-2xl mb-1" style="color:#4CAF50"></i>'
-    + '<p class="text-xs" style="color:#C6C6C6">클릭하여 사진 선택</p>'
-    + '<p id="sugPhotoName" class="text-xs mt-1 font-bold" style="color:#2E7D32"></p>'
+    + '<div class="upload-zone" onclick="document.getElementById(\'sugPhotoInput\').click()">'
+    + '<i class="fas fa-camera text-3xl" style="color:#C6C6C6"></i>'
+    + '<p class="text-xs mt-1" style="color:#C6C6C6">클릭하여 사진 선택</p>'
     + '</div>'
-    + '<input type="file" id="sugPhotoInput" accept="image/*" style="display:none" onchange="document.getElementById(\'sugPhotoName\').textContent=this.files[0]?.name||\'\'">'
+    + '<input type="file" id="sugPhotoInput" accept="image/*" class="hidden" onchange="previewSugPhoto(this)">'
+    + '<div id="sugPhotoPreview"></div>'
     + '</div>'
     + '</div>'
     + '<div class="modal-footer">'
@@ -20184,7 +20196,7 @@ async function printHazardDetail(id) {
   }
   if (!h) { toast('출력할 데이터를 불러올 수 없습니다.', 'error'); return; }
 
-  var typeLabel = h.report_type === 'nearmiss' ? '아차사고 보고서' : '위험신고 보고서';
+  var typeLabel = h.report_type === 'nearmiss' ? '아차사고 보고서' : '위험신고및건의 보고서';
   var riskLabel2 = h.risk_level==='critical'?'긴급':h.risk_level==='high'?'높음':h.risk_level==='medium'?'보통':'낮음';
   var statusLabel3 = h.status==='resolved'?'조치완료':h.status==='reviewing'?'검토중':'미처리';
 
@@ -35260,7 +35272,7 @@ function renderHazardReportPage(container) {
           <i class="fas fa-exclamation-triangle text-white text-xl"></i>
         </div>
         <div>
-          <h2 class="font-bold text-sm" style="color:#A8005A">위험신고</h2>
+          <h2 class="font-bold text-sm" style="color:#A8005A">위험신고및건의</h2>
           <p class="text-xs" style="color:#D70072">추락·감전·화재 등 즉각 위험상황 발생 시</p>
         </div>
       </div>

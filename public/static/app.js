@@ -40266,27 +40266,45 @@ async function renderWorkReportForm(container, taskId) {
       <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
     </tr>`;
 
-    // ── 섹션3: 작업 케이블정보 행 ────────────────────────────────
-    const mkCable = (cb, i) => {
-      const cktypes = cb.cable_kind ? cb.cable_kind.split(',') : [];
+    // ── 섹션3: 작업 케이블정보 카드 (방안 C: 세로 2열 그리드) ────────────────
+    const mkCable = function(cb, i) {
       // BUG-020: spec '0.0' / '0' 은 REAL→TEXT 오염값 → 빈값으로 정규화
-      const cbSpec = (cb.spec && cb.spec !== '0.0' && cb.spec !== '0') ? cb.spec : '';
-      return `
-    <tr class="hover:bg-gray-50">
-      <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
-      <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.lot_no||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec" onchange="_syncMakerOpts(this)">${SPEC_OPTS.replace(`value="${cbSpec}"`,`value="${cbSpec}" selected`)}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker">${_getMakerOpts(cbSpec, cb.maker||'')}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS.replace(`value="${cb.mfg_year||''}"`,`value="${cb.mfg_year||''}" selected`)}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS.replace(`value="${cb.cable_kind||''}"`,`value="${cb.cable_kind||''}" selected`)}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-asset"><option value="">자산구분</option><option value="N-1" ${(cb.asset_type||'')==='N-1'?'selected':''}>N-1</option><option value="N-2" ${(cb.asset_type||'')==='N-2'?'selected':''}>N-2</option></select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS.replace(`value="${cb.proc||''}"`,`value="${cb.proc||''}" selected`)}</select></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${cb.start_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${cb.end_point||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" value="${cb.usage_m||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" value="${cb.remark||''}" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-remark" placeholder="특이사항"></td>
-      <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
-    </tr>`};
+      var cbSpec = (cb.spec && cb.spec !== '0.0' && cb.spec !== '0') ? cb.spec : '';
+      return '<div class="cable-card border border-blue-100 rounded-xl p-3 mb-2 bg-blue-50/30" data-idx="' + i + '">'
+        + '<div class="flex items-center justify-between mb-2">'
+        +   '<span class="text-xs font-semibold text-blue-500"># ' + (i+1) + '</span>'
+        +   '<button onclick="_wrRemoveCableCard(this)" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button>'
+        + '</div>'
+        + '<div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">'
+        +   '<div><label class="block text-gray-400 mb-0.5">LOT NO.</label>'
+        +     '<input type="text" value="' + (cb.lot_no||'') + '" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-lot-no" placeholder="LOT NO."></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">규격(C)</label>'
+        +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-spec" onchange="_syncMakerOpts(this)">' + SPEC_OPTS.replace('value="' + cbSpec + '"', 'value="' + cbSpec + '" selected') + '</select></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">제조사</label>'
+        +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-maker">' + _getMakerOpts(cbSpec, cb.maker||'') + '</select></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">제작년도</label>'
+        +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-mfg-year">' + YEAR_OPTS.replace('value="' + (cb.mfg_year||'') + '"', 'value="' + (cb.mfg_year||'') + '" selected') + '</select></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">케이블종류</label>'
+        +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-kind">' + KIND_OPTS.replace('value="' + (cb.cable_kind||'') + '"', 'value="' + (cb.cable_kind||'') + '" selected') + '</select></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">자산구분</label>'
+        +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-asset">'
+        +       '<option value="">자산구분</option>'
+        +       '<option value="N-1"' + ((cb.asset_type||'')==='N-1'?' selected':'') + '>N-1</option>'
+        +       '<option value="N-2"' + ((cb.asset_type||'')==='N-2'?' selected':'') + '>N-2</option>'
+        +     '</select></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">공정구분</label>'
+        +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-proc">' + PROC_OPTS.replace('value="' + (cb.proc||'') + '"', 'value="' + (cb.proc||'') + '" selected') + '</select></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">시작점(M)</label>'
+        +     '<input type="number" step="1" value="' + (cb.start_point||'') + '" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">종단점(M)</label>'
+        +     '<input type="number" step="1" value="' + (cb.end_point||'') + '" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">사용량(M) <span class="text-blue-400">자동</span></label>'
+        +     '<input type="number" step="1" value="' + (cb.usage_m||'') + '" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-blue-50 text-right wrc-usage-m" placeholder="자동" readonly style="cursor:default;"></div>'
+        +   '<div><label class="block text-gray-400 mb-0.5">특이사항</label>'
+        +     '<input type="text" value="' + (cb.remark||'') + '" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-remark" placeholder="특이사항"></div>'
+        + '</div>'
+        + '</div>';
+    };
 
     // ── 케이블 세트 HTML 생성 헬퍼 (번호 n: 1부터) ──────────────────────────
     const mkCableSetHTML = (n, cableData, extrasData) => {
@@ -40309,35 +40327,16 @@ async function renderWorkReportForm(container, taskId) {
               작업 케이블정보
             </span>
             <div class="flex items-center gap-2">
-              <button onclick="_wrAddCableRow('${sid}-cable-tbody')" class="text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-lg px-3 py-1 hover:bg-blue-100">
+              <button onclick="_wrAddCableRow('${sid}-cable-wrap')" class="text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-lg px-3 py-1 hover:bg-blue-100">
                 <i class="fas fa-plus mr-1"></i>행 추가
               </button>
               ${n > 1 ? `<button onclick="this.closest('.wr-cable-set').remove();_wrRenumberSets()" class="text-xs text-red-400 hover:text-red-600 px-1"><i class="fas fa-trash-alt"></i></button>` : ''}
             </div>
           </div>
-          <div class="overflow-x-auto pb-2">
-            <table class="w-full text-xs border-collapse" style="min-width:1000px">
-              <thead>
-                <tr class="bg-blue-50 text-gray-600 text-center">
-                  <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-24">LOT NO.</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-16">규격(C)</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-16">제조사</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-18">제작년도</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-36">케이블종류</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-16">자산구분</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-20">공정구분</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-18">시작점<br><span class="font-normal text-gray-400">(M)</span></th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-18">종단점<br><span class="font-normal text-gray-400">(M)</span></th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-18">사용량(M)<br><span class="text-blue-400 font-normal">자동계산</span></th>
-                  <th class="border border-gray-200 px-1 py-1.5">특이사항</th>
-                  <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
-                </tr>
-              </thead>
-              <tbody id="${sid}-cable-tbody">
-                ${cbRows.map((cb,i) => mkCable(cb, i)).join('')}
-              </tbody>
-            </table>
+          <div class="px-3 pb-3">
+            <div id="${sid}-cable-wrap">
+              ${cbRows.map((cb,i) => mkCable(cb, i)).join('')}
+            </div>
           </div>
         </div>
         <!-- N번 공종별 작업량 -->
@@ -40466,11 +40465,13 @@ async function renderWorkReportForm(container, taskId) {
 
 // 섹션3 작업케이블: |종단점 - 시작점| (절대값)
 function _calcUsage(inputEl) {
-  const tr = inputEl.closest('tr');
-  if (!tr) return;
-  const sp = parseInt(tr.querySelector('.wrc-start-point')?.value);
-  const ep = parseInt(tr.querySelector('.wrc-end-point')?.value);
-  const usageEl = tr.querySelector('.wrc-usage-m');
+  var card = inputEl.closest('.cable-card');
+  if (!card) return;
+  var spEl = card.querySelector('.wrc-start-point');
+  var epEl = card.querySelector('.wrc-end-point');
+  var usageEl = card.querySelector('.wrc-usage-m');
+  var sp = parseInt(spEl ? spEl.value : '');
+  var ep = parseInt(epEl ? epEl.value : '');
   if (usageEl && !isNaN(sp) && !isNaN(ep)) usageEl.value = Math.abs(ep - sp);
   else if (usageEl) usageEl.value = '';
 }
@@ -40517,113 +40518,129 @@ function _wrAddCableSet() {
   ];
   const WR_EXTRA_ITEMS = window._wrExtraItemsCache || WR_EXTRA_ITEMS_FALLBACK2;
   const sid = `cs${n}`;
-  // 케이블 3행 기본 생성
-  let cableRows3 = '';
-  for (let r = 0; r < 3; r++) {
-    cableRows3 += `<tr class="hover:bg-gray-50">
-      <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${r+1}</td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec" onchange="_syncMakerOpts(this)">${SPEC_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker">${_getMakerOpts('','')}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS2}</select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-asset"><option value="">자산구분</option><option value="N-1">N-1</option><option value="N-2">N-2</option></select></td>
-      <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS}</select></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
-      <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
-      <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-remark" placeholder="특이사항"></td>
-      <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>
-    </tr>`;
+  // 케이블 3카드 기본 생성 (방안 C)
+  var cableCards3 = '';
+  for (var r = 0; r < 3; r++) {
+    var yr2 = getKSTYear();
+    var yopts2 = '<option value="">제작년도</option>';
+    for (var yi2 = yr2; yi2 >= yr2 - 20; yi2--) yopts2 += '<option value="' + yi2 + '">' + yi2 + '</option>';
+    cableCards3 += '<div class="cable-card border border-blue-100 rounded-xl p-3 mb-2 bg-blue-50/30" data-idx="' + r + '">'
+      + '<div class="flex items-center justify-between mb-2">'
+      +   '<span class="text-xs font-semibold text-blue-500"># ' + (r+1) + '</span>'
+      +   '<button onclick="_wrRemoveCableCard(this)" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button>'
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">'
+      +   '<div><label class="block text-gray-400 mb-0.5">LOT NO.</label>'
+      +     '<input type="text" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-lot-no" placeholder="LOT NO."></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">규격(C)</label>'
+      +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-spec" onchange="_syncMakerOpts(this)">' + SPEC_OPTS + '</select></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">제조사</label>'
+      +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-maker">' + _getMakerOpts('','') + '</select></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">제작년도</label>'
+      +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-mfg-year">' + yopts2 + '</select></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">케이블종류</label>'
+      +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-kind">' + KIND_OPTS2 + '</select></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">자산구분</label>'
+      +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-asset">'
+      +       '<option value="">자산구분</option><option value="N-1">N-1</option><option value="N-2">N-2</option>'
+      +     '</select></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">공정구분</label>'
+      +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-proc">' + PROC_OPTS + '</select></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">시작점(M)</label>'
+      +     '<input type="number" step="1" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">종단점(M)</label>'
+      +     '<input type="number" step="1" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">사용량(M) <span class="text-blue-400">자동</span></label>'
+      +     '<input type="number" step="1" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-blue-50 text-right wrc-usage-m" placeholder="자동" readonly style="cursor:default;"></div>'
+      +   '<div><label class="block text-gray-400 mb-0.5">특이사항</label>'
+      +     '<input type="text" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-remark" placeholder="특이사항"></div>'
+      + '</div>'
+      + '</div>';
   }
-  div.innerHTML = `
-    <!-- ${n}번 작업 케이블정보 -->
-    <div class="bg-white rounded-2xl shadow-sm border border-blue-100">
-      <div class="flex items-center justify-between px-4 pt-3 pb-2">
-        <span class="font-semibold text-gray-700 text-sm">
-          <i class="fas fa-stream text-blue-400 mr-1"></i>
-          작업 케이블정보
-        </span>
-        <div class="flex items-center gap-2">
-          <button onclick="_wrAddCableRow('${sid}-cable-tbody')" class="text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-lg px-3 py-1 hover:bg-blue-100">
-            <i class="fas fa-plus mr-1"></i>행 추가
-          </button>
-          <button onclick="this.closest('.wr-cable-set').remove();_wrRenumberSets()" class="text-xs text-red-400 hover:text-red-600 px-1"><i class="fas fa-trash-alt"></i></button>
-        </div>
-      </div>
-      <div class="overflow-x-auto pb-2">
-        <table class="w-full text-xs border-collapse" style="min-width:1000px">
-          <thead>
-            <tr class="bg-blue-50 text-gray-600 text-center">
-              <th class="border border-gray-200 px-1 py-1.5 w-7">No</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-24">LOT NO.</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-16">규격(C)</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-16">제조사</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-18">제작년도</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-36">케이블종류</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-16">자산구분</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-20">공정구분</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-18">시작점<br><span class="font-normal text-gray-400">(M)</span></th>
-              <th class="border border-gray-200 px-1 py-1.5 w-18">종단점<br><span class="font-normal text-gray-400">(M)</span></th>
-              <th class="border border-gray-200 px-1 py-1.5 w-18">사용량(M)<br><span class="text-blue-400 font-normal">자동계산</span></th>
-              <th class="border border-gray-200 px-1 py-1.5">특이사항</th>
-              <th class="border border-gray-200 px-1 py-1.5 w-7"></th>
-            </tr>
-          </thead>
-          <tbody id="${sid}-cable-tbody">${cableRows3}</tbody>
-        </table>
-      </div>
-    </div>
-    <!-- ${n}번 공종별 작업량 -->
-    <div class="bg-white rounded-2xl shadow-sm border border-orange-100">
-      <div class="flex items-center px-4 pt-3 pb-2">
-        <span class="font-semibold text-gray-700 text-sm">
-          <i class="fas fa-clipboard-list text-orange-400 mr-1"></i>
-          공종별 작업량
-        </span>
-      </div>
-      <div class="px-3 pb-3">
-        <table class="w-full text-xs border-collapse">
-          <thead>
-            <tr class="bg-orange-50 text-gray-600 text-center">
-              <th class="border border-gray-200 px-2 py-1.5">공종</th>
-              <th class="border border-gray-200 px-2 py-1.5 w-32">작업량</th>
-              <th class="border border-gray-200 px-2 py-1.5 w-14">단위</th>
-            </tr>
-          </thead>
-          <tbody id="${sid}-extra-tbody">
-            ${WR_EXTRA_ITEMS.map(item=>`<tr class="hover:bg-orange-50">
-              <td class="border border-gray-200 px-2 py-1 text-gray-700">${item.label || item.key}</td>
-              <td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="${item.key}" placeholder="0" step="0.1" min="0"></td>
-              <td class="border border-gray-200 px-2 py-1 text-center text-gray-400">${item.unit}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
+  div.innerHTML = ''
+    + '<!-- ' + n + '번 작업 케이블정보 -->'
+    + '<div class="bg-white rounded-2xl shadow-sm border border-blue-100">'
+    +   '<div class="flex items-center justify-between px-4 pt-3 pb-2">'
+    +     '<span class="font-semibold text-gray-700 text-sm">'
+    +       '<i class="fas fa-stream text-blue-400 mr-1"></i>작업 케이블정보'
+    +     '</span>'
+    +     '<div class="flex items-center gap-2">'
+    +       '<button onclick="_wrAddCableRow(\'' + sid + '-cable-wrap\')" class="text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-lg px-3 py-1 hover:bg-blue-100">'
+    +         '<i class="fas fa-plus mr-1"></i>행 추가'
+    +       '</button>'
+    +       '<button onclick="this.closest(\'.wr-cable-set\').remove();_wrRenumberSets()" class="text-xs text-red-400 hover:text-red-600 px-1"><i class="fas fa-trash-alt"></i></button>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div class="px-3 pb-3">'
+    +     '<div id="' + sid + '-cable-wrap">' + cableCards3 + '</div>'
+    +   '</div>'
+    + '</div>'
+    + '<!-- ' + n + '번 공종별 작업량 -->'
+    + '<div class="bg-white rounded-2xl shadow-sm border border-orange-100">'
+    +   '<div class="flex items-center px-4 pt-3 pb-2">'
+    +     '<span class="font-semibold text-gray-700 text-sm">'
+    +       '<i class="fas fa-clipboard-list text-orange-400 mr-1"></i>공종별 작업량'
+    +     '</span>'
+    +   '</div>'
+    +   '<div class="px-3 pb-3">'
+    +     '<table class="w-full text-xs border-collapse">'
+    +       '<thead><tr class="bg-orange-50 text-gray-600 text-center">'
+    +         '<th class="border border-gray-200 px-2 py-1.5">공종</th>'
+    +         '<th class="border border-gray-200 px-2 py-1.5 w-32">작업량</th>'
+    +         '<th class="border border-gray-200 px-2 py-1.5 w-14">단위</th>'
+    +       '</tr></thead>'
+    +       '<tbody id="' + sid + '-extra-tbody">'
+    +         (function() {
+               var rows = '';
+               WR_EXTRA_ITEMS.forEach(function(item) {
+                 rows += '<tr class="hover:bg-orange-50">'
+                   + '<td class="border border-gray-200 px-2 py-1 text-gray-700">' + (item.label || item.key) + '</td>'
+                   + '<td class="border border-gray-200 p-0.5"><input type="number" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wre-qty" data-key="' + item.key + '" placeholder="0" step="0.1" min="0"></td>'
+                   + '<td class="border border-gray-200 px-2 py-1 text-center text-gray-400">' + item.unit + '</td>'
+                   + '</tr>';
+               });
+               return rows;
+             })()
+    +       '</tbody>'
+    +     '</table>'
+    +   '</div>'
+    + '</div>';
   wrap.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // 세트 삭제 후 번호 재정렬
 function _wrRenumberSets() {
-  document.querySelectorAll('#wr-cable-sets .wr-cable-set').forEach((el, idx) => {
-    const n = idx + 1;
+  document.querySelectorAll('#wr-cable-sets .wr-cable-set').forEach(function(el, idx) {
+    var n = idx + 1;
     el.dataset.set = n;
-    const ct = el.querySelector('.wr-set-cable-title');
-    const et = el.querySelector('.wr-set-extra-title');
-    if (ct) ct.textContent = `${n}번`;
-    if (et) et.textContent = `${n}번`;
-    // tbody id 재설정 — 케이블(0), 추가입력(1) 순서 (작업내역 섹션 제거됨)
-    const sid = `cs${n}`;
-    const tbodies = el.querySelectorAll('tbody');
-    if (tbodies[0]) tbodies[0].id = `${sid}-cable-tbody`;
-    if (tbodies[1]) tbodies[1].id = `${sid}-extra-tbody`;
+    var ct = el.querySelector('.wr-set-cable-title');
+    var et = el.querySelector('.wr-set-extra-title');
+    if (ct) ct.textContent = n + '번';
+    if (et) et.textContent = n + '번';
+    // cable-wrap id 재설정 (방안 C: tbody → div#cable-wrap)
+    var sid = 'cs' + n;
+    var cableWrap = el.querySelector('[id$="-cable-wrap"]');
+    if (cableWrap) cableWrap.id = sid + '-cable-wrap';
+    var tbodies = el.querySelectorAll('tbody');
+    if (tbodies[0]) tbodies[0].id = sid + '-extra-tbody';
     // 케이블 섹션 "행 추가" 버튼 onclick 갱신
-    const allBtns = el.querySelectorAll('button');
-    const cBtn = Array.from(allBtns).find(b => b.getAttribute('onclick')?.includes('_wrAddCableRow'));
-    if (cBtn) cBtn.setAttribute('onclick', `_wrAddCableRow('${sid}-cable-tbody')`);
+    var allBtns = el.querySelectorAll('button');
+    var cBtn = null;
+    for (var bi = 0; bi < allBtns.length; bi++) {
+      if (allBtns[bi].getAttribute('onclick') && allBtns[bi].getAttribute('onclick').indexOf('_wrAddCableRow') !== -1) {
+        cBtn = allBtns[bi];
+        break;
+      }
+    }
+    if (cBtn) cBtn.setAttribute('onclick', '_wrAddCableRow(\'' + sid + '-cable-wrap\')');
   });
+}
+
+// ── 케이블 카드 삭제 (RULE-003: onclick 속성 내 따옴표 중첩 금지 → 전역 함수 분리) ──
+function _wrRemoveCableCard(btn) {
+  var card = btn.closest('.cable-card');
+  if (card) card.parentNode.removeChild(card);
 }
 
 // ── 규격별 제조사 옵션 헬퍼 ─────────────────────────────────────────────────
@@ -40639,46 +40656,66 @@ function _getMakerOpts(spec, selected) {
     return `<option value="${v}"${sel}>${label}</option>`;
   }).join('');
 }
-// 규격 변경 시 같은 행의 제조사 select 옵션 교체
+// 규격 변경 시 같은 카드의 제조사 select 옵션 교체
 function _syncMakerOpts(specSel) {
-  const tr = specSel.closest('tr');
-  if (!tr) return;
-  const makerSel = tr.querySelector('.wrc-maker');
+  var card = specSel.closest('.cable-card');
+  if (!card) return;
+  var makerSel = card.querySelector('.wrc-maker');
   if (!makerSel) return;
-  const currentMaker = makerSel.value;
+  var currentMaker = makerSel.value;
   makerSel.innerHTML = _getMakerOpts(specSel.value, currentMaker);
 }
 
-// 특정 tbody에 작업 케이블정보 행 추가
-function _wrAddCableRow(tbodyId) {
-  const tbody = document.getElementById(tbodyId);
-  if (!tbody) return;
-  const i = tbody.rows.length;
-  const SPEC_OPTS3  = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(v=>`<option value="${v}">${v||'규격'}</option>`).join('');
-  const KIND_OPTS3  = ['','가공','일반','지중','난연'].map(v=>`<option value="${v}">${v||'케이블종류'}</option>`).join('');
-  const PROC_OPTS3  = ['','신설','철거(불용)','철거(폐기)','이설'].map(v=>`<option value="${v}">${v||'공정구분'}</option>`).join('');    // [FEAT-176]
-  const YEAR_OPTS   = (()=>{const a=[];const y=getKSTYear();for(let i=y;i>=y-20;i--)a.push(`<option value="${i}">${i}</option>`);return '<option value="">제작년도</option>'+a.join('');})();
-  const tr = document.createElement('tr');
-  tr.className = 'hover:bg-gray-50';
-  tr.innerHTML = `
-    <td class="border border-gray-200 px-1 py-1 text-center text-gray-400 text-xs">${i+1}</td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-lot-no" placeholder="LOT NO."></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-spec" onchange="_syncMakerOpts(this)">${SPEC_OPTS3}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-maker">${_getMakerOpts('','')}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-mfg-year">${YEAR_OPTS}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-kind">${KIND_OPTS3}</select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-asset"><option value="">자산구분</option><option value="N-1">N-1</option><option value="N-2">N-2</option></select></td>
-    <td class="border border-gray-200 p-0.5"><select class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-proc">${PROC_OPTS3}</select></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></td>
-    <td class="border border-gray-200 p-0.5"><input type="number" step="1" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none text-right wrc-usage-m bg-blue-50" placeholder="자동" readonly style="cursor:default;"></td>
-    <td class="border border-gray-200 p-0.5"><input type="text" class="w-full border-0 bg-transparent text-xs p-1 focus:outline-none wrc-remark" placeholder="특이사항"></td>
-    <td class="border border-gray-200 p-0.5 text-center"><button onclick="this.closest('tr').remove()" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button></td>`;
-  tbody.appendChild(tr);
+// 특정 cable-wrap에 작업 케이블정보 카드 추가 (방안 C)
+function _wrAddCableRow(wrapId) {
+  var wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  var i = wrap.querySelectorAll('.cable-card').length;
+  var SPEC_OPTS3 = ['','1C','2C','12C','36C','72C','144C','288C','기타'].map(function(v){return '<option value="' + v + '">' + (v||'규격') + '</option>';}).join('');
+  var KIND_OPTS3 = ['','가공','일반','지중','난연'].map(function(v){return '<option value="' + v + '">' + (v||'케이블종류') + '</option>';}).join('');
+  var PROC_OPTS3 = ['','신설','철거(불용)','철거(폐기)','이설'].map(function(v){return '<option value="' + v + '">' + (v||'공정구분') + '</option>';}).join('');    // [FEAT-176]
+  var yr = getKSTYear();
+  var yopts = '<option value="">제작년도</option>';
+  for (var yi = yr; yi >= yr - 20; yi--) yopts += '<option value="' + yi + '">' + yi + '</option>';
+  var card = document.createElement('div');
+  card.className = 'cable-card border border-blue-100 rounded-xl p-3 mb-2 bg-blue-50/30';
+  card.setAttribute('data-idx', i);
+  card.innerHTML = ''
+    + '<div class="flex items-center justify-between mb-2">'
+    +   '<span class="text-xs font-semibold text-blue-500"># ' + (i+1) + '</span>'
+    +   '<button onclick="_wrRemoveCableCard(this)" class="text-red-300 hover:text-red-500 text-xs px-1"><i class="fas fa-times"></i></button>'
+    + '</div>'
+    + '<div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">'
+    +   '<div><label class="block text-gray-400 mb-0.5">LOT NO.</label>'
+    +     '<input type="text" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-lot-no" placeholder="LOT NO."></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">규격(C)</label>'
+    +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-spec" onchange="_syncMakerOpts(this)">' + SPEC_OPTS3 + '</select></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">제조사</label>'
+    +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-maker">' + _getMakerOpts('','') + '</select></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">제작년도</label>'
+    +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-mfg-year">' + yopts + '</select></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">케이블종류</label>'
+    +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-kind">' + KIND_OPTS3 + '</select></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">자산구분</label>'
+    +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-asset">'
+    +       '<option value="">자산구분</option><option value="N-1">N-1</option><option value="N-2">N-2</option>'
+    +     '</select></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">공정구분</label>'
+    +     '<select class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-proc">' + PROC_OPTS3 + '</select></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">시작점(M)</label>'
+    +     '<input type="number" step="1" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 text-right wrc-start-point" placeholder="시작(M)" oninput="_calcUsage(this)"></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">종단점(M)</label>'
+    +     '<input type="number" step="1" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 text-right wrc-end-point" placeholder="종단(M)" oninput="_calcUsage(this)"></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">사용량(M) <span class="text-blue-400">자동</span></label>'
+    +     '<input type="number" step="1" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-blue-50 text-right wrc-usage-m" placeholder="자동" readonly style="cursor:default;"></div>'
+    +   '<div><label class="block text-gray-400 mb-0.5">특이사항</label>'
+    +     '<input type="text" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-blue-400 wrc-remark" placeholder="특이사항"></div>'
+    + '</div>';
+  wrap.appendChild(card);
 }
 
-// 하위호환: _wrAddCable → cs1 세트의 케이블 첫번째 tbody에 추가
-function _wrAddCable() { _wrAddCableRow('cs1-cable-tbody'); }
+// 하위호환: _wrAddCable → cs1 세트의 케이블 첫번째 wrap에 추가
+function _wrAddCable() { _wrAddCableRow('cs1-cable-wrap'); }
 
 // 섹션2: 확선내역 행 추가
 function _wrAddConfirm() {
@@ -40755,25 +40792,36 @@ function _collectWrData(taskId) {
   document.querySelectorAll('#wr-cable-sets .wr-cable-set').forEach((setEl, si) => {
     const setNo = parseInt(setEl.dataset.set || (si + 1));
     const sid = `cs${setNo}`;
-    const cables = [];
-    const tbodyCable = document.getElementById(`${sid}-cable-tbody`);
-    if (tbodyCable) {
-      tbodyCable.querySelectorAll('tr').forEach(tr => {
+    var cables = [];
+    var cableWrap = document.getElementById(sid + '-cable-wrap');
+    if (cableWrap) {
+      cableWrap.querySelectorAll('.cable-card').forEach(function(card) {
         // 시작점/종단점: 빈 문자열이면 null, 아니면 숫자로 변환 (0도 유효값)
-        const spRaw = tr.querySelector('.wrc-start-point')?.value;
-        const epRaw = tr.querySelector('.wrc-end-point')?.value;
+        var spEl = card.querySelector('.wrc-start-point');
+        var epEl = card.querySelector('.wrc-end-point');
+        var spRaw = spEl ? spEl.value : '';
+        var epRaw = epEl ? epEl.value : '';
+        var lotEl     = card.querySelector('.wrc-lot-no');
+        var specEl    = card.querySelector('.wrc-spec');
+        var makerEl   = card.querySelector('.wrc-maker');
+        var yearEl    = card.querySelector('.wrc-mfg-year');
+        var kindEl    = card.querySelector('.wrc-kind');
+        var assetEl   = card.querySelector('.wrc-asset');
+        var procEl    = card.querySelector('.wrc-proc');
+        var usageEl   = card.querySelector('.wrc-usage-m');
+        var remarkEl  = card.querySelector('.wrc-remark');
         cables.push({
-          lot_no:      tr.querySelector('.wrc-lot-no')?.value || '',
-          spec:        tr.querySelector('.wrc-spec')?.value || '',
-          maker:       tr.querySelector('.wrc-maker')?.value || '',
-          mfg_year:    tr.querySelector('.wrc-mfg-year')?.value || '',
-          cable_kind:  tr.querySelector('.wrc-kind')?.value || '',   // DB: cable_kind
-          asset_type:  tr.querySelector('.wrc-asset')?.value || '',  // DB: asset_type
-          proc:        tr.querySelector('.wrc-proc')?.value || '',
+          lot_no:      lotEl    ? (lotEl.value    || '') : '',
+          spec:        specEl   ? (specEl.value   || '') : '',
+          maker:       makerEl  ? (makerEl.value  || '') : '',
+          mfg_year:    yearEl   ? (yearEl.value   || '') : '',
+          cable_kind:  kindEl   ? (kindEl.value   || '') : '',   // DB: cable_kind
+          asset_type:  assetEl  ? (assetEl.value  || '') : '',  // DB: asset_type
+          proc:        procEl   ? (procEl.value   || '') : '',
           start_point: spRaw !== '' && spRaw != null ? parseInt(spRaw) : null,
           end_point:   epRaw !== '' && epRaw != null ? parseInt(epRaw) : null,
-          usage_m:     parseInt(tr.querySelector('.wrc-usage-m')?.value) || 0,
-          remark:      tr.querySelector('.wrc-remark')?.value || '',
+          usage_m:     usageEl  ? (parseInt(usageEl.value) || 0) : 0,
+          remark:      remarkEl ? (remarkEl.value  || '') : '',
         });
       });
     }
@@ -40811,25 +40859,25 @@ function _validateWorkReport() {
   const errors = [];
   const sets = document.querySelectorAll('#wr-cable-sets .wr-cable-set');
 
-  sets.forEach((setEl, si) => {
-    const setNo = si + 1;
-    const sid = `cs${parseInt(setEl.dataset.set || setNo)}`;
-    const tbody = document.getElementById(`${sid}-cable-tbody`);
-    if (!tbody) return;
+  sets.forEach(function(setEl, si) {
+    var setNo = si + 1;
+    var sid = 'cs' + parseInt(setEl.dataset.set || setNo);
+    var cableWrap2 = document.getElementById(sid + '-cable-wrap');
+    if (!cableWrap2) return;
 
-    tbody.querySelectorAll('tr').forEach((tr, ri) => {
-      // 행에 값이 하나라도 있는지 확인 (완전히 빈 행은 건너뜀)
-      const hasAnyValue = REQUIRED_FIELDS.some(f => {
-        const el = tr.querySelector(`.${f.cls}`);
+    cableWrap2.querySelectorAll('.cable-card').forEach(function(card, ri) {
+      // 카드에 값이 하나라도 있는지 확인 (완전히 빈 카드는 건너뜀)
+      var hasAnyValue = REQUIRED_FIELDS.some(function(f) {
+        var el = card.querySelector('.' + f.cls);
         return el && el.value && el.value.trim() !== '';
       });
-      if (!hasAnyValue) return; // 빈 행 스킵
+      if (!hasAnyValue) return; // 빈 카드 스킵
 
-      // 값이 있는 행에서 미입력 필드 검사
-      REQUIRED_FIELDS.forEach(f => {
-        const el = tr.querySelector(`.${f.cls}`);
+      // 값이 있는 카드에서 미입력 필드 검사
+      REQUIRED_FIELDS.forEach(function(f) {
+        var el = card.querySelector('.' + f.cls);
         if (!el || !el.value || el.value.trim() === '') {
-          errors.push(`케이블 세트${setNo} ${ri+1}행: [${f.label}] 미입력`);
+          errors.push('케이블 세트' + setNo + ' ' + (ri+1) + '행: [' + f.label + '] 미입력');
         }
       });
     });

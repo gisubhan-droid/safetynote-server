@@ -31628,14 +31628,20 @@ async function showEditTeamModal(teamId, currentName, currentDesc) {
 }
 
 async function updateTeam(teamId) {
-  const name = document.getElementById('etName')?.value.trim();
-  const desc = document.getElementById('etDesc')?.value.trim()||'';
+  var name = document.getElementById('etName')?.value.trim();
+  var desc = document.getElementById('etDesc')?.value.trim()||'';
   if (!name) { toast('팀명을 입력하세요.', 'error'); return; }
   try {
-    await API.put(`/teams/${teamId}`, { name, description: desc });
+    await API.put('/teams/' + teamId, { name: name, description: desc, is_active: 1 });
     toast('팀 정보가 수정되었습니다.');
     document.querySelector('.modal-overlay')?.remove();
-    renderUsersPage(document.getElementById('page-content'));
+    var cont = document.getElementById('page-content');
+    // 현재 페이지에 맞게 재렌더 (현장팀관리 → renderTeamsPage, 사용자관리 → renderUsersPage)
+    if (cont && cont.querySelector('h2')?.textContent?.includes('현장팀')) {
+      renderTeamsPage(cont);
+    } else {
+      renderUsersPage(cont);
+    }
   } catch(e) { toast(e.response?.data?.error||'수정 실패','error'); }
 }
 
@@ -31682,10 +31688,13 @@ async function renderTeamsPage(container) {
             </div>
             ${currentUser.role === 'admin' ? `
             <div class="flex gap-2">
+              <button onclick="showEditTeamModal(${team.id},'${team.name.replace(/'/g,"\\'")}','${(team.description||'').replace(/'/g,"\\'")}') " class="btn btn-outline btn-sm">
+                <i class="fas fa-edit"></i> 팀명 수정
+              </button>
               <button onclick="showTeamMembersModal(${team.id})" class="btn btn-outline btn-sm">
                 <i class="fas fa-users-cog"></i> 팀원 관리
               </button>
-              <button onclick="deleteTeam(${team.id}, '${team.name}')" class="btn btn-danger btn-sm">
+              <button onclick="deleteTeam(${team.id},'${team.name.replace(/'/g,"\\'")}') " class="btn btn-danger btn-sm">
                 <i class="fas fa-trash"></i>
               </button>
             </div>` : ''}

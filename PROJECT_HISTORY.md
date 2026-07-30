@@ -11482,3 +11482,30 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | feat: [FEAT-CABLE-PAGE] 광케이블 사용량 케이블 상세 내역 페이지네이션 추가 (15/20/25/50건 선택) |
+
+---
+
+## 세션 120 — FEAT-TEAM-EDIT: 현장팀 관리 팀명/설명 수정 기능 추가
+
+### 작업 개요
+현장팀관리 페이지에서 팀명/설명 수정 기능이 없던 문제를 해결.
+서버 `PUT /teams/:id` API는 이미 구현되어 있었고, 프론트엔드에 버튼 연결만 추가.
+
+### 변경 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | renderTeamsPage 수정 버튼 추가, updateTeam 스마트 재렌더 수정 |
+
+### 주요 변경
+1. **`renderTeamsPage` 버튼 추가**: `팀명 수정` 버튼 → `showEditTeamModal(id, name, desc)` 호출 (RULE-003 준수)
+2. **`updateTeam` 스마트 재렌더**: 현재 페이지 h2 텍스트 기준 분기 (`현장팀` → `renderTeamsPage`, 그 외 → `renderUsersPage`)
+3. **부가 수정**: `const` → `var` (RULE-001), 백틱 URL → 문자열 연결, `is_active:1` 명시
+
+### 검증
+- `node --check` ✅ / `npm run build` ✅ (296.86 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | feat: [FEAT-TEAM-EDIT] 현장팀 관리 팀명/설명 수정 기능 추가 |

@@ -7244,3 +7244,40 @@ var _cdLimit = 20;  // 페이지당 건수 (15/20/25/50)
 ### 검증
 - `node --check public/static/app.js` ✅ 문법 오류 없음
 - `npm run build` ✅ (296.86 kB)
+
+---
+
+## FEAT-TEAM-EDIT — 현장팀 관리 팀명/설명 수정 기능 추가
+
+- **날짜**: 2025-07-30
+- **커밋**: (아래 참조)
+- **작업 파일**: `public/static/app.js`
+- **서버 수정**: 없음 (`PUT /teams/:id` 이미 구현됨)
+
+### 배경
+현장팀관리 페이지 팀 카드에 팀원 관리 + 삭제 버튼만 있고 팀명/설명 수정 버튼 없었음.
+`showEditTeamModal()` + `updateTeam()` 함수는 사용자관리(renderUsersPage) 전용으로만 연결되어 있었음.
+
+### 변경 내용
+
+#### ① `renderTeamsPage` 팀 카드 버튼 영역
+- **팀명 수정** 버튼 추가 (`showEditTeamModal` 호출)
+- RULE-003 준수: `team.name` / `team.description` → `.replace(/'/g, "\\'")` 적용
+
+#### ② `updateTeam()` 함수 — 스마트 재렌더
+| 항목 | 변경 전 | 변경 후 |
+|------|--------|--------|
+| 성공 후 재렌더 | `renderUsersPage()` 고정 | 현재 페이지 h2 텍스트로 분기: `현장팀` → `renderTeamsPage`, 그 외 → `renderUsersPage` |
+| 변수 선언 | `const` | `var` (RULE-001) |
+| API 호출 | 백틱 URL | 문자열 연결 URL |
+| `is_active` 전달 | 없음 | `is_active: 1` 명시 |
+
+### 충돌 점검 결과
+- 서버 `PUT /teams/:id` — UNIQUE 제약으로 중복 팀명 409 자동 차단 ✅
+- 과거 `work_reports.worker_team` — 텍스트 스냅샷 저장이므로 팀명 변경 무관 ✅
+- 작업목록 `task.team_name` — JOIN 실시간 조회이므로 변경 즉시 반영 ✅
+- RULE-001 / RULE-003 준수 ✅
+
+### 검증
+- `node --check public/static/app.js` ✅ 문법 오류 없음
+- `npm run build` ✅ (dist/_worker.js 296.86 kB)

@@ -1,6 +1,6 @@
 # SafetyNOTE — NAS 설치 매뉴얼 (DOCS-001)
 
-> 작성: 세션 79 (2026-07-25) | 보강: 세션 81 (2026-07-25)
+> 작성: 세션 79 (2026-07-25) | 보강: 세션 81 (2026-07-25) | 보강: 세션 124 (2026-07-30)
 > 대상: 신규 NAS 설치 담당자 (IT 비전문가 가능)
 > 환경: Synology NAS (DSM 7.x) + Node.js v18 + PM2
 > 소요 시간: 약 20~40분 (네트워크 환경에 따라 상이)
@@ -21,6 +21,7 @@
 10. [업데이트 및 재설치 가이드](#10-업데이트-및-재설치-가이드)
 11. [문제 해결 FAQ](#11-문제-해결-faq)
 12. [설치 후 일상 운영 요약](#12-설치-후-일상-운영-요약)
+13. [⚠️ 구형 NAS 특수 환경 설치 가이드](#13-️-구형-nas-특수-환경-설치-가이드-glibc-낮은-커널)
 
 ---
 
@@ -53,6 +54,30 @@ DSM 웹 브라우저 접속 → **패키지 센터** → 검색 → 설치:
 >
 > 💡 **install.sh v2.1**은 Node.js v18과 v20을 자동 탐지합니다.
 > DSM에 두 버전이 모두 설치된 경우 v18이 우선 사용됩니다.
+
+### 🔴 Node.js 다중 버전 설치 시 반드시 확인 (중요)
+
+> 📌 **실제 장애 사례 (세션 124, 2026-07-30)**
+> Node.js v16/v14 등 하위 버전이 v18과 동시에 설치된 경우,
+> PATH 오염으로 인해 `better-sqlite3` native binary가 잘못된 ABI 버전으로
+> 선택되어 서버 기동에 실패하는 문제가 발생함.
+
+**설치 전 확인 명령:**
+```bash
+# 설치된 Node 버전 전체 확인
+ls /volume1/@appstore/ | grep -i node
+
+# 현재 PATH의 node 확인
+which node && node --version
+```
+
+**v18만 남겨야 하는 경우 조치:**
+1. DSM → 패키지 센터 → 설치된 패키지
+2. `Node.js v16` (또는 v14 등 하위 버전) → **제거**
+3. `Node.js v18` → **재설치** (기존 설치 있어도 재설치 권장)
+4. 재설치 후 `node --version` → `v18.x.x` 확인
+
+> ✅ Node.js는 **v18 단일 버전만** 설치된 상태에서 SafetyNOTE를 설치하세요.
 
 ---
 
@@ -850,6 +875,81 @@ pm2 restart safetynote
 
 ---
 
+### ❌ better-sqlite3 GLIBC 오류 (구형 NAS)
+
+**증상**: PM2 status = `errored`, 로그에 아래 메시지 반복
+```
+Error: /lib64/libm.so.6: version `GLIBC_2.29' not found
+(required by .../better-sqlite3/build/Release/better_sqlite3.node)
+code: 'ERR_DLOPEN_FAILED'
+```
+
+**원인**: NAS Linux 커널이 오래되어 GLIBC 버전이 2.29 미만 (예: 커널 4.4.x → GLIBC 2.17 수준)
+
+**1차 해결: Node.js 단일 버전 재설치 (가장 권장)**
+```bash
+# 1. PM2 중지
+pm2 delete safetynote
+
+# 2. DSM 패키지 센터에서 하위 Node 버전 제거 후 v18 재설치
+#    → 패키지 센터 → 설치된 패키지 → Node.js vXX(하위 버전) → 제거
+#    → Node.js v18 재설치
+
+# 3. node_modules 완전 삭제 후 재설치
+cd /volume1/safetynote
+rm -rf node_modules
+/volume1/@appstore/Node.js_v18/usr/local/bin/npm install --legacy-peer-deps
+
+# 4. PM2 재기동
+NODE_BIN=/volume1/@appstore/Node.js_v18/usr/local/bin/node
+TSX_BIN=/volume1/safetynote/node_modules/.bin/tsx
+PORT=3443 pm2 start "$TSX_BIN" \
+  --name safetynote \
+  --interpreter "$NODE_BIN" \
+  --cwd /volume1/safetynote \
+  -- node-server.ts
+```
+
+**2차 해결: --ignore-scripts + prebuilt binary 수동 주입**
+
+> Node 재설치 후에도 여전히 GLIBC 오류 발생 시 사용
+
+```bash
+# 1. --ignore-scripts로 컴파일 건너뛰고 설치
+cd /volume1/safetynote
+rm -rf node_modules
+/volume1/@appstore/Node.js_v18/usr/local/bin/npm install \
+  --legacy-peer-deps --ignore-scripts
+
+# 2. better-sqlite3 설치 버전 확인
+cat node_modules/better-sqlite3/package.json | grep '"version"'
+# → 예: "9.6.0"
+
+# 3. Node ABI 버전 확인 (Node18 = node-v108)
+/volume1/@appstore/Node.js_v18/usr/local/bin/node -e \
+  "console.log('node-v' + process.versions.modules)"
+# → node-v108
+
+# 4. 해당 버전 prebuilt binary 다운로드 및 주입
+BSQL3_VER=9.6.0   # 위에서 확인한 버전
+NODE_ABI=108       # 위에서 확인한 ABI 번호
+
+curl -L \
+  "https://github.com/WiseLibs/better-sqlite3/releases/download/v${BSQL3_VER}/better-sqlite3-v${BSQL3_VER}-node-v${NODE_ABI}-linux-x64.tar.gz" \
+  -o /tmp/bsql3.tar.gz
+
+tar -xzf /tmp/bsql3.tar.gz -C /tmp/
+mkdir -p /volume1/safetynote/node_modules/better-sqlite3/build/Release/
+cp /tmp/build/Release/better_sqlite3.node \
+   /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+ls -lh /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+# → 파일 존재 확인
+```
+
+> ⚠️ 이 방법으로도 GLIBC 오류가 계속되면 → **13장 구형 NAS 특수 환경 가이드** 참조
+
+---
+
 ### ❌ 비상 복구 서버가 필요한 경우
 
 **상황**: 브라우저로 SafetyNOTE가 전혀 접속 안 되고 SSH도 불가
@@ -954,6 +1054,273 @@ tail -10 /var/log/safetynote-watchdog.log
 
 ---
 
+## 13. ⚠️ 구형 NAS 특수 환경 설치 가이드 (GLIBC 낮은 커널)
+
+> 📌 **해당 조건**: Linux 커널 4.4.x 이하, GLIBC 2.29 미만 (Synology 구형 모델)  
+> 📌 **실제 발생**: 세션 123~124 (2026-07-30) — `sh_sever` NAS  
+> 📌 **이 장은 일반 설치와 별개로 구형 NAS 전용 절차입니다.**
+
+---
+
+### 13-1. 구형 NAS 해당 여부 확인
+
+NAS SSH에서 실행:
+
+```bash
+# 커널 버전 확인
+uname -r
+# → 4.4.180+bsp  (4.4.x = 구형 해당)
+# → 4.18.x 이상 = 일반 설치 가능
+
+# GLIBC 버전 확인
+ldd --version | head -1
+# → ldd (GNU libc) 2.17  (2.29 미만 = 구형 해당)
+# → ldd (GNU libc) 2.31 이상 = 일반 설치 가능
+```
+
+| 커널 버전 | GLIBC | 설치 방법 |
+|-----------|-------|-----------|
+| 4.4.x 이하 | 2.17~2.28 | **이 장(13장) 절차 사용** |
+| 4.18.x 이상 | 2.29 이상 | 일반 설치 (방법 A/B) 사용 |
+
+---
+
+### 13-2. 구형 NAS 설치 전 필수 준비
+
+#### ① DSM 패키지 센터에서 Node.js 단일 버전만 유지
+
+> ⚠️ **핵심**: Node.js는 **v18 하나만** 설치되어야 합니다.
+> 하위 버전(v16, v14 등)이 동시에 설치된 경우 PATH 오염으로 기동 실패.
+
+```
+DSM → 패키지 센터 → 설치된 패키지
+  → Node.js v16 (또는 v14) : 제거
+  → Node.js v18 : 재설치 (기존 설치 있어도 재설치)
+```
+
+재설치 후 확인:
+```bash
+# v18만 응답해야 함
+/volume1/@appstore/Node.js_v18/usr/local/bin/node --version
+# → v18.18.2
+which node && node --version
+# → v18.x.x (다른 버전 나오면 PATH 문제 — 절대경로만 사용)
+```
+
+#### ② make/gcc 없음 확인 (컴파일 불가 환경)
+
+```bash
+which make || echo "make 없음"
+which gcc  || echo "gcc 없음"
+# → 둘 다 없음 = --ignore-scripts 방식 필수
+```
+
+---
+
+### 13-3. 구형 NAS 설치 절차 (전체)
+
+#### Step 1. 코드 다운로드
+
+```bash
+cd /volume1
+git clone https://github.com/gisubhan-droid/safetynote-server.git safetynote --depth 1
+cd /volume1/safetynote
+mkdir -p backups public/uploads/apk
+```
+
+#### Step 2. npm 설치 — 컴파일 건너뛰기
+
+```bash
+/volume1/@appstore/Node.js_v18/usr/local/bin/npm install \
+  --legacy-peer-deps --ignore-scripts
+# → added 94 packages (또는 유사 숫자) ✅
+```
+
+> `--ignore-scripts`: 네이티브 모듈 컴파일 postinstall 전체 건너뜀  
+> `--legacy-peer-deps`: 의존성 버전 충돌 무시
+
+#### Step 3. tsx 설치 확인
+
+```bash
+ls -la /volume1/safetynote/node_modules/.bin/tsx
+# → lrwxrwxrwx ... tsx -> ../tsx/dist/cli.mjs ✅
+```
+
+#### Step 4. better-sqlite3 버전 및 Node ABI 확인
+
+```bash
+# 설치된 better-sqlite3 버전
+cat /volume1/safetynote/node_modules/better-sqlite3/package.json | grep '"version"'
+# → "version": "9.6.0"  (예시)
+
+# Node ABI 번호 확인 (Node18 = 108)
+/volume1/@appstore/Node.js_v18/usr/local/bin/node -e \
+  "console.log('node-v' + process.versions.modules)"
+# → node-v108
+```
+
+#### Step 5. better-sqlite3 prebuilt binary 다운로드 및 주입
+
+```bash
+# 위에서 확인한 버전/ABI 값을 변수에 설정
+BSQL3_VER=9.6.0    # cat package.json 결과
+NODE_ABI=108        # node -e 결과
+
+# binary 다운로드
+curl -L \
+  "https://github.com/WiseLibs/better-sqlite3/releases/download/v${BSQL3_VER}/better-sqlite3-v${BSQL3_VER}-node-v${NODE_ABI}-linux-x64.tar.gz" \
+  -o /tmp/bsql3.tar.gz
+
+# 압축 해제 및 복사
+tar -xzf /tmp/bsql3.tar.gz -C /tmp/
+mkdir -p /volume1/safetynote/node_modules/better-sqlite3/build/Release/
+cp /tmp/build/Release/better_sqlite3.node \
+   /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+
+# 복사 확인
+ls -lh /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+```
+
+> ⚠️ 이 binary도 GLIBC 2.29를 요구할 수 있음.
+> 그 경우 **Node.js v18 단일 재설치** 후 `npm install` (--ignore-scripts 없이) 재시도 권장.
+> Node PATH가 정리되면 자동 컴파일 또는 올바른 binary 선택이 이루어질 수 있음.
+
+#### Step 6. .env 파일 생성
+
+```bash
+cat > /volume1/safetynote/.env << 'EOF'
+PORT=3443
+DB_PATH=/volume1/safetynote/safety.db
+UPLOAD_PATH=/volume1/safetynote/public/uploads
+UPLOAD_SUBDIR=true
+TZ=Asia/Seoul
+HTTP_PORT=3444
+EOF
+
+cat /volume1/safetynote/.env   # 확인
+```
+
+#### Step 7. PM2 서버 기동
+
+```bash
+# 기존 프로세스 정리
+pm2 delete safetynote 2>/dev/null || true
+
+# 절대경로로 PM2 기동 (PATH 오염 방지)
+NODE_BIN=/volume1/@appstore/Node.js_v18/usr/local/bin/node
+TSX_BIN=/volume1/safetynote/node_modules/.bin/tsx
+
+PORT=3443 pm2 start "$TSX_BIN" \
+  --name safetynote \
+  --interpreter "$NODE_BIN" \
+  --cwd /volume1/safetynote \
+  -- node-server.ts
+
+pm2 save --force
+```
+
+#### Step 8. 기동 확인
+
+```bash
+# 상태 확인 (30초 후)
+pm2 status
+# → status: online ✅
+
+# 로그 확인
+pm2 logs safetynote --nostream --lines 30
+```
+
+**정상 로그:**
+```
+[ENV] .env 파일 로드 완료: /volume1/safetynote/.env
+[DB] /volume1/safetynote/safety.db
+[patchSchema] DB 스키마 최신 상태 확인 완료
+✅ 서버 실행 중 (HTTPS): https://0.0.0.0:3443
+✅ HTTP 내부 포트 실행 중: http://0.0.0.0:3444 (Android FCM 전용)
+```
+
+**실패 로그 (GLIBC 오류 지속 시):**
+```
+Error: /lib64/libm.so.6: version `GLIBC_2.29' not found
+→ 13-4 트러블슈팅 참조
+```
+
+---
+
+### 13-4. 구형 NAS 트러블슈팅
+
+#### 🔴 GLIBC 오류 계속 발생 시 단계별 시도
+
+**시도 순서:**
+
+| 단계 | 방법 | 성공 확률 |
+|------|------|-----------|
+| 1 | Node.js 단일 버전(v18) 재설치 후 `npm install` (일반) | ⭐⭐⭐ 높음 |
+| 2 | `--ignore-scripts` + v9.6.0 linux-x64 prebuilt binary | ⭐⭐ 중간 |
+| 3 | `--ignore-scripts` + 구버전(v7.6.2) prebuilt binary | ⭐ 낮음 |
+| 4 | `--ignore-scripts` + linuxmusl binary (비권장) | ☆ 매우 낮음 |
+
+**시도 1 — Node18 단일 재설치 후 일반 설치:**
+```bash
+# DSM 패키지 센터에서 하위 Node 제거 → v18 재설치 완료 후
+pm2 delete safetynote
+cd /volume1/safetynote && rm -rf node_modules
+/volume1/@appstore/Node.js_v18/usr/local/bin/npm install --legacy-peer-deps
+# (--ignore-scripts 없이 — 정상 postinstall 실행 시도)
+```
+
+**시도 3 — 구버전 better-sqlite3 v7.6.2:**
+```bash
+cd /volume1/safetynote
+/volume1/@appstore/Node.js_v18/usr/local/bin/npm install \
+  better-sqlite3@7.6.2 --legacy-peer-deps --ignore-scripts
+
+curl -L \
+  "https://github.com/WiseLibs/better-sqlite3/releases/download/v7.6.2/better-sqlite3-v7.6.2-node-v108-linux-x64.tar.gz" \
+  -o /tmp/bsql3_v7.tar.gz
+tar -xzf /tmp/bsql3_v7.tar.gz -C /tmp/
+cp /tmp/build/Release/better_sqlite3.node \
+   /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+```
+
+#### 🔍 binary GLIBC 요구사항 직접 확인
+
+```bash
+# 현재 주입된 binary가 어떤 GLIBC를 요구하는지 확인
+objdump -p /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+  | grep GLIBC
+# → GLIBC_2.29  (이 NAS에서 불가)
+# → GLIBC_2.17  (이 NAS에서 가능 ✅)
+
+# NAS에서 사용 가능한 GLIBC 버전 확인
+strings /lib64/libc.so.6 | grep "GLIBC_2\." | sort -V | tail -5
+# → 가장 높은 버전이 이 NAS의 최대 GLIBC 버전
+```
+
+---
+
+### 13-5. 구형 NAS 설치 완료 후 추가 주의사항
+
+1. **Watchdog 스크립트도 절대경로 확인 필요**  
+   `scripts/pm2-watchdog.sh` 내부에서 Node/TSX 경로를 절대경로로 지정했는지 확인:
+   ```bash
+   grep -n "NODE_BIN\|TSX_BIN\|node-server" /volume1/safetynote/scripts/pm2-watchdog.sh
+   ```
+
+2. **npm update/재설치 시 주의**  
+   패키지 업데이트로 better-sqlite3 버전이 바뀌면 binary 재주입 필요.
+   서버 재시작 실패 시 이 절차를 먼저 확인.
+
+3. **NAS 재부팅 후 PATH 문제 재발 가능**  
+   Watchdog이 PM2를 재시작할 때도 `--interpreter` 절대경로 옵션이 포함되어야 함.
+   `pm2 save` 저장 내용에 반드시 절대경로가 포함되어 있어야 함.
+
+---
+
+*13장 추가: 세션 124 (2026-07-30) — sh_sever NAS 실제 장애 사례 기반*
+
+---
+
 ## 📞 설치 지원
 
 설치 중 문제가 발생하면 아래 정보를 준비하여 문의하세요:
@@ -967,5 +1334,7 @@ tail -10 /var/log/safetynote-watchdog.log
 
 ---
 
-*SafetyNOTE NAS 설치 매뉴얼 v2.0 — 2026-07-25*
-*이전 버전(v1.0): 2026-07-25 초안 | 이번 버전(v2.0): update/reinstall 모드, patchSchema, Watchdog 상세, 트러블슈팅 보강*
+*SafetyNOTE NAS 설치 매뉴얼 v2.1 — 2026-07-30*  
+*v1.0 (2026-07-25): 초안*  
+*v2.0 (2026-07-25): update/reinstall 모드, patchSchema, Watchdog 상세, 트러블슈팅 보강*  
+*v2.1 (2026-07-30): Node 다중설치 충돌 경고 추가, 13장 구형 NAS 특수 환경 가이드 신설 (GLIBC 2.17 환경 대응)*

@@ -1159,19 +1159,22 @@ cat /volume1/safetynote/node_modules/better-sqlite3/package.json | grep '"versio
 # → node-v108
 ```
 
-#### Step 5. better-sqlite3 prebuilt binary 다운로드 및 주입
+#### Step 5. better-sqlite3 v8.0.0 설치 및 prebuilt binary 주입
+
+> 📌 **검증된 조합 (세션 124, 2026-07-30)**
+> - better-sqlite3 **v8.0.0** + node-v108-linux-x64
+> - GLIBC 최대 **2.14** 요구 → GLIBC 2.17 NAS에서 ✅ 동작 확인
 
 ```bash
-# 위에서 확인한 버전/ABI 값을 변수에 설정
-BSQL3_VER=9.6.0    # cat package.json 결과
-NODE_ABI=108        # node -e 결과
+# better-sqlite3 v8.0.0으로 교체 설치 (--ignore-scripts 필수)
+/volume1/@appstore/Node.js_v18/usr/local/bin/npm install \
+  better-sqlite3@8.0.0 --legacy-peer-deps --ignore-scripts
 
-# binary 다운로드
+# v8.0.0 Node18(node-v108)용 prebuilt binary 다운로드 및 주입
 curl -L \
-  "https://github.com/WiseLibs/better-sqlite3/releases/download/v${BSQL3_VER}/better-sqlite3-v${BSQL3_VER}-node-v${NODE_ABI}-linux-x64.tar.gz" \
+  "https://github.com/WiseLibs/better-sqlite3/releases/download/v8.0.0/better-sqlite3-v8.0.0-node-v108-linux-x64.tar.gz" \
   -o /tmp/bsql3.tar.gz
 
-# 압축 해제 및 복사
 tar -xzf /tmp/bsql3.tar.gz -C /tmp/
 mkdir -p /volume1/safetynote/node_modules/better-sqlite3/build/Release/
 cp /tmp/build/Release/better_sqlite3.node \
@@ -1179,11 +1182,8 @@ cp /tmp/build/Release/better_sqlite3.node \
 
 # 복사 확인
 ls -lh /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+# → -rwxr-xr-x ... 1.7M ... better_sqlite3.node ✅
 ```
-
-> ⚠️ 이 binary도 GLIBC 2.29를 요구할 수 있음.
-> 그 경우 **Node.js v18 단일 재설치** 후 `npm install` (--ignore-scripts 없이) 재시도 권장.
-> Node PATH가 정리되면 자동 컴파일 또는 올바른 binary 선택이 이루어질 수 있음.
 
 #### Step 6. .env 파일 생성
 
@@ -1249,52 +1249,47 @@ Error: /lib64/libm.so.6: version `GLIBC_2.29' not found
 
 ### 13-4. 구형 NAS 트러블슈팅
 
-#### 🔴 GLIBC 오류 계속 발생 시 단계별 시도
+#### 🔴 GLIBC 오류 발생 시 — 검증된 해결책
 
-**시도 순서:**
+> 📌 **실제 검증 완료 (세션 124, 2026-07-30, sh_sever NAS)**
+> NAS 커널 4.4.180+, GLIBC 2.17, make/gcc 없음 환경에서 아래 조합으로 성공.
 
-| 단계 | 방법 | 성공 확률 |
-|------|------|-----------|
-| 1 | Node.js 단일 버전(v18) 재설치 후 `npm install` (일반) | ⭐⭐⭐ 높음 |
-| 2 | `--ignore-scripts` + v9.6.0 linux-x64 prebuilt binary | ⭐⭐ 중간 |
-| 3 | `--ignore-scripts` + 구버전(v7.6.2) prebuilt binary | ⭐ 낮음 |
-| 4 | `--ignore-scripts` + linuxmusl binary (비권장) | ☆ 매우 낮음 |
+**✅ 확정 해결책: better-sqlite3 v8.0.0**
 
-**시도 1 — Node18 단일 재설치 후 일반 설치:**
+| better-sqlite3 버전 | node-v108 prebuilt | GLIBC 요구 | GLIBC 2.17 NAS |
+|---------------------|--------------------|-----------:|:--------------:|
+| v12.9.0 | ❌ 없음 | — | ❌ 불가 |
+| v11.10.0 | ✅ 있음 | 2.29 | ❌ 불가 |
+| v9.6.0 | ✅ 있음 | 2.29 | ❌ 불가 |
+| v8.6.0 | ✅ 있음 | 2.29 | ❌ 불가 |
+| **v8.0.0** | ✅ 있음 | **2.14** | ✅ **동작** |
+| v7.6.2 | ✅ 있음 | 2.14 | ✅ 동작 |
+
+**핵심 명령:**
 ```bash
-# DSM 패키지 센터에서 하위 Node 제거 → v18 재설치 완료 후
-pm2 delete safetynote
-cd /volume1/safetynote && rm -rf node_modules
-/volume1/@appstore/Node.js_v18/usr/local/bin/npm install --legacy-peer-deps
-# (--ignore-scripts 없이 — 정상 postinstall 실행 시도)
-```
-
-**시도 3 — 구버전 better-sqlite3 v7.6.2:**
-```bash
-cd /volume1/safetynote
-/volume1/@appstore/Node.js_v18/usr/local/bin/npm install \
-  better-sqlite3@7.6.2 --legacy-peer-deps --ignore-scripts
-
-curl -L \
-  "https://github.com/WiseLibs/better-sqlite3/releases/download/v7.6.2/better-sqlite3-v7.6.2-node-v108-linux-x64.tar.gz" \
-  -o /tmp/bsql3_v7.tar.gz
-tar -xzf /tmp/bsql3_v7.tar.gz -C /tmp/
+# v8.0.0 설치 + binary 주입 (위 Step 5 참조)
+npm install better-sqlite3@8.0.0 --legacy-peer-deps --ignore-scripts
+curl -L "https://github.com/WiseLibs/better-sqlite3/releases/download/v8.0.0/better-sqlite3-v8.0.0-node-v108-linux-x64.tar.gz" \
+  -o /tmp/bsql3.tar.gz
+tar -xzf /tmp/bsql3.tar.gz -C /tmp/
 cp /tmp/build/Release/better_sqlite3.node \
-   /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+   node_modules/better-sqlite3/build/Release/better_sqlite3.node
 ```
 
-#### 🔍 binary GLIBC 요구사항 직접 확인
+#### 🔍 binary GLIBC 요구사항 확인 (objdump/strings 없는 NAS용)
 
 ```bash
-# 현재 주입된 binary가 어떤 GLIBC를 요구하는지 확인
-objdump -p /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node \
-  | grep GLIBC
-# → GLIBC_2.29  (이 NAS에서 불가)
-# → GLIBC_2.17  (이 NAS에서 가능 ✅)
+# GLIBC_2.29 포함 여부 확인 (0이면 이 NAS에서 사용 가능)
+grep -c "GLIBC_2.29" \
+  /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+# → 0 이면 ✅ 사용 가능
+# → 1 이상이면 ❌ 이 NAS에서 불가
 
-# NAS에서 사용 가능한 GLIBC 버전 확인
-strings /lib64/libc.so.6 | grep "GLIBC_2\." | sort -V | tail -5
-# → 가장 높은 버전이 이 NAS의 최대 GLIBC 버전
+# 요구하는 GLIBC 버전 전체 목록
+grep -ao "GLIBC_[0-9.]*" \
+  /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+  | sort -u
+# 정상 결과 예시: GLIBC_2.14, GLIBC_2.2.5, GLIBC_2.3.4, GLIBC_2.4
 ```
 
 ---
@@ -1337,4 +1332,5 @@ strings /lib64/libc.so.6 | grep "GLIBC_2\." | sort -V | tail -5
 *SafetyNOTE NAS 설치 매뉴얼 v2.1 — 2026-07-30*  
 *v1.0 (2026-07-25): 초안*  
 *v2.0 (2026-07-25): update/reinstall 모드, patchSchema, Watchdog 상세, 트러블슈팅 보강*  
-*v2.1 (2026-07-30): Node 다중설치 충돌 경고 추가, 13장 구형 NAS 특수 환경 가이드 신설 (GLIBC 2.17 환경 대응)*
+*v2.1 (2026-07-30): Node 다중설치 충돌 경고 추가, 13장 구형 NAS 특수 환경 가이드 신설 (GLIBC 2.17 환경 대응)*  
+*v2.2 (2026-07-30): 13장 — better-sqlite3 v8.0.0 + node-v108 linux-x64 검증 완료 반영 (sh_sever NAS 실제 성공 사례)*

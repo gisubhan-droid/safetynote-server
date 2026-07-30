@@ -7281,3 +7281,49 @@ var _cdLimit = 20;  // 페이지당 건수 (15/20/25/50)
 ### 검증
 - `node --check public/static/app.js` ✅ 문법 오류 없음
 - `npm run build` ✅ (dist/_worker.js 296.86 kB)
+
+---
+
+## FEAT-CON-AMOUNT — 공사현황 외선공량/접속공량 합산 금액 컬럼 추가
+
+- **날짜**: 2025-07-30
+- **작업 파일**: `src/routes/constructions.ts`, `public/static/app.js`
+
+### 배경
+공사현황 테이블에 외선일보/접속일보 공량 합산 금액이 표시되지 않았음.
+엑셀 다운로드 시 공사번호 헤더 누락 문제도 함께 수정.
+
+### 공량 금액 데이터 경로
+| 구분 | 경로 |
+|------|------|
+| 외선공량 | `work_report_extras` × `COALESCE(unit_price_snapshot, volume_unit_prices.unit_price)` |
+| 접속공량 | `splice_work_items` × `COALESCE(unit_price_snapshot, splice_unit_prices.unit_price)` + 야간/가공 추가금 |
+| 연결 | `tasks.construction_id` → `constructions.id` |
+
+### 변경 내용
+
+#### `src/routes/constructions.ts`
+- `GET /constructions/work-amounts` 엔드포인트 신규 추가 (/:id 앞에 등록 — RULE-002)
+- 응답: `{ [construction_id]: { work_amount: N, splice_amount: N } }` 맵
+
+#### `public/static/app.js`
+| 위치 | 변경 내용 |
+|------|-----------|
+| `exportConstructionsExcel()` | 헤더 맨 앞 `공사번호` 추가, `시공통보금액` 뒤 `외선공량`/`접속공량` 추가 |
+| 공사현황 로드 직후 | `/constructions/work-amounts` 백그라운드 호출 → `_conListCache` 각 항목에 `work_amount`/`splice_amount` 병합 → `_conGoPage()` 재렌더 |
+| 테이블 헤더 | `시공통보금액` ~ `공사담당자` 사이 `외선공량`/`접속공량` `<th>` 2개 삽입 |
+| colgroup | `<col class="cc-workamt">` / `<col class="cc-spliceamt">` 2개 추가 (헤더/바디 테이블 각각) |
+| `_conBuildRow()` | `시공통보금액 TD` 뒤 외선공량/접속공량 TD 2개 추가 (외선=파랑, 접속=인디고, 없으면 '-') |
+
+### 엑셀 컬럼 순서 (변경 후)
+`공사번호 | 공사요청번호 | 작업번호 | 공사명 | 작업지시주소 | 공사담당자 | 공사감독자 | 진행상태 | 시공통보일 | 완료예정일 | 시공통보금액 | 외선공량 | 접속공량 | 등록작업건 | 작업(완료)`
+
+### 충돌 점검 결과
+- `GET /constructions/work-amounts` — `/:id` 파라미터 라우트보다 앞에 등록 ✅
+- 공량 금액 로드 실패 시 화면 깨지지 않음 (`.catch` 무시, '-' 표시) ✅
+- `_conGoPage()` 재렌더 — 기존 정렬/페이지 상태 유지 ✅
+- RULE-001 / RULE-003 준수 ✅
+
+### 검증
+- `node --check public/static/app.js` ✅ 문법 오류 없음
+- `npm run build` ✅ (dist/_worker.js 298.71 kB)

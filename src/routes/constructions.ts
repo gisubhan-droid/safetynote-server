@@ -73,6 +73,66 @@ app.get('/', async (c) => {
   }
 })
 
+// ─── 공사별 외선/접속 공량 합산 금액 ────────────────────────────────────────
+// ⚠️ RULE-002: /:id 보다 반드시 앞에 등록
+app.get('/work-amounts', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  try {
+    const db = c.env.DB
+
+    // 외선 공량 금액: construction_id별 합산
+    // work_reports → work_report_extras × volume_unit_prices (unit_price_snapshot 우선)
+    const workRows = await db.prepare(`
+      SELECT t.construction_id,
+             COALESCE(SUM(wre.qty * COALESCE(wre.unit_price_snapshot, vup.unit_price, 0)), 0) AS work_amount
+      FROM work_report_extras wre
+      JOIN work_reports wr ON wr.id = wre.report_id
+      JOIN tasks t ON t.id = wr.task_id
+      LEFT JOIN volume_unit_prices vup ON vup.item_key = wre.item_key
+      WHERE wr.status IN ('submitted','confirmed')
+        AND t.construction_id IS NOT NULL
+      GROUP BY t.construction_id
+    `).all<any>()
+
+    // 접속 공량 금액: construction_id별 합산
+    // splice_reports → splice_work_items × splice_unit_prices (스냅샷 우선, 야간/가공 추가금 포함)
+    const spliceRows = await db.prepare(`
+      SELECT t.construction_id,
+             COALESCE(SUM(
+               swi.qty * (
+                 COALESCE(swi.unit_price_snapshot, sup.unit_price, 0)
+                 + CASE WHEN swi.is_night  = 1 THEN COALESCE(swi.night_price_snapshot,  sup.night_price,  0) ELSE 0 END
+                 + CASE WHEN swi.is_aerial = 1 THEN COALESCE(swi.aerial_price_snapshot, sup.aerial_price, 0) ELSE 0 END
+               )
+             ), 0) AS splice_amount
+      FROM splice_work_items swi
+      JOIN splice_reports sr ON sr.id = swi.report_id
+      JOIN tasks t ON t.id = sr.task_id
+      LEFT JOIN splice_unit_prices sup ON sup.item_label = swi.work_label
+      WHERE sr.status IN ('submitted','confirmed')
+        AND t.construction_id IS NOT NULL
+      GROUP BY t.construction_id
+    `).all<any>()
+
+    // construction_id → { work_amount, splice_amount } 맵으로 병합
+    const result: Record<number, { work_amount: number; splice_amount: number }> = {}
+    for (const r of (workRows.results || [])) {
+      if (!result[r.construction_id]) result[r.construction_id] = { work_amount: 0, splice_amount: 0 }
+      result[r.construction_id].work_amount = Math.round(r.work_amount || 0)
+    }
+    for (const r of (spliceRows.results || [])) {
+      if (!result[r.construction_id]) result[r.construction_id] = { work_amount: 0, splice_amount: 0 }
+      result[r.construction_id].splice_amount = Math.round(r.splice_amount || 0)
+    }
+
+    return c.json(result)
+  } catch (e: any) {
+    return c.json({ error: e.message || '공량 금액 조회 실패' }, 500)
+  }
+})
+
 // ─── 공사 단건 조회 (+ 연결된 작업 목록 포함) ───────────────────────────────
 app.get('/:id', async (c) => {
   const user = getUser(c)

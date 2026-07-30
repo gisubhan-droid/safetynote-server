@@ -11509,3 +11509,32 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | feat: [FEAT-TEAM-EDIT] 현장팀 관리 팀명/설명 수정 기능 추가 |
+
+---
+
+## 세션 121 — FEAT-CON-AMOUNT: 공사현황 외선공량/접속공량 컬럼 추가 + 엑셀 공사번호 누락 수정
+
+### 작업 개요
+공사현황 테이블에 외선일보/접속일보 공량 합산 금액 컬럼(외선공량/접속공량) 추가.
+엑셀 다운로드 공사번호 헤더 누락도 함께 수정.
+
+### 변경 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `src/routes/constructions.ts` | `GET /constructions/work-amounts` 신규 엔드포인트 추가 |
+| `public/static/app.js` | 공사현황 로드 후 work-amounts 병합, 테이블/엑셀 컬럼 추가 |
+
+### 주요 변경
+1. **서버**: `GET /constructions/work-amounts` — construction_id별 외선/접속 공량 합산 금액 맵 반환
+2. **공사현황 로드**: `/constructions` 목록 로드 후 백그라운드 `work-amounts` 병합 → `_conGoPage()` 재렌더
+3. **테이블**: `시공통보금액` ~ `공사담당자` 사이 `외선공량`(파랑) / `접속공량`(인디고) 컬럼 추가
+4. **엑셀**: `공사번호` 헤더 맨 앞 추가, `외선공량`/`접속공량` 컬럼 추가 (총 15개 컬럼)
+
+### 검증
+- `node --check` ✅ / `npm run build` ✅ (298.71 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | feat: [FEAT-CON-AMOUNT] 공사현황 외선/접속 공량 금액 컬럼 추가 + 엑셀 공사번호 누락 수정 |

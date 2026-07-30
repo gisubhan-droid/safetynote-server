@@ -3856,8 +3856,9 @@ function _initTaskColResize() {
 // 공사현황 엑셀 다운로드
 function exportConstructionsExcel(list) {
   const statusLabel = { registered:'등록', in_progress:'진행중', completed:'완료', settlement_requested:'정산요청', settled:'정산완료' };
-  const headers = ['공사요청번호','작업번호','공사명','작업지시주소','공사담당자','공사감독자','진행상태','시공통보일','완료예정일','시공통보금액','등록작업건','작업(완료)'];
+  const headers = ['공사번호','공사요청번호','작업번호','공사명','작업지시주소','공사담당자','공사감독자','진행상태','시공통보일','완료예정일','시공통보금액','외선공량','접속공량','등록작업건','작업(완료)'];
   const rows = list.map(c => [
+    c.con_number || '',
     c.request_no || '',
     c.work_number || '',
     c.title || '',
@@ -3868,6 +3869,8 @@ function exportConstructionsExcel(list) {
     c.notification_date ? c.notification_date.slice(0, 10) : '',
     c.completion_date ? c.completion_date.slice(0, 10) : '',
     c.notification_amount != null ? Number(c.notification_amount) : '',
+    c.work_amount > 0 ? Number(c.work_amount) : '',
+    c.splice_amount > 0 ? Number(c.splice_amount) : '',
     c.task_total || 0,
     c.task_completed || 0,
   ]);
@@ -4126,6 +4129,34 @@ async function renderConstructionsPage(container) {
 
     window._conListCache = list;   // 엑셀 다운로드용 캐시
 
+    // ── 외선/접속 공량 금액 백그라운드 병합 [FEAT-CON-AMOUNT] ─────────────
+    // 목록 렌더 후 비동기로 work-amounts API 호출 → 각 항목에 work_amount/splice_amount 주입
+    API.get('/constructions/work-amounts').then(function(amtRes) {
+      var amtMap = amtRes.data || {};
+      var updated = false;
+      window._conListCache.forEach(function(con) {
+        var entry = amtMap[con.id];
+        if (entry) {
+          con.work_amount   = entry.work_amount   || 0;
+          con.splice_amount = entry.splice_amount || 0;
+          updated = true;
+        }
+      });
+      // 정렬 캐시도 병합
+      if (window._conSortedCache) {
+        window._conSortedCache.forEach(function(con) {
+          var entry = amtMap[con.id];
+          if (entry) {
+            con.work_amount   = entry.work_amount   || 0;
+            con.splice_amount = entry.splice_amount || 0;
+          }
+        });
+      }
+      // 병합 후 테이블 재렌더 (DOM만 교체, 스크롤 위치 유지)
+      if (updated && window._conGoPage) window._conGoPage();
+    }).catch(function() { /* 공량 금액 로드 실패 시 무시 — 화면은 '-'로 표시 */ });
+    // ──────────────────────────────────────────────────────────────────────
+
     // ── 행 렌더 함수 (정렬 재렌더 공용) ────────────────────────────────────
     const _conBuildRow = (con, idx) => {
       const borderColor = con.status==='settled'?'#4338CA':con.status==='settlement_requested'?'#D97706':con.status==='completed'?'#059669':con.status==='in_progress'?'#D70072':'#9E9BC8';
@@ -4168,6 +4199,8 @@ async function renderConstructionsPage(container) {
             : '<span style="color:#CCC;font-size:11px">-</span>'}
         </td>
         <td class="con-td" style="text-align:right;font-size:12px;color:#374151;font-weight:600;padding-right:10px">${con.notification_amount != null ? Number(con.notification_amount).toLocaleString('ko-KR')+'원' : '<span style=\"color:#CCC\">-</span>'}</td>
+        <td class="con-td" style="text-align:right;font-size:12px;color:#1D4ED8;font-weight:600;padding-right:10px">${con.work_amount > 0 ? Number(con.work_amount).toLocaleString('ko-KR')+'원' : '<span style=\"color:#CCC\">-</span>'}</td>
+        <td class="con-td" style="text-align:right;font-size:12px;color:#4338CA;font-weight:600;padding-right:10px">${con.splice_amount > 0 ? Number(con.splice_amount).toLocaleString('ko-KR')+'원' : '<span style=\"color:#CCC\">-</span>'}</td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.manager_display_name || con.manager_name || '<span style="color:#CCC">-</span>'}</td>
         <td class="con-td" style="text-align:center;font-size:12px;color:#374151;font-weight:500">${con.supervisor_name || '<span style="color:#CCC">-</span>'}</td>
         <td class="con-td" style="text-align:center">${constructionStatusChip(con.status)}</td>
@@ -4354,6 +4387,7 @@ async function renderConstructionsPage(container) {
             <col class="cc-connum"><col class="cc-req"><col class="cc-type"><col class="cc-title">
             <col class="cc-addr">
             <col class="cc-cdate"><col class="cc-pdate"><col class="cc-tasks"><col class="cc-amount">
+            <col class="cc-workamt"><col class="cc-spliceamt">
             <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
           </colgroup>
           <thead>
@@ -4394,6 +4428,10 @@ async function renderConstructionsPage(container) {
                   style="text-align:right;cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('notification_amount')">
                 시공통보금액<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="5c" style="text-align:right;user-select:none">
+                외선공량<span class="col-resizer"></span></th>
+              <th class="con-th con-th-resize" data-col="5d" style="text-align:right;user-select:none">
+                접속공량<span class="col-resizer"></span></th>
               <th class="con-th con-th-resize" data-col="6" data-sortcol="manager_display_name"
                   style="text-align:center;cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('manager_display_name')">
@@ -4418,6 +4456,7 @@ async function renderConstructionsPage(container) {
               <col class="cc-connum"><col class="cc-req"><col class="cc-type"><col class="cc-title">
               <col class="cc-addr">
               <col class="cc-cdate"><col class="cc-pdate"><col class="cc-tasks"><col class="cc-amount">
+              <col class="cc-workamt"><col class="cc-spliceamt">
               <col class="cc-mgr"><col class="cc-sup"><col class="cc-status">
             </colgroup>
             <tbody>

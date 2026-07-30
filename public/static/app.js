@@ -3698,16 +3698,27 @@ function _initConColResize() {
   const headCols = headTable.querySelectorAll('col');
   const bodyCols = bodyTable.querySelectorAll('col');
   const ths      = headTable.querySelectorAll('th');   // 전체 th (리사이즈 여부 무관)
+  const LS_KEY   = 'sn-con-col-widths';                // localStorage 저장 키
 
   // ── 1) col에 초기 px 너비 확정 (getBoundingClientRect 기반)
   //    table-layout:fixed 상태에서 th.offsetWidth 는 0이 될 수 있으므로
   //    먼저 th.getBoundingClientRect() 로 실제 렌더 너비를 읽어 col에 박음
   requestAnimationFrame(() => {
+    // localStorage 저장값 복원 (저장된 값이 있으면 CSS 기본값 대신 적용)
+    var savedWidths = {};
+    try { savedWidths = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(e) {}
+
     ths.forEach((th, i) => {
-      const w = th.getBoundingClientRect().width;
-      if (w > 0) {
-        if (headCols[i]) headCols[i].style.width = w + 'px';
-        if (bodyCols[i]) bodyCols[i].style.width = w + 'px';
+      // 저장된 너비가 있으면 우선 적용, 없으면 렌더 너비 기반
+      if (savedWidths[i]) {
+        if (headCols[i]) headCols[i].style.width = savedWidths[i] + 'px';
+        if (bodyCols[i]) bodyCols[i].style.width = savedWidths[i] + 'px';
+      } else {
+        const w = th.getBoundingClientRect().width;
+        if (w > 0) {
+          if (headCols[i]) headCols[i].style.width = w + 'px';
+          if (bodyCols[i]) bodyCols[i].style.width = w + 'px';
+        }
       }
     });
 
@@ -3745,16 +3756,31 @@ function _initConColResize() {
           document.body.style.userSelect = '';
           document.removeEventListener('mousemove', onMouseMove);
           document.removeEventListener('mouseup', onMouseUp);
+          // ── localStorage 저장 (드래그 완료 시점)
+          var newW = Math.max(50, startW + (document.body._lastClientX || startX) - startX);
+          if (headCols[colIdx]) {
+            var finalW = parseFloat(headCols[colIdx].style.width);
+            if (finalW > 0) {
+              var ws = {};
+              try { ws = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(ex) {}
+              ws[colIdx] = finalW;
+              localStorage.setItem(LS_KEY, JSON.stringify(ws));
+            }
+          }
         }
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
       });
 
-      // 더블클릭: CSS 클래스 너비로 리셋
+      // 더블클릭: CSS 기본 너비로 리셋 + localStorage에서 해당 컬럼 제거
       resizer.addEventListener('dblclick', function(e) {
         e.stopPropagation();
         if (headCols[colIdx]) headCols[colIdx].style.width = '';
         if (bodyCols[colIdx]) bodyCols[colIdx].style.width = '';
+        var ws = {};
+        try { ws = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(ex) {}
+        delete ws[colIdx];
+        localStorage.setItem(LS_KEY, JSON.stringify(ws));
       });
     });
 
@@ -3782,14 +3808,26 @@ function _initTaskColResize() {
   const headCols = headTable.querySelectorAll('col');
   const bodyCols = bodyTable.querySelectorAll('col');
   const allThs   = headTable.querySelectorAll('th');   // 전체 th (#, 요청번호, 작업번호 ...)
+  const LS_KEY   = 'sn-task-col-widths';               // localStorage 저장 키
 
   requestAnimationFrame(() => {
-    // ── 1) col에 초기 px 너비 확정
+    // localStorage 저장값 복원
+    var savedWidths = {};
+    try { savedWidths = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(e) {}
+
+    // ── 1) col에 초기 px 너비 확정 (저장값 우선, 없으면 렌더 너비)
     allThs.forEach((th, i) => {
-      const w = th.getBoundingClientRect().width;
-      if (w > 0) {
-        if (headCols[i]) headCols[i].style.width = w + 'px';
-        if (bodyCols[i]) bodyCols[i].style.width = w + 'px';
+      // data-col 키가 있으면 해당 키로, 없으면 index로 조회
+      var dcKey = th.dataset.col !== undefined ? th.dataset.col : String(i);
+      if (savedWidths[dcKey]) {
+        if (headCols[i]) headCols[i].style.width = savedWidths[dcKey] + 'px';
+        if (bodyCols[i]) bodyCols[i].style.width = savedWidths[dcKey] + 'px';
+      } else {
+        const w = th.getBoundingClientRect().width;
+        if (w > 0) {
+          if (headCols[i]) headCols[i].style.width = w + 'px';
+          if (bodyCols[i]) bodyCols[i].style.width = w + 'px';
+        }
       }
     });
 
@@ -3803,6 +3841,8 @@ function _initTaskColResize() {
       const colIdx = th.dataset.col !== undefined
         ? parseInt(th.dataset.col, 10)
         : Array.from(allThs).indexOf(th);
+      // localStorage 저장 키: data-col 문자열 값 그대로 사용 (숫자/문자 혼재 대응)
+      const dcKey  = th.dataset.col !== undefined ? th.dataset.col : String(Array.from(allThs).indexOf(th));
 
       let startX, startW;
 
@@ -3829,15 +3869,30 @@ function _initTaskColResize() {
           document.body.style.userSelect = '';
           document.removeEventListener('mousemove', onMouseMove);
           document.removeEventListener('mouseup', onMouseUp);
+          // ── localStorage 저장 (드래그 완료 시점)
+          if (headCols[colIdx]) {
+            var finalW = parseFloat(headCols[colIdx].style.width);
+            if (finalW > 0) {
+              var ws = {};
+              try { ws = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(ex) {}
+              ws[dcKey] = finalW;
+              localStorage.setItem(LS_KEY, JSON.stringify(ws));
+            }
+          }
         }
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
       });
 
+      // 더블클릭: CSS 기본 너비로 리셋 + localStorage에서 해당 컬럼 제거
       resizer.addEventListener('dblclick', function(e) {
         e.stopPropagation();
         if (headCols[colIdx]) headCols[colIdx].style.width = '';
         if (bodyCols[colIdx]) bodyCols[colIdx].style.width = '';
+        var ws = {};
+        try { ws = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(ex) {}
+        delete ws[dcKey];
+        localStorage.setItem(LS_KEY, JSON.stringify(ws));
       });
     });
 
@@ -4428,9 +4483,9 @@ async function renderConstructionsPage(container) {
                   style="text-align:right;cursor:pointer;user-select:none"
                   onclick="if(window._conSortTrigger)window._conSortTrigger('notification_amount')">
                 시공통보금액<span class="con-sort-arrow" style="color:#C6C6C6;font-size:10px"> ↕</span><span class="col-resizer"></span></th>
-              <th class="con-th con-th-resize" data-col="5c" style="text-align:right;user-select:none">
+              <th class="con-th con-th-resize" data-col="5c" style="text-align:center;user-select:none">
                 외선공량<span class="col-resizer"></span></th>
-              <th class="con-th con-th-resize" data-col="5d" style="text-align:right;user-select:none">
+              <th class="con-th con-th-resize" data-col="5d" style="text-align:center;user-select:none">
                 접속공량<span class="col-resizer"></span></th>
               <th class="con-th con-th-resize" data-col="6" data-sortcol="manager_display_name"
                   style="text-align:center;cursor:pointer;user-select:none"

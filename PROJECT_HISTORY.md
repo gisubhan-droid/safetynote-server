@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-30 (세션 122 — FEAT-MENU-RENAME: "현장작업 > 공사현황" → "공사현황 > 공사내역" 이동 및 명칭 변경)
-> **GitHub 최신 (safetynote-server): `(이번 세션)`** — feat: [FEAT-MENU-RENAME] 공사현황 메뉴 이동 및 명칭 변경 (공사내역)
-> **이전 커밋 (safetynote-server): `5fd560d`** — feat: [FEAT-CON-AMOUNT] 공사현황 외선/접속 공량 금액 컬럼 추가 + 엑셀 공사번호 누락 수정
+> 최종 업데이트: 2026-07-30 (세션 123 — FEAT-COL-PERSIST: 공사현황/작업관리 컬럼 너비 영구 저장 + 외선/접속공량 헤더 정렬/너비 개선)
+> **GitHub 최신 (safetynote-server): `(이번 세션)`** — feat: [FEAT-COL-PERSIST] 공사현황/작업관리 컬럼 너비 localStorage 영구 저장
+> **이전 커밋 (safetynote-server): `5b9de43`** — feat: [FEAT-MENU-RENAME] 공사현황 메뉴 이동 및 명칭 변경 (공사내역)
 > **이전 커밋 (safetynote-server): `ddccb08`** — fix: [BUG-192d] 안전교육 서명요청 내용보기 TypeError(meta.bg) — eduType 무효값 방어코드 추가
 > **이전 커밋 (safetynote-server): `5a12fa9`** — fix: [세션111] 서명요청 버그 3건 수정 — 중복pending 일괄처리/자동completed조건 개선/SC내용보기 버튼화
 > **이전 커밋 (safetynote-server): `01cab28`** — feat: [세션111] 시스템설정 파일저장경로 UI에 안전교육/산업안전보건위원회/위험성평가 폴더구조 표시 추가
@@ -11591,3 +11591,52 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | feat: [FEAT-MENU-RENAME] 공사현황 메뉴 이동 및 명칭 변경 (공사내역) |
+
+---
+
+## 세션 123 — FEAT-COL-PERSIST: 컬럼 너비 영구 저장 + 외선/접속공량 헤더 개선
+
+### 작업 개요
+공사현황·작업관리 테이블의 컬럼 너비를 사용자가 드래그 조정 후 재접속 시에도 유지되도록 localStorage 저장/복원 기능 추가.
+외선공량/접속공량 헤더 중앙정렬 및 기본 너비 90px 지정 함께 처리.
+공량내역(field-report)은 이미 동일 기능 구현되어 있어 변경 없음.
+
+### 변경 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | _initConColResize() localStorage 저장/복원 추가, _initTaskColResize() 동일 추가, 외선/접속공량 헤더 text-align center |
+| `public/static/style.css` | cc-workamt(90px), cc-spliceamt(90px) 너비 정의 추가 |
+
+### 주요 변경 상세
+
+#### 1. 공사현황 컬럼 너비 영구 저장 (`_initConColResize`)
+- **localStorage 키**: `sn-con-col-widths` → `{ colIndex: width_px }` 형태
+- **저장**: 드래그 `mouseup` 시점에 해당 컬럼 index 기준 저장
+- **복원**: 함수 초기화 시 저장값 있으면 CSS 기본값 대신 적용
+- **더블클릭 리셋**: col 너비 초기화 + localStorage 해당 항목 삭제
+
+#### 2. 작업관리 컬럼 너비 영구 저장 (`_initTaskColResize`)
+- **localStorage 키**: `sn-task-col-widths` → `{ data-col값: width_px }` 형태
+- **저장 키**: `data-col` 문자열 그대로 사용 (숫자/문자 혼재 대응: 1~7, risk_level, status)
+- **저장/복원/리셋**: 공사현황과 동일 패턴
+
+#### 3. 외선공량/접속공량 헤더 개선
+- 헤더 `text-align`: `right` → `center`
+- 기본 너비: `cc-workamt` / `cc-spliceamt` → `90px` (style.css 신규 정의)
+
+### 적용 범위 (테이블별 저장 여부)
+| 테이블 | localStorage 키 | 상태 |
+|--------|----------------|------|
+| 공사현황 | `sn-con-col-widths` | ✅ 이번 세션 추가 |
+| 작업관리 | `sn-task-col-widths` | ✅ 이번 세션 추가 |
+| 공량내역 외선 | `fr_cable_col_widths` | ✅ 기존 구현 유지 |
+| 공량내역 접속 | `fr_splice_col_widths` | ✅ 기존 구현 유지 |
+
+### 검증
+- `node --check` ✅ / `npm run build` ✅ (298.71 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | feat: [FEAT-COL-PERSIST] 공사현황/작업관리 컬럼 너비 localStorage 영구 저장 + 외선/접속공량 헤더 개선 |

@@ -292,7 +292,7 @@ const UI_ROLE_LABEL = {
 
 // 메뉴 항목 정의 (관리자용 전체 목록 - 권한 체크박스용)
 const MENU_DEFINITIONS = [
-  { id:'constructions',     label:'공사현황',        icon:'fas fa-hard-hat',          group:'메인' },
+  { id:'constructions',     label:'공사내역',        icon:'fas fa-hard-hat',          group:'메인' },
   { id:'dashboard',        label:'작업현황',         icon:'fas fa-tasks',             group:'메인' },
   { id:'tasks',            label:'작업관리',         icon:'fas fa-clipboard-list',    group:'메인' },
   { id:'inspections',      label:'현장점검',         icon:'fas fa-search',            group:'메인' },
@@ -2316,7 +2316,6 @@ function renderApp() {
       items: [
         { id:'dashboard',     icon:'fas fa-tasks',           label:'작업현황' },
         { id:'tasks',         icon:'fas fa-clipboard-list',  label:'작업관리' },
-        { id:'constructions', icon:'fas fa-hard-hat',        label:'공사현황' },
         { id:'site-map',      icon:'fas fa-map-marked-alt',  label:'현장위치 지도' },
       ]
     },
@@ -2356,6 +2355,7 @@ function renderApp() {
       id: 'volume', icon: 'fas fa-chart-line', label: '공사현황', color: '#34d399',
       items: [
         { id:'con-stats',     icon:'fas fa-chart-pie',      label:'공사통계' },
+        { id:'constructions', icon:'fas fa-hard-hat',        label:'공사내역' },
         { id:'stats-task',    icon:'fas fa-tasks',          label:'작업통계' },
         { id:'volume-stats',  icon:'fas fa-chart-bar',      label:'물량통계' },
         { id:'report-write',  icon:'fas fa-pen-to-square',  label:'작업일보 작성' },
@@ -2426,7 +2426,7 @@ function renderApp() {
     var workItems = [];
     if (isOn('lgu_menu_dashboard',     true))  workItems.push({ id:'dashboard',     icon:'fas fa-tasks',           label:'작업현황' });
     if (isOn('lgu_menu_tasks',         true))  workItems.push({ id:'tasks',         icon:'fas fa-clipboard-list',  label:'작업관리' });
-    if (isOn('lgu_menu_constructions', false)) workItems.push({ id:'constructions', icon:'fas fa-hard-hat',        label:'공사현황' });
+    if (isOn('lgu_menu_constructions', false)) workItems.push({ id:'constructions', icon:'fas fa-hard-hat',        label:'공사내역' });
     if (isOn('lgu_menu_site_map',      true))  workItems.push({ id:'site-map',      icon:'fas fa-map-marked-alt',  label:'현장위치 지도' });
 
     // ── 그룹②: 안전점검 (현장점검) ──────────────────────────────────────────────
@@ -23524,7 +23524,7 @@ async function renderAdminSettingsPage(container, _activeTab) {
             { key:'lgu_menu_dashboard',     label:'작업현황',      defaultOn:true  },
             { key:'lgu_menu_inspections',   label:'현장점검',      defaultOn:true  },
             { key:'lgu_menu_site_map',      label:'현장위치 지도', defaultOn:true  },
-            { key:'lgu_menu_constructions', label:'공사현황',      defaultOn:false },
+            { key:'lgu_menu_constructions', label:'공사내역',      defaultOn:false },
             { key:'lgu_menu_tasks',         label:'작업관리',      defaultOn:false },
             { key:'lgu_menu_stats',         label:'안전현황 통계', defaultOn:false },
           ];

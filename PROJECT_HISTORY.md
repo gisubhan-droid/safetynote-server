@@ -1,8 +1,8 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
-> 최종 업데이트: 2026-07-29 (세션 112 — FEAT-194 메뉴 구조 변경 및 명칭 변경)
-> **GitHub 최신 (safetynote-server): `5afe597`** — feat: [FEAT-194] 메뉴 구조 변경 — 항목관리 그룹 신설 + 3개 메뉴 명칭 변경
-> **이전 커밋 (safetynote-server): `7487748`** — feat: [FEAT-193] 위험성평가 서명요청 — 전원 서명 완료 후 미처리에서 사라지도록 변경
+> 최종 업데이트: 2026-07-30 (세션 122 — FEAT-MENU-RENAME: "현장작업 > 공사현황" → "공사현황 > 공사내역" 이동 및 명칭 변경)
+> **GitHub 최신 (safetynote-server): `(이번 세션)`** — feat: [FEAT-MENU-RENAME] 공사현황 메뉴 이동 및 명칭 변경 (공사내역)
+> **이전 커밋 (safetynote-server): `5fd560d`** — feat: [FEAT-CON-AMOUNT] 공사현황 외선/접속 공량 금액 컬럼 추가 + 엑셀 공사번호 누락 수정
 > **이전 커밋 (safetynote-server): `ddccb08`** — fix: [BUG-192d] 안전교육 서명요청 내용보기 TypeError(meta.bg) — eduType 무효값 방어코드 추가
 > **이전 커밋 (safetynote-server): `5a12fa9`** — fix: [세션111] 서명요청 버그 3건 수정 — 중복pending 일괄처리/자동completed조건 개선/SC내용보기 버튼화
 > **이전 커밋 (safetynote-server): `01cab28`** — feat: [세션111] 시스템설정 파일저장경로 UI에 안전교육/산업안전보건위원회/위험성평가 폴더구조 표시 추가
@@ -11538,3 +11538,56 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | feat: [FEAT-CON-AMOUNT] 공사현황 외선/접속 공량 금액 컬럼 추가 + 엑셀 공사번호 누락 수정 |
+
+---
+
+## 세션 122 — FEAT-MENU-RENAME: "공사현황" 메뉴 이동 및 명칭 변경 (공사내역)
+
+### 작업 개요
+메인메뉴와 하위메뉴 명칭 충돌 문제 해결.
+"현장작업" 그룹 하위 "공사현황" 항목을 "공사현황(volume)" 그룹 하위로 이동하고,
+명칭을 "공사내역"으로 변경하여 메인메뉴 "공사현황"과 구분.
+이동 위치: 공사통계 ~ 작업통계 사이.
+
+### 사전 분석 (LGU+ 접근 권한)
+- LGU+ 사용자는 `lguGroups`(별도 배열)만 렌더링 → `allManagerGroups`(volume 그룹) 자체가 렌더링되지 않음
+- `canAccess()` 2중 차단 구조로 volume 그룹 이동 시 LGU+ 접근 자동 차단 확인
+- 별도 권한 처리 불필요 — 기존 구조만으로 의도한 접근 제한 달성
+
+### 변경 파일
+| 파일 | 변경 내용 |
+|------|-----------|
+| `public/static/app.js` | 5곳 수정 (아래 상세) |
+
+### 주요 변경 (app.js 5곳)
+
+| # | 위치 | 변경 내용 |
+|---|------|-----------|
+| ① | line 295 — MENU_DEFINITIONS | `label:'공사현황'` → `label:'공사내역'` (권한 체크박스용) |
+| ② | line ~2319 — work 그룹 items | `constructions` 항목 제거 (현장작업 하위에서 삭제) |
+| ③ | line ~2358 — volume 그룹 items | `con-stats` 뒤, `stats-task` 앞에 `constructions` 삽입 (`label:'공사내역'`) |
+| ④ | line ~2429 — LGU+ workItems | `label:'공사현황'` → `label:'공사내역'` (시스템설정 ON 시 노출 label) |
+| ⑤ | line ~23527 — 시스템설정 LGU+ | `label:'공사현황'` → `label:'공사내역'` |
+
+### 변경 후 메뉴 구조
+```
+현장작업 (work)
+  ├ 작업현황
+  ├ 작업관리
+  └ 현장위치 지도     ← 공사현황 항목 제거됨
+
+공사현황 (volume)
+  ├ 공사통계
+  ├ 공사내역          ← 이동 + 명칭 변경 (id:'constructions' 그대로 유지)
+  └ 작업통계
+  ...
+```
+
+### 검증
+- `node --check` ✅ / `npm run build` ✅ (298.71 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | (이번 세션) | feat: [FEAT-MENU-RENAME] 공사현황 메뉴 이동 및 명칭 변경 (공사내역) |

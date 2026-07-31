@@ -21,8 +21,12 @@
 
 ---
 
-> 최종 업데이트: 2026-07-30 (세션 123 — FEAT-COL-PERSIST: 공사현황/작업관리 컬럼 너비 영구 저장 + 외선/접속공량 헤더 정렬/너비 개선)
-> **GitHub 최신 (safetynote-server): `(이번 세션)`** — feat: [FEAT-COL-PERSIST] 공사현황/작업관리 컬럼 너비 localStorage 영구 저장
+> 최종 업데이트: 2026-07-31 (세션 125 — BUG-196+FEAT-196: 내 작업목록 검색 Android IME 한글 버그 수정 + 검색 버튼 방식 전환 + 공사요청번호 검색 추가)
+> **GitHub 최신 (safetynote-server): `(이번 세션)`** — fix+feat: [BUG-196+FEAT-196] 내 작업목록 검색 Android IME 한글 버그 수정 + 검색버튼 방식 전환 + 공사요청번호 검색 추가
+> **이전 커밋 (safetynote-server): `c36ec25`** — docs: [NAS구분] NAS001 LinkMax 기준 명시 + 신규 NAS 구분 구조 정립
+> **이전 커밋 (safetynote-server): `bedd988`** — feat: [FEAT-195] 외선작업일보 케이블정보 모바일 세로 카드 레이아웃(방안 C) 적용
+> **이전 커밋 (safetynote-server): `c36ec25`** — docs: [NAS구분] NAS001 LinkMax 기준 명시 + 신규 NAS 구분 구조 정립
+> **이전 커밋 (safetynote-server): `bedd988`** — feat: [FEAT-195] 외선작업일보 케이블정보 모바일 세로 카드 레이아웃(방안 C) 적용
 > **이전 커밋 (safetynote-server): `5b9de43`** — feat: [FEAT-MENU-RENAME] 공사현황 메뉴 이동 및 명칭 변경 (공사내역)
 > **이전 커밋 (safetynote-server): `ddccb08`** — fix: [BUG-192d] 안전교육 서명요청 내용보기 TypeError(meta.bg) — eduType 무효값 방어코드 추가
 > **이전 커밋 (safetynote-server): `5a12fa9`** — fix: [세션111] 서명요청 버그 3건 수정 — 중복pending 일괄처리/자동completed조건 개선/SC내용보기 버튼화

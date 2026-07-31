@@ -2,6 +2,87 @@
 
 ---
 
+## [BUG-196 + FEAT-196] 내 작업목록 검색 개선 3건 — Android IME 한글 입력 버그 수정 + 검색 버튼 방식 전환 + 공사요청번호 검색 추가 (세션 125)
+
+> **대상 NAS**: NAS001 LinkMax 본사
+
+### 요구사항
+
+| 구분 | 내용 |
+|------|------|
+| **BUG-196** | Android 모바일 앱 내 작업목록 검색 — 한글 입력 시 두 번째 글자가 입력 안 됨 |
+| **FEAT-196-A** | 실시간 검색(oninput) → 검색어 입력 후 [검색] 버튼 클릭 또는 Enter 키 방식으로 변경 |
+| **FEAT-196-B** | 검색 대상에 공사요청번호(request_no) 추가 (기존: 등록건명 + 공사담당자) |
+
+### 원인 분석
+
+- **BUG-196 근본 원인**: `oninput` 이벤트 + 300ms debounce 방식 사용
+  - Android IME(소프트 키보드)는 한글 조합 중 `compositionend` 이벤트를 늦게 발화
+  - `_imeComposing` 가드가 있었으나 Android WebView에서 타이밍 불일치로 중간값이 읽힘
+  - 두 번째 글자 입력 시 첫 글자만 확정된 상태로 검색이 실행 → 렌더링 재시작 → 두 번째 글자 누락
+
+### 구현 내용
+
+#### `public/static/app.js` 변경사항 4곳
+
+**1. `applyMyTasksSearch` 함수 — debounce 제거, RULE-001 준수 (var/function)**
+```javascript
+// 변경 전: setTimeout 300ms debounce, 화살표함수
+let _myTasksSearchTimer = null;
+function applyMyTasksSearch(kw) {
+  _myTasksSearchKw = (kw || '').trim();
+  clearTimeout(_myTasksSearchTimer);
+  _myTasksSearchTimer = setTimeout(() => { ... }, 300);
+}
+
+// 변경 후: 즉시 실행, var/function 사용
+function applyMyTasksSearch(kw) {
+  _myTasksSearchKw = (kw || '').trim();
+  var content = document.getElementById('page-content') || document.getElementById('main-content');
+  if (!content) return;
+  renderMyTasksPage(content).then(function() {
+    var inp = document.getElementById('myTasksSearchInput');
+    if (inp) { inp.focus(); var len = inp.value.length; inp.setSelectionRange(len, len); }
+  });
+}
+```
+
+**2. 전역 헬퍼 함수 추가 (RULE-003: onclick 내 따옴표 중첩 금지)**
+```javascript
+function doMyTasksSearch() {
+  var inp = document.getElementById('myTasksSearchInput');
+  if (inp) applyMyTasksSearch(inp.value);
+}
+function clearMyTasksSearch() {
+  var inp = document.getElementById('myTasksSearchInput');
+  if (inp) inp.value = '';
+  applyMyTasksSearch('');
+}
+```
+
+**3. 검색 바 HTML 변경**
+```
+변경 전: oninput="if(!_imeComposing)applyMyTasksSearch(this.value)"  (실시간)
+변경 후: onkeydown="if(event.key==='Enter'&&!_imeComposing){doMyTasksSearch();}"  (Enter만)
+         + [검색] 버튼 추가 (onclick="doMyTasksSearch()")
+         + placeholder: "등록건명 또는 공사담당자 검색" → "등록건명 / 공사담당자 / 공사요청번호"
+```
+
+**4. 검색 필터 로직 — request_no 추가, RULE-001 준수**
+```javascript
+// 변경 전: const + 화살표함수, 검색 대상 3개
+// 변경 후: var + function, 검색 대상 4개 (request_no 추가)
+var reqMatch = (t.request_no || '').toLowerCase().includes(kwLower);
+return titleMatch || mgrMatch || conMatch || reqMatch;
+```
+
+### 검증
+
+- ✅ `node --check` PASS
+- ✅ `npm run build` 성공 (298.71 kB)
+
+---
+
 ## [FEAT-194] 메뉴 구조 변경 — 항목관리 그룹 신설 + 3개 메뉴 명칭 변경 (세션 112)
 
 ### 요구사항

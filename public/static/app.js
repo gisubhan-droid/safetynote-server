@@ -16210,20 +16210,27 @@ function applyMyTasksFilter(filterType) {
   const content = document.getElementById('page-content') || document.getElementById('main-content');
   if (content) renderMyTasksPage(content);
 }
-// 검색어 변경 시 debounce 후 재렌더링 (서버 재요청 없이 클라이언트 필터)
-let _myTasksSearchTimer = null;
+// 검색 실행 — 버튼 클릭 또는 Enter 키 입력 시 즉시 재렌더링 (서버 재요청 없이 클라이언트 필터)
+// BUG-196: oninput 실시간 방식 제거 → Android IME 한글 두 번째 글자 누락 문제 근본 해결
 function applyMyTasksSearch(kw) {
   _myTasksSearchKw = (kw || '').trim();
-  clearTimeout(_myTasksSearchTimer);
-  _myTasksSearchTimer = setTimeout(() => {
-    const content = document.getElementById('page-content') || document.getElementById('main-content');
-    if (!content) return;
-    renderMyTasksPage(content).then(() => {
-      // 재렌더링 후 검색 input에 포커스 복원 (모바일 키보드 유지)
-      const inp = document.getElementById('myTasksSearchInput');
-      if (inp) { inp.focus(); const len = inp.value.length; inp.setSelectionRange(len, len); }
-    });
-  }, 300);
+  var content = document.getElementById('page-content') || document.getElementById('main-content');
+  if (!content) return;
+  renderMyTasksPage(content).then(function() {
+    // 재렌더링 후 검색 input에 포커스 복원 (모바일 키보드 유지)
+    var inp = document.getElementById('myTasksSearchInput');
+    if (inp) { inp.focus(); var len = inp.value.length; inp.setSelectionRange(len, len); }
+  });
+}
+// RULE-003: onclick 내 따옴표 중첩 금지 → 검색 실행/초기화 전역 함수로 분리
+function doMyTasksSearch() {
+  var inp = document.getElementById('myTasksSearchInput');
+  if (inp) applyMyTasksSearch(inp.value);
+}
+function clearMyTasksSearch() {
+  var inp = document.getElementById('myTasksSearchInput');
+  if (inp) inp.value = '';
+  applyMyTasksSearch('');
 }
 
 async function renderMyTasksPage(container) {
@@ -16317,14 +16324,16 @@ async function renderMyTasksPage(container) {
         })
       : _afterWcFilter;
 
-    // ── 클라이언트 검색 필터 (등록건명 | 공사담당자) ──────────────────────────
-    const kwLower = activeSearchKw.toLowerCase();
-    const tasks = kwLower
-      ? tasksBeforeSearch.filter(t => {
-          const titleMatch  = (t.title || '').toLowerCase().includes(kwLower);
-          const mgrMatch    = (t.con_manager_display_name || t.supervisor_name || '').toLowerCase().includes(kwLower);
-          const conMatch    = (t.construction_title || '').toLowerCase().includes(kwLower);
-          return titleMatch || mgrMatch || conMatch;
+    // ── 클라이언트 검색 필터 (등록건명 | 공사담당자 | 공사요청번호) ─────────────
+    // FEAT-196: 공사요청번호(request_no) 검색 대상 추가
+    var kwLower = activeSearchKw.toLowerCase();
+    var tasks = kwLower
+      ? tasksBeforeSearch.filter(function(t) {
+          var titleMatch = (t.title || '').toLowerCase().includes(kwLower);
+          var mgrMatch   = (t.con_manager_display_name || t.supervisor_name || '').toLowerCase().includes(kwLower);
+          var conMatch   = (t.construction_title || '').toLowerCase().includes(kwLower);
+          var reqMatch   = (t.request_no || '').toLowerCase().includes(kwLower);
+          return titleMatch || mgrMatch || conMatch || reqMatch;
         })
       : tasksBeforeSearch;
 
@@ -16333,18 +16342,19 @@ async function renderMyTasksPage(container) {
     container.innerHTML = `
     <div class="page-container">
 
-      <!-- ── 검색 바 ── -->
+      <!-- ── 검색 바 (BUG-196: oninput→Enter+버튼, FEAT-196: 공사요청번호 추가) ── -->
       <div class="mb-2" style="position:relative">
         <div style="display:flex;align-items:center;background:#fff;border:1.5px solid ${activeSearchKw ? '#D70072' : '#E5E7EB'};border-radius:14px;padding:0 12px;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,0.06);transition:border-color .2s">
           <i class="fas fa-search" style="color:${activeSearchKw ? '#D70072' : '#C6C6C6'};font-size:14px;flex-shrink:0"></i>
-          <input id="myTasksSearchInput" type="text" autocomplete="off" inputmode="text" placeholder="등록건명 또는 공사담당자 검색"
+          <input id="myTasksSearchInput" type="text" autocomplete="off" inputmode="text" placeholder="등록건명 / 공사담당자 / 공사요청번호"
             value="${activeSearchKw.replace(/"/g,'&quot;')}"
-            oninput="if(!_imeComposing)applyMyTasksSearch(this.value)"
+            onkeydown="if(event.key==='Enter'&&!_imeComposing){doMyTasksSearch();}"
             style="flex:1;border:none;outline:none;font-size:14px;padding:11px 0;background:transparent;color:#374151;min-width:0"
             autocomplete="off" autocorrect="off" spellcheck="false">
-          ${activeSearchKw ? `<button onclick="applyMyTasksSearch('');document.getElementById('myTasksSearchInput').value=''" style="background:none;border:none;padding:4px;cursor:pointer;color:#C6C6C6;font-size:16px;line-height:1;flex-shrink:0" aria-label="검색 초기화"><i class="fas fa-times-circle"></i></button>` : ''}
+          ${activeSearchKw ? '<button onclick="clearMyTasksSearch()" style="background:none;border:none;padding:4px;cursor:pointer;color:#C6C6C6;font-size:16px;line-height:1;flex-shrink:0" aria-label="검색 초기화"><i class="fas fa-times-circle"></i></button>' : ''}
+          <button onclick="doMyTasksSearch()" style="background:#D70072;color:#fff;border:none;border-radius:10px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0;white-space:nowrap">검색</button>
         </div>
-        ${activeSearchKw ? `<div style="margin-top:5px;padding:0 4px;font-size:12px;color:#D70072;font-weight:600"><i class="fas fa-filter mr-1"></i>"${activeSearchKw}" 검색 결과 ${tasks.length}건</div>` : ''}
+        ${activeSearchKw ? '<div style="margin-top:5px;padding:0 4px;font-size:12px;color:#D70072;font-weight:600"><i class="fas fa-filter mr-1"></i>&quot;' + activeSearchKw + '&quot; 검색 결과 ' + tasks.length + '건</div>' : ''}
       </div>
 
       <!-- ── 진행단계 필터 드롭다운 ── -->

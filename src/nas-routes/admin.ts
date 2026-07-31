@@ -694,6 +694,55 @@ function resolveNpmBin(): string {
   return 'npm'
 }
 
+// vite 실행 파일 경로 탐색 (BUG-VITE2: npm run build 대신 vite 직접 실행으로 PATH 문제 우회)
+// npm run build → shell 경유 → vite 못 찾음 / vite 직접 실행 → PATH 무관
+function resolveViteBin(cwd: string): string {
+  const candidates = [
+    `${cwd}/node_modules/.bin/vite`,
+    `${cwd}/node_modules/vite/bin/vite.js`,
+  ]
+  for (const c of candidates) {
+    if (existsSync(c)) return c
+  }
+  return ''
+}
+
+// Node 실행 파일 경로 탐색 (vite.js 직접 실행 시 필요)
+function resolveNodeBin(): string {
+  const candidates = [
+    process.env.NODE_EXEC,
+    '/volume1/@appstore/Node.js_v20/usr/local/bin/node',
+    '/volume1/@appstore/Node.js_v18/usr/local/bin/node',
+    '/usr/local/bin/node',
+    '/usr/bin/node',
+    'node',
+  ]
+  for (const c of candidates) {
+    if (c && (c === 'node' || existsSync(c))) return c
+  }
+  return 'node'
+}
+
+// 빌드 실행 헬퍼 — vite 직접 실행(최우선) / npm run build(폴백)
+async function runBuild(cwd: string, timeoutMs = 120000): Promise<{ code: number; stdout: string; stderr: string }> {
+  const viteBin = resolveViteBin(cwd)
+  if (viteBin) {
+    // vite 바이너리 직접 실행 — PATH 문제 완전 우회
+    if (viteBin.endsWith('.js')) {
+      const nodeBin = resolveNodeBin()
+      _addUpdateLog(`빌드: node ${viteBin} build`)
+      return runCmd(nodeBin, [viteBin, 'build'], cwd, timeoutMs)
+    } else {
+      _addUpdateLog(`빌드: ${viteBin} build`)
+      return runCmd(viteBin, ['build'], cwd, timeoutMs)
+    }
+  }
+  // 폴백: npm run build
+  const npmBin = resolveNpmBin()
+  _addUpdateLog(`빌드 폴백: ${npmBin} run build`)
+  return runCmd(npmBin, ['run', 'build'], cwd, timeoutMs)
+}
+
 // git remote URL 자동 교정 (BUG-061)
 // NAS의 .git/config 가 구버전 repo URL을 가리키는 경우 자동 수정
 const CORRECT_REMOTE_URL = 'https://github.com/gisubhan-droid/safetynote-server.git'
@@ -857,23 +906,20 @@ app.post('/update/apply', async (c) => {
       // KST 반영 시각 (UTC+9)
       _updateState.appliedAt = kstDateTimeStr(false)
 
-      // ── 3. npm run build (프론트엔드 dist 재빌드) ──────────────
+      // ── 3. 프론트엔드 dist 재빌드 ──────────────
       // BUG-049: git reset 후 빌드 없이 pm2 restart만 하면 dist/ 가 이전 버전 그대로 유지됨
+      // BUG-VITE2: npm run build → shell 경유 vite 탐색 실패 → runBuild()로 vite 직접 실행
       _updateState.status  = 'restarting'
       _updateState.message = '프론트엔드 빌드 중... (30초~1분 소요)'
-      _addUpdateLog('npm run build 시작...')
-
-      // NAS Node.js 경로 자동 탐색 (BUG-049)
-      const npmBin = resolveNpmBin()
-      _addUpdateLog(`npm 경로: ${npmBin}`)
-      const buildRes = await runCmd(npmBin, ['run', 'build'], cwd, 120000)
+      _addUpdateLog('빌드 시작...')
+      const buildRes = await runBuild(cwd, 120000)
       if (buildRes.code !== 0) {
-        _addUpdateLog(`npm run build 실패: ${buildRes.stderr.trim().slice(0, 200)}`)
+        _addUpdateLog(`빌드 실패: ${buildRes.stderr.trim().slice(0, 200)}`)
         _updateState.status  = 'error'
         _updateState.message = `빌드 실패: ${buildRes.stderr.trim().slice(0, 100)}`
         return
       }
-      _addUpdateLog(`npm run build 완료 ✅`)
+      _addUpdateLog(`빌드 완료 ✅`)
 
       // ── 4. pm2 restart ─────────────────────────────────────
       _updateState.message = '서버 재시작 중... 잠시 후 페이지를 새로고침하세요'
@@ -1039,20 +1085,18 @@ app.post('/update/rollback', async (c) => {
       _updateState.updatedAt = new Date().toISOString()
       _updateState.appliedAt = kstDateTimeStr(false)
 
-      // ── 3. npm run build ──────────────────────────────────────
+      // ── 3. 프론트엔드 dist 재빌드 ────────────────────────────────
       _updateState.status  = 'restarting'
       _updateState.message = '프론트엔드 빌드 중... (30초~1분 소요)'
-      _addUpdateLog('npm run build 시작...')
-
-      const npmBin = resolveNpmBin()
-      const buildRes = await runCmd(npmBin, ['run', 'build'], cwd, 120000)
+      _addUpdateLog('빌드 시작...')
+      const buildRes = await runBuild(cwd, 120000)
       if (buildRes.code !== 0) {
-        _addUpdateLog(`npm run build 실패: ${buildRes.stderr.trim().slice(0, 200)}`)
+        _addUpdateLog(`빌드 실패: ${buildRes.stderr.trim().slice(0, 200)}`)
         _updateState.status  = 'error'
         _updateState.message = `빌드 실패: ${buildRes.stderr.trim().slice(0, 100)}`
         return
       }
-      _addUpdateLog('npm run build 완료 ✅')
+      _addUpdateLog('빌드 완료 ✅')
 
       // ── 4. pm2 restart ────────────────────────────────────────
       _updateState.message = '서버 재시작 중... 잠시 후 페이지를 새로고침하세요'
@@ -1232,18 +1276,18 @@ app.post('/update/webhook', async (c) => {
       _updateState.updatedAt = new Date().toISOString()
       _updateState.appliedAt = kstDateTimeStr(false)
 
-      // ── 3. npm run build ─────────────────────────────────────────
+      // ── 3. 프론트엔드 dist 재빌드 ───────────────────────────────────
       _updateState.status  = 'restarting'
-      _updateState.message = 'npm run build 실행 중...'
-      _addUpdateLog('npm run build 시작...')
-      const buildRes = await runCmd('npm', ['run', 'build'], cwd, 120000)
+      _updateState.message = '프론트엔드 빌드 중...'
+      _addUpdateLog('빌드 시작...')
+      const buildRes = await runBuild(cwd, 120000)
       if (buildRes.code !== 0) {
-        _addUpdateLog(`npm run build 실패: ${buildRes.stderr.trim()}`)
+        _addUpdateLog(`빌드 실패: ${buildRes.stderr.trim()}`)
         _updateState.status  = 'error'
         _updateState.message = `빌드 실패: ${buildRes.stderr.trim().slice(0, 100)}`
         return
       }
-      _addUpdateLog('npm run build 완료 ✅')
+      _addUpdateLog('빌드 완료 ✅')
 
       // ── 4. pm2 restart ───────────────────────────────────────────
       _updateState.message = '서버 재시작 중...'

@@ -23292,6 +23292,28 @@ async function renderAdminSettingsPage(container, _activeTab) {
               </button>
             </div>
 
+            <!-- 강제 전송 카드 -->
+            <div id="relay-force-card" class="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-xl">
+              <p class="text-xs font-semibold text-orange-700 mb-1 flex items-center gap-1">
+                <i class="fas fa-paper-plane"></i> 현재 APK 강제 전송
+                <span class="text-xs font-normal text-gray-400 ml-1">— 등록된 모든 활성 슬레이브에 즉시 전송</span>
+              </p>
+              <div class="flex items-center gap-3 flex-wrap">
+                <div id="relay-force-info" class="text-xs text-gray-500 flex-1">
+                  <i class="fas fa-spinner fa-spin text-gray-300"></i> APK 정보 확인 중...
+                </div>
+                <button onclick="_forceRelayApk()" id="relay-force-btn"
+                  class="flex-shrink-0 flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all"
+                  style="background:linear-gradient(135deg,#ea580c,#dc2626)">
+                  <i class="fas fa-paper-plane"></i> 강제 전송
+                </button>
+              </div>
+              <p class="text-xs text-gray-400 mt-2">
+                <i class="fas fa-info-circle mr-1"></i>
+                전송 후 약 30초~수 분 뒤 아래 목록의 <strong>[마지막 결과]</strong>를 확인하세요. (전송은 백그라운드에서 진행됩니다)
+              </p>
+            </div>
+
             <!-- 슬레이브 목록 테이블 -->
             <div id="relay-targets-table" class="overflow-x-auto">
               <div class="flex items-center gap-2 text-xs text-gray-400 py-3">
@@ -24936,8 +24958,9 @@ async function _loadRelayTargets() {
   const container = document.getElementById('relay-targets-table');
   if (!container) return;
 
-  // 배치 설정도 함께 로드
+  // 배치 설정 + 강제전송 카드 정보도 함께 로드
   _loadRelaySettings();
+  _loadRelayForceInfo();
 
   try {
     const res = await API.get('/dist/apk/relay/targets');
@@ -25124,6 +25147,71 @@ async function _toggleRelayTarget(id) {
     await _loadRelayTargets();
   } catch(e) {
     toast(e.response?.data?.error || '상태 변경 실패', 'error');
+  }
+}
+
+/**
+ * 강제전송 카드 APK 정보 업데이트
+ * _loadRelayTargets() 호출 시 함께 실행 — 현재 APK 버전·슬레이브 수 표시
+ */
+async function _loadRelayForceInfo() {
+  const infoEl = document.getElementById('relay-force-info');
+  if (!infoEl) return;
+  try {
+    const [apkRes, targetsRes] = await Promise.all([
+      API.get('/dist/apk/version'),
+      API.get('/dist/apk/relay/targets'),
+    ]);
+    const apk     = apkRes.data;
+    const targets = targetsRes.data && targetsRes.data.targets ? targetsRes.data.targets : [];
+    const activeCount = targets.filter(function(t) { return t.active; }).length;
+
+    if (!apk || !apk.available || !apk.version) {
+      infoEl.innerHTML = '<span class="text-orange-400"><i class="fas fa-exclamation-triangle mr-1"></i>APK 미설정 — 먼저 APK를 업로드하세요.</span>';
+      var btn = document.getElementById('relay-force-btn');
+      if (btn) btn.disabled = true;
+      return;
+    }
+    if (activeCount === 0) {
+      infoEl.innerHTML = '<span class="text-gray-400"><i class="fas fa-info-circle mr-1"></i>활성 슬레이브 없음 — 슬레이브를 먼저 등록·활성화하세요.</span>';
+      var btn2 = document.getElementById('relay-force-btn');
+      if (btn2) btn2.disabled = true;
+      return;
+    }
+    infoEl.innerHTML =
+      '<span class="font-mono text-orange-700">v' + (apk.version || '?') + '</span>' +
+      '<span class="text-gray-400 mx-1">·</span>' +
+      '<span class="text-purple-600">' + activeCount + '대 슬레이브에 전송 예정</span>';
+    var btn3 = document.getElementById('relay-force-btn');
+    if (btn3) btn3.disabled = false;
+  } catch(e) {
+    infoEl.innerHTML = '<span class="text-red-400 text-xs"><i class="fas fa-exclamation-circle mr-1"></i>APK 정보 조회 실패</span>';
+  }
+}
+
+/**
+ * 강제 전송 실행
+ * POST /api/dist/apk/relay/force → 슬레이브 전체에 현재 APK 즉시 전달
+ */
+async function _forceRelayApk() {
+  const btn = document.getElementById('relay-force-btn');
+  const infoEl = document.getElementById('relay-force-info');
+  const infoText = infoEl ? infoEl.textContent : '';
+
+  if (!confirm('현재 APK를 모든 활성 슬레이브 NAS에 강제 전송하시겠습니까?\n\n' + infoText + '\n\n전송은 백그라운드에서 진행되며, 완료 후 아래 목록에서 결과를 확인할 수 있습니다.')) return;
+
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 전송 중...'; }
+  try {
+    const res = await API.post('/dist/apk/relay/force');
+    const data = res.data;
+    toast(data.message || ('v' + (data.version || '?') + ' 강제 전송 시작 — ' + (data.queued || 0) + '대 슬레이브'), 'success');
+    // 5초 후 목록 갱신 (전송 결과 반영 시간 확보)
+    setTimeout(function() { _loadRelayTargets(); }, 5000);
+  } catch(e) {
+    const errMsg = (e.response && e.response.data && e.response.data.error) ? e.response.data.error : (e.message || '강제 전송 실패');
+    toast(errMsg, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i> 강제 전송'; }
   }
 }
 

@@ -520,4 +520,68 @@ app.patch('/apk/relay/settings', async (c) => {
   }
 })
 
+// ─── POST /apk/relay/force ───────────────────────────────────────────────────
+// 현재 APK 설정(system_settings)을 그대로 사용해 모든 활성 슬레이브에 강제 전송 (관리자 전용)
+// 응답: { success, version, queued, message }
+// 실제 전송은 relayApkToSlaves() 비동기 fire-and-forget — 응답 후 백그라운드 실행
+app.post('/apk/relay/force', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+  if (user.role !== 'admin') return c.json({ error: '관리자 권한 필요' }, 403)
+
+  const rawDb = getRawDb()
+
+  // 현재 APK 설정 조회
+  const version     = getSetting('apk_version')     || ''
+  const apkUrl      = getSetting('apk_url')          || ''
+  const releaseNote = getSetting('apk_release_note') || ''
+  const forceUpdate = getSetting('apk_force_update') || '0'
+
+  if (!apkUrl) {
+    return c.json({ error: 'APK가 설정되지 않았습니다. 먼저 APK를 업로드하거나 URL을 입력하세요.' }, 400)
+  }
+  if (!version) {
+    return c.json({ error: 'APK 버전이 설정되지 않았습니다.' }, 400)
+  }
+
+  // 활성 슬레이브 수 확인
+  let activeCount = 0
+  try {
+    const row = rawDb
+      .prepare(`SELECT COUNT(*) as cnt FROM apk_relay_targets WHERE active = 1`)
+      .get() as { cnt: number }
+    activeCount = row?.cnt ?? 0
+  } catch (e: any) {
+    console.error('[APK Force Relay] 슬레이브 수 조회 실패:', e.message)
+    return c.json({ error: '슬레이브 목록 조회 실패', detail: e.message }, 500)
+  }
+
+  if (activeCount === 0) {
+    return c.json({ error: '활성화된 슬레이브 NAS가 없습니다. 슬레이브를 먼저 등록하고 활성화하세요.' }, 400)
+  }
+
+  // DEPLOY_WEBHOOK_SECRET 확인
+  const secret = process.env.DEPLOY_WEBHOOK_SECRET || ''
+  if (!secret) {
+    return c.json({ error: 'DEPLOY_WEBHOOK_SECRET이 설정되지 않아 릴레이할 수 없습니다.' }, 503)
+  }
+
+  console.log(`[APK Force Relay] 관리자 수동 강제전송 시작 — v${version} → 슬레이브 ${activeCount}대`)
+
+  // 비동기 fire-and-forget — 메인 응답에 영향 없음
+  relayApkToSlaves({
+    version,
+    apk_url:      apkUrl,
+    release_note: releaseNote,
+    force_update: forceUpdate,
+  }).catch((e: any) => console.error('[APK Force Relay] 예기치 못한 오류:', e.message))
+
+  return c.json({
+    success: true,
+    version,
+    queued:  activeCount,
+    message: `v${version} APK 강제 전송을 시작했습니다. 슬레이브 ${activeCount}대에 순차 전송 중입니다. 잠시 후 아래 목록의 [마지막 결과]를 확인하세요.`,
+  })
+})
+
 export default app

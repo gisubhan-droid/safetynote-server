@@ -2,6 +2,29 @@
 
 ---
 
+## [BUG-VITE2] 빌드 실패 근본 해결 — vite 직접 실행 (세션 125, 링크맥스 NAS)
+
+### 현상 (2차)
+- BUG-VITE(PATH 추가)로 수정했으나 여전히 `sh: vite: command not found` 발생
+- 로그: `npm 경로: /usr/local/bin/npm` → `npm run build 실패: sh: vite: command not found`
+
+### 원인 (2차)
+- `npm run build`는 내부적으로 shell을 경유해 `vite`를 탐색함
+- Synology 기본 npm(`/usr/local/bin/npm`)이 script 실행 시 자체 PATH로 덮어써서 `node_modules/.bin`을 잃어버림
+- PATH에 `node_modules/.bin`을 추가해도 npm 내부 shell이 재설정하므로 효과 없음
+
+### 수정 내용 (2차)
+- `resolveViteBin(cwd)` 함수 신규 추가 — `node_modules/.bin/vite` 또는 `node_modules/vite/bin/vite.js` 경로 탐색
+- `resolveNodeBin()` 함수 신규 추가 — vite.js 직접 실행 시 node 경로 탐색
+- `runBuild(cwd)` 헬퍼 신규 추가:
+  1. `node_modules/.bin/vite build` 직접 실행 (최우선 — PATH 문제 완전 우회)
+  2. `node node_modules/vite/bin/vite.js build` (폴백)
+  3. `npm run build` (최종 폴백)
+- 빌드 실행 3곳(line 869, 1094, 1283) 모두 `runBuild(cwd)` 호출로 교체
+- 커밋: `3a2c87a`
+
+---
+
 ## [BUG-VITE] 서버 업데이트 빌드 실패 — sh: vite: command not found (세션 125, 링크맥스 NAS)
 
 ### 현상

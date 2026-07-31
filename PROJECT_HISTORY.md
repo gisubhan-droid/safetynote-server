@@ -22,7 +22,8 @@
 ---
 
 > 최종 업데이트: 2026-07-31 (세션 125 — BUG-VITE: 서버 업데이트 빌드 실패 수정 + BUG-196+FEAT-196: 내 작업목록 검색 Android IME 한글 버그 수정 + 검색 버튼 방식 전환 + 공사요청번호 검색 추가)
-> **GitHub 최신 (safetynote-server): `35bc9ba`** — fix: [BUG-VITE] 서버 업데이트 빌드 실패 수정 — runCmd PATH에 node_modules/.bin + Node.js_v20 경로 추가 (sh: vite: command not found)
+> **GitHub 최신 (safetynote-server): `3a2c87a`** — fix: [BUG-VITE2] 빌드 실패 근본 해결 — npm run build 대신 node_modules/.bin/vite 직접 실행 (runBuild 헬퍼 도입)
+> **이전 커밋 (safetynote-server): `35bc9ba`** — fix: [BUG-VITE] 서버 업데이트 빌드 실패 수정 — runCmd PATH에 node_modules/.bin + Node.js_v20 경로 추가 (sh: vite: command not found)
 > **이전 커밋 (safetynote-server): `aebb7e0`** — fix+feat: [BUG-196+FEAT-196] 내 작업목록 검색 Android IME 한글 버그 수정 + 검색버튼 방식 전환 + 공사요청번호 검색 추가
 > **이전 커밋 (safetynote-server): `c36ec25`** — docs: [NAS구분] NAS001 LinkMax 기준 명시 + 신규 NAS 구분 구조 정립
 > **이전 커밋 (safetynote-server): `bedd988`** — feat: [FEAT-195] 외선작업일보 케이블정보 모바일 세로 카드 레이아웃(방안 C) 적용

@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-07-31 (세션 126 — FEAT-200: APK 강제 전송 기능 추가 — 설정 > APK 탭 > 슬레이브 NAS 자동 릴레이 섹션)
-> **GitHub 최신 (safetynote-server): `742a0bb`** — feat: [FEAT-200] APK 강제 전송 기능 추가 (POST /api/dist/apk/relay/force + UI 카드)
+> 최종 업데이트: 2026-07-31 (세션 126 — BUG-ROLLUP: 서버 업데이트/롤백 빌드 실패 완전 해결 — npm install + bs3 바이너리 교체 자동화)
+> **GitHub 최신 (safetynote-server): `9d91630`** — fix: [BUG-ROLLUP] 서버 업데이트/롤백 시 빌드 실패 완전 해결 — npm install + bs3 바이너리 교체 자동화
+> **이전 커밋 (safetynote-server): `5c72624`** — docs: [FEAT-200] PROJECT_HISTORY + BUGFIX_LOG 세션 126 기록 추가
+> **이전 커밋 (safetynote-server): `742a0bb`** — feat: [FEAT-200] APK 강제 전송 기능 추가 (POST /api/dist/apk/relay/force + UI 카드)
 > **이전 커밋 (safetynote-server): `3a2c87a`** — fix: [BUG-VITE2] 빌드 실패 근본 해결 — npm run build 대신 node_modules/.bin/vite 직접 실행 (runBuild 헬퍼 도입)
 > **이전 커밋 (safetynote-server): `35bc9ba`** — fix: [BUG-VITE] 서버 업데이트 빌드 실패 수정 — runCmd PATH에 node_modules/.bin + Node.js_v20 경로 추가 (sh: vite: command not found)
 > **이전 커밋 (safetynote-server): `aebb7e0`** — fix+feat: [BUG-196+FEAT-196] 내 작업목록 검색 Android IME 한글 버그 수정 + 검색버튼 방식 전환 + 공사요청번호 검색 추가

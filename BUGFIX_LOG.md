@@ -2,6 +2,57 @@
 
 ---
 
+## [BUG-ROLLUP] 서버 업데이트/롤백 시 빌드 실패 완전 해결 — npm install + bs3 바이너리 교체 자동화 (세션 126)
+
+> **대상 NAS**: 전체 (NAS001 NAS002 포함 — glibc 버전 자동 감지로 환경 구분)
+
+### 현상
+- NAS002 최초 업데이트 적용 시 빌드 실패
+- 에러: `/volume1/safetynote/node_modules/rollup/dist/native.js:121 Error: Cannot find module @rollup/rollup-linux-x64-gnu`
+- `npm has a bug related to optional dependencies`
+
+### 원인
+| 단계 | 내용 |
+|---|---|
+| `git reset --hard` | node_modules를 건드리지 않음 |
+| optional 바이너리 | `@rollup/rollup-linux-x64-gnu` — npm의 optional deps 불완전 설치 버그로 누락 가능 |
+| install.sh | 최초 설치 시 완전 설치됨 — git reset 후 재현 |
+| npm install 미실행 | 업데이트 흐름이 git reset → 빌드만 수행 — optional 복구 없음 |
+
+### 해결 (`src/nas-routes/admin.ts`)
+
+**추가된 함수:**
+
+`runNpmInstall(cwd)`:
+- `npm install --ignore-scripts` 실행
+- `--ignore-scripts`: better-sqlite3 rebuild 방지 (bs3 바이너리는 fixBs3Binary가 담당)
+- 실패해도 경고만 → 빌드 진행 차단 안 함
+
+`fixBs3Binary(cwd)`:
+- `ldd --version`으로 glibc 버전 자동 감지
+- glibc < 2.29: v8.0.0 node-v108 바이너리 wget → 교체
+- glibc ≥ 2.29: 스킵 (NAS001 등 정상 환경 영향 없음)
+- 실패해도 경고만 → 차단 안 함
+
+**업데이트 흐름 변경:**
+```
+Before: git reset → 빌드 → pm2 restart
+After:  git reset → npm install → bs3 교체 → 빌드 → pm2 restart
+```
+
+**적용 위치:**
+- `POST /update/apply` (업데이트) — line 975
+- `POST /update/rollback` (롤백) — line 1163 (동일 패턴 적용)
+
+### 커밋
+- `9d91630` — fix: [BUG-ROLLUP] 서버 업데이트/롤백 시 빌드 실패 완전 해결
+
+### 검증
+- ✅ `npm run build` 성공 (298.71 kB)
+- ✅ GitHub push 완료
+
+---
+
 ## [FEAT-200] APK 강제 전송 기능 추가 — 설정 > APK 탭 > 슬레이브 NAS 릴레이 섹션 (세션 126)
 
 > **대상 NAS**: NAS001 LinkMax 본사 (마스터) → NAS002 삼흥 본사 (슬레이브) 수동 전송 필요에서 출발

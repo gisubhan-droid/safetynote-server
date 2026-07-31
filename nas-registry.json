@@ -33,10 +33,21 @@
       "app_version": "v2.0.0+",
       "contact": "링크맥스 담당자",
       "note": "최초 설치 고객사. 세션 1(2026-06-10)부터 모든 개발·테스트 기준 NAS. Node.js v18, PORT=3443, DB=/volume1/safetynote/data/safety.db"
+    },
+    {
+      "id": "NAS002",
+      "name": "삼흥 본사",
+      "url": "https://shamhung.synology.me:3443",
+      "active": true,
+      "install_date": "2026-07-31",
+      "app_version": "v2.0.0+",
+      "contact": "삼흥 담당자",
+      "note": "2번째 설치 고객사. install.sh v2.4 적용. Node.js v18, glibc 2.26, PORT=3443, DB=/volume1/safetynote/safety.db, 호스트명=sh_sever"
     }
   ],
   "_history": [
     "2026-06-10  NAS001 LinkMax 본사 최초 설치 (세션 1)",
-    "2026-07-31  NAS001 운영 정보 상세화 + 신규 NAS 추가 구조 설계"
+    "2026-07-31  NAS001 운영 정보 상세화 + 신규 NAS 추가 구조 설계",
+    "2026-07-31  NAS002 삼흥 본사 추가 (shamhung.synology.me:3443, install.sh v2.4)"
   ]
 }

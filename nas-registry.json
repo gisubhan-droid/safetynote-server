@@ -1,20 +1,42 @@
 {
   "_comment": [
     "SafetyNOTE NAS 배포 대상 목록",
-    "새 NAS 추가: nas_list 배열에 항목 추가 후 git push",
+    "새 NAS 추가: nas_list 배열에 항목 추가 후 git push → GitHub Actions 자동 배포",
     "active: false 로 설정하면 해당 NAS 전송 skip",
     "batch_size: 한 번에 전송할 NAS 수 (권장 10, 최대 20)",
-    "batch_delay_sec: 배치 간 대기 시간(초) (권장 5~10)"
+    "batch_delay_sec: 배치 간 대기 시간(초) (권장 5~10)",
+    "",
+    "⚠️  NAS별 독립 설정 필수 항목: PORT / JWT_SECRET / RECOVERY_PASSWORD",
+    "    (JWT_SECRET 은 install.sh 실행 시 자동 생성 — NAS마다 다름)",
+    "",
+    "신규 NAS 추가 템플릿:",
+    "  {",
+    "    \"id\": \"NAS002\",",
+    "    \"name\": \"고객사명 본사\",",
+    "    \"url\": \"https://도메인:포트\",",
+    "    \"active\": true,",
+    "    \"install_date\": \"YYYY-MM-DD\",",
+    "    \"app_version\": \"현재 배포 버전\",",
+    "    \"contact\": \"담당자명\",",
+    "    \"note\": \"특이사항 (예: 포트 변경, v20 Node.js 등)\"",
+    "  }"
   ],
   "batch_size": 10,
   "batch_delay_sec": 5,
   "nas_list": [
     {
       "id": "NAS001",
-      "name": "LinkMak 본사",
+      "name": "LinkMax 본사",
       "url": "https://linkmax.myds.me:3443",
-      "active": true
+      "active": true,
+      "install_date": "2026-06-10",
+      "app_version": "v2.0.0+",
+      "contact": "링크맥스 담당자",
+      "note": "최초 설치 고객사. 세션 1(2026-06-10)부터 모든 개발·테스트 기준 NAS. Node.js v18, PORT=3443, DB=/volume1/safetynote/data/safety.db"
     }
   ],
-  "_test": "GitHub Actions 배치 전송 테스트 - 2026-07-26 03:04:49"
+  "_history": [
+    "2026-06-10  NAS001 LinkMax 본사 최초 설치 (세션 1)",
+    "2026-07-31  NAS001 운영 정보 상세화 + 신규 NAS 추가 구조 설계"
+  ]
 }

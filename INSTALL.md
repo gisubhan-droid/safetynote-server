@@ -461,7 +461,22 @@ pm2 start safety-management
 
 ## 13. 다중 NAS 운영 체크리스트
 
-> 2대 이상의 NAS에 동시 설치 시 반드시 확인할 항목.
+> 2대 이상의 NAS에 동시 설치 시 반드시 확인할 항목.  
+> 전체 NAS 운영 현황은 **`NAS_OPERATIONS.md`** 를 마스터 문서로 관리합니다.
+
+---
+
+### 🏢 현재 운영 중인 NAS 목록
+
+| NAS ID | 고객사 | URL | 설치일 | 비고 |
+|--------|--------|-----|--------|------|
+| **NAS001** | **LinkMax 본사** | https://linkmax.myds.me:3443 | 2026-06-10 | **최초 설치** — 개발/테스트 기준 환경 |
+| NAS002 | *(신규 추가 시 기입)* | — | — | `nas-registry.json` 에 항목 추가 필요 |
+
+> 📋 **NAS 추가 절차**: `nas-registry.json` 항목 추가 → git push → GitHub Actions 자동 배포  
+> 📄 **운영 이력 기록**: 신규 NAS 관련 이력은 `NAS_OPERATIONS.md` 에 별도 기록 (PROJECT_HISTORY.md 와 혼용 금지)
+
+---
 
 ### 📋 NAS별 독립 설정 체크리스트
 
@@ -470,14 +485,19 @@ pm2 start safety-management
 cat /volume1/safetynote/.env
 ```
 
-| 항목 | NAS-A (예시) | NAS-B (예시) | 비고 |
-|------|------------|------------|------|
-| `PORT` | `3443` | `3443` | 공유기 포트포워딩 각자 독립 |
-| `DB_PATH` | `/volume1/safetynote/safety.db` | `/volume1/safetynote/safety.db` | NAS마다 별도 파일 |
+| 항목 | NAS001 LinkMax 본사 (실제 운영) | 신규 NAS (추가 시) | 비고 |
+|------|-------------------------------|-------------------|------|
+| `PORT` | `3443` | 각자 독립 설정 | 공유기 포트포워딩 각자 독립 |
+| `DB_PATH` | `/volume1/safetynote/data/safety.db` | `/volume1/safetynote/safety.db` | NAS마다 별도 파일 |
 | `UPLOAD_PATH` | `/volume1/safetynote/public/uploads` | `/volume1/safetynote/public/uploads` | NAS마다 별도 |
-| `JWT_SECRET` | `auto-generated-32chars-A` | `auto-generated-32chars-B` | **⚠️ 반드시 달라야 함** |
-| `RECOVERY_PASSWORD` | 변경 권장 | 변경 권장 | **⚠️ 보안상 변경 필수** |
-| `DEPLOY_WEBHOOK_SECRET` | 각자 설정 | 각자 설정 | 선택사항 |
+| `JWT_SECRET` | `auto-generated-32chars` (설치 시 자동 생성) | 설치 시 자동 생성 | **⚠️ 반드시 NAS마다 달라야 함** |
+| `RECOVERY_PASSWORD` | 변경 권장 | **반드시 변경** | **⚠️ 보안상 변경 필수** |
+| `DEPLOY_WEBHOOK_SECRET` | `safetynote-nas-2026` | 각자 설정 | 선택사항 |
+
+> ⚠️ **NAS001 특이사항**: DB 파일이 심볼릭 링크 구조  
+> `/volume1/safetynote/safety.db` → 심볼릭 링크  
+> `/volume1/safetynote/data/safety.db` → 실제 운영 DB (6.8MB↑)  
+> `.env`에 `DB_PATH=/volume1/safetynote/data/safety.db` 반드시 설정
 
 ### 🔧 PM2 등록 방법 (NAS별 실행 — ecosystem.config.cjs 방식은 hang 발생)
 
@@ -567,5 +587,6 @@ sleep 5 && pm2 logs safetynote --nostream --lines 10
 
 ---
 
-*SafetyNOTE v1.0 — 현장 안전관리 시스템*  
-*최종 점검: 2026-07-22 | 다중 NAS 설치 검증 완료*
+*SafetyNOTE v2.0+ — 현장 안전관리 시스템*  
+*최종 점검: 2026-07-31 | NAS001 LinkMax 본사 실제 운영 정보 반영 + 신규 NAS 구분 구조 추가*  
+*전체 NAS 운영 현황 → `NAS_OPERATIONS.md` 참조*

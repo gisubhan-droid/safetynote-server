@@ -1,5 +1,26 @@
 # Safety NOTE - 프로젝트 전체 진행 이력
 
+---
+
+## 📌 이 문서의 NAS 기준 안내
+
+> **이 이력 전체(세션 1 ~ 현재)는 NAS001 LinkMax 본사 기준으로 작성되었습니다.**
+
+| 항목 | 내용 |
+|------|------|
+| **기준 NAS** | NAS001 — LinkMax 본사 |
+| **URL** | https://linkmax.myds.me:3443 |
+| **최초 설치일** | 2026-06-10 (세션 1) |
+| **역할** | 최초 설치 고객사 / 모든 개발·테스트·버그픽스의 기준 환경 |
+| **레지스트리** | `nas-registry.json` → NAS001 항목 참조 |
+
+> ⚠️ **신규 NAS 추가 시 주의사항**
+> - 신규 NAS 설치 이력은 이 문서와 **별도 파일**로 관리하거나, 별도 섹션을 만들어 혼용을 방지하세요.
+> - 신규 NAS 추가 절차: `nas-registry.json`에 항목 추가 → `NAS_OPERATIONS.md` 운영 현황 업데이트 → `INSTALL.md` 13장 체크리스트 참조.
+> - NAS별 독립 설정 필수: `PORT` / `JWT_SECRET` / `RECOVERY_PASSWORD` (상세: `INSTALL.md` 상단 표 참조)
+
+---
+
 > 최종 업데이트: 2026-07-30 (세션 123 — FEAT-COL-PERSIST: 공사현황/작업관리 컬럼 너비 영구 저장 + 외선/접속공량 헤더 정렬/너비 개선)
 > **GitHub 최신 (safetynote-server): `(이번 세션)`** — feat: [FEAT-COL-PERSIST] 공사현황/작업관리 컬럼 너비 localStorage 영구 저장
 > **이전 커밋 (safetynote-server): `5b9de43`** — feat: [FEAT-MENU-RENAME] 공사현황 메뉴 이동 및 명칭 변경 (공사내역)

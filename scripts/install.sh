@@ -28,6 +28,10 @@
 # =============================================================================
 
 set -e
+# install.sh 버전: v2.4 (2025-07-31)
+# 변경 이력:
+#   v2.4 — better-sqlite3 GLIBC 호환 바이너리 자동 교체 + DB 초기화 스크립트 자동 실행 통합
+#          (NAS001/NAS002에서 발견된 patchSchema 미동작 문제 예방)
 
 # ─── 색상 정의 ───────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -75,7 +79,7 @@ step()    { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 # ─── 배너 ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║   SafetyNOTE NAS 설치 스크립트  v2.3        ║${NC}"
+echo -e "${CYAN}║   SafetyNOTE NAS 설치 스크립트  v2.4        ║${NC}"
 echo -e "${CYAN}║   $(date '+%Y-%m-%d %H:%M:%S')                         ║${NC}"
 printf  "${CYAN}║   설치 볼륨 : %-30s${CYAN}║${NC}\n" "/${VOLUME}  (자동 감지)"
 echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
@@ -86,11 +90,13 @@ echo ""
 # =============================================================================
 info "Node.js 탐색 순서: v18 → v20 → v22 → 시스템 node"
 info "권장: DSM 패키지 센터 → Node.js v18 (안정적)"
+info "설치 단계: 총 11단계 (Step 7·9 서브 포함)"
+info "v2.4 신규: better-sqlite3 GLIBC 호환 바이너리 자동 교체 + DB 핵심 테이블 자동 초기화"
 
 # =============================================================================
 # Step 1: Node.js 탐지
 # =============================================================================
-step "Step 1/8: Node.js 탐지"
+step "Step 1/10: Node.js 탐지"
 
 detect_node() {
   # v18 우선 → v20 → v22 → 시스템 node 순서로 탐색
@@ -129,7 +135,7 @@ fi
 # =============================================================================
 # Step 2: Git 확인
 # =============================================================================
-step "Step 2/8: Git 확인"
+step "Step 2/10: Git 확인"
 
 if ! command -v git &>/dev/null; then
   err "Git이 설치되어 있지 않습니다.
@@ -143,7 +149,7 @@ ok "$GIT_VER"
 # =============================================================================
 # Step 3: PM2 확인 / 설치
 # =============================================================================
-step "Step 3/8: PM2 확인 / 설치"
+step "Step 3/10: PM2 확인 / 설치"
 
 if ! command -v pm2 &>/dev/null; then
   info "PM2 설치 중..."
@@ -162,7 +168,7 @@ fi
 # =============================================================================
 # Step 4: 기존 설치 확인 + DB 백업
 # =============================================================================
-step "Step 4/8: 설치 경로 확인"
+step "Step 4/10: 설치 경로 확인"
 
 if [ -d "$INSTALL_DIR" ]; then
   warn "$INSTALL_DIR 가 이미 존재합니다."
@@ -209,7 +215,7 @@ fi
 # =============================================================================
 # Step 5: 코드 다운로드 / 업데이트
 # =============================================================================
-step "Step 5/8: 코드 다운로드"
+step "Step 5/10: 코드 다운로드"
 
 if [ "$INSTALL_MODE" = "update" ] && [ -d "$INSTALL_DIR/.git" ]; then
   cd "$INSTALL_DIR"
@@ -249,7 +255,7 @@ ok "폴더 구조 확인 완료"
 # =============================================================================
 # Step 6: npm 패키지 설치
 # =============================================================================
-step "Step 6/8: npm 패키지 설치"
+step "Step 6/10: npm 패키지 설치"
 
 if [ "$INSTALL_MODE" = "update" ] && [ -d "node_modules" ]; then
   info "node_modules 존재 — 업데이트 확인 중..."
@@ -269,9 +275,74 @@ fi
 ok "tsx 확인: $TSX_EXEC"
 
 # =============================================================================
+# Step 6b: better-sqlite3 GLIBC 호환 바이너리 교체
+# =============================================================================
+# 배경: Synology NAS 구형 glibc(2.26~2.28) 환경에서 npm install이 설치하는
+#   better-sqlite3 v9.x prebuilt 바이너리는 GLIBC_2.29 심볼을 사용하므로
+#   서버 구동 시 "GLIBC_2.29 not found" 오류로 DB 전체 불능 상태가 됩니다.
+#   v8.0.0 node-v108 바이너리는 GLIBC_2.14 이하만 사용 → 구형 NAS 완전 호환.
+step "Step 7/10: better-sqlite3 GLIBC 호환 바이너리 교체"
+
+SQLITE3_BINARY="$INSTALL_DIR/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+SQLITE3_URL="https://github.com/WiseLibs/better-sqlite3/releases/download/v8.0.0/better-sqlite3-v8.0.0-node-v108-linux-x64.tar.gz"
+SQLITE3_TMP_TAR="/tmp/bs3_install_v800.tar.gz"
+SQLITE3_TMP_DIR="/tmp/bs3_install_v800_dir"
+
+# NAS glibc 버전 확인
+GLIBC_VER=""
+if command -v ldd &>/dev/null; then
+  GLIBC_VER=$(ldd --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1 || true)
+fi
+
+# glibc 2.29 미만이거나 판별 불가 시 교체 실행
+NEEDS_FIX=false
+if [ -z "$GLIBC_VER" ]; then
+  warn "glibc 버전 판별 불가 — 안전을 위해 호환 바이너리로 교체합니다"
+  NEEDS_FIX=true
+else
+  # 버전 비교: major.minor → major*1000+minor 숫자 비교
+  GLIBC_MAJOR=$(echo "$GLIBC_VER" | cut -d. -f1)
+  GLIBC_MINOR=$(echo "$GLIBC_VER" | cut -d. -f2)
+  GLIBC_NUM=$((GLIBC_MAJOR * 1000 + GLIBC_MINOR))
+  if [ "$GLIBC_NUM" -lt 2029 ]; then
+    info "glibc ${GLIBC_VER} 감지 (< 2.29) — 호환 바이너리로 교체합니다"
+    NEEDS_FIX=true
+  else
+    ok "glibc ${GLIBC_VER} (≥ 2.29) — 기본 바이너리 사용 가능"
+  fi
+fi
+
+if $NEEDS_FIX; then
+  if [ ! -d "$(dirname "$SQLITE3_BINARY")" ]; then
+    warn "better-sqlite3 build 디렉토리 없음 — npm install이 완료됐는지 확인 필요"
+  else
+    info "v8.0.0 node-v108 바이너리 다운로드 중..."
+    if wget -q "$SQLITE3_URL" -O "$SQLITE3_TMP_TAR" 2>/dev/null; then
+      rm -rf "$SQLITE3_TMP_DIR"
+      mkdir -p "$SQLITE3_TMP_DIR"
+      tar -xzf "$SQLITE3_TMP_TAR" -C "$SQLITE3_TMP_DIR"
+      if [ -f "${SQLITE3_TMP_DIR}/build/Release/better_sqlite3.node" ]; then
+        # 기존 바이너리 백업
+        [ -f "$SQLITE3_BINARY" ] && cp "$SQLITE3_BINARY" "${SQLITE3_BINARY}.orig_$(date +%Y%m%d%H%M%S)"
+        cp "${SQLITE3_TMP_DIR}/build/Release/better_sqlite3.node" "$SQLITE3_BINARY"
+        chmod 755 "$SQLITE3_BINARY"
+        ok "better-sqlite3 v8.0.0 바이너리 교체 완료 (GLIBC_2.14 호환)"
+      else
+        warn "바이너리 추출 실패 — 서버 시작 후 오류 발생 시 scripts/fix-sqlite3-binary.sh 수동 실행 필요"
+      fi
+      rm -f "$SQLITE3_TMP_TAR"
+      rm -rf "$SQLITE3_TMP_DIR"
+    else
+      warn "바이너리 다운로드 실패 (네트워크 확인 필요)"
+      warn "설치 완료 후 수동 실행: bash ${INSTALL_DIR}/scripts/fix-sqlite3-binary.sh"
+    fi
+  fi
+fi
+
+# =============================================================================
 # Step 7: .env 설정 파일 생성
 # =============================================================================
-step "Step 7/8: 환경설정 파일 생성"
+step "Step 8/10: 환경설정 파일 생성"
 
 ENV_FILE="$INSTALL_DIR/.env"
 
@@ -320,9 +391,501 @@ EOF
 fi
 
 # =============================================================================
+# Step 7b: DB 핵심 테이블 초기화
+# =============================================================================
+# 배경: node-server.ts의 patchSchema는 기존 테이블을 점진적으로 마이그레이션하는
+#   시스템입니다. 초기 설치 시 테이블 자체가 없으면 "no such table: users" 오류로
+#   마이그레이션 전체가 실패하고, tasks/constructions 등 핵심 테이블이 생성되지 않아
+#   로그인 자체가 불가능한 증상이 발생합니다(NAS001/NAS002에서 재현됨).
+# 이 단계는 신규·재설치 시 DB를 미리 초기화하여 위 증상을 원천 차단합니다.
+step "Step 9/10: DB 핵심 테이블 초기화"
+
+DB_FILE="$INSTALL_DIR/safety.db"
+DB_INIT_SCRIPT="$INSTALL_DIR/scripts/db-init.cjs"
+
+# 신규/재설치 시 or DB 파일이 없을 때 초기화 실행
+# 업데이트 모드에서도 DB 파일이 없으면 초기화 (비어있는 DB 방지)
+RUN_DB_INIT=false
+if [ "$INSTALL_MODE" = "fresh" ]; then
+  info "신규 설치 — DB 초기화 실행"
+  RUN_DB_INIT=true
+elif [ "$INSTALL_MODE" = "reinstall" ]; then
+  info "재설치 모드 — DB 초기화 실행"
+  RUN_DB_INIT=true
+elif [ ! -f "$DB_FILE" ]; then
+  info "DB 파일 없음 — DB 초기화 실행 (업데이트 모드이나 DB 부재)"
+  RUN_DB_INIT=true
+else
+  ok "업데이트 모드 + 기존 DB 존재 — DB 초기화 건너뜀 (기존 데이터 보존)"
+fi
+
+if $RUN_DB_INIT; then
+  info "DB 초기화 스크립트 생성 중..."
+
+  # ── 인라인으로 db-init.cjs 생성 (ES Module 충돌 방지용 .cjs) ────────────────
+  cat > "$DB_INIT_SCRIPT" << 'DBINIT_EOF'
+'use strict';
+/**
+ * SafetyNOTE DB 핵심 테이블 초기화 스크립트
+ * 생성: install.sh v2.4 (2025-07-31)
+ * 목적: patchSchema v0.154+ 정상 동작을 위한 전체 스키마 사전 생성
+ *       기존 테이블은 IF NOT EXISTS + ALTER로 보존됨
+ */
+
+const path = require('path');
+const INSTALL_DIR = path.resolve(__dirname, '..');
+const Database = require(path.join(INSTALL_DIR, 'node_modules', 'better-sqlite3'));
+const DB_PATH   = process.env.DB_PATH || path.join(INSTALL_DIR, 'safety.db');
+
+console.log('='.repeat(60));
+console.log('[SafetyNOTE] DB 핵심 테이블 초기화');
+console.log('DB 경로:', DB_PATH);
+console.log('='.repeat(60));
+
+const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = OFF');
+db.pragma('synchronous = NORMAL');
+
+// ── 헬퍼 ──────────────────────────────────────────────────────
+function hasColumn(table, col) {
+  try {
+    return db.prepare('PRAGMA table_info(' + table + ')').all().map(function(r){ return r.name; }).includes(col);
+  } catch(_) { return false; }
+}
+function safeAlter(sql, label) {
+  try {
+    db.exec(sql);
+    console.log('  ✅ ' + label);
+  } catch(e) {
+    if (e.message && e.message.includes('duplicate column')) {
+      console.log('  ⏩ ' + label + ' (이미 존재)');
+    } else {
+      console.log('  ⚠️  ' + label + ' 실패(무시): ' + e.message);
+    }
+  }
+}
+
+var existingTables = db.prepare(
+  "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+).all().map(function(r){ return r.name; });
+console.log('[현재 테이블] ' + (existingTables.join(', ') || '(없음)'));
+
+// ── Step 1: teams (users FK 선행) ─────────────────────────────
+console.log('\n[1] teams...');
+db.exec([
+  'CREATE TABLE IF NOT EXISTS teams (',
+  '  id INTEGER PRIMARY KEY AUTOINCREMENT,',
+  '  name TEXT NOT NULL UNIQUE,',
+  '  description TEXT DEFAULT \'\',',
+  '  is_active INTEGER DEFAULT 1,',
+  '  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,',
+  '  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP',
+  ')'
+].join('\n'));
+console.log('  ✅ teams');
+
+// ── Step 2: users (patchSchema v0.154 최종 스키마) ────────────
+console.log('\n[2] users...');
+if (!existingTables.includes('users')) {
+  db.exec([
+    'CREATE TABLE users (',
+    '  id INTEGER PRIMARY KEY AUTOINCREMENT,',
+    '  username TEXT UNIQUE NOT NULL,',
+    '  password_hash TEXT NOT NULL,',
+    '  name TEXT NOT NULL,',
+    '  role TEXT NOT NULL CHECK(role IN (\'admin\',\'supervisor\',\'worker\',\'lgu\',\'lgu_plus\')),',
+    '  department TEXT,',
+    '  phone TEXT,',
+    '  position TEXT,',
+    '  is_active INTEGER NOT NULL DEFAULT 1,',
+    '  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,',
+    '  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,',
+    '  company TEXT,',
+    '  blood_type TEXT,',
+    '  emergency_contact TEXT,',
+    '  health_info TEXT,',
+    '  edu_hire_date TEXT,',
+    '  edu_special_electric TEXT,',
+    '  edu_special_confined TEXT,',
+    '  edu_special_loading TEXT,',
+    '  edu_experience_date TEXT,',
+    '  team_id INTEGER REFERENCES teams(id),',
+    '  is_leader INTEGER DEFAULT 0,',
+    '  is_pending INTEGER DEFAULT 0,',
+    '  rejection_reason TEXT DEFAULT NULL,',
+    '  approved_by INTEGER DEFAULT NULL,',
+    '  approved_at DATETIME DEFAULT NULL,',
+    '  id_number TEXT,',
+    '  privacy_agreed INTEGER DEFAULT 0,',
+    '  privacy_agreed_at DATETIME,',
+    '  security_agreed INTEGER DEFAULT 0,',
+    '  security_agreed_at DATETIME,',
+    '  location_agreed INTEGER DEFAULT 0,',
+    '  location_agreed_at DATETIME,',
+    '  sub_role TEXT NOT NULL DEFAULT \'\',',
+    '  grade TEXT DEFAULT \'\',',
+    '  edu_periodic_date DATE,',
+    '  edu_job_change_date DATE,',
+    '  edu_special_date DATE,',
+    '  edu_supervisor_date DATE,',
+    '  edu_special_records TEXT DEFAULT \'{}\',',
+    '  fcm_token TEXT DEFAULT NULL,',
+    '  permissions TEXT DEFAULT NULL',
+    ')'
+  ].join('\n'));
+  // admin 계정 삽입
+  db.prepare(
+    'INSERT OR IGNORE INTO users (username,password_hash,name,role,department,position,is_active,sub_role)' +
+    ' VALUES (?,?,?,?,?,?,?,?)'
+  ).run('admin','admin1234','시스템관리자','admin','관리부','시스템관리자',1,'');
+  console.log('  ✅ users 생성 + admin 삽입');
+} else {
+  console.log('  ⏩ users 이미 존재 — 누락 컬럼만 보완');
+  var userAlters = [
+    ['company',             'ALTER TABLE users ADD COLUMN company TEXT'],
+    ['blood_type',          'ALTER TABLE users ADD COLUMN blood_type TEXT'],
+    ['emergency_contact',   'ALTER TABLE users ADD COLUMN emergency_contact TEXT'],
+    ['health_info',         'ALTER TABLE users ADD COLUMN health_info TEXT'],
+    ['edu_hire_date',       'ALTER TABLE users ADD COLUMN edu_hire_date TEXT'],
+    ['edu_special_electric','ALTER TABLE users ADD COLUMN edu_special_electric TEXT'],
+    ['edu_special_confined','ALTER TABLE users ADD COLUMN edu_special_confined TEXT'],
+    ['edu_special_loading', 'ALTER TABLE users ADD COLUMN edu_special_loading TEXT'],
+    ['edu_experience_date', 'ALTER TABLE users ADD COLUMN edu_experience_date TEXT'],
+    ['team_id',             'ALTER TABLE users ADD COLUMN team_id INTEGER'],
+    ['is_leader',           'ALTER TABLE users ADD COLUMN is_leader INTEGER DEFAULT 0'],
+    ['is_pending',          'ALTER TABLE users ADD COLUMN is_pending INTEGER DEFAULT 0'],
+    ['rejection_reason',    'ALTER TABLE users ADD COLUMN rejection_reason TEXT DEFAULT NULL'],
+    ['approved_by',         'ALTER TABLE users ADD COLUMN approved_by INTEGER DEFAULT NULL'],
+    ['approved_at',         'ALTER TABLE users ADD COLUMN approved_at DATETIME DEFAULT NULL'],
+    ['id_number',           'ALTER TABLE users ADD COLUMN id_number TEXT'],
+    ['privacy_agreed',      'ALTER TABLE users ADD COLUMN privacy_agreed INTEGER DEFAULT 0'],
+    ['privacy_agreed_at',   'ALTER TABLE users ADD COLUMN privacy_agreed_at DATETIME'],
+    ['security_agreed',     'ALTER TABLE users ADD COLUMN security_agreed INTEGER DEFAULT 0'],
+    ['security_agreed_at',  'ALTER TABLE users ADD COLUMN security_agreed_at DATETIME'],
+    ['location_agreed',     'ALTER TABLE users ADD COLUMN location_agreed INTEGER DEFAULT 0'],
+    ['location_agreed_at',  'ALTER TABLE users ADD COLUMN location_agreed_at DATETIME'],
+    ['sub_role',            "ALTER TABLE users ADD COLUMN sub_role TEXT NOT NULL DEFAULT ''"],
+    ['grade',               "ALTER TABLE users ADD COLUMN grade TEXT DEFAULT ''"],
+    ['edu_periodic_date',   'ALTER TABLE users ADD COLUMN edu_periodic_date DATE'],
+    ['edu_job_change_date', 'ALTER TABLE users ADD COLUMN edu_job_change_date DATE'],
+    ['edu_special_date',    'ALTER TABLE users ADD COLUMN edu_special_date DATE'],
+    ['edu_supervisor_date', 'ALTER TABLE users ADD COLUMN edu_supervisor_date DATE'],
+    ['edu_special_records', "ALTER TABLE users ADD COLUMN edu_special_records TEXT DEFAULT '{}'"],
+    ['fcm_token',           'ALTER TABLE users ADD COLUMN fcm_token TEXT DEFAULT NULL'],
+    ['permissions',         'ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT NULL'],
+  ];
+  for (var i = 0; i < userAlters.length; i++) {
+    if (!hasColumn('users', userAlters[i][0])) safeAlter(userAlters[i][1], 'users.' + userAlters[i][0]);
+  }
+}
+
+// ── Step 3: work_categories / work_types ──────────────────────
+console.log('\n[3] work_categories, work_types...');
+db.exec('CREATE TABLE IF NOT EXISTS work_categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, code TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)');
+db.exec('CREATE TABLE IF NOT EXISTS work_types (id INTEGER PRIMARY KEY AUTOINCREMENT, category_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES work_categories(id))');
+console.log('  ✅ work_categories, work_types');
+
+// ── Step 4: tasks (urgent CHECK 포함) ─────────────────────────
+console.log('\n[4] tasks...');
+if (!existingTables.includes('tasks')) {
+  db.exec([
+    'CREATE TABLE tasks (',
+    '  id INTEGER PRIMARY KEY AUTOINCREMENT,',
+    '  task_number TEXT UNIQUE NOT NULL,',
+    '  title TEXT NOT NULL,',
+    '  description TEXT,',
+    '  category_id INTEGER,',
+    '  work_type_id INTEGER,',
+    '  location TEXT,',
+    '  planned_date DATE,',
+    '  planned_quantity REAL,',
+    '  quantity_unit TEXT DEFAULT \'개\',',
+    '  supervisor_id INTEGER,',
+    '  status TEXT NOT NULL DEFAULT \'unassigned\'',
+    '    CHECK(status IN (\'unassigned\',\'assigned\',\'in_progress\',\'tbm_done\',\'working\',\'completed\',\'cancelled\',\'work_completed\')),',
+    '  priority TEXT DEFAULT \'normal\' CHECK(priority IN (\'low\',\'normal\',\'high\',\'urgent\')),',
+    '  notes TEXT,',
+    '  created_by INTEGER,',
+    '  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,',
+    '  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,',
+    '  work_class TEXT DEFAULT \'line\' CHECK(work_class IN (\'line\',\'equipment\',\'pipe\',\'bucket\',\'pole\',\'rooftop\',\'ladder\',\'heavy\',\'all\')),',
+    '  started_at DATETIME,',
+    '  completed_at DATETIME,',
+    '  tbm_done_at DATETIME,',
+    '  construction_type TEXT DEFAULT \'\',',
+    '  request_no TEXT DEFAULT \'\',',
+    '  contractor_name TEXT DEFAULT \'\',',
+    '  risk_level TEXT DEFAULT \'low\' CHECK(risk_level IN (\'low\',\'medium\',\'high\',\'urgent\')),',
+    '  lgu_supervisor TEXT DEFAULT \'\',',
+    '  work_number TEXT DEFAULT \'\',',
+    '  work_completed_at DATETIME,',
+    '  confirmed_address TEXT DEFAULT \'\',',
+    '  construction_id INTEGER REFERENCES constructions(id),',
+    '  sub_task_number TEXT DEFAULT \'\',',
+    '  gps_lat REAL, gps_lng REAL, gps_accuracy REAL, gps_captured_at DATETIME,',
+    '  start_gps_lat REAL, start_gps_lng REAL, start_gps_accuracy REAL, start_gps_captured_at DATETIME,',
+    '  work_sub_class TEXT DEFAULT \'\',',
+    '  FOREIGN KEY (category_id) REFERENCES work_categories(id),',
+    '  FOREIGN KEY (work_type_id) REFERENCES work_types(id),',
+    '  FOREIGN KEY (supervisor_id) REFERENCES users(id),',
+    '  FOREIGN KEY (created_by) REFERENCES users(id)',
+    ')'
+  ].join('\n'));
+  db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_supervisor ON tasks(supervisor_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_planned_date ON tasks(planned_date)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_construction_id ON tasks(construction_id)');
+  console.log('  ✅ tasks 생성 (risk_level urgent 포함)');
+} else {
+  console.log('  ⏩ tasks 이미 존재 — 컬럼 보완 + risk_level CHECK 확인');
+  var taskAlters = [
+    ['work_class',        "ALTER TABLE tasks ADD COLUMN work_class TEXT DEFAULT 'line'"],
+    ['construction_type', "ALTER TABLE tasks ADD COLUMN construction_type TEXT DEFAULT ''"],
+    ['request_no',        "ALTER TABLE tasks ADD COLUMN request_no TEXT DEFAULT ''"],
+    ['contractor_name',   "ALTER TABLE tasks ADD COLUMN contractor_name TEXT DEFAULT ''"],
+    ['risk_level',        "ALTER TABLE tasks ADD COLUMN risk_level TEXT DEFAULT 'low'"],
+    ['lgu_supervisor',    "ALTER TABLE tasks ADD COLUMN lgu_supervisor TEXT DEFAULT ''"],
+    ['work_number',       "ALTER TABLE tasks ADD COLUMN work_number TEXT DEFAULT ''"],
+    ['confirmed_address', "ALTER TABLE tasks ADD COLUMN confirmed_address TEXT DEFAULT ''"],
+    ['construction_id',   'ALTER TABLE tasks ADD COLUMN construction_id INTEGER'],
+    ['sub_task_number',   "ALTER TABLE tasks ADD COLUMN sub_task_number TEXT DEFAULT ''"],
+    ['gps_lat',           'ALTER TABLE tasks ADD COLUMN gps_lat REAL'],
+    ['gps_lng',           'ALTER TABLE tasks ADD COLUMN gps_lng REAL'],
+    ['gps_accuracy',      'ALTER TABLE tasks ADD COLUMN gps_accuracy REAL'],
+    ['gps_captured_at',   'ALTER TABLE tasks ADD COLUMN gps_captured_at DATETIME'],
+    ['work_sub_class',    "ALTER TABLE tasks ADD COLUMN work_sub_class TEXT DEFAULT ''"],
+  ];
+  for (var j = 0; j < taskAlters.length; j++) {
+    if (!hasColumn('tasks', taskAlters[j][0])) safeAlter(taskAlters[j][1], 'tasks.' + taskAlters[j][0]);
+  }
+  // risk_level CHECK에 urgent 없으면 테이블 재생성
+  var tRow = db.prepare("SELECT sql FROM sqlite_master WHERE name='tasks'").get();
+  if (tRow && tRow.sql && tRow.sql.indexOf("'urgent'") === -1) {
+    console.log('  ⚠️  tasks.risk_level CHECK에 urgent 없음 → 재생성');
+    try {
+      db.exec('ALTER TABLE tasks RENAME TO tasks_bak_install');
+      var newSql = tRow.sql.replace(
+        "CHECK(risk_level IN ('low','medium','high'))",
+        "CHECK(risk_level IN ('low','medium','high','urgent'))"
+      );
+      db.exec(newSql);
+      db.exec('INSERT INTO tasks SELECT * FROM tasks_bak_install');
+      db.exec('DROP TABLE tasks_bak_install');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_supervisor ON tasks(supervisor_id)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_planned_date ON tasks(planned_date)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_construction_id ON tasks(construction_id)');
+      console.log('  ✅ tasks.risk_level urgent 추가 완료');
+    } catch(e) {
+      console.log('  ⚠️  재생성 실패(무시): ' + e.message);
+      try { db.exec('ALTER TABLE tasks_bak_install RENAME TO tasks'); } catch(_) {}
+    }
+  } else {
+    console.log('  ✅ tasks.risk_level urgent 이미 포함');
+  }
+}
+
+// ── Step 5: task_assignments ───────────────────────────────────
+console.log('\n[5] task_assignments...');
+db.exec('CREATE TABLE IF NOT EXISTS task_assignments (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, worker_id INTEGER NOT NULL, assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP, assigned_by INTEGER, FOREIGN KEY (task_id) REFERENCES tasks(id), FOREIGN KEY (worker_id) REFERENCES users(id), FOREIGN KEY (assigned_by) REFERENCES users(id), UNIQUE(task_id, worker_id))');
+db.exec('CREATE INDEX IF NOT EXISTS idx_task_assignments_worker ON task_assignments(worker_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_task_assignments_task ON task_assignments(task_id)');
+console.log('  ✅ task_assignments');
+
+// ── Step 6: task_work_types ────────────────────────────────────
+console.log('\n[6] task_work_types...');
+db.exec('CREATE TABLE IF NOT EXISTS task_work_types (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, work_type_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE, FOREIGN KEY (work_type_id) REFERENCES work_types(id), UNIQUE(task_id, work_type_id))');
+db.exec('CREATE INDEX IF NOT EXISTS idx_task_work_types_task ON task_work_types(task_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_task_work_types_type ON task_work_types(work_type_id)');
+console.log('  ✅ task_work_types');
+
+// ── Step 7: task_attachments ───────────────────────────────────
+console.log('\n[7] task_attachments...');
+db.exec('CREATE TABLE IF NOT EXISTS task_attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, uploader_id INTEGER NOT NULL, file_name TEXT NOT NULL, file_path TEXT NOT NULL, file_size INTEGER DEFAULT 0, mime_type TEXT DEFAULT \'application/octet-stream\', attach_type TEXT DEFAULT \'order\', description TEXT DEFAULT \'\', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (task_id) REFERENCES tasks(id), FOREIGN KEY (uploader_id) REFERENCES users(id))');
+db.exec('CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id)');
+console.log('  ✅ task_attachments');
+
+// ── Step 8: constructions ──────────────────────────────────────
+console.log('\n[8] constructions...');
+if (!existingTables.includes('constructions')) {
+  db.exec([
+    'CREATE TABLE constructions (',
+    '  id INTEGER PRIMARY KEY AUTOINCREMENT,',
+    '  request_no TEXT UNIQUE NOT NULL,',
+    '  work_number TEXT NOT NULL DEFAULT \'\',',
+    '  title TEXT NOT NULL,',
+    '  work_order_address TEXT DEFAULT \'\',',
+    '  manager_id INTEGER,',
+    '  manager_name TEXT DEFAULT \'\',',
+    '  supervisor_name TEXT DEFAULT \'\',',
+    '  description TEXT DEFAULT \'\',',
+    '  status TEXT NOT NULL DEFAULT \'registered\'',
+    '    CHECK(status IN (\'registered\',\'in_progress\',\'completed\',\'settled\')),',
+    '  work_class TEXT DEFAULT \'\',',
+    '  settlement_requested INTEGER DEFAULT 0,',
+    '  settlement_requested_at DATETIME,',
+    '  completion_date DATE,',
+    '  notification_date DATE,',
+    '  notification_amount REAL DEFAULT 0,',
+    '  con_number TEXT DEFAULT \'\',',
+    '  created_by INTEGER,',
+    '  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,',
+    '  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,',
+    '  FOREIGN KEY (manager_id) REFERENCES users(id),',
+    '  FOREIGN KEY (created_by) REFERENCES users(id)',
+    ')'
+  ].join('\n'));
+  db.exec('CREATE INDEX IF NOT EXISTS idx_constructions_request_no ON constructions(request_no)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_constructions_status ON constructions(status)');
+  console.log('  ✅ constructions 생성');
+} else {
+  console.log('  ⏩ constructions 이미 존재 — 컬럼 보완');
+  var conAlters = [
+    ['work_class',              "ALTER TABLE constructions ADD COLUMN work_class TEXT DEFAULT ''"],
+    ['settlement_requested',    'ALTER TABLE constructions ADD COLUMN settlement_requested INTEGER DEFAULT 0'],
+    ['settlement_requested_at', 'ALTER TABLE constructions ADD COLUMN settlement_requested_at DATETIME'],
+    ['completion_date',         'ALTER TABLE constructions ADD COLUMN completion_date DATE'],
+    ['notification_date',       'ALTER TABLE constructions ADD COLUMN notification_date DATE'],
+    ['notification_amount',     'ALTER TABLE constructions ADD COLUMN notification_amount REAL DEFAULT 0'],
+    ['con_number',              "ALTER TABLE constructions ADD COLUMN con_number TEXT DEFAULT ''"],
+  ];
+  for (var k = 0; k < conAlters.length; k++) {
+    if (!hasColumn('constructions', conAlters[k][0])) safeAlter(conAlters[k][1], 'constructions.' + conAlters[k][0]);
+  }
+}
+
+// ── Step 9: checklist_items ────────────────────────────────────
+console.log('\n[9] checklist_items...');
+db.exec("CREATE TABLE IF NOT EXISTS checklist_items (id INTEGER PRIMARY KEY AUTOINCREMENT, work_class TEXT NOT NULL DEFAULT 'all', category TEXT NOT NULL, question TEXT NOT NULL, sort_order INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, note TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+console.log('  ✅ checklist_items');
+
+// ── Step 10: 기타 핵심 테이블 ─────────────────────────────────
+console.log('\n[10] 기타 핵심 테이블...');
+
+db.exec('CREATE TABLE IF NOT EXISTS risk_assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, assessor_id INTEGER NOT NULL, assessment_date DATETIME DEFAULT CURRENT_TIMESTAMP, weather TEXT, temperature TEXT, workers_count INTEGER DEFAULT 1, notes TEXT, status TEXT DEFAULT \'draft\' CHECK(status IN (\'draft\',\'completed\',\'approved\',\'submitted\')), kakao_shared INTEGER DEFAULT 0, kakao_shared_at DATETIME, type TEXT DEFAULT \'checklist\', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (task_id) REFERENCES tasks(id), FOREIGN KEY (assessor_id) REFERENCES users(id))');
+db.exec('CREATE INDEX IF NOT EXISTS idx_risk_assessments_task ON risk_assessments(task_id)');
+
+db.exec('CREATE TABLE IF NOT EXISTS tbm_records (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, conductor_id INTEGER NOT NULL, tbm_date DATETIME DEFAULT CURRENT_TIMESTAMP, location TEXT, weather TEXT, temperature TEXT, workers_count INTEGER DEFAULT 1, attendees TEXT, safety_topics TEXT, precautions TEXT, special_notes TEXT, signature_data TEXT, kakao_shared INTEGER DEFAULT 0, kakao_shared_at DATETIME, status TEXT DEFAULT \'draft\' CHECK(status IN (\'draft\',\'completed\')), created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (task_id) REFERENCES tasks(id), FOREIGN KEY (conductor_id) REFERENCES users(id))');
+db.exec('CREATE INDEX IF NOT EXISTS idx_tbm_records_task ON tbm_records(task_id)');
+
+db.exec("CREATE TABLE IF NOT EXISTS work_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, worker_id INTEGER NOT NULL, log_date DATE NOT NULL, start_time TIME, end_time TIME, actual_quantity REAL DEFAULT 0, quantity_unit TEXT DEFAULT '개', work_description TEXT, issues TEXT, tomorrow_plan TEXT, status TEXT DEFAULT 'working' CHECK(status IN ('working','completed','paused')), created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (task_id) REFERENCES tasks(id), FOREIGN KEY (worker_id) REFERENCES users(id))");
+db.exec('CREATE INDEX IF NOT EXISTS idx_work_logs_task ON work_logs(task_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_work_logs_worker ON work_logs(worker_id)');
+
+db.exec("CREATE TABLE IF NOT EXISTS task_photos (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, uploader_id INTEGER NOT NULL, photo_type TEXT DEFAULT 'progress' CHECK(photo_type IN ('before','progress','after','hazard','tbm','completion')), file_name TEXT NOT NULL, file_path TEXT, file_size INTEGER, mime_type TEXT DEFAULT 'image/jpeg', caption TEXT, stage TEXT DEFAULT '03', taken_at DATETIME DEFAULT CURRENT_TIMESTAMP, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (task_id) REFERENCES tasks(id), FOREIGN KEY (uploader_id) REFERENCES users(id))");
+db.exec('CREATE INDEX IF NOT EXISTS idx_task_photos_task ON task_photos(task_id)');
+
+// site_inspections (0006/0007 컬럼 포함)
+db.exec("CREATE TABLE IF NOT EXISTS site_inspections (id INTEGER PRIMARY KEY AUTOINCREMENT, inspector_id INTEGER NOT NULL, inspection_date DATETIME DEFAULT CURRENT_TIMESTAMP, location TEXT NOT NULL, inspection_type TEXT DEFAULT 'routine' CHECK(inspection_type IN ('routine','special','safety')), findings TEXT, corrective_actions TEXT, hazard_level TEXT DEFAULT 'low' CHECK(hazard_level IN ('low','medium','high','critical')), status TEXT DEFAULT 'open' CHECK(status IN ('open','in_progress','closed')), due_date DATE, closed_at DATETIME, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, task_id INTEGER REFERENCES tasks(id), inspection_date_only TEXT, inspection_result TEXT NOT NULL DEFAULT 'none', result_reason TEXT NOT NULL DEFAULT '', updated_at DATETIME, FOREIGN KEY (inspector_id) REFERENCES users(id))");
+db.exec('CREATE INDEX IF NOT EXISTS idx_site_inspections_task_id ON site_inspections(task_id)');
+// site_inspections 누락 컬럼 보완
+['task_id','inspection_date_only','inspection_result','result_reason','updated_at'].forEach(function(col) {
+  var sql = col === 'task_id'
+    ? 'ALTER TABLE site_inspections ADD COLUMN task_id INTEGER'
+    : col === 'inspection_date_only'
+      ? 'ALTER TABLE site_inspections ADD COLUMN inspection_date_only TEXT'
+      : col === 'inspection_result'
+        ? "ALTER TABLE site_inspections ADD COLUMN inspection_result TEXT NOT NULL DEFAULT 'none'"
+        : col === 'result_reason'
+          ? "ALTER TABLE site_inspections ADD COLUMN result_reason TEXT NOT NULL DEFAULT ''"
+          : 'ALTER TABLE site_inspections ADD COLUMN updated_at DATETIME';
+  safeAlter(sql, 'site_inspections.' + col);
+});
+
+db.exec("CREATE TABLE IF NOT EXISTS inspection_photos (id INTEGER PRIMARY KEY AUTOINCREMENT, inspection_id INTEGER NOT NULL, file_name TEXT NOT NULL, file_path TEXT, file_size INTEGER, mime_type TEXT DEFAULT 'image/jpeg', caption TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (inspection_id) REFERENCES site_inspections(id))");
+
+db.exec("CREATE TABLE IF NOT EXISTS hazard_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, reporter_id INTEGER NOT NULL, task_id INTEGER, report_date DATETIME DEFAULT CURRENT_TIMESTAMP, location TEXT NOT NULL, hazard_type TEXT NOT NULL, hazard_description TEXT NOT NULL, risk_level TEXT DEFAULT 'medium' CHECK(risk_level IN ('low','medium','high','critical')), immediate_action TEXT, suggestion TEXT DEFAULT '', photo_data TEXT, status TEXT DEFAULT 'open' CHECK(status IN ('open','reviewing','resolved')), report_type TEXT DEFAULT 'hazard' CHECK(report_type IN ('hazard','near_miss','improvement')), resolved_by INTEGER, resolved_at DATETIME, resolution_notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (reporter_id) REFERENCES users(id), FOREIGN KEY (task_id) REFERENCES tasks(id), FOREIGN KEY (resolved_by) REFERENCES users(id))");
+db.exec('CREATE INDEX IF NOT EXISTS idx_hazard_reports_status ON hazard_reports(status)');
+
+console.log('  ✅ 기타 핵심 테이블');
+
+// ── Step 11: checklist 관련 ────────────────────────────────────
+console.log('\n[11] 체크리스트 관련...');
+db.exec("CREATE TABLE IF NOT EXISTS checklist_assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, work_class TEXT NOT NULL, assessor_id INTEGER NOT NULL, assessed_at DATETIME DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'draft' CHECK(status IN ('draft','completed')), kakao_shared INTEGER DEFAULT 0, notes TEXT, FOREIGN KEY (task_id) REFERENCES tasks(id), FOREIGN KEY (assessor_id) REFERENCES users(id))");
+db.exec("CREATE TABLE IF NOT EXISTS checklist_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, assessment_id INTEGER NOT NULL, item_id INTEGER NOT NULL, response TEXT DEFAULT NULL CHECK(response IS NULL OR response IN ('na','ok','nok')), memo TEXT, FOREIGN KEY (assessment_id) REFERENCES checklist_assessments(id) ON DELETE CASCADE, FOREIGN KEY (item_id) REFERENCES checklist_items(id), UNIQUE(assessment_id, item_id))");
+db.exec("CREATE TABLE IF NOT EXISTS tbm_photo_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, assessment_id INTEGER NOT NULL, section_type TEXT NOT NULL, section_name TEXT NOT NULL, is_required INTEGER DEFAULT 1, FOREIGN KEY (assessment_id) REFERENCES checklist_assessments(id) ON DELETE CASCADE)");
+db.exec("CREATE TABLE IF NOT EXISTS tbm_photo_items (id INTEGER PRIMARY KEY AUTOINCREMENT, section_id INTEGER NOT NULL, label TEXT NOT NULL, file_path TEXT, file_name TEXT, mime_type TEXT, uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (section_id) REFERENCES tbm_photo_sections(id) ON DELETE CASCADE)");
+console.log('  ✅ 체크리스트');
+
+// ── Step 12: system_settings ───────────────────────────────────
+console.log('\n[12] system_settings...');
+db.exec("CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', label TEXT, description TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+var ins = db.prepare("INSERT OR IGNORE INTO system_settings (key,value,label,description) VALUES (?,?,?,?)");
+ins.run('upload_root_path','','파일 저장 루트 경로','NAS 또는 로컬 경로');
+ins.run('use_task_folder','true','작업별 폴더 구조 사용','');
+ins.run('task_photo_subdir','작업사진','작업 사진 하위폴더명','');
+ins.run('inspection_subdir','안전점검','점검 사진 하위폴더명','');
+console.log('  ✅ system_settings');
+
+// ── Step 13: periodic_risk_assessments ────────────────────────
+console.log('\n[13] periodic_risk_assessments...');
+db.exec("CREATE TABLE IF NOT EXISTS periodic_risk_assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL DEFAULT 'periodic' CHECK(type IN ('periodic','special')), title TEXT NOT NULL, work_type TEXT, location TEXT, assessor_id INTEGER NOT NULL, assessed_date DATE NOT NULL, status TEXT DEFAULT 'draft' CHECK(status IN ('draft','submitted','approved')), notes TEXT, kakao_shared INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (assessor_id) REFERENCES users(id))");
+db.exec("CREATE TABLE IF NOT EXISTS periodic_risk_details (id INTEGER PRIMARY KEY AUTOINCREMENT, assessment_id INTEGER NOT NULL, hazard_category TEXT NOT NULL, hazard_factor TEXT NOT NULL, risk_before INTEGER DEFAULT 1, risk_after INTEGER DEFAULT 1, control_measures TEXT, responsible TEXT, due_date DATE, status TEXT DEFAULT 'pending' CHECK(status IN ('pending','done')), FOREIGN KEY (assessment_id) REFERENCES periodic_risk_assessments(id) ON DELETE CASCADE)");
+console.log('  ✅ periodic_risk_assessments');
+
+// ── Step 14: risk_assessment_signatures ───────────────────────
+console.log('\n[14] risk_assessment_signatures...');
+db.exec("CREATE TABLE IF NOT EXISTS risk_assessment_signatures (id INTEGER PRIMARY KEY AUTOINCREMENT, assessment_id INTEGER NOT NULL REFERENCES risk_assessments(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id), user_name TEXT NOT NULL, position TEXT DEFAULT '', role TEXT DEFAULT 'member', signed_at DATETIME DEFAULT CURRENT_TIMESTAMP, sign_method TEXT DEFAULT 'account', sign_data TEXT, UNIQUE(assessment_id, user_id))");
+db.exec('CREATE INDEX IF NOT EXISTS idx_ra_sigs_assessment ON risk_assessment_signatures(assessment_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_ra_sigs_user ON risk_assessment_signatures(user_id)');
+console.log('  ✅ risk_assessment_signatures');
+
+// ── Step 15: 보조 테이블들 ────────────────────────────────────
+console.log('\n[15] 보조 테이블...');
+db.exec("CREATE TABLE IF NOT EXISTS legal_notices (id INTEGER PRIMARY KEY AUTOINCREMENT, notice_key TEXT UNIQUE NOT NULL, title TEXT NOT NULL, law_ref TEXT, content TEXT, is_active INTEGER DEFAULT 1, updated_by INTEGER REFERENCES users(id), updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+db.exec("CREATE TABLE IF NOT EXISTS signature_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, assessment_id INTEGER NOT NULL REFERENCES risk_assessments(id) ON DELETE CASCADE, requester_id INTEGER NOT NULL REFERENCES users(id), worker_id INTEGER NOT NULL REFERENCES users(id), status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','signed','rejected')), requested_at DATETIME DEFAULT CURRENT_TIMESTAMP, responded_at DATETIME, sign_data TEXT, UNIQUE(assessment_id, worker_id))");
+db.exec("CREATE TABLE IF NOT EXISTS safety_education_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, edu_type TEXT NOT NULL, edu_subject TEXT NOT NULL, edu_date DATE NOT NULL, edu_hours REAL NOT NULL, edu_location TEXT DEFAULT '', instructor TEXT DEFAULT '', year INTEGER NOT NULL, month INTEGER NOT NULL, notes TEXT DEFAULT '', edu_content TEXT, created_by INTEGER REFERENCES users(id), created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+db.exec("CREATE TABLE IF NOT EXISTS safety_education_attendees (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES safety_education_sessions(id) ON DELETE CASCADE, user_id INTEGER REFERENCES users(id), name TEXT NOT NULL, department TEXT DEFAULT '', position TEXT DEFAULT '', sign_data TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+db.exec("CREATE TABLE IF NOT EXISTS edu_photos (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES safety_education_sessions(id) ON DELETE CASCADE, file_name TEXT NOT NULL, file_path TEXT, file_size INTEGER, mime_type TEXT DEFAULT 'image/jpeg', uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+db.exec("CREATE TABLE IF NOT EXISTS edu_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL UNIQUE REFERENCES safety_education_sessions(id) ON DELETE CASCADE, report_data TEXT, generated_at DATETIME DEFAULT CURRENT_TIMESTAMP, generated_by INTEGER REFERENCES users(id))");
+db.exec("CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, type TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, data TEXT, is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_users_team_id ON users(team_id)');
+console.log('  ✅ 보조 테이블');
+
+// ── 최종 검증 ─────────────────────────────────────────────────
+db.pragma('foreign_keys = ON');
+var finals = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(function(r){ return r.name; });
+var critical = ['users','tasks','constructions','checklist_items','system_settings','teams','task_work_types','task_attachments','site_inspections'];
+var allOk = true;
+console.log('\n[핵심 테이블 검증]');
+critical.forEach(function(t) {
+  var ok = finals.includes(t);
+  console.log('  ' + (ok ? '✅' : '❌') + ' ' + t);
+  if (!ok) allOk = false;
+});
+
+var admin = db.prepare("SELECT id FROM users WHERE username='admin'").get();
+console.log('  ' + (admin ? '✅' : '⚠️ ') + ' admin 계정');
+
+db.close();
+console.log('\n' + '='.repeat(60));
+if (allOk) {
+  console.log('✅ DB 초기화 완료 — 서버 시작 준비 완료');
+} else {
+  console.log('⚠️  일부 테이블 누락 — 위 로그 확인 필요');
+  process.exit(1);
+}
+console.log('='.repeat(60));
+DBINIT_EOF
+
+  ok "DB 초기화 스크립트 생성 완료: $DB_INIT_SCRIPT"
+
+  # DB 초기화 실행
+  info "DB 핵심 테이블 초기화 실행 중..."
+  if "$NODE_EXEC" "$DB_INIT_SCRIPT" 2>&1; then
+    ok "DB 핵심 테이블 초기화 완료"
+  else
+    warn "DB 초기화 중 일부 경고 발생 — 서버 시작 후 pm2 logs로 확인하세요"
+  fi
+fi
+
+# =============================================================================
 # Step 8: PM2 서버 시작
 # =============================================================================
-step "Step 8/8: PM2 서버 시작"
+step "Step 10/10: PM2 서버 시작"
 
 $PM2_EXEC delete "$APP_NAME" 2>/dev/null || true
 sleep 1
@@ -362,7 +925,7 @@ fi
 # =============================================================================
 # Step 9: DSM 작업 스케줄러 — PM2 자동복구 Watchdog 등록
 # =============================================================================
-step "Step 9: PM2 자동복구 Watchdog 등록 (SSH 비활성화 환경 대비)"
+step "Step 11: PM2 자동복구 Watchdog 등록 (SSH 비활성화 환경 대비)"
 
 WATCHDOG_SCRIPT="$INSTALL_DIR/scripts/pm2-watchdog.sh"
 RECOVERY_SCRIPT="$INSTALL_DIR/scripts/safe-recovery.sh"

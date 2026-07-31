@@ -656,10 +656,13 @@ function runCmd(
   return new Promise((resolve) => {
     let stdout = '', stderr = ''
     // NAS PATH 보강 — Node.js_v18 bin이 PATH에 없어도 npm/git/pm2 인식
+    // BUG-VITE: node_modules/.bin 추가 — npm run build 시 vite command not found 방지
     const nasNodeBin = '/volume1/@appstore/Node.js_v18/usr/local/bin'
+    const nasNodeBinV20 = '/volume1/@appstore/Node.js_v20/usr/local/bin'
+    const localBin = `${cwd}/node_modules/.bin`
     const env = {
       ...process.env,
-      PATH: [nasNodeBin, process.env.PATH || '', '/usr/local/bin', '/usr/bin', '/bin'].join(':'),
+      PATH: [localBin, nasNodeBinV20, nasNodeBin, process.env.PATH || '', '/usr/local/bin', '/usr/bin', '/bin'].join(':'),
     }
     const proc = spawn(cmd, args, { cwd, stdio: 'pipe', env })
     proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })

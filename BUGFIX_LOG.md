@@ -2,6 +2,46 @@
 
 ---
 
+## [FEAT-200] APK 강제 전송 기능 추가 — 설정 > APK 탭 > 슬레이브 NAS 릴레이 섹션 (세션 126)
+
+> **대상 NAS**: NAS001 LinkMax 본사 (마스터) → NAS002 삼흥 본사 (슬레이브) 수동 전송 필요에서 출발
+
+### 배경 및 문제
+- NAS002 신규 설치 후 APK 전송이 필요한 상황
+- 기존 릴레이는 GitHub Actions webhook 수신 시에만 자동 실행 → 수동 트리거 방법 없음
+- curl로 직접 webhook 재호출하는 방법은 있으나 관리자가 UI에서 간단히 처리할 수 없었음
+
+### 해결 방법
+| 파일 | 내용 |
+|------|------|
+| `src/nas-routes/dist.ts` | `POST /api/dist/apk/relay/force` 엔드포인트 신규 추가 |
+| `public/static/app.js` | 강제 전송 카드 UI + `_loadRelayForceInfo()` + `_forceRelayApk()` 함수 추가 |
+
+### 동작 흐름
+```
+관리자 [강제 전송] 클릭
+  → confirm 팝업
+  → POST /api/dist/apk/relay/force (admin 인증)
+     ├─ APK 미설정 → 400 에러
+     ├─ 슬레이브 0대 → 400 에러
+     ├─ DEPLOY_WEBHOOK_SECRET 미설정 → 503 에러
+     └─ relayApkToSlaves() 비동기 실행 (fire-and-forget)
+          → 슬레이브 각각 POST /api/dist/apk/webhook
+  → 즉시 { success, version, queued, message } 응답
+  → toast 표시
+  → 5초 후 목록 자동 갱신 (last_relay_at / last_relay_status 확인)
+```
+
+### 커밋
+- `742a0bb` — feat: [FEAT-200] APK 강제 전송 기능 추가 (POST /api/dist/apk/relay/force + UI 카드)
+
+### 검증
+- ✅ `node --check` PASS
+- ✅ `npm run build` 성공 (298.71 kB)
+- ✅ GitHub push 완료 (`742a0bb`)
+
+---
+
 ## [BUG-BS3] better-sqlite3 GLIBC 불호환 완전 해결 — v8.0.0 node-v108 바이너리 교체 (세션 126, NAS001)
 
 > **대상 NAS**: NAS001 LinkMax 본사 (링크맥스 NAS001 — 최초 설치 기준)

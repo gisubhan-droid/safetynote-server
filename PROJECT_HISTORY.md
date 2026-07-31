@@ -21,8 +21,9 @@
 
 ---
 
-> 최종 업데이트: 2026-07-31 (세션 125 — BUG-VITE: 서버 업데이트 빌드 실패 수정 + BUG-196+FEAT-196: 내 작업목록 검색 Android IME 한글 버그 수정 + 검색 버튼 방식 전환 + 공사요청번호 검색 추가)
-> **GitHub 최신 (safetynote-server): `3a2c87a`** — fix: [BUG-VITE2] 빌드 실패 근본 해결 — npm run build 대신 node_modules/.bin/vite 직접 실행 (runBuild 헬퍼 도입)
+> 최종 업데이트: 2026-07-31 (세션 126 — FEAT-200: APK 강제 전송 기능 추가 — 설정 > APK 탭 > 슬레이브 NAS 자동 릴레이 섹션)
+> **GitHub 최신 (safetynote-server): `742a0bb`** — feat: [FEAT-200] APK 강제 전송 기능 추가 (POST /api/dist/apk/relay/force + UI 카드)
+> **이전 커밋 (safetynote-server): `3a2c87a`** — fix: [BUG-VITE2] 빌드 실패 근본 해결 — npm run build 대신 node_modules/.bin/vite 직접 실행 (runBuild 헬퍼 도입)
 > **이전 커밋 (safetynote-server): `35bc9ba`** — fix: [BUG-VITE] 서버 업데이트 빌드 실패 수정 — runCmd PATH에 node_modules/.bin + Node.js_v20 경로 추가 (sh: vite: command not found)
 > **이전 커밋 (safetynote-server): `aebb7e0`** — fix+feat: [BUG-196+FEAT-196] 내 작업목록 검색 Android IME 한글 버그 수정 + 검색버튼 방식 전환 + 공사요청번호 검색 추가
 > **이전 커밋 (safetynote-server): `c36ec25`** — docs: [NAS구분] NAS001 LinkMax 기준 명시 + 신규 NAS 구분 구조 정립
@@ -11420,6 +11421,45 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | feat: [FEAT-199] 작업관리/공사현황 기간 필터 전환 + 엑셀 전체 다운로드 |
+
+### 작업 — FEAT-200
+
+#### FEAT-200 — APK 강제 전송 기능 추가 (설정 > APK 탭 > 슬레이브 NAS 자동 릴레이 섹션)
+
+**배경**:
+- NAS001에서 NAS002로 APK를 수동 전송하는 방법 필요 (GitHub Actions webhook 없이)
+- 기존에는 `POST /apk/webhook`을 curl로 직접 호출해야 했음 → UI에서 버튼 클릭으로 처리
+
+**구현 내용**:
+
+**`src/nas-routes/dist.ts`**:
+- `POST /apk/relay/force` 엔드포인트 신규 추가 (admin 전용)
+- 현재 `system_settings`의 `apk_version / apk_url / release_note / force_update` 값 그대로 사용
+- 활성 슬레이브 수 사전 조회 → 0대/APK 미설정/DEPLOY_WEBHOOK_SECRET 미설정 시 조기 에러 반환
+- `relayApkToSlaves()` 비동기 fire-and-forget 호출 → 즉시 `{ success, version, queued, message }` 응답
+- 별도 APK 재다운로드 없음 — 기존 함수 재사용으로 코드 중복 없음
+
+**`public/static/app.js`**:
+- 강제 전송 카드 UI 추가 (슬레이브 목록 테이블 바로 위, 주황 테마)
+- `_loadRelayForceInfo()`: APK 버전 + 활성 슬레이브 수 실시간 조회 → 미설정 시 버튼 자동 비활성화
+- `_forceRelayApk()`: confirm → `POST /api/dist/apk/relay/force` → toast → 5초 후 목록 갱신
+- `_loadRelayTargets()` 호출 시 `_loadRelayForceInfo()` 자동 연동
+- 기존 릴레이 함수 패턴(const/let/async) 동일하게 유지 — 충돌 없음
+
+**충돌 체크**:
+- RULE-001: 기존 릴레이 함수 구간 전체가 `const/let/async` 사용 중 → 동일 패턴 유지 (혼용 없음)
+- RULE-003: `_forceRelayApk()` 전역 함수 분리 → onclick 내 따옴표 중첩 없음
+- KST-001: 시각 표시는 `_loadRelayTargets()` 목록 새로고침으로 자동 `_toKSTDateTime()` 적용
+
+**검증**: `node --check` ✅ + `npm run build` ✅ (298.71 kB)
+
+#### 커밋
+
+| repo | commit | 내용 |
+|------|--------|------|
+| safetynote-server | `742a0bb` | feat: [FEAT-200] APK 강제 전송 기능 추가 (POST /api/dist/apk/relay/force + UI 카드) |
+
+---
 
 ### 작업 — BUG-EXCEL
 

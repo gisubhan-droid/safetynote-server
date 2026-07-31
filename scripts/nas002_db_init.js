@@ -317,6 +317,40 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_task_assignments_worker ON task_assignme
 db.exec(`CREATE INDEX IF NOT EXISTS idx_task_assignments_task ON task_assignments(task_id)`);
 console.log('  ✅ task_assignments');
 
+// ── Step 4b: task_work_types ──────────────────────────────────
+console.log('\n[Step 4b] task_work_types...');
+db.exec(`CREATE TABLE IF NOT EXISTS task_work_types (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL,
+  work_type_id INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (work_type_id) REFERENCES work_types(id),
+  UNIQUE(task_id, work_type_id)
+)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_task_work_types_task ON task_work_types(task_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_task_work_types_type ON task_work_types(work_type_id)`);
+console.log('  ✅ task_work_types');
+
+// ── Step 4c: task_attachments ─────────────────────────────────
+console.log('\n[Step 4c] task_attachments...');
+db.exec(`CREATE TABLE IF NOT EXISTS task_attachments (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id     INTEGER NOT NULL,
+  uploader_id INTEGER NOT NULL,
+  file_name   TEXT NOT NULL,
+  file_path   TEXT NOT NULL,
+  file_size   INTEGER DEFAULT 0,
+  mime_type   TEXT DEFAULT 'application/octet-stream',
+  attach_type TEXT DEFAULT 'order',
+  description TEXT DEFAULT '',
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (task_id)     REFERENCES tasks(id),
+  FOREIGN KEY (uploader_id) REFERENCES users(id)
+)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id)`);
+console.log('  ✅ task_attachments');
+
 // ── Step 5: constructions 테이블 ─────────────────────────────
 console.log('\n[Step 5] constructions 테이블...');
 if (!existingTables.includes('constructions')) {
@@ -514,7 +548,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS task_photos (
 )`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_task_photos_task ON task_photos(task_id)`);
 
-// site_inspections
+// site_inspections (0006: task_id, 0007: inspection_date_only/result/reason, patchSchema: updated_at)
 db.exec(`CREATE TABLE IF NOT EXISTS site_inspections (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   inspector_id INTEGER NOT NULL,
@@ -531,8 +565,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS site_inspections (
   closed_at DATETIME,
   notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  task_id INTEGER REFERENCES tasks(id),
+  inspection_date_only TEXT,
+  inspection_result TEXT NOT NULL DEFAULT 'none',
+  result_reason TEXT NOT NULL DEFAULT '',
+  updated_at DATETIME,
   FOREIGN KEY (inspector_id) REFERENCES users(id)
 )`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_site_inspections_task_id ON site_inspections(task_id)`);
 
 // inspection_photos
 db.exec(`CREATE TABLE IF NOT EXISTS inspection_photos (

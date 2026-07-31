@@ -10,7 +10,7 @@
 
 | NAS ID | 고객사 | 설치일 | 상태 | 현재 단계 |
 |--------|--------|--------|------|----------|
-| **NAS002** | 미확인 | 2026-07-31 | 🔄 진행중 | DB 핵심 테이블 초기화 → 500 에러 해결 중 |
+| **NAS002** | 미확인 | 2026-07-31 | ✅ 완료 | 서버 정상 동작 확인 |
 
 ---
 
@@ -144,15 +144,31 @@ pm2 logs safetynote --nostream --lines 30
 
 ---
 
-### 다음 작업
-- [ ] **nas002_db_init.js 실행** → 500 에러 해결 확인
-- [ ] 전체 메뉴 정상 동작 확인 (작업목록, 공사관리, 체크리스트)
-- [ ] NAS002 환경 정보 확정 후 `NAS_OPERATIONS.md` NAS002 섹션 추가
-- [ ] 고객사 정보 확인
+### 추가 패치 이력 (nas002_db_init.js 실행 후 발견된 누락)
+
+| 패치 | 내용 | 해결 방법 |
+|------|------|-----------|
+| task_work_types | 테이블 누락 → `/api/tasks` 500 | 수동 CREATE |
+| site_inspections.task_id | 컬럼 누락 → `/api/inspections` 500 | ALTER TABLE |
+| site_inspections.inspection_date_only 등 | 컬럼 누락 | ALTER TABLE |
+| task_attachments | 테이블 누락 → 첨부파일 500 | 수동 CREATE |
+| tasks.risk_level CHECK | `urgent` 미포함 → INSERT 실패 | `nas002_patch_tasks_rl.cjs` |
+| safety_committee_votes.voted_at | 컬럼 누락 | ALTER TABLE |
+
+> ✅ 위 항목들은 `nas002_db_init.js` v2에 모두 반영 완료 (다음 NAS 설치 시 자동 처리)
+
+### ✅ 최종 완료 (2026-07-31)
+- 서버 정상 동작 확인
+- 전체 메뉴 500 에러 해소
+- 작업 상세 팝업 정상 로드
+
+### 남은 작업
+- [ ] 고객사 정보 확인 후 현황표 업데이트
+- [ ] `NAS_OPERATIONS.md` NAS002 섹션 추가
 - [ ] `nas-registry.json` NAS002 항목 추가
 - [ ] GitHub Secrets 등록 (NAS_WEBHOOK_URL_2, NAS_WEBHOOK_SECRET_2)
 
 ---
 
 *최초 작성: 2026-07-31 | 세션 126*  
-*최종 업데이트: 2026-07-31 | 세션 127 (nas002_db_init.js 작성)*
+*최종 업데이트: 2026-07-31 | 세션 127 (NAS002 정상 동작 확인 완료)*

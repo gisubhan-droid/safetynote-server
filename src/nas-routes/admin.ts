@@ -723,6 +723,72 @@ function resolveNodeBin(): string {
   return 'node'
 }
 
+// npm install 헬퍼 — optional deps 포함 재설치 (rollup native 바이너리 누락 방지)
+// BUG-ROLLUP: git reset --hard 후 @rollup/rollup-linux-x64-gnu 등 optional 바이너리 누락 → 빌드 실패
+// --ignore-scripts: better-sqlite3 rebuild 방지 (bs3 바이너리는 fixBs3Binary()에서 별도 교체)
+async function runNpmInstall(cwd: string, timeoutMs = 120000): Promise<{ code: number; stdout: string; stderr: string }> {
+  const npmBin = resolveNpmBin()
+  _addUpdateLog(`npm install --ignore-scripts (rollup optional 바이너리 복구)...`)
+  const res = await runCmd(npmBin, ['install', '--ignore-scripts'], cwd, timeoutMs)
+  if (res.code !== 0) {
+    _addUpdateLog(`npm install 경고: ${res.stderr.trim().slice(0, 150)}`)
+  } else {
+    _addUpdateLog('npm install 완료 ✅')
+  }
+  return res
+}
+
+// better-sqlite3 v8.0.0 바이너리 교체 헬퍼
+// BUG-BS3: npm install 실행 시 v9.x 바이너리로 덮어씌워져 GLIBC_2.29 에러 재발
+// glibc < 2.29 환경(Synology NAS 대다수)에서만 교체 실행 — 정상 환경은 스킵
+async function fixBs3Binary(cwd: string): Promise<void> {
+  // glibc 버전 확인 (ldd --version)
+  const lddRes = await runCmd('ldd', ['--version'], cwd, 5000)
+  const lddOut = (lddRes.stdout + lddRes.stderr).split('\n')[0] || ''
+  const glibcMatch = lddOut.match(/(\d+\.\d+)/)
+  const glibcVer = glibcMatch ? parseFloat(glibcMatch[1]) : 999
+
+  if (glibcVer >= 2.29) {
+    _addUpdateLog(`glibc ${glibcVer} ≥ 2.29 — better-sqlite3 바이너리 교체 불필요, 스킵`)
+    return
+  }
+
+  _addUpdateLog(`glibc ${glibcVer} < 2.29 감지 — better-sqlite3 v8.0.0 바이너리 교체 시작...`)
+
+  const bs3NodePath = `${cwd}/node_modules/better-sqlite3/build/Release/better_sqlite3.node`
+  const tarUrl = 'https://github.com/WiseLibs/better-sqlite3/releases/download/v8.0.0/better-sqlite3-v8.0.0-node-v108-linux-x64.tar.gz'
+  const tmpTar = '/tmp/bs3_update_fix.tar.gz'
+  const tmpDir = '/tmp/bs3_update_fix_dir'
+
+  try {
+    // 1. 다운로드
+    const dlRes = await runCmd('wget', ['-q', tarUrl, '-O', tmpTar], cwd, 60000)
+    if (dlRes.code !== 0) {
+      _addUpdateLog(`bs3 바이너리 다운로드 실패 (무시): ${dlRes.stderr.trim().slice(0, 100)}`)
+      return
+    }
+
+    // 2. 압축 해제
+    await runCmd('mkdir', ['-p', tmpDir], cwd, 5000)
+    const tarRes = await runCmd('tar', ['-xzf', tmpTar, '-C', tmpDir], cwd, 30000)
+    if (tarRes.code !== 0) {
+      _addUpdateLog(`bs3 압축 해제 실패 (무시): ${tarRes.stderr.trim().slice(0, 100)}`)
+      return
+    }
+
+    // 3. 바이너리 교체
+    const cpRes = await runCmd('cp', [`${tmpDir}/build/Release/better_sqlite3.node`, bs3NodePath], cwd, 10000)
+    if (cpRes.code !== 0) {
+      _addUpdateLog(`bs3 바이너리 복사 실패 (무시): ${cpRes.stderr.trim().slice(0, 100)}`)
+      return
+    }
+
+    _addUpdateLog('better-sqlite3 v8.0.0 바이너리 교체 완료 ✅ (GLIBC 호환)')
+  } catch (e: any) {
+    _addUpdateLog(`bs3 바이너리 교체 오류 (무시): ${e.message}`)
+  }
+}
+
 // 빌드 실행 헬퍼 — vite 직접 실행(최우선) / npm run build(폴백)
 async function runBuild(cwd: string, timeoutMs = 120000): Promise<{ code: number; stdout: string; stderr: string }> {
   const viteBin = resolveViteBin(cwd)
@@ -906,10 +972,19 @@ app.post('/update/apply', async (c) => {
       // KST 반영 시각 (UTC+9)
       _updateState.appliedAt = kstDateTimeStr(false)
 
-      // ── 3. 프론트엔드 dist 재빌드 ──────────────
+      // ── 3. npm install — optional 바이너리 복구 ────────────
+      // BUG-ROLLUP: git reset 후 @rollup/rollup-linux-x64-gnu 등 optional 바이너리 누락 → 빌드 실패
+      _updateState.status  = 'restarting'
+      _updateState.message = 'npm install 중... (패키지 복구)'
+      await runNpmInstall(cwd, 120000)
+
+      // ── 3b. better-sqlite3 GLIBC 호환 바이너리 교체 ────────
+      // BUG-BS3: npm install 시 v9.x 바이너리로 덮어씌워져 glibc < 2.29 환경에서 크래시
+      await fixBs3Binary(cwd)
+
+      // ── 4. 프론트엔드 dist 재빌드 ──────────────
       // BUG-049: git reset 후 빌드 없이 pm2 restart만 하면 dist/ 가 이전 버전 그대로 유지됨
       // BUG-VITE2: npm run build → shell 경유 vite 탐색 실패 → runBuild()로 vite 직접 실행
-      _updateState.status  = 'restarting'
       _updateState.message = '프론트엔드 빌드 중... (30초~1분 소요)'
       _addUpdateLog('빌드 시작...')
       const buildRes = await runBuild(cwd, 120000)
@@ -921,7 +996,7 @@ app.post('/update/apply', async (c) => {
       }
       _addUpdateLog(`빌드 완료 ✅`)
 
-      // ── 4. pm2 restart ─────────────────────────────────────
+      // ── 5. pm2 restart ─────────────────────────────────────
       _updateState.message = '서버 재시작 중... 잠시 후 페이지를 새로고침하세요'
       _addUpdateLog('pm2 restart safetynote 실행...')
 
@@ -1085,8 +1160,17 @@ app.post('/update/rollback', async (c) => {
       _updateState.updatedAt = new Date().toISOString()
       _updateState.appliedAt = kstDateTimeStr(false)
 
-      // ── 3. 프론트엔드 dist 재빌드 ────────────────────────────────
+      // ── 3. npm install — optional 바이너리 복구 ────────────
+      // BUG-ROLLUP: git reset 후 @rollup/rollup-linux-x64-gnu 등 optional 바이너리 누락 → 빌드 실패
       _updateState.status  = 'restarting'
+      _updateState.message = 'npm install 중... (패키지 복구)'
+      await runNpmInstall(cwd, 120000)
+
+      // ── 3b. better-sqlite3 GLIBC 호환 바이너리 교체 ────────
+      // BUG-BS3: npm install 시 v9.x 바이너리로 덮어씌워져 glibc < 2.29 환경에서 크래시
+      await fixBs3Binary(cwd)
+
+      // ── 4. 프론트엔드 dist 재빌드 ────────────────────────────────
       _updateState.message = '프론트엔드 빌드 중... (30초~1분 소요)'
       _addUpdateLog('빌드 시작...')
       const buildRes = await runBuild(cwd, 120000)
@@ -1098,7 +1182,7 @@ app.post('/update/rollback', async (c) => {
       }
       _addUpdateLog('빌드 완료 ✅')
 
-      // ── 4. pm2 restart ────────────────────────────────────────
+      // ── 5. pm2 restart ────────────────────────────────────────
       _updateState.message = '서버 재시작 중... 잠시 후 페이지를 새로고침하세요'
       _addUpdateLog('pm2 restart safetynote 실행...')
 

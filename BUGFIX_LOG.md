@@ -2,6 +2,25 @@
 
 ---
 
+## [BUG-VITE] 서버 업데이트 빌드 실패 — sh: vite: command not found (세션 125, 링크맥스 NAS)
+
+### 현상
+- 브라우저 서버 업데이트 UI에서 "빌드 실패: sh: vite: command not found" 오류
+- NAS 현재 버전(aebb7e0)과 GitHub 최신이 동일한데도 업데이트 적용 불가
+
+### 원인
+- `admin.ts` `runCmd()` 함수의 `env.PATH`에 `node_modules/.bin`이 없음
+- `npm run build` → 내부적으로 `vite` 실행 시 `vite`는 `node_modules/.bin/vite`에 있으나 PATH에 없어 탐색 실패
+- NAS Node.js v20 경로(`/volume1/@appstore/Node.js_v20/usr/local/bin`)도 미포함이었음
+
+### 수정 내용
+- `src/nas-routes/admin.ts` `runCmd()` 함수 내 `env.PATH` 구성 변경
+  - `node_modules/.bin` (`${cwd}/node_modules/.bin`) — 최우선 추가
+  - `/volume1/@appstore/Node.js_v20/usr/local/bin` — v20 경로 추가
+- 커밋: `35bc9ba`
+
+---
+
 ## [BUG-196 + FEAT-196] 내 작업목록 검색 개선 3건 — Android IME 한글 입력 버그 수정 + 검색 버튼 방식 전환 + 공사요청번호 검색 추가 (세션 125)
 
 > **대상 NAS**: NAS001 LinkMax 본사

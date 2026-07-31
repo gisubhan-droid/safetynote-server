@@ -63,8 +63,13 @@
    export PATH=/opt/bin:/opt/sbin:/volume1/@appstore/Node.js_v18/usr/local/bin:$PATH
    ```
 
-4. **better-sqlite3** — glibc 2.26 환경으로 GitHub prebuilt 바이너리 미호환  
-   → `npm rebuild better-sqlite3` (소스빌드, gcc/make 필요)
+4. **better-sqlite3** — glibc 2.26 환경, gcc/make 없음 (Entware 미설치)
+   - v9.x prebuilt → GLIBC_2.29 필요 → ❌ 불가
+   - **해결책: v8.0.0 node-v108 바이너리 교체** (GLIBC_2.14 이하만 사용) ✅
+   - npm install 후 바이너리 재교체 필요 → `scripts/fix-sqlite3-binary.sh` 실행
+   ```bash
+   bash /volume1/safetynote/scripts/fix-sqlite3-binary.sh
+   ```
 
 ### PM2 등록 명령어 (NAS001 기준)
 

@@ -2,6 +2,56 @@
 
 ---
 
+## [BUG-BS3] better-sqlite3 GLIBC 불호환 완전 해결 — v8.0.0 node-v108 바이너리 교체 (세션 126, NAS001)
+
+> **대상 NAS**: NAS001 LinkMax 본사 (링크맥스 NAS001 — 최초 설치 기준)
+
+### 현상
+- pm2 restart 후 브라우저 503 오류 반복
+- error.log: `GLIBC_2.29' not found (required by better_sqlite3.node)`
+- 재시작 횟수 1112회 (크래시 루프)
+
+### 원인 분석
+| 버전 | 바이너리 최대 GLIBC 요구 | NAS001(2.26) 호환 |
+|------|------|------|
+| v9.6.0 node-v108 | **GLIBC_2.29** (exp/log/pow/fcntl64) | ❌ 불가 |
+| v9.4.0 node-v108 | **GLIBC_2.29** | ❌ 불가 |
+| v9.0.0 node-v108 | **GLIBC_2.29** | ❌ 불가 |
+| v8.7.0 node-v108 | **GLIBC_2.29** | ❌ 불가 |
+| **v8.0.0 node-v108** | **GLIBC_2.14** 이하만 사용 | ✅ **완전 호환** |
+
+- v9.x → v8.0.0 사이 `exp`, `log`, `pow`, `fcntl64` 함수가 GLIBC_2.29 버전 심볼로 교체됨
+- gcc/make(Entware) 없어 소스빌드 불가 (현재 NAS001에 `/opt/bin/` 미설치)
+- python3 3.8.12 존재 → 비상복구서버(3445) 정상 동작 중
+
+### 해결 방법
+**v8.0.0 node-v108 바이너리만 교체** (코드 수정 없음)
+- `prepare / exec / transaction / pragma / run / all / get` — v8.0.0에도 동일 API 존재 → 완전 호환
+- 코드 변경 불필요, 바이너리 파일 1개만 교체
+
+### NAS에서 실행한 명령
+```bash
+cd /volume1/safetynote
+wget -q "https://github.com/WiseLibs/better-sqlite3/releases/download/v8.0.0/better-sqlite3-v8.0.0-node-v108-linux-x64.tar.gz" -O /tmp/bs3_fix.tar.gz
+mkdir -p /tmp/bs3_fix_dir
+tar -xzf /tmp/bs3_fix.tar.gz -C /tmp/bs3_fix_dir/
+cp /tmp/bs3_fix_dir/build/Release/better_sqlite3.node \
+   /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+pm2 restart safetynote
+```
+
+### 결과
+- ✅ pm2 status: `online`
+- ✅ out.log: `✅ 서버 실행 중 (HTTPS): https://0.0.0.0:3443`
+- ✅ 503 오류 해소
+
+### ⚠️ 주의: npm install 실행 시 바이너리 유실
+`npm install` 또는 `npm rebuild` 실행 시 v9.6.0 바이너리로 덮어씌워져 동일 문제 재발.
+→ npm install 후 반드시 위 바이너리 교체 명령 재실행 필요.
+→ `scripts/fix-sqlite3-binary.sh` 스크립트로 자동화 가능 (별도 작성).
+
+---
+
 ## [BUG-VITE2] 빌드 실패 근본 해결 — vite 직접 실행 (세션 125, 링크맥스 NAS)
 
 ### 현상 (2차)

@@ -22,7 +22,7 @@
 ---
 
 > 최종 업데이트: 2026-08-03 (세션 132 — BUG-206: Webhook 자동업데이트 플로우 npm install 누락 수정)
-> **GitHub 최신 (safetynote-server): `(커밋 후 갱신)`** — fix: [BUG-206] Webhook 자동업데이트 플로우에 runNpmInstall+fixBs3Binary+fixTsxBinary 삽입
+> **GitHub 최신 (safetynote-server): `3d1525b`** — fix: [BUG-206] Webhook 자동업데이트 플로우에 runNpmInstall+fixBs3Binary+fixTsxBinary 삽입
 > **이전 커밋 (safetynote-server): `574a66b`** — fix: [BUG-202] 신규 NAS 설치 시에도 tsx 소멸 악순환 차단
 > **이전 커밋 (safetynote-server): `e646491`** — fix: [BUG-202] tsx 소멸 영구 차단 — start-server.sh 래퍼 + PM2 재등록 가이드
 > **이전 커밋 (safetynote-server): `7c284d7`** — docs: [BUG-205] PROJECT_HISTORY 커밋 해시 8610a45 반영 (세션 130)
@@ -7642,7 +7642,7 @@ git reset 후 rollup optional 바이너리가 없어 빌드 실패 → 구버전
 | `BUGFIX_LOG.md` | BUG-206 상세 기록 맨 위 삽입 |
 
 ### 커밋
-- `(커밋 후 갱신)` — fix: [BUG-206] Webhook 자동업데이트 플로우에 npm install+fixBs3Binary+fixTsxBinary 삽입
+- `3d1525b` — fix: [BUG-206] Webhook 자동업데이트 플로우에 npm install+fixBs3Binary+fixTsxBinary 삽입
 
 ---
 

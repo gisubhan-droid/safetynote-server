@@ -22,7 +22,7 @@
 ---
 
 > 최종 업데이트: 2026-08-03 (세션 127 — BUG-201: 현장위치 지도 날짜 검색 기준 수정 — 등록일 → 실제 작업/평가 진행일)
-> **GitHub 최신 (safetynote-server): `커밋예정`** — fix: [BUG-201] 현장위치 지도 날짜 필터 등록일→작업일/점검일 수정 + TBM 탭 날짜 파라미터 누락 수정
+> **GitHub 최신 (safetynote-server): `c7e7a03`** — fix: [BUG-201] 현장위치 지도 날짜 필터 등록일→작업일/점검일 수정 + TBM 탭 날짜 파라미터 누락 수정
 > **이전 커밋 (safetynote-server): `72bad24`** — docs: [NAS002] NAS_OPERATIONS.md 삼흥 본사 섹션 추가
 > **이전 커밋 (safetynote-server): `3186256`** — docs: [BUG-ROLLUP] PROJECT_HISTORY + BUGFIX_LOG 세션 126 기록 추가
 > **이전 커밋 (safetynote-server): `9d91630`** — fix: [BUG-ROLLUP] 서버 업데이트/롤백 시 빌드 실패 완전 해결 — npm install + bs3 바이너리 교체 자동화

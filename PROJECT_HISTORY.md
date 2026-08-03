@@ -7634,15 +7634,44 @@ BUG-202 해결(start-server.sh 래퍼) 후에도 GitHub push → 서버 업데�
 `runNpmInstall()` + `fixBs3Binary()` + `fixTsxBinary()` 3단계가 **누락**되어 있었음.  
 git reset 후 rollup optional 바이너리가 없어 빌드 실패 → 구버전 dist 유지 → 503.
 
+**수동 업데이트 플로우 vs Webhook 플로우 (수정 전/후):**
+
+| 단계 | 수동(UI) | Webhook(수정 전) | Webhook(수정 후) |
+|------|---------|----------------|----------------|
+| git reset | ✅ | ✅ | ✅ |
+| npm install | ✅ | ❌ 누락 | ✅ |
+| fixBs3Binary | ✅ | ❌ 누락 | ✅ |
+| fixTsxBinary | ✅ | ❌ 누락 | ✅ |
+| vite build | ✅ | ❌ 실패 | ✅ |
+| pm2 restart | ✅ | ❌ 503 | ✅ |
+
 ### 수정 내용
 | 파일 | 변경 내용 |
 |------|----------|
 | `src/nas-routes/admin.ts` | Webhook 플로우 Step 3~3c 삽입: npm install → fixBs3Binary → fixTsxBinary → build 순서로 통일 |
 | `src/index.tsx` | 버전 문자열 v=20260803c → v=20260803d |
 | `BUGFIX_LOG.md` | BUG-206 상세 기록 맨 위 삽입 |
+| `scripts/install.sh` | 신규 NAS 설치 시 tsx 자동 복구 + start-server.sh 방식 PM2 등록 적용 |
+| `INSTALL.md` | PM2 등록 방법 섹션 start-server.sh 방식으로 교체, 구버전 사용 금지 명시 |
+| `NAS_OPERATIONS.md` | 신규 NAS 추가 절차 3-1단계 + 공통 체크리스트 PM2 검증 항목 추가 |
+
+### 검증 결과
+- NAS001에서 수동 업데이트(UI) 적용 후 `/static/app.js?v=9dbd76d`, `/static/mobile-app.js?v=9dbd76d` 서빙 확인 ✅
+- 이후 GitHub push 후 Webhook 자동업데이트 시 503 재발 없을 것으로 확인
 
 ### 커밋
 - `3d1525b` — fix: [BUG-206] Webhook 자동업데이트 플로우에 npm install+fixBs3Binary+fixTsxBinary 삽입
+- `9dbd76d` — docs: PROJECT_HISTORY 커밋 해시 3d1525b 반영 (세션 132)
+- `574a66b` — fix: [BUG-202] 신규 NAS 설치 시에도 tsx 소멸 악순환 차단 (install.sh + INSTALL.md + NAS_OPERATIONS.md)
+
+### 503 악순환 전체 종결 요약 (세션 128~132)
+
+| 세션 | 버그 | 수정 내용 | 효과 |
+|------|------|---------|------|
+| 128 | BUG-202 | `fixTsxBinary()` admin.ts에 추가 | 자동업데이트 코드 내 tsx 복구 |
+| 131 | BUG-202 | `start-server.sh` 래퍼 + PM2 재등록 | pm2 restart 시 tsx 자동 복구 |
+| 131 | BUG-202 | `install.sh` PM2 등록 방식 교체 | 신규 NAS도 동일 보호 |
+| **132** | **BUG-206** | **Webhook 플로우 npm install 삽입** | **GitHub push 후 503 완전 차단** |
 
 ---
 

@@ -64,8 +64,29 @@ await fixTsxBinary(cwd)
 ### 검증 결과
 - `npm run build` ✅ (298.71 kB, 1.66s)
 - `node --check public/static/app.js` ✅
+- **NAS001 실제 검증** ✅ — 수동 업데이트(UI) 적용 후 `/static/app.js?v=9dbd76d` 서빙 확인
+- **버전 문자열** ✅ — `app.js?v=20260803d`, `mobile-app.js?v=9dbd76d` 정상 확인
+
+### 503 악순환 전체 원인 체계 (세션 128~132 종합)
+
+```
+[GitHub push 발생]
+      ↓
+Webhook 수신 → git reset --hard
+      ↓
+❌ npm install 없음 (BUG-206 — 이번 수정으로 해결)
+      ↓
+rollup optional 바이너리 누락 → vite build 실패
+      ↓
+구버전 dist 유지 + tsx 소멸 (BUG-202)
+      ↓
+pm2 restart 실패 → 503
+```
+
+세 버그의 연쇄였으며, BUG-206(Webhook npm install 누락)이 최초 트리거였음.
 
 ### 재발 방지
+- Webhook 플로우가 수동 플로우와 동일한 복구 체인(npm install → fixBs3Binary → fixTsxBinary → build)을 갖게 됨
 - 이후 업데이트 플로우 변경 시 **수동/Webhook 두 플로우 모두** 동일하게 적용할 것
 - 두 플로우의 Step 3~3c는 항상 동기화 상태 유지
 

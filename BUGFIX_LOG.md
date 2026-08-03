@@ -238,7 +238,12 @@ var pd = String(tbm.tbm_date || tbm.planned_date || '').slice(0, 10);
 
 ---
 
-## [BUG-202] 자동업데이트 후 tsx 바이너리 누락으로 서버 기동 불가 (세션 128)
+## [BUG-202] 자동업데이트 후 tsx 바이너리 누락으로 서버 기동 불가 (세션 128 → 영구 해결 세션 131)
+
+> **[세션 131 추가]** fixTsxBinary()는 자동업데이트 코드(admin.ts) 안에서만 동작합니다.  
+> **PM2 자체가 tsx를 직접 참조하는 구조**에서는 tsx 소멸 → pm2 restart 즉시 실패 → fixTsxBinary()조차 호출 불가.  
+> **영구 해결**: PM2 script를 `scripts/start-server.sh` 래퍼로 교체 (tsx 소멸 시 자동 복구 후 기동).  
+> **NAS001 적용 방법**: 아래 "NAS001 PM2 재등록 명령어" 섹션 참조.
 
 > **발생 NAS**: NAS001 LinkMax 본사 (`linkmax.myds.me:3443`)
 > **발견일**: 2026-08-03

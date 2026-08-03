@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-03 (세션 130 — BUG-205: 현장위치지도 완료 탭 /tbm→/tasks API 전면 교체)
-> **GitHub 최신 (safetynote-server): `8610a45`** — fix: [BUG-205] 현장위치지도 완료 탭 /tbm→/tasks API 교체 — planned_date 기준으로 현장점검과 데이터 소스 통일
+> 최종 업데이트: 2026-08-03 (세션 131 — BUG-202 영구 해결: start-server.sh 래퍼 + PM2 재등록 방식 확정)
+> **GitHub 최신 (safetynote-server): `e646491`** — fix: [BUG-202] tsx 소멸 영구 차단 — start-server.sh 래퍼 + PM2 재등록 가이드
+> **이전 커밋 (safetynote-server): `7c284d7`** — docs: [BUG-205] PROJECT_HISTORY 커밋 해시 8610a45 반영 (세션 130)
+> **이전 커밋 (safetynote-server): `8610a45`** — fix: [BUG-205] 현장위치지도 완료 탭 /tbm→/tasks API 교체 — planned_date 기준으로 현장점검과 데이터 소스 통일
 > **이전 커밋 (safetynote-server): `466c301`** — docs: [BUG-204] PROJECT_HISTORY 커밋 해시 d2927cf 반영 (세션 129)
 > **이전 커밋 (safetynote-server): `d2927cf`** — fix: [BUG-204] 현장위치지도 진행 탭 /tbm→/tasks API 교체 — planned_date 기준으로 현장점검과 데이터 소스 통일
 > **이전 커밋 (safetynote-server): `0546cfa`** — fix: [BUG-203] app.js 버전 문자열 갱신 v=20260726c→v=20260803a (브라우저 캐시 강제 갱신)
@@ -7616,6 +7618,37 @@ task.status = 'paused'(일시중지/작업중지 신고 상태)가 두 페이지
 
 ### 커밋
 - `27cb2f2` — fix: 현장위치지도·현장점검 — 중지(paused) 작업 미표시 처리
+
+---
+
+## 세션 131 (2026-08-03) — BUG-202 영구 해결: tsx 소멸 자동 복구 start-server.sh 래퍼
+
+### 작업 배경
+BUG-205(세션 130) push 후 NAS001에서 503 재발. 브라우저 콘솔에서 `app.js?v=20260714a`(7월 14일 구버전) 서빙 확인.  
+`fixTsxBinary()`는 admin.ts(자동업데이트 코드) 안에서 동작하지만, PM2 script가 tsx 절대경로를 직접 참조하므로 tsx 소멸 시 pm2 restart 자체가 즉시 실패 → fixTsxBinary() 호출 불가 → 악순환.
+
+### 근본 원인
+`ecosystem.config.cjs`의 PM2 script가 `/volume1/safetynote/node_modules/.bin/tsx` 절대경로 하드코딩.  
+tsx 소멸 → pm2 restart → ERR_MODULE_NOT_FOUND → 즉시 크래시 → 503.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `scripts/start-server.sh` | **신규 생성** — tsx 소멸 자동 감지·복구 후 서버 기동하는 PM2 래퍼 |
+| `ecosystem.config.cjs` | PM2 script: tsx 절대경로 → `start-server.sh`, interpreter: `node` → `/bin/bash` |
+| `NAS_OPERATIONS.md` | PM2 등록 명령어 섹션을 start-server.sh 방식으로 전면 교체, 구버전 사용 금지 명시 |
+| `BUGFIX_LOG.md` | BUG-202 섹션에 세션 131 영구 해결 내용 추가 |
+
+**start-server.sh 복구 로직:**
+- Case 1: `.bin/tsx` 정상 존재 → 즉시 통과
+- Case 2: tsx 패키지 있음 + 링크만 없음 → 심볼릭 링크 수동 재생성
+- Case 3: tsx 패키지 자체 없음 → `npm install tsx --save-dev` 자동 실행
+
+### 커밋
+- `e646491` — fix: [BUG-202] tsx 소멸 영구 차단 — start-server.sh 래퍼 + PM2 재등록 가이드
+
+### NAS001 적용 필요 작업
+- [ ] SSH 접속 후 `git pull` → PM2 재등록 (start-server.sh 방식) → `pm2 save`
 
 ---
 

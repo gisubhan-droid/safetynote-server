@@ -1423,42 +1423,19 @@ app.post('/update/webhook', async (c) => {
       _updateState.updatedAt = new Date().toISOString()
       _updateState.appliedAt = kstDateTimeStr(false)
 
-      // ── 3. npm install — optional 바이너리 복구 ────────────────────
-      // BUG-206: Webhook 플로우에 npm install이 없어 git reset 후 rollup optional 바이너리 누락
-      //          → vite build 실패 → 구버전 dist 유지 → 503 (수동 업데이트 플로우와 동일하게 적용)
+      // ── 3. pm2 restart — start-server.sh가 git pull+build+tsx복구 전부 처리 ──
+      // BUG-207: Webhook 플로우에서 npm install/build를 서버 코드로 처리하면
+      //          "구버전 서버가 업데이트를 처리"하는 치킨-에그 문제 발생
+      // 해결: 모든 업데이트 로직(git pull → npm install → fixBs3 → fixTsx → build)을
+      //       scripts/start-server.sh 안에 내장 → pm2 restart 시 자동 실행
+      //       Webhook은 pm2 restart만 트리거하면 됨
       _updateState.status  = 'restarting'
-      _updateState.message = 'npm install 중... (패키지 복구)'
-      _addUpdateLog('npm install --ignore-scripts (rollup optional 바이너리 복구)...')
-      await runNpmInstall(cwd, 120000)
-
-      // ── 3b. better-sqlite3 GLIBC 호환 바이너리 교체 ────────────────
-      // BUG-BS3: npm install 시 v9.x 바이너리로 덮어씌워져 glibc < 2.29 환경에서 크래시
-      await fixBs3Binary(cwd)
-
-      // ── 3c. tsx 바이너리 링크 복구 ──────────────────────────────────
-      // BUG-202: --ignore-scripts 로 인해 node_modules/.bin/tsx 미생성 → pm2 기동 불가
-      // BUG-206: Webhook 플로우에도 동일하게 적용 (수동 업데이트와 동일한 복구 체인)
-      await fixTsxBinary(cwd)
-
-      // ── 4. 프론트엔드 dist 재빌드 ───────────────────────────────────
-      _updateState.message = '프론트엔드 빌드 중...'
-      _addUpdateLog('빌드 시작...')
-      const buildRes = await runBuild(cwd, 120000)
-      if (buildRes.code !== 0) {
-        _addUpdateLog(`빌드 실패: ${buildRes.stderr.trim()}`)
-        _updateState.status  = 'error'
-        _updateState.message = `빌드 실패: ${buildRes.stderr.trim().slice(0, 100)}`
-        return
-      }
-      _addUpdateLog('빌드 완료 ✅')
-
-      // ── 5. pm2 restart ───────────────────────────────────────────
-      _updateState.message = '서버 재시작 중...'
-      _addUpdateLog('pm2 restart safetynote 실행...')
+      _updateState.message = '서버 재시작 중... (start-server.sh가 최신 코드로 자동 빌드)'
+      _addUpdateLog('pm2 restart safetynote 실행... (git pull + build는 start-server.sh 내장)')
       setTimeout(async () => {
         const restartRes = await runCmd('pm2', ['restart', 'safetynote'], cwd, 15000)
         if (restartRes.code === 0) {
-          _addUpdateLog('pm2 restart 완료 ✅')
+          _addUpdateLog('pm2 restart 완료 ✅ (start-server.sh가 백그라운드에서 build 중...)')
           _updateState.status  = 'done'
           _updateState.message = `Webhook 자동 업데이트 완료! (${_updateState.currentCommit})`
         } else {

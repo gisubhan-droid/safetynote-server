@@ -726,6 +726,7 @@ function resolveNodeBin(): string {
 // npm install 헬퍼 — optional deps 포함 재설치 (rollup native 바이너리 누락 방지)
 // BUG-ROLLUP: git reset --hard 후 @rollup/rollup-linux-x64-gnu 등 optional 바이너리 누락 → 빌드 실패
 // --ignore-scripts: better-sqlite3 rebuild 방지 (bs3 바이너리는 fixBs3Binary()에서 별도 교체)
+// BUG-202: --ignore-scripts 사용 시 tsx .bin 심볼릭 링크 미생성 → fixTsxBinary()에서 별도 복구
 async function runNpmInstall(cwd: string, timeoutMs = 120000): Promise<{ code: number; stdout: string; stderr: string }> {
   const npmBin = resolveNpmBin()
   _addUpdateLog(`npm install --ignore-scripts (rollup optional 바이너리 복구)...`)
@@ -736,6 +737,60 @@ async function runNpmInstall(cwd: string, timeoutMs = 120000): Promise<{ code: n
     _addUpdateLog('npm install 완료 ✅')
   }
   return res
+}
+
+// tsx 바이너리 링크 복구 헬퍼
+// BUG-202: npm install --ignore-scripts 실행 시 postinstall 스크립트가 건너뛰어져
+//          node_modules/.bin/tsx 심볼릭 링크가 생성되지 않음
+//          → pm2가 tsx를 찾지 못해 ERR_MODULE_NOT_FOUND 에러로 서버 기동 불가
+// 해결: tsx 패키지가 node_modules/tsx 에 존재하는 경우 .bin 링크를 수동 생성
+async function fixTsxBinary(cwd: string): Promise<void> {
+  const { existsSync } = await import('fs')
+  const path = await import('path')
+
+  const tsxDir   = path.join(cwd, 'node_modules', 'tsx')
+  const binLink  = path.join(cwd, 'node_modules', '.bin', 'tsx')
+
+  // tsx 패키지 자체가 없으면 별도 설치
+  if (!existsSync(tsxDir)) {
+    _addUpdateLog('[BUG-202] tsx 패키지 없음 — npm install tsx 시도...')
+    const npmBin = resolveNpmBin()
+    const res = await runCmd(npmBin, ['install', 'tsx', '--save-dev'], cwd, 60000)
+    if (res.code !== 0) {
+      _addUpdateLog(`[BUG-202] tsx 설치 실패: ${res.stderr.trim().slice(0, 100)}`)
+    } else {
+      _addUpdateLog('[BUG-202] tsx 패키지 설치 완료 ✅')
+    }
+    return
+  }
+
+  // tsx 패키지는 있으나 .bin 링크가 없는 경우 — 링크 수동 생성
+  if (!existsSync(binLink)) {
+    _addUpdateLog('[BUG-202] node_modules/.bin/tsx 링크 없음 — 수동 생성 중...')
+    // tsx 실행 진입점 탐색: dist/cli.mjs 또는 dist/cli.js
+    const candidates = [
+      path.join(tsxDir, 'dist', 'cli.mjs'),
+      path.join(tsxDir, 'dist', 'cli.js'),
+    ]
+    const tsxEntry = candidates.find(p => existsSync(p))
+    if (!tsxEntry) {
+      _addUpdateLog('[BUG-202] tsx 진입점 탐색 실패 — npm install tsx 재시도')
+      const npmBin = resolveNpmBin()
+      await runCmd(npmBin, ['install', 'tsx', '--save-dev'], cwd, 60000)
+      return
+    }
+    // 심볼릭 링크 생성
+    const lnRes = await runCmd('ln', ['-sf', tsxEntry, binLink], cwd, 5000)
+    if (lnRes.code !== 0) {
+      _addUpdateLog(`[BUG-202] 링크 생성 실패: ${lnRes.stderr.trim().slice(0, 100)}`)
+    } else {
+      // 실행 권한 부여
+      await runCmd('chmod', ['+x', binLink], cwd, 5000)
+      _addUpdateLog(`[BUG-202] node_modules/.bin/tsx 링크 복구 완료 ✅ → ${tsxEntry}`)
+    }
+  } else {
+    _addUpdateLog('[BUG-202] node_modules/.bin/tsx 확인 ✅ (정상)')
+  }
 }
 
 // better-sqlite3 v8.0.0 바이너리 교체 헬퍼
@@ -982,6 +1037,10 @@ app.post('/update/apply', async (c) => {
       // BUG-BS3: npm install 시 v9.x 바이너리로 덮어씌워져 glibc < 2.29 환경에서 크래시
       await fixBs3Binary(cwd)
 
+      // ── 3c. tsx 바이너리 링크 복구 ────────────────────────────
+      // BUG-202: --ignore-scripts 로 인해 node_modules/.bin/tsx 미생성 → pm2 기동 불가
+      await fixTsxBinary(cwd)
+
       // ── 4. 프론트엔드 dist 재빌드 ──────────────
       // BUG-049: git reset 후 빌드 없이 pm2 restart만 하면 dist/ 가 이전 버전 그대로 유지됨
       // BUG-VITE2: npm run build → shell 경유 vite 탐색 실패 → runBuild()로 vite 직접 실행
@@ -1169,6 +1228,10 @@ app.post('/update/rollback', async (c) => {
       // ── 3b. better-sqlite3 GLIBC 호환 바이너리 교체 ────────
       // BUG-BS3: npm install 시 v9.x 바이너리로 덮어씌워져 glibc < 2.29 환경에서 크래시
       await fixBs3Binary(cwd)
+
+      // ── 3c. tsx 바이너리 링크 복구 ────────────────────────────
+      // BUG-202: --ignore-scripts 로 인해 node_modules/.bin/tsx 미생성 → pm2 기동 불가
+      await fixTsxBinary(cwd)
 
       // ── 4. 프론트엔드 dist 재빌드 ────────────────────────────────
       _updateState.message = '프론트엔드 빌드 중... (30초~1분 소요)'

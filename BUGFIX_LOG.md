@@ -2,6 +2,89 @@
 
 ---
 
+## [BUG-202] 자동업데이트 후 tsx 바이너리 누락으로 서버 기동 불가 (세션 128)
+
+> **발생 NAS**: NAS001 LinkMax 본사 (`linkmax.myds.me:3443`)
+> **발견일**: 2026-08-03
+> **심각도**: 🔴 CRITICAL — 서버 전체 응답 불가 (503)
+
+### 현상
+- 자동업데이트 실행 후 pm2 `online` 상태이지만 `curl https://localhost:3443/api/health` 응답 없음
+- 브라우저에서 모든 API, 정적 파일(app.js, xlsx.full.min.js 등) 503 에러
+- pm2 restart count ↺ 3 → 4 (반복 크래시 후 재시작)
+- `pm2 logs safetynote --lines 50 --nostream` error 로그:
+  ```
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module
+  '/volume1/safetynote/node_modules/.bin/tsx'
+  ```
+
+### 근본 원인 분석
+
+```
+자동업데이트 흐름:
+  git reset --hard origin/main
+    → runNpmInstall()  ← npm install --ignore-scripts
+                           ↑
+                     [문제 지점]
+                     postinstall 스크립트 전부 건너뜀
+                     → node_modules/.bin/tsx 심볼릭 링크 미생성
+                     → node_modules/tsx/ 패키지는 존재하지만 실행 불가
+    → fixBs3Binary()   ← 정상 (GLIBC 교체)
+    → pm2 restart      ← tsx 없음 → ERR_MODULE_NOT_FOUND → 즉시 크래시
+```
+
+**왜 `--ignore-scripts`를 쓰는가?**
+- BUG-BS3 대응으로 `better-sqlite3` postinstall rebuild를 막기 위해 도입
+- 부작용: tsx를 포함한 모든 패키지의 postinstall/bin-link 스크립트가 차단됨
+
+**왜 이전까지 안 터졌나?**
+- 최초 설치 시 `npm install`(--ignore-scripts 없음)로 `.bin/tsx` 생성됨
+- 자동업데이트의 `git reset --hard`는 소스 파일만 초기화 → `node_modules/` 유지
+- 따라서 `.bin/tsx` 링크가 살아있어 정상 동작
+- **이번에는** git reset 후 `npm install --ignore-scripts`가 기존 `.bin/tsx`를 삭제/덮어쓰면서 링크 소멸
+
+### 수정 내용 (admin.ts)
+
+**① `fixTsxBinary()` 함수 신규 추가 (line 743~793)**
+
+| 경우 | 처리 |
+|---|---|
+| `node_modules/tsx/` 없음 | `npm install tsx --save-dev` 실행 |
+| `node_modules/tsx/` 있고 `.bin/tsx` 없음 | `ln -sf dist/cli.mjs .bin/tsx` 수동 생성 + `chmod +x` |
+| `.bin/tsx` 정상 존재 | 확인 로그만 출력, 스킵 |
+
+**② 업데이트 플로우 Step 3c 추가 (line 1040)**
+```
+Step 3.  runNpmInstall()   ← --ignore-scripts
+Step 3b. fixBs3Binary()    ← GLIBC 교체 (기존)
+Step 3c. fixTsxBinary()    ← BUG-202 신규 추가 ✅
+Step 4.  runBuild()
+Step 5.  pm2 restart
+```
+
+**③ 롤백 플로우 동일 적용 (line 1232)** — 롤백 시에도 동일 문제 발생 가능
+
+### 수동 복구 명령어 (이미 발생한 경우)
+
+```bash
+cd /volume1/safetynote
+npm install tsx --save-dev
+pm2 restart safetynote
+sleep 5 && curl -sk https://localhost:3443/api/health
+```
+
+### 재발 방지
+
+- `fixTsxBinary()` 함수가 자동업데이트/롤백 플로우에 영구 포함됨
+- 모든 신규 NAS 설치 후 최초 자동업데이트 시 자동 적용됨
+- pm2 logs에서 `[BUG-202]` 태그로 tsx 복구 상태 확인 가능
+
+### 검증 결과
+- `npm run build` ✅ (298.71 kB, 1.65s)
+- `node --check` (admin.ts TypeScript 빌드 포함) ✅
+
+---
+
 ## [BUG-201] 현장위치 지도 날짜 검색 기준 수정 — 등록일 → 실제 작업/평가 진행일 (세션 127)
 
 > **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)

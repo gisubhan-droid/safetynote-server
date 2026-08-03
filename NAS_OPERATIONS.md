@@ -301,6 +301,7 @@ cd /volume1/safetynote \
 | 2026-07-31 | 세션 126 | FAIL(503) 원인 진단 — DEPLOY_WEBHOOK_SECRET 미설정 |
 | 2026-07-31 | 세션 126 | BUG-ROLLUP: admin.ts 자동 복구 코드 추가 (commit 9d91630) |
 | 2026-07-31 | 세션 127 | NAS002 수동 복구 명령어 정리 + NAS_OPERATIONS.md NAS002 섹션 추가 |
+| 2026-08-03 | 세션 128 | BUG-202 tsx 바이너리 누락 진단 (NAS001 발생) → fixTsxBinary() 코드 수정, NAS002 한 번에 실행 블록에 npm install tsx 추가 |
 | — | — | ⏳ **NAS002 수동 복구 대기중** — SSH 실행 필요 |
 
 ---
@@ -320,4 +321,5 @@ cd /volume1/safetynote \
 
 *최초 작성: 2026-07-31 | NAS001 LinkMax 본사 기준*  
 *2026-08-03 세션 127 업데이트: NAS002 삼흥 본사 섹션 추가 (BUG-ROLLUP 수동 복구 명령어 포함)*  
+*2026-08-03 세션 128 업데이트: BUG-202 tsx 바이너리 누락 버그 기록 + fixTsxBinary() 코드 수정 + NAS002 한 번에 실행 블록에 npm install tsx 추가 + BUG 목록 셀션 신규 추가*  
 *업데이트 시 반드시 마스터 테이블 + 해당 NAS 섹션 동시 수정*

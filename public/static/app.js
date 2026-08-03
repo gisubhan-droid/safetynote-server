@@ -45517,7 +45517,7 @@ async function renderSiteMapPage(container) {
 
           <!-- 날짜 -->
           <div class="flex items-center gap-1">
-            <label class="text-xs font-bold text-gray-600 whitespace-nowrap">등록일</label>
+            <label class="text-xs font-bold text-gray-600 whitespace-nowrap">${_tab === 'inspection' ? '점검일' : '작업일'}</label>
             <input type="date" id="siteMapDateFrom" value="${_df}" class="form-control text-sm" style="width:130px">
             <span class="text-gray-400 text-sm">~</span>
             <input type="date" id="siteMapDateTo"   value="${_dt}" class="form-control text-sm" style="width:130px">
@@ -45820,9 +45820,14 @@ async function loadSiteMapMarkers(map) {
     // 작업 개시(working) 이후 건은 진행 탭으로 이동됨
     // [BUG-084] 날짜 파라미터 제거: tbm_done 건은 날짜 무관 전체 조회 후 클라이언트 필터
     //   dateParams() 사용 시 기본 30일 범위 밖 TBM 레코드 필터아웃 → 0건
+    // [BUG-201] date_from/date_to 추가: tbm_date(TBM 진행일) 기준 날짜 필터 적용
+    //   서버 tbm.ts: date(COALESCE(tbm.tbm_date, tbm.created_at)) >= date_from 이미 지원
+    //   기존 BUG-084 우려(30일 밖 0건)는 tbm_done 상태 특성상 단기 데이터이므로 실질 영향 없음
     if (filter === 'tbm') {
       const _tbmP = new URLSearchParams();
-      if (userId) _tbmP.set('user_id', userId);
+      if (dateFrom) _tbmP.set('date_from', dateFrom);
+      if (dateTo)   _tbmP.set('date_to',   dateTo);
+      if (userId)   _tbmP.set('user_id',   userId);
       _tbmP.set('limit', '500');
       const res = await API.get(`/tbm?${_tbmP.toString()}`);
       const _rawTbmList = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.tbms || []);

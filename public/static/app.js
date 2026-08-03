@@ -45905,11 +45905,18 @@ async function loadSiteMapMarkers(map) {
         : _rawTbmAllList;
 
       // ② task_status = 'working' 인 건만 추출 (진행 탭 조건, paused 중지 제외)
-      // [BUG-180] 서버 date_from/date_to 필터 후 클라이언트에서 planned_date 2차 필터
+      // [BUG-180] 서버 date_from/date_to 필터 후 클라이언트에서 2차 필터
+      // [BUG-203] 클라이언트 2차 필터 기준 수정: planned_date → tbm_date 우선 (planned_date fallback)
+      //   - 기존: planned_date(작업 계획일) 기준 → 서버 tbm_date 필터와 기준 불일치
+      //     → 서버가 tbm_date 기준으로 반환한 3건 중 planned_date가 다른 날짜인 2건이 클라이언트에서 탈락
+      //   - 수정: tbm_date(TBM 진행일) 우선, 없으면 planned_date fallback → 서버 필터와 동일 기준
+      //   예시(현장점검 3건 vs 지도 1건 불일치 원인):
+      //     서버 tbm_date=2026-08-03 → 3건 반환
+      //     클라이언트 planned_date 기준 재필터 → 작업 계획일이 다른 2건 탈락 → 1건만 표시
       const workingTbmList = tbmAllFiltered.filter(function(tbm) {
         if (tbm.task_status !== 'working') return false;
-        // planned_date 기준 클라이언트 2차 필터 (서버 tbm_date 필터 보완)
-        var pd = tbm.planned_date ? String(tbm.planned_date).slice(0, 10) : '';
+        // tbm_date(TBM 진행일) 우선, 없으면 planned_date fallback (서버 tbm.ts 필터와 동일 기준)
+        var pd = String(tbm.tbm_date || tbm.planned_date || '').slice(0, 10);
         if (dateFrom && pd && pd < dateFrom) return false;
         if (dateTo   && pd && pd > dateTo)   return false;
         return true;

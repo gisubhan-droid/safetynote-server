@@ -11,6 +11,7 @@
 | NAS ID | 고객사 | URL | 설치일 | 현재 버전 | Node.js | 상태 | 담당자 |
 |--------|--------|-----|--------|-----------|---------|------|--------|
 | **NAS001** | **LinkMax 본사** | https://linkmax.myds.me:3443 | 2026-06-10 | v2.0.0+ | v18 | ✅ 운영중 | 링크맥스 담당자 |
+| **NAS002** | **삼흥 본사** | https://shamhung.synology.me:3443 | 2026-07-31 | v2.0.0+ | v18 | ⚠️ 수동복구 대기 | 삼흥 담당자 |
 
 > 신규 NAS 추가 시 위 테이블에 행을 추가하고 아래 섹션도 함께 작성하세요.
 
@@ -162,6 +163,148 @@ curl -fsSL https://raw.githubusercontent.com/gisubhan-droid/safetynote-server/ma
 
 ---
 
+## 🏢 NAS002 — 삼흥 본사 (2번째 설치)
+
+### 기본 정보
+
+| 항목 | 내용 |
+|------|------|
+| **NAS ID** | NAS002 |
+| **고객사** | 삼흥 본사 |
+| **URL** | https://shamhung.synology.me:3443 |
+| **최초 설치일** | 2026-07-31 (install.sh v2.4) |
+| **역할** | 2번째 설치 고객사 — NAS001의 APK 릴레이 슬레이브 대상 |
+| **레지스트리** | `nas-registry.json` → `"id": "NAS002"` |
+| **apk_relay_targets** | NAS001 설정 > APK 탭 > 슬레이브 NAS 자동 릴레이 섹션에 등록됨 |
+
+### 환경 정보
+
+| 항목 | 내용 |
+|------|------|
+| **OS** | Synology DSM (Linux, 호스트명: sh_sever) |
+| **Node.js** | v18 (`/volume1/@appstore/Node.js_v18`) |
+| **glibc** | **2.26** ⚠️ — better-sqlite3 v8.0.0 바이너리 필수 |
+| **PM2 앱명** | `safetynote` |
+| **PORT** | 3443 |
+| **설치 경로** | `/volume1/safetynote` |
+| **실제 DB 경로** | `/volume1/safetynote/safety.db` (NAS001과 다름 — 심볼릭 링크 없음) |
+| **업로드 경로** | `/volume1/safetynote/public/uploads` |
+
+### ⚠️ NAS002 특이사항 / 알려진 이슈
+
+#### 1. BUG-ROLLUP — 업데이트 시 빌드 실패 (2026-07-31 발생, 코드 수정 완료)
+- **원인**: `git reset --hard` 후 `@rollup/rollup-linux-x64-gnu` optional 바이너리 누락
+- **코드 수정**: `admin.ts`에 `runNpmInstall()` + `fixBs3Binary()` 헬퍼 추가 → commit `9d91630`
+- **적용 시점**: NAS002가 다음번 정상 업데이트를 받으면 자동 적용됨
+- **현재 상태**: ⚠️ NAS002 수동 복구 아직 미완료 (빌드 실패 상태일 수 있음)
+
+#### 2. BUG-BS3 — better-sqlite3 GLIBC_2.29 에러 (glibc 2.26 환경)
+- **원인**: npm install 시 v9.x 바이너리 교체 → GLIBC_2.29 요구 → ❌ 크래시
+- **해결책**: v8.0.0 node-v108 바이너리 수동 교체 (install.sh v2.4에 자동화 포함)
+- `npm install --ignore-scripts` 필수 + 바이너리 재교체 필수
+
+#### 3. DEPLOY_WEBHOOK_SECRET 미설정 — APK 강제전송 FAIL(503) 원인
+- **원인**: install.sh가 기존 `.env` 있으면 `DEPLOY_WEBHOOK_SECRET` 추가 스킵함
+- **해결**: `.env`에 `DEPLOY_WEBHOOK_SECRET=safetynote-nas-2026` 수동 추가 필요
+- ⚠️ 미적용 시 NAS001 → NAS002 APK 릴레이 시 503 에러 발생
+
+### 🚨 NAS002 현재 상태 (2026-07-31 기준)
+
+| 항목 | 상태 |
+|------|------|
+| **설치** | ✅ install.sh v2.4 완료 |
+| **서버 동작** | ⚠️ 불확실 (수동 복구 명령어 미실행) |
+| **빌드** | ❌ BUG-ROLLUP으로 빌드 실패 상태 추정 |
+| **APK 릴레이 수신** | ❌ DEPLOY_WEBHOOK_SECRET 미설정 (503 에러) |
+| **수동 복구** | ⏳ 대기중 — 아래 명령어 실행 필요 |
+
+### 🔧 NAS002 수동 복구 명령어 (SSH 실행)
+
+> NAS002에 SSH 접속 후 아래 순서대로 실행하세요.
+
+**STEP 1 — 최신 코드 받기**
+```bash
+cd /volume1/safetynote && git pull
+```
+> ✅ `9d91630`, `3186256` 커밋 포함 확인
+
+**STEP 2 — rollup optional 바이너리 복구**
+```bash
+npm install --ignore-scripts
+```
+> ⚠️ `--ignore-scripts` 필수 (없으면 bs3 v9.x rebuild → GLIBC_2.29 에러 재발)
+
+**STEP 3 — better-sqlite3 v8.0.0 바이너리 교체**
+```bash
+wget -q "https://github.com/WiseLibs/better-sqlite3/releases/download/v8.0.0/better-sqlite3-v8.0.0-node-v108-linux-x64.tar.gz" \
+  -O /tmp/bs3.tar.gz \
+&& mkdir -p /tmp/bs3dir \
+&& tar -xzf /tmp/bs3.tar.gz -C /tmp/bs3dir/ \
+&& cp /tmp/bs3dir/build/Release/better_sqlite3.node \
+   /volume1/safetynote/node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+&& echo "✅ better-sqlite3 바이너리 교체 완료"
+```
+
+**STEP 4 — 프론트엔드 빌드**
+```bash
+node_modules/.bin/vite build
+```
+> ✅ 기대: `✓ built in XX.XXs` / `dist/_worker.js ~300kB`
+
+**STEP 5 — pm2 재시작 + 상태 확인**
+```bash
+pm2 restart safetynote && sleep 3 && pm2 status
+```
+
+**STEP 6 — 동작 확인**
+```bash
+curl -sk https://localhost:3443/api/health
+```
+> ✅ 기대: `{"status":"ok", ...}`
+
+**STEP 7 — DEPLOY_WEBHOOK_SECRET 추가 (503 에러 해결)**
+```bash
+grep "DEPLOY_WEBHOOK_SECRET" /volume1/safetynote/.env && echo "✅ 이미 설정됨" || {
+  echo "" >> /volume1/safetynote/.env
+  echo "DEPLOY_WEBHOOK_SECRET=safetynote-nas-2026" >> /volume1/safetynote/.env
+  echo "✅ DEPLOY_WEBHOOK_SECRET 추가 완료"
+  pm2 restart safetynote
+}
+```
+
+**한 번에 실행 (전체 복사용)**
+```bash
+cd /volume1/safetynote \
+&& git pull \
+&& npm install --ignore-scripts \
+&& wget -q "https://github.com/WiseLibs/better-sqlite3/releases/download/v8.0.0/better-sqlite3-v8.0.0-node-v108-linux-x64.tar.gz" -O /tmp/bs3.tar.gz \
+&& mkdir -p /tmp/bs3dir \
+&& tar -xzf /tmp/bs3.tar.gz -C /tmp/bs3dir/ \
+&& cp /tmp/bs3dir/build/Release/better_sqlite3.node \
+   node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+&& node_modules/.bin/vite build \
+&& pm2 restart safetynote \
+&& sleep 3 \
+&& grep "DEPLOY_WEBHOOK_SECRET" .env || (echo "" >> .env && echo "DEPLOY_WEBHOOK_SECRET=safetynote-nas-2026" >> .env && pm2 restart safetynote) \
+&& echo "=== 완료 ===" \
+&& pm2 status \
+&& curl -sk https://localhost:3443/api/health
+```
+
+### NAS002 이력 요약
+
+| 날짜 | 세션 | 내용 |
+|------|------|------|
+| 2026-07-31 | 세션 126 | **최초 설치** — install.sh v2.4, nas-registry.json 등록 |
+| 2026-07-31 | 세션 126 | NAS001 → NAS002 APK 수동 전송 방법 분석 (dist.ts 릴레이 구조 확인) |
+| 2026-07-31 | 세션 126 | FEAT-200: APK 강제전송 기능 추가 (POST /apk/relay/force + UI 카드) |
+| 2026-07-31 | 세션 126 | FAIL(503) 원인 진단 — DEPLOY_WEBHOOK_SECRET 미설정 |
+| 2026-07-31 | 세션 126 | BUG-ROLLUP: admin.ts 자동 복구 코드 추가 (commit 9d91630) |
+| 2026-07-31 | 세션 127 | NAS002 수동 복구 명령어 정리 + NAS_OPERATIONS.md NAS002 섹션 추가 |
+| — | — | ⏳ **NAS002 수동 복구 대기중** — SSH 실행 필요 |
+
+---
+
 ## 📋 NAS 공통 체크리스트 (설치 후 필수 확인)
 
 - [ ] `.env` → `PORT` / `JWT_SECRET` / `RECOVERY_PASSWORD` NAS001과 다른지 확인
@@ -176,4 +319,5 @@ curl -fsSL https://raw.githubusercontent.com/gisubhan-droid/safetynote-server/ma
 ---
 
 *최초 작성: 2026-07-31 | NAS001 LinkMax 본사 기준*  
+*2026-08-03 세션 127 업데이트: NAS002 삼흥 본사 섹션 추가 (BUG-ROLLUP 수동 복구 명령어 포함)*  
 *업데이트 시 반드시 마스터 테이블 + 해당 NAS 섹션 동시 수정*

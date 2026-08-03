@@ -2,6 +2,75 @@
 
 ---
 
+## [BUG-206] GitHub push 후 자동업데이트(Webhook)만 503 발생 — Webhook 플로우 npm install 누락 (세션 132)
+
+> **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)
+> **발견일**: 2026-08-03
+> **심각도**: 🔴 CRITICAL — GitHub push 후 서버 전체 503, 수동 업데이트(UI)는 정상
+
+### 현상
+
+- 시스템설정 → 서버업데이트(수동 UI) 로 업데이트하면 정상
+- GitHub에 push 후 Webhook으로 자동 업데이트하면 **매번 503** 발생
+- `app.js?v=이전버전` (구버전 dist) 이 계속 서빙됨
+- BUG-202 해결(start-server.sh 래퍼) 후에도 동일 증상 반복
+
+### 근본 원인 분석
+
+**수동 업데이트 플로우 vs Webhook 자동 업데이트 플로우 비교:**
+
+```
+수동 업데이트 (정상):
+  git reset --hard
+  → runNpmInstall()   ← ✅ 있음
+  → fixBs3Binary()    ← ✅ 있음
+  → fixTsxBinary()    ← ✅ 있음
+  → runBuild()
+  → pm2 restart
+
+Webhook 자동 업데이트 (문제):
+  git reset --hard
+  → (npm install 없음) ← ❌ 누락!
+  → (fixBs3Binary 없음) ← ❌ 누락!
+  → (fixTsxBinary 없음) ← ❌ 누락!
+  → runBuild()        ← rollup optional 바이너리 없어 빌드 실패
+  → pm2 restart       ← 구버전 dist 유지 → 503
+```
+
+**왜 수동은 되고 Webhook은 안 됐나?**
+- 수동 업데이트 플로우(`/api/admin/update`)에는 BUG-ROLLUP 수정 시 `runNpmInstall()` 등을 추가했음
+- Webhook 플로우(`/api/admin/update/webhook`)는 별도 코드 블록으로 분리되어 있어 동일한 수정이 **누락**됨
+- push가 올 때마다 Webhook 플로우만 실행되므로 매번 503 재발
+
+### 수정 내용 (src/nas-routes/admin.ts)
+
+**Webhook 플로우 Step 3~3c 삽입** (line ~1426):
+
+```typescript
+// ── 3. npm install — optional 바이너리 복구 ────────────────────
+// BUG-206: Webhook 플로우에 npm install이 없어 git reset 후 rollup optional 바이너리 누락
+await runNpmInstall(cwd, 120000)
+
+// ── 3b. better-sqlite3 GLIBC 호환 바이너리 교체 ────────────────
+await fixBs3Binary(cwd)
+
+// ── 3c. tsx 바이너리 링크 복구 ──────────────────────────────────
+// BUG-202 + BUG-206: Webhook 플로우에도 동일하게 적용
+await fixTsxBinary(cwd)
+
+// ── 4. 프론트엔드 dist 재빌드 (기존 Step 3 → Step 4로 번호 이동)
+```
+
+### 검증 결과
+- `npm run build` ✅ (298.71 kB, 1.66s)
+- `node --check public/static/app.js` ✅
+
+### 재발 방지
+- 이후 업데이트 플로우 변경 시 **수동/Webhook 두 플로우 모두** 동일하게 적용할 것
+- 두 플로우의 Step 3~3c는 항상 동기화 상태 유지
+
+---
+
 ## [BUG-205] 현장위치지도 완료 탭 건수 불일치 — /tbm → /tasks API 교체 (세션 130)
 
 > **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)

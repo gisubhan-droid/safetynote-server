@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-03 (세션 131 — BUG-202 영구 해결: start-server.sh 래퍼 + PM2 재등록 방식 확정)
-> **GitHub 최신 (safetynote-server): `e646491`** — fix: [BUG-202] tsx 소멸 영구 차단 — start-server.sh 래퍼 + PM2 재등록 가이드
+> 최종 업데이트: 2026-08-03 (세션 132 — BUG-206: Webhook 자동업데이트 플로우 npm install 누락 수정)
+> **GitHub 최신 (safetynote-server): `(커밋 후 갱신)`** — fix: [BUG-206] Webhook 자동업데이트 플로우에 runNpmInstall+fixBs3Binary+fixTsxBinary 삽입
+> **이전 커밋 (safetynote-server): `574a66b`** — fix: [BUG-202] 신규 NAS 설치 시에도 tsx 소멸 악순환 차단
+> **이전 커밋 (safetynote-server): `e646491`** — fix: [BUG-202] tsx 소멸 영구 차단 — start-server.sh 래퍼 + PM2 재등록 가이드
 > **이전 커밋 (safetynote-server): `7c284d7`** — docs: [BUG-205] PROJECT_HISTORY 커밋 해시 8610a45 반영 (세션 130)
 > **이전 커밋 (safetynote-server): `8610a45`** — fix: [BUG-205] 현장위치지도 완료 탭 /tbm→/tasks API 교체 — planned_date 기준으로 현장점검과 데이터 소스 통일
 > **이전 커밋 (safetynote-server): `466c301`** — docs: [BUG-204] PROJECT_HISTORY 커밋 해시 d2927cf 반영 (세션 129)
@@ -7618,6 +7620,29 @@ task.status = 'paused'(일시중지/작업중지 신고 상태)가 두 페이지
 
 ### 커밋
 - `27cb2f2` — fix: 현장위치지도·현장점검 — 중지(paused) 작업 미표시 처리
+
+---
+
+## 세션 132 (2026-08-03) — BUG-206: Webhook 자동업데이트 npm install 누락 수정 (진짜 근본 원인)
+
+### 작업 배경
+BUG-202 해결(start-server.sh 래퍼) 후에도 GitHub push → 서버 업데이트 후 503이 계속 발생.  
+수동 업데이트(UI)는 정상, Webhook만 503 → **두 플로우의 코드가 다름**을 발견.
+
+### 근본 원인
+`src/nas-routes/admin.ts`의 Webhook 플로우(`/update/webhook`)에  
+`runNpmInstall()` + `fixBs3Binary()` + `fixTsxBinary()` 3단계가 **누락**되어 있었음.  
+git reset 후 rollup optional 바이너리가 없어 빌드 실패 → 구버전 dist 유지 → 503.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `src/nas-routes/admin.ts` | Webhook 플로우 Step 3~3c 삽입: npm install → fixBs3Binary → fixTsxBinary → build 순서로 통일 |
+| `src/index.tsx` | 버전 문자열 v=20260803c → v=20260803d |
+| `BUGFIX_LOG.md` | BUG-206 상세 기록 맨 위 삽입 |
+
+### 커밋
+- `(커밋 후 갱신)` — fix: [BUG-206] Webhook 자동업데이트 플로우에 npm install+fixBs3Binary+fixTsxBinary 삽입
 
 ---
 

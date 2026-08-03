@@ -4,18 +4,29 @@
  * ⚠️ 주의: NAS(Synology) 환경에서 `pm2 start ecosystem.config.cjs` 방식이
  *         응답 없이 hang 되는 현상이 있었음.
  *
- * ✅ 실제 NAS에서 동작 확인된 시작 방법 (커맨드라인 직접 등록):
+ * ✅ [BUG-202 영구해결] 권장 시작 방법 — start-server.sh 래퍼 사용:
  *
- *   PORT=3443 pm2 start /volume1/safetynote/node_modules/.bin/tsx \
+ *   pm2 delete safetynote 2>/dev/null || true
+ *   PORT=3443 pm2 start /volume1/safetynote/scripts/start-server.sh \
  *     --name safetynote \
- *     --interpreter /usr/local/bin/node \
- *     -- node-server.ts
+ *     --interpreter /bin/bash \
+ *     --cwd /volume1/safetynote
  *   pm2 save
  *
+ * ✅ start-server.sh 래퍼 장점:
+ *   - pm2 restart 시마다 tsx 존재 여부 자동 확인
+ *   - tsx 소멸 시 자동 복구 (링크 생성 or npm install tsx) 후 서버 시작
+ *   - npm install --ignore-scripts 실행해도 다음 pm2 restart에서 자동 복구
+ *   - 503 반복 악순환 영구 차단
+ *
+ * ⚠️ 구버전 등록 방식 (tsx 직접 지정 — 사용 금지):
+ *   PORT=3443 pm2 start /volume1/safetynote/node_modules/.bin/tsx ...
+ *   → tsx 소멸 시 pm2 restart 즉시 실패 → 503 → 악순환
+ *
  * 이유:
- *   - NAS에 npx 없음 → tsx 절대경로 직접 지정 필수
- *   - NAS에 NVM 없음 → interpreter 절대경로 필수 (없으면 PM2가 NVM 탐색하다 멈춤)
- *   - .env 파일이 PORT를 덮어씀 → `PORT=3443` 앞에 인라인으로 지정
+ *   - NAS에 npx 없음 → bash 래퍼 내부에서 tsx 절대경로 직접 처리
+ *   - NAS에 NVM 없음 → interpreter /bin/bash 로 hang 방지
+ *   - .env 파일이 PORT를 덮어씀 → start-server.sh 내부에서 .env 로드
  *
  * 이 파일은 설정 항목 참고 및 버전관리 목적으로 유지.
  */
@@ -23,11 +34,12 @@ module.exports = {
   apps: [
     {
       name: 'safetynote',
-      // NAS에 npx 없음 → node_modules/.bin/tsx 절대경로 직접 사용
-      script: '/volume1/safetynote/node_modules/.bin/tsx',
-      args: 'node-server.ts',
-      // NAS에 NVM 없음 → PM2가 NVM 탐색하다 hang → 절대경로 필수
-      interpreter: '/usr/local/bin/node',
+      // [BUG-202 영구해결] tsx 직접 지정 → start-server.sh 래퍼로 교체
+      // start-server.sh: pm2 restart 시마다 tsx 자동 복구 후 서버 기동
+      script: '/volume1/safetynote/scripts/start-server.sh',
+      args: '',
+      // bash 래퍼 → interpreter /bin/bash (NVM hang 완전 방지)
+      interpreter: '/bin/bash',
       interpreter_args: '',
       cwd: '/volume1/safetynote',
       env: {

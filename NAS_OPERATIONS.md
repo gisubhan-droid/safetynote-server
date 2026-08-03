@@ -74,21 +74,30 @@
 
 ### PM2 등록 명령어 (NAS001 기준)
 
-```bash
-PORT=3443 pm2 start /volume1/safetynote/node_modules/.bin/tsx \
-  --name safetynote \
-  --interpreter /usr/local/bin/node \
-  -- node-server.ts
+> **[BUG-202 영구 해결 — 세션 131]** tsx 절대경로 직접 참조 방식은 tsx 소멸 시 pm2 restart 즉시 실패(503)하는 악순환의 근본 원인이었습니다.  
+> **현재는 `scripts/start-server.sh` 래퍼를 경유**합니다 — tsx 소멸을 감지하면 자동 복구 후 서버를 기동합니다.
 
-pm2 start /volume1/safetynote/scripts/recovery-server.py \
-  --name safetynote-recovery \
-  --interpreter /usr/bin/python3 \
-  -- /volume1/safetynote 3445
+```bash
+# ✅ 현재 방식 (BUG-202 영구 해결 — start-server.sh 래퍼)
+pm2 delete safetynote 2>/dev/null || true
+
+PORT=3443 pm2 start /volume1/safetynote/scripts/start-server.sh \
+  --name safetynote \
+  --interpreter /bin/bash \
+  --cwd /volume1/safetynote
 
 pm2 save
 ```
 
-> ⚠️ `ecosystem.config.cjs` 방식은 NAS PM2에서 hang 발생 → 반드시 커맨드라인 직접 등록 방식 사용
+> ⚠️ `ecosystem.config.cjs` 방식은 NAS PM2에서 hang 발생 → 반드시 커맨드라인 직접 등록 방식 사용  
+> ❌ **구버전 방식 (사용 금지)** — tsx 소멸 시 즉시 503 악순환:
+> ```bash
+> # 절대 사용하지 말 것
+> PORT=3443 pm2 start /volume1/safetynote/node_modules/.bin/tsx \
+>   --name safetynote \
+>   --interpreter /usr/local/bin/node \
+>   -- node-server.ts
+> ```
 
 ### 백업 기록
 
@@ -109,6 +118,9 @@ pm2 save
 | 2026-07-25 | 세션 80 | v2.0.0 최종 버전 태깅 + APK v2.0.0 동시 릴리즈 |
 | 2026-07-30 | 세션 123 | FEAT-COL-PERSIST (현재 최신) |
 | 2026-07-31 | — | NAS_OPERATIONS.md 문서 신규 작성 (NAS001/신규 NAS 구분 정리) |
+| 2026-08-03 | 세션 129 | BUG-204: 현장위치지도 진행탭 /tbm→/tasks API 교체 (planned_date 기준) |
+| 2026-08-03 | 세션 130 | BUG-205: 현장위치지도 완료탭 /tbm→/tasks API 교체 (planned_date 기준) |
+| 2026-08-03 | 세션 131 | BUG-202: tsx 소멸 영구 차단 — start-server.sh 래퍼 + PM2 재등록 방식 확정 |
 
 > 전체 상세 이력 → `PROJECT_HISTORY.md` 참조 (전체가 NAS001 LinkMax 기준)
 
@@ -322,4 +334,5 @@ cd /volume1/safetynote \
 *최초 작성: 2026-07-31 | NAS001 LinkMax 본사 기준*  
 *2026-08-03 세션 127 업데이트: NAS002 삼흥 본사 섹션 추가 (BUG-ROLLUP 수동 복구 명령어 포함)*  
 *2026-08-03 세션 128 업데이트: BUG-202 tsx 바이너리 누락 버그 기록 + fixTsxBinary() 코드 수정 + NAS002 한 번에 실행 블록에 npm install tsx 추가 + BUG 목록 셀션 신규 추가*  
+*2026-08-03 세션 131 업데이트: BUG-202 영구 해결 — PM2 등록 명령어를 start-server.sh 래퍼 방식으로 교체 (tsx 소멸 자동 복구). BUG-204/BUG-205 현장위치지도 API 교체 이력 추가.*  
 *업데이트 시 반드시 마스터 테이블 + 해당 NAS 섹션 동시 수정*

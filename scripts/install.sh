@@ -266,13 +266,37 @@ else
 fi
 ok "패키지 설치 완료"
 
-# tsx 경로 확인 (NAS는 npx 없음 → 절대경로 사용 필수)
+# tsx 경로 확인 및 자동 복구 (BUG-202 영구 해결)
+# start-server.sh가 PM2 래퍼로 tsx를 자동 복구하지만, 초기 설치 시에도 확인
 TSX_EXEC="$INSTALL_DIR/node_modules/.bin/tsx"
 if [ ! -x "$TSX_EXEC" ]; then
-  err "tsx를 찾을 수 없습니다: $TSX_EXEC
-  npm install 이 정상적으로 완료됐는지 확인해주세요."
+  warn "tsx 심볼릭 링크 없음 — 자동 복구 시도 중..."
+  TSX_MJS="$INSTALL_DIR/node_modules/tsx/dist/cli.mjs"
+  if [ -f "$TSX_MJS" ]; then
+    ln -sf "$TSX_MJS" "$TSX_EXEC" && chmod +x "$TSX_EXEC"
+    ok "tsx 심볼릭 링크 수동 생성 완료: $TSX_EXEC"
+  else
+    info "tsx 패키지 없음 — npm install tsx 실행 중..."
+    "$NPM_EXEC" install tsx --save-dev --ignore-scripts 2>&1 | tail -3
+    # 설치 후 링크 재확인
+    if [ ! -x "$TSX_EXEC" ] && [ -f "$TSX_MJS" ]; then
+      ln -sf "$TSX_MJS" "$TSX_EXEC" && chmod +x "$TSX_EXEC"
+    fi
+    if [ ! -x "$TSX_EXEC" ]; then
+      err "tsx 복구 실패. scripts/start-server.sh가 서버 기동 시 자동으로 재시도합니다."
+    fi
+  fi
 fi
 ok "tsx 확인: $TSX_EXEC"
+
+# start-server.sh 실행 권한 확인 (PM2 래퍼 — BUG-202 영구 해결)
+START_SERVER_SH="$INSTALL_DIR/scripts/start-server.sh"
+if [ -f "$START_SERVER_SH" ]; then
+  chmod +x "$START_SERVER_SH"
+  ok "start-server.sh 실행 권한 설정 완료"
+else
+  warn "start-server.sh 없음 — PM2 등록 시 tsx 직접 방식으로 폴백"
+fi
 
 # =============================================================================
 # Step 6b: better-sqlite3 GLIBC 호환 바이너리 교체
@@ -891,11 +915,23 @@ $PM2_EXEC delete "$APP_NAME" 2>/dev/null || true
 sleep 1
 
 info "PM2 프로세스 등록 중..."
-PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
-  --name "$APP_NAME" \
-  --interpreter "$NODE_EXEC" \
-  --cwd "$INSTALL_DIR" \
-  -- node-server.ts
+# [BUG-202 영구 해결] start-server.sh 래퍼 방식 사용
+# tsx 소멸 시 자동 복구(링크 재생성 or npm install tsx) 후 서버 기동
+# → 자동업데이트/재시작 후 503 악순환 구조적 차단
+if [ -x "$START_SERVER_SH" ]; then
+  PORT=$APP_PORT $PM2_EXEC start "$START_SERVER_SH" \
+    --name "$APP_NAME" \
+    --interpreter /bin/bash \
+    --cwd "$INSTALL_DIR"
+  ok "PM2 등록: start-server.sh 래퍼 방식 (tsx 자동 복구 포함)"
+else
+  warn "start-server.sh 없음 — tsx 직접 방식으로 폴백 (tsx 소멸 시 503 위험)"
+  PORT=$APP_PORT $PM2_EXEC start "$TSX_EXEC" \
+    --name "$APP_NAME" \
+    --interpreter "$NODE_EXEC" \
+    --cwd "$INSTALL_DIR" \
+    -- node-server.ts
+fi
 
 sleep 4
 

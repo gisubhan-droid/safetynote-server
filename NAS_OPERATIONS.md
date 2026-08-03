@@ -159,7 +159,27 @@ NAS_WEBHOOK_SECRET_2 = 신규NAS_DEPLOY_WEBHOOK_SECRET값
 curl -fsSL https://raw.githubusercontent.com/gisubhan-droid/safetynote-server/main/scripts/install.sh | bash
 ```
 
-> 상세 설치 절차 → `INSTALL.md` 2장 참조
+> 상세 설치 절차 → `INSTALL.md` 2장 참조  
+> **[BUG-202 영구 해결 포함]** install.sh가 자동으로 `scripts/start-server.sh` 래퍼 방식으로 PM2를 등록합니다.  
+> tsx 소멸 시 자동 복구되므로 자동업데이트 후 503 악순환 발생하지 않습니다.
+
+### 3-1단계 — PM2 등록 방식 검증 (설치 후 확인)
+
+```bash
+# PM2 등록 방식이 start-server.sh인지 확인
+pm2 show safetynote | grep -E "script|interpreter"
+# 정상 출력 예시:
+#   script          | /volume1/safetynote/scripts/start-server.sh
+#   interpreter     | /bin/bash
+
+# tsx 링크 상태 확인
+ls -la /volume1/safetynote/node_modules/.bin/tsx
+# 정상 출력 예시:
+#   lrwxrwxrwx ... tsx -> ../tsx/dist/cli.mjs
+```
+
+> ⚠️ `interpreter`가 `/bin/bash`가 아닌 `node`이면 BUG-202 위험 상태입니다.  
+> NAS001 PM2 등록 명령어 섹션을 참고해 재등록하세요.
 
 ### 4단계 — 이 문서(NAS_OPERATIONS.md) 업데이트
 
@@ -320,11 +340,23 @@ cd /volume1/safetynote \
 
 ## 📋 NAS 공통 체크리스트 (설치 후 필수 확인)
 
+### 기본 설정
 - [ ] `.env` → `PORT` / `JWT_SECRET` / `RECOVERY_PASSWORD` NAS001과 다른지 확인
 - [ ] `.env` → `DB_PATH` 실제 DB 경로 확인
+- [ ] `DEPLOY_WEBHOOK_SECRET` `.env`에 추가 확인 (없으면 APK 릴레이 수신 503)
+
+### PM2 등록 상태 (BUG-202 영구 해결 적용 확인) ⭐ 필수
+- [ ] `pm2 show safetynote | grep interpreter` → `/bin/bash` 확인
+- [ ] `pm2 show safetynote | grep script` → `start-server.sh` 경로 확인
+- [ ] `ls -la node_modules/.bin/tsx` → 심볼릭 링크 존재 확인
+- [ ] **위 3개 중 하나라도 실패 시** → NAS001 PM2 등록 명령어 섹션 참고해 재등록
+
+### 자동화 및 운영
 - [ ] `pm2 save` + `pm2 startup` 완료 (재부팅 자동시작)
 - [ ] Watchdog 등록 (`scripts/pm2-watchdog.sh` → DSM 작업 스케줄러 5분 주기)
 - [ ] GitHub Secrets `NAS_WEBHOOK_URL_N` 등록
+
+### 최종 확인
 - [ ] 브라우저에서 `https://NAS주소:포트` 접속 확인
 - [ ] 관리자 계정 초기 비밀번호 변경
 - [ ] `nas-registry.json` + `NAS_OPERATIONS.md` 업데이트 후 git push

@@ -501,12 +501,19 @@ cat /volume1/safetynote/.env
 
 ### 🔧 PM2 등록 방법 (NAS별 실행 — ecosystem.config.cjs 방식은 hang 발생)
 
+> **[BUG-202 영구 해결 — 2026-08-03 세션 131]**  
+> tsx 절대경로 직접 등록 방식은 자동업데이트 후 tsx 소멸 시 pm2 restart가 즉시 실패하여 503 악순환이 발생합니다.  
+> **현재는 `scripts/start-server.sh` 래퍼를 경유하는 방식을 사용합니다.**  
+> install.sh v2.5+는 이 방식으로 자동 등록됩니다.
+
 ```bash
-# ── [메인 서버] ─────────────────────────────────────────────────────────────
-PORT=3443 pm2 start /volume1/safetynote/node_modules/.bin/tsx \
+# ── [메인 서버] ✅ 현재 방식 (BUG-202 영구 해결 — start-server.sh 래퍼) ──────
+pm2 delete safetynote 2>/dev/null || true
+
+PORT=3443 pm2 start /volume1/safetynote/scripts/start-server.sh \
   --name safetynote \
-  --interpreter /usr/local/bin/node \
-  -- node-server.ts
+  --interpreter /bin/bash \
+  --cwd /volume1/safetynote
 
 # ── [비상 복구 서버] ─────────────────────────────────────────────────────────
 pm2 start /volume1/safetynote/scripts/recovery-server.py \
@@ -519,6 +526,13 @@ pm2 save
 
 > **주의**: `ecosystem.config.cjs`는 참고 문서용. NAS에서 `pm2 start ecosystem.config.cjs` 실행 시 hang 발생.  
 > 반드시 위의 커맨드라인 직접 등록 방법 사용.
+>
+> ❌ **구버전 방식 (사용 금지)** — tsx 소멸 시 즉시 503 악순환 발생:
+> ```bash
+> # 절대 사용하지 말 것
+> PORT=3443 pm2 start /volume1/safetynote/node_modules/.bin/tsx \
+>   --name safetynote --interpreter /usr/local/bin/node -- node-server.ts
+> ```
 
 ### 🔍 시스템 점검 결과 요약 (2026-07-22 기준)
 

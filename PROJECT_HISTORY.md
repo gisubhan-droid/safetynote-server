@@ -22,7 +22,7 @@
 ---
 
 > 최종 업데이트: 2026-08-03 (세션 128 — BUG-202: 자동업데이트 후 tsx 바이너리 누락 → 서버 503 근본 해결 + NAS 공통 버그 목록 관리 체계 구축)
-> **GitHub 최신 (safetynote-server): `(빌드 후 커밋 예정)`** — fix: [BUG-202] 자동업데이트 시 tsx .bin 링크 미생성 → fixTsxBinary() 추가 + NAS_OPERATIONS 버그 목록/체크리스트 보강
+> **GitHub 최신 (safetynote-server): `2cf0cfd`** — fix: [BUG-202] 자동업데이트 후 tsx 바이너리 누락 근본 해결 — fixTsxBinary() 추가 + NAS 공통 버그 목록/체크리스트 보강
 > **이전 커밋 (safetynote-server): `ce713a0`** — docs: [BUG-201] PROJECT_HISTORY 커밋 해시 c7e7a03 반영 (세션 127)
 > **이전 커밋 (safetynote-server): `c7e7a03`** — fix: [BUG-201] 현장위치 지도 날짜 필터 등록일→작업일/점검일 수정 + TBM 탭 날짜 파라미터 누락 수정
 > **이전 커밋 (safetynote-server): `72bad24`** — docs: [NAS002] NAS_OPERATIONS.md 삼흥 본사 섹션 추가

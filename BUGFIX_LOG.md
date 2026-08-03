@@ -2,6 +2,45 @@
 
 ---
 
+## [BUG-208] 업데이트 중 "Network 조회 실패" 빨간 배너 표시 (세션 133)
+
+> **대상**: 전체 공통 (UI)
+> **발견일**: 2026-08-03
+> **심각도**: 🟡 MINOR — 기능 영향 없음, UX 혼란 유발
+
+### 현상
+GitHub push → Webhook → pm2 restart 진행 중 업데이트 UI에 빨간색으로
+`"상태 조회 실패: Network Error"` 메시지 표시. 업데이트 자체는 정상 완료됨.
+
+### 근본 원인
+pm2 restart 시 서버가 수 초간 다운 → 브라우저 폴링(2초마다 `/api/admin/update/status`)이
+응답 없는 서버에 요청 → axios `Network Error` → catch → 빨간 에러 배너 출력.
+실제 오류가 아닌 **정상 재시작 다운타임의 부산물**.
+
+### 수정 내용
+`public/static/app.js` — `_updLoadStatus()` catch 블록 개선:
+
+```javascript
+// 수정 전
+} catch(e) {
+    _updSetBanner('상태 조회 실패: ' + e.message, 'error');  // 항상 빨간 배너
+}
+
+// 수정 후
+} catch(e) {
+    if (e.message === 'Network Error' || e.code === 'ERR_NETWORK' || (e.response && e.response.status >= 500)) {
+        _updSetBanner('서버 재시작 중... 잠시 대기하세요 ⏳', 'restarting');  // 노란 대기 배너
+    } else {
+        _updSetBanner('상태 조회 실패: ' + e.message, 'error');  // 진짜 오류만 빨간 배너
+    }
+}
+```
+
+### 커밋
+- `69b95d3` — fix: [BUG-208] pm2 restart 중 Network Error → 빨간 에러 배너 대신 재시작 대기 안내로 표시
+
+---
+
 ## [BUG-207] GitHub push 후 503 — 치킨-에그 구조 영구 해결 (세션 132)
 
 > **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)

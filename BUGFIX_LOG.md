@@ -2,6 +2,98 @@
 
 ---
 
+## [BUG-205] 현장위치지도 완료 탭 건수 불일치 — /tbm → /tasks API 교체 (세션 130)
+
+> **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)
+> **발견일**: 2026-08-03
+> **심각도**: 🔴 CRITICAL — BUG-204(진행탭) 수정 후 완료탭도 동일한 구조적 불일치 확인
+
+### 현상
+
+현장위치지도 완료 탭 건수와 현장점검 화면 완료 건수가 다름.
+
+### 근본 원인 분석
+
+BUG-204(진행탭)와 완전히 동일한 구조적 문제.
+
+```
+현장점검 화면(완료):      /tasks API  (planned_date 기준, status='completed')
+현장위치지도 완료탭:       /tbm   API  (tbm_date 기준, task_status='work_completed|completed')
+```
+
+| 항목 | 현장위치지도 완료탭(변경 전) | 현장점검 완료탭 |
+|------|--------------------------|----------------|
+| API | `/tbm` | `/tasks?status=completed` |
+| 날짜 기준 | `tbm_date` 또는 `created_at` | `planned_date` |
+| 필터 파라미터 | `date_from`, `date_to`, `user_id` | `start_date`, `end_date` |
+| 완료 조건 | `task_status='work_completed' OR 'completed'` | `status='completed'` |
+| limit 처리 | ❌ tbm.ts에 limit 로직 없음 (전송해도 무시) | ✅ 페이지네이션 정상 |
+| 데이터 단위 | TBM 레코드 기준 (TBM 미작성 작업 누락) | tasks 테이블 기준 |
+
+**추가 문제**: `/tbm` API에 `limit` 파라미터 처리 코드가 없어 클라이언트의 `limit=500` 전송이 무시됨.
+
+### 충돌 체크 (수정 전 검증)
+
+| 이전 버그 | 우려 사항 | 검증 결과 |
+|----------|----------|----------|
+| BUG-082 | /tbm으로 변경한 이유: LGU+ is_auto_request_no 필터 우려 | tasks.ts에도 동일 서버측 LGU+ 필터 존재 확인. 위험성체크·진행 탭이 /tasks로 정상 동작 중 → **충돌 없음** |
+| BUG-085 | 날짜 파라미터 전송 로직 | /tasks의 start_date/end_date로 대체 → 동일 기능 |
+| BUG-185 | 클라이언트 2차 planned_date 필터 패턴 | 그대로 적용 (위험성체크·진행 탭과 동일 패턴) |
+| BUG-204 | 진행탭 /tasks 교체 시 변수명 | 완료탭 변수명에 `Co` suffix 부여로 충돌 방지 확인 |
+
+### 수정 내용 (app.js line ~46004)
+
+**방안: 완료 탭을 /tasks API로 전면 교체 (BUG-204 진행탭과 동일 패턴)**
+
+```javascript
+// 변경 전 — /tbm API 기반 (tbm_date 기준)
+const tcp = new URLSearchParams();
+if (dateFrom) tcp.set('date_from', dateFrom);
+if (dateTo)   tcp.set('date_to',   dateTo);
+if (userId)   tcp.set('user_id',   userId);
+tcp.set('limit', '500');  // ← tbm.ts에서 무시됨
+const tbmDoneRes = await API.get(`/tbm?${tcp.toString()}`);
+// task_status='work_completed|completed' 클라이언트 2차 필터
+
+// 변경 후 — /tasks API 기반 (planned_date 기준, 현장점검과 동일 소스)
+const cop = new URLSearchParams();
+cop.set('status', 'work_completed,completed');
+if (dateFrom) cop.set('start_date', dateFrom);
+if (dateTo)   cop.set('end_date',   dateTo);
+if (userId)   cop.set('supervisor_id', userId);
+const completedRes = await API.get(`/tasks?${cop.toString()}`);
+// LGU+ 클라이언트 이중방어 + planned_date 2차 필터 (BUG-185 패턴 계승)
+```
+
+**필드명 변경** (tbm → tasks 응답 구조):
+
+| 항목 | 변경 전 (tbm) | 변경 후 (tasks) |
+|------|-------------|----------------|
+| 작업 ID | `tbm.task_id` | `t.id` |
+| 작업명 | `tbm.task_title \|\| tbm.work_name` | `t.title \|\| t.work_name` |
+| 담당자 | `tbm.conductor_name` | `t.supervisor_name` |
+| 날짜 | `tbm.tbm_date \|\| tbm.created_at` | `t.planned_date \|\| t.created_at` |
+| GPS | `tbm.gps_lat/lon` | `t.gps_lat/lon` |
+| GPS출처 | `'tbm'` | `'task'` |
+
+**변수명** (진행탭과 충돌 방지, `Co` suffix):
+- `_smMyUiRoleCo`, `_smIsLguCo`, `_completedLguFiltered`, `completedList`
+- `wlGpsCacheCo`, `noGpsCo`, `wlGCo`
+
+**버전 문자열**: `v=20260803b` → `v=20260803c` (브라우저 캐시 강제 갱신)
+
+### 관련 버그 이력
+
+| 버그 | 내용 | 관계 |
+|------|------|------|
+| BUG-082 | 완료 탭 포함 전체 /tbm API 기반으로 변경 | 이번 수정으로 완료탭 원복 |
+| BUG-085 | 완료 탭 서버 날짜 파라미터 추가 | start_date/end_date 파라미터로 계승 |
+| BUG-185 | 위험성체크 탭 /tasks API + planned_date 2차 필터 패턴 | 이번 완료탭 수정의 참조 패턴 |
+| BUG-204 | 진행 탭 /tbm → /tasks API 교체 | 이번 완료탭 수정의 직접 참조 패턴 |
+| **BUG-205** | **완료 탭 /tbm → /tasks API 전면 교체** | 이번 수정 ✅ |
+
+---
+
 ## [BUG-204] 현장위치지도 진행 탭 건수 불일치 — /tbm → /tasks API 교체 (세션 129)
 
 > **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)

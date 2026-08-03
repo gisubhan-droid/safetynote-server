@@ -2,6 +2,73 @@
 
 ---
 
+## [BUG-207] GitHub push 후 503 — 치킨-에그 구조 영구 해결 (세션 132)
+
+> **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)
+> **발견일**: 2026-08-03
+> **심각도**: 🔴 CRITICAL — GitHub push 후 매번 503, 수동 업데이트(UI)만 정상
+
+### 현상
+
+BUG-206 수정(Webhook 플로우 npm install 삽입) 후에도 동일 증상 반복.  
+수동 업데이트는 항상 정상, GitHub push 후 Webhook 자동업데이트만 503.
+
+### 근본 원인 — 치킨-에그 구조
+
+```
+[기존 악순환의 본질]
+push → Webhook 수신
+  → 현재 실행 중인 서버(구버전 admin.ts)가 업데이트 처리
+  → 구버전 코드에 버그 있으면 수정 코드가 push되어도 영원히 적용 불가
+  → 구버전이 npm install 없이 build → 실패 → 503 → pm2 restart
+  → 새 코드 로딩 → 그러나 이미 503, 다음 push 때 또 반복
+```
+
+수동 업데이트가 되는 이유: 브라우저에서 UI 버튼 클릭 → 현재 메모리에 로딩된 코드 실행.  
+수동으로 복구 후 pm2 restart → 새 코드(BUG-206 수정본) 로딩 → 다음 수동 업데이트는 정상.  
+하지만 그 다음 push가 오면 → Webhook → 새 코드로 처리 → 정상이어야 하는데...  
+**실제로는 또 503** → BUG-206 수정 코드조차 실행될 기회가 없었음.
+
+### 수정 내용
+
+**핵심 설계 변경: 업데이트 로직을 서버 코드(admin.ts)에서 start-server.sh(bash)로 이전**
+
+```
+[수정 후 구조]
+push → Webhook → pm2 restart 만 트리거
+  → start-server.sh (bash 스크립트) 가 직접 실행:
+       STEP1: git pull (origin/main)       ← 항상 최신 코드
+       STEP2: npm install --ignore-scripts ← rollup 바이너리 복구
+       STEP3: bs3 GLIBC 바이너리 교체      ← BUG-BS3
+       STEP4: tsx 심볼릭 링크 복구          ← BUG-202
+       STEP5: vite build                   ← 최신 코드로 빌드
+       STEP6: node tsx node-server.ts 기동
+  → 서버 코드(admin.ts) 버전과 완전히 무관
+  → 어떤 버그가 admin.ts에 있어도 절대 영향 없음 ✅
+```
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `scripts/start-server.sh` | git pull + npm install + bs3 교체 + tsx 복구 + vite build 전체 내장 |
+| `src/nas-routes/admin.ts` | Webhook 플로우: npm install/build 제거 → pm2 restart만 트리거 |
+| `src/index.tsx` | 버전 문자열 v=20260803d → v=20260803e |
+
+### 검증 결과
+- `npm run build` ✅ (298.71 kB, 1.39s)
+- NAS001 수동 복구 + PM2 재등록 후 서버 정상 응답 ✅
+  - `pm2 status`: online, mem 42.1mb, restart 0회
+  - `curl https://localhost:3443`: `<!DOCTYPE html>` 정상 응답
+
+### 재발 방지
+- **업데이트 로직은 반드시 bash 스크립트(start-server.sh)에만** — 서버 코드에 두지 않음
+- Webhook/수동 업데이트 모두 최종적으로 pm2 restart → start-server.sh 실행
+- 서버 코드 버그와 완전히 독립된 업데이트 파이프라인
+
+### 커밋
+- `68c127e` — fix: [BUG-207] start-server.sh에 git pull+build 내장 — 서버 코드 버전 의존 완전 제거
+
+---
+
 ## [BUG-206] GitHub push 후 자동업데이트(Webhook)만 503 발생 — Webhook 플로우 npm install 누락 (세션 132)
 
 > **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)

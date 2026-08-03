@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-03 (세션 132 — BUG-206: Webhook 자동업데이트 플로우 npm install 누락 수정)
-> **GitHub 최신 (safetynote-server): `3d1525b`** — fix: [BUG-206] Webhook 자동업데이트 플로우에 runNpmInstall+fixBs3Binary+fixTsxBinary 삽입
+> 최종 업데이트: 2026-08-03 (세션 132 — BUG-207: start-server.sh 업데이트 로직 내장, 치킨-에그 구조 영구 해결)
+> **GitHub 최신 (safetynote-server): `68c127e`** — fix: [BUG-207] start-server.sh에 git pull+build 내장 — 서버 코드 버전 의존 완전 제거
+> **이전 커밋 (safetynote-server): `0c8a9ad`** — docs: [BUG-206] 세션 132 최종 마무리
+> **이전 커밋 (safetynote-server): `3d1525b`** — fix: [BUG-206] Webhook 자동업데이트 플로우에 runNpmInstall+fixBs3Binary+fixTsxBinary 삽입
 > **이전 커밋 (safetynote-server): `574a66b`** — fix: [BUG-202] 신규 NAS 설치 시에도 tsx 소멸 악순환 차단
 > **이전 커밋 (safetynote-server): `e646491`** — fix: [BUG-202] tsx 소멸 영구 차단 — start-server.sh 래퍼 + PM2 재등록 가이드
 > **이전 커밋 (safetynote-server): `7c284d7`** — docs: [BUG-205] PROJECT_HISTORY 커밋 해시 8610a45 반영 (세션 130)
@@ -7620,6 +7622,40 @@ task.status = 'paused'(일시중지/작업중지 신고 상태)가 두 페이지
 
 ### 커밋
 - `27cb2f2` — fix: 현장위치지도·현장점검 — 중지(paused) 작업 미표시 처리
+
+---
+
+## 세션 132 (2026-08-03) — BUG-207: start-server.sh 업데이트 로직 내장 (치킨-에그 구조 영구 해결)
+
+### 작업 배경
+BUG-206 수정 후에도 GitHub push → 503 반복. 수동은 정상, Webhook만 503.  
+**치킨-에그 구조**: 구버전 서버가 Webhook을 받아 업데이트 처리 → 구버전 코드의 버그가 수정되어 push되어도, 실행되는 것은 항상 구버전이므로 수정이 적용되지 않음.
+
+### 근본 원인
+업데이트 로직(npm install, build 등)이 서버 코드(admin.ts)에 있는 구조 자체가 문제.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `scripts/start-server.sh` | **git pull + npm install + bs3 교체 + tsx 복구 + vite build 전체 내장** |
+| `src/nas-routes/admin.ts` | Webhook: npm install/build 제거 → pm2 restart만 트리거 |
+| `src/index.tsx` | 버전 문자열 v=20260803d → v=20260803e |
+
+### 검증 결과
+- NAS001 수동 복구 + PM2 재등록 후 `pm2 status` online, restart 0회, mem 42.1mb ✅
+- `curl https://localhost:3443` 정상 응답 ✅
+
+### 커밋
+- `68c127e` — fix: [BUG-207] start-server.sh에 git pull+build 내장
+
+### 503 악순환 완전 종결 (세션 128~132 종합)
+
+| 세션 | 버그 | 수정 | 효과 |
+|------|------|------|------|
+| 128 | BUG-202 | fixTsxBinary() 추가 | admin.ts 내 tsx 복구 |
+| 131 | BUG-202 | start-server.sh PM2 래퍼 | pm2 restart 시 tsx 자동 복구 |
+| 132 | BUG-206 | Webhook 플로우 npm install | (치킨-에그로 무효) |
+| **132** | **BUG-207** | **start-server.sh에 업데이트 전체 내장** | **서버 코드 버전 완전 독립 ✅** |
 
 ---
 

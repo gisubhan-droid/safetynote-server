@@ -24085,7 +24085,13 @@ async function _updLoadStatus() {
       }
     }
   } catch(e) {
-    _updSetBanner('상태 조회 실패: ' + e.message, 'error');
+    // BUG-208: pm2 restart 중 서버 다운타임으로 인한 Network Error는 정상 부산물
+    // → 빨간 에러 배너 대신 "재시작 중" 안내 메시지로 표시
+    if (e.message === 'Network Error' || e.code === 'ERR_NETWORK' || (e.response && e.response.status >= 500)) {
+      _updSetBanner('서버 재시작 중... 잠시 대기하세요 ⏳', 'restarting');
+    } else {
+      _updSetBanner('상태 조회 실패: ' + e.message, 'error');
+    }
   }
 }
 

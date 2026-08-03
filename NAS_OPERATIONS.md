@@ -121,6 +121,8 @@ pm2 save
 | 2026-08-03 | 세션 129 | BUG-204: 현장위치지도 진행탭 /tbm→/tasks API 교체 (planned_date 기준) |
 | 2026-08-03 | 세션 130 | BUG-205: 현장위치지도 완료탭 /tbm→/tasks API 교체 (planned_date 기준) |
 | 2026-08-03 | 세션 131 | BUG-202: tsx 소멸 영구 차단 — start-server.sh 래퍼 + PM2 재등록 방식 확정 |
+| 2026-08-03 | 세션 132 | BUG-206/207: Webhook 자동업데이트 npm install 누락 + 치�-에그 구조 영구 해결 |
+| 2026-08-03 | 세션 133 | BUG-208: 업데이트 중 빨간 Network Error 배너 → 노란 재시작 대기 안내로 개선 |
 
 > 전체 상세 이력 → `PROJECT_HISTORY.md` 참조 (전체가 NAS001 LinkMax 기준)
 
@@ -367,4 +369,6 @@ cd /volume1/safetynote \
 *2026-08-03 세션 127 업데이트: NAS002 삼흥 본사 섹션 추가 (BUG-ROLLUP 수동 복구 명령어 포함)*  
 *2026-08-03 세션 128 업데이트: BUG-202 tsx 바이너리 누락 버그 기록 + fixTsxBinary() 코드 수정 + NAS002 한 번에 실행 블록에 npm install tsx 추가 + BUG 목록 셀션 신규 추가*  
 *2026-08-03 세션 131 업데이트: BUG-202 영구 해결 — PM2 등록 명령어를 start-server.sh 래퍼 방식으로 교체 (tsx 소멸 자동 복구). BUG-204/BUG-205 현장위치지도 API 교체 이력 추가.*  
+*2026-08-03 세션 132 업데이트: BUG-206/207 수정 — Webhook 플로우 npm install 누락 + 치�-에그 구조 영구 해결 (start-server.sh 6단계 파이프라인).*  
+*2026-08-03 세션 133 업데이트: BUG-208 해결 — 업데이트 중 UI 빨간 Network Error 배너 → 노란 재시작 대기 안내로 개선. install.sh v2.5 버전 업.*  
 *업데이트 시 반드시 마스터 테이블 + 해당 NAS 섹션 동시 수정*

@@ -21,8 +21,11 @@
 
 ---
 
-> 최종 업데이트: 2026-08-03 (세션 132 — BUG-207: start-server.sh 업데이트 로직 내장, 치킨-에그 구조 영구 해결)
-> **GitHub 최신 (safetynote-server): `68c127e`** — fix: [BUG-207] start-server.sh에 git pull+build 내장 — 서버 코드 버전 의존 완전 제거
+> 최종 업데이트: 2026-08-03 (세션 133 — BUG-208: pm2 restart 중 빨간 Network Error 배너 → 노란 재시작 대기 안내로 개선)
+> **GitHub 최신 (safetynote-server): `ee9725f`** — test: [BUG-208] 재시작 중 Network Error 배너 개선 검증 — v=20260803h
+> **이전 커밋 (safetynote-server): `69b95d3`** — fix: [BUG-208] pm2 restart 중 Network Error → 빨간 에러 배너 대신 재시작 대기 안내로 표시
+> **이전 커밋 (safetynote-server): `821a2df`** — docs: [BUG-207] 세션 132 최종 마무리
+> **이전 커밋 (safetynote-server): `68c127e`** — fix: [BUG-207] start-server.sh에 git pull+build 내장 — 서버 코드 버전 의존 완전 제거
 > **이전 커밋 (safetynote-server): `0c8a9ad`** — docs: [BUG-206] 세션 132 최종 마무리
 > **이전 커밋 (safetynote-server): `3d1525b`** — fix: [BUG-206] Webhook 자동업데이트 플로우에 runNpmInstall+fixBs3Binary+fixTsxBinary 삽입
 > **이전 커밋 (safetynote-server): `574a66b`** — fix: [BUG-202] 신규 NAS 설치 시에도 tsx 소멸 악순환 차단
@@ -11843,3 +11846,46 @@ fetch → blob → new File([blob], name, {type:'image/jpeg'})
 | repo | commit | 내용 |
 |------|--------|------|
 | safetynote-server | (이번 세션) | feat: [FEAT-COL-PERSIST] 공사현황/작업관리 컬럼 너비 localStorage 영구 저장 + 외선/접속공량 헤더 개선 |
+
+---
+
+## 세션 133 (2026-08-03) — BUG-208: pm2 restart 중 Network Error 배너 UX 개선
+
+### 작업 배경
+세션 132에서 BUG-207(치킨-에그 구조) 해결 후 테스트 push 진행.  
+업데이트 중 UI에 빨간색 **"상태 조회 실패: Network Error"** 메시지 출력 확인.  
+업데이트 자체는 정상 완료되지만 사용자 혼란 유발 → BUG-208로 등록·처리.
+
+### 근본 원인
+pm2 restart 시 서버가 수 초간 다운 → 브라우저 폴링(2초마다)이 응답 없는 서버에 요청  
+→ axios `Network Error` → catch 블록 무조건 빨간 에러 배너 출력.  
+실제 오류가 아닌 **정상 재시작 다운타임의 부산물**.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | `_updLoadStatus()` catch 블록: Network Error / ERR_NETWORK / 5xx → 노란 재시작 대기 배너 |
+| `src/index.tsx` | 버전 문자열 v=20260803g |
+
+```javascript
+// 수정 후 — BUG-208
+} catch(e) {
+    if (e.message === 'Network Error' || e.code === 'ERR_NETWORK'
+        || (e.response && e.response.status >= 500)) {
+        _updSetBanner('서버 재시작 중... 잠시 대기하세요 ⏳', 'restarting'); // 노란 배너
+    } else {
+        _updSetBanner('상태 조회 실패: ' + e.message, 'error'); // 진짜 오류만 빨간 배너
+    }
+}
+```
+
+### 검증 결과
+- 테스트 push(`ee9725f`, v=20260803h) 후 NAS001 Webhook 자동업데이트
+- 재시작 중: 🟡 "서버 재시작 중... 잠시 대기하세요 ⏳" 정상 표시 ✅
+- 빨간 "상태 조회 실패: Network Error" 완전 소멸 ✅
+- 업데이트 완료 후 서버 정상 응답 ✅
+
+### 커밋
+- `69b95d3` — fix: [BUG-208] pm2 restart 중 Network Error 배너 개선
+- `57d1b3b` — docs: [BUG-208] BUGFIX_LOG 기록 추가
+- `ee9725f` — test: [BUG-208] 검증 push v=20260803h

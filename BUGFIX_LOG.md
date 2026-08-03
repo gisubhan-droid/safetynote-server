@@ -2,6 +2,87 @@
 
 ---
 
+## [BUG-204] 현장위치지도 진행 탭 건수 불일치 — /tbm → /tasks API 교체 (세션 129)
+
+> **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)
+> **발견일**: 2026-08-03
+> **심각도**: 🔴 CRITICAL — BUG-203 수정 후에도 불일치 지속, 데이터 소스 자체 불일치
+
+### 현상
+
+BUG-203 수정(tbm_date 2차 필터 변경) 후에도 현장점검 건수와 현장위치지도 진행 탭 건수 불일치 지속.
+
+### 근본 원인 분석
+
+```
+현장점검 화면:        /tasks API  (planned_date 기준 필터)
+현장위치지도 진행탭:   /tbm   API  (tbm_date    기준 필터)
+```
+
+두 화면이 **완전히 다른 API, 다른 날짜 컬럼**을 사용 → 동일 날짜 조회해도 건수가 다를 수밖에 없음.
+
+BUG-203에서 클라이언트 2차 필터 기준(planned_date→tbm_date)을 수정했지만,
+서버 API 자체가 달라 여전히 불일치 발생.
+
+### 충돌 체크 (방안 B 진행 전 검증)
+
+| 이전 버그 | 우려 사항 | 검증 결과 |
+|----------|----------|----------|
+| BUG-082 | /tbm으로 변경한 이유: LGU+ is_auto_request_no 필터 문제 | tasks.ts에도 동일 서버측 LGU+ 필터 존재 확인. 위험성체크 탭이 /tasks로 정상 동작 중 → **충돌 없음** |
+| BUG-180 | 날짜 파라미터 전송 로직 | /tasks의 start_date/end_date로 대체 → 동일 기능 |
+| BUG-185 | 클라이언트 2차 planned_date 필터 패턴 | 그대로 적용 (위험성체크 탭과 동일) |
+
+### 수정 내용 (app.js)
+
+**방안 B 채택: 진행 탭을 /tasks API로 전면 교체**
+
+```javascript
+// 변경 전 — /tbm API 기반 (tbm_date 기준)
+const twp = new URLSearchParams();
+if (dateFrom) twp.set('date_from', dateFrom);
+if (dateTo)   twp.set('date_to',   dateTo);
+if (userId)   twp.set('user_id',   userId);
+twp.set('limit', '500');
+const tbmAllRes = await API.get(`/tbm?${twp.toString()}`);
+const _rawTbmAllList = Array.isArray(tbmAllRes.data) ? tbmAllRes.data
+  : (tbmAllRes.data?.items || tbmAllRes.data?.tbms || []);
+// task_status='working' 2차 필터 + tbm_date 날짜 2차 필터
+
+// 변경 후 — /tasks API 기반 (planned_date 기준, 현장점검과 동일 소스)
+const twp = new URLSearchParams();
+twp.set('status', 'working');
+if (dateFrom) twp.set('start_date', dateFrom);
+if (dateTo)   twp.set('end_date',   dateTo);
+if (userId)   twp.set('supervisor_id', userId);
+const workingRes = await API.get(`/tasks?${twp.toString()}`);
+const _rawWorkingList = workingRes.data?.tasks || workingRes.data || [];
+// LGU+ 클라이언트 이중방어 + planned_date 2차 필터 (위험성체크 탭과 동일 패턴)
+```
+
+**팝업 필드명 변경** (tbm → tasks 응답 구조):
+
+| 항목 | 변경 전 (tbm) | 변경 후 (tasks) |
+|------|-------------|----------------|
+| 작업 ID | `tbm.task_id` | `t.id` |
+| 작업명 | `tbm.task_title \|\| tbm.work_name` | `t.title \|\| t.work_name` |
+| 담당자 | `tbm.conductor_name` | `t.supervisor_name` |
+| 날짜 | `tbm.tbm_date \|\| tbm.created_at` | `t.planned_date \|\| t.created_at` |
+| GPS | `tbm.gps_lat/lon` | `t.gps_lat/lon` |
+
+**버전 문자열**: `v=20260803a` → `v=20260803b` (브라우저 캐시 강제 갱신)
+
+### 관련 버그 이력
+
+| 버그 | 내용 | 관계 |
+|------|------|------|
+| BUG-082 | 진행 탭 API 소스를 /tasks → /tbm 으로 변경 | 이번 수정으로 원복(단, LGU+ 필터 검증 후) |
+| BUG-180 | 진행 탭 서버 날짜 파라미터 추가 | start_date/end_date 파라미터로 계승 |
+| BUG-185 | 위험성체크 탭 /tasks API 날짜 필터 + 클라이언트 2차 필터 | 이번 진행탭 수정의 참조 패턴 |
+| BUG-203 | 진행 탭 클라이언트 2차 필터 기준 tbm_date로 수정 | 근본 원인 해결 안 됨 → BUG-204로 이어짐 |
+| **BUG-204** | **진행 탭 /tbm → /tasks API 전면 교체** | 이번 수정 ✅ |
+
+---
+
 ## [BUG-203] 현장위치 지도 진행 탭 — 현장점검 건수와 불일치 (세션 128)
 
 > **대상 NAS**: NAS001 LinkMax 본사 (전체 공통)

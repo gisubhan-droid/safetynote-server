@@ -45877,59 +45877,54 @@ async function loadSiteMapMarkers(map) {
       }
     }
 
-    // ── ③ 진행 탭 (task_status = 'working') — paused(중지) 제외
-    // [BUG-082 수정] /api/tbm 기반으로 변경:
-    //   - /tasks API는 constructions.is_auto_request_no 필터가 tbm.ts와 다르게 동작하여
-    //     LGU+ 사용자에게 0건 반환되는 문제가 있음 (NAS 진단 ③ 확인)
-    //   - /tbm API는 서버+클라이언트 LGU+ 이중방어가 정상 동작 확인됨
-    //   - task_status='working' 인 건만 진행 탭에 표시 (중지 paused 제외)
-    // GPS 우선순위: tbm_records.gps → work_logs.gps → 좌표 없음(목록만)
+    // ── ③ 진행 탭 (status = 'working') — paused(중지) 제외
+    // [BUG-204 수정] /tasks API로 교체 — planned_date 기준 (현장점검 화면과 동일 소스)
+    //   - BUG-082: /tbm API 기반으로 변경한 이유(LGU+ 필터) →
+    //     tasks.ts에도 동일한 서버측 LGU+ 필터(constructions.is_auto_request_no) 존재 확인
+    //     위험성체크 탭이 /tasks API로 정상 동작 중 → 충돌 없음
+    //   - BUG-203 부분 수정(tbm_date 2차 필터) 후에도 불일치 지속:
+    //     근본 원인 = API 소스 자체 불일치
+    //     현장점검 화면: /tasks API (planned_date 기준)
+    //     현장위치지도 진행탭: /tbm API (tbm_date 기준) → 데이터 소스 자체가 다름
+    //   - 방안 B: /tasks?status=working&start_date=...&end_date=...&supervisor_id=...
+    //     → 현장점검과 완전히 동일한 소스 → 건수 불일치 근본 해결
+    // GPS 우선순위: tasks.gps_lat/lon 우선 → work_logs GPS fallback (위험성체크 탭과 동일 패턴)
     if (filter === 'working') {
-      // ① TBM API로 진행 목록 확보 — [BUG-180 수정] 날짜 파라미터 전송
-      //   - 기존: 날짜 파라미터 미전송 → 전체 기간 working 데이터 반환 → 날짜 필터 무시됨
-      //   - 수정: date_from/date_to 서버 전송 + 클라이언트 planned_date 2차 필터
-      //   - working 상태는 '현재 진행중'이지만 등록일(tbm_date) 기준 날짜 범위 적용
+      // ① /tasks API로 진행(working) 목록 조회 — planned_date 기준
+      //   tasks.ts: status='working', start_date/end_date → planned_date 기준 서버 필터
+      //   supervisor_id: tasks.ts line 124에서 지원 확인
       const twp = new URLSearchParams();
-      if (dateFrom) twp.set('date_from', dateFrom);
-      if (dateTo)   twp.set('date_to',   dateTo);
-      if (userId)   twp.set('user_id',   userId);
-      twp.set('limit', '500');
-      const tbmAllRes = await API.get(`/tbm?${twp.toString()}`);
-      const _rawTbmAllList = Array.isArray(tbmAllRes.data) ? tbmAllRes.data
-        : (tbmAllRes.data?.items || tbmAllRes.data?.tbms || []);
+      twp.set('status', 'working');
+      if (dateFrom) twp.set('start_date', dateFrom);
+      if (dateTo)   twp.set('end_date',   dateTo);
+      if (userId)   twp.set('supervisor_id', userId);
+      const workingRes = await API.get(`/tasks?${twp.toString()}`);
+      const _rawWorkingList = workingRes.data?.tasks || workingRes.data || [];
+
       // [BUG-079 준용] LGU+ 클라이언트 이중 방어: is_auto_request_no=0 건만 표시 (서버 필터 보조)
       var _smMyUiRoleW = dbRoleToUi(currentUser.role, currentUser.position, currentUser.sub_role);
       var _smIsLguW = (_smMyUiRoleW === 'lgu_plus' || currentUser.role === 'lgu_plus' || currentUser.role === 'lgu'); // [FEAT-048]
-      const tbmAllFiltered = _smIsLguW
-        ? _rawTbmAllList.filter(function(t) { return t.is_auto_request_no === 0; })
-        : _rawTbmAllList;
+      const _workingLguFiltered = _smIsLguW
+        ? _rawWorkingList.filter(function(t) { return t.is_auto_request_no === 0; })
+        : _rawWorkingList;
 
-      // ② task_status = 'working' 인 건만 추출 (진행 탭 조건, paused 중지 제외)
-      // [BUG-180] 서버 date_from/date_to 필터 후 클라이언트에서 2차 필터
-      // [BUG-203] 클라이언트 2차 필터 기준 수정: planned_date → tbm_date 우선 (planned_date fallback)
-      //   - 기존: planned_date(작업 계획일) 기준 → 서버 tbm_date 필터와 기준 불일치
-      //     → 서버가 tbm_date 기준으로 반환한 3건 중 planned_date가 다른 날짜인 2건이 클라이언트에서 탈락
-      //   - 수정: tbm_date(TBM 진행일) 우선, 없으면 planned_date fallback → 서버 필터와 동일 기준
-      //   예시(현장점검 3건 vs 지도 1건 불일치 원인):
-      //     서버 tbm_date=2026-08-03 → 3건 반환
-      //     클라이언트 planned_date 기준 재필터 → 작업 계획일이 다른 2건 탈락 → 1건만 표시
-      const workingTbmList = tbmAllFiltered.filter(function(tbm) {
-        if (tbm.task_status !== 'working') return false;
-        // tbm_date(TBM 진행일) 우선, 없으면 planned_date fallback (서버 tbm.ts 필터와 동일 기준)
-        var pd = String(tbm.tbm_date || tbm.planned_date || '').slice(0, 10);
+      // ② 클라이언트 2차 날짜 필터: planned_date 기준 (서버 start_date/end_date 필터 보완)
+      //   위험성체크 탭(BUG-185)과 동일 패턴 — 서버 필터 누락 케이스 방어
+      const workingList = _workingLguFiltered.filter(function(t) {
+        var pd = t.planned_date ? String(t.planned_date).slice(0, 10) : '';
         if (dateFrom && pd && pd < dateFrom) return false;
         if (dateTo   && pd && pd > dateTo)   return false;
         return true;
       });
 
-      if (workingTbmList.length === 0) {
+      if (workingList.length === 0) {
         // 데이터 없음 — 빈 목록으로 종료
       } else {
-        // ③ TBM GPS 우선, 없는 task_id는 work_logs GPS 조회
+        // ③ tasks.gps_lat 없는 건들은 work_logs GPS fallback 조회
         const wlGpsCache = {};
-        const noTbmGpsItems = workingTbmList.filter(tbm => !tbm.gps_lat || !tbm.gps_lon);
-        await Promise.all(noTbmGpsItems.map(async (tbm) => {
-          const tid = tbm.task_id;
+        const noTaskGpsItems = workingList.filter(function(t) { return !t.gps_lat || !t.gps_lon; });
+        await Promise.all(noTaskGpsItems.map(async (t) => {
+          const tid = t.id;
           if (!tid) return;
           try {
             const wlRes = await API.get(`/worklogs?task_id=${tid}`);
@@ -45944,18 +45939,17 @@ async function loadSiteMapMarkers(map) {
         }));
 
         // ④ 마커 생성
-        for (const tbm of workingTbmList) {
-          // paused(중지)는 이미 workingTbmList에서 제외됨 — task_status === 'working' 만 처리
+        for (const t of workingList) {
           let lat = null, lon = null, gpsSource = '', addr = '', displayDate = '';
-          const wlG = tbm.task_id ? wlGpsCache[tbm.task_id] : null;
-          const statusLabel = '🟢 진행'; // paused 제외로 항상 진행 상태만
+          const wlG = t.id ? wlGpsCache[t.id] : null;
+          const statusLabel = '🟢 진행';
 
-          if (tbm.gps_lat && tbm.gps_lon) {
-            lat = parseFloat(tbm.gps_lat);
-            lon = parseFloat(tbm.gps_lon);
-            addr = tbm.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-            displayDate = _toKSTDateTime(tbm.tbm_date || tbm.created_at || '');
-            gpsSource = 'tbm';
+          if (t.gps_lat && t.gps_lon) {
+            lat = parseFloat(t.gps_lat);
+            lon = parseFloat(t.gps_lon);
+            addr = t.gps_address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+            displayDate = _toKSTDateTime(t.planned_date || t.created_at || '');
+            gpsSource = 'task';
           } else if (wlG) {
             lat = wlG.lat; lon = wlG.lon;
             addr = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
@@ -45963,16 +45957,16 @@ async function loadSiteMapMarkers(map) {
             gpsSource = 'worklog';
           } else {
             // GPS 기록 없음 — 목록에만 추가
-            displayDate = _toKSTDateTime(tbm.tbm_date || tbm.created_at || '');
+            displayDate = _toKSTDateTime(t.planned_date || t.created_at || '');
           }
 
-          const name = tbm.task_title || tbm.work_name || tbm.construction_name || '작업';
-          const conductor = tbm.conductor_name || '';
+          const name = t.title || t.work_name || t.construction_name || '작업';
+          const supervisor = t.supervisor_name || '';
 
           if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
             // GPS 없는 건은 목록에만 추가
             listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-              author: conductor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: tbm.task_id || null });
+              author: supervisor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: t.id || null });
             continue;
           }
 
@@ -45982,8 +45976,8 @@ async function loadSiteMapMarkers(map) {
             <div style="min-width:200px;font-size:13px;">
               <div style="font-weight:700;color:${meta.color};margin-bottom:4px">🟢 작업 진행중</div>
               <div style="font-weight:600">${name}</div>
-              ${conductor ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
-                <i class="fas fa-user-hard-hat mr-1"></i>${conductor}
+              ${supervisor ? `<div style="color:#6B7280;font-size:11px;margin-top:2px">
+                <i class="fas fa-user-hard-hat mr-1"></i>${supervisor}
               </div>` : ''}
               <div style="color:#6B7280;font-size:11px;margin-top:2px">
                 <i class="fas fa-calendar-alt mr-1"></i>${displayDate || '-'}
@@ -45996,13 +45990,13 @@ async function loadSiteMapMarkers(map) {
               </div>` : ''}
               <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
                 <button onclick="showMapModalByCoords(${lat}, ${lon}, '${name.replace(/'/g, '')}', '${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
-                ${tbm.task_id ? `<button onclick="showTaskDetail(${tbm.task_id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
+                ${t.id ? `<button onclick="showTaskDetail(${t.id})" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #D8D0DC;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-file-alt mr-1"></i>작업상세</button>` : ''}
               </div>
             </div>`);
 
           latLngs.push([lat, lon]);
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: conductor, address: addr, lat, lon, taskId: tbm.task_id || null });
+            author: supervisor, address: addr, lat, lon, taskId: t.id || null });
         }
       }
     }

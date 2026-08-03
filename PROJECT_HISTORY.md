@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-03 (세션 128 — BUG-203: 현장위치지도 진행 탭 건수 현장점검과 불일치 수정)
-> **GitHub 최신 (safetynote-server): `ad4c963`** — fix: [BUG-203] 현장위치지도 진행 탭 건수 불일치 수정 — 클라이언트 2차 필터 planned_date→tbm_date 기준 변경
+> 최종 업데이트: 2026-08-03 (세션 129 — BUG-204: 현장위치지도 진행 탭 /tbm→/tasks API 전면 교체)
+> **GitHub 최신 (safetynote-server): `(push 후 갱신 예정)`** — fix: [BUG-204] 현장위치지도 진행 탭 /tbm→/tasks API 교체 — planned_date 기준으로 현장점검과 데이터 소스 통일
+> **이전 커밋 (safetynote-server): `0546cfa`** — fix: [BUG-203] app.js 버전 문자열 갱신 v=20260726c→v=20260803a (브라우저 캐시 강제 갱신)
+> **이전 커밋 (safetynote-server): `ad4c963`** — fix: [BUG-203] 현장위치지도 진행 탭 건수 불일치 수정 — 클라이언트 2차 필터 planned_date→tbm_date 기준 변경
 > **이전 커밋 (safetynote-server): `5796ebd`** — docs: [BUG-202] PROJECT_HISTORY 커밋 해시 2cf0cfd 반영 (세션 128)
 > **이전 커밋 (safetynote-server): `2cf0cfd`** — fix: [BUG-202] 자동업데이트 후 tsx 바이너리 누락 근본 해결 — fixTsxBinary() 추가 + NAS 공통 버그 목록/체크리스트 보강
 > **이전 커밋 (safetynote-server): `ce713a0`** — docs: [BUG-201] PROJECT_HISTORY 커밋 해시 c7e7a03 반영 (세션 127)

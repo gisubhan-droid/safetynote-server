@@ -2,6 +2,48 @@
 
 ---
 
+## [FEAT-SC-PRINT] 산업안전보건위원회 — 회의록 인쇄 전면 개선 (세션 136)
+
+> **대상**: 산업안전보건위원회 회의록 PDF 출력 (`_scPrintMeeting`)
+> **발견일**: 2026-08-04
+> **유형**: 🟢 FEATURE — 인쇄 UX 전면 개선
+
+### 요구사항
+1. 안전교육 출력 방식과 동일한 렌더링 구조 적용
+2. 좌/우 여백 최소화 → A4 1장 수용
+3. 안건제목 컬럼 폭 확대 (22%)
+4. 안건 내용 줄바꿈(`\n`) 인쇄 반영
+5. 서명부: 사용자측/근로자측 각각 2명 1행 2열 병렬 배치
+6. A4 비율 자동 조정 (`_autoScaleSC` JS 삽입)
+7. 회의 요약 textarea 확대 (신규 rows=2→5, 수정모달 rows=3→6)
+
+### 수정 내용
+
+| 위치 | 파일 | 변경 내용 |
+|------|------|----------|
+| `_scPrintMeeting` 전체 | `public/static/app.js` | 안전교육 방식(a4-page div + 툴바 + autoScale) 통일 |
+| `@page margin` | 인쇄 CSS | `14mm 12mm` → `10mm 8mm` (여백 최소화) |
+| 안건 테이블 컬럼 | 인쇄 HTML | 안건제목 `22%` 확장, 내용 `white-space:pre-wrap` |
+| 서명부 레이아웃 | 인쇄 HTML | 1인 1행 → 2인 1행, 사용자측/근로자측 색상 구분 헤더 |
+| `_autoScaleSC` JS | 인쇄 HTML | `sc-a4Page` id 기반 zoom + transform scale 자동 비율 |
+| `sc-new-summary` | `public/static/app.js` | `rows="2"` → `rows="5"`, `min-height:100px` |
+| `sc-edit-summary` | `public/static/app.js` | `rows="3"` → `rows="6"`, `min-height:120px` |
+| `src/index.tsx` | 버전 문자열 | `v=20260804a` → `v=20260804b` |
+
+### 충돌 체크
+- `_scPrintMeeting` (51061~51178): 단일 독립 함수, 외부 참조 없음 ✅
+- `_autoScaleSC` id: `sc-a4Page` — 기존 `a4Page`(안전교육용), `_autoScale`(TBM용)과 네임스페이스 분리 ✅
+- `sc-new-summary`, `sc-edit-summary`: 각각 단독 사용, 충돌 없음 ✅
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.53s)
+
+### 커밋
+- (이번 세션 push 커밋 반영 예정)
+
+---
+
 ## [FEAT-SC-VOTE] 산업안전보건위원회 — 안건 투표 후 의결 결과 자동 표시 (세션 134)
 
 > **대상**: 산업안전보건위원회 회의록 (전체 공통)

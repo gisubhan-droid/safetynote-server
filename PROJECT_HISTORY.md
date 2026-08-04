@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-04 (세션 135 — 핸드오프 복구: 세션 131→135 이력 정리 및 문서 갱신)
-> **GitHub 최신 (safetynote-server): `fdfa4fa`** — docs: [세션135] 핸드오프 복구 — 문서 갱신
+> 최종 업데이트: 2026-08-04 (세션 136 — FEAT-SC-PRINT: 산업안전보건위원회 회의록 인쇄 전면 개선)
+> **GitHub 최신 (safetynote-server): (이번 세션 push 예정)**
+> **이전 커밋 (safetynote-server): `f807ad6`** — docs: [세션135] PROJECT_HISTORY 최신 커밋 해시 fdfa4fa 반영
+> **이전 커밋 (safetynote-server): `fdfa4fa`** — docs: [세션135] 핸드오프 복구 — 문서 갱신
 > **이전 커밋 (safetynote-server): `9b5bd79`** — feat: [FEAT-SC-VOTE] 산업안전보건위원회 투표 의결 결과 자동 표시
 > **이전 커밋 (safetynote-server): `c9828ac`** — docs: [BUG-208] 세션 133 최종 마무리
 > **이전 커밋 (safetynote-server): `ee9725f`** — test: [BUG-208] 재시작 중 Network Error 배너 개선 검증 — v=20260803h
@@ -11937,3 +11939,41 @@ pm2 restart 시 서버가 수 초간 다운 → 브라우저 폴링(2초마다)�
 
 ### 커밋
 - `fdfa4fa` — docs: [세션135] 핸드오프 복구 — BUGFIX_LOG FEAT-SC-VOTE 커밋 반영 + PROJECT_HISTORY 헤더/세션135 섹션 + NAS_OPERATIONS 134/135 이력 추가
+
+---
+
+## 세션 136 (2026-08-04) — FEAT-SC-PRINT: 산업안전보건위원회 회의록 인쇄 전면 개선
+
+### 작업 배경
+기존 `_scPrintMeeting` 인쇄는 단순 문자열 htmlContent 방식으로 안전교육 출력과 구조가 달랐음.
+- 여백 과다(상하좌우 모두 크게 설정)로 내용이 A4 2페이지에 걸침
+- 안건 내용 줄바꿈 미반영, 안건제목 컬럼 좁음
+- 서명부 1인 1행 세로 나열 → 인쇄 공간 낭비
+- A4 자동 비율 조정 없음 → 넘칠 경우 잘림
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | `_scPrintMeeting` 전체 재작성 — 안전교육 방식(a4-page + 툴바 + autoScale) 통일 |
+| `public/static/app.js` | 서명부 `_scBuildSignRows`: 2인 1행 2열 병렬, 사용자측(보라)/근로자측(파랑) 색상 헤더 |
+| `public/static/app.js` | 안건 `white-space:pre-wrap`, 안건제목 `width:22%` 확장 |
+| `public/static/app.js` | `_autoScaleSC` JS: `#sc-a4Page` 기반 zoom + transform scale 자동 비율 |
+| `public/static/app.js` | `sc-new-summary` rows=2→5, `sc-edit-summary` rows=3→6 |
+| `src/index.tsx` | 버전 `v=20260804a` → `v=20260804b` |
+
+### 인쇄 구조 변경 요약
+| 항목 | 이전 | 이후 |
+|------|------|------|
+| 렌더링 방식 | 단순 문자열 | a4-page div + 툴바 + autoScale JS |
+| @page 여백 | 14mm/12mm/16mm/15mm | 10mm/8mm 균일 (최소화) |
+| 안건제목 폭 | auto | 22% 고정 |
+| 안건 내용 줄바꿈 | 미반영 | pre-wrap |
+| 서명부 | 1인 1행 | 2인 1행 (좌우 2열) |
+| 비율 자동 조정 | 없음 | _autoScaleSC (zoom + transform) |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.53s)
+
+### 커밋
+- (이번 세션 push 커밋 반영 예정)

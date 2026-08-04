@@ -49741,8 +49741,8 @@ function _scCreateMeeting() {
             '<label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">' +
               '<i class="fas fa-align-left" style="color:#7C3AED;margin-right:4px"></i>회의 요약' +
             '</label>' +
-            '<textarea id="sc-new-summary" rows="2" placeholder="회의 주요 내용 요약..." ' +
-              'style="width:100%;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>' +
+            '<textarea id="sc-new-summary" rows="5" placeholder="회의 주요 내용 요약 (내용이 많을 경우 자유롭게 입력)..." ' +
+              'style="width:100%;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical;min-height:100px"></textarea>' +
           '</div>' +
 
           // 기본 안건 미리보기 (정기만 표시)
@@ -50082,7 +50082,7 @@ function _scEditBasicInfo(mid) {
           '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">개최 장소</label>' +
             '<input id="sc-edit-location" type="text" value="' + (m.location||'').replace(/"/g,'&quot;') + '" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box"></div>' +
           '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">회의 요약</label>' +
-            '<textarea id="sc-edit-summary" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical">' + (m.summary||'') + '</textarea></div>' +
+            '<textarea id="sc-edit-summary" rows="6" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical;min-height:120px">' + (m.summary||'') + '</textarea></div>' +
         '</div>' +
         '<div style="display:flex;gap:8px;margin-top:16px">' +
           '<button data-mid="' + mid + '" onclick="_scSubmitEditBasic(this.getAttribute(\'data-mid\'))" style="flex:1;padding:10px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">저장</button>' +
@@ -51058,6 +51058,7 @@ function _scDeleteDoc(docId) {
 // [BUG-183b] res 구조 수정: API 응답 { meeting, attendees, agendas, photos, docs }
 //            → res.meeting 으로 접근, attendees/agendas 별도 키
 // [BUG-183d] 닫기/인쇄 버튼 추가 (안전교육 출력 방식 참고)
+// [FEAT-SC-PRINT] 안전교육 방식 통일: a4-page + autoScale + 2열 서명부 + pre-wrap + 여백 최소화
 function _scPrintMeeting(meetingId) {
   _scFetch('/api/safety-committee/meetings/' + meetingId).then(function(r){ return r.json(); }).then(function(res) {
     // API 응답: { meeting:{...}, attendees:[...], agendas:[...], photos:[...], docs:[...] }
@@ -51067,109 +51068,263 @@ function _scPrintMeeting(meetingId) {
     var attendees = res.attendees || m.attendees || [];
     var typeLabel = m.meeting_type === 'regular' ? '정기' : m.meeting_type === 'extraordinary' ? '임시' : '서면';
 
+    // ── 안건 행 생성 ─────────────────────────────────────────────────────────
     var agendaRows = '';
     for (var i = 0; i < agendas.length; i++) {
       var ag = agendas[i];
-      // agenda_no 우선, seq 폴백 (patchSchema v0.184 이전 구 DB 대응)
       var agNo = ag.agenda_no || ag.seq || (i + 1);
-      // [FEAT-SC-VOTE] 의결결과 셀: 투표 집계 + 가결/부결 + result 텍스트 통합 표시
-      var pAg = Number(ag.vote_agree   || 0);
-      var pDa = Number(ag.vote_disagree|| 0);
-      var pAb = Number(ag.vote_abstain || 0);
+      // [FEAT-SC-VOTE] 의결결과 셀: 투표 집계 + 가결/부결 + result 텍스트 통합
+      var pAg    = Number(ag.vote_agree    || 0);
+      var pDa    = Number(ag.vote_disagree || 0);
+      var pAb    = Number(ag.vote_abstain  || 0);
       var pTotal = pAg + pDa + pAb;
       var voteLineHtml = '';
       var verdictColor = '';
       var verdictText  = '';
       if (ag.vote_enabled && pTotal > 0) {
-        var isPassP = pAg > pDa;
+        var isPassP  = pAg > pDa;
         verdictText  = isPassP ? '가결' : '부결';
         verdictColor = isPassP ? '#065F46' : '#C0255A';
         voteLineHtml =
-          '<div style="font-size:11px;color:#374151;margin-bottom:2px">' +
+          '<div style="font-size:8pt;color:#374151;margin-bottom:1px">' +
             '찬성 ' + pAg + '명 / 반대 ' + pDa + '명' + (pAb > 0 ? ' / 기권 ' + pAb + '명' : '') +
           '</div>' +
-          '<div style="font-size:13px;font-weight:700;color:' + verdictColor + '">' + verdictText + '</div>';
+          '<div style="font-size:9pt;font-weight:700;color:' + verdictColor + '">' + verdictText + '</div>';
       }
       var resultText = ag.result || ag.decision || '';
       var resultCell = voteLineHtml
-        ? voteLineHtml + (resultText ? '<div style="font-size:11px;color:#475569;margin-top:3px">' + resultText + '</div>' : '')
+        ? voteLineHtml + (resultText ? '<div style="font-size:8pt;color:#475569;margin-top:2px">' + resultText + '</div>' : '')
         : (resultText || '-');
-      agendaRows += '<tr>' +
-        '<td style="padding:8px;text-align:center;font-weight:700;font-size:13px;width:60px">제' + agNo + '호</td>' +
-        '<td style="padding:8px;font-weight:700;font-size:13px">' + (ag.title||'') + '</td>' +
-        '<td style="padding:8px;font-size:12px;color:#475569">' + (ag.content||'') + '</td>' +
-        '<td style="padding:8px;font-size:12px;text-align:center">' + (ag.assignee_name||'-') + '</td>' +
-        '<td style="padding:8px;font-size:12px;text-align:center">' + resultCell + '</td>' +
-      '</tr>';
+      // 안건 내용 줄바꿈 반영: white-space:pre-wrap
+      agendaRows +=
+        '<tr>' +
+          '<td style="text-align:center;font-weight:700;font-size:8.5pt;white-space:nowrap">제' + agNo + '호</td>' +
+          '<td style="font-weight:600;font-size:8.5pt">' + (ag.title||'') + '</td>' +
+          '<td style="font-size:8pt;color:#333;white-space:pre-wrap;line-height:1.45">' + (ag.content||'') + '</td>' +
+          '<td style="font-size:8pt;text-align:center;white-space:nowrap">' + (ag.assignee_name||'-') + '</td>' +
+          '<td style="font-size:8pt;text-align:center">' + resultCell + '</td>' +
+        '</tr>';
     }
 
-    var employerRows = '';
-    var workerRows   = '';
+    // ── 서명부: 사용자측/근로자측 분류 후 2명 1행으로 배치 ────────────────────
+    var employerList = [];
+    var workerList   = [];
     for (var j = 0; j < attendees.length; j++) {
       var att = attendees[j];
-      var signCell = att.signature_data
-        ? '<td style="width:120px;border-bottom:1px solid #555;text-align:center;padding:2px"><img src="' + att.signature_data + '" style="max-width:110px;max-height:38px;object-fit:contain"></td>'
-        : (att.signed_at
-          ? '<td style="width:120px;border-bottom:1px solid #555;text-align:center;font-size:12px;color:#065F46">✔ ' + (att.signed_at||'').substring(0,10) + '</td>'
-          : '<td style="width:120px;border-bottom:1px solid #555;text-align:center"></td>');
-      var row = '<tr style="height:44px">' +
-        '<td style="text-align:center;font-size:13px;font-weight:600;width:100px">' + (att.name||att.user_name||'') + '</td>' +
-        '<td style="text-align:center;font-size:12px;color:#475569;width:120px">' + (att.custom_title||att.role_type||'위원') + '</td>' +
-        signCell +
-      '</tr>';
-      if (att.side === 'worker') workerRows += row;
-      else employerRows += row;
+      if (att.side === 'worker') workerList.push(att);
+      else employerList.push(att);
     }
 
-    var htmlContent = '<!DOCTYPE html><html lang="ko"><head>' +
-      '<meta charset="UTF-8">' +
-      '<title>산업안전보건위원회 회의록</title>' +
-      '<style>' +
-        '@page{size:A4 portrait;margin:14mm 12mm 16mm 15mm}' +
-        'body{font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif;margin:0;padding:0;font-size:13px;color:#000;background:#fff}' +
-        '.toolbar{position:fixed;top:0;left:0;right:0;height:48px;background:#1f2937;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:0 20px;z-index:9999}' +
-        '.btn-close{background:#374151;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;cursor:pointer}' +
-        '.btn-print{background:#7C3AED;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer}' +
-        '.content{padding:20mm 18mm 10mm;margin-top:48px}' +
-        'h1{font-size:22px;text-align:center;font-weight:700;margin:0 0 6px;letter-spacing:2px}' +
-        '.meta{text-align:center;font-size:12px;color:#444;margin-bottom:20px}' +
-        'table{width:100%;border-collapse:collapse;margin-bottom:16px}' +
-        'th{background:#f0ece8;border:1px solid #888;padding:7px 8px;font-size:12px;font-weight:700}' +
-        'td{border:1px solid #aaa;padding:6px 8px;font-size:12px;vertical-align:top}' +
-        '.section-title{font-size:15px;font-weight:700;margin:16px 0 8px;padding:4px 0;border-bottom:2px solid #333}' +
-        '.sign-table td{border:none}' +
-        '.sign-table{margin-bottom:0}' +
-        '@media print{.toolbar{display:none}.content{margin-top:0;padding:10mm}}' +
-      '</style>' +
-    '</head><body>' +
-    '<div class="toolbar">' +
-      '<button class="btn-close" onclick="window.parent.postMessage(\'closePrintOverlay\',\'*\')">✕ 닫기</button>' +
-      '<button class="btn-print" onclick="window.print()"><i style="margin-right:4px">🖨</i> 인쇄 / PDF 저장</button>' +
-    '</div>' +
-    '<div class="content">' +
-    '<h1>산업안전보건위원회 회의록</h1>' +
-    '<div class="meta">개최일: ' + (m.held_date||'').substring(0,10) + ' &nbsp;|&nbsp; 장소: ' + (m.location||'-') + ' &nbsp;|&nbsp; 유형: ' + typeLabel + '회의</div>' +
-    '<table><thead><tr><th style="width:80px">구분</th><th>내용</th></tr></thead><tbody>' +
-      '<tr><td style="font-weight:700;text-align:center">회의명</td><td>' + (m.title||'') + '</td></tr>' +
-      '<tr><td style="font-weight:700;text-align:center">개최일시</td><td>' + (m.held_date||'').substring(0,10) + '</td></tr>' +
-      '<tr><td style="font-weight:700;text-align:center">장소</td><td>' + (m.location||'') + '</td></tr>' +
-      '<tr><td style="font-weight:700;text-align:center">요약</td><td style="white-space:pre-wrap">' + (m.summary||'') + '</td></tr>' +
-    '</tbody></table>' +
-    '<div class="section-title">▣ 안건 목록</div>' +
-    (agendaRows
-      ? '<table><thead><tr><th style="width:60px">안건번호</th><th>안건제목</th><th>내용</th><th style="width:80px">담당자</th><th style="width:80px">의결결과</th></tr></thead><tbody>' + agendaRows + '</tbody></table>'
-      : '<p style="color:#888;font-size:12px;padding:8px 0">안건 없음</p>') +
-    '<div class="section-title">▣ 참석자 서명부 — 사용자측</div>' +
-    (employerRows
-      ? '<table class="sign-table"><thead><tr><th style="width:100px">이름</th><th style="width:120px">직책</th><th style="width:120px">서명</th></tr></thead><tbody>' + employerRows + '</tbody></table>'
-      : '<p style="color:#888;font-size:12px;padding:8px 0">참석자 없음</p>') +
-    '<div class="section-title">▣ 참석자 서명부 — 근로자측</div>' +
-    (workerRows
-      ? '<table class="sign-table"><thead><tr><th style="width:100px">이름</th><th style="width:120px">직책</th><th style="width:120px">서명</th></tr></thead><tbody>' + workerRows + '</tbody></table>'
-      : '<p style="color:#888;font-size:12px;padding:8px 0">참석자 없음</p>') +
-    '<div style="margin-top:32px;font-size:11px;color:#888;text-align:center">산업안전보건법 제24조 / 보존기간 3년</div>' +
-    '</div>' +
-    '</body></html>';
+    // 서명 1인분 셀 블록 생성 (td 3개: 이름/직책/서명)
+    function _scSignCells(att) {
+      var signContent = att.signature_data
+        ? '<img src="' + att.signature_data + '" style="max-width:72px;max-height:32px;object-fit:contain;display:block;margin:0 auto">'
+        : (att.signed_at
+          ? '<span style="font-size:7pt;color:#065F46">✔ ' + (att.signed_at||'').substring(0,10) + '</span>'
+          : '');
+      return '<td style="text-align:center;font-size:8pt;font-weight:600;border:1px solid #999;padding:3px 4px;white-space:nowrap">' + (att.name||att.user_name||'') + '</td>' +
+             '<td style="text-align:center;font-size:7.5pt;color:#555;border:1px solid #999;padding:3px 4px;white-space:nowrap">' + (att.custom_title||att.role_type||'위원') + '</td>' +
+             '<td style="text-align:center;border:1px solid #999;padding:3px 4px;width:72px;height:36px">' + signContent + '</td>';
+    }
+
+    // 2명씩 1행으로 묶기 (홀수면 마지막 빈 셀 채움)
+    function _scBuildSignRows(list) {
+      if (!list.length) return '';
+      var rows = '';
+      for (var k = 0; k < list.length; k += 2) {
+        var a1 = list[k];
+        var a2 = list[k + 1];
+        rows += '<tr style="height:40px">' +
+          _scSignCells(a1) +
+          (a2
+            ? _scSignCells(a2)
+            : '<td colspan="3" style="border:1px solid #999"></td>') +
+        '</tr>';
+      }
+      return rows;
+    }
+
+    var employerSignRows = _scBuildSignRows(employerList);
+    var workerSignRows   = _scBuildSignRows(workerList);
+
+    // 2열 서명 테이블 헤더 (이름/직책/서명 × 2)
+    var signTableHeader =
+      '<thead><tr>' +
+        '<th style="background:#f0ece8;border:1px solid #888;padding:4px;font-size:7.5pt;width:14%">이름</th>' +
+        '<th style="background:#f0ece8;border:1px solid #888;padding:4px;font-size:7.5pt;width:14%">직책</th>' +
+        '<th style="background:#f0ece8;border:1px solid #888;padding:4px;font-size:7.5pt;width:10%">서명</th>' +
+        '<th style="background:#f0ece8;border:1px solid #888;padding:4px;font-size:7.5pt;width:14%">이름</th>' +
+        '<th style="background:#f0ece8;border:1px solid #888;padding:4px;font-size:7.5pt;width:14%">직책</th>' +
+        '<th style="background:#f0ece8;border:1px solid #888;padding:4px;font-size:7.5pt;width:10%">서명</th>' +
+      '</tr></thead>';
+
+    // ── 최종 HTML (안전교육 방식: a4-page div + toolbar + autoScale JS) ────────
+    var htmlContent = '<!DOCTYPE html>\n<html lang="ko">\n<head>\n' +
+      '<meta charset="UTF-8">\n' +
+      '<title>산업안전보건위원회 회의록</title>\n' +
+      '<style>\n' +
+        '@page { size: A4 portrait; margin: 10mm 8mm 10mm 8mm; }\n' +
+        '* { box-sizing: border-box; margin: 0; padding: 0;\n' +
+        '    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }\n' +
+        'body { font-size: 9pt; color: #111; background: #fff; }\n' +
+
+        /* ── 본문 테이블 ── */
+        'table.main { width: 100%; border-collapse: collapse; margin-bottom: 6px; }\n' +
+        'table.main th, table.main td { border: 1px solid #666; padding: 3px 5px; font-size: 8pt; vertical-align: middle; }\n' +
+        'table.main th { background: #f0ece8; font-weight: 700; text-align: center; white-space: nowrap; width: 14%; }\n' +
+        'table.main td { text-align: left; }\n' +
+
+        /* ── 안건 테이블 ── */
+        'table.agenda { width: 100%; border-collapse: collapse; margin-bottom: 6px; }\n' +
+        'table.agenda th { background: #f0ece8; border: 1px solid #777; padding: 4px 5px; font-size: 8pt; font-weight: 700; text-align: center; }\n' +
+        'table.agenda td { border: 1px solid #aaa; padding: 4px 5px; font-size: 8pt; vertical-align: top; }\n' +
+
+        /* ── 섹션 제목 ── */
+        '.section-title { font-size: 9pt; font-weight: 700; margin: 7px 0 4px; padding: 2px 0 2px 6px;\n' +
+        '  border-left: 3px solid #555; }\n' +
+
+        /* ── 인쇄 전용 ── */
+        '@media print {\n' +
+        '  html, body { margin: 0; padding: 0; background: #fff; }\n' +
+        '  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n' +
+        '  .no-print { display: none !important; }\n' +
+        '  .sc-a4-page { margin: 0; box-shadow: none; width: 100%; }\n' +
+        '}\n' +
+
+        /* ── 화면 미리보기 ── */
+        '@media screen {\n' +
+        '  body { background: #e5e7eb; padding: 0; padding-top: 56px; overflow-x: hidden; }\n' +
+        '  .sc-a4-page {\n' +
+        '    background: #fff; width: 210mm;\n' +
+        '    margin: 20px auto; padding: 10mm 8mm;\n' +
+        '    box-shadow: 0 4px 24px rgba(0,0,0,0.18);\n' +
+        '  }\n' +
+        '  .print-toolbar {\n' +
+        '    position: fixed; top: 0; left: 0; right: 0; z-index: 999;\n' +
+        '    background: #1f2937; color: #fff;\n' +
+        '    display: flex; align-items: center; justify-content: space-between;\n' +
+        '    padding: 10px 20px; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);\n' +
+        '  }\n' +
+        '  .print-toolbar .toolbar-title { font-size: 14px; font-weight: bold; flex: 1; }\n' +
+        '  .print-toolbar button { padding: 7px 20px; border-radius: 8px; border: none;\n' +
+        '    font-size: 13px; font-weight: bold; cursor: pointer; }\n' +
+        '  .btn-print { background: #7C3AED; color: #fff; }\n' +
+        '  .btn-close  { background: #374151; color: #ccc; }\n' +
+        '}\n' +
+      '</style>\n' +
+    '</head>\n<body>\n' +
+
+    /* ── 툴바 (화면 전용) ── */
+    '<div class="print-toolbar no-print">\n' +
+      '<span class="toolbar-title">\n' +
+        '<span style="font-size:12px;opacity:0.7;margin-right:8px">📋 산업안전보건위원회 회의록 미리보기</span>' +
+        (m.title||'회의록') +
+      '</span>\n' +
+      '<button class="btn-print" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>\n' +
+      '<button class="btn-close" onclick="window.parent.postMessage(\'closePrintOverlay\',\'*\')">✕ 닫기</button>\n' +
+    '</div>\n' +
+
+    /* ── A4 본문 ── */
+    '<div class="sc-a4-page" id="sc-a4Page">\n' +
+
+      /* 제목 */
+      '<div style="text-align:center;margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid #333">\n' +
+        '<div style="font-size:16pt;font-weight:700;letter-spacing:4px">산업안전보건위원회 회의록</div>\n' +
+        '<div style="font-size:8pt;color:#555;margin-top:3px">' + typeLabel + '회의 &nbsp;|&nbsp; 개최일: ' + (m.held_date||'').substring(0,10) + ' &nbsp;|&nbsp; 장소: ' + (m.location||'-') + '</div>\n' +
+      '</div>\n' +
+
+      /* 기본 정보 */
+      '<table class="main">\n' +
+        '<tbody>\n' +
+          '<tr><th>회의명</th><td colspan="3" style="font-weight:700">' + (m.title||'') + '</td></tr>\n' +
+          '<tr><th>개최일시</th><td>' + (m.held_date||'').substring(0,10) + '</td>' +
+              '<th style="width:10%">장소</th><td>' + (m.location||'') + '</td></tr>\n' +
+          '<tr><th>회의 유형</th><td>' + typeLabel + '회의</td>' +
+              '<th style="width:10%">법적 근거</th><td style="font-size:7.5pt;color:#444">산업안전보건법 제24조</td></tr>\n' +
+          (m.summary
+            ? '<tr><th style="vertical-align:top;padding-top:5px">회의 요약</th><td colspan="3" style="white-space:pre-wrap;line-height:1.5;font-size:8pt">' + (m.summary||'') + '</td></tr>\n'
+            : '') +
+        '</tbody>\n' +
+      '</table>\n' +
+
+      /* 안건 목록 */
+      '<div class="section-title">▣ 안건 목록</div>\n' +
+      (agendaRows
+        ? '<table class="agenda">\n' +
+            '<thead><tr>' +
+              '<th style="width:7%">안건번호</th>' +
+              '<th style="width:22%">안건제목</th>' +
+              '<th>내용</th>' +
+              '<th style="width:9%">담당자</th>' +
+              '<th style="width:16%">의결결과</th>' +
+            '</tr></thead>\n' +
+            '<tbody>' + agendaRows + '</tbody>\n' +
+          '</table>\n'
+        : '<p style="color:#888;font-size:8pt;padding:5px 0">안건 없음</p>\n') +
+
+      /* 서명부 */
+      '<div class="section-title">▣ 참석자 서명부</div>\n' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:4px">\n' +
+        '<thead><tr>' +
+          '<th colspan="6" style="background:#E8E4F0;border:1px solid #888;padding:4px;font-size:8pt;font-weight:700;text-align:left">사용자측</th>' +
+        '</tr>' +
+        (employerSignRows ? signTableHeader : '') +
+        '</thead>\n' +
+        '<tbody>' + (employerSignRows || '<tr><td colspan="6" style="border:1px solid #aaa;padding:6px;text-align:center;color:#888;font-size:8pt">참석자 없음</td></tr>') + '</tbody>\n' +
+      '</table>\n' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:6px">\n' +
+        '<thead><tr>' +
+          '<th colspan="6" style="background:#E4EDF0;border:1px solid #888;padding:4px;font-size:8pt;font-weight:700;text-align:left">근로자측</th>' +
+        '</tr>' +
+        (workerSignRows ? signTableHeader : '') +
+        '</thead>\n' +
+        '<tbody>' + (workerSignRows || '<tr><td colspan="6" style="border:1px solid #aaa;padding:6px;text-align:center;color:#888;font-size:8pt">참석자 없음</td></tr>') + '</tbody>\n' +
+      '</table>\n' +
+
+      /* 하단 */
+      '<div style="margin-top:6px;font-size:7.5pt;color:#888;text-align:center;border-top:1px solid #ddd;padding-top:4px">' +
+        '산업안전보건법 제24조 / 보존기간 3년' +
+      '</div>\n' +
+
+    '</div><!-- /.sc-a4-page -->\n' +
+
+    /* autoScale JS (안전교육 방식 동일 패턴, id만 sc-a4Page로 분리) */
+    '<script>\n' +
+    '(function _autoScaleSC() {\n' +
+    '  var page = document.getElementById(\'sc-a4Page\');\n' +
+    '  if (!page) return;\n' +
+    '  var MARGIN_MM   = 10 + 10;\n' +
+    '  var A4_H_MM     = 297 - MARGIN_MM;\n' +
+    '  var MM_TO_PX    = 96 / 25.4;\n' +
+    '  var A4_AVAIL_PX = A4_H_MM * MM_TO_PX;\n' +
+    '  var styleEl = document.createElement(\'style\');\n' +
+    '  styleEl.id  = \'__sc-print-zoom__\';\n' +
+    '  document.head.appendChild(styleEl);\n' +
+    '  function doFit() {\n' +
+    '    page.style.zoom            = \'\';\n' +
+    '    page.style.transform       = \'\';\n' +
+    '    page.style.transformOrigin = \'\';\n' +
+    '    styleEl.textContent        = \'\';\n' +
+    '    var naturalH = page.scrollHeight;\n' +
+    '    if (naturalH <= A4_AVAIL_PX) return;\n' +
+    '    var ratio = A4_AVAIL_PX / naturalH;\n' +
+    '    page.style.transform       = \'scale(\' + ratio + \')\';\n' +
+    '    page.style.transformOrigin = \'top center\';\n' +
+    '    page.style.marginBottom    = \'-\' + (naturalH * (1 - ratio)) + \'px\';\n' +
+    '    styleEl.textContent = \'@media print { #sc-a4Page { zoom: \' + ratio + \'; transform: none !important; margin-bottom: 0 !important; } }\';\n' +
+    '  }\n' +
+    '  var imgs = page.querySelectorAll(\'img\');\n' +
+    '  if (!imgs.length) { doFit(); return; }\n' +
+    '  var done = 0;\n' +
+    '  var onDone = function() { if (++done >= imgs.length) doFit(); };\n' +
+    '  imgs.forEach(function(img) {\n' +
+    '    if (img.complete) onDone();\n' +
+    '    else { img.addEventListener(\'load\', onDone); img.addEventListener(\'error\', onDone); }\n' +
+    '  });\n' +
+    '})();\n' +
+    '</script>\n' +
+
+    '</body>\n</html>';
 
     _openPrintOverlay(htmlContent);
   }).catch(function(e) {

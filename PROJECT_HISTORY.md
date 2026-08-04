@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-04 (세션 138 — FIX-SC-ORG-PRINT-SCALE: 조직도 인쇄 A4 하단 빈공간 제거)
-> **GitHub 최신 (safetynote-server): `5c93def`** — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용
+> 최종 업데이트: 2026-08-04 (세션 139 — FEAT-PDF-FILENAME: 인쇄 PDF 저장 시 문서 파일명 자동 설정)
+> **GitHub 최신 (safetynote-server): (이번 커밋)** — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정
+> **이전 커밋 (safetynote-server): `1f19e7f`** — docs: [세션138] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 5c93def 반영
+> **이전 커밋 (safetynote-server): `5c93def`** — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용
 > **이전 커밋 (safetynote-server): `b951cfc`** — docs: [세션137] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 9176b3b 반영
 > **이전 커밋 (safetynote-server): `9176b3b`** — feat: [FEAT-SC-ORG-PRINT] 산업안전보건위원회 조직도 인쇄 전면 개선
 > **이전 커밋 (safetynote-server): `9dc36e1`** — docs: [세션136] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 반영
@@ -12066,3 +12068,44 @@ if (Math.abs(ratio - 1) < 0.02) return; // ±2% 이내면 처리 불필요
 
 ### 커밋
 - `5c93def` — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용 — A4 하단 빈공간 제거
+
+---
+
+## 세션 139 (2026-08-04) — FEAT-PDF-FILENAME: 인쇄 PDF 저장 시 문서 파일명 자동 설정
+
+### 작업 배경
+PDF 저장 시 파일명이 항상 `제목없음.pdf`로 저장되어 문서 식별 불편.
+브라우저 인쇄→PDF 저장 시 `<title>` 값을 파일명으로 사용하는 동작 활용.
+
+### 구현 원리
+- `_openPrintOverlay(htmlContent, docTitle)` — 두 번째 파라미터 추가
+- `_safePdfFilename(str)` 헬퍼 — OS 금지 문자 제거, 공백→`_`, 100자 제한
+- 각 출력 함수에서 docTitle 생성 후 `_openPrintOverlay` 호출
+
+### 수정 내용
+
+| 함수 | 파일명 형식 | 사용 필드 |
+|------|-----------|---------|
+| `_openPrintOverlay` | `docTitle` 파라미터 + `_safePdfFilename` 헬퍼 추가 | — |
+| `_tbmPrint` | `TBM_YYYYMMDD_작업건명` | `tbm.tbm_date`, `tbm.task_title` |
+| `printEduLog` | `교육종류_YYYYMMDD_교육건명` | `meta.label`, `session.edu_date`, `session.edu_subject` |
+| `printEduSign` | `서명지_교육종류_YYYYMMDD_교육건명` | 동일 |
+| `_scPrintMeeting` | `안보위_회의종류_YYYYMMDD_회의제목` | `typeLabel`, `m.held_date`, `m.title` |
+| `_scPrintOrgChart` | `안보위_조직도_YYYYMMDD` | 출력 당일 날짜 |
+
+### 추가 — autoScaleOrg 세부 개선
+| 항목 | 변경 내용 |
+|------|---------|
+| `marginBottom` 초기화 | `page.style.marginBottom = ''` 추가 (doFit 호출마다 리셋) |
+| 0값 방어 | `if (!naturalH) return` 추가 |
+| 확대 cap | `1.8 → 2.0` (더 넓게) |
+| 축소 하한 | `0.3` 추가 |
+| 스킵 임계값 | `0.02 → 0.01` (더 정밀) |
+| 버전 | `v=20260804d` → `v=20260804e` |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 2.05s)
+
+### 커밋
+- (이번 커밋)

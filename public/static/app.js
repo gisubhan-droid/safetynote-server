@@ -14491,7 +14491,35 @@ async function _eduApprovalSignInApp(sessionId, approvalRole, eduType) {
 //   - srcdoc + sandbox 방식: Chrome에서 window.print() 호출 시 부모 창을 인쇄하는 버그 존재
 //   - Blob URL + src 방식: iframe이 독립 origin으로 처리되어 window.print()가 iframe 자체를 인쇄
 //   - sandbox 속성 제거: allow-modals 없이도 print 다이얼로그 열림 (blob: URL은 별도 origin)
-function _openPrintOverlay(htmlContent) {
+// ── PDF 저장 파일명용 문자열 정리 헬퍼 ──────────────────────────────────────
+// 특수문자·공백을 제거하여 OS 파일명으로 안전하게 사용
+function _safePdfFilename(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/[/\\:*?"<>|]/g, '')   // OS 금지 문자 제거
+    .replace(/\s+/g, '_')           // 공백 → 언더스코어
+    .replace(/_+/g, '_')            // 연속 언더스코어 정리
+    .replace(/^_|_$/g, '')          // 앞뒤 언더스코어 제거
+    .substring(0, 100);             // 최대 100자
+}
+
+function _openPrintOverlay(htmlContent, docTitle) {
+  // docTitle이 있으면 htmlContent의 <title>을 교체 (PDF 저장 파일명)
+  // 브라우저 인쇄→PDF 저장 시 <title> 값이 파일명으로 사용됨 (Chrome/Edge/Firefox)
+  if (docTitle) {
+    var safeTitle = _safePdfFilename(docTitle);
+    if (safeTitle) {
+      // 기존 <title>...</title> 교체, 없으면 <head> 직후 삽입
+      if (/<title[^>]*>/i.test(htmlContent)) {
+        htmlContent = htmlContent.replace(/<title[^>]*>[\s\S]*?<\/title>/i,
+          '<title>' + safeTitle + '</title>');
+      } else {
+        htmlContent = htmlContent.replace(/(<head[^>]*>)/i,
+          '$1<title>' + safeTitle + '</title>');
+      }
+    }
+  }
+
   // 기존 오버레이 제거
   const existing = document.getElementById('__print-overlay__');
   if (existing) existing.remove();
@@ -15851,7 +15879,11 @@ async function _tbmPrint(tbmId) {
 
 </body>
 </html>`;
-    _openPrintOverlay(_tbmPrintHtml);
+    // PDF 저장 파일명: TBM_YYYYMMDD_작업건명
+    var _tbmDateStr  = (tbm.tbm_date || '').slice(0, 10).replace(/-/g, '');
+    var _tbmTitle    = tbm.task_title || tbm.work_name || '';
+    var _tbmDocTitle = 'TBM' + (_tbmDateStr ? '_' + _tbmDateStr : '') + (_tbmTitle ? '_' + _tbmTitle : '');
+    _openPrintOverlay(_tbmPrintHtml, _tbmDocTitle);
   } catch(e) {
     toast(e.message || 'TBM 인쇄 데이터 로딩 실패', 'error');
   }
@@ -37665,7 +37697,12 @@ async function printEduLog(sessionId) {
   }
 
   // ── 미리보기 오버레이 열기 (BUG-094: Android WebView 호환) ─────────────────
-  _openPrintOverlay(buildPrintHtml());
+  // PDF 저장 파일명: 교육종류_YYYYMMDD_교육건명
+  var _eduDateStr  = (session.edu_date || '').slice(0, 10).replace(/-/g, '');
+  var _eduLabel    = (meta && meta.label) ? meta.label : (session.edu_type || '교육');
+  var _eduSubject  = session.edu_subject || '';
+  var _eduDocTitle = _eduLabel + (_eduDateStr ? '_' + _eduDateStr : '') + (_eduSubject ? '_' + _eduSubject : '');
+  _openPrintOverlay(buildPrintHtml(), _eduDocTitle);
 }
 
 // ─── 서명지 출력 ─────────────────────────────────────────────────────────────
@@ -37841,7 +37878,12 @@ async function printEduSign(sessionId) {
   </div><!-- /.a4-page -->
 </body>
 </html>`;
-  _openPrintOverlay(_eduSignHtml);
+  // PDF 저장 파일명: 서명지_교육종류_YYYYMMDD_교육건명
+  var _signDateStr  = (session.edu_date || '').slice(0, 10).replace(/-/g, '');
+  var _signLabel    = (meta && meta.label) ? meta.label : (session.edu_type || '교육');
+  var _signSubject  = session.edu_subject || '';
+  var _signDocTitle = '서명지_' + _signLabel + (_signDateStr ? '_' + _signDateStr : '') + (_signSubject ? '_' + _signSubject : '');
+  _openPrintOverlay(_eduSignHtml, _signDocTitle);
 }
 
 // ─── 교육자료 상세 모달 내 업로드 팝업 [FEAT-EDU-MAT] ───────────────────────
@@ -48712,10 +48754,11 @@ function _scPrintOrgChart() {
       '(function _autoScaleOrg() {\n' +
       '  var page = document.getElementById(\'sc-org-a4Page\');\n' +
       '  if (!page) return;\n' +
+      '  // A4 가용 높이: @page margin top+bottom=20mm 제외, 96dpi CSS px 기준\n' +
       '  var MARGIN_MM   = 10 + 10;\n' +
-      '  var A4_H_MM     = 297 - MARGIN_MM;\n' +
-      '  var MM_TO_PX    = 96 / 25.4;\n' +
-      '  var A4_AVAIL_PX = A4_H_MM * MM_TO_PX;\n' +
+      '  var A4_H_MM     = 297 - MARGIN_MM;    // 277mm\n' +
+      '  var MM_TO_PX    = 96 / 25.4;           // CSS px/mm (≈3.78)\n' +
+      '  var A4_AVAIL_PX = A4_H_MM * MM_TO_PX;  // ≈1047px\n' +
       '  var styleEl = document.createElement(\'style\');\n' +
       '  styleEl.id  = \'__sc-org-zoom__\';\n' +
       '  document.head.appendChild(styleEl);\n' +
@@ -48723,16 +48766,20 @@ function _scPrintOrgChart() {
       '    page.style.zoom            = \'\';\n' +
       '    page.style.transform       = \'\';\n' +
       '    page.style.transformOrigin = \'\';\n' +
+      '    page.style.marginBottom    = \'\';\n' +
       '    styleEl.textContent        = \'\';\n' +
       '    var naturalH = page.scrollHeight;\n' +
-      '    var ratio = A4_AVAIL_PX / naturalH;\n' +
-      '    ratio = Math.min(ratio, 1.8);\n' +
-      '    if (Math.abs(ratio - 1) < 0.02) return;\n' +
+      '    if (!naturalH) return;\n' +
+      '    var ratio = A4_AVAIL_PX / naturalH;  // <1 축소, >1 확대\n' +
+      '    ratio = Math.min(ratio, 2.0);  // 최대 200% 확대 cap\n' +
+      '    ratio = Math.max(ratio, 0.3);  // 최소 30% 축소 하한\n' +
+      '    if (Math.abs(ratio - 1) < 0.01) return; // ±1% 이내 처리 생략\n' +
       '    page.style.transform       = \'scale(\' + ratio + \')\';\n' +
       '    page.style.transformOrigin = \'top center\';\n' +
       '    page.style.marginBottom    = \'-\' + (naturalH * (1 - ratio)) + \'px\';\n' +
       '    styleEl.textContent = \'@media print { #sc-org-a4Page { zoom: \' + ratio + \'; transform: none !important; margin-bottom: 0 !important; } }\';\n' +
       '  }\n' +
+      '  // 이미지 로드 완료 후 측정 (없으면 즉시 실행)\n' +
       '  var imgs = page.querySelectorAll(\'img\');\n' +
       '  if (!imgs.length) { doFit(); return; }\n' +
       '  var done = 0;\n' +
@@ -48746,7 +48793,13 @@ function _scPrintOrgChart() {
 
       '</body>\n</html>';
 
-    _openPrintOverlay(htmlContent);
+    // PDF 저장 파일명: 안보위_조직도_YYYYMMDD
+    var _orgToday = new Date();
+    var _orgMM    = ('0' + (_orgToday.getMonth() + 1)).slice(-2);
+    var _orgDD    = ('0' + _orgToday.getDate()).slice(-2);
+    var _orgDateStr = '' + _orgToday.getFullYear() + _orgMM + _orgDD;
+    var _orgDocTitle = '안보위_조직도_' + _orgDateStr;
+    _openPrintOverlay(htmlContent, _orgDocTitle);
   }).catch(function(e) {
     alert('조직도 출력 데이터 불러오기 실패: ' + e.message);
   });
@@ -51530,7 +51583,15 @@ function _scPrintMeeting(meetingId) {
 
     '</body>\n</html>';
 
-    _openPrintOverlay(htmlContent);
+    // PDF 저장 파일명: 안보위_회의종류_YYYYMMDD_회의제목
+    var _scMtgDateStr  = (m.held_date || '').slice(0, 10).replace(/-/g, '');
+    var _scMtgType    = typeLabel || '';
+    var _scMtgTitle   = m.title || '';
+    var _scMtgDocTitle = '안보위' +
+      (_scMtgType  ? '_' + _scMtgType  : '') +
+      (_scMtgDateStr ? '_' + _scMtgDateStr : '') +
+      (_scMtgTitle ? '_' + _scMtgTitle : '');
+    _openPrintOverlay(htmlContent, _scMtgDocTitle);
   }).catch(function(e) {
     alert('회의록 출력 데이터 불러오기 실패: ' + e.message);
   });

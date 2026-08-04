@@ -2,6 +2,54 @@
 
 ---
 
+## [FEAT-PDF-FILENAME] 인쇄 PDF 저장 시 문서 파일명 자동 설정 (세션 139)
+
+> **대상**: `_openPrintOverlay` + 전체 출력 함수 (TBM·교육·서명지·회의록·조직도)
+> **발견일**: 2026-08-04
+> **유형**: 🟢 FEATURE — PDF 저장 시 의미 있는 파일명 자동 적용
+
+### 요구사항
+- 브라우저에서 인쇄→PDF 저장 시 `제목없음.pdf` 대신 문서 내용을 반영한 파일명 자동 설정
+- 예) TBM → `TBM_20260804_고소작업안전점검.pdf`
+
+### 구현 방식
+브라우저 인쇄→PDF 저장 시 `<title>` 값을 파일명으로 사용하는 동작(Chrome/Edge/Firefox 공통)을 활용.
+`_openPrintOverlay(htmlContent, docTitle)` 두 번째 인자를 추가하여 HTML `<title>` 태그를 교체.
+
+### 수정 내용
+
+| 함수 | 파일명 형식 | 예시 |
+|------|-----------|------|
+| `_openPrintOverlay` | `docTitle` 파라미터 추가 + `_safePdfFilename()` 헬퍼 추가 | — |
+| `_tbmPrint` | `TBM_YYYYMMDD_작업건명` | `TBM_20260804_고소작업안전점검` |
+| `printEduLog` | `교육종류_YYYYMMDD_교육건명` | `안전교육_20260804_화재안전교육` |
+| `printEduSign` | `서명지_교육종류_YYYYMMDD_교육건명` | `서명지_안전교육_20260804_화재안전교육` |
+| `_scPrintMeeting` | `안보위_회의종류_YYYYMMDD_회의제목` | `안보위_정기_20260804_제3차정기회의` |
+| `_scPrintOrgChart` | `안보위_조직도_YYYYMMDD` | `안보위_조직도_20260804` |
+
+### 추가 — autoScaleOrg 개선 (조직도 A4 꽉 채우기)
+- `marginBottom` 초기화 누락 수정 (`page.style.marginBottom = ''` 추가)
+- `if (!naturalH) return` — 0값 방어 추가
+- 최대 cap `1.8 → 2.0`, 최소 하한 `0.3` 추가
+- 스킵 임계값 `0.02 → 0.01` (더 정밀하게)
+- `src/index.tsx` 버전: `v=20260804d` → `v=20260804e`
+
+### 브라우저 호환
+| 브라우저 | 동작 |
+|---------|------|
+| Chrome / Edge | ✅ `<title>` → PDF 파일명 자동 적용 |
+| Firefox | ✅ 동일 |
+| Safari | ⚠️ 일부 버전에서 미적용 (기본 동작 유지) |
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 2.05s)
+
+### 커밋
+- (이번 커밋)
+
+---
+
 ## [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 — A4 하단 빈공간 제거 (세션 138)
 
 > **대상**: `_scPrintOrgChart` 내 `_autoScaleOrg` IIFE

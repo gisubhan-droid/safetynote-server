@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-03 (세션 133 — BUG-208: pm2 restart 중 빨간 Network Error 배너 → 노란 재시작 대기 안내로 개선)
-> **GitHub 최신 (safetynote-server): `ee9725f`** — test: [BUG-208] 재시작 중 Network Error 배너 개선 검증 — v=20260803h
+> 최종 업데이트: 2026-08-04 (세션 134 — FEAT-SC-VOTE: 산업안전보건위원회 투표 의결 결과 자동 표시)
+> **GitHub 최신 (safetynote-server): (이번 세션 push 예정)**
+> **이전 커밋 (safetynote-server): `c9828ac`** — docs: [BUG-208] 세션 133 최종 마무리
+> **이전 커밋 (safetynote-server): `ee9725f`** — test: [BUG-208] 재시작 중 Network Error 배너 개선 검증 — v=20260803h
 > **이전 커밋 (safetynote-server): `69b95d3`** — fix: [BUG-208] pm2 restart 중 Network Error → 빨간 에러 배너 대신 재시작 대기 안내로 표시
 > **이전 커밋 (safetynote-server): `821a2df`** — docs: [BUG-207] 세션 132 최종 마무리
 > **이전 커밋 (safetynote-server): `68c127e`** — fix: [BUG-207] start-server.sh에 git pull+build 내장 — 서버 코드 버전 의존 완전 제거
@@ -11889,3 +11891,28 @@ pm2 restart 시 서버가 수 초간 다운 → 브라우저 폴링(2초마다)�
 - `69b95d3` — fix: [BUG-208] pm2 restart 중 Network Error 배너 개선
 - `57d1b3b` — docs: [BUG-208] BUGFIX_LOG 기록 추가
 - `ee9725f` — test: [BUG-208] 검증 push v=20260803h
+
+---
+
+## 세션 134 (2026-08-04) — FEAT-SC-VOTE: 산업안전보건위원회 투표 의결 결과 자동 표시
+
+### 작업 배경
+안건 투표 처리 후 의결 결과(가결/부결)가 화면·인쇄에 자동 표시되지 않아
+관리자가 수동으로 텍스트를 입력해야 했음.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | `_scLoadAgendasTab`: 투표 집계 뒤 가결/부결 배지 자동 표시 |
+| `public/static/app.js` | `_scEditAgenda`: 수정 모달에 투표 집계 + 자동입력 버튼 추가 |
+| `public/static/app.js` | `_scPrintMeeting`: 인쇄 의결결과 열에 찬성N/반대N + 가결/부결 표시 |
+| `src/index.tsx` | 버전 v=20260804a |
+
+### 판정 기준
+- 찬성 > 반대 → **가결** (초록)
+- 찬성 ≤ 반대 → **부결** (빨강)
+- 총 투표 0건 → 판정 배지 없음
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 4.39s)

@@ -50211,11 +50211,22 @@ function _scLoadAgendasTab(body) {
             else abstainCount++;
           }
         }
-        voteHtml = '<div style="display:flex;gap:6px;margin-top:6px;align-items:center">' +
-          '<span style="font-size:11px;font-weight:700;color:#374151">투표:</span>' +
-          '<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:10px;font-size:11px">✔ 찬성 ' + agreeCount + '</span>' +
-          '<span style="background:#FEE2E2;color:#991B1B;padding:2px 8px;border-radius:10px;font-size:11px">✘ 반대 ' + disagreeCount + '</span>' +
-          '<span style="background:#F3F4F6;color:#6B7280;padding:2px 8px;border-radius:10px;font-size:11px">— 기권 ' + abstainCount + '</span>' +
+        // [FEAT-SC-VOTE] 가결/부결 판정: 찬성 > 반대 → 가결, 그 외 → 부결 (투표 0건은 판정 없음)
+        var totalVotes = agreeCount + disagreeCount + abstainCount;
+        var verdictHtml = '';
+        if (totalVotes > 0) {
+          var isPass = agreeCount > disagreeCount;
+          verdictHtml = '<span style="background:' + (isPass ? '#065F46' : '#991B1B') + ';color:#fff;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700;margin-left:4px">' +
+            (isPass ? '✅ 가결' : '❌ 부결') + '</span>';
+        }
+        voteHtml = '<div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">' +
+          '<span style="font-size:11px;font-weight:700;color:#374151">의결:</span>' +
+          '<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:10px;font-size:11px">찬성 ' + agreeCount + '명</span>' +
+          '<span style="font-size:11px;color:#9CA3AF">/</span>' +
+          '<span style="background:#FEE2E2;color:#991B1B;padding:2px 8px;border-radius:10px;font-size:11px">반대 ' + disagreeCount + '명</span>' +
+          '<span style="font-size:11px;color:#9CA3AF">/</span>' +
+          '<span style="background:#F3F4F6;color:#6B7280;padding:2px 8px;border-radius:10px;font-size:11px">기권 ' + abstainCount + '명</span>' +
+          verdictHtml +
           (ag.vote_closed ? '<span style="background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">마감</span>' : '') +
         '</div>';
       }
@@ -50322,7 +50333,32 @@ function _scEditAgenda(agId) {
           '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">담당자 이름</label>' +
             '<input id="sc-ag-edit-assignee" type="text" value="' + (ag.assignee_name||'').replace(/"/g,'&quot;') + '" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box"></div>' +
           '<div><label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">의결 결과</label>' +
-            '<input id="sc-ag-edit-result" type="text" value="' + (ag.result||'').replace(/"/g,'&quot;') + '" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box"></div>' +
+            // [FEAT-SC-VOTE] 투표 활성화 안건이면 집계 기반 자동 채우기 버튼 제공
+            (ag.vote_enabled ? (function() {
+              var ac = ag.vote_agree != null ? Number(ag.vote_agree) : 0;
+              var dc = ag.vote_disagree != null ? Number(ag.vote_disagree) : 0;
+              var ab = ag.vote_abstain != null ? Number(ag.vote_abstain) : 0;
+              var total = ac + dc + ab;
+              var autoVal = total > 0
+                ? ('찬성 ' + ac + '명 / 반대 ' + dc + '명' + (ab > 0 ? ' / 기권 ' + ab + '명' : '') + '  ' + (ac > dc ? '가결' : '부결'))
+                : '';
+              var currentVal = (ag.result || '').replace(/"/g,'&quot;');
+              return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">' +
+                '<span style="font-size:11px;color:#6B7280">투표 집계:</span>' +
+                (total > 0
+                  ? '<span style="font-size:11px;font-weight:600;color:' + (ac > dc ? '#065F46' : '#991B1B') + '">' +
+                    '찬성 ' + ac + '명 / 반대 ' + dc + '명' + (ab > 0 ? ' / 기권 ' + ab + '명' : '') + ' → ' + (ac > dc ? '가결' : '부결') +
+                    '</span>' +
+                    '<button type="button" onclick="document.getElementById(\'sc-ag-edit-result\').value=\'' + autoVal.replace(/'/g,"\\'") + '\'" ' +
+                      'style="padding:2px 8px;background:#7C3AED;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer">자동입력</button>'
+                  : '<span style="font-size:11px;color:#9CA3AF">투표 없음</span>') +
+                '</div>' +
+                '<input id="sc-ag-edit-result" type="text" value="' + currentVal + '" ' +
+                  'placeholder="예: 찬성 9명 / 반대 1명  가결" ' +
+                  'style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box">';
+            })() :
+            '<input id="sc-ag-edit-result" type="text" value="' + (ag.result||'').replace(/"/g,'&quot;') + '" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;box-sizing:border-box">') +
+          '</div>' +
         '</div>' +
         '<div style="display:flex;gap:8px;margin-top:16px">' +
           '<button data-agid="' + agId + '" onclick="_scSubmitEditAgenda(this.getAttribute(\'data-agid\'))" style="flex:1;padding:10px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">저장</button>' +
@@ -51036,12 +51072,34 @@ function _scPrintMeeting(meetingId) {
       var ag = agendas[i];
       // agenda_no 우선, seq 폴백 (patchSchema v0.184 이전 구 DB 대응)
       var agNo = ag.agenda_no || ag.seq || (i + 1);
+      // [FEAT-SC-VOTE] 의결결과 셀: 투표 집계 + 가결/부결 + result 텍스트 통합 표시
+      var pAg = Number(ag.vote_agree   || 0);
+      var pDa = Number(ag.vote_disagree|| 0);
+      var pAb = Number(ag.vote_abstain || 0);
+      var pTotal = pAg + pDa + pAb;
+      var voteLineHtml = '';
+      var verdictColor = '';
+      var verdictText  = '';
+      if (ag.vote_enabled && pTotal > 0) {
+        var isPassP = pAg > pDa;
+        verdictText  = isPassP ? '가결' : '부결';
+        verdictColor = isPassP ? '#065F46' : '#C0255A';
+        voteLineHtml =
+          '<div style="font-size:11px;color:#374151;margin-bottom:2px">' +
+            '찬성 ' + pAg + '명 / 반대 ' + pDa + '명' + (pAb > 0 ? ' / 기권 ' + pAb + '명' : '') +
+          '</div>' +
+          '<div style="font-size:13px;font-weight:700;color:' + verdictColor + '">' + verdictText + '</div>';
+      }
+      var resultText = ag.result || ag.decision || '';
+      var resultCell = voteLineHtml
+        ? voteLineHtml + (resultText ? '<div style="font-size:11px;color:#475569;margin-top:3px">' + resultText + '</div>' : '')
+        : (resultText || '-');
       agendaRows += '<tr>' +
         '<td style="padding:8px;text-align:center;font-weight:700;font-size:13px;width:60px">제' + agNo + '호</td>' +
         '<td style="padding:8px;font-weight:700;font-size:13px">' + (ag.title||'') + '</td>' +
         '<td style="padding:8px;font-size:12px;color:#475569">' + (ag.content||'') + '</td>' +
         '<td style="padding:8px;font-size:12px;text-align:center">' + (ag.assignee_name||'-') + '</td>' +
-        '<td style="padding:8px;font-size:12px;text-align:center;font-weight:600;color:#065F46">' + (ag.result||ag.decision||'-') + '</td>' +
+        '<td style="padding:8px;font-size:12px;text-align:center">' + resultCell + '</td>' +
       '</tr>';
     }
 

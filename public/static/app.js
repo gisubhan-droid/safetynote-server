@@ -50475,6 +50475,8 @@ function _scLoadAgendasTab(body) {
   _scFetch('/api/safety-committee/meetings/' + _scCurrentMeetingId).then(function(r){ return r.json(); }).then(function(res) {
     var m = res.meeting || res.data || res;
     var agendas = res.agendas || m.agendas || [];
+    // 참석자 목록 (user_id + user_name) — 미투표자 계산에 사용
+    var attendees = res.attendees || m.attendees || [];
     var rows = '';
     for (var i = 0; i < agendas.length; i++) {
       var ag = agendas[i];
@@ -50484,11 +50486,12 @@ function _scLoadAgendasTab(body) {
         var agreeCount = ag.vote_agree != null ? Number(ag.vote_agree) : 0;
         var disagreeCount = ag.vote_disagree != null ? Number(ag.vote_disagree) : 0;
         var abstainCount = ag.vote_abstain != null ? Number(ag.vote_abstain) : 0;
-        if (ag.votes && ag.votes.length) {
+        var votes = ag.votes || [];
+        if (votes.length) {
           agreeCount = 0; disagreeCount = 0; abstainCount = 0;
-          for (var vi = 0; vi < ag.votes.length; vi++) {
-            if (ag.votes[vi].vote === 'agree') agreeCount++;
-            else if (ag.votes[vi].vote === 'disagree') disagreeCount++;
+          for (var vi = 0; vi < votes.length; vi++) {
+            if (votes[vi].vote === 'agree') agreeCount++;
+            else if (votes[vi].vote === 'disagree') disagreeCount++;
             else abstainCount++;
           }
         }
@@ -50510,6 +50513,37 @@ function _scLoadAgendasTab(body) {
           verdictHtml +
           (ag.vote_closed ? '<span style="background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">마감</span>' : '') +
         '</div>';
+
+        // ── [FEAT-VOTE-STATUS] 투표현황 블록: 투표완료 수 + 미투표자 이름 ──────
+        // 참석자 중 투표한 user_id Set
+        var votedUserIds = {};
+        for (var vj = 0; vj < votes.length; vj++) {
+          if (votes[vj].user_id) votedUserIds[votes[vj].user_id] = true;
+        }
+        // 참석자 기준 미투표자 목록 (user_id 있는 참석자만 대상)
+        var nonVoters = [];
+        for (var ai = 0; ai < attendees.length; ai++) {
+          var att = attendees[ai];
+          if (att.user_id && !votedUserIds[att.user_id]) {
+            nonVoters.push(att.user_name || att.name || ('사용자' + att.user_id));
+          }
+        }
+        var votedCount  = votes.length;
+        var nonVoterStr = nonVoters.length > 0 ? nonVoters.join(', ') : '없음 (전원 완료)';
+        var nonVoterColor = nonVoters.length > 0 ? '#92400E' : '#065F46';
+        var nonVoterBg    = nonVoters.length > 0 ? '#FEF9C3' : '#D1FAE5';
+        voteHtml +=
+          '<div style="margin-top:6px;padding:7px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:11px">' +
+            '<div style="font-weight:700;color:#374151;margin-bottom:4px"><i class="fas fa-chart-pie" style="color:#7C3AED;margin-right:5px"></i>투표현황</div>' +
+            '<div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap">' +
+              '<span style="background:#EDE9F8;color:#4E3A63;padding:2px 8px;border-radius:8px;white-space:nowrap">' +
+                '✅ 투표완료: ' + votedCount + '명' +
+              '</span>' +
+              '<span style="background:' + nonVoterBg + ';color:' + nonVoterColor + ';padding:2px 8px;border-radius:8px;word-break:break-all">' +
+                '⏳ 미투표: ' + nonVoterStr +
+              '</span>' +
+            '</div>' +
+          '</div>';
       }
       rows += '<div style="background:#fff;border:1.5px solid #E5E7EB;border-radius:10px;padding:14px;margin-bottom:8px">' +
         '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">' +

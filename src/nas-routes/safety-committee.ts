@@ -338,6 +338,28 @@ app.get('/meetings/:id', async (c) => {
     }
   }
 
+  // votes 배열 첨부: 안건별 투표자(이름+결과) 목록
+  // safety_committee_votes 테이블이 없는 구버전 NAS 대응 → try/catch
+  try {
+    const allVotes: any[] = rawDb.prepare(`
+      SELECT scv.agenda_id, scv.user_id, u.name as voter_name, scv.vote, scv.voted_at
+      FROM safety_committee_votes scv
+      JOIN users u ON u.id = scv.user_id
+      WHERE scv.meeting_id = ?
+      ORDER BY scv.voted_at ASC
+    `).all(id)
+    // 안건별로 그룹핑하여 각 agenda.votes 에 첨부
+    const votesByAgenda: Record<number, any[]> = {}
+    for (const v of allVotes) {
+      if (!votesByAgenda[v.agenda_id]) votesByAgenda[v.agenda_id] = []
+      votesByAgenda[v.agenda_id].push({ user_id: v.user_id, voter_name: v.voter_name, vote: v.vote, voted_at: v.voted_at })
+    }
+    for (const ag of agendas) { ag.votes = votesByAgenda[ag.id] || [] }
+  } catch(e: any) {
+    console.warn('[SC] GET /meetings/:id — votes 배열 조회 실패 (무시):', e.message)
+    for (const ag of agendas) { if (!ag.votes) ag.votes = [] }
+  }
+
   let photos: any[] = []
   try {
     photos = rawDb.prepare(`
@@ -562,6 +584,26 @@ app.get('/meeting/:id', async (c) => {
       console.warn('[SC] GET /meeting/:id — agendas 2차도 실패 (빈 배열):', e2.message)
     }
   }
+  // votes 배열 첨부 (단수 경로 하위호환)
+  try {
+    const allVotes2: any[] = rawDb.prepare(`
+      SELECT scv.agenda_id, scv.user_id, u.name as voter_name, scv.vote, scv.voted_at
+      FROM safety_committee_votes scv
+      JOIN users u ON u.id = scv.user_id
+      WHERE scv.meeting_id = ?
+      ORDER BY scv.voted_at ASC
+    `).all(id)
+    const votesByAgenda2: Record<number, any[]> = {}
+    for (const v of allVotes2) {
+      if (!votesByAgenda2[v.agenda_id]) votesByAgenda2[v.agenda_id] = []
+      votesByAgenda2[v.agenda_id].push({ user_id: v.user_id, voter_name: v.voter_name, vote: v.vote, voted_at: v.voted_at })
+    }
+    for (const ag of agendas) { ag.votes = votesByAgenda2[ag.id] || [] }
+  } catch(e: any) {
+    console.warn('[SC] GET /meeting/:id — votes 배열 조회 실패 (무시):', e.message)
+    for (const ag of agendas) { if (!ag.votes) ag.votes = [] }
+  }
+
   let photos: any[] = []
   try {
     photos = rawDb.prepare(`SELECT id, file_name, caption, created_at, mime_type FROM safety_committee_photos WHERE meeting_id = ? ORDER BY id ASC`).all(id)

@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-04 (세션 137 — FEAT-SC-ORG-PRINT: 산업안전보건위원회 조직도 인쇄 전면 개선)
-> **GitHub 최신 (safetynote-server): `9176b3b`** — feat: [FEAT-SC-ORG-PRINT] 산업안전보건위원회 조직도 인쇄 전면 개선
+> 최종 업데이트: 2026-08-04 (세션 138 — FIX-SC-ORG-PRINT-SCALE: 조직도 인쇄 A4 하단 빈공간 제거)
+> **GitHub 최신 (safetynote-server): (이번 커밋)** — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용
+> **이전 커밋 (safetynote-server): `b951cfc`** — docs: [세션137] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 9176b3b 반영
+> **이전 커밋 (safetynote-server): `9176b3b`** — feat: [FEAT-SC-ORG-PRINT] 산업안전보건위원회 조직도 인쇄 전면 개선
 > **이전 커밋 (safetynote-server): `9dc36e1`** — docs: [세션136] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 반영
 > **이전 커밋 (safetynote-server): `a088a54`** — feat: [FEAT-SC-PRINT] 산업안전보건위원회 회의록 인쇄 전면 개선
 > **이전 커밋 (safetynote-server): `f807ad6`** — docs: [세션135] PROJECT_HISTORY 최신 커밋 해시 fdfa4fa 반영
@@ -12023,3 +12025,44 @@ pm2 restart 시 서버가 수 초간 다운 → 브라우저 폴링(2초마다)�
 
 ### 커밋
 - `9176b3b` — feat: [FEAT-SC-ORG-PRINT] 산업안전보건위원회 조직도 인쇄 전면 개선
+
+---
+
+## 세션 138 (2026-08-04) — FIX-SC-ORG-PRINT-SCALE: 조직도 인쇄 A4 하단 빈공간 제거
+
+### 작업 배경
+세션 137에서 `_autoScaleOrg` 도입 후 조직도 출력 시 콘텐츠가 A4 상단 약 50%에만 표시되고 하단 절반이 흰 여백으로 남는 문제 발견.
+
+### 근본 원인
+`_autoScaleOrg` `doFit()` 함수 내 조기 반환 조건:
+```javascript
+if (naturalH <= A4_AVAIL_PX) return;
+```
+위원 수가 적어 조직도 전체 높이가 A4 높이보다 작을 경우 스케일링을 전혀 적용하지 않아 콘텐츠가 상단에 집중되고 하단이 비어 있었음.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | `_autoScaleOrg` 조기 반환 조건 제거 → 항상 ratio 계산 |
+| `public/static/app.js` | `ratio = Math.min(ratio, 1.8)` — 과도한 확대 180% cap 추가 |
+| `public/static/app.js` | `if (Math.abs(ratio - 1) < 0.02) return` — ±2% 이내면 처리 생략 |
+| `src/index.tsx` | 버전 `v=20260804c` → `v=20260804d` |
+
+### 변경 로직
+```javascript
+// 변경 전: 콘텐츠 < A4이면 return → 확대 미적용
+if (naturalH <= A4_AVAIL_PX) return;
+var ratio = A4_AVAIL_PX / naturalH;
+
+// 변경 후: 항상 ratio 계산, 확대·축소 모두 적용
+var ratio = A4_AVAIL_PX / naturalH;
+ratio = Math.min(ratio, 1.8);           // 과도한 확대 방지
+if (Math.abs(ratio - 1) < 0.02) return; // ±2% 이내면 처리 불필요
+```
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.32s)
+
+### 커밋
+- (이번 커밋)

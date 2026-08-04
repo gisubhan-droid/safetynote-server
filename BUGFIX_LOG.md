@@ -2,6 +2,51 @@
 
 ---
 
+## [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 — A4 하단 빈공간 제거 (세션 138)
+
+> **대상**: `_scPrintOrgChart` 내 `_autoScaleOrg` IIFE
+> **발견일**: 2026-08-04
+> **유형**: 🔴 BUG — 조직도 콘텐츠 < A4 높이 시 확대 미적용으로 하단 빈공간 발생
+
+### 원인
+`_autoScaleOrg` 함수의 조기 반환 조건:
+```javascript
+if (naturalH <= A4_AVAIL_PX) return;  // 콘텐츠가 A4보다 작으면 스케일링 건너뜀
+```
+조직도 특성상 위원 수가 적을 경우 콘텐츠가 A4 절반 이하 → 하단 약 50% 흰 여백 발생
+
+### 수정 내용
+
+| 위치 | 변경 전 | 변경 후 |
+|------|--------|---------|
+| `_autoScaleOrg` `doFit()` | `if (naturalH <= A4_AVAIL_PX) return;` 조건으로 확대 건너뜀 | 조건 제거 → 항상 ratio 계산 |
+| ratio 계산 | 축소만 적용 | 확대·축소 모두 적용, `Math.min(ratio, 1.8)` cap |
+| 스킵 조건 | 없음 (너무 작으면 항상 return) | `Math.abs(ratio - 1) < 0.02` — ±2% 이내면 스킵 |
+| `src/index.tsx` 버전 | `v=20260804c` | `v=20260804d` |
+
+### 수정 핵심 코드
+```javascript
+// 변경 전
+var naturalH = page.scrollHeight;
+if (naturalH <= A4_AVAIL_PX) return;   // ← 문제
+var ratio = A4_AVAIL_PX / naturalH;
+
+// 변경 후
+var naturalH = page.scrollHeight;
+var ratio = A4_AVAIL_PX / naturalH;
+ratio = Math.min(ratio, 1.8);          // 과도한 확대 방지 (180% cap)
+if (Math.abs(ratio - 1) < 0.02) return; // ±2% 이내면 처리 불필요
+```
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.32s)
+
+### 커밋
+- (이번 커밋)
+
+---
+
 ## [FEAT-SC-ORG-PRINT] 산업안전보건위원회 — 조직도 인쇄 전면 개선 (세션 137)
 
 > **대상**: 산업안전보건위원회 조직도 PDF 출력 (`_scPrintOrgChart`)

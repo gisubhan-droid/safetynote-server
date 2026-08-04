@@ -48725,8 +48725,9 @@ function _scPrintOrgChart() {
       '    page.style.transformOrigin = \'\';\n' +
       '    styleEl.textContent        = \'\';\n' +
       '    var naturalH = page.scrollHeight;\n' +
-      '    if (naturalH <= A4_AVAIL_PX) return;\n' +
       '    var ratio = A4_AVAIL_PX / naturalH;\n' +
+      '    ratio = Math.min(ratio, 1.8);\n' +
+      '    if (Math.abs(ratio - 1) < 0.02) return;\n' +
       '    page.style.transform       = \'scale(\' + ratio + \')\';\n' +
       '    page.style.transformOrigin = \'top center\';\n' +
       '    page.style.marginBottom    = \'-\' + (naturalH * (1 - ratio)) + \'px\';\n' +

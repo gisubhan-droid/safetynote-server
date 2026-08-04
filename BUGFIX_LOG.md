@@ -43,7 +43,7 @@ if (Math.abs(ratio - 1) < 0.02) return; // ±2% 이내면 처리 불필요
 - `npm run build` ✅ (298.71 kB, 1.32s)
 
 ### 커밋
-- (이번 커밋)
+- `5c93def` — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용 — A4 하단 빈공간 제거
 
 ---
 

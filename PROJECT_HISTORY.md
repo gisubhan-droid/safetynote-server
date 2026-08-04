@@ -22,7 +22,7 @@
 ---
 
 > 최종 업데이트: 2026-08-04 (세션 138 — FIX-SC-ORG-PRINT-SCALE: 조직도 인쇄 A4 하단 빈공간 제거)
-> **GitHub 최신 (safetynote-server): (이번 커밋)** — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용
+> **GitHub 최신 (safetynote-server): `5c93def`** — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용
 > **이전 커밋 (safetynote-server): `b951cfc`** — docs: [세션137] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 9176b3b 반영
 > **이전 커밋 (safetynote-server): `9176b3b`** — feat: [FEAT-SC-ORG-PRINT] 산업안전보건위원회 조직도 인쇄 전면 개선
 > **이전 커밋 (safetynote-server): `9dc36e1`** — docs: [세션136] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 반영
@@ -12065,4 +12065,4 @@ if (Math.abs(ratio - 1) < 0.02) return; // ±2% 이내면 처리 불필요
 - `npm run build` ✅ (298.71 kB, 1.32s)
 
 ### 커밋
-- (이번 커밋)
+- `5c93def` — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용 — A4 하단 빈공간 제거

@@ -22,7 +22,7 @@
 ---
 
 > 최종 업데이트: 2026-08-04 (세션 139 — FEAT-PDF-FILENAME: 인쇄 PDF 저장 시 문서 파일명 자동 설정)
-> **GitHub 최신 (safetynote-server): (이번 커밋)** — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정
+> **GitHub 최신 (safetynote-server): `a6ccc03`** — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정
 > **이전 커밋 (safetynote-server): `1f19e7f`** — docs: [세션138] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 5c93def 반영
 > **이전 커밋 (safetynote-server): `5c93def`** — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용
 > **이전 커밋 (safetynote-server): `b951cfc`** — docs: [세션137] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 9176b3b 반영
@@ -12108,4 +12108,4 @@ PDF 저장 시 파일명이 항상 `제목없음.pdf`로 저장되어 문서 식
 - `npm run build` ✅ (298.71 kB, 2.05s)
 
 ### 커밋
-- (이번 커밋)
+- `a6ccc03` — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정

@@ -46,7 +46,7 @@
 - `npm run build` ✅ (298.71 kB, 2.05s)
 
 ### 커밋
-- (이번 커밋)
+- `a6ccc03` — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정 — TBM/교육/서명지/회의록/조직도 + autoScaleOrg 세부 개선
 
 ---
 

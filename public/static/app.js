@@ -14504,20 +14504,25 @@ function _safePdfFilename(str) {
 }
 
 function _openPrintOverlay(htmlContent, docTitle) {
-  // docTitle이 있으면 htmlContent의 <title>을 교체 (PDF 저장 파일명)
-  // 브라우저 인쇄→PDF 저장 시 <title> 값이 파일명으로 사용됨 (Chrome/Edge/Firefox)
-  if (docTitle) {
-    var safeTitle = _safePdfFilename(docTitle);
-    if (safeTitle) {
-      // 기존 <title>...</title> 교체, 없으면 <head> 직후 삽입
-      if (/<title[^>]*>/i.test(htmlContent)) {
-        htmlContent = htmlContent.replace(/<title[^>]*>[\s\S]*?<\/title>/i,
-          '<title>' + safeTitle + '</title>');
-      } else {
-        htmlContent = htmlContent.replace(/(<head[^>]*>)/i,
-          '$1<title>' + safeTitle + '</title>');
-      }
+  // docTitle 처리:
+  // ① iframe 내부 <title> 교체 (Firefox는 iframe title 사용)
+  // ② 인쇄 버튼에 data-doctitle 삽입 → 클릭 시 postMessage로 부모에 전달
+  //    부모가 document.title을 임시 변경 → Chrome/Edge PDF 파일명 적용
+  var safeTitle = docTitle ? _safePdfFilename(docTitle) : '';
+  if (safeTitle) {
+    // iframe 내부 <title> 교체
+    if (/<title[^>]*>/i.test(htmlContent)) {
+      htmlContent = htmlContent.replace(/<title[^>]*>[\s\S]*?<\/title>/i,
+        '<title>' + safeTitle + '</title>');
+    } else {
+      htmlContent = htmlContent.replace(/(<head[^>]*>)/i,
+        '$1<title>' + safeTitle + '</title>');
     }
+    // 인쇄 버튼에 data-doctitle 속성 삽입 (onclick="window.print()" 패턴)
+    htmlContent = htmlContent.replace(
+      /onclick="window\.print\(\)"/g,
+      'onclick="window.parent.postMessage({type:\'setPdfTitle\',title:this.getAttribute(\'data-doctitle\')},\'*\');setTimeout(function(){window.print();},80);" data-doctitle="' + safeTitle + '"'
+    );
   }
 
   // 기존 오버레이 제거
@@ -14568,18 +14573,32 @@ function _openPrintOverlay(htmlContent, docTitle) {
   window.__printBlobUrl__ = blobUrl;
   iframe.src = blobUrl;
 
-  // ── 메시지 수신: 닫기 / TBM 결재 서명 후 재출력 ──
+  // ── 메시지 수신: 닫기 / TBM 결재 서명 후 재출력 / PDF 파일명 설정 ──
+  const _origPageTitle = document.title;  // 원래 탭 제목 저장
   function _onCloseMsg(e) {
     const msg = e.data;
     if (msg === 'closePrintOverlay') {
+      document.title = _origPageTitle;    // 탭 제목 복원
       overlay.remove();
       if (window.__printBlobUrl__) {
         URL.revokeObjectURL(window.__printBlobUrl__);
         window.__printBlobUrl__ = null;
       }
       window.removeEventListener('message', _onCloseMsg);
+    } else if (msg && msg.type === 'setPdfTitle' && msg.title) {
+      // 인쇄 버튼 클릭 시 → 부모 탭 title을 문서명으로 임시 변경
+      // Chrome/Edge: 인쇄 다이얼로그의 PDF 파일명 = document.title 사용
+      document.title = msg.title;
+      // 인쇄 완료 후 복원 (afterprint 이벤트 or 타임아웃)
+      var _restoreTitle = function() {
+        document.title = _origPageTitle;
+        window.removeEventListener('afterprint', _restoreTitle);
+      };
+      window.addEventListener('afterprint', _restoreTitle);
+      setTimeout(_restoreTitle, 30000); // 30초 후 강제 복원 (보험)
     } else if (msg && msg.type === 'reloadTbmPrint' && msg.tbmId) {
       // blob URL은 reload() 불가 → 오버레이 닫고 _tbmPrint() 재호출
+      document.title = _origPageTitle;
       overlay.remove();
       if (window.__printBlobUrl__) {
         URL.revokeObjectURL(window.__printBlobUrl__);

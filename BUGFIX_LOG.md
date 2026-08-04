@@ -37,7 +37,7 @@
 - `npm run build` ✅ (298.71 kB, 1.84s)
 
 ### 커밋
-- (이번 세션 push 커밋 반영 예정)
+- `9176b3b` — feat: [FEAT-SC-ORG-PRINT] 산업안전보건위원회 조직도 인쇄 전면 개선
 
 ---
 

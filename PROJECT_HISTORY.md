@@ -22,7 +22,7 @@
 ---
 
 > 최종 업데이트: 2026-08-04 (세션 137 — FEAT-SC-ORG-PRINT: 산업안전보건위원회 조직도 인쇄 전면 개선)
-> **GitHub 최신 (safetynote-server): (이번 세션 push 예정)**
+> **GitHub 최신 (safetynote-server): `9176b3b`** — feat: [FEAT-SC-ORG-PRINT] 산업안전보건위원회 조직도 인쇄 전면 개선
 > **이전 커밋 (safetynote-server): `9dc36e1`** — docs: [세션136] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 반영
 > **이전 커밋 (safetynote-server): `a088a54`** — feat: [FEAT-SC-PRINT] 산업안전보건위원회 회의록 인쇄 전면 개선
 > **이전 커밋 (safetynote-server): `f807ad6`** — docs: [세션135] PROJECT_HISTORY 최신 커밋 해시 fdfa4fa 반영
@@ -12022,4 +12022,4 @@ pm2 restart 시 서버가 수 초간 다운 → 브라우저 폴링(2초마다)�
 - `npm run build` ✅ (298.71 kB, 1.84s)
 
 ### 커밋
-- (이번 세션 push 커밋 반영 예정)
+- `9176b3b` — feat: [FEAT-SC-ORG-PRINT] 산업안전보건위원회 조직도 인쇄 전면 개선

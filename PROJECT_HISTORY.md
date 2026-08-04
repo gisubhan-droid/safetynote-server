@@ -22,7 +22,8 @@
 ---
 
 > 최종 업데이트: 2026-08-04 (세션 135 — 핸드오프 복구: 세션 131→135 이력 정리 및 문서 갱신)
-> **GitHub 최신 (safetynote-server): `9b5bd79`** — feat: [FEAT-SC-VOTE] 산업안전보건위원회 투표 의결 결과 자동 표시
+> **GitHub 최신 (safetynote-server): `fdfa4fa`** — docs: [세션135] 핸드오프 복구 — 문서 갱신
+> **이전 커밋 (safetynote-server): `9b5bd79`** — feat: [FEAT-SC-VOTE] 산업안전보건위원회 투표 의결 결과 자동 표시
 > **이전 커밋 (safetynote-server): `c9828ac`** — docs: [BUG-208] 세션 133 최종 마무리
 > **이전 커밋 (safetynote-server): `ee9725f`** — test: [BUG-208] 재시작 중 Network Error 배너 개선 검증 — v=20260803h
 > **이전 커밋 (safetynote-server): `69b95d3`** — fix: [BUG-208] pm2 restart 중 Network Error → 빨간 에러 배너 대신 재시작 대기 안내로 표시
@@ -11935,4 +11936,4 @@ pm2 restart 시 서버가 수 초간 다운 → 브라우저 폴링(2초마다)�
 | NAS_OPERATIONS.md 갱신 | 변경이력 테이블에 세션 134/135 항목 추가 |
 
 ### 커밋
-- (세션 135 마무리 커밋)
+- `fdfa4fa` — docs: [세션135] 핸드오프 복구 — BUGFIX_LOG FEAT-SC-VOTE 커밋 반영 + PROJECT_HISTORY 헤더/세션135 섹션 + NAS_OPERATIONS 134/135 이력 추가

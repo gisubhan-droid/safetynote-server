@@ -37516,7 +37516,7 @@ async function printEduLog(sessionId) {
   <!-- ── 인쇄 전용 법령 머리글 (position:fixed — 매 페이지 상단 자동 반복) ── -->
   <div class="law-print-header">
     <span>산업안전보건법 시행규칙 별표 4 (안전보건교육 실시기록)</span>
-    <span>작성일: ${today}</span>
+    <span>출력일: ${today}</span>
   </div>
 
   <!-- ── 인쇄 미리보기 툴바 (화면에서만 표시) ── -->
@@ -37534,7 +37534,7 @@ async function printEduLog(sessionId) {
     <!-- ── 화면 미리보기용 법령 표기 (인쇄 시 숨김 — 인쇄는 position:fixed 머리글 사용) ── -->
     <div class="law-header-screen">
       <span>산업안전보건법 시행규칙 별표 4 (안전보건교육 실시기록)</span>
-      <span>작성일: ${today}</span>
+      <span>출력일: ${today}</span>
     </div>
 
     <!-- ── 제목 (한 줄 중앙) ── -->
@@ -37826,7 +37826,7 @@ async function printEduSign(sessionId) {
   <!-- ── 인쇄 전용 머리글 (position:fixed — 매 페이지 자동 반복) ── -->
   <div class="law-print-header">
     <span>안전보건교육 서명부</span>
-    <span>작성일: ${today}</span>
+    <span>출력일: ${today}</span>
   </div>
 
   <!-- ── 미리보기 툴바 (화면에서만 표시) ── -->
@@ -37844,7 +37844,7 @@ async function printEduSign(sessionId) {
     <!-- ── 화면용 머리글 ── -->
     <div class="law-header-screen">
       <span>안전보건교육 서명부</span>
-      <span>작성일: ${today}</span>
+      <span>출력일: ${today}</span>
     </div>
 
     <div class="doc-title">안전보건교육 서명부</div>

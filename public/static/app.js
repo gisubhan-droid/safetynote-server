@@ -48702,15 +48702,16 @@ function _scPrintOrgChart() {
       '<meta charset="UTF-8">\n' +
       '<title>산업안전보건위원회 조직도</title>\n' +
       '<style>\n' +
-        '@page { size: A4 portrait; margin: 10mm 8mm 10mm 8mm; }\n' +
+        '@page { size: A4 portrait; margin: 8mm 8mm 8mm 8mm; }\n' +
         '* { box-sizing: border-box; margin: 0; padding: 0;\n' +
         '    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }\n' +
         'body { font-size: 9pt; color: #111; background: #fff; }\n' +
         '@media print {\n' +
-        '  html, body { margin: 0; padding: 0; background: #fff; }\n' +
+        '  html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }\n' +
         '  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n' +
         '  .no-print { display: none !important; }\n' +
-        '  .sc-org-a4 { margin: 0; box-shadow: none; width: 100%; }\n' +
+        '  .sc-org-a4 { margin: 0; box-shadow: none; width: 100%;\n' +
+        '    page-break-after: avoid; page-break-inside: avoid; }\n' +
         '}\n' +
         '@media screen {\n' +
         '  body { background: #e5e7eb; padding: 0; padding-top: 56px; overflow-x: hidden; }\n' +
@@ -48773,11 +48774,14 @@ function _scPrintOrgChart() {
       '(function _autoScaleOrg() {\n' +
       '  var page = document.getElementById(\'sc-org-a4Page\');\n' +
       '  if (!page) return;\n' +
-      '  // A4 가용 높이: @page margin top+bottom=20mm 제외, 96dpi CSS px 기준\n' +
-      '  var MARGIN_MM   = 10 + 10;\n' +
-      '  var A4_H_MM     = 297 - MARGIN_MM;    // 277mm\n' +
+      '  // A4 가용 높이 계산\n' +
+      '  // @page margin: 10mm top+bottom = 20mm\n' +
+      '  // Chrome PDF 저장 시 자체 여백 추가 보정: 추가 15mm 확보 → 총 35mm 제외\n' +
+      '  // (프린터 출력은 @page만 적용, PDF 저장은 추가 여백 발생)\n' +
+      '  var MARGIN_MM   = 10 + 10 + 15;       // 35mm (PDF 저장 여백 포함)\n' +
+      '  var A4_H_MM     = 297 - MARGIN_MM;    // 262mm\n' +
       '  var MM_TO_PX    = 96 / 25.4;           // CSS px/mm (≈3.78)\n' +
-      '  var A4_AVAIL_PX = A4_H_MM * MM_TO_PX;  // ≈1047px\n' +
+      '  var A4_AVAIL_PX = A4_H_MM * MM_TO_PX;  // ≈990px\n' +
       '  var styleEl = document.createElement(\'style\');\n' +
       '  styleEl.id  = \'__sc-org-zoom__\';\n' +
       '  document.head.appendChild(styleEl);\n' +
@@ -48790,13 +48794,14 @@ function _scPrintOrgChart() {
       '    var naturalH = page.scrollHeight;\n' +
       '    if (!naturalH) return;\n' +
       '    var ratio = A4_AVAIL_PX / naturalH;  // <1 축소, >1 확대\n' +
-      '    ratio = Math.min(ratio, 2.0);  // 최대 200% 확대 cap\n' +
+      '    ratio = Math.min(ratio, 1.8);  // 최대 180% 확대 cap\n' +
       '    ratio = Math.max(ratio, 0.3);  // 최소 30% 축소 하한\n' +
       '    if (Math.abs(ratio - 1) < 0.01) return; // ±1% 이내 처리 생략\n' +
       '    page.style.transform       = \'scale(\' + ratio + \')\';\n' +
       '    page.style.transformOrigin = \'top center\';\n' +
       '    page.style.marginBottom    = \'-\' + (naturalH * (1 - ratio)) + \'px\';\n' +
-      '    styleEl.textContent = \'@media print { #sc-org-a4Page { zoom: \' + ratio + \'; transform: none !important; margin-bottom: 0 !important; } }\';\n' +
+      '    // @media print: zoom + page-break 완전 차단\n' +
+      '    styleEl.textContent = \'@media print { #sc-org-a4Page { zoom: \' + ratio + \'; transform: none !important; margin-bottom: 0 !important; page-break-after: avoid !important; page-break-inside: avoid !important; } body { overflow: hidden !important; } }\';\n' +
       '  }\n' +
       '  // 이미지 로드 완료 후 측정 (없으면 즉시 실행)\n' +
       '  var imgs = page.querySelectorAll(\'img\');\n' +

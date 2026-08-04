@@ -48522,30 +48522,233 @@ function _scRenderOrgChartTab(container, members) {
 }
 
 function _scPrintOrgChart() {
-  var bodyEl = document.getElementById('sc-orgchart-body');
-  var bodyHtml = bodyEl ? bodyEl.innerHTML : '<p>조직도 없음</p>';
-  var now = new Date();
-  var dateStr = now.getFullYear() + '년 ' + (now.getMonth() + 1) + '월 ' + now.getDate() + '일';
-  var win = window.open('', '_blank', 'width=860,height=700');
-  if (!win) { alert('팝업 차단을 해제해 주세요.'); return; }
-  win.document.write(
-    '<!DOCTYPE html><html><head>' +
-    '<meta charset="UTF-8"><title>산업안전보건위원회 조직도</title>' +
-    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">' +
-    '<style>body{font-family:"맑은 고딕","Apple SD Gothic Neo",sans-serif;padding:32px 40px;color:#1E293B;max-width:780px;margin:0 auto}' +
-    'h1{font-size:20px;font-weight:700;text-align:center;margin-bottom:4px}' +
-    '.sub{font-size:12px;color:#64748B;text-align:center;margin-bottom:24px}' +
-    '.footer{margin-top:28px;font-size:11px;color:#9CA3AF;text-align:center;border-top:1px solid #E5E7EB;padding-top:10px}' +
-    '@media print{button{display:none}}' +
-    '</style></head><body>' +
-    '<h1>산업안전보건위원회 조직도</h1>' +
-    '<div class="sub">출력일: ' + dateStr + '</div>' +
-    bodyHtml +
-    '<div class="footer">본 조직도는 등록 위원 현황을 기준으로 자동 생성됩니다.</div>' +
-    '<div style="text-align:center;margin-top:14px"><button onclick="window.print()" style="padding:9px 24px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">🖨️ 인쇄</button></div>' +
-    '</body></html>'
-  );
-  win.document.close();
+  // [FEAT-SC-ORG-PRINT] 안전교육 방식 통일: _openPrintOverlay + a4-page + autoScaleOrg
+  // API 재호출로 최신 위원 데이터 확보 (DOM innerHTML 복사 방식 제거)
+  _scFetch('/api/safety-committee/members').then(function(r){ return r.json(); }).then(function(res) {
+    var members = Array.isArray(res) ? res : (res.data || []);
+
+    var now = new Date();
+    var dateStr = now.getFullYear() + '년 ' + (now.getMonth() + 1) + '월 ' + now.getDate() + '일';
+
+    // ── 위원 분류 (화면 렌더와 동일 로직) ───────────────────────────────────
+    var roleOrder = { chair: 0, vice_chair: 1, secretary: 2, member: 3 };
+    var roleLabel = { chair: '위원장', vice_chair: '부위원장', secretary: '간사', member: '위원' };
+    var roleIcon  = { chair: '★', vice_chair: '◆', secretary: '▣', member: '●' };
+
+    var employers   = [];
+    var workers     = [];
+    var chair       = null;
+    var viceChairs  = [];
+    var secretaries = [];
+
+    for (var i = 0; i < members.length; i++) {
+      var m = members[i];
+      if (!m.is_active && m.is_active !== undefined) continue;
+      if (m.role_type === 'chair')           { chair = m; }
+      else if (m.role_type === 'vice_chair') { viceChairs.push(m); }
+      else if (m.role_type === 'secretary')  { secretaries.push(m); }
+      if (m.side === 'employer') employers.push(m);
+      else workers.push(m);
+    }
+    function sortM(arr) {
+      return arr.slice().sort(function(a, b) {
+        return (roleOrder[a.role_type] || 3) - (roleOrder[b.role_type] || 3);
+      });
+    }
+    employers = sortM(employers);
+    workers   = sortM(workers);
+
+    // ── 인쇄용 위원 카드 HTML (FontAwesome 미사용 — 아이콘을 텍스트 기호로 대체) ─
+    function orgCard(mem, isChair) {
+      var rl   = roleLabel[mem.role_type] || '위원';
+      var ic   = roleIcon[mem.role_type]  || '●';
+      var disp = mem.custom_title || rl;
+      var dept = mem.user_position || mem.user_department || '';
+      var bgGrad = isChair
+        ? 'background:linear-gradient(135deg,#7C3AED,#4F46E5);color:#fff;border:2px solid #7C3AED'
+        : (mem.side === 'employer'
+            ? 'background:#F5F3FF;color:#4E3A63;border:1px solid #DDD6FE'
+            : 'background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0');
+      var subCol = isChair ? 'color:rgba(255,255,255,.85)' : 'color:#64748B';
+      return '<div style="' + bgGrad + ';border-radius:10px;padding:8px 10px;text-align:center;' +
+        'min-width:80px;max-width:110px;display:inline-block;vertical-align:top;' +
+        'box-shadow:0 2px 6px rgba(0,0,0,.1);margin:3px">' +
+        '<div style="font-size:14px;margin-bottom:4px">' + ic + '</div>' +
+        '<div style="font-weight:700;font-size:8.5pt">' + (mem.user_name || '') + '</div>' +
+        '<div style="font-size:7.5pt;font-weight:600;margin-top:1px">' + disp + '</div>' +
+        (dept ? '<div style="font-size:7pt;margin-top:1px;' + subCol + '">' + dept + '</div>' : '') +
+      '</div>';
+    }
+
+    // ── 패널 (사용자측 / 근로자측) ──────────────────────────────────────────
+    function sidePanel(title, arr, panelBg, panelBdr, headerCol) {
+      if (!arr.length) {
+        return '<div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;padding:14px;text-align:center;color:#9CA3AF;font-size:8pt">등록된 위원 없음</div>';
+      }
+      var cards = '';
+      for (var ci = 0; ci < arr.length; ci++) cards += orgCard(arr[ci], false);
+      return '<div style="background:' + panelBg + ';border:1.5px solid ' + panelBdr + ';border-radius:12px;padding:12px">' +
+        '<div style="font-size:8.5pt;font-weight:700;color:' + headerCol + ';margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid ' + panelBdr + '">' +
+          title + ' (' + arr.length + '명)' +
+        '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">' + cards + '</div>' +
+      '</div>';
+    }
+
+    // ── 위원장 셀 ───────────────────────────────────────────────────────────
+    var chairHtml = chair
+      ? orgCard(chair, true)
+      : '<div style="padding:8px 18px;background:#E5E7EB;border-radius:10px;color:#9CA3AF;font-size:8pt;display:inline-block">위원장 미지정</div>';
+
+    // ── 부위원장·간사 셀 ────────────────────────────────────────────────────
+    var viceSecHtml = '';
+    for (var vi = 0; vi < viceChairs.length;  vi++) viceSecHtml += orgCard(viceChairs[vi],  false);
+    for (var si = 0; si < secretaries.length; si++) viceSecHtml += orgCard(secretaries[si], false);
+
+    // ── 연결선 ──────────────────────────────────────────────────────────────
+    var lineV = '<div style="display:flex;justify-content:center;margin:4px 0">' +
+                  '<div style="width:2px;height:16px;background:#DDD6FE"></div>' +
+                '</div>';
+    var lineH = '<div style="display:flex;justify-content:center;margin:0 0 4px">' +
+                  '<div style="width:45%;height:2px;background:#DDD6FE"></div>' +
+                '</div>';
+
+    // ── 전체 조직도 본문 HTML ────────────────────────────────────────────────
+    var orgBody =
+      // 1단: 위원장
+      '<div style="text-align:center;margin-bottom:2px">' +
+        '<div style="font-size:7.5pt;font-weight:700;color:#9CA3AF;margin-bottom:4px;letter-spacing:.05em">위원장</div>' +
+        chairHtml +
+      '</div>' +
+      lineV +
+      // 2단: 부위원장·간사
+      (viceSecHtml
+        ? '<div style="text-align:center;margin-bottom:2px">' +
+            '<div style="font-size:7.5pt;font-weight:700;color:#9CA3AF;margin-bottom:4px;letter-spacing:.05em">부위원장 · 간사</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center">' + viceSecHtml + '</div>' +
+          '</div>' + lineV
+        : '') +
+      lineH +
+      // 3단: 사용자측 / 근로자측
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px">' +
+        sidePanel('사용자측 위원', employers, '#F5F3FF', '#DDD6FE', '#7C3AED') +
+        sidePanel('근로자측 위원', workers,   '#ECFDF5', '#A7F3D0', '#059669') +
+      '</div>';
+
+    // ── 최종 HTML (안전교육 방식: a4-page div + toolbar + autoScaleOrg JS) ──
+    var htmlContent =
+      '<!DOCTYPE html>\n<html lang="ko">\n<head>\n' +
+      '<meta charset="UTF-8">\n' +
+      '<title>산업안전보건위원회 조직도</title>\n' +
+      '<style>\n' +
+        '@page { size: A4 portrait; margin: 10mm 8mm 10mm 8mm; }\n' +
+        '* { box-sizing: border-box; margin: 0; padding: 0;\n' +
+        '    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }\n' +
+        'body { font-size: 9pt; color: #111; background: #fff; }\n' +
+        '@media print {\n' +
+        '  html, body { margin: 0; padding: 0; background: #fff; }\n' +
+        '  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n' +
+        '  .no-print { display: none !important; }\n' +
+        '  .sc-org-a4 { margin: 0; box-shadow: none; width: 100%; }\n' +
+        '}\n' +
+        '@media screen {\n' +
+        '  body { background: #e5e7eb; padding: 0; padding-top: 56px; overflow-x: hidden; }\n' +
+        '  .sc-org-a4 {\n' +
+        '    background: #fff; width: 210mm;\n' +
+        '    margin: 20px auto; padding: 10mm 8mm;\n' +
+        '    box-shadow: 0 4px 24px rgba(0,0,0,0.18);\n' +
+        '  }\n' +
+        '  .print-toolbar {\n' +
+        '    position: fixed; top: 0; left: 0; right: 0; z-index: 999;\n' +
+        '    background: #1f2937; color: #fff;\n' +
+        '    display: flex; align-items: center; justify-content: space-between;\n' +
+        '    padding: 10px 20px; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);\n' +
+        '  }\n' +
+        '  .print-toolbar .toolbar-title { font-size: 14px; font-weight: bold; flex: 1; }\n' +
+        '  .print-toolbar button { padding: 7px 20px; border-radius: 8px; border: none;\n' +
+        '    font-size: 13px; font-weight: bold; cursor: pointer; }\n' +
+        '  .btn-print { background: #7C3AED; color: #fff; }\n' +
+        '  .btn-close  { background: #374151; color: #ccc; }\n' +
+        '}\n' +
+      '</style>\n' +
+      '</head>\n<body>\n' +
+
+      // ── 툴바 (화면 전용) ──
+      '<div class="print-toolbar no-print">\n' +
+        '<span class="toolbar-title">' +
+          '<span style="font-size:12px;opacity:0.7;margin-right:8px">📋 산업안전보건위원회 조직도 미리보기</span>' +
+          '위원 ' + members.length + '명' +
+        '</span>\n' +
+        '<button class="btn-print" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>\n' +
+        '<button class="btn-close" onclick="window.parent.postMessage(\'closePrintOverlay\',\'*\')">✕ 닫기</button>\n' +
+      '</div>\n' +
+
+      // ── A4 본문 ──
+      '<div class="sc-org-a4" id="sc-org-a4Page">\n' +
+
+        // 제목 영역
+        '<div style="text-align:center;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #333">\n' +
+          '<div style="font-size:15pt;font-weight:700;letter-spacing:3px">산업안전보건위원회 조직도</div>\n' +
+          '<div style="font-size:8pt;color:#555;margin-top:3px">' +
+            '출력일: ' + dateStr +
+            ' &nbsp;|&nbsp; 사용자측 ' + employers.length + '명 / 근로자측 ' + workers.length + '명 / 합계 ' + members.filter(function(x){ return !(!x.is_active && x.is_active !== undefined); }).length + '명' +
+          '</div>\n' +
+        '</div>\n' +
+
+        // 조직도 본체
+        (members.length === 0
+          ? '<div style="text-align:center;padding:40px;color:#9CA3AF;font-size:10pt">등록된 위원이 없습니다.</div>'
+          : orgBody) +
+
+        // 하단 법령 표기
+        '<div style="margin-top:10px;font-size:7.5pt;color:#888;text-align:center;border-top:1px solid #ddd;padding-top:4px">' +
+          '산업안전보건법 제24조 / 본 조직도는 등록 위원 현황을 기준으로 자동 생성됩니다. / 보존기간 3년' +
+        '</div>\n' +
+
+      '</div><!-- /.sc-org-a4 -->\n' +
+
+      // ── autoScaleOrg JS (안전교육 방식 동일 패턴, id=sc-org-a4Page로 독립) ──
+      '<script>\n' +
+      '(function _autoScaleOrg() {\n' +
+      '  var page = document.getElementById(\'sc-org-a4Page\');\n' +
+      '  if (!page) return;\n' +
+      '  var MARGIN_MM   = 10 + 10;\n' +
+      '  var A4_H_MM     = 297 - MARGIN_MM;\n' +
+      '  var MM_TO_PX    = 96 / 25.4;\n' +
+      '  var A4_AVAIL_PX = A4_H_MM * MM_TO_PX;\n' +
+      '  var styleEl = document.createElement(\'style\');\n' +
+      '  styleEl.id  = \'__sc-org-zoom__\';\n' +
+      '  document.head.appendChild(styleEl);\n' +
+      '  function doFit() {\n' +
+      '    page.style.zoom            = \'\';\n' +
+      '    page.style.transform       = \'\';\n' +
+      '    page.style.transformOrigin = \'\';\n' +
+      '    styleEl.textContent        = \'\';\n' +
+      '    var naturalH = page.scrollHeight;\n' +
+      '    if (naturalH <= A4_AVAIL_PX) return;\n' +
+      '    var ratio = A4_AVAIL_PX / naturalH;\n' +
+      '    page.style.transform       = \'scale(\' + ratio + \')\';\n' +
+      '    page.style.transformOrigin = \'top center\';\n' +
+      '    page.style.marginBottom    = \'-\' + (naturalH * (1 - ratio)) + \'px\';\n' +
+      '    styleEl.textContent = \'@media print { #sc-org-a4Page { zoom: \' + ratio + \'; transform: none !important; margin-bottom: 0 !important; } }\';\n' +
+      '  }\n' +
+      '  var imgs = page.querySelectorAll(\'img\');\n' +
+      '  if (!imgs.length) { doFit(); return; }\n' +
+      '  var done = 0;\n' +
+      '  var onDone = function() { if (++done >= imgs.length) doFit(); };\n' +
+      '  imgs.forEach(function(img) {\n' +
+      '    if (img.complete) onDone();\n' +
+      '    else { img.addEventListener(\'load\', onDone); img.addEventListener(\'error\', onDone); }\n' +
+      '  });\n' +
+      '})();\n' +
+      '</script>\n' +
+
+      '</body>\n</html>';
+
+    _openPrintOverlay(htmlContent);
+  }).catch(function(e) {
+    alert('조직도 출력 데이터 불러오기 실패: ' + e.message);
+  });
 }
 
 // 회의록 탭 내용 렌더 (통합 페이지 전용 — 헤더/통계/법령 포함)

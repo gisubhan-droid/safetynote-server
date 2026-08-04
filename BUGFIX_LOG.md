@@ -2,6 +2,45 @@
 
 ---
 
+## [FEAT-SC-ORG-PRINT] 산업안전보건위원회 — 조직도 인쇄 전면 개선 (세션 137)
+
+> **대상**: 산업안전보건위원회 조직도 PDF 출력 (`_scPrintOrgChart`)
+> **발견일**: 2026-08-04
+> **유형**: 🟢 FEATURE — 조직도 인쇄 안전교육 방식 통일
+
+### 요구사항
+- 안전교육 출력 방식과 동일한 구조 적용 (`_openPrintOverlay` + a4-page)
+- A4 1장 한 페이지 출력 (비율 자동 조정)
+- 팝업(`window.open`) 방식 제거 → 브라우저 팝업 차단 문제 해소
+
+### 수정 내용
+
+| 위치 | 파일 | 변경 내용 |
+|------|------|----------|
+| `_scPrintOrgChart` 전체 | `public/static/app.js` | 전면 재작성 — 안전교육 방식 통일 |
+| 렌더링 방식 | - | `window.open()` 팝업 → `_openPrintOverlay()` + a4-page div |
+| 데이터 소스 | - | DOM innerHTML 복사 → API `/api/safety-committee/members` 재호출 |
+| 아이콘 | - | FontAwesome CDN 의존 제거 → 텍스트 기호(★◆▣●)로 대체 (인쇄 안정성) |
+| A4 여백 | - | 없음 → `@page 10mm 8mm` 균일 (회의록·안전교육 동일) |
+| 비율 자동 조정 | - | 없음 → `_autoScaleOrg` JS (`#sc-org-a4Page`, `__sc-org-zoom__`) |
+| 툴바 | - | 단순 버튼 → 보라색 툴바 + 🖨️ 인쇄/PDF + ✕ 닫기 |
+| `src/index.tsx` | 버전 | `v=20260804b` → `v=20260804c` |
+
+### 충돌 체크
+- `sc-org-a4Page` id: 기존 `sc-a4Page`(회의록), `a4Page`(안전교육)과 네임스페이스 분리 ✅
+- `__sc-org-zoom__` style id: 기존 `__sc-print-zoom__`, `__edu-print-zoom__`과 분리 ✅
+- `_autoScaleOrg` IIFE: 기존 `_autoScaleSC`, `_autoScaleEdu`와 분리 ✅
+- `_scPrintOrgChart` 단독 독립 함수, 외부 참조 없음 ✅
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.84s)
+
+### 커밋
+- (이번 세션 push 커밋 반영 예정)
+
+---
+
 ## [FEAT-SC-PRINT] 산업안전보건위원회 — 회의록 인쇄 전면 개선 (세션 136)
 
 > **대상**: 산업안전보건위원회 회의록 PDF 출력 (`_scPrintMeeting`)

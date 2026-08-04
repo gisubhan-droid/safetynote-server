@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-04 (세션 136 — FEAT-SC-PRINT: 산업안전보건위원회 회의록 인쇄 전면 개선)
-> **GitHub 최신 (safetynote-server): `a088a54`** — feat: [FEAT-SC-PRINT] 산업안전보건위원회 회의록 인쇄 전면 개선
+> 최종 업데이트: 2026-08-04 (세션 137 — FEAT-SC-ORG-PRINT: 산업안전보건위원회 조직도 인쇄 전면 개선)
+> **GitHub 최신 (safetynote-server): (이번 세션 push 예정)**
+> **이전 커밋 (safetynote-server): `9dc36e1`** — docs: [세션136] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 반영
+> **이전 커밋 (safetynote-server): `a088a54`** — feat: [FEAT-SC-PRINT] 산업안전보건위원회 회의록 인쇄 전면 개선
 > **이전 커밋 (safetynote-server): `f807ad6`** — docs: [세션135] PROJECT_HISTORY 최신 커밋 해시 fdfa4fa 반영
 > **이전 커밋 (safetynote-server): `fdfa4fa`** — docs: [세션135] 핸드오프 복구 — 문서 갱신
 > **이전 커밋 (safetynote-server): `9b5bd79`** — feat: [FEAT-SC-VOTE] 산업안전보건위원회 투표 의결 결과 자동 표시
@@ -11977,3 +11979,47 @@ pm2 restart 시 서버가 수 초간 다운 → 브라우저 폴링(2초마다)�
 
 ### 커밋
 - `a088a54` — feat: [FEAT-SC-PRINT] 산업안전보건위원회 회의록 인쇄 전면 개선
+
+---
+
+## 세션 137 (2026-08-04) — FEAT-SC-ORG-PRINT: 산업안전보건위원회 조직도 인쇄 전면 개선
+
+### 작업 배경
+기존 `_scPrintOrgChart`는 `window.open()` 팝업 방식 사용.
+- 팝업 차단 브라우저에서 인쇄 불가
+- 화면 DOM innerHTML 복사로 FontAwesome 아이콘 미로드 문제
+- A4 비율 자동 조정 없어 위원 수 증가 시 잘림 발생
+- 안전교육 출력과 구조 완전 상이
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `public/static/app.js` | `_scPrintOrgChart` 전체 재작성 — 안전교육 방식(`_openPrintOverlay` + a4-page) 통일 |
+| `public/static/app.js` | API 재호출로 최신 위원 데이터 독립 확보, DOM 복사 방식 완전 제거 |
+| `public/static/app.js` | FontAwesome 의존 제거 → 텍스트 기호(★◆▣●) 대체 (인쇄 안정성 확보) |
+| `public/static/app.js` | `_autoScaleOrg` JS: `#sc-org-a4Page` + `__sc-org-zoom__` 독립 네임스페이스 |
+| `src/index.tsx` | 버전 `v=20260804b` → `v=20260804c` |
+
+### 인쇄 구조 변경
+| 항목 | 이전 | 이후 |
+|------|------|------|
+| 렌더링 방식 | `window.open()` 팝업 | `_openPrintOverlay` + a4-page div |
+| 데이터 소스 | DOM innerHTML 복사 | API 재호출 (독립 생성) |
+| 아이콘 | FontAwesome CDN | 텍스트 기호 (★◆▣●) |
+| @page 여백 | 없음 | 10mm/8mm 균일 |
+| A4 비율 조정 | 없음 | `_autoScaleOrg` (zoom + transform) |
+| 툴바 | 단순 인쇄 버튼 | 안전교육 동일 스타일 |
+
+### 인쇄 기준 정책 확정
+> 본 시스템의 모든 인쇄 출력은 **안전교육 일지 출력 로직**을 기본 기준으로 한다.
+> - `_openPrintOverlay` 방식
+> - `a4-page div` + 보라색 툴바 (🖨️ 인쇄/PDF + ✕ 닫기)
+> - `@page margin: 10mm 8mm`
+> - `_autoScale*` JS (zoom + transform scale, A4 1장 자동 수용)
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.84s)
+
+### 커밋
+- (이번 세션 push 커밋 반영 예정)

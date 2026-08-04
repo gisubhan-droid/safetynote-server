@@ -21,13 +21,14 @@
 
 ---
 
-> 최종 업데이트: 2026-08-04 (세션 139 — FEAT-PDF-FILENAME: 인쇄 PDF 저장 시 문서 파일명 자동 설정)
-> **GitHub 최신 (safetynote-server): `5d6a3da`** — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정
+> 최종 업데이트: 2026-08-04 (세션 140 — FEAT-VOTE-STATUS: 안보위 투표현황 표시 + FIX-PRINT-DATE-LABEL: 출력일 레이블)
+> **GitHub 최신 (safetynote-server): `174248c`** — feat: [FEAT-VOTE-STATUS] 안보위 안건 투표현황 표시
+> **이전 커밋 (safetynote-server): `8ec34c0`** — fix: [FIX-PRINT-DATE-LABEL] 교육일지·서명지 출력 헤더 '작성일' → '출력일'
+> **이전 커밋 (safetynote-server): `923f65f`** — fix: [FIX-ORG-PDF-2PAGE] 조직도 PDF 저장 2페이지 문제
+> **이전 커밋 (safetynote-server): `5d6a3da`** — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정
 > **이전 커밋 (safetynote-server): `1f19e7f`** — docs: [세션138] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 5c93def 반영
 > **이전 커밋 (safetynote-server): `5c93def`** — fix: [FIX-SC-ORG-PRINT-SCALE] 조직도 인쇄 autoScaleOrg 확대·축소 모두 적용
-> **이전 커밋 (safetynote-server): `b951cfc`** — docs: [세션137] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 9176b3b 반영
 > **이전 커밋 (safetynote-server): `9176b3b`** — feat: [FEAT-SC-ORG-PRINT] 산업안전보건위원회 조직도 인쇄 전면 개선
-> **이전 커밋 (safetynote-server): `9dc36e1`** — docs: [세션136] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 반영
 > **이전 커밋 (safetynote-server): `a088a54`** — feat: [FEAT-SC-PRINT] 산업안전보건위원회 회의록 인쇄 전면 개선
 > **이전 커밋 (safetynote-server): `f807ad6`** — docs: [세션135] PROJECT_HISTORY 최신 커밋 해시 fdfa4fa 반영
 > **이전 커밋 (safetynote-server): `fdfa4fa`** — docs: [세션135] 핸드오프 복구 — 문서 갱신
@@ -12109,3 +12110,67 @@ PDF 저장 시 파일명이 항상 `제목없음.pdf`로 저장되어 문서 식
 
 ### 커밋
 - `a6ccc03` — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정
+
+---
+
+## 세션 140 (2026-08-04) — FIX-PRINT-DATE-LABEL + FEAT-VOTE-STATUS
+
+### 작업 1: FIX-PRINT-DATE-LABEL — 출력물 상단 날짜 레이블 '작성일' → '출력일' 수정
+
+**배경**
+안전교육 일지 출력 시 문서 상단에 오늘 날짜가 "작성일:"로 표시 → 실제 교육 작성일이 아닌 인쇄 시점 날짜이므로 "출력일:"로 레이블 변경 요청.
+
+**전수 체크 결과**
+
+| 출력 함수 | 레이블 | 조치 |
+|----------|--------|------|
+| `printEduLog` (교육일지) 인쇄용 fixed 헤더 | `작성일:` | ✅ `출력일:` 로 수정 |
+| `printEduLog` (교육일지) 화면 미리보기 헤더 | `작성일:` | ✅ `출력일:` 로 수정 |
+| `printEduSign` (서명지) 인쇄용 fixed 헤더 | `작성일:` | ✅ `출력일:` 로 수정 |
+| `printEduSign` (서명지) 화면 미리보기 헤더 | `작성일:` | ✅ `출력일:` 로 수정 |
+| `_tbmPrint` (TBM) | 이미 `출력일:` | 정상 유지 |
+| 물량통계 출력 | 이미 `인쇄일:` | 정상 유지 |
+| 안보위 운영규칙·조직도·회의록 | 이미 `출력일:` | 정상 유지 |
+
+**수정 파일**: `public/static/app.js` (4곳)
+**커밋**: `8ec34c0` / 버전 `v=20260804h`
+
+---
+
+### 작업 2: FEAT-VOTE-STATUS — 안보위 안건 투표현황 표시 (투표완료/미투표자)
+
+**배경**
+안보위 안건 탭에서 투표 진행 중 누가 투표했는지, 누가 아직 안 했는지 확인이 불가능 → 관리자가 미투표자에게 독려하기 어려움.
+
+**구현 내용**
+
+백엔드 (`src/nas-routes/safety-committee.ts`):
+- `GET /meetings/:id`, `GET /meeting/:id` 응답의 각 안건에 `votes` 배열 추가
+  ```
+  votes: [{ user_id, voter_name, vote, voted_at }, ...]
+  ```
+- `safety_committee_votes` JOIN `users` — meeting_id 기준 일괄 조회 후 agenda_id로 그룹핑
+- 구버전 NAS (테이블 미존재) 대응: `try/catch` + 빈 배열 폴백
+
+프론트엔드 (`public/static/app.js`):
+- `_scLoadAgendasTab` 에서 `attendees` 배열 추출 추가
+- 투표 활성 안건 카드 의결 표시 아래에 **투표현황 블록** 추가:
+
+```
+📊 투표현황
+  ✅ 투표완료: 3명
+  ⏳ 미투표:   홍길동, 이영희       ← 황색 배경 (미투표자 있을 때)
+```
+- 전원 완료 시 `없음 (전원 완료)` — 초록 배경
+- 참석자(`attendees`) 기준으로 미투표자 계산 (user_id 없는 비회원 참석자 제외)
+
+**수정 파일**: `public/static/app.js`, `src/nas-routes/safety-committee.ts`, `src/index.tsx`
+**커밋**: `174248c` / 버전 `v=20260804i`
+
+---
+
+### 세션 140 전체 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB)
+- NAS 반영 및 사용자 확인 ✅
+

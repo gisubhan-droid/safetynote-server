@@ -2,6 +2,84 @@
 
 ---
 
+## [FEAT-VOTE-STATUS] 안보위 안건 투표현황 표시 (세션 140)
+
+> **대상**: `_scLoadAgendasTab` (app.js) + `GET /meetings/:id`, `GET /meeting/:id` (safety-committee.ts)
+> **작업일**: 2026-08-04
+> **유형**: 🟢 FEATURE — 투표 활성 안건에 투표완료 수 및 미투표자 이름 표시
+
+### 요구사항
+- 안보위 안건 탭에서 투표 활성 안건 카드에 "누가 투표했는지 / 누가 안 했는지" 즉시 확인 가능
+- 표시 예: `✅ 투표완료: 3명` / `⏳ 미투표: 홍길동, 이영희`
+
+### 수정 내용
+
+**백엔드 `src/nas-routes/safety-committee.ts`**
+
+| 엔드포인트 | 추가 내용 |
+|-----------|---------|
+| `GET /meetings/:id` | 각 안건에 `votes: [{ user_id, voter_name, vote, voted_at }]` 배열 추가 |
+| `GET /meeting/:id` | 동일 (하위 호환 단수 경로) |
+
+- `safety_committee_votes` JOIN `users` — meeting_id 기준 일괄 조회 후 agenda_id로 그룹핑
+- 구버전 NAS (테이블 없음) 대응: `try/catch` + 빈 배열 폴백
+
+**프론트엔드 `public/static/app.js`**
+
+- `_scLoadAgendasTab` 에 `attendees` 배열 추출 추가
+- 의결 표시 아래 **투표현황 블록** 신규 추가:
+  - `✅ 투표완료: N명` — votes 배열 길이
+  - `⏳ 미투표: 이름1, 이름2, ...` — attendees 중 votes에 없는 사람
+  - 전원 완료 시 → `없음 (전원 완료)` 초록 배경
+  - 미투표자 있을 시 → 황색 배경
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.46s)
+- NAS 반영 확인 ✅
+
+### 커밋
+- `174248c` — feat: [FEAT-VOTE-STATUS] 안보위 안건 투표현황 표시 (투표완료 수 + 미투표자 이름)
+- 버전: `v=20260804i`
+
+---
+
+## [FIX-PRINT-DATE-LABEL] 교육일지·서명지 출력 헤더 '작성일' → '출력일' 변경 (세션 140)
+
+> **대상**: `printEduLog`, `printEduSign` (app.js)
+> **작업일**: 2026-08-04
+> **유형**: 🔴 BUG — 출력물 상단 날짜 레이블이 "작성일"로 표시되어 혼동 유발
+
+### 원인
+`const today = new Date()` 로 인쇄 시점 오늘 날짜를 가져오면서 레이블을 `작성일:` 로 표기 →
+인쇄일(출력일)임에도 "작성일"로 표시되어 실제 문서 작성일과 혼동
+
+### 전수 체크 결과
+
+| 출력 함수 | 레이블 | 문제 여부 |
+|----------|--------|---------|
+| `printEduLog` (교육일지) | `작성일` → **`출력일`** | ⚠️ 수정 |
+| `printEduSign` (서명지) | `작성일` → **`출력일`** | ⚠️ 수정 |
+| `_tbmPrint` (TBM) | 이미 `출력일` | ✅ 정상 |
+| 물량통계 출력 | 이미 `인쇄일` | ✅ 정상 |
+| 안보위 운영규칙·조직도·회의록 | 이미 `출력일` | ✅ 정상 |
+
+### 수정 내용
+- `printEduLog` — 인쇄용 fixed 헤더 + 화면 미리보기 헤더 2곳: `작성일:` → `출력일:`
+- `printEduSign` — 인쇄용 fixed 헤더 + 화면 미리보기 헤더 2곳: `작성일:` → `출력일:`
+- 총 4곳 수정, 날짜 값(`today = new Date()`)은 그대로 유지
+
+### 검증
+- `grep "작성일" public/static/app.js` → **0건** ✅
+- `node --check` ✅ / `npm run build` ✅
+- NAS 반영 확인 ✅
+
+### 커밋
+- `8ec34c0` — fix: [FIX-PRINT-DATE-LABEL] 교육일지·서명지 출력 헤더 '작성일' → '출력일' 레이블 변경
+- 버전: `v=20260804h`
+
+---
+
 ## [FEAT-PDF-FILENAME] 인쇄 PDF 저장 시 문서 파일명 자동 설정 (세션 139)
 
 > **대상**: `_openPrintOverlay` + 전체 출력 함수 (TBM·교육·서명지·회의록·조직도)

@@ -2,6 +2,90 @@
 
 ---
 
+## [BUG-211] 안드로이드 앱 터치 스크롤 불가 — #page-content overflow:hidden 전역 적용 (세션 141)
+
+> **대상**: `public/static/style.css` — FEAT-210 CSS 부작용
+> **작업일**: 2026-08-06
+> **유형**: 🔴 BUG — FEAT-210(e4cdedd) 적용 이후 모든 페이지에서 터치 스크롤 차단
+
+### 증상
+- 안드로이드 앱 접속 시 내 작업목록 등 모든 화면에서 터치 스크롤 동작 안 함
+- 발생 시점: 2026-08-06 오후 (FEAT-210 NAS 반영 시점과 일치)
+
+### 원인
+
+FEAT-210 적용 시 `style.css`에 추가된 `#page-content { overflow: hidden }` 이
+**전역 CSS**로 작용하여 site-map 페이지 외 **모든 페이지**의 공통 컨테이너에 `overflow:hidden` 적용.
+
+```css
+/* ❌ 문제 코드 (FEAT-210 e4cdedd) */
+#page-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;  /* ← 모든 페이지 터치 스크롤 차단 원인 */
+}
+```
+
+**추가 발견**: 모바일 미디어 쿼리 `@media (max-width:768px) { .main-content { height:100dvh } }` 도
+`.site-map-mode` 조건 없이 전역 적용 → 함께 수정.
+
+| 항목 | 내용 |
+|------|------|
+| **JS `overflowY` 문제 여부** | JS line 45650 `pageContent.style.overflowY='hidden'` 은 site-map 진입 시만 적용, 이탈 시 line 3205에서 `''` 초기화 → **문제 없음** |
+| **CSS 문제** | `#page-content { overflow:hidden }` 항상 적용 → **전체 페이지 스크롤 차단** |
+
+### 수정 내용 (`public/static/style.css`)
+
+**수정 1 — `#page-content` overflow:hidden 제거 + `.site-map-mode` 전용 규칙 추가**
+
+```css
+/* 변경 전 */
+#page-content {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  overflow: hidden;  /* ← 제거 */
+}
+
+/* 변경 후 */
+#page-content {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  /* overflow:hidden 제거 */
+}
+.main-content.site-map-mode #page-content {
+  overflow: hidden;  /* site-map 전용 */
+}
+```
+
+**수정 2 — 모바일 미디어 쿼리 `height:100dvh` 스코프 제한**
+
+```css
+/* 변경 전 */
+@media (max-width: 768px) {
+  .main-content { height: 100dvh; }  /* ← 전역 적용 */
+}
+
+/* 변경 후 */
+@media (max-width: 768px) {
+  .main-content.site-map-mode { height: 100dvh; }  /* site-map 전용 */
+}
+```
+
+### 충돌 체크
+- JS line 3208 `_mc.classList.remove('site-map-mode')` 이탈 시 클래스 제거 → CSS 규칙도 함께 해제 ✅
+- JS line 45650 `pageContent.style.overflowY='hidden'` 인라인 스타일 → site-map 진입 시만, 이탈 시 초기화 ✅
+- `.main-content.site-map-mode { height:100vh }` 기존 규칙 유지 (수정 없음) ✅
+- `#siteMapRoot`, `#leafletMap`, `#siteMapList` 규칙 영향 없음 ✅
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 2.39s)
+
+### 커밋
+- (기록 예정) — fix: [BUG-211] 안드로이드 터치 스크롤 불가 — style.css #page-content/모바일 overflow:hidden 전역적용 수정 (v=20260806c)
+
+---
+
 ## [FEAT-210] 현장위치지도 레이아웃 반응형 + 기본값 변경 (세션 141)
 
 > **대상**: `renderSiteMapPage` (app.js) + style.css 현장위치지도 섹션

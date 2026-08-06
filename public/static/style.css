@@ -1392,6 +1392,11 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* overflow:hidden 제거 — site-map 전용 스코프(.site-map-mode #page-content)로 이동
+     BUG-211: 전역 overflow:hidden이 모든 페이지 터치 스크롤을 차단하는 문제 수정 */
+}
+/* site-map 전용: .site-map-mode 클래스 부여 시에만 overflow 차단 */
+.main-content.site-map-mode #page-content {
   overflow: hidden;
 }
 /* site-map 루트 컨테이너: page-content padding 안에서 남은 높이 전부 사용 */
@@ -1416,7 +1421,10 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 }
 /* 모바일(≤768px): 지도 높이 축소 + 목록 높이 축소 */
 @media (max-width: 768px) {
-  .main-content { height: 100dvh; }   /* iOS Safari 주소창 고려 dynamic vh */
+  /* BUG-211: .main-content 전역 height:100dvh 제거 → site-map-mode 전용으로 스코프 제한
+     기존: .main-content { height:100dvh } — 모바일 모든 페이지 스크롤 차단
+     수정: .main-content.site-map-mode만 적용 */
+  .main-content.site-map-mode { height: 100dvh; }  /* iOS Safari 주소창 고려 dynamic vh */
   #leafletMap   { min-height: 220px; }
   #siteMapList  { max-height: 140px; }
 }

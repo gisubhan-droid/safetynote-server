@@ -46023,7 +46023,21 @@ async function loadSiteMapMarkers(map) {
             displayDate = _toKSTDateTime(wlG.date || '');
             gpsSource = 'worklog';
           } else {
-            // GPS 기록 없음 — 목록에만 추가
+            // GPS 기록 없음 — 우선순위 3순위: confirmed_address(최종주소) → 4순위: work_order_address(작업지시 주소)
+            // /geocode/forward API로 주소 → 좌표 변환 시도 (BUG-209 수정)
+            const addrForGeo = t.confirmed_address || t.work_order_address || '';
+            if (addrForGeo) {
+              try {
+                const geoRes = await API.get(`/geocode/forward?address=${encodeURIComponent(addrForGeo)}`);
+                const geoData = geoRes.data || {};
+                if (geoData.lat && geoData.lon && !isNaN(geoData.lat) && !isNaN(geoData.lon)) {
+                  lat = parseFloat(geoData.lat);
+                  lon = parseFloat(geoData.lon);
+                  addr = addrForGeo;
+                  gpsSource = t.confirmed_address ? 'confirmed_address' : 'work_order_address';
+                }
+              } catch(_) { /* geocoding 실패 시 noGps 처리로 낙하 */ }
+            }
             displayDate = _toKSTDateTime(t.planned_date || t.created_at || '');
           }
 
@@ -46031,13 +46045,17 @@ async function loadSiteMapMarkers(map) {
           const supervisor = t.supervisor_name || '';
 
           if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
-            // GPS 없는 건은 목록에만 추가
+            // GPS + 주소 geocoding 모두 실패 — 목록에만 추가
             listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
               author: supervisor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: t.id || null });
             continue;
           }
 
-          const gpsLabel = gpsSource === 'worklog' ? `${statusLabel}(일지GPS)` : statusLabel;
+          // gpsSource별 아이콘 레이블 결정
+          const _addrSourceLabel = gpsSource === 'confirmed_address' ? '최종주소' : '작업지시주소';
+          const gpsLabel = gpsSource === 'worklog' ? `${statusLabel}(일지GPS)`
+            : (gpsSource === 'confirmed_address' || gpsSource === 'work_order_address') ? `${statusLabel}(${_addrSourceLabel})`
+            : statusLabel;
           const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, gpsLabel) }).addTo(map);
           marker.bindPopup(`
             <div style="min-width:200px;font-size:13px;">
@@ -46054,6 +46072,8 @@ async function loadSiteMapMarkers(map) {
               </div>
               ${gpsSource === 'worklog' ? `<div style="color:#10B981;font-size:10px;margin-top:3px">
                 <i class="fas fa-info-circle mr-1"></i>작업일지 GPS 기준
+              </div>` : (gpsSource === 'confirmed_address' || gpsSource === 'work_order_address') ? `<div style="color:#F59E0B;font-size:10px;margin-top:3px">
+                <i class="fas fa-map-pin mr-1"></i>${gpsSource === 'confirmed_address' ? '최종주소' : '작업지시주소'} 기반 위치 (참고용)
               </div>` : ''}
               <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
                 <button onclick="showMapModalByCoords(${lat}, ${lon}, '${name.replace(/'/g, '')}', '${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>
@@ -46145,7 +46165,21 @@ async function loadSiteMapMarkers(map) {
             displayDate = _toKSTDateTime(wlGCo.date || '');
             gpsSource = 'worklog';
           } else {
-            // GPS 기록 없음 — 목록에만 추가
+            // GPS 기록 없음 — 우선순위 3순위: confirmed_address(최종주소) → 4순위: work_order_address(작업지시 주소)
+            // /geocode/forward API로 주소 → 좌표 변환 시도 (BUG-209 수정)
+            const addrForGeoCo = t.confirmed_address || t.work_order_address || '';
+            if (addrForGeoCo) {
+              try {
+                const geoResCo = await API.get(`/geocode/forward?address=${encodeURIComponent(addrForGeoCo)}`);
+                const geoDataCo = geoResCo.data || {};
+                if (geoDataCo.lat && geoDataCo.lon && !isNaN(geoDataCo.lat) && !isNaN(geoDataCo.lon)) {
+                  lat = parseFloat(geoDataCo.lat);
+                  lon = parseFloat(geoDataCo.lon);
+                  addr = addrForGeoCo;
+                  gpsSource = t.confirmed_address ? 'confirmed_address' : 'work_order_address';
+                }
+              } catch(_) { /* geocoding 실패 시 noGps 처리로 낙하 */ }
+            }
             displayDate = _toKSTDateTime(t.planned_date || t.created_at || '');
           }
 
@@ -46153,13 +46187,18 @@ async function loadSiteMapMarkers(map) {
           const supervisor = t.supervisor_name || '';
 
           if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
-            // GPS 없는 건은 목록에만 추가
+            // GPS + 주소 geocoding 모두 실패 — 목록에만 추가
             listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
               author: supervisor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: t.id || null });
             continue;
           }
 
-          const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, doneLabel) }).addTo(map);
+          // gpsSource별 아이콘 레이블 결정
+          const _addrSourceLabelCo = gpsSource === 'confirmed_address' ? '최종주소' : '작업지시주소';
+          const doneLabelFinal = gpsSource === 'worklog' ? `${doneLabel}(일지GPS)`
+            : (gpsSource === 'confirmed_address' || gpsSource === 'work_order_address') ? `${doneLabel}(${_addrSourceLabelCo})`
+            : doneLabel;
+          const marker = L.marker([lat, lon], { icon: makeIcon(meta.color, doneLabelFinal) }).addTo(map);
           marker.bindPopup(`
             <div style="min-width:200px;font-size:13px;">
               <div style="font-weight:700;color:${meta.color};margin-bottom:4px">${doneLabel}</div>
@@ -46175,6 +46214,8 @@ async function loadSiteMapMarkers(map) {
               </div>
               ${gpsSource === 'worklog' ? `<div style="color:#10B981;font-size:10px;margin-top:3px">
                 <i class="fas fa-info-circle mr-1"></i>작업일지 GPS 기준
+              </div>` : (gpsSource === 'confirmed_address' || gpsSource === 'work_order_address') ? `<div style="color:#F59E0B;font-size:10px;margin-top:3px">
+                <i class="fas fa-map-pin mr-1"></i>${gpsSource === 'confirmed_address' ? '최종주소' : '작업지시주소'} 기반 위치 (참고용)
               </div>` : ''}
               <div style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px;display:flex;gap:6px">
                 <button onclick="showMapModalByCoords(${lat}, ${lon}, '${name.replace(/'/g, '')}', '${addr.replace(/'/g, '')}')" style="flex:1;padding:5px 0;border-radius:7px;border:1.5px solid #685182;background:#685182;color:#fff;font-size:11px;font-weight:700;cursor:pointer"><i class="fas fa-map-marked-alt mr-1"></i>지도앱 열기</button>

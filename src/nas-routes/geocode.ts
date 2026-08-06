@@ -39,6 +39,64 @@ app.get('/kakaomap-sdk', async (c) => {
   }
 })
 
+// GET /forward — 순방향 지오코딩 프록시 (주소 → 좌표, 카카오 우선 + Nominatim fallback)
+// 용도: 현장위치 지도에서 GPS 없는 작업의 confirmed_address / work_order_address → 마커 표시
+app.get('/forward', async (c) => {
+  const user = getUser(c)
+  if (!user) return c.json({ error: '인증 필요' }, 401)
+
+  const { address } = c.req.query()
+  if (!address || !address.trim()) return c.json({ error: 'address 필요' }, 400)
+
+  const kakaoKey = getSetting('kakao_rest_api_key') || ''
+
+  // ── 카카오 순방향 지오코딩 ─────────────────────────────────────────────────
+  if (kakaoKey) {
+    try {
+      const kakaoUrl = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(address)}&size=1`
+      const kakaoRes = await fetch(kakaoUrl, {
+        headers: { Authorization: `KakaoAK ${kakaoKey}` }
+      })
+      if (kakaoRes.ok) {
+        const data: any = await kakaoRes.json()
+        const doc = data?.documents?.[0]
+        if (doc) {
+          const lat = parseFloat(doc.y)
+          const lon = parseFloat(doc.x)
+          const displayAddr = doc.road_address?.address_name || doc.address?.address_name || address
+          if (!isNaN(lat) && !isNaN(lon)) {
+            return c.json({ lat, lon, address: displayAddr, source: 'kakao' })
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[순방향지오코딩] 카카오 실패, Nominatim fallback:', e)
+    }
+  }
+
+  // ── Nominatim fallback ───────────────────────────────────────────────────
+  try {
+    const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&accept-language=ko&countrycodes=kr`
+    const nomRes = await fetch(nomUrl, { headers: { 'User-Agent': 'SafetyNoteApp/1.0' } })
+    if (nomRes.ok) {
+      const data: any = await nomRes.json()
+      const item = Array.isArray(data) ? data[0] : null
+      if (item && item.lat && item.lon) {
+        const lat = parseFloat(item.lat)
+        const lon = parseFloat(item.lon)
+        if (!isNaN(lat) && !isNaN(lon)) {
+          return c.json({ lat, lon, address: item.display_name || address, source: 'nominatim' })
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[순방향지오코딩] Nominatim 실패:', e)
+  }
+
+  // 주소로 좌표 변환 실패
+  return c.json({ lat: null, lon: null, address, source: 'failed' }, 404)
+})
+
 // GET /reverse — 역지오코딩 프록시 (카카오 우선, Nominatim fallback)
 app.get('/reverse', async (c) => {
   const user = getUser(c)

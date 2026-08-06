@@ -3195,7 +3195,7 @@ function navigateTo(page) {
 
   const content = document.getElementById('page-content');
 
-  // site-map 이탈 시: page-content 스타일 리셋 + ResizeObserver 해제
+  // site-map 이탈 시: page-content 스타일 리셋 + main-content .site-map-mode 해제 + ResizeObserver 해제
   if (page !== 'site-map') {
     content.style.display = '';
     content.style.flexDirection = '';
@@ -3203,6 +3203,9 @@ function navigateTo(page) {
     content.style.height = '';
     content.style.boxSizing = '';
     content.style.overflowY = '';
+    // 방안 A: main-content 높이 고정 해제 → 다른 페이지는 정상 스크롤 복원
+    const _mc = document.querySelector('.main-content');
+    if (_mc) _mc.classList.remove('site-map-mode');
     if (window._siteMapResizeObserver) {
       window._siteMapResizeObserver.disconnect();
       window._siteMapResizeObserver = null;
@@ -45515,9 +45518,9 @@ let _kakaoMapInstance = null;  // 카카오맵 인스턴스 재사용
 async function renderSiteMapPage(container) {
   // ── 전역 필터 초기화 (첫 진입: 오늘(KST), 탭: 위험성체크) ──
   const _today = getKSTDate(); // KST 기준 오늘
-  if (window._smTab      === undefined) window._smTab      = 'risk';
-  // 기본 날짜 범위: 30일 (위험성체크/TBM 과거 데이터 표시를 위해)
-  if (window._smDateFrom === undefined) { const d = getKSTNow(); d.setUTCDate(d.getUTCDate()-30); window._smDateFrom = d.toISOString().split('T')[0]; }
+  if (window._smTab      === undefined) window._smTab      = 'working'; // 기본: 진행 탭
+  // 기본 날짜: 오늘 (진행중 작업 즉시 조회)
+  if (window._smDateFrom === undefined) window._smDateFrom = _today;
   if (window._smDateTo   === undefined) window._smDateTo   = _today;  // 기본: 오늘
   if (window._smUserId   === undefined) window._smUserId   = '';   // 전체 사용자
   if (window._smUserList === undefined) window._smUserList = [];   // 사용자 목록 캐시
@@ -45617,11 +45620,12 @@ async function renderSiteMapPage(container) {
         </div>
       </div>
 
-      <!-- ③ 지도 (화면 70% 높이 고정) -->
-      <div id="leafletMap" style="width:100%;height:175vh;min-height:750px;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;flex-shrink:0;"></div>
+      <!-- ③ 지도 — flex:1 로 남은 공간 자동 채움 (방안 A: 브라우저 창 크기 반응형) -->
+      <!-- height/min-height 는 style.css #leafletMap 에서 제어 -->
+      <div id="leafletMap" style="width:100%;border-radius:12px;overflow:hidden;background:#f3f4f6;position:relative;z-index:0;"></div>
 
       <!-- ④ 범례 -->
-      <div class="flex gap-4 mt-3 text-sm flex-wrap" id="siteMapLegend" style="flex-shrink:0">
+      <div class="flex gap-4 mt-2 text-sm flex-wrap" id="siteMapLegend" style="flex-shrink:0">
         ${TAB_DEFS.map(t => `
           <span class="flex items-center gap-1" style="color:#6B7280">
             <span style="display:inline-block;width:10px;height:10px;background:${t.color};border-radius:50%"></span>
@@ -45632,20 +45636,25 @@ async function renderSiteMapPage(container) {
         </span>` : ''}
       </div>
 
-      <!-- ⑤ 위치 목록 (스크롤 가능 영역) -->
-      <div id="siteMapList" class="mt-3 space-y-2" style="overflow-y:auto;max-height:40vh;padding-bottom:16px;flex-shrink:0"></div>
+      <!-- ⑤ 위치 목록 (고정 높이 스크롤 영역) -->
+      <div id="siteMapList" class="mt-2 space-y-2" style="overflow-y:auto;padding-bottom:8px;flex-shrink:0;"></div>
     </div>
   `;
 
-  // page-content: 현장위치 지도는 지도 70vh + 리스트 스크롤 구조 → overflow-y:auto
+  // page-content: 방안 A — flex column 체인 유지 + main-content.site-map-mode 활성화
+  // .site-map-mode: height:100vh + overflow:hidden → flex 체인으로 지도 높이 자동 계산
   const pageContent = document.getElementById('page-content');
   if (pageContent) {
-    pageContent.style.display = 'block';
-    pageContent.style.overflowY = 'auto';
-    pageContent.style.flex = '';
-    pageContent.style.height = 'auto';
+    pageContent.style.display = 'flex';
+    pageContent.style.flexDirection = 'column';
+    pageContent.style.overflowY = 'hidden'; // 내부 siteMapList만 스크롤
+    pageContent.style.flex = '1';
+    pageContent.style.height = '0';         // flex child가 부모 높이를 초과하지 않도록
     pageContent.style.boxSizing = 'border-box';
   }
+  // main-content에 site-map-mode 클래스 부여 → height:100vh + overflow:hidden 적용
+  const _mainContent = document.querySelector('.main-content');
+  if (_mainContent) _mainContent.classList.add('site-map-mode');
 
   await loadLeafletMap();
 }

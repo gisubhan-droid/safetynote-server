@@ -2,6 +2,65 @@
 
 ---
 
+## [BUG-209] 현장위치지도 진행·완료탭 마커 미표시 수정 (세션 141)
+
+> **대상**: `loadSiteMapMarkers` 진행탭·완료탭 (app.js) + `GET /geocode/forward` 신규 (geocode.ts)
+> **작업일**: 2026-08-06
+> **유형**: 🔴 BUG — GPS 없는 작업이 목록에는 표시되나 지도 마커가 표시되지 않음
+
+### 원인
+
+`tasks.gps_lat/lon` 없고 `work_logs` GPS fallback도 없을 때,  
+`tasks.confirmed_address`(최종주소) · `tasks.work_order_address`(작업지시주소)가 존재해도  
+geocoding 없이 바로 `noGps:true` 처리 → 지도 마커 미표시
+
+- `/tasks API`는 이미 `SELECT t.*`로 두 주소 필드를 반환하고 있었음
+- 순방향 지오코딩(`/geocode/forward`) API가 존재하지 않아 클라이언트에서 활용 불가
+
+### 수정 내용
+
+**백엔드 `src/nas-routes/geocode.ts`**
+
+| 엔드포인트 | 추가 내용 |
+|-----------|---------|
+| `GET /geocode/forward?address=` | 주소→좌표 변환 (카카오 `search/address.json` 우선 + Nominatim fallback) |
+
+- 반환: `{ lat, lon, address, source }` (실패 시 `source:'failed'`, 404)
+- `GET /geocode/reverse`와 동일한 인증·키 처리 패턴
+
+**프론트엔드 `public/static/app.js`**
+
+마커 표시 우선순위 (수정 후):
+1. `tasks.gps_lat/lon` (GPS 좌표) ← 기존 유지
+2. `work_logs` GPS fallback ← 기존 유지
+3. **`confirmed_address`(최종주소) → `/geocode/forward` 호출** ← 신규
+4. **`work_order_address`(작업지시주소) → `/geocode/forward` 호출** ← 신규
+5. 모두 실패 → `noGps:true` 목록만 표시
+
+| 탭 | 적용 위치 | 처리 |
+|----|---------|------|
+| 진행탭 (`filter==='working'`) | else 블록 (line ~46025) | `addrForGeo` geocoding 후 마커 생성 |
+| 완료탭 (`filter==='completed'`) | else 블록 (line ~46147) | 동일 패턴 (`addrForGeoCo` 변수명) |
+
+- 팝업에 위치 출처 안내 추가: 황색 `"최종주소 기반 위치 (참고용)"` / `"작업지시주소 기반 위치 (참고용)"`
+- 아이콘 레이블에도 `(최종주소)` / `(작업지시주소)` 구분 표시
+
+### 충돌 체크 결과
+- `/api/geocode` 라우트: `node-server.ts` 기 등록 — `/forward` 자동 포함 ✅
+- 기존 `/geocode/reverse`: line 753 한 곳만 사용, 충돌 없음 ✅
+- `confirmed_address` / `work_order_address` 필드: `SELECT t.*`로 이미 반환 중 ✅
+- TBM·위험성체크·현장점검 탭: 별도 로직, 영향 없음 ✅
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 5.56s)
+
+### 커밋
+- `2ad95db` — feat: [BUG-209] /geocode/forward 순방향지오코딩 API 추가 — 주소→좌표 변환 (카카오 REST + Nominatim fallback)
+- `5e363a1` — fix: [BUG-209] 현장위치지도 진행·완료탭 마커 미표시 수정 — GPS없을 때 최종주소→작업지시주소 geocoding 마커 표시 (v=20260806a)
+
+---
+
 ## [FEAT-VOTE-STATUS] 안보위 안건 투표현황 표시 (세션 140)
 
 > **대상**: `_scLoadAgendasTab` (app.js) + `GET /meetings/:id`, `GET /meeting/:id` (safety-committee.ts)

@@ -21,8 +21,11 @@
 
 ---
 
-> 최종 업데이트: 2026-08-04 (세션 140 — FEAT-VOTE-STATUS: 안보위 투표현황 표시 + FIX-PRINT-DATE-LABEL: 출력일 레이블)
-> **GitHub 최신 (safetynote-server): `174248c`** — feat: [FEAT-VOTE-STATUS] 안보위 안건 투표현황 표시
+> 최종 업데이트: 2026-08-06 (세션 141 — BUG-209: 현장위치지도 진행·완료탭 마커 미표시 수정)
+> **GitHub 최신 (safetynote-server): `5e363a1`** — fix: [BUG-209] 현장위치지도 진행·완료탭 마커 미표시 수정
+> **이전 커밋 (safetynote-server): `2ad95db`** — feat: [BUG-209] /geocode/forward 순방향지오코딩 API 추가
+> **이전 커밋 (safetynote-server): `91f9e74`** — docs: [세션140] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 174248c 반영
+> **이전 커밋 (safetynote-server): `174248c`** — feat: [FEAT-VOTE-STATUS] 안보위 안건 투표현황 표시
 > **이전 커밋 (safetynote-server): `8ec34c0`** — fix: [FIX-PRINT-DATE-LABEL] 교육일지·서명지 출력 헤더 '작성일' → '출력일'
 > **이전 커밋 (safetynote-server): `923f65f`** — fix: [FIX-ORG-PDF-2PAGE] 조직도 PDF 저장 2페이지 문제
 > **이전 커밋 (safetynote-server): `5d6a3da`** — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정
@@ -12110,6 +12113,51 @@ PDF 저장 시 파일명이 항상 `제목없음.pdf`로 저장되어 문서 식
 
 ### 커밋
 - `a6ccc03` — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정
+
+---
+
+## 세션 141 (2026-08-06) — BUG-209: 현장위치지도 진행·완료탭 마커 미표시 수정
+
+### 작업: BUG-209 — GPS 없는 작업 마커 미표시 수정
+
+**배경**
+현장위치지도 진행중/완료 탭에서 작업 목록은 표시되나 "위치 미기록 (GPS미기록)"으로 지도 마커가 없음.
+작업 상세에서는 `confirmed_address`(최종주소)와 `work_order_address`(작업지시주소)가 존재하나 활용되지 않음.
+
+**원인 분석**
+- BUG-204/205에서 `/tbm API → /tasks API` 교체 시 GPS 처리 흐름이 GPS 좌표 의존으로 고착
+- `tasks.gps_lat/lon` + `work_logs` GPS fallback 모두 없으면 바로 `noGps:true` 처리
+- 순방향 지오코딩 API(`/geocode/forward`)가 미존재 → 주소를 좌표로 변환할 수단 없음
+- `/tasks API`는 `SELECT t.*`로 `confirmed_address`, `work_order_address` 이미 반환 중 → 프론트만 미활용
+
+**수정 내용**
+
+`src/nas-routes/geocode.ts` — `GET /forward?address=` 신규 추가
+- 카카오 `search/address.json` 우선 → Nominatim fallback
+- 기존 `/reverse` 엔드포인트와 동일 패턴(인증, 키 처리)
+- `node-server.ts`의 `app.route('/api/geocode', geocodeRoutes)` 기 등록 → 자동 포함
+
+`public/static/app.js` — 진행탭·완료탭 마커 생성 로직 수정
+
+마커 표시 우선순위 (수정 후):
+1. `tasks.gps_lat/lon` (GPS 좌표) — 기존 유지
+2. `work_logs` GPS fallback — 기존 유지  
+3. `confirmed_address`(최종주소) → `/geocode/forward` 호출 — **신규**
+4. `work_order_address`(작업지시주소) → `/geocode/forward` 호출 — **신규**
+5. 모두 실패 → `noGps:true` 목록만 표시
+
+팝업 UI: 주소기반 마커에 황색 안내문 `"최종주소 기반 위치 (참고용)"` 추가
+아이콘 레이블: `🟢 진행(최종주소)` / `✅ 작업완료(작업지시주소)` 형태로 출처 표시
+
+`src/index.tsx` — 버전 `v=20260804i` → `v=20260806a`
+
+**검증**
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 5.56s)
+
+**커밋**
+- `2ad95db` — feat: [BUG-209] /geocode/forward 순방향지오코딩 API 추가
+- `5e363a1` — fix: [BUG-209] 현장위치지도 진행·완료탭 마커 미표시 수정 (v=20260806a)
 
 ---
 

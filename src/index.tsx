@@ -372,7 +372,7 @@ app.get('*', (c) => {
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260806a"></script>
+  <script src="/static/app.js?v=20260806b"></script>
 </body>
 </html>`)
 })

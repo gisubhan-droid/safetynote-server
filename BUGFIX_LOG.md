@@ -2,6 +2,63 @@
 
 ---
 
+## [FEAT-210] 현장위치지도 레이아웃 반응형 + 기본값 변경 (세션 141)
+
+> **대상**: `renderSiteMapPage` (app.js) + style.css 현장위치지도 섹션
+> **작업일**: 2026-08-06
+> **유형**: 🟢 FEATURE — 지도 화면 크기 브라우저 창 자동 조절 + 기본 조회 진행탭·오늘
+
+### 요구사항
+1. 현장위치지도 지도 영역이 `height:175vh` 고정으로 작업 목록이 화면 아래로 밀려 스크롤해야 보이는 문제 개선
+2. 접속 시 기본 조회: 탭=진행, 날짜=오늘
+
+### 수정 내용
+
+**레이아웃 방안 A (브라우저 창 높이 반응형)**
+
+| 구성 요소 | 기존 | 변경 |
+|---------|------|------|
+| 지도 `#leafletMap` | `height:175vh; flex-shrink:0` (고정) | `flex:1; min-height:260px` (나머지 공간 자동 채움) |
+| 목록 `#siteMapList` | `max-height:40vh` | `max-height:180px` (CSS 제어, 고정 영역) |
+| `main-content` | `min-height:100vh` (항상) | `.site-map-mode` 클래스 시에만 `height:100vh; overflow:hidden` |
+| `page-content` | `display:block; height:auto` (JS 덮어쓰기) | `display:flex; flex-direction:column; height:0` (flex 체인 유지) |
+
+**CSS 격리 전략 (충돌 방지)**
+- `.main-content.site-map-mode` — site-map 진입 시만 활성화, 이탈 시 자동 제거
+- 다른 페이지는 기존 `min-height:100vh` 그대로 → 스크롤 정상 작동
+
+**기본값 변경**
+
+| 항목 | 기존 | 변경 |
+|------|------|------|
+| 기본 탭 | `risk` (위험성체크) | `working` (진행) |
+| 기본 날짜 from | 오늘 -30일 | 오늘 |
+| 기본 날짜 to | 오늘 | 오늘 (동일) |
+
+**반응형 breakpoint**
+
+| 화면 | 지도 최소 높이 | 목록 최대 높이 |
+|------|-------------|-------------|
+| 모바일 ≤768px | 220px | 140px |
+| 태블릿 769~1024px | 300px | 160px |
+| 기본 (PC) | 260px | 180px |
+| 대형 ≥1440px | 260px | 220px |
+
+### 충돌 체크
+- style.css `#siteMapRoot`, `#leafletMap` 기존 flex 정의 이미 존재 → 확장 적용 ✅
+- 이탈 리셋 코드 (navigateTo line ~3199) 이미 모든 인라인 스타일 초기화 → `.site-map-mode` 제거 코드 추가로 완전 격리 ✅
+- 다른 페이지 `main-content` 영향 없음 (클래스 미부여 시 기존 동작 유지) ✅
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.68s)
+
+### 커밋
+- `bbc7ad8` — feat: [FEAT-210] 현장위치지도 레이아웃 방안A — 브라우저 창 높이 반응형 + .site-map-mode CSS 격리
+- `e4cdedd` — feat: [FEAT-210] 현장위치지도 기본값 진행탭·오늘 변경 + 지도 flex:1 반응형 레이아웃 (v=20260806b)
+
+---
+
 ## [BUG-209] 현장위치지도 진행·완료탭 마커 미표시 수정 (세션 141)
 
 > **대상**: `loadSiteMapMarkers` 진행탭·완료탭 (app.js) + `GET /geocode/forward` 신규 (geocode.ts)

@@ -21,8 +21,11 @@
 
 ---
 
-> 최종 업데이트: 2026-08-06 (세션 141 — BUG-209: 현장위치지도 진행·완료탭 마커 미표시 수정)
-> **GitHub 최신 (safetynote-server): `5e363a1`** — fix: [BUG-209] 현장위치지도 진행·완료탭 마커 미표시 수정
+> 최종 업데이트: 2026-08-06 (세션 141 — FEAT-210: 현장위치지도 반응형 레이아웃 + 기본값 변경)
+> **GitHub 최신 (safetynote-server): `e4cdedd`** — feat: [FEAT-210] 현장위치지도 기본값 진행탭·오늘 + 반응형 레이아웃 (v=20260806b)
+> **이전 커밋 (safetynote-server): `bbc7ad8`** — feat: [FEAT-210] 현장위치지도 방안A CSS 격리
+> **이전 커밋 (safetynote-server): `2a8c72d`** — docs: [세션141] BUG-209 문서
+> **이전 커밋 (safetynote-server): `5e363a1`** — fix: [BUG-209] 현장위치지도 진행·완료탭 마커 미표시 수정
 > **이전 커밋 (safetynote-server): `2ad95db`** — feat: [BUG-209] /geocode/forward 순방향지오코딩 API 추가
 > **이전 커밋 (safetynote-server): `91f9e74`** — docs: [세션140] BUGFIX_LOG + PROJECT_HISTORY 커밋 해시 174248c 반영
 > **이전 커밋 (safetynote-server): `174248c`** — feat: [FEAT-VOTE-STATUS] 안보위 안건 투표현황 표시
@@ -12116,7 +12119,28 @@ PDF 저장 시 파일명이 항상 `제목없음.pdf`로 저장되어 문서 식
 
 ---
 
-## 세션 141 (2026-08-06) — BUG-209: 현장위치지도 진행·완료탭 마커 미표시 수정
+## 세션 141 (2026-08-06) — BUG-209 마커 미표시 수정 + FEAT-210 반응형 레이아웃·기본값 변경
+
+### 작업 2: FEAT-210 — 현장위치지도 레이아웃 반응형 + 기본값 변경
+
+**요구사항**
+- 지도 영역이 `height:175vh`로 고정 → 브라우저 창 크기에 맞게 자동 조절
+- 작업 목록이 스크롤 없이 지도 아래에 항상 보이도록
+- 접속 기본값: 탭=진행, 날짜=오늘
+
+**수정 방식 (방안 A)**
+- `style.css`: `.main-content.site-map-mode { height:100vh; overflow:hidden }` — 다른 페이지 격리
+- `style.css`: `#leafletMap { flex:1; min-height:260px }` — 남은 공간 자동 채움
+- `style.css`: `#siteMapList { max-height:180px }` + 반응형 breakpoint 3단계
+- `app.js`: site-map 진입 시 `.site-map-mode` 추가, 이탈 시 제거
+- `app.js`: 지도 인라인 `height:175vh` 제거 → CSS에 위임
+- `app.js`: `_smTab='working'`, `_smDateFrom=오늘` 기본값 변경
+
+**커밋**: `bbc7ad8`, `e4cdedd` (v=20260806b)
+
+---
+
+### 작업 1: BUG-209 — GPS 없는 작업 마커 미표시 수정
 
 ### 작업: BUG-209 — GPS 없는 작업 마커 미표시 수정
 

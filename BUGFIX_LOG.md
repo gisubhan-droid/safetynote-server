@@ -82,7 +82,7 @@ FEAT-210 적용 시 `style.css`에 추가된 `#page-content { overflow: hidden }
 - `npm run build` ✅ (298.71 kB, 2.39s)
 
 ### 커밋
-- (기록 예정) — fix: [BUG-211] 안드로이드 터치 스크롤 불가 — style.css #page-content/모바일 overflow:hidden 전역적용 수정 (v=20260806c)
+- `1f87186` — fix: [BUG-211] 안드로이드 터치 스크롤 불가 — style.css #page-content/모바일 overflow:hidden 전역적용 수정 (v=20260806c)
 
 ---
 

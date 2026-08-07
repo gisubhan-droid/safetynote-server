@@ -282,6 +282,29 @@ body {
   color: var(--text-main);
 }
 
+/* BUG-213 v2: Android WebView position:fixed 안정화
+   ▸ 원인: body를 스크롤 컨테이너로 두면 Android WebView에서 position:fixed 요소가
+           뷰포트 기준이 아닌 body 기준으로 스크롤됨 → #icon-rail, .bottom-nav 함께 스크롤
+   ▸ 해결: html/body를 뷰포트에 고정 → 실제 스크롤을 #app에 위임
+   ▸ sticky 호환: position:sticky는 스크롤 컨테이너(#app) 안 .main-content 기준으로 동작
+                  → .top-header가 #app 스크롤 시 상단 고정 유지 ✅
+   ▸ overflow-x: clip 사용 이유: hidden과 달리 스크롤 컨텍스트를 생성하지 않아
+                                  자식의 position:sticky 를 방해하지 않음 (CSS Overflow Level 3) */
+html {
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  height: 100%;
+  overflow: hidden;
+}
+#app {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: clip;                    /* sticky 방해 없이 가로 넘침 차단 */
+  -webkit-overflow-scrolling: touch;   /* iOS 관성 스크롤 */
+}
+
 /* ─── 모바일 유틸 ─── */
 @media (max-width: 640px) {
   .hide-mobile { display: none !important; }
@@ -831,7 +854,12 @@ body {
 #flyout-overlay.open { display: block; }
 
 /* FEAT-058: 메인 콘텐츠/헤더 — icon-rail clamp 넓이와 동기화 */
-.main-content { margin-left: clamp(52px, 5.5vw, 72px); }
+/* BUG-213 v2: min-width:0 — flex child 가로 넘침 방지 (overflow-x:clip 미지원 브라우저 대비) */
+.main-content { margin-left: clamp(52px, 5.5vw, 72px); min-width: 0; }
+/* .top-header: sticky → #app 스크롤 컨텍스트 안에서 상단 고정
+   position:sticky는 가장 가까운 scroll-ancestor(#app, overflow-y:auto)를 기준으로 동작
+   → #app 세로 스크롤 시 .top-header가 #app 뷰포트 top:0에 고정됨 ✅
+   주의: overflow-x:clip은 스크롤 컨텍스트 미생성 → sticky 정상 동작 보장 */
 .top-header   { left: clamp(52px, 5.5vw, 72px); }
 /* FEAT-059: 크레딧 바 22px 높이만큼 하단 여백 (데스크톱 전용) */
 body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
@@ -1388,7 +1416,11 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 .main-content.site-map-mode {
   display: flex;        /* flex 체인: page-content → siteMapRoot → leafletMap 높이 자동 계산 */
   flex-direction: column;
-  height: 100vh;        /* BUG-213 롤백: body 스크롤 구조 복원 → 100vh 정상 동작 */
+  /* BUG-213 v2: 스크롤 컨테이너가 #app(height:100%)이므로 100% = 뷰포트 높이
+     100vh는 뷰포트 기준이나 #app이 스크롤 컨테이너일 때는 #app 높이(=100vh)와 동일.
+     단, Android 브라우저 주소창 변화 시 100dvh가 더 안정적이므로 dvh 우선 사용 */
+  height: 100dvh;
+  height: 100vh;        /* fallback: dvh 미지원 브라우저 */
   overflow: hidden;
 }
 /* page-content: main-content 안에서 top-header 제외 나머지 전체 차지 */
@@ -1429,7 +1461,8 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   /* BUG-211: .main-content 전역 height:100dvh 제거 → site-map-mode 전용으로 스코프 제한
      기존: .main-content { height:100dvh } — 모바일 모든 페이지 스크롤 차단
      수정: .main-content.site-map-mode만 적용 */
-  .main-content.site-map-mode { height: 100dvh; }  /* BUG-213 롤백: body 스크롤 구조 복원 → 100dvh 정상 동작 */
+  /* BUG-213 v2: #app(height:100%) 스크롤 컨테이너 기준 — 100dvh = 뷰포트 동적 높이 */
+  .main-content.site-map-mode { height: 100dvh; }
   #leafletMap   { min-height: 220px; }
   #siteMapList  { max-height: 140px; }
 }

@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-06 (세션 141 — BUG-211: 안드로이드 터치 스크롤 불가 수정 (v=20260806c))
-> **GitHub 최신 (safetynote-server): `1f87186`** — fix: [BUG-211] 안드로이드 터치 스크롤 불가 — style.css overflow:hidden 전역적용 수정 (v=20260806c)
+> 최종 업데이트: 2026-08-07 (세션 141 — BUG-212: 상단 헤더 스크롤 이탈 수정 (v=20260806d))
+> **GitHub 최신 (safetynote-server): (커밋 후 갱신 예정)** — fix: [BUG-212] 상단 헤더 스크롤 이탈 — style.css .main-content flex/min-height 전역적용 제거
+> **이전 커밋 (safetynote-server): `4409c66`** — docs: [세션141] BUG-211 커밋 해시 1f87186 반영
+> **이전 커밋 (safetynote-server): `1f87186`** — fix: [BUG-211] 안드로이드 터치 스크롤 불가 — style.css overflow:hidden 전역적용 수정 (v=20260806c)
 > **이전 커밋 (safetynote-server): `96db7c0`** — docs: [세션141] BUGFIX_LOG + PROJECT_HISTORY FEAT-210 커밋 해시 e4cdedd 반영
 > **이전 커밋 (safetynote-server): `e4cdedd`** — feat: [FEAT-210] 현장위치지도 기본값 진행탭·오늘 + 반응형 레이아웃 (v=20260806b)
 > **이전 커밋 (safetynote-server): `bbc7ad8`** — feat: [FEAT-210] 현장위치지도 방안A CSS 격리

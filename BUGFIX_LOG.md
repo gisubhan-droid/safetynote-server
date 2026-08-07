@@ -2,6 +2,83 @@
 
 ---
 
+## [BUG-212] 상단 헤더·사이드메뉴 고정 안됨 — .main-content flex/min-height 전역 적용 (세션 141)
+
+> **대상**: `public/static/style.css` — BUG-211 수정 후 잔존 FEAT-210 CSS 부작용
+> **작업일**: 2026-08-07
+> **유형**: 🔴 BUG — 스크롤 시 상단 헤더(작업현황 타이틀)가 콘텐츠와 함께 스크롤됨
+
+### 증상
+- 안드로이드 앱에서 페이지 스크롤 시 상단 헤더(`.top-header`)가 콘텐츠와 함께 위로 사라짐
+- 좌측 아이콘 레일(`#icon-rail`, `position:fixed`)은 정상 고정 유지
+- BUG-211 수정(터치 스크롤 복원) 이후 발생 확인
+
+### 원인
+
+FEAT-210 적용 시 `style.css`에 추가된 아래 규칙이 원인:
+
+```css
+/* ❌ 문제 코드 (FEAT-210, BUG-211 수정 후에도 잔존) */
+.main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;   ← 이 두 속성이 문제
+}
+```
+
+**`position: sticky`의 스크롤 컨테이너 결정 원리:**
+- `sticky` 요소는 **가장 가까운 스크롤 가능한 조상** 안에서만 고정됨
+- `.main-content`에 `display:flex` + `min-height:100vh` 적용 시 브라우저가 `.main-content`를 스크롤 컨테이너로 인식
+- 결과: `.top-header { position:sticky; top:0 }` 가 `body` 기준이 아닌 `.main-content` 기준으로 동작
+- 콘텐츠를 스크롤하면 `.main-content` 전체가 스크롤되어 `sticky` 헤더도 함께 사라짐
+
+| 요소 | CSS | 기대 | 실제(문제) |
+|------|-----|------|----------|
+| `.top-header` | `position:sticky; top:0` | body 기준 고정 | `.main-content` 기준 sticky → 스크롤 시 사라짐 |
+| `#icon-rail` | `position:fixed` | viewport 고정 | ✅ 정상 (fixed는 영향 없음) |
+
+### 수정 내용 (`public/static/style.css`)
+
+`.main-content` 전역 flex 규칙 완전 제거 → `.site-map-mode` 전용으로 이동
+
+```css
+/* 변경 전 */
+.main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;   /* ← 제거 */
+}
+.main-content.site-map-mode {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* 변경 후 */
+/* .main-content 전역 규칙 없음 */
+.main-content.site-map-mode {
+  display: flex;          /* ← site-map 전용으로 이동 */
+  flex-direction: column; /* ← site-map 전용으로 이동 */
+  height: 100vh;
+  overflow: hidden;
+}
+```
+
+### 충돌 체크
+- **site-map 진입 시** JS line 45648: `pageContent.style.flex='1'` 등 인라인 설정 + `classList.add('site-map-mode')` → CSS `.site-map-mode { display:flex }` 활성화 → flex 체인 정상 ✅
+- **site-map 이탈 시** JS line 3200: 모든 인라인 스타일 `''` 초기화 + `classList.remove('site-map-mode')` → CSS flex 비활성화 → 일반 페이지 sticky 정상 복원 ✅
+- `#page-content { flex:1; display:flex }` 전역 CSS → `.main-content`가 flex container 아니므로 일반 페이지에서 무시, site-map에서는 JS 인라인이 우선 적용 ✅
+- `#siteMapRoot`, `#leafletMap`, `#siteMapList` 규칙 영향 없음 ✅
+- `.main-content.site-map-mode { height:100dvh }` 모바일 미디어쿼리 (BUG-211 수정) 영향 없음 ✅
+
+### 검증
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.79s)
+
+### 커밋
+- (기록 예정) — fix: [BUG-212] 상단 헤더 스크롤 이탈 — style.css .main-content flex/min-height 전역적용 제거 (v=20260806d)
+
+---
+
 ## [BUG-211] 안드로이드 앱 터치 스크롤 불가 — #page-content overflow:hidden 전역 적용 (세션 141)
 
 > **대상**: `public/static/style.css` — FEAT-210 CSS 부작용

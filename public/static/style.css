@@ -1375,15 +1375,15 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 }
 
 /* ─── 현장위치 지도 — 방안 A: 브라우저 창 높이 반응형 레이아웃 ────────── */
-/* main-content 기본: 최소 뷰포트 높이 (다른 페이지는 정상 스크롤 유지) */
-.main-content {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-/* site-map 전용: .site-map-mode 클래스 부여 시 height 고정 + overflow 차단 */
+/* main-content 기본: flex/min-height 제거 — BUG-212
+   display:flex + min-height:100vh 가 .main-content에 전역 적용되면
+   top-header(position:sticky)의 스크롤 컨테이너가 body→main-content로 바뀌어
+   상단 헤더가 콘텐츠와 함께 스크롤되는 문제 발생 → site-map-mode 전용으로 이동 */
+/* site-map 전용: .site-map-mode 클래스 부여 시에만 flex 체인 + height 고정 + overflow 차단 */
 .main-content.site-map-mode {
-  height: 100vh;      /* flex 체인 확정 */
+  display: flex;        /* flex 체인: page-content → siteMapRoot → leafletMap 높이 자동 계산 */
+  flex-direction: column;
+  height: 100vh;        /* flex 체인 확정 */
   overflow: hidden;
 }
 /* page-content: main-content 안에서 top-header 제외 나머지 전체 차지 */

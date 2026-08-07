@@ -45555,6 +45555,24 @@ async function renderSiteMapPage(container) {
   const selUser = userList.find(u => String(u.id) === String(_userId));
   const userLabel = selUser ? selUser.name : '전체 사용자';
 
+  // 모바일용 드롭다운 현재 선택 레이블
+  var _curTabDef = null;
+  for (var _ti = 0; _ti < TAB_DEFS.length; _ti++) { if (TAB_DEFS[_ti].key === _tab) { _curTabDef = TAB_DEFS[_ti]; break; } }
+  var _tabLabel = _curTabDef ? _curTabDef.label : '⚠️ 위험성체크';
+
+  // 모바일 기간 드롭다운 현재 선택값 계산
+  var _periodVal = 'today';
+  var _todayStr = getKSTDate();
+  var _weekAgo  = (function() { var d = getKSTNow(); d.setUTCDate(d.getUTCDate()-7);  return d.toISOString().split('T')[0]; })();
+  var _monthAgo = (function() { var d = getKSTNow(); d.setUTCDate(d.getUTCDate()-30); return d.toISOString().split('T')[0]; })();
+  if (_df === '' && _dt === '')                     _periodVal = 'all';
+  else if (_df === _weekAgo  && _dt === _todayStr)  _periodVal = 'week';
+  else if (_df === _monthAgo && _dt === _todayStr)  _periodVal = 'month';
+  else if (_df === _todayStr && _dt === _todayStr)  _periodVal = 'today';
+  else                                               _periodVal = 'custom';
+
+  var _periodLabel = _periodVal === 'today' ? '오늘' : _periodVal === 'week' ? '7일' : _periodVal === 'month' ? '30일' : _periodVal === 'all' ? '전체' : (_df||'처음') + '~' + (_dt||'오늘');
+
   container.innerHTML = `
     <div id="siteMapRoot" style="display:flex;flex-direction:column;height:100%;overflow:hidden">
 
@@ -45564,8 +45582,9 @@ async function renderSiteMapPage(container) {
         <p class="text-xs text-gray-400">${dateRangeLabel}</p>
       </div>
 
-      <!-- ① 구분 탭 (현장점검과 동일 라운드 버튼) -->
-      <div class="flex gap-1 mb-3 flex-wrap" style="flex-shrink:0">
+      <!-- ① 구분 탭 (PC: 라운드 버튼 / 모바일: 드롭다운) -->
+      <!-- PC 탭 버튼 — 모바일에서 숨김 -->
+      <div class="sm-pc-tabs flex gap-1 mb-3 flex-wrap" style="flex-shrink:0">
         ${TAB_DEFS.map(tab => {
           const isActive = _tab === tab.key;
           return `<button
@@ -45580,9 +45599,36 @@ async function renderSiteMapPage(container) {
           </button>`;
         }).join('')}
       </div>
+      <!-- 모바일 필터 (드롭다운 2개+조회) — PC에서 숨김 -->
+      <div class="sm-mobile-filter" style="flex-shrink:0">
+        <div style="display:flex;gap:6px;align-items:center">
+          <!-- 구분 드롭다운 -->
+          <select id="siteMapTabDrop"
+            onchange="window._smTab=this.value;_applySiteMapFilters()"
+            style="flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1.5px solid #685182;font-size:12px;font-weight:700;color:#685182;background:white;-webkit-appearance:none;appearance:none;background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%228%22 viewBox=%220 0 12 8%22><path d=%22M1 1l5 5 5-5%22 stroke=%22%23685182%22 stroke-width=%222%22 fill=%22none%22/></svg>');background-repeat:no-repeat;background-position:right 8px center;padding-right:26px">
+            ${TAB_DEFS.map(tab =>
+              `<option value="${tab.key}" ${_tab === tab.key ? 'selected' : ''}>${tab.label}</option>`
+            ).join('')}
+          </select>
+          <!-- 기간 드롭다운 -->
+          <select id="siteMapPeriodDrop"
+            onchange="_onSiteMapPeriodDrop(this.value)"
+            style="flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1.5px solid #D8D0DC;font-size:12px;color:#374151;background:white;-webkit-appearance:none;appearance:none;background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%228%22 viewBox=%220 0 12 8%22><path d=%22M1 1l5 5 5-5%22 stroke=%22%236B7280%22 stroke-width=%222%22 fill=%22none%22/></svg>');background-repeat:no-repeat;background-position:right 8px center;padding-right:26px">
+            <option value="today"  ${_periodVal==='today'  ? 'selected' : ''}>📅 오늘</option>
+            <option value="week"   ${_periodVal==='week'   ? 'selected' : ''}>📅 7일</option>
+            <option value="month"  ${_periodVal==='month'  ? 'selected' : ''}>📅 30일</option>
+            <option value="all"    ${_periodVal==='all'    ? 'selected' : ''}>📅 전체</option>
+          </select>
+          <!-- 조회 버튼 -->
+          <button onclick="_applySiteMapFilters()"
+            style="padding:6px 12px;border-radius:8px;background:#685182;color:white;border:none;font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0">
+            <i class="fas fa-search"></i>
+          </button>
+        </div>
+      </div>
 
-      <!-- ② 필터 바 (날짜 + 사용자) -->
-      <div class="card p-3 mb-3" style="background:#F5F0F8;border:1px solid #D8D0DC;flex-shrink:0">
+      <!-- ② 필터 바 (날짜 + 사용자) — PC 전용, 모바일에서 숨김 -->
+      <div class="sm-pc-filter card p-3 mb-3" style="background:#F5F0F8;border:1px solid #D8D0DC;flex-shrink:0">
         <div class="flex flex-wrap items-center gap-2">
 
           <!-- 날짜 -->
@@ -45598,19 +45644,6 @@ async function renderSiteMapPage(container) {
             <button onclick="_setSiteMapDateRange('week')"  class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">7일</button>
             <button onclick="_setSiteMapDateRange('month')" class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">30일</button>
             <button onclick="_setSiteMapDateRange('all')"   class="btn btn-outline btn-xs" style="font-size:11px;padding:2px 8px">전체</button>
-          </div>
-
-          <!-- 사용자 선택 드롭다운 -->
-          <div class="flex items-center gap-1 ml-auto">
-            <i class="fas fa-user text-xs" style="color:#685182"></i>
-            <select id="siteMapUserId"
-              onchange="window._smUserId=this.value;_applySiteMapFilters()"
-              class="form-control text-sm" style="width:130px;padding:4px 6px;border-radius:8px;border:1px solid #D8D0DC">
-              <option value="" ${!_userId ? 'selected' : ''}>전체 사용자</option>
-              ${userList.map(u =>
-                `<option value="${u.id}" ${String(u.id)===String(_userId)?'selected':''}>${u.name}${u.position?` (${u.position})`:''}</option>`
-              ).join('')}
-            </select>
           </div>
 
           <!-- 조회 버튼 -->
@@ -45631,9 +45664,6 @@ async function renderSiteMapPage(container) {
             <span style="display:inline-block;width:10px;height:10px;background:${t.color};border-radius:50%"></span>
             ${t.label}
           </span>`).join('')}
-        ${_userId ? `<span class="flex items-center gap-1 ml-2" style="color:#685182;font-weight:600">
-          <i class="fas fa-user" style="font-size:10px"></i> ${userLabel}
-        </span>` : ''}
       </div>
 
       <!-- ⑤ 위치 목록 (고정 높이 스크롤 영역) -->
@@ -45661,11 +45691,23 @@ async function renderSiteMapPage(container) {
 
 // 조회 버튼: DOM → 전역 저장 후 재렌더링
 function _applySiteMapFilters() {
-  window._smDateFrom = document.getElementById('siteMapDateFrom')?.value ?? window._smDateFrom ?? '';
-  window._smDateTo   = document.getElementById('siteMapDateTo')?.value   ?? window._smDateTo   ?? '';
-  const selEl = document.getElementById('siteMapUserId');
+  // PC 날짜 입력값 읽기 (요소 없으면 기존 전역값 유지)
+  var dfEl = document.getElementById('siteMapDateFrom');
+  var dtEl = document.getElementById('siteMapDateTo');
+  if (dfEl) window._smDateFrom = dfEl.value;
+  if (dtEl) window._smDateTo   = dtEl.value;
+  // 모바일 구분 드롭다운 읽기
+  var tabDrop = document.getElementById('siteMapTabDrop');
+  if (tabDrop) window._smTab = tabDrop.value;
+  // PC 사용자 셀렉트 (제거됨 — null 안전)
+  var selEl = document.getElementById('siteMapUserId');
   if (selEl) window._smUserId = selEl.value;
   renderSiteMapPage(document.getElementById('page-content'));
+}
+
+// 모바일 기간 드롭다운 변경 핸들러
+function _onSiteMapPeriodDrop(val) {
+  _setSiteMapDateRange(val);
 }
 
 // 빠른 날짜 선택: 전역 직접 수정 후 재렌더링
@@ -45858,7 +45900,8 @@ async function loadSiteMapMarkers(map) {
         // GPS 없는 건은 목록에만 추가 (지도 마커는 GPS 보유 건만)
         if (!gpsValid) {
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: supervisor, address: addr, lat: null, lon: null, noGps: true, taskId: t.id });
+            author: supervisor, address: addr, lat: null, lon: null, noGps: true, taskId: t.id,
+            team: (t.team_name || ''), workers: (t.assigned_workers && t.assigned_workers.length ? t.assigned_workers.map(function(w){return w.name||w;}).join(', ') : '') });
           continue;
         }
 
@@ -45887,7 +45930,8 @@ async function loadSiteMapMarkers(map) {
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: supervisor, address: addr, lat, lon, taskId: t.id });
+          author: supervisor, address: addr, lat, lon, taskId: t.id,
+          team: (t.team_name || ''), workers: (t.assigned_workers && t.assigned_workers.length ? t.assigned_workers.map(function(w){return w.name||w;}).join(', ') : '') });
       }
     }
 
@@ -45949,7 +45993,8 @@ async function loadSiteMapMarkers(map) {
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: tbm.conductor_name || '', address: addr, lat, lon, taskId: tbm.task_id || null });
+          author: tbm.conductor_name || '', address: addr, lat, lon, taskId: tbm.task_id || null,
+          team: (tbm.team_name || ''), workers: (Array.isArray(tbm.attendees) && tbm.attendees.length ? tbm.attendees.map(function(a){return a.name||a;}).join(', ') : '') });
       }
     }
 
@@ -46056,7 +46101,8 @@ async function loadSiteMapMarkers(map) {
           if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
             // GPS + 주소 geocoding 모두 실패 — 목록에만 추가
             listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-              author: supervisor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: t.id || null });
+              author: supervisor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: t.id || null,
+              team: (t.team_name || ''), workers: (t.assigned_workers && t.assigned_workers.length ? t.assigned_workers.map(function(w){return w.name||w;}).join(', ') : '') });
             continue;
           }
 
@@ -46092,7 +46138,8 @@ async function loadSiteMapMarkers(map) {
 
           latLngs.push([lat, lon]);
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: supervisor, address: addr, lat, lon, taskId: t.id || null });
+            author: supervisor, address: addr, lat, lon, taskId: t.id || null,
+            team: (t.team_name || ''), workers: (t.assigned_workers && t.assigned_workers.length ? t.assigned_workers.map(function(w){return w.name||w;}).join(', ') : '') });
         }
       }
     }
@@ -46198,7 +46245,8 @@ async function loadSiteMapMarkers(map) {
           if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
             // GPS + 주소 geocoding 모두 실패 — 목록에만 추가
             listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-              author: supervisor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: t.id || null });
+              author: supervisor, address: addr || '위치 미기록', lat: null, lon: null, noGps: true, taskId: t.id || null,
+              team: (t.team_name || ''), workers: (t.assigned_workers && t.assigned_workers.length ? t.assigned_workers.map(function(w){return w.name||w;}).join(', ') : '') });
             continue;
           }
 
@@ -46234,7 +46282,8 @@ async function loadSiteMapMarkers(map) {
 
           latLngs.push([lat, lon]);
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: supervisor, address: addr, lat, lon, taskId: t.id || null });
+            author: supervisor, address: addr, lat, lon, taskId: t.id || null,
+            team: (t.team_name || ''), workers: (t.assigned_workers && t.assigned_workers.length ? t.assigned_workers.map(function(w){return w.name||w;}).join(', ') : '') });
         }
       }
     }
@@ -46279,7 +46328,8 @@ async function loadSiteMapMarkers(map) {
         if (!gpsValid) {
           // GPS 없는 건: 목록에만 추가
           listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-            author: ins.inspector_name || '', address: addr, lat: null, lon: null, noGps: true, taskId: ins.task_id || null });
+            author: ins.inspector_name || '', address: addr, lat: null, lon: null, noGps: true, taskId: ins.task_id || null,
+            team: '', workers: '' });
           continue;
         }
 
@@ -46311,7 +46361,8 @@ async function loadSiteMapMarkers(map) {
 
         latLngs.push([lat, lon]);
         listItems.push({ color: meta.color, icon: meta.faIcon, date: displayDate, name,
-          author: ins.inspector_name || '', address: addr, lat, lon, taskId: ins.task_id || null });
+          author: ins.inspector_name || '', address: addr, lat, lon, taskId: ins.task_id || null,
+          team: '', workers: '' });
       }
     }
 
@@ -46357,6 +46408,10 @@ async function loadSiteMapMarkers(map) {
                 <div class="font-semibold text-gray-800 text-sm truncate">${item.name}</div>
                 ${item.author ? `<div class="text-xs font-medium truncate" style="color:${item.noGps ? '#9CA3AF' : item.color}">
                   <i class="fas fa-user mr-1"></i>${item.author}
+                </div>` : ''}
+                ${(item.team || item.workers) ? `<div class="li-team text-xs truncate" style="color:#6B7280;margin-top:1px">
+                  ${item.team ? `<span class="li-team-badge" style="display:inline-block;padding:0 5px;border-radius:4px;background:#EDE9F4;color:#685182;font-weight:700;font-size:10px;margin-right:4px">${item.team}</span>` : ''}
+                  ${item.workers ? `<span><i class="fas fa-hard-hat" style="font-size:9px;margin-right:2px"></i>${item.workers}</span>` : ''}
                 </div>` : ''}
                 <div class="text-xs text-gray-400 truncate mt-0.5">
                   <i class="fas fa-calendar-alt mr-1"></i>${item.date || '-'}

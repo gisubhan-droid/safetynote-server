@@ -1476,6 +1476,11 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   margin-top: 6px;
 }
 
+/* ── 모바일/PC 이원화: 기본(PC) — 모바일 드롭다운 숨김, PC 탭/필터 표시 ── */
+.sm-mobile-filter { display: none; }
+.sm-pc-tabs       { display: flex; }
+.sm-pc-filter     { display: block; }
+
 /* ── 모바일(≤768px) ── */
 @media (max-width: 768px) {
   /* C1: 모바일에서 padding-bottom 상쇄 + 정확한 높이 */
@@ -1489,15 +1494,42 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
     padding: 8px 12px 4px;
   }
 
-  /* 모바일: 헤더/탭/필터 여백 축소 */
-  #siteMapRoot .mb-3 { margin-bottom: 5px !important; }
-  #siteMapRoot .mb-2 { margin-bottom: 3px !important; }
-  #siteMapRoot .p-3  { padding: 7px 10px !important; }
+  /* 모바일: 헤더 여백 축소 (탭/필터 class 교체로 .mb-3 일괄 적용 제거) */
   #siteMapRoot h2    { font-size: 15px !important; }
+  #siteMapRoot .flex.items-center.justify-between { margin-bottom: 4px !important; }
+
+  /* 모바일: PC 탭 버튼/필터 숨김 → 드롭다운 표시 */
+  .sm-pc-tabs   { display: none !important; }
+  .sm-pc-filter { display: none !important; }
+  .sm-mobile-filter {
+    display: block;
+    margin-bottom: 6px;
+    flex-shrink: 0;
+  }
 
   /* 모바일: 지도 최소 높이 조정, 목록 높이 축소 */
   #leafletMap  { min-height: 150px; }
   #siteMapList { height: 130px; }   /* 모바일: 목록 3~4줄 */
+}
+
+/* ── li-team 행: 팀 배지 + 작업자 (PC/모바일 공통) ── */
+.li-team {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  line-height: 1.4;
+}
+.li-team-badge {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #EDE9F4;
+  color: #685182;
+  font-weight: 700;
+  font-size: 10px;
+  margin-right: 3px;
+  white-space: nowrap;
 }
 
 /* ── 소형 모바일(≤480px, 키보드 팝업 등 극소화면) ── */

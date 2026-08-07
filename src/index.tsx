@@ -368,11 +368,11 @@ app.get('*', (c) => {
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20260807e">
+  <link rel="stylesheet" href="/static/style.css?v=20260807f">
 </head>
 <body class="bg-gray-50 min-h-screen">
   <div id="app"></div>
-  <script src="/static/app.js?v=20260806h"></script>
+  <script src="/static/app.js?v=20260807a"></script>
 </body>
 </html>`)
 })

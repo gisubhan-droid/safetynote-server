@@ -21,8 +21,11 @@
 
 ---
 
-> 최종 업데이트: 2026-08-07 (세션 141 — BUG-213: Android WebView position:fixed 스크롤 버그 수정 (v=20260806e))
-> **GitHub 최신 (safetynote-server): `7fcdcda`** — fix: [세션141] BUG-213 Android WebView position:fixed 스크롤 버그 수정 (v=20260806e)
+> 최종 업데이트: 2026-08-07 (세션 141 — BUG-214: 가로 스크롤 차단 + site-map 리스트 미표시 수정 (v=20260806g))
+> **GitHub 최신 (safetynote-server): `8b40324`** — fix: [세션141] BUG-214 가로 스크롤 + site-map 리스트 미표시 수정 (v=20260806g)
+> **이전 커밋 (safetynote-server): `5ce9d0a`** — fix: [세션141] BUG-213 후속 — #app overflow-x:clip 추가 (가로 스크롤 발생 수정)
+> **이전 커밋 (safetynote-server): `06e25e2`** — docs: [세션141] BUG-213 커밋 해시 7fcdcda 반영
+> **이전 커밋 (safetynote-server): `7fcdcda`** — fix: [세션141] BUG-213 Android WebView position:fixed 스크롤 버그 수정 (v=20260806e)
 > **이전 커밋 (safetynote-server): `3354f74`** — docs: [세션141] BUG-212 커밋 해시 fb388dc 반영
 > **이전 커밋 (safetynote-server): `fb388dc`** — fix: [BUG-212] 상단 헤더 스크롤 이탈 — style.css .main-content flex/min-height 전역적용 제거 (v=20260806d)
 > **이전 커밋 (safetynote-server): `4409c66`** — docs: [세션141] BUG-211 커밋 해시 1f87186 반영
@@ -12126,6 +12129,20 @@ PDF 저장 시 파일명이 항상 `제목없음.pdf`로 저장되어 문서 식
 ---
 
 ## 세션 141 (2026-08-06) — BUG-209 마커 미표시 수정 + FEAT-210 반응형 레이아웃·기본값 변경 + BUG-211~213 연쇄 UI 버그 수정
+
+### 작업 6: BUG-214 — 가로 스크롤 차단 + site-map 리스트 미표시 수정
+
+**증상**
+- 내부 화면 콘텐츠 우측 잘림 / 가로 스크롤 불가 (overflow-x:clip 부작용)
+- site-map 지도 아래 검색 리스트 미표시 (height:100vh vs #app 스크롤 컨텍스트 불일치)
+
+**수정 내용** (`style.css` 3곳)
+- `#app { overflow-x: clip → hidden }` + `.main-content { max-width:100% }` 추가
+- `.main-content.site-map-mode { height: 100vh/100dvh → 100% }` (PC + 모바일)
+
+**커밋**: `8b40324` — fix: [세션141] BUG-214 가로 스크롤 + site-map 리스트 미표시 수정 (v=20260806g)
+
+---
 
 ### 작업 5: BUG-213 — Android WebView position:fixed 스크롤 버그 수정
 

@@ -2,6 +2,58 @@
 
 ---
 
+## [BUG-214] 가로 스크롤 차단 + site-map 리스트 미표시 — BUG-213 후속 (세션 141)
+
+> **대상**: `public/static/style.css`  
+> **작업일**: 2026-08-07  
+> **커밋**: `8b40324`  
+> **유형**: 🔴 BUG — BUG-213 수정(overflow-x:clip) 후속 부작용 2건
+
+### 증상
+1. **작업현황 등 내부 화면 우측 잘림** — 카드/목록 콘텐츠가 우측으로 잘리고 가로 스크롤 불가
+2. **site-map 지도 아래 검색 리스트 미표시** — 지도 아래 `#siteMapList`가 화면 밖으로 밀려 보이지 않음
+
+### 원인
+
+**증상 1 (가로 잘림)**
+```css
+/* BUG-213 후속 수정에서 적용한 코드 */
+#app { overflow-x: clip; }
+/* clip이 #app의 scrollWidth 계산을 방해 →
+   .main-content 너비가 #app 안에 정확히 맞지 않아 콘텐츠 잘림 */
+```
+
+**증상 2 (site-map 리스트 미표시)**
+```css
+.main-content.site-map-mode { height: 100vh; }
+/* #app { overflow-y:auto }가 스크롤 컨테이너가 된 상태에서
+   100vh(뷰포트 기준)가 #app 높이와 불일치 → #siteMapList가 화면 밖으로 밀림 */
+```
+
+### 수정 내용 (`public/static/style.css` 3곳)
+
+```css
+/* ① clip → hidden + .main-content 가로 넘침 원천 차단 */
+#app {
+  overflow-x: hidden;    /* clip → hidden */
+}
+.main-content { max-width: 100%; }  /* 추가: #app 너비 초과 차단 */
+/* → 자식 overflow-x:auto(테이블 등)는 .main-content 너비 안에서 독립 동작 유지 ✅ */
+
+/* ② site-map 높이 #app 기준으로 통일 */
+.main-content.site-map-mode { height: 100%; }    /* 100vh → 100% */
+@media (max-width:768px) {
+  .main-content.site-map-mode { height: 100%; }  /* 100dvh → 100% */
+}
+/* → #app(height:100%) 기준 계산 → 뷰포트와 동일하면서 스크롤 컨텍스트 올바르게 유지 */
+```
+
+### 검증
+- `node --check public/static/app.js` → ✅ OK
+- `npm run build` → ✅ `dist/_worker.js 298.71 kB` (1.34s)
+
+---
+
 ## [BUG-213] Android WebView position:fixed 스크롤 버그 — html/body overflow 미설정 (세션 141)
 
 > **대상**: `public/static/style.css`  

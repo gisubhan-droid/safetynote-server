@@ -22,7 +22,7 @@
 ---
 
 > 최종 업데이트: 2026-08-07 (세션 144 — FEAT-217 알람 수신 대상 공사 관련자 한정)
-> **GitHub 최신 (safetynote-server): `(이번 커밋)`** — fix: [FEAT-217] 알람 수신 대상 공사담당자+현장대리인+안전관리자 한정
+> **GitHub 최신 (safetynote-server): `5eb1153`** — fix: [FEAT-217] 알람 수신 대상 공사담당자+현장대리인+안전관리자 한정
 > **이전 커밋 (safetynote-server): `685d134`** — docs: [세션143] FEAT-216-2 모바일 지도 비율 조정 커밋 1b2e412 반영
 > **이전 커밋 (safetynote-server): `1b2e412`** — fix: [FEAT-216] 모바일 지도 비율 조정 — siteMapList 높이 확대 + 드롭다운 폰트 축소 (v=20260807g)
 > **이전 커밋 (safetynote-server): `4182ba9`** — docs: [세션143] FEAT-216 모바일 UI 개선 커밋 34b306c 반영
@@ -12512,6 +12512,6 @@ html, body { height: 100%; overflow: hidden; }   /* body 스크롤 제거 → fi
 - FEAT-215/216/216-2 CSS/JS: 변경 없음 (서버 코드만 수정)
 - RULE-001: app.js 수정 없음
 
-**커밋**: `fix: [FEAT-217] 알람 수신 대상 공사담당자+현장대리인+안전관리자 한정`  
+**커밋**: `5eb1153`  
 **빌드**: `npm run build` ✅ (299.05 kB)
 

@@ -75,7 +75,7 @@ FEAT-210 적용 시 `style.css`에 추가된 아래 규칙이 원인:
 - `npm run build` ✅ (298.71 kB, 1.79s)
 
 ### 커밋
-- (기록 예정) — fix: [BUG-212] 상단 헤더 스크롤 이탈 — style.css .main-content flex/min-height 전역적용 제거 (v=20260806d)
+- `fb388dc` — fix: [BUG-212] 상단 헤더 스크롤 이탈 — style.css .main-content flex/min-height 전역적용 제거 (v=20260806d))
 
 ---
 

@@ -21,8 +21,9 @@
 
 ---
 
-> 최종 업데이트: 2026-08-07 (세션 145 — FEAT-218 FCM 알림 클릭 화면 이동)
-> **GitHub 최신 (safetynote-server): `009dd2e`** — feat: [FEAT-218] FCM 알림 클릭 화면 이동 — tasks.ts FCM 발송 추가 + app.js tbm/edu 타입 처리 (v=20260807b)
+> 최종 업데이트: 2026-08-07 (세션 145 — FEAT-218 FCM 알림 클릭 화면 이동 + 문서 정리)
+> **GitHub 최신 (safetynote-server): `27dc822`** — docs: [세션145] FEAT-218 FCM 알림 클릭 화면 이동 커밋 009dd2e / APK v1.4.17(04782ca) 반영
+> **이전 커밋 (safetynote-server): `009dd2e`** — feat: [FEAT-218] FCM 알림 클릭 화면 이동 — tasks.ts FCM 발송 추가 + app.js tbm/edu 타입 처리 (v=20260807b)
 > **이전 커밋 (safetynote-server): `7f95653`** — docs: [세션144] FEAT-217 알람 수신 대상 수정 커밋 5eb1153 반영
 > **이전 커밋 (safetynote-server): `5eb1153`** — fix: [FEAT-217] 알람 수신 대상 공사담당자+현장대리인+안전관리자 한정
 > **이전 커밋 (safetynote-server): `685d134`** — docs: [세션143] FEAT-216-2 모바일 지도 비율 조정 커밋 1b2e412 반영
@@ -12516,4 +12517,69 @@ html, body { height: 100%; overflow: hidden; }   /* body 스크롤 제거 → fi
 
 **커밋**: `5eb1153`  
 **빌드**: `npm run build` ✅ (299.05 kB)
+
+---
+
+## 세션 145 (2026-08-07) — FEAT-218 FCM 알림 클릭 화면 이동
+
+### 작업: FEAT-218 — FCM 푸시 알림 탭 시 해당 화면 자동 이동
+
+**배경**  
+Android 앱(Capacitor 6.x WebView)에서 FCM 알림이 도착해도 탭하면 아무 반응 없음.  
+서버(tasks.ts)는 SSE만 발송 중 — 앱 비활성 상태에서는 FCM 푸시 자체가 미도달.
+
+**원인 4가지**
+
+| # | 위치 | 원인 |
+|---|------|------|
+| 1 | `MyFirebaseMessagingService.java` | `showNotification(title, body)` 에서 FCM `data` 페이로드를 Intent Extra에 전혀 담지 않음 |
+| 2 | `MainActivity.java` | `onNewIntent()` 없음, FCM Intent 처리 로직 전무 |
+| 3 | `src/routes/tasks.ts` | 작업 상태 변경 시 FCM 발송 코드 자체 없음 (SSE만 발송) |
+| 4 | `public/static/app.js` | `_navigateByNotif()`에 `tbm_completed`, `tbm_approval_done`, `edu_approval_done` 타입 미처리 |
+
+**변경 사항**
+
+**① MyFirebaseMessagingService.java**
+- `showNotification()` 시그니처에 `Map<String, String> data` 파라미터 추가
+- `tapIntent`에 `fcm_type`, `fcm_ref_type`, `fcm_ref_id` Extra 세팅
+- `onMessageReceived()`에서 `remoteMessage.getData()` 전달
+- `PendingIntent` requestCode → `System.currentTimeMillis()` 고유화 (알림 중복 방지)
+
+**② MainActivity.java**
+- `onCreate()` 직후 `handleFcmIntent(getIntent())` 호출 → 앱 종료 상태 진입 처리
+- `onNewIntent()` 오버라이드 추가 → 앱 실행 중 알림 탭 처리
+- `handleFcmIntent(Intent)` 신규 메서드: Intent Extra 읽어 WebView JS 호출
+  - 앱 종료 상태 (WebView URL null): **1500ms** 지연
+  - 앱 실행 중 (WebView URL 있음): **800ms** 지연
+- `executeNavigateJs()` 신규 메서드: JS 인젝션 방어 후 `window._navigateByNotif({type, ref_type, ref_id})` 실행
+
+**③ src/routes/tasks.ts**
+- 파일 상단에 `import { sendFcmToUsers } from '../nas-routes/push-helper'` 추가
+- Block1(모든 상태변경): `notifTargetIds` Set으로 계산된 대상에게 FCM 병행 발송
+- Block2(체크리스트 이후): `targetIds2` 배열 대상에게 FCM 병행 발송
+- FCM data: `{ type:'task_status', ref_type:'task', ref_id: String(id) }`
+
+**④ public/static/app.js** (`v=20260807b`)
+- `_navigateByNotif()`에 미처리 타입 추가:
+  - `tbm_completed` / `tbm_approval_done` / `tbm_attendee_all_signed` → TBM 화면 + `showTbmDetail(ref_id)`
+  - `edu_approval_done` → 교육 화면 + `showEducationDetail(ref_id)`
+- 기존 `const conId` → `var conId` 수정 (RULE-001 준수)
+
+**알림 탭 → 화면 이동 전체 매핑 (완성 후)**
+
+| FCM type | 이동 화면 | 상세 동작 |
+|----------|-----------|-----------|
+| `task_status`, `task_status_manager`, `task_status_change`, `task_created`, `task_assigned` | 작업 탭 | `showTaskDetail(ref_id)` |
+| `sign_request` | 서명 요청 탭 | — |
+| `hazard_report` | 위험 신고 탭 | — |
+| `settlement_request` | 공사 탭 | `showConstructionDetail(ref_id)` |
+| `tbm_completed`, `tbm_approval_done`, `tbm_attendee_all_signed` | TBM 탭 | `showTbmDetail(ref_id)` |
+| `edu_approval_done` | 교육 탭 | `showEducationDetail(ref_id)` |
+
+**커밋 (서버)**: `009dd2e` — feat: [FEAT-218] FCM 알림 클릭 화면 이동  
+**커밋 (docs)**: `27dc822` — docs: [세션145] FEAT-218 반영  
+**커밋 (android)**: `04782ca` — feat: [FEAT-218] FCM 알림 클릭 화면 이동  
+**빌드**: `npm run build` ✅ (302.94 kB)  
+**APK**: `v1.4.17` ✅ — https://github.com/gisubhan-droid/safetynote-android/releases/download/v1.4.17/safetynote-v1.4.17.apk
+
 

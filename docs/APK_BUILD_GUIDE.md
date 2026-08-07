@@ -1,7 +1,7 @@
 # SafetyNOTE — APK 빌드 가이드
 
 > 최초 작성: 세션 87 (2026-07-26)
-> 마지막 업데이트: 세션 98 (2026-07-27)
+> 마지막 업데이트: 세션 145 (2026-08-07)
 > 대상: AI 에이전트 (다음 세션에서 APK 빌드 요청 시 이 문서 참조)
 
 ---
@@ -59,8 +59,8 @@ git log --oneline -3
 
 ### 3-2. 버전 결정 규칙
 
-- 현재 최신 APK 버전: **v1.4.16** (세션 98 기준)
-- 다음 빌드 시 **버전을 +0.0.1 올린다**: `1.4.16` → `1.4.17`
+- 현재 최신 APK 버전: **v1.4.17** (세션 145 기준)
+- 다음 빌드 시 **버전을 +0.0.1 올린다**: `1.4.17` → `1.4.18`
 - 형식: `MAJOR.MINOR.PATCH` (예: `1.4.16`)
 
 ### 3-3. GitHub Actions workflow_dispatch 실행
@@ -195,6 +195,7 @@ for a in r.get('assets', []):
 | v1.4.14 | 이전 | `ff62cbf` | BUG-011 Thread 방식 교체, 컴파일 오류 수정 |
 | v1.4.15 | 세션87 | `a172a6f` | **BUG-IME: `captureInput: false` — 한글 IME 근본 수정** |
 | v1.4.16 | 세션98 | `45f995e` | **BUG-179b: `saveImageToGallery()` 브릿지 추가 — Android 갤러리 직접 저장** |
+| v1.4.17 | 세션145 | `04782ca` | **FEAT-218: FCM 알림 클릭 → 해당 화면 이동 — MyFirebaseMessagingService data→Intent + MainActivity handleFcmIntent** |
 
 ---
 

@@ -1,7 +1,7 @@
 # SafetyNOTE — 서버 빌드 & 배포 가이드
 
 > 최초 작성: 세션 87 (2026-07-26)
-> 마지막 업데이트: 세션 87 (2026-07-26)
+> 마지막 업데이트: 세션 145 (2026-08-07)
 > 목적: **에이전트 전용 참조 파일** — 다음 세션에서 빌드/배포 요청 시 이 파일을 먼저 읽는다.
 
 ---
@@ -101,7 +101,7 @@ NAS 자동 처리:
 | **파일** | `safetynote-android/.github/workflows/build-apk.yml` |
 | **트리거** | `workflow_dispatch` (수동 실행) |
 | **동작** | Capacitor 빌드 → 서명 APK → GitHub Release 생성 → NAS Webhook |
-| **현재 최신 버전** | `v1.4.15` |
+| **현재 최신 버전** | `v1.4.17` |
 
 ---
 
@@ -165,17 +165,21 @@ NAS 자동 처리:
 | 세션 87 | 2026-07-26 | `643a093` | docs: BUG-168 기록 추가 | docs only |
 | 세션 87 | 2026-07-26 | `bf1be78` | docs: APK_BUILD_GUIDE.md 최초 작성 | docs only |
 | 세션 87 | 2026-07-26 | `bc02654` | docs: 남은 작업 현황 최종 업데이트 | docs only |
+| 세션 88~143 | 2026-07-26~2026-08-07 | (다수) | BUG-168~FEAT-216-2 다수 수정 | 캐시버스팅 최대 `v=20260807g` |
+| 세션 144 | 2026-08-07 | `5eb1153` | FEAT-217: 알람 수신 대상 공사담당자+현장대리인+안전관리자 한정 | |
+| 세션 144 | 2026-08-07 | `7f95653` | docs: [세션144] FEAT-217 커밋 5eb1153 반영 | docs only |
+| 세션 145 | 2026-08-07 | `009dd2e` | FEAT-218: FCM 알림 클릭 화면 이동 — tasks.ts FCM 발송 + app.js tbm/edu 타입 | 캐시버스팅 `v=20260807b` |
 
 > **다음 배포 시 이 표에 행 추가할 것.**
 
 ---
 
-## 7. 현재 상태 (세션 87 기준)
+## 7. 현재 상태 (세션 145 기준)
 
 ```
-safetynote-server  main  bc02654  ✅ 최신
-safetynote-android main  a172a6f  ✅ 최신 (APK v1.4.15)
-캐시 버스팅              ?v=20260726c
+safetynote-server  main  009dd2e  ✅ 최신 (FEAT-218)
+safetynote-android main  04782ca  ✅ 최신 (APK v1.4.17 빌드 중)
+캐시 버스팅              ?v=20260807b
 NAS001 (LinkMax 본사)    https://linkmax.myds.me:3443  ✅ 활성
 ```
 

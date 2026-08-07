@@ -2,6 +2,60 @@
 
 ---
 
+## [FEAT-218] FCM 알림 클릭 화면 이동 — 알림 탭 시 해당 화면으로 직접 이동 (세션 145)
+
+> **대상**: `android-overrides/MyFirebaseMessagingService.java`, `android-overrides/MainActivity.java`, `src/routes/tasks.ts`, `public/static/app.js`
+> **작업일**: 2026-08-07
+> **커밋 (서버)**: `009dd2e`
+> **커밋 (android)**: `04782ca`
+> **APK**: `v1.4.17`
+> **유형**: 🟢 FEATURE — FCM 알림 클릭 → 해당 화면 자동 이동
+> **상태**: ✅ **완료**
+
+### 문제
+Android 앱에서 FCM 알림 클릭 시 아무 반응 없음.
+1. `MyFirebaseMessagingService.showNotification()`이 FCM `data` 페이로드를 Intent에 전달하지 않음
+2. `MainActivity`에 `onNewIntent()` / FCM Intent 처리 로직 없음
+3. `src/routes/tasks.ts`에 작업 상태 변경 FCM 발송 코드 자체 없음 (SSE만)
+4. `app.js _navigateByNotif()`에 `tbm_completed`, `tbm_approval_done`, `edu_approval_done` 타입 미처리
+
+### 변경 내용
+
+| 파일 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| `MyFirebaseMessagingService.java` | `showNotification(title, body)` — data 전달 없음 | `showNotification(title, body, Map<String,String> data)` — Intent Extra에 `fcm_type/ref_type/ref_id` 담기 |
+| `MainActivity.java` | FCM Intent 처리 로직 없음 | `handleFcmIntent()` + `onNewIntent()` 추가. `executeNavigateJs()`로 WebView JS 호출 (앱 종료 1500ms, 실행 중 800ms 지연) |
+| `src/routes/tasks.ts` | 작업 상태 변경 시 SSE만 발송 | FEAT-217 `notifTargetIds` / `targetIds2` 재사용, Block1·Block2 모두 `sendFcmToUsers()` FCM 병행 발송 |
+| `public/static/app.js` | `_navigateByNotif()` task/sign_request만 처리 | `tbm_completed`, `tbm_approval_done`, `tbm_attendee_all_signed`, `edu_approval_done` 케이스 추가 |
+
+### 알림 탭 → 화면 이동 매핑 (변경 후)
+
+| FCM type | 이동 화면 |
+|----------|-----------|
+| `task_status`, `task_status_manager`, `task_status_change` | 해당 작업 상세 (`showTaskDetail(ref_id)`) |
+| `task_created`, `task_assigned` | 해당 작업 상세 |
+| `sign_request` | 서명 요청 화면 |
+| `hazard_report` | 위험 신고 화면 |
+| `settlement_request` | 공사 상세 모달 |
+| `tbm_completed`, `tbm_approval_done`, `tbm_attendee_all_signed` | TBM 화면 (`showTbmDetail(ref_id)`) |
+| `edu_approval_done` | 교육 화면 (`showEducationDetail(ref_id)`) |
+
+### 동작 시나리오
+
+```
+[앱 종료 상태]
+FCM data(type, ref_type, ref_id) → showNotification() Intent Extra 세팅
+→ 알림 탭 → MainActivity.onCreate() → handleFcmIntent(getIntent())
+→ 1500ms 후 evaluateJavascript("window._navigateByNotif({...})")
+
+[앱 실행 중/백그라운드]
+FCM data → showNotification() Intent Extra 세팅
+→ 알림 탭 → MainActivity.onNewIntent() → handleFcmIntent(intent)
+→ 800ms 후 evaluateJavascript("window._navigateByNotif({...})")
+```
+
+---
+
 ## [FEAT-217] 알람 처리 로직 수정 — 공사담당자+현장대리인+안전관리자 한정 발송 (세션 144)
 
 > **대상**: `src/routes/tasks.ts`, `src/routes/tbm.ts`

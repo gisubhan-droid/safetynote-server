@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-07 (세션 142 — FEAT-215 현장위치 지도 완전 반응형 레이아웃 (v=20260807e))
-> **GitHub 최신 (safetynote-server): `5aa0d08`** — fix: [FEAT-215] 현장위치 지도 완전 반응형 레이아웃 — 하단 여백 제거 + 유동 flex (v=20260807e)
+> 최종 업데이트: 2026-08-07 (세션 143 — FEAT-216 현장위치 지도 모바일 UI 개선 (v=20260807a))
+> **GitHub 최신 (safetynote-server): `34b306c`** — feat: [FEAT-216] 현장위치 지도 모바일 UI 개선 — 드롭다운 필터 + 팀/작업자 복원 (v=20260807a)
+> **이전 커밋 (safetynote-server): `ea0308e`** — docs: [세션142] FEAT-215 반응형 레이아웃 + BUG-213 v2 + site-map 수정 커밋 반영 (5aa0d08)
+> **이전 커밋 (safetynote-server): `5aa0d08`** — fix: [FEAT-215] 현장위치 지도 완전 반응형 레이아웃 — 하단 여백 제거 + 유동 flex (v=20260807e)
 > **이전 커밋 (safetynote-server): `adf932e`** — fix: [site-map] 모바일 지도 하단 목록 미표시 수정
 > **이전 커밋 (safetynote-server): `4e26ba5`** — fix: [BUG-213 v2] html/body overflow:hidden + overflow-x:clip 재적용 — fixed+sticky 동시 안정화
 > **이전 커밋 (safetynote-server): `b89a314`** — fix: [BUG-213] Android WebView position:fixed 안정화 — GPU 레이어 방식
@@ -12227,6 +12229,43 @@ body { height: 100%; overflow: hidden; }
 
 **캐시버스팅**: `style.css?v=20260807e`, `app.js?v=20260806h`  
 **커밋**: `5aa0d08` — fix: [FEAT-215] 현장위치 지도 완전 반응형 레이아웃 — 하단 여백 제거 + 유동 flex (v=20260807e)
+
+---
+
+## 세션 143 (2026-08-07) — FEAT-216 현장위치 지도 모바일 UI 개선
+
+### 작업: FEAT-216 — 모바일 드롭다운 필터 + 팀/작업자 행 복원
+
+**배경**  
+FEAT-215 반응형 레이아웃 이후 모바일에서 상단 필터 영역이 화면의 ~50%를 점유.  
+또한 이전에 표시되던 목록 카드의 작업팀/TBM 작업자 정보가 사라진 상태.
+
+**변경 사항**
+
+| 항목 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| 사용자 필터 | 👤 전체 사용자 셀렉트박스 | ❌ 모바일 완전 제거 |
+| 탭 버튼 5개 | 라운드 버튼 2줄 | 📂 구분 드롭다운 1개 |
+| 날짜 필터 | 직접입력 + 4개 버튼 | 📅 기간 드롭다운 1개 |
+| 필터 높이 | ~172px | ~82px (-90px) |
+| 목록 카드 | 이름/작성자/주소 | + 팀명 배지 + 작업자 행 |
+| PC 화면 | — | 변경 없음 |
+
+**기술 구현 (`public/static/app.js`, `public/static/style.css`)**
+- `sm-pc-tabs` / `sm-pc-filter`: PC 전용 class → `@media ≤768px` 숨김
+- `sm-mobile-filter`: 모바일 전용 드롭다운 컨테이너
+- `siteMapTabDrop` (구분) / `siteMapPeriodDrop` (기간) 드롭다운 신규 추가
+- `_onSiteMapPeriodDrop()` 헬퍼 함수 추가 → `_setSiteMapDateRange()` 위임
+- `_applySiteMapFilters()` 개선: 모바일 탭 드롭다운 값 읽기 추가
+- `listItems.push` 8개 위치: `team`, `workers` 필드 추가
+- listItems 렌더러: `li-team` div + `li-team-badge` span 추가
+- `style.css`: `.li-team`, `.li-team-badge` 스타일 신규 정의
+
+**검증**
+- `npm run build` ✅ (`dist/_worker.js 298.71 kB`, 1.65s)
+
+**캐시버스팅**: `app.js?v=20260807a`, `style.css?v=20260807f`  
+**커밋**: `34b306c` — feat: [FEAT-216] 현장위치 지도 모바일 UI 개선 — 드롭다운 필터 + 팀/작업자 복원 (v=20260807a)
 
 ---
 

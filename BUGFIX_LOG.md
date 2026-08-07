@@ -2,6 +2,48 @@
 
 ---
 
+## [FEAT-216] 현장위치 지도 모바일 UI 개선 — 드롭다운 필터 + 팀/작업자 복원 (세션 143)
+
+> **대상**: `public/static/app.js`, `public/static/style.css`, `src/index.tsx`  
+> **작업일**: 2026-08-07  
+> **커밋**: `34b306c`  
+> **유형**: 🟢 FEATURE — 모바일 전용 필터 간소화 + 목록 카드 팀/작업자 행 복원  
+> **상태**: ✅ **완료**
+
+### 변경 사항
+
+| 항목 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| 사용자 필터 | 👤 전체 사용자 셀렉트박스 | ❌ **모바일 제거** |
+| 탭 버튼 5개 | 라운드 버튼 2줄 | 📂 구분 드롭다운 1개 (모바일 전용) |
+| 날짜 필터 | 직접입력 + 4개 버튼 | 📅 기간 드롭다운 1개 (모바일 전용) |
+| 필터 영역 높이 | ~172px | ~82px (-90px) |
+| 목록 카드 | 이름/작성자/주소 | + **팀명 배지 + TBM 작업자** 행 추가 |
+| PC 화면 | — | **변경 없음** (`@media ≤768px` 스코프) |
+
+### 기술 구현
+
+- **`sm-pc-tabs` / `sm-pc-filter`**: PC 전용 — `@media ≤768px`에서 `display:none`
+- **`sm-mobile-filter`**: 모바일 전용 — PC에서 `display:none`, 모바일에서 `display:block`
+- **`siteMapTabDrop`**: 구분 드롭다운 (`onchange → window._smTab + _applySiteMapFilters()`)
+- **`siteMapPeriodDrop`**: 기간 드롭다운 (`onchange → _onSiteMapPeriodDrop(val)`)
+- **`_onSiteMapPeriodDrop`**: 신규 헬퍼 함수 → `_setSiteMapDateRange()` 위임
+- **`_applySiteMapFilters`**: 모바일 드롭다운 값 읽기 추가 (`siteMapTabDrop`)
+- **`listItems.push` 8개 위치**: `team`, `workers` 필드 추가 (탭별 데이터 소스 차이 반영)
+  - risk/working/completed: `t.team_name`, `t.assigned_workers`
+  - tbm: `tbm.team_name`, `tbm.attendees`
+  - inspection: `''`, `''` (현장점검은 팀 정보 없음)
+- **listItems 렌더러**: `li-team` div 추가 — 팀 배지(`li-team-badge`) + 작업자명
+- **style.css**: `.li-team`, `.li-team-badge` 스타일 + 모바일 이원화 규칙
+
+### 충돌 회피
+
+- 기존 `#siteMapRoot .mb-3 { margin-bottom:5px }` 규칙: 새 dropsdown은 `sm-mobile-filter` class로 분리 → 충돌 없음
+- `siteMapUserId` 제거: `_applySiteMapFilters`에 `if(selEl)` null 가드 유지 → 안전
+- FEAT-215 flex 레이아웃: 새 HTML 구조가 동일한 `siteMapRoot → leafletMap → siteMapList` 체인 유지 → 호환
+
+---
+
 ## [FEAT-215] 현장위치 지도 완전 반응형 레이아웃 — 하단 여백 제거 + 유동 flex (세션 142)
 
 > **대상**: `public/static/style.css`  

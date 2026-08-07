@@ -2,6 +2,97 @@
 
 ---
 
+## [FEAT-215] 현장위치 지도 완전 반응형 레이아웃 — 하단 여백 제거 + 유동 flex (세션 142)
+
+> **대상**: `public/static/style.css`  
+> **작업일**: 2026-08-07  
+> **커밋**: `5aa0d08`  
+> **유형**: 🟢 FEATURE — 현장위치 지도 반응형 레이아웃 완전 재설계  
+> **상태**: ✅ **완료**
+
+### 배경
+
+BUG-213 v2(`html/body overflow:hidden + #app overflow-y:auto`) 구조 기반에서,  
+지도 화면의 하단 여백(92px), 사이드 패딩(64px), 지도 고정 높이 문제 3가지 충돌이 동시에 발생.
+
+### 충돌 원인 3가지
+
+| 충돌 | 원인 | 증상 |
+|------|------|------|
+| **C1** | `body:has(#icon-rail) .main-content { padding-bottom: 92px }` + `site-map-mode { height:100dvh }` 동시 적용 | 하단 92px 빈 여백 낭비 |
+| **C2** | `#page-content` 클래스 `p-4`(padding 16px 사방) — site-map에서도 그대로 적용 | 상하 32px 추가 공간 손실 |
+| **C3** | `#leafletMap { max-height:260px }` 고정값 | 화면 크기 무관 → 대형/소형 화면 최적화 불가 |
+
+### 수정 내용 (`public/static/style.css` — site-map 블록 전체 재설계)
+
+```css
+/* ─── 현장위치 지도 — 완전 반응형 flex 레이아웃 ── */
+
+/* C1 해결: padding-bottom:0 강제 */
+.main-content.site-map-mode {
+  display: flex; flex-direction: column;
+  height: 100dvh; height: 100vh;  /* fallback */
+  padding-bottom: 0 !important;
+  overflow: hidden;
+}
+
+/* C2 해결: site-map에서 p-4 패딩 제거 */
+.main-content.site-map-mode #page-content {
+  overflow: hidden;
+  padding: 0 !important;
+}
+
+/* siteMapRoot: page-content padding 대체 자체 패딩 */
+#siteMapRoot {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  padding: 12px 16px 8px;
+  box-sizing: border-box;
+}
+
+/* C3 해결: max-height 완전 제거 → 순수 flex 비율 */
+#leafletMap {
+  flex: 1;         /* 남은 공간 전부 사용 */
+  min-height: 0;
+  min-height: 200px;  /* 최소 보장 */
+}
+
+/* 목록: 고정 높이 유지 (지도가 밀어내지 않음) */
+#siteMapList {
+  flex: 0 0 auto;
+  height: 160px;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+```
+
+**반응형 미디어쿼리 (4개):**
+
+| 화면 | 지도 min-height | 목록 height |
+|------|---------------|------------|
+| ≤480px (소형 모바일) | 120px | 110px |
+| ≤768px (모바일) | 150px | 130px |
+| 769~1024px (태블릿) | 240px | 180px |
+| ≥1440px (대형) | 320px (min) | 220px |
+
+### 충돌 체크
+
+- **app.js `siteMapRoot` 인라인**: `style="display:flex;flex-direction:column;height:100%;overflow:hidden"` → CSS flex 체인 정상 override ✅
+- **app.js `siteMapList` 인라인**: `style="overflow-y:auto;padding-bottom:8px;flex-shrink:0"` → CSS `flex:0 0 auto; height:160px` override ✅
+- **app.js `pageContent` 인라인**: `display:flex; flexDirection:column; overflowY:hidden; flex:1; height:0` → CSS `overflow:hidden; padding:0` 과 동일 방향 ✅
+- **BUG-213 v2 구조 (`html/body overflow:hidden + #app overflow-y:auto`)**: 변경 없음 — 기반 유지 ✅
+- **`body:has(#icon-rail) .main-content { padding-bottom:92px }`**: `!important`로 완전 상쇄 ✅
+
+### 검증
+- `npm run build` → ✅ `dist/_worker.js 298.71 kB` (1.51s)
+- 캐시버스팅: `style.css?v=20260807e`, `app.js?v=20260806h`
+
+### 커밋
+- `5aa0d08` — fix: [FEAT-215] 현장위치 지도 완전 반응형 레이아웃 — 하단 여백 제거 + 유동 flex (v=20260807e)
+
+---
+
 ## [BUG-214] 가로 스크롤 차단 + site-map 리스트 미표시 — BUG-213 후속 (세션 141/142)
 
 > **대상**: `public/static/style.css`  

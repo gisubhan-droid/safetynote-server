@@ -21,8 +21,11 @@
 
 ---
 
-> 최종 업데이트: 2026-08-07 (세션 142 — BUG-213 최종 해결: GPU 레이어 방식 (v=20260807b))
-> **GitHub 최신 (safetynote-server): `b89a314`** — fix: [BUG-213] Android WebView position:fixed 안정화 — GPU 레이어 방식
+> 최종 업데이트: 2026-08-07 (세션 142 — FEAT-215 현장위치 지도 완전 반응형 레이아웃 (v=20260807e))
+> **GitHub 최신 (safetynote-server): `5aa0d08`** — fix: [FEAT-215] 현장위치 지도 완전 반응형 레이아웃 — 하단 여백 제거 + 유동 flex (v=20260807e)
+> **이전 커밋 (safetynote-server): `adf932e`** — fix: [site-map] 모바일 지도 하단 목록 미표시 수정
+> **이전 커밋 (safetynote-server): `4e26ba5`** — fix: [BUG-213 v2] html/body overflow:hidden + overflow-x:clip 재적용 — fixed+sticky 동시 안정화
+> **이전 커밋 (safetynote-server): `b89a314`** — fix: [BUG-213] Android WebView position:fixed 안정화 — GPU 레이어 방식
 > **이전 커밋 (safetynote-server): `6f63a64`** — fix: [세션141] style.css 캐시버스팅 갱신 v=5dfc5a8d → v=20260807a
 > **이전 커밋 (safetynote-server): `8b40324`** — fix: [세션141] BUG-214 가로 스크롤 + site-map 리스트 미표시 수정 (v=20260806g)
 > **이전 커밋 (safetynote-server): `5ce9d0a`** — fix: [세션141] BUG-213 후속 — #app overflow-x:clip 추가 (가로 스크롤 발생 수정)
@@ -12159,6 +12162,71 @@ Android WebView에서 `position:sticky`(.top-header)를 완전 무효화시킴 �
 - `npm run build` ✅ (dist/_worker.js 298.71 kB, 1.58s)
 
 **커밋**: `b89a314` — fix: [BUG-213] Android WebView position:fixed 안정화 — GPU 레이어 방식
+
+---
+
+### 작업: BUG-213 v2 — html/body overflow:hidden + overflow-x:clip 재적용
+
+**배경**  
+GPU 레이어(`translateZ(0)`) 단독으로는 Android WebView body 스크롤 자체를 차단하지 못해 fixed 요소 스크롤 버그 지속.  
+`overflow:hidden`을 재도입하되 sticky를 파괴하지 않는 방식 필요.
+
+**핵심 기술**: `overflow-x: clip` — `hidden`과 달리 스크롤 컨텍스트를 생성하지 않아 `position:sticky` 정상 동작 보장.
+
+**수정 내용** (`public/static/style.css`)
+```css
+html { height: 100%; overflow: hidden; }
+body { height: 100%; overflow: hidden; }
+#app {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: clip;                    /* sticky 방해 없이 가로 넘침 차단 */
+  -webkit-overflow-scrolling: touch;
+}
+```
+
+**캐시버스팅**: `style.css?v=20260807c`  
+**커밋**: `4e26ba5` — fix: [BUG-213 v2] html/body overflow:hidden + overflow-x:clip 재적용
+
+---
+
+### 작업: site-map 목록 미표시 수정 — flex 비율 조정
+
+**증상**: BUG-213 v2 적용 후 `#app { overflow-y:auto }` 스크롤 컨텍스트에서 `#siteMapList`(목록)가 화면 밖으로 밀려 미표시.
+
+**원인**: `#leafletMap { flex:1 }` + `#siteMapList { flex:1 }` 동등 비율 → 지도가 전체 공간 독점.
+
+**수정 내용** (`public/static/style.css`)
+- `#leafletMap { flex:3 }` + `max-height:260px` 기준 설정
+- `#siteMapList { flex:1 }` + `max-height:200px` 명시
+
+**캐시버스팅**: `style.css?v=20260807d`  
+**커밋**: `adf932e` — fix: [site-map] 모바일 지도 하단 목록 미표시 수정
+
+---
+
+### 작업: FEAT-215 — 현장위치 지도 완전 반응형 레이아웃
+
+**배경**  
+세션 142에서 BUG-213 v2 구조(`html/body overflow:hidden + #app overflow-y:auto`) 기반으로  
+지도 화면의 3가지 충돌(C1/C2/C3)을 동시에 해결.
+
+**충돌 C1**: `padding-bottom:92px`(bottom-nav용) + `height:100dvh` 동시 → 하단 92px 여백  
+**충돌 C2**: `#page-content p-4`(padding:16px 사방) — site-map에서도 적용 → 64px 공간 낭비  
+**충돌 C3**: `#leafletMap max-height:260px` 고정값 → 화면 크기 무관 → 유동 불가
+
+**수정 내용** (`public/static/style.css` — site-map 블록 전체 재설계)
+- C1: `.site-map-mode { padding-bottom: 0 !important }`
+- C2: `.site-map-mode #page-content { padding: 0 !important }` + `#siteMapRoot` 자체 패딩 부여
+- C3: `#leafletMap { flex:1; min-height:200px }` (max-height 완전 제거)
+- `#siteMapList { flex:0 0 auto; height:160px }` (고정 높이 — 지도가 밀어내지 않음)
+- 4개 미디어쿼리: ≤480px / ≤768px / 769~1024px / ≥1440px
+
+**검증**
+- `npm run build` ✅ (`dist/_worker.js 298.71 kB`, 1.51s)
+
+**캐시버스팅**: `style.css?v=20260807e`, `app.js?v=20260806h`  
+**커밋**: `5aa0d08` — fix: [FEAT-215] 현장위치 지도 완전 반응형 레이아웃 — 하단 여백 제거 + 유동 flex (v=20260807e)
 
 ---
 

@@ -2,6 +2,70 @@
 
 ---
 
+## [BUG-213] Android WebView position:fixed 스크롤 버그 — html/body overflow 미설정 (세션 141)
+
+> **대상**: `public/static/style.css`  
+> **작업일**: 2026-08-07  
+> **커밋**: `7fcdcda`  
+> **유형**: 🔴 BUG — Android 앱(v1.4.16) 전체 화면 스크롤 / `#icon-rail`(position:fixed) 함께 스크롤됨
+
+### 증상
+- Android 앱(v1.4.16)에서 페이지 스크롤 시 `#icon-rail`(position:fixed) 상단(브랜드 로고, 상단 메뉴 아이콘)이 잘려 사라지고 하단(내계정, 로그아웃, v1.4.16)만 보임
+- `position:fixed` 요소 자체가 스크롤됨 → Android WebView에서 fixed 컨텍스트 이상
+- **태블릿은 정상** / 스마트폰 Android만 발생
+- BUG-211, BUG-212 수정 이후에도 지속
+
+### 원인
+
+`html`, `body` 모두 `overflow` 미설정 상태에서 Android WebView가 `body`를 스크롤 컨테이너로 사용:
+
+```css
+/* ❌ 문제 상태 */
+body {
+  font-family: ...;
+  background: ...;
+  /* overflow 없음 — Android WebView가 body를 스크롤 컨테이너로 사용 */
+}
+/* html 규칙 자체 없음 */
+```
+
+- **body 스크롤 발생 시**: Android WebView에서 `position:fixed` 요소가 뷰포트 기준이 아닌 body 기준으로 고정되어 함께 스크롤됨
+- **태블릿 정상인 이유**: 화면이 커서 콘텐츠가 뷰포트 안에 수용 → body 스크롤 미발생 → fixed 요소 정상 고정
+- **스마트폰 고장인 이유**: 콘텐츠가 뷰포트보다 길어 body 스크롤 발생 → fixed 요소 함께 스크롤
+
+### 수정 내용 (`public/static/style.css`)
+
+`body { }` 블록 바로 뒤에 BUG-213 규칙 추가:
+
+```css
+/* 변경 후 — body 블록 바로 뒤 삽입 */
+html, body {
+  height: 100%;
+  overflow: hidden;                 /* body 스크롤 제거 → fixed 안정화 */
+}
+#app {
+  height: 100%;
+  overflow-y: auto;                 /* 실제 스크롤을 #app에 위임 */
+  -webkit-overflow-scrolling: auto; /* touch 금지 — sticky/fixed 방해 방지 */
+}
+```
+
+**스크롤 컨테이너 변경 흐름:**
+
+| 요소 | 이전 | 이후 |
+|------|------|------|
+| 스크롤 컨테이너 | `body` (암묵적) | `#app` (명시) |
+| `#icon-rail` (fixed) | body 스크롤 시 함께 스크롤됨 ❌ | 항상 뷰포트 기준 고정 ✅ |
+| `.top-header` (sticky) | `#app` 내 `.main-content` 기준 | 동일 — 정상 ✅ |
+| `site-map-mode` | 정상 | 동일 — 정상 ✅ |
+| 모달/오버레이 (fixed) | body 스크롤 시 영향 가능 | 뷰포트 기준 고정 ✅ |
+
+### 검증
+- `node --check public/static/app.js` → ✅ OK
+- `npm run build` → ✅ `dist/_worker.js 298.71 kB` (1.68s)
+
+---
+
 ## [BUG-212] 상단 헤더·사이드메뉴 고정 안됨 — .main-content flex/min-height 전역 적용 (세션 141)
 
 > **대상**: `public/static/style.css` — BUG-211 수정 후 잔존 FEAT-210 CSS 부작용

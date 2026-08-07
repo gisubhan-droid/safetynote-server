@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-07 (세션 141 — BUG-212: 상단 헤더 스크롤 이탈 수정 (v=20260806d))
-> **GitHub 최신 (safetynote-server): `fb388dc`** — fix: [BUG-212] 상단 헤더 스크롤 이탈 — style.css .main-content flex/min-height 전역적용 제거 (v=20260806d)
+> 최종 업데이트: 2026-08-07 (세션 141 — BUG-213: Android WebView position:fixed 스크롤 버그 수정 (v=20260806e))
+> **GitHub 최신 (safetynote-server): `7fcdcda`** — fix: [세션141] BUG-213 Android WebView position:fixed 스크롤 버그 수정 (v=20260806e)
+> **이전 커밋 (safetynote-server): `3354f74`** — docs: [세션141] BUG-212 커밋 해시 fb388dc 반영
+> **이전 커밋 (safetynote-server): `fb388dc`** — fix: [BUG-212] 상단 헤더 스크롤 이탈 — style.css .main-content flex/min-height 전역적용 제거 (v=20260806d)
 > **이전 커밋 (safetynote-server): `4409c66`** — docs: [세션141] BUG-211 커밋 해시 1f87186 반영
 > **이전 커밋 (safetynote-server): `1f87186`** — fix: [BUG-211] 안드로이드 터치 스크롤 불가 — style.css overflow:hidden 전역적용 수정 (v=20260806c)
 > **이전 커밋 (safetynote-server): `96db7c0`** — docs: [세션141] BUGFIX_LOG + PROJECT_HISTORY FEAT-210 커밋 해시 e4cdedd 반영
@@ -12123,7 +12125,48 @@ PDF 저장 시 파일명이 항상 `제목없음.pdf`로 저장되어 문서 식
 
 ---
 
-## 세션 141 (2026-08-06) — BUG-209 마커 미표시 수정 + FEAT-210 반응형 레이아웃·기본값 변경
+## 세션 141 (2026-08-06) — BUG-209 마커 미표시 수정 + FEAT-210 반응형 레이아웃·기본값 변경 + BUG-211~213 연쇄 UI 버그 수정
+
+### 작업 5: BUG-213 — Android WebView position:fixed 스크롤 버그 수정
+
+**증상**
+- Android 앱(v1.4.16)에서 전체 페이지 스크롤 시 `#icon-rail`(position:fixed) 상단이 잘려 사라짐
+- fixed 요소 자체가 스크롤됨 → Android WebView fixed 컨텍스트 이상
+- 태블릿 정상 / 스마트폰 Android만 발생. BUG-211·212 수정 이후에도 지속
+
+**원인**
+- `html`, `body` 모두 `overflow` 미설정 → Android WebView가 body를 스크롤 컨테이너로 인식
+- body 콘텐츠가 뷰포트보다 길어 body 스크롤 발생 → `position:fixed` 요소가 뷰포트 기준이 아닌 body 기준으로 고정되어 스크롤됨
+- 태블릿은 화면 크기로 콘텐츠가 뷰포트 내 수용 → body 스크롤 미발생 → 정상
+
+**수정 내용**
+`public/static/style.css` — `body { }` 블록 뒤에 BUG-213 규칙 추가:
+```css
+html, body { height: 100%; overflow: hidden; }   /* body 스크롤 제거 → fixed 안정화 */
+#app { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: auto; }  /* 스크롤을 #app에 위임 */
+```
+
+**영향 없음**: `.top-header`(sticky), site-map-mode, 모달/오버레이 모두 #app 스크롤 컨테이너 안에서 정상 동작
+
+**검증**
+- `node --check public/static/app.js` ✅
+- `npm run build` ✅ (298.71 kB, 1.68s)
+
+**커밋**: `7fcdcda` — fix: [세션141] BUG-213 Android WebView position:fixed 스크롤 버그 수정 (v=20260806e)
+
+---
+
+### 작업 4: BUG-212 — 상단 헤더 스크롤 이탈 수정
+
+**커밋**: `fb388dc` — fix: [BUG-212] 상단 헤더 스크롤 이탈 — style.css .main-content flex/min-height 전역적용 제거 (v=20260806d)
+
+---
+
+### 작업 3: BUG-211 — 안드로이드 터치 스크롤 불가 수정
+
+**커밋**: `1f87186` — fix: [BUG-211] 안드로이드 터치 스크롤 불가 — style.css overflow:hidden 전역적용 수정 (v=20260806c)
+
+---
 
 ### 작업 2: FEAT-210 — 현장위치지도 레이아웃 반응형 + 기본값 변경
 

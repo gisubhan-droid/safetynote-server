@@ -298,6 +298,8 @@ html, body {
 #app {
   height: 100%;
   overflow-y: auto;
+  overflow-x: clip;                    /* 가로 스크롤 차단 — hidden과 달리 스크롤 컨텍스트
+                                          미생성 → 자식 overflow-x:auto(테이블 등) 독립 동작 유지 */
   -webkit-overflow-scrolling: auto;    /* touch 금지 — position:sticky/fixed 방해 방지 */
 }
 

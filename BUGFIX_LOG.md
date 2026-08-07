@@ -2,12 +2,13 @@
 
 ---
 
-## [BUG-214] 가로 스크롤 차단 + site-map 리스트 미표시 — BUG-213 후속 (세션 141)
+## [BUG-214] 가로 스크롤 차단 + site-map 리스트 미표시 — BUG-213 후속 (세션 141/142)
 
 > **대상**: `public/static/style.css`  
 > **작업일**: 2026-08-07  
-> **커밋**: `8b40324`  
-> **유형**: 🔴 BUG — BUG-213 수정(overflow-x:clip) 후속 부작용 2건
+> **커밋(발생)**: `8b40324` → **커밋(해결)**: `b89a314` (세션 142)  
+> **유형**: 🔴 BUG — BUG-213 수정(overflow-x:clip) 후속 부작용 2건  
+> **상태**: ✅ **해결** — BUG-213과 함께 롤백으로 해결
 
 ### 증상
 1. **작업현황 등 내부 화면 우측 잘림** — 카드/목록 콘텐츠가 우측으로 잘리고 가로 스크롤 불가
@@ -52,14 +53,19 @@
 - `node --check public/static/app.js` → ✅ OK
 - `npm run build` → ✅ `dist/_worker.js 298.71 kB` (1.34s)
 
+### ⚠️ 최종 결론 (세션 142)
+BUG-213 해결 과정에서 도입된 `html/body { overflow:hidden } + #app { overflow-y:auto }` 구조 자체가 근본 원인이었음.  
+세션 142에서 **전부 롤백** 후 `#icon-rail`에 GPU 레이어만 추가하여 BUG-213/214 동시 해결. 자세한 내용은 BUG-213 항목 참조.
+
 ---
 
-## [BUG-213] Android WebView position:fixed 스크롤 버그 — html/body overflow 미설정 (세션 141)
+## [BUG-213] Android WebView position:fixed 스크롤 버그 — html/body overflow 미설정 (세션 141/142)
 
 > **대상**: `public/static/style.css`  
 > **작업일**: 2026-08-07  
-> **커밋**: `7fcdcda`  
-> **유형**: 🔴 BUG — Android 앱(v1.4.16) 전체 화면 스크롤 / `#icon-rail`(position:fixed) 함께 스크롤됨
+> **커밋(발생)**: `7fcdcda` → **커밋(최종해결)**: `b89a314` (세션 142)  
+> **유형**: 🔴 BUG — Android 앱(v1.4.16) 전체 화면 스크롤 / `#icon-rail`(position:fixed) 함께 스크롤됨  
+> **상태**: ✅ **해결** — GPU 레이어 강제 분리(`translateZ(0)`)로 최종 해결
 
 ### 증상
 - Android 앱(v1.4.16)에서 페이지 스크롤 시 `#icon-rail`(position:fixed) 상단(브랜드 로고, 상단 메뉴 아이콘)이 잘려 사라지고 하단(내계정, 로그아웃, v1.4.16)만 보임
@@ -115,6 +121,48 @@ html, body {
 ### 검증
 - `node --check public/static/app.js` → ✅ OK
 - `npm run build` → ✅ `dist/_worker.js 298.71 kB` (1.68s)
+
+### ❌ 잘못된 수정 시도 이력 (세션 141)
+1. `html/body { overflow:hidden } + #app { overflow-y:auto }` → `position:sticky`(.top-header) 완전 파괴 (Android WebView sticky 무효화)
+2. `#app { overflow-x:clip }` → 내부 가로 스크롤 전부 차단 (BUG-214 발생)
+3. `overflow-x:clip → hidden + .main-content { max-width:100% }` → 콘텐츠 여전히 잘림
+4. `site-map height 100vh → 100%` → #siteMapList 여전히 미표시
+5. `style.css 캐시버스팅 v=20260807a` → 캐시 문제 해결이나 CSS 자체가 잘못됨
+
+### ✅ 최종 해결 방법 (세션 142, 커밋 `b89a314`)
+
+**핵심 원칙**: body 스크롤 구조를 건드리지 않고, `#icon-rail`만 GPU 합성 레이어로 분리.
+
+```css
+/* ① BUG-213 블록 전부 제거 (html/body overflow, #app height/overflow) */
+/* 전부 삭제 */
+
+/* ② BUG-214 .main-content max-width:100% 제거 */
+.main-content { margin-left: clamp(52px, 5.5vw, 72px); }  /* max-width:100% 제거 */
+
+/* ③ site-map-mode height 복원 */
+.main-content.site-map-mode { height: 100vh; }   /* 100% → 100vh (PC) */
+@media (max-width: 768px) {
+  .main-content.site-map-mode { height: 100dvh; } /* 100% → 100dvh (모바일) */
+}
+
+/* ④ #icon-rail GPU 레이어 강제 분리 */
+#icon-rail {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+```
+
+**효과**:
+- body 스크롤 구조 원래대로 → `position:sticky`(.top-header) 정상 동작 ✅
+- `#icon-rail` GPU 합성 레이어 분리 → Android WebView fixed 스크롤 버그 해결 ✅
+- `overflow-x/y` 조작 없음 → 가로/세로 스크롤 원래대로 ✅
+- site-map height `100vh`/`100dvh` 복원 → 지도/목록 레이아웃 정상화 ✅
+- 캐시버스팅: style.css `v=20260807b`, app.js `v=20260806h`
+
+### 검증 (세션 142)
+- `npm run build` → ✅ `dist/_worker.js 298.71 kB` (1.58s)
+- `git push` → ✅ `6f63a64..b89a314`
 
 ---
 

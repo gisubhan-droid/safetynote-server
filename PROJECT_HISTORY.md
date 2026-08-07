@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-07 (세션 141 — BUG-214: 가로 스크롤 차단 + site-map 리스트 미표시 수정 (v=20260806g))
-> **GitHub 최신 (safetynote-server): `8b40324`** — fix: [세션141] BUG-214 가로 스크롤 + site-map 리스트 미표시 수정 (v=20260806g)
+> 최종 업데이트: 2026-08-07 (세션 142 — BUG-213 최종 해결: GPU 레이어 방식 (v=20260807b))
+> **GitHub 최신 (safetynote-server): `b89a314`** — fix: [BUG-213] Android WebView position:fixed 안정화 — GPU 레이어 방식
+> **이전 커밋 (safetynote-server): `6f63a64`** — fix: [세션141] style.css 캐시버스팅 갱신 v=5dfc5a8d → v=20260807a
+> **이전 커밋 (safetynote-server): `8b40324`** — fix: [세션141] BUG-214 가로 스크롤 + site-map 리스트 미표시 수정 (v=20260806g)
 > **이전 커밋 (safetynote-server): `5ce9d0a`** — fix: [세션141] BUG-213 후속 — #app overflow-x:clip 추가 (가로 스크롤 발생 수정)
 > **이전 커밋 (safetynote-server): `06e25e2`** — docs: [세션141] BUG-213 커밋 해시 7fcdcda 반영
 > **이전 커밋 (safetynote-server): `7fcdcda`** — fix: [세션141] BUG-213 Android WebView position:fixed 스크롤 버그 수정 (v=20260806e)
@@ -12125,6 +12127,38 @@ PDF 저장 시 파일명이 항상 `제목없음.pdf`로 저장되어 문서 식
 
 ### 커밋
 - `a6ccc03` — feat: [FEAT-PDF-FILENAME] 인쇄 PDF 저장 파일명 자동 설정
+
+---
+
+## 세션 142 (2026-08-07) — BUG-213 최종 해결: GPU 레이어 방식
+
+### 작업: BUG-213 최종 해결 — html/body overflow 롤백 + #icon-rail GPU 레이어
+
+**배경**
+세션 141에서 BUG-213 수정으로 도입한 `html/body { overflow:hidden } + #app { overflow-y:auto }` 구조가  
+Android WebView에서 `position:sticky`(.top-header)를 완전 무효화시킴 → BUG-212 재현.  
+동시에 BUG-214 (overflow-x:clip 가로 차단) 잔존.
+
+**최종 접근**: 잘못된 수정 전부 롤백 + `#icon-rail`에 GPU 레이어 분리 1줄만 추가.
+
+**수정 내용** (`public/static/style.css` + `src/index.tsx`)
+1. BUG-213 블록 전체 제거: `html/body { overflow:hidden }` + `#app { height/overflow-y/overflow-x/-webkit }` 삭제
+2. BUG-214 `.main-content { max-width:100% }` 제거
+3. `.main-content.site-map-mode { height: 100% → 100vh }` 복원 (PC)
+4. `@media(≤768px) .main-content.site-map-mode { height: 100% → 100dvh }` 복원 (모바일)
+5. `#icon-rail`에 `-webkit-transform: translateZ(0); transform: translateZ(0);` 추가
+6. 캐시버스팅: style.css `v=20260807a → v=20260807b`, app.js `v=20260806g → v=20260806h`
+
+**효과**
+- body 스크롤 구조 복원 → `position:sticky`(.top-header) 정상 ✅
+- `#icon-rail` GPU 합성 레이어 분리 → Android WebView fixed 스크롤 버그 해결 ✅
+- overflow 조작 없음 → 가로/세로 스크롤 원래대로 ✅
+- site-map `height:100vh/100dvh` 복원 → 지도/목록 레이아웃 정상 ✅
+
+**검증**
+- `npm run build` ✅ (dist/_worker.js 298.71 kB, 1.58s)
+
+**커밋**: `b89a314` — fix: [BUG-213] Android WebView position:fixed 안정화 — GPU 레이어 방식
 
 ---
 

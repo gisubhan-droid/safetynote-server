@@ -2,6 +2,32 @@
 
 ---
 
+## [FEAT-216-2] 현장위치 지도 모바일 비율 조정 — 지도 축소 + 리스트 확대 + 드롭다운 폰트 축소 (세션 143)
+
+> **대상**: `public/static/style.css`, `src/index.tsx`
+> **작업일**: 2026-08-07
+> **커밋**: `1b2e412`
+> **유형**: 🟡 TWEAK — 모바일 전용 레이아웃 비율 미세 조정
+> **상태**: ✅ **완료**
+
+### 변경 내용 (`@media ≤768px` / `@media ≤480px` 스코프만)
+
+| 항목 | 변경 전 | 변경 후 | 효과 |
+|------|---------|---------|------|
+| `#leafletMap min-height` (≤768px) | `150px` | `120px` | 지도 -30px |
+| `#siteMapList height` (≤768px) | `130px` | `185px` | 리스트 +55px (카드 2~3개) |
+| `#leafletMap min-height` (≤480px) | `120px` | `100px` | 소형 지도 -20px |
+| `#siteMapList height` (≤480px) | `110px` | `155px` | 소형 리스트 +45px |
+| `.sm-mobile-filter select font-size` | `12px` (인라인) | `11px` (CSS 오버라이드) | 드롭다운 폰트 축소 |
+| `.sm-mobile-filter button font-size` | `12px` (인라인) | `11px` (CSS 오버라이드) | 조회버튼 폰트 축소 |
+
+### 충돌 없음 확인
+- PC 기본값 / 태블릿 / 대형 화면 값 **변경 없음**
+- FEAT-215 `flex:1`/`flex:0 0 auto` 체인 구조 **그대로 유지**
+- 인라인 스타일 `!important` 오버라이드 방식 → app.js RULE-001 **준수**
+
+---
+
 ## [FEAT-216] 현장위치 지도 모바일 UI 개선 — 드롭다운 필터 + 팀/작업자 복원 (세션 143)
 
 > **대상**: `public/static/app.js`, `public/static/style.css`, `src/index.tsx`  

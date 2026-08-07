@@ -21,8 +21,10 @@
 
 ---
 
-> 최종 업데이트: 2026-08-07 (세션 143 — FEAT-216-2 모바일 지도 비율 조정 (v=20260807g))
-> **GitHub 최신 (safetynote-server): `1b2e412`** — fix: [FEAT-216] 모바일 지도 비율 조정 — siteMapList 높이 확대 + 드롭다운 폰트 축소 (v=20260807g)
+> 최종 업데이트: 2026-08-07 (세션 144 — FEAT-217 알람 수신 대상 공사 관련자 한정)
+> **GitHub 최신 (safetynote-server): `(이번 커밋)`** — fix: [FEAT-217] 알람 수신 대상 공사담당자+현장대리인+안전관리자 한정
+> **이전 커밋 (safetynote-server): `685d134`** — docs: [세션143] FEAT-216-2 모바일 지도 비율 조정 커밋 1b2e412 반영
+> **이전 커밋 (safetynote-server): `1b2e412`** — fix: [FEAT-216] 모바일 지도 비율 조정 — siteMapList 높이 확대 + 드롭다운 폰트 축소 (v=20260807g)
 > **이전 커밋 (safetynote-server): `4182ba9`** — docs: [세션143] FEAT-216 모바일 UI 개선 커밋 34b306c 반영
 > **이전 커밋 (safetynote-server): `34b306c`** — feat: [FEAT-216] 현장위치 지도 모바일 UI 개선 — 드롭다운 필터 + 팀/작업자 복원 (v=20260807a)
 > **이전 커밋 (safetynote-server): `ea0308e`** — docs: [세션142] FEAT-215 반응형 레이아웃 + BUG-213 v2 + site-map 수정 커밋 반영 (5aa0d08)
@@ -12477,4 +12479,39 @@ html, body { height: 100%; overflow: hidden; }   /* body 스크롤 제거 → fi
 - `node --check public/static/app.js` ✅
 - `npm run build` ✅ (298.71 kB)
 - NAS 반영 및 사용자 확인 ✅
+
+
+---
+
+## 세션 144 (2026-08-07) — FEAT-217 알람 수신 대상 공사 관련자 한정
+
+### 작업: FEAT-217 — 알람 처리 로직 수정
+
+**배경**  
+작업 상태 변경 알람이 `role IN ('admin','supervisor')` 조건으로 공사와 무관한 모든 관리자/감독자에게 발송되는 문제.  
+공사에 등록된 공사담당자에게만 해당 공사 알람이 가도록 수정 요청.
+
+**변경 사항**
+
+| 파일 | 위치 | 변경 전 | 변경 후 |
+|------|------|---------|---------|
+| `tasks.ts` | taskRow 쿼리 | construction_id 미포함 | `LEFT JOIN constructions con` + `con_manager_id` 추가 |
+| `tasks.ts` | Block1 모든 상태변경 | `role IN ('admin','supervisor')` 전체 | 공사담당자+현장대리인+안전관리자 |
+| `tasks.ts` | Block2 체크리스트 이후 | `position IN ('관리감독자','총괄책임자','대표이사')` 전체 | 동일 대상 교체 |
+| `tbm.ts` | taskRow 쿼리 | title, task_number만 조회 | `LEFT JOIN constructions con` + `con_manager_id` 추가 |
+| `tbm.ts` | TBM완료 알람 | `role IN ('admin','supervisor')` 전체 | 공사담당자+현장대리인+안전관리자 |
+
+**알람 수신 구조 (변경 후)**
+- 공사담당자: `constructions.manager_id` 기준 해당 공사 1명
+- 현장대리인: `position = '현장대리인'` 전체 수신 (예외 유지)
+- 안전관리자: `position = '안전관리자'` 전체 수신 (예외 유지)
+- 그 외 admin/supervisor: 미수신
+
+**충돌 없음 확인**
+- `broadcastToRoles(['admin','supervisor'])` SSE 브로드캐스트: 그대로 유지 (DB 저장만 필터링)
+- FEAT-215/216/216-2 CSS/JS: 변경 없음 (서버 코드만 수정)
+- RULE-001: app.js 수정 없음
+
+**커밋**: `fix: [FEAT-217] 알람 수신 대상 공사담당자+현장대리인+안전관리자 한정`  
+**빌드**: `npm run build` ✅ (299.05 kB)
 

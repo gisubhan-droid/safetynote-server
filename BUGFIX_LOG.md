@@ -2,6 +2,44 @@
 
 ---
 
+## [FEAT-217] 알람 처리 로직 수정 — 공사담당자+현장대리인+안전관리자 한정 발송 (세션 144)
+
+> **대상**: `src/routes/tasks.ts`, `src/routes/tbm.ts`
+> **작업일**: 2026-08-07
+> **커밋**: `(이번 커밋)`
+> **유형**: 🔴 BUGFIX — 알람 수신 대상 과다 발송 수정
+> **상태**: ✅ **완료**
+
+### 문제
+작업 상태 변경 알람이 `role IN ('admin','supervisor')` 조건으로 **모든 admin/supervisor에게 전체 발송**됨. 공사와 무관한 사용자도 수신.
+
+### 변경 내용
+
+| 파일 | 위치 | 변경 전 | 변경 후 |
+|------|------|---------|---------|
+| `tasks.ts` | taskRow 쿼리 | `construction_id` 미포함 | `LEFT JOIN constructions con` + `con.manager_id as con_manager_id` 추가 |
+| `tasks.ts` | Block1 (모든 상태변경) | `role IN ('admin','supervisor')` 전체 | 공사담당자+현장대리인+안전관리자 |
+| `tasks.ts` | Block2 (체크리스트 이후) | `position IN ('관리감독자','총괄책임자','대표이사')` 전체 | 동일 대상 교체 |
+| `tbm.ts` | taskRow 쿼리 | `SELECT title, task_number FROM tasks` | `LEFT JOIN constructions con` + `con_manager_id` 추가 |
+| `tbm.ts` | TBM완료 알람 | `role IN ('admin','supervisor')` 전체 | 공사담당자+현장대리인+안전관리자 |
+
+### 알람 수신 구조 (변경 후)
+```
+어떤 작업 이벤트 발생 시:
+  ├── 공사담당자 (해당 공사 constructions.manager_id, 1명) → ✅ 수신
+  ├── 현장대리인 (position 기준, 전체) → ✅ 수신
+  ├── 안전관리자 (position 기준, 전체) → ✅ 수신
+  └── 그 외 admin/supervisor → ❌ 미수신
+```
+
+### 충돌 없음 확인
+- `broadcastToRoles(['admin','supervisor'], ssePayload)` SSE 브로드캐스트: **그대로 유지** (DB 저장만 필터링)
+- `taskRow` 변수명: tbm.ts line 107 기존 변수 재활용 (쿼리 확장)
+- Block1 `notifTargetIds` Set: try 블록 스코프 내부 독립 선언, Block2는 동일 패턴으로 재계산
+- FEAT-215/216/216-2 CSS/JS 변경 없음 — 서버 코드만 수정
+
+---
+
 ## [FEAT-216-2] 현장위치 지도 모바일 비율 조정 — 지도 축소 + 리스트 확대 + 드롭다운 폰트 축소 (세션 143)
 
 > **대상**: `public/static/style.css`, `src/index.tsx`

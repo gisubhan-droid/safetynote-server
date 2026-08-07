@@ -1008,11 +1008,13 @@ app.patch('/:id/status', async (c) => {
   try {
     const taskRow = await c.env.DB.prepare(
       `SELECT t.title, t.supervisor_id, t.work_number, t.sub_task_number, t.task_number,
+              t.construction_id, con.manager_id as con_manager_id,
               u.name as supervisor_name,
               GROUP_CONCAT(ta.worker_id) as worker_ids
        FROM tasks t
        LEFT JOIN users u ON u.id = t.supervisor_id
        LEFT JOIN task_assignments ta ON ta.task_id = t.id
+       LEFT JOIN constructions con ON con.id = t.construction_id
        WHERE t.id = ? GROUP BY t.id`
     ).bind(id).first<any>()
 
@@ -1041,22 +1043,27 @@ app.patch('/:id/status', async (c) => {
     // 관리자/감독자에게 브로드캐스트
     broadcastToRoles(['admin', 'supervisor'], ssePayload)
 
-    // ─── 모든 상태변경 → admin/supervisor DB 저장 (배지 카운트 유지용)
+    // ─── 모든 상태변경 → 공사담당자+현장대리인+안전관리자 DB 저장 (배지 카운트 유지용)
+    // [FEAT-217] 공사에 등록된 공사담당자만 수신. 현장대리인·안전관리자는 전체 수신.
     try {
       const notifTitle = `작업 상태 변경: ${sLabel}`
       const notifMsg   = ssePayload.message
-      const adminUsers = await c.env.DB.prepare(
-        `SELECT id FROM users WHERE role IN ('admin','supervisor') AND is_active=1`
+      // 현장대리인 + 안전관리자 (position 기준, 전체)
+      const fixedUsers = await c.env.DB.prepare(
+        `SELECT id FROM users WHERE position IN ('현장대리인','안전관리자') AND is_active=1`
       ).all<any>()
-      if (adminUsers.results?.length > 0) {
+      const notifTargetIds = new Set<number>((fixedUsers.results || []).map((u: any) => u.id as number))
+      // 공사담당자 (해당 공사에 등록된 1명)
+      if (taskRow?.con_manager_id) notifTargetIds.add(taskRow.con_manager_id as number)
+      // 본인 제외
+      notifTargetIds.delete(user.id)
+      if (notifTargetIds.size > 0) {
         const insertStmt = c.env.DB.prepare(
           `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
            VALUES (?, 'task_status_change', ?, ?, ?, 'task', 0)`
         )
         await c.env.DB.batch(
-          adminUsers.results
-            .filter((u: any) => u.id !== user.id)
-            .map((u: any) => insertStmt.bind(u.id, notifTitle, notifMsg, Number(id)))
+          [...notifTargetIds].map((uid: number) => insertStmt.bind(uid, notifTitle, notifMsg, Number(id)))
         )
       }
     } catch(_) {}
@@ -1069,44 +1076,43 @@ app.patch('/:id/status', async (c) => {
       }
     }
 
-    // ─── 체크리스트 완료 이후 단계 변경 시 → 관리감독자/총괄책임자/대표이사 알림
+    // ─── 체크리스트 완료 이후 단계 변경 시 → 공사담당자+현장대리인+안전관리자 알림
+    // [FEAT-217] 기존 관리감독자/총괄책임자/대표이사 전체 발송 → 공사 관련자 한정
     const POST_CHECKLIST_STATUSES = ['tbm_done', 'working', 'work_completed', 'completed']
     if (POST_CHECKLIST_STATUSES.includes(status)) {
-      const TARGET_POSITIONS = ['관리감독자', '총괄책임자', '대표이사']
-      const placeholders = TARGET_POSITIONS.map(() => '?').join(',')
-
-      // 대상 직책 사용자 조회
-      const targetUsers = await c.env.DB.prepare(
-        `SELECT id, name, position FROM users
-         WHERE position IN (${placeholders}) AND is_active = 1`
-      ).bind(...TARGET_POSITIONS).all<any>()
-
-      if (targetUsers.results && targetUsers.results.length > 0) {
-        const notifTitle  = `작업 상태 변경: ${sLabel}`
-        const notifMsg    = `[${taskNumDisplay}] "${taskRow?.title || id}" 작업이 [${sLabel}] 단계로 변경되었습니다. (처리: ${user.name})`
+      try {
+        const notifTitle2 = `작업 상태 변경: ${sLabel}`
+        const notifMsg2   = `[${taskNumDisplay}] "${taskRow?.title || id}" 작업이 [${sLabel}] 단계로 변경되었습니다. (처리: ${user.name})`
 
         const managerPayload = {
           ...ssePayload,
           type: 'task_status_manager',
-          message: notifMsg,
+          message: notifMsg2,
         }
 
-        const targetIds = targetUsers.results.map((u: any) => u.id as number)
+        // 현장대리인 + 안전관리자 (position 기준, 전체) + 공사담당자 (해당 공사 1명)
+        const fixedUsers2 = await c.env.DB.prepare(
+          `SELECT id FROM users WHERE position IN ('현장대리인','안전관리자') AND is_active=1`
+        ).all<any>()
+        const targetSet = new Set<number>((fixedUsers2.results || []).map((u: any) => u.id as number))
+        if (taskRow?.con_manager_id) targetSet.add(taskRow.con_manager_id as number)
+        targetSet.delete(user.id)
+        const targetIds2 = [...targetSet]
 
-        // SSE 실시간 알림 (접속 중인 경우)
-        sendToUsers(targetIds, managerPayload)
+        if (targetIds2.length > 0) {
+          // SSE 실시간 알림 (접속 중인 경우)
+          sendToUsers(targetIds2, managerPayload)
 
-        // notifications 테이블에 영구 저장 (접속 여부 무관)
-        const insertStmt = c.env.DB.prepare(
-          `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
-           VALUES (?, 'task_status_change', ?, ?, ?, 'task', 0)`
-        )
-        await c.env.DB.batch(
-          targetIds.map((uid: number) =>
-            insertStmt.bind(uid, notifTitle, notifMsg, Number(id))
+          // notifications 테이블에 영구 저장 (접속 여부 무관)
+          const insertStmt2 = c.env.DB.prepare(
+            `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
+             VALUES (?, 'task_status_change', ?, ?, ?, 'task', 0)`
           )
-        )
-      }
+          await c.env.DB.batch(
+            targetIds2.map((uid: number) => insertStmt2.bind(uid, notifTitle2, notifMsg2, Number(id)))
+          )
+        }
+      } catch(_) {}
     }
   } catch (_) {}
 

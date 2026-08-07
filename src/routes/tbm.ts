@@ -104,7 +104,11 @@ app.post('/', async (c) => {
 
   // ── TBM 완료 시 안전관리자에게 결재 서명 요청 알림 ─────────────────────────
   const tbmId = result.meta.last_row_id
-  const taskRow = await c.env.DB.prepare(`SELECT title, task_number FROM tasks WHERE id = ?`).bind(task_id).first<any>()
+  const taskRow = await c.env.DB.prepare(
+    `SELECT t.title, t.task_number, t.construction_id, con.manager_id as con_manager_id
+     FROM tasks t LEFT JOIN constructions con ON con.id = t.construction_id
+     WHERE t.id = ?`
+  ).bind(task_id).first<any>()
   const tbmTitle = `TBM: ${taskRow?.title || task_id}`
   const safetyUsers = await c.env.DB.prepare(
     `SELECT id, name FROM users WHERE position = '안전관리자' AND is_active = 1`
@@ -164,27 +168,32 @@ app.post('/', async (c) => {
     }
   }
 
-  // ── TBM 완료 시 admin/supervisor에게 알림 ─────────────────────────────────
+  // ── TBM 완료 시 공사담당자+현장대리인+안전관리자 알림 ──────────────────────
+  // [FEAT-217] 기존 admin/supervisor 전체 발송 → 공사 관련자 한정
   try {
     const taskNum    = taskRow?.task_number ? `[${taskRow.task_number}] ` : ''
     const notifTitle = `TBM 완료: ${taskNum}${taskRow?.title || task_id}`
     const notifMsg   = `${user.name}님이 TBM을 완료했습니다.${taskRow?.task_number ? ` (${taskRow.task_number})` : ''}`
-    const adminUsers = await c.env.DB.prepare(
-      `SELECT id FROM users WHERE role IN ('admin','supervisor') AND is_active=1`
+    // 현장대리인 + 안전관리자 (position 기준, 전체)
+    const fixedUsers = await c.env.DB.prepare(
+      `SELECT id FROM users WHERE position IN ('현장대리인','안전관리자') AND is_active=1`
     ).all<any>()
-    if (adminUsers.results?.length > 0) {
+    const notifTargetIds = new Set<number>((fixedUsers.results || []).map((u: any) => u.id as number))
+    // 공사담당자 (해당 공사에 등록된 1명)
+    if (taskRow?.con_manager_id) notifTargetIds.add(taskRow.con_manager_id as number)
+    // 본인 제외
+    notifTargetIds.delete(user.id)
+    if (notifTargetIds.size > 0) {
       const insertStmt = c.env.DB.prepare(
         `INSERT INTO notifications (user_id, type, title, message, ref_id, ref_type, is_read)
          VALUES (?, 'tbm_completed', ?, ?, ?, 'tbm', 0)`
       )
       await c.env.DB.batch(
-        adminUsers.results
-          .filter((u: any) => u.id !== user.id)
-          .map((u: any) => insertStmt.bind(u.id, notifTitle, notifMsg, Number(tbmId)))
+        [...notifTargetIds].map((uid: number) => insertStmt.bind(uid, notifTitle, notifMsg, Number(tbmId)))
       )
       // SSE 실시간 푸시
-      for (const u of adminUsers.results.filter((u: any) => u.id !== user.id)) {
-        sendToUser(u.id, {
+      for (const uid of notifTargetIds) {
+        sendToUser(uid, {
           type: 'tbm_completed',
           title: notifTitle,
           message: notifMsg,

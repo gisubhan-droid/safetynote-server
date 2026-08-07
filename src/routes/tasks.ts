@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { getUser } from '../utils'
 import { sendToUser, broadcastAll, broadcastToRoles, sendToUsers } from '../sse'
 import { refreshConstructionStatus } from './constructions'
+import { sendFcmToUsers } from '../nas-routes/push-helper'
 
 type Bindings = { DB: D1Database }
 const app = new Hono<{ Bindings: Bindings }>()
@@ -1065,6 +1066,23 @@ app.patch('/:id/status', async (c) => {
         await c.env.DB.batch(
           [...notifTargetIds].map((uid: number) => insertStmt.bind(uid, notifTitle, notifMsg, Number(id)))
         )
+
+        // ─── FCM 푸시 발송 (백그라운드/종료 상태 기기 도달용)
+        // [FEAT-218] SSE만으로는 앱 비활성 시 미도달 → FCM 병행 발송
+        try {
+          await sendFcmToUsers(
+            [...notifTargetIds],
+            {
+              title: notifTitle,
+              body: notifMsg,
+              data: {
+                type: 'task_status',
+                ref_type: 'task',
+                ref_id: String(id)
+              }
+            }
+          )
+        } catch(_) {}
       }
     } catch(_) {}
 
@@ -1111,6 +1129,23 @@ app.patch('/:id/status', async (c) => {
           await c.env.DB.batch(
             targetIds2.map((uid: number) => insertStmt2.bind(uid, notifTitle2, notifMsg2, Number(id)))
           )
+
+          // ─── FCM 푸시 발송 (체크리스트 이후 단계, 관리자급 대상)
+          // [FEAT-218] 앱 비활성 시에도 즉시 도달
+          try {
+            await sendFcmToUsers(
+              targetIds2,
+              {
+                title: notifTitle2,
+                body: notifMsg2,
+                data: {
+                  type: 'task_status',
+                  ref_type: 'task',
+                  ref_id: String(id)
+                }
+              }
+            )
+          } catch(_) {}
         }
       } catch(_) {}
     }

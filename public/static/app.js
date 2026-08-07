@@ -2900,8 +2900,32 @@ function _navigateByNotif(n) {
   // ── 정산 요청: 공사 상세 모달로 바로 이동
   if (type === 'settlement_request') {
     safeNavigateTo('constructions');
-    const conId = n.conId || (n.ref_type === 'construction' ? n.ref_id : null);
-    if (conId) setTimeout(() => showConstructionDetail(conId), 400);
+    var conId = n.conId || (n.ref_type === 'construction' ? n.ref_id : null);
+    if (conId) setTimeout(function(){ showConstructionDetail(conId); }, 400);
+    return;
+  }
+
+  // ── TBM 관련 알림 → TBM 화면으로 이동
+  if (
+    type === 'tbm_completed' ||
+    type === 'tbm_approval_done' ||
+    type === 'tbm_attendee_all_signed'
+  ) {
+    safeNavigateTo('tbm');
+    var tbmId = n.tbmId || (n.ref_type === 'tbm' ? n.ref_id : null);
+    if (tbmId && typeof showTbmDetail === 'function') {
+      setTimeout(function(){ showTbmDetail(tbmId); }, 450);
+    }
+    return;
+  }
+
+  // ── 교육 관련 알림 → 교육 화면으로 이동
+  if (type === 'edu_approval_done') {
+    safeNavigateTo('education');
+    var eduId = n.eduId || (n.ref_type === 'education' ? n.ref_id : null);
+    if (eduId && typeof showEducationDetail === 'function') {
+      setTimeout(function(){ showEducationDetail(eduId); }, 450);
+    }
     return;
   }
 }

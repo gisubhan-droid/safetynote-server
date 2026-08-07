@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>현장위치 지도 — 모바일 개선안 미리보기</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'Apple SD Gothic Neo', sans-serif; background: #f0eff5; }
+
+  /* ─── 비교 레이아웃 ─── */
+  .compare-wrap {
+    display: flex; gap: 12px; padding: 16px;
+    max-width: 900px; margin: 0 auto;
+    justify-content: center;
+  }
+  .phone-frame {
+    width: 360px; flex-shrink: 0;
+    background: #1a1a2e; border-radius: 44px;
+    padding: 12px 8px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .phone-inner {
+    border-radius: 36px; overflow: hidden;
+    background: #f5f5f5;
+    height: 720px; display: flex; flex-direction: column;
+  }
+  .phone-label {
+    text-align: center; color: #fff; font-size: 12px; font-weight: 700;
+    padding: 6px 0 10px; letter-spacing: 0.5px;
+  }
+  .label-before { color: #ff8a80; }
+  .label-after  { color: #69f0ae; }
+
+  /* ─── 상단 바 ─── */
+  .status-bar {
+    background: #3d2b6e; color: #fff;
+    font-size: 11px; padding: 6px 16px 4px;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-shrink: 0;
+  }
+  .top-bar {
+    background: #3d2b6e; color: #fff;
+    padding: 8px 14px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 14px; font-weight: 600;
+    flex-shrink: 0;
+  }
+  .top-bar .menu-icon { font-size: 18px; opacity: 0.8; }
+  .top-bar .notif { margin-left: auto; display: flex; gap: 12px; font-size: 18px; }
+
+  /* ─── 아이콘 레일 + 메인 ─── */
+  .body-row {
+    display: flex; flex: 1; overflow: hidden;
+  }
+  .icon-rail {
+    width: 48px; background: #2d1f5e; flex-shrink: 0;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 12px 0; gap: 18px;
+  }
+  .icon-rail .ic {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(255,255,255,0.12);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; cursor: pointer;
+  }
+  .icon-rail .ic.active { background: #6851a5; }
+
+  .main-area { flex: 1; overflow-y: auto; overflow-x: hidden; background: #f5f5f5; }
+
+  /* ─── 페이지 콘텐츠 ─── */
+  .page-header {
+    background: #fff; padding: 10px 14px 6px;
+    border-bottom: 1px solid #e8e4f0;
+  }
+  .page-header h2 { font-size: 15px; font-weight: 700; color: #2d1f5e; }
+  .page-header .date-label { font-size: 11px; color: #999; margin-top: 1px; }
+
+  /* ─── 필터 카드 — BEFORE ─── */
+  .filter-card {
+    background: #fff; margin: 8px 10px;
+    border-radius: 12px; padding: 10px 12px;
+    box-shadow: 0 2px 8px rgba(104,81,165,0.1);
+  }
+
+  /* 탭 버튼 (Before) */
+  .tab-row { display: flex; gap: 6px; margin-bottom: 7px; flex-wrap: wrap; }
+  .tab-btn {
+    padding: 5px 9px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    border: 1.5px solid #ddd; background: #fff; cursor: pointer; white-space: nowrap;
+    color: #555;
+  }
+  .tab-btn.active-green  { background: #27ae60; color: #fff; border-color: #27ae60; }
+  .tab-btn.border-yellow { border-color: #f1c40f; color: #856404; }
+  .tab-btn.border-purple { border-color: #6851a5; color: #6851a5; }
+
+  /* 날짜 행 (Before) */
+  .date-row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+  .date-label-sm { font-size: 11px; color: #666; white-space: nowrap; font-weight: 600; }
+  .date-input {
+    flex: 1; padding: 5px 7px; border: 1.5px solid #ddd; border-radius: 8px;
+    font-size: 11px; color: #333; background: #fafafa; text-align: center;
+  }
+  .date-sep { font-size: 12px; color: #aaa; }
+  .quick-row { display: flex; gap: 5px; margin-bottom: 7px; }
+  .quick-btn {
+    flex: 1; padding: 5px 0; border-radius: 8px; font-size: 11px;
+    border: 1.5px solid #ddd; background: #fff; color: #555; cursor: pointer; text-align: center;
+  }
+  .quick-btn.active { background: #ede9f7; border-color: #6851a5; color: #6851a5; font-weight: 700; }
+
+  /* 사용자+조회 행 */
+  .user-row { display: flex; gap: 8px; align-items: center; }
+  .user-select {
+    flex: 1; padding: 6px 10px; border: 1.5px solid #ddd; border-radius: 8px;
+    font-size: 11px; background: #fafafa; color: #333; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    padding-right: 28px;
+  }
+  .search-btn {
+    padding: 6px 14px; background: #6851a5; color: #fff;
+    border-radius: 8px; font-size: 12px; font-weight: 700; border: none; cursor: pointer;
+    white-space: nowrap;
+  }
+
+  /* ─── 필터 카드 — AFTER ─── */
+  .filter-card-new {
+    background: #fff; margin: 8px 10px;
+    border-radius: 12px; padding: 10px 12px;
+    box-shadow: 0 2px 8px rgba(104,81,165,0.1);
+  }
+  .dd-row { margin-bottom: 7px; }
+  .dd-select {
+    width: 100%; padding: 8px 14px; border-radius: 10px; font-size: 13px;
+    border: 1.5px solid #ddd; background: #fff; color: #333;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+    cursor: pointer; font-weight: 500;
+  }
+  .dd-select.active-filter {
+    border-color: #6851a5; background-color: #f5f2ff; color: #4a3580; font-weight: 700;
+  }
+  .dd-select.date-filter {
+    border-color: #e0ddf5;
+  }
+  .dd-row-split { display: flex; gap: 8px; margin-bottom: 0; }
+  .dd-row-split .dd-select { flex: 1; }
+
+  /* ─── 지도 영역 ─── */
+  .map-area {
+    margin: 0 10px 6px; border-radius: 12px; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    position: relative;
+  }
+  .map-img {
+    width: 100%; display: block;
+    background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 30%, #a5d6a7 60%, #81c784 100%);
+    position: relative;
+  }
+  .map-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 6px;
+    color: #555; font-size: 12px;
+  }
+  .map-placeholder .map-icon { font-size: 28px; }
+  .map-zoom {
+    position: absolute; top: 8px; left: 8px;
+    background: #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    display: flex; flex-direction: column;
+  }
+  .map-zoom button {
+    width: 26px; height: 26px; border: none; background: transparent;
+    font-size: 16px; font-weight: 700; color: #555; cursor: pointer;
+    line-height: 1;
+  }
+  .map-zoom button:first-child { border-bottom: 1px solid #eee; }
+  .map-marker {
+    position: absolute; font-size: 20px;
+  }
+  .map-attrib {
+    position: absolute; bottom: 4px; right: 6px;
+    font-size: 9px; color: #555; background: rgba(255,255,255,0.7);
+    padding: 1px 4px; border-radius: 3px;
+  }
+
+  /* ─── 범례 ─── */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 6px 10px;
+    padding: 4px 12px 6px; font-size: 10px; color: #555;
+  }
+
+  /* ─── 목록 ─── */
+  .list-area { padding: 0 10px; flex-shrink: 0; }
+  .list-item {
+    background: #fff; border-radius: 10px; padding: 9px 11px;
+    display: flex; align-items: center; gap: 9px;
+    margin-bottom: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .list-play {
+    width: 34px; height: 34px; border-radius: 50%; background: #27ae60;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    color: #fff; font-size: 14px;
+  }
+  .list-info { flex: 1; min-width: 0; }
+  .list-title { font-size: 12px; font-weight: 600; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list-meta { font-size: 10px; color: #888; margin-top: 2px; }
+  .list-detail {
+    padding: 5px 10px; background: #6851a5; color: #fff;
+    border-radius: 7px; font-size: 11px; font-weight: 600; flex-shrink: 0;
+  }
+
+  /* ─── 하단 네비 ─── */
+  .bottom-nav {
+    height: 58px; background: #fff; border-top: 1px solid #e8e4f0;
+    display: flex; align-items: center; justify-content: space-around;
+    flex-shrink: 0; padding-bottom: 2px;
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-size: 9px; color: #aaa;
+  }
+  .nav-item.active { color: #6851a5; }
+  .nav-item .nav-icon { font-size: 20px; }
+
+  /* ─── 높이 표시 바 ─── */
+  .height-indicator {
+    position: absolute; right: -60px; top: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+  }
+  .h-bar { width: 2px; background: #ff5252; }
+  .h-label {
+    font-size: 9px; color: #ff5252; font-weight: 700;
+    white-space: nowrap; background: #fff; padding: 1px 3px;
+    border-radius: 3px;
+  }
+
+  /* ─── 화살표 주석 ─── */
+  .annotation {
+    text-align: center; font-size: 11px; color: #6851a5;
+    padding: 8px 4px 4px; font-weight: 600;
+  }
+  .badge-diff {
+    display: inline-block; background: #e8f5e9; color: #27ae60;
+    border-radius: 10px; padding: 2px 8px; font-size: 11px;
+    font-weight: 700; margin: 4px auto;
+  }
+
+  /* ─── 페이지 타이틀 ─── */
+  .page-title {
+    text-align: center; padding: 20px 0 8px;
+    font-size: 18px; font-weight: 800; color: #2d1f5e;
+  }
+  .page-subtitle { text-align: center; font-size: 12px; color: #888; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div class="page-title">현장위치 지도 — 모바일 UI 개선 미리보기</div>
+<div class="page-subtitle">좌: 현재 화면 &nbsp;|&nbsp; 우: 개선안 (드롭다운 적용)</div>
+
+<div class="compare-wrap">
+
+  <!-- ══════════════ BEFORE ══════════════ -->
+  <div>
+    <div class="phone-label label-before">◀ 현재 (Before)</div>
+    <div class="phone-frame">
+      <div class="phone-inner">
+        <!-- 상태바 -->
+        <div class="status-bar">
+          <span>1:46</span><span>▪</span>
+          <span style="margin-left:auto">▂▄▆ 🛜 99%</span>
+        </div>
+        <!-- 탑바 -->
+        <div class="top-bar">
+          <span class="menu-icon">☰</span>
+          <span>site-map</span>
+          <div class="notif">🔔 🔑 ↩</div>
+        </div>
+        <!-- 바디 -->
+        <div class="body-row">
+          <!-- 아이콘 레일 -->
+          <div class="icon-rail">
+            <div class="ic active">🏗</div>
+            <div class="ic">🛡</div>
+            <div class="ic">🦺</div>
+            <div class="ic">📊</div>
+            <div class="ic">⚙️</div>
+          </div>
+          <!-- 메인 -->
+          <div class="main-area">
+            <div class="page-header">
+              <h2>현장위치 지도</h2>
+              <div class="date-label">2026-08-07</div>
+            </div>
+
+            <!-- BEFORE 필터 카드 -->
+            <div class="filter-card">
+              <!-- 탭 2줄 -->
+              <div class="tab-row">
+                <button class="tab-btn border-yellow">⚠️ 위험성체크</button>
+                <button class="tab-btn">🦺 TBM</button>
+                <button class="tab-btn active-green">🟢 진행</button>
+              </div>
+              <div class="tab-row">
+                <button class="tab-btn">✅ 완료</button>
+                <button class="tab-btn border-purple">🔍 현장점검</button>
+              </div>
+              <!-- 날짜 -->
+              <div class="date-row">
+                <span class="date-label-sm">작업일</span>
+                <div class="date-input">2026. 8. 7.</div>
+                <span class="date-sep">~</span>
+                <div class="date-input">2026. 8. 7.</div>
+              </div>
+              <!-- 빠른 기간 -->
+              <div class="quick-row">
+                <button class="quick-btn active">오늘</button>
+                <button class="quick-btn">7일</button>
+                <button class="quick-btn">30일</button>
+                <button class="quick-btn">전체</button>
+              </div>
+              <!-- 사용자 + 조회 -->
+              <div class="user-row">
+                <select class="user-select"><option>👤 전체 사용자</option></select>
+                <button class="search-btn">🔍 조회</button>
+              </div>
+            </div>
+
+            <!-- 지도 -->
+            <div class="map-area">
+              <div class="map-img" style="height:155px;">
+                <div class="map-placeholder" style="height:155px; background: linear-gradient(135deg,#dcedc8,#c5e1a5,#aed581);">
+                  <div style="font-size:11px;color:#555;text-align:center;padding-top:60px">🗺️ Leaflet 지도</div>
+                  <div style="font-size:9px;color:#777">© OpenStreetMap contributors</div>
+                </div>
+                <div class="map-zoom">
+                  <button>+</button><button>−</button>
+                </div>
+                <span class="map-marker" style="top:55px;left:80px">🟢</span>
+                <span class="map-marker" style="top:70px;right:55px">🟠</span>
+                <div class="map-attrib">Leaflet | © OpenStreetMap</div>
+              </div>
+            </div>
+
+            <!-- 범례 -->
+            <div class="legend">
+              <span>🟠⚠️ 위험성체크</span><span>🟠🦺 TBM</span><span>🟢🟢 진행</span>
+              <span>🟢✅ 완료</span><span>🔵🔍 현장점검</span>
+            </div>
+
+            <!-- 목록 -->
+            <div class="list-area">
+              <div class="list-item">
+                <div class="list-play">▶</div>
+                <div class="list-info">
+                  <div class="list-title">[신축][고압구성]이선시 오입...</div>
+                  <div class="list-meta">📅 2026-08-07 &nbsp; 📍 경기 이천시 ...</div>
+                </div>
+                <div class="list-detail">📄 상세</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 하단 네비 -->
+        <div class="bottom-nav">
+          <div class="nav-item active"><span class="nav-icon">🏗</span>현장작업</div>
+          <div class="nav-item"><span class="nav-icon">🛡</span>안전점검</div>
+          <div class="nav-item"><span class="nav-icon">🦺</span>안전관리</div>
+          <div class="nav-item"><span class="nav-icon">📊</span>공사현황</div>
+          <div class="nav-item"><span class="nav-icon">⚙️</span>관리/설정</div>
+        </div>
+      </div>
+    </div>
+    <!-- 높이 측정 표시 -->
+    <div style="text-align:center;margin-top:8px">
+      <div style="font-size:11px;color:#ff5252;font-weight:700">필터 영역 높이</div>
+      <div style="font-size:18px;font-weight:800;color:#ff5252">≈ 172px</div>
+      <div style="font-size:10px;color:#888">탭2줄+날짜+기간버튼+사용자</div>
+    </div>
+  </div>
+
+  <!-- ══════════════ AFTER ══════════════ -->
+  <div>
+    <div class="phone-label label-after">개선안 (After) ▶</div>
+    <div class="phone-frame">
+      <div class="phone-inner">
+        <!-- 상태바 -->
+        <div class="status-bar">
+          <span>1:46</span><span>▪</span>
+          <span style="margin-left:auto">▂▄▆ 🛜 99%</span>
+        </div>
+        <!-- 탑바 -->
+        <div class="top-bar">
+          <span class="menu-icon">☰</span>
+          <span>site-map</span>
+          <div class="notif">🔔 🔑 ↩</div>
+        </div>
+        <!-- 바디 -->
+        <div class="body-row">
+          <!-- 아이콘 레일 -->
+          <div class="icon-rail">
+            <div class="ic active">🏗</div>
+            <div class="ic">🛡</div>
+            <div class="ic">🦺</div>
+            <div class="ic">📊</div>
+            <div class="ic">⚙️</div>
+          </div>
+          <!-- 메인 -->
+          <div class="main-area">
+            <div class="page-header">
+              <h2>현장위치 지도</h2>
+              <div class="date-label">2026-08-07</div>
+            </div>
+
+            <!-- AFTER 필터 카드 — 드롭다운 3줄 -->
+            <div class="filter-card-new">
+              <!-- 드롭다운 1: 구분 -->
+              <div class="dd-row">
+                <select class="dd-select active-filter">
+                  <option>🟢 진행</option>
+                  <option>⚠️ 위험성체크</option>
+                  <option>🦺 TBM</option>
+                  <option>✅ 완료</option>
+                  <option>🔍 현장점검</option>
+                </select>
+              </div>
+              <!-- 드롭다운 2: 기간 -->
+              <div class="dd-row">
+                <select class="dd-select date-filter">
+                  <option>📅 오늘</option>
+                  <option>📅 7일</option>
+                  <option>📅 30일</option>
+                  <option>📅 전체</option>
+                </select>
+              </div>
+              <!-- 드롭다운 3: 사용자 + 조회 버튼 -->
+              <div class="dd-row-split">
+                <select class="dd-select">
+                  <option>👤 전체 사용자</option>
+                </select>
+                <button class="search-btn">🔍 조회</button>
+              </div>
+            </div>
+
+            <!-- 지도 — 더 많은 공간 -->
+            <div class="map-area">
+              <div class="map-img" style="height:205px;">
+                <div class="map-placeholder" style="height:205px; background: linear-gradient(135deg,#dcedc8,#c5e1a5,#aed581);">
+                  <div style="font-size:11px;color:#555;text-align:center;padding-top:82px">🗺️ Leaflet 지도</div>
+                  <div style="font-size:9px;color:#777">© OpenStreetMap contributors</div>
+                </div>
+                <div class="map-zoom">
+                  <button>+</button><button>−</button>
+                </div>
+                <span class="map-marker" style="top:75px;left:80px">🟢</span>
+                <span class="map-marker" style="top:95px;right:55px">🟠</span>
+                <span class="map-marker" style="top:50px;right:90px">🟢</span>
+                <div class="map-attrib">Leaflet | © OpenStreetMap</div>
+              </div>
+            </div>
+
+            <!-- 범례 -->
+            <div class="legend">
+              <span>🟠⚠️ 위험성체크</span><span>🟠🦺 TBM</span><span>🟢🟢 진행</span>
+              <span>🟢✅ 완료</span><span>🔵🔍 현장점검</span>
+            </div>
+
+            <!-- 목록 — 더 많은 공간 -->
+            <div class="list-area">
+              <div class="list-item">
+                <div class="list-play">▶</div>
+                <div class="list-info">
+                  <div class="list-title">[신축][고압구성]이선시 오입...</div>
+                  <div class="list-meta">📅 2026-08-07 &nbsp; 📍 경기 이천시 ...</div>
+                </div>
+                <div class="list-detail">📄 상세</div>
+              </div>
+              <div class="list-item">
+                <div class="list-play" style="background:#e67e22">▶</div>
+                <div class="list-info">
+                  <div class="list-title">[증설] 변전소 설비 점검 작업</div>
+                  <div class="list-meta">📅 2026-08-07 &nbsp; 📍 경기 용인시 ...</div>
+                </div>
+                <div class="list-detail">📄 상세</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 하단 네비 -->
+        <div class="bottom-nav">
+          <div class="nav-item active"><span class="nav-icon">🏗</span>현장작업</div>
+          <div class="nav-item"><span class="nav-icon">🛡</span>안전점검</div>
+          <div class="nav-item"><span class="nav-icon">🦺</span>안전관리</div>
+          <div class="nav-item"><span class="nav-icon">📊</span>공사현황</div>
+          <div class="nav-item"><span class="nav-icon">⚙️</span>관리/설정</div>
+        </div>
+      </div>
+    </div>
+    <!-- 높이 측정 표시 -->
+    <div style="text-align:center;margin-top:8px">
+      <div style="font-size:11px;color:#27ae60;font-weight:700">필터 영역 높이</div>
+      <div style="font-size:18px;font-weight:800;color:#27ae60">≈ 112px</div>
+      <div style="font-size:10px;color:#888">드롭다운 3줄 (구분+기간+사용자)</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 개선 요약 -->
+<div style="max-width:760px;margin:0 auto 24px;padding:0 16px">
+  <div style="background:#fff;border-radius:16px;padding:16px 20px;box-shadow:0 2px 12px rgba(104,81,165,0.12)">
+    <div style="font-size:14px;font-weight:800;color:#2d1f5e;margin-bottom:12px">📊 개선 효과 요약</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:160px;background:#fff5f5;border-radius:10px;padding:10px 14px;border-left:4px solid #ff5252">
+        <div style="font-size:11px;color:#888;margin-bottom:4px">현재 필터 높이</div>
+        <div style="font-size:22px;font-weight:800;color:#ff5252">172px</div>
+        <div style="font-size:10px;color:#aaa">탭 2줄 + 날짜 + 기간 버튼 + 사용자</div>
+      </div>
+      <div style="flex:1;min-width:160px;background:#f0fff4;border-radius:10px;padding:10px 14px;border-left:4px solid #27ae60">
+        <div style="font-size:11px;color:#888;margin-bottom:4px">개선 후 필터 높이</div>
+        <div style="font-size:22px;font-weight:800;color:#27ae60">112px</div>
+        <div style="font-size:10px;color:#aaa">드롭다운 3줄 (구분 + 기간 + 사용자)</div>
+      </div>
+      <div style="flex:1;min-width:160px;background:#f5f0ff;border-radius:10px;padding:10px 14px;border-left:4px solid #6851a5">
+        <div style="font-size:11px;color:#888;margin-bottom:4px">확보 추가 공간</div>
+        <div style="font-size:22px;font-weight:800;color:#6851a5">+60px</div>
+        <div style="font-size:10px;color:#aaa">지도 +50px · 목록 항목 +1~2개</div>
+      </div>
+    </div>
+    <div style="margin-top:14px;font-size:12px;color:#555;line-height:1.7">
+      ✅ <strong>PC 화면 영향 없음</strong> — <code>@media (max-width: 768px)</code> 스코프만 변경<br>
+      ✅ <strong>기능 동일</strong> — 드롭다운 선택값 → 기존 조회 로직에 동일하게 연결<br>
+      ✅ <strong>app.js 수정 범위</strong> — <code>renderSiteMapPage</code> 함수 내 HTML 구조 + 이벤트 핸들러만
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1506,10 +1506,19 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
     margin-bottom: 6px;
     flex-shrink: 0;
   }
+  /* 모바일 드롭다운 폰트 축소 (인라인 12px 오버라이드) */
+  .sm-mobile-filter select {
+    font-size: 11px !important;
+    padding: 5px 26px 5px 7px !important;
+  }
+  .sm-mobile-filter button {
+    font-size: 11px !important;
+    padding: 5px 10px !important;
+  }
 
-  /* 모바일: 지도 최소 높이 조정, 목록 높이 축소 */
-  #leafletMap  { min-height: 150px; }
-  #siteMapList { height: 130px; }   /* 모바일: 목록 3~4줄 */
+  /* 모바일: 지도 최소 높이 축소 → 목록 공간 확보 */
+  #leafletMap  { min-height: 120px; }  /* 150px → 120px (-30px) */
+  #siteMapList { height: 185px; }      /* 130px → 185px (+55px): 카드 2~3개 표시 */
 }
 
 /* ── li-team 행: 팀 배지 + 작업자 (PC/모바일 공통) ── */
@@ -1534,8 +1543,8 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
 
 /* ── 소형 모바일(≤480px, 키보드 팝업 등 극소화면) ── */
 @media (max-width: 480px) {
-  #leafletMap  { min-height: 120px; }
-  #siteMapList { height: 110px; }
+  #leafletMap  { min-height: 100px; }  /* 120px → 100px (-20px) */
+  #siteMapList { height: 155px; }      /* 110px → 155px (+45px) */
 }
 
 /* ── 태블릿(769px~1024px) ── */

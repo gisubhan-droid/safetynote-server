@@ -94,21 +94,24 @@ async function sendFcmMessage(
   fcmToken: string,
   payload: FcmPayload
 ): Promise<FcmResult> {
+  // ⚠️ [FEAT-218 BUG-FIX] data-only 메시지 사용 이유:
+  //   notification 필드가 있으면 백그라운드/종료 상태에서 Firebase SDK가 OS에 알림 표시를 위임.
+  //   이 경우 onMessageReceived()가 호출되지 않아 FCM data가 Intent Extra에 절대 담기지 않음.
+  //   → data-only 메시지: 항상 onMessageReceived() 호출 → MyFirebaseMessagingService가 직접
+  //     알림 표시 + Intent Extra 세팅 → MainActivity.handleFcmIntent() 정상 동작.
+  //   title/body는 data 필드에 함께 전송하여 MyFirebaseMessagingService에서 추출.
+  const mergedData: Record<string, string> = {
+    title:    payload.title,
+    body:     payload.body,
+    ...(payload.data || {}),
+  }
   const message = {
     message: {
       token: fcmToken,
-      notification: {
-        title: payload.title,
-        body: payload.body,
-      },
-      data: payload.data || {},
+      // notification 필드 의도적으로 제외 (data-only 메시지)
+      data: mergedData,
       android: {
         priority: 'high',
-        notification: {
-          sound: 'default',
-          channel_id: 'safetynote_push',   // Android 앱의 알림 채널 ID
-          click_action: 'FLUTTER_NOTIFICATION_CLICK',
-        },
       },
     },
   }

@@ -1103,6 +1103,8 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --mob-nav-h:   60px;
+  /* [BUG-MODAL-TOP] 모바일 모달 top 오프셋 — JS에서 실제 top-header.getBoundingClientRect().bottom으로 갱신 */
+  --mob-header-h: 56px;
 }
 
 /* ─── PWA 스탠드얼론 모드 여백 ──────────────────────────────────── */
@@ -1166,12 +1168,16 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   .top-header { padding: 0 12px; }
 
   /* ── 모바일 모달 → 전체화면 방식 ──────────────────────────────── */
-  /* 업무 모달(기본): 헤더(56px) 아래부터 전체화면 */
+  /* 업무 모달(기본): 헤더 아래부터 전체화면
+     top 값은 CSS 변수 --mob-header-h로 관리.
+     JS에서 실제 top-header.getBoundingClientRect().bottom을 읽어
+     document.documentElement.style.setProperty('--mob-header-h', Xpx) 로 갱신함.
+     브라우저 주소창 show/hide 등으로 뷰포트 변동 시에도 항상 정확한 위치 유지. */
   .modal-overlay {
     align-items: flex-start !important;
     justify-content: flex-start !important;
     padding: 0 !important;
-    top: 56px !important;           /* top-header 높이 — 헤더가 항상 위에 표시됨 */
+    top: var(--mob-header-h, 56px) !important;  /* [BUG-MODAL-TOP] JS 동적 갱신값 사용 */
     background: rgba(0,0,0,0) !important;  /* 배경 dim 제거 */
     backdrop-filter: none !important;
     pointer-events: none !important; /* [FEAT-024] overlay 배경 터치/클릭 이벤트 차단 → 스크롤 시 팝업 닫힘 방지 */
@@ -1183,7 +1189,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   .modal {
     width: 100% !important;
     max-width: 100% !important;
-    height: calc(100dvh - 56px) !important;  /* 헤더 아래 전체 높이 */
+    height: calc(100dvh - var(--mob-header-h, 56px)) !important;  /* [BUG-MODAL-TOP] 헤더 아래 전체 높이 */
     max-height: none !important;
     border-radius: 0 !important;
     overflow-y: auto !important;
@@ -1263,7 +1269,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   .modal-content {
     width: 100% !important;
     max-width: 100% !important;
-    height: calc(100dvh - 56px) !important;
+    height: calc(100dvh - var(--mob-header-h, 56px)) !important;
     max-height: none !important;
     border-radius: 0 !important;
     overflow-y: auto !important;

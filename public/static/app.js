@@ -2669,6 +2669,11 @@ function renderApp() {
   applyTheme(localStorage.getItem('sn-theme') || 'default');
   // 저장된 사용자 설정 적용 (글자 크기 등)
   applyUserPrefs();
+  // [BUG-MODAL-TOP] 앱 렌더링 후 실제 top-header 높이로 --mob-header-h CSS 변수 갱신
+  // (renderApp 호출 시점에 top-header가 DOM에 추가됨 → 이 시점에서 정확한 bottom 계산 가능)
+  if (typeof window._updateMobHeaderH === 'function') {
+    setTimeout(window._updateMobHeaderH, 50);
+  }
 }
 
 // 금일예정작업 바로가기 — dashboard로 이동 후 금일 예정 작업 카드로 스크롤
@@ -38679,6 +38684,34 @@ async function init() {
 
 // 시작
 document.addEventListener('DOMContentLoaded', init);
+
+// ── [BUG-MODAL-TOP] 모바일 모달 top 위치 동적 보정 ────────────────────────────
+// 문제: top-header가 position:sticky + z-index:1100 이고, modal-overlay가 fixed.
+//       CSS top:56px 고정값은 브라우저 주소창 show/hide·다양한 기기 헤더 높이에서 부정확.
+//       → 모달 상단(제목, 닫기버튼)이 top-header 뒤로 가려져 닫기 불가.
+// 해결: JS로 실제 top-header.getBoundingClientRect().bottom을 읽어
+//       CSS 변수 --mob-header-h에 반영 → 모달이 항상 헤더 바로 아래에서 시작.
+(function() {
+  function _updateMobHeaderH() {
+    if (window.innerWidth > 768) return;  // 모바일에서만
+    var h = document.querySelector('.top-header');
+    if (!h) return;
+    var bottom = h.getBoundingClientRect().bottom;
+    if (bottom > 0) {
+      document.documentElement.style.setProperty('--mob-header-h', bottom + 'px');
+    }
+  }
+  // DOMContentLoaded 이후 렌더링 완료 시점에서 최초 설정
+  document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(_updateMobHeaderH, 100);
+  });
+  // 화면 크기 변경 시 (브라우저 주소창 show/hide, 기기 회전 등) 재계산
+  window.addEventListener('resize', _updateMobHeaderH);
+  // 스크롤 시 top-header 위치가 바뀔 수 있으므로 (sticky 동작) 재계산
+  window.addEventListener('scroll', _updateMobHeaderH, { passive: true });
+  // 앱 레이아웃 렌더 후에도 재계산 (renderApp 이후 top-header가 생성됨)
+  window._updateMobHeaderH = _updateMobHeaderH;
+})();
 
 // ── 모바일 전체화면 모달: 터치 스크롤/클릭으로 모달이 닫히지 않도록 방지 ──
 // modal-sm(소형 확인팝업)은 제외, 업무 모달(전체화면)만 적용

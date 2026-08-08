@@ -38685,30 +38685,60 @@ async function init() {
 // 시작
 document.addEventListener('DOMContentLoaded', init);
 
-// ── [BUG-MODAL-TOP] 모바일 모달 top 위치 동적 보정 ────────────────────────────
+// ── [BUG-MODAL-TOP v3] 모바일 모달 top 위치 동적 보정 ────────────────────────────
 // 문제: top-header가 position:sticky + z-index:1100 이고, modal-overlay가 fixed.
 //       CSS top:56px 고정값은 브라우저 주소창 show/hide·다양한 기기 헤더 높이에서 부정확.
 //       → 모달 상단(제목, 닫기버튼)이 top-header 뒤로 가려져 닫기 불가.
-// 해결: JS로 실제 top-header.getBoundingClientRect().bottom을 읽어
-//       CSS 변수 --mob-header-h에 반영 → 모달이 항상 헤더 바로 아래에서 시작.
+// 해결v3: (1) 모달이 DOM에 추가될 때마다 MutationObserver로 감지 → 즉시 재계산
+//         (2) 다중 setTimeout(50/150/300ms) fallback — Android WebView 렌더 지연 대응
+//         (3) getBoundingClientRect().bottom <= 0이면 CSS height fallback(56px) 사용
 (function() {
   function _updateMobHeaderH() {
     if (window.innerWidth > 768) return;  // 모바일에서만
     var h = document.querySelector('.top-header');
     if (!h) return;
     var bottom = h.getBoundingClientRect().bottom;
+    // bottom <= 0 이면 헤더가 뷰포트 위에 있거나 숨겨진 것 → CSS height 직접 읽기
+    if (bottom <= 0) {
+      var rect = h.getBoundingClientRect();
+      // offsetTop + offsetHeight 방식으로 fallback
+      bottom = h.offsetTop + h.offsetHeight;
+    }
     if (bottom > 0) {
       document.documentElement.style.setProperty('--mob-header-h', bottom + 'px');
     }
   }
-  // DOMContentLoaded 이후 렌더링 완료 시점에서 최초 설정
+  // DOMContentLoaded 이후 렌더링 완료 시점에서 최초 설정 (다중 타이밍)
   document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(_updateMobHeaderH, 100);
+    setTimeout(_updateMobHeaderH, 50);
+    setTimeout(_updateMobHeaderH, 150);
+    setTimeout(_updateMobHeaderH, 400);
   });
   // 화면 크기 변경 시 (브라우저 주소창 show/hide, 기기 회전 등) 재계산
   window.addEventListener('resize', _updateMobHeaderH);
-  // 스크롤 시 top-header 위치가 바뀔 수 있으므로 (sticky 동작) 재계산
+  // 스크롤 시 재계산 (sticky top-header 위치 변동 대응)
   window.addEventListener('scroll', _updateMobHeaderH, { passive: true });
+  // [v3] MutationObserver: modal-overlay가 body에 추가될 때마다 즉시 재계산
+  // Android WebView에서 모달 열릴 때 --mob-header-h가 초기값 그대로인 문제 해결
+  var _modalObserver = new MutationObserver(function(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var added = mutations[i].addedNodes;
+      for (var j = 0; j < added.length; j++) {
+        var node = added[j];
+        if (node.nodeType === 1 && node.classList && node.classList.contains('modal-overlay')) {
+          // 모달 추가 즉시 + 렌더 지연 fallback
+          _updateMobHeaderH();
+          setTimeout(_updateMobHeaderH, 50);
+          setTimeout(_updateMobHeaderH, 200);
+          break;
+        }
+      }
+    }
+  });
+  // body 직계 자식 변화만 감시 (subtree:false → 성능 최소화)
+  document.addEventListener('DOMContentLoaded', function() {
+    _modalObserver.observe(document.body, { childList: true });
+  });
   // 앱 레이아웃 렌더 후에도 재계산 (renderApp 이후 top-header가 생성됨)
   window._updateMobHeaderH = _updateMobHeaderH;
 })();

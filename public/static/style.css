@@ -1168,19 +1168,19 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   .top-header { padding: 0 12px; }
 
   /* ── 모바일 모달 → 전체화면 방식 ──────────────────────────────── */
-  /* 업무 모달(기본): 헤더 아래부터 전체화면
-     top 값은 CSS 변수 --mob-header-h로 관리.
-     JS에서 실제 top-header.getBoundingClientRect().bottom을 읽어
-     document.documentElement.style.setProperty('--mob-header-h', Xpx) 로 갱신함.
-     브라우저 주소창 show/hide 등으로 뷰포트 변동 시에도 항상 정확한 위치 유지. */
+  /* [BUG-MODAL-TOP v2] top:0에서 시작, 내부 padding-top으로 헤더 공간 확보.
+     top:56px 방식은 position:fixed 기준점 계산 오차로 모달 상단이 헤더 뒤 숨겨지는 문제.
+     top:0 + padding-top:var(--mob-header-h)로 overlay가 전체 뷰포트 덮되,
+     top-header(z-index:1100 > modal-overlay z-index:1000)가 그 위에 표시됨.
+     padding-top 공간은 pointer-events:none → 하단 콘텐츠 영역만 터치 가능. */
   .modal-overlay {
     align-items: flex-start !important;
     justify-content: flex-start !important;
-    padding: 0 !important;
-    top: var(--mob-header-h, 56px) !important;  /* [BUG-MODAL-TOP] JS 동적 갱신값 사용 */
-    background: rgba(0,0,0,0) !important;  /* 배경 dim 제거 */
+    top: 0 !important;                           /* 뷰포트 최상단부터 (고정값 오차 제거) */
+    padding: var(--mob-header-h, 56px) 0 0 0 !important;  /* 헤더 높이만큼 상단 여백 */
+    background: rgba(0,0,0,0) !important;
     backdrop-filter: none !important;
-    pointer-events: none !important; /* [FEAT-024] overlay 배경 터치/클릭 이벤트 차단 → 스크롤 시 팝업 닫힘 방지 */
+    pointer-events: none !important; /* [FEAT-024] overlay 배경 터치/클릭 이벤트 차단 */
   }
   /* overlay 내부 실제 콘텐츠(modal)는 터치/클릭 정상 동작 */
   .modal-overlay > * {
@@ -1189,7 +1189,7 @@ body:has(#app-credit-bar) .main-content { padding-bottom: 22px; }
   .modal {
     width: 100% !important;
     max-width: 100% !important;
-    height: calc(100dvh - var(--mob-header-h, 56px)) !important;  /* [BUG-MODAL-TOP] 헤더 아래 전체 높이 */
+    height: calc(100dvh - var(--mob-header-h, 56px)) !important;  /* 헤더 아래 전체 높이 */
     max-height: none !important;
     border-radius: 0 !important;
     overflow-y: auto !important;

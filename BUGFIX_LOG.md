@@ -2,6 +2,65 @@
 
 ---
 
+## [FEAT-218 BUG-FIX] FCM 알림 탭 무반응 근본 수정 (세션 146)
+
+> **대상**: `src/fcm.ts`, `android-overrides/MainActivity.java`
+> **작업일**: 2026-08-08
+> **커밋 (서버)**: `f458aff`
+> **커밋 (android)**: `bdfdc6e` (pendingFcmIntent 패턴), `13f2a60` (onResume public 수정)
+> **APK**: `v1.4.18`
+> **유형**: 🔴 BUGFIX — v1.4.17 테스트 후 알림 탭 무반응 근본 원인 수정
+> **상태**: ✅ **완료** (빌드 중)
+
+### 문제
+v1.4.17 실기기 테스트 결과 알림 탭 시 여전히 반응 없음.
+
+### 근본 원인 분석 (3가지)
+
+| # | 원인 | 영향 |
+|---|------|------|
+| 1 | `src/fcm.ts`에 `notification` 필드 존재 → 백그라운드/종료 상태에서 Firebase SDK가 OS에 알림 표시 위임 → `onMessageReceived()` 미호출 → FCM data가 Intent Extra에 절대 미전달 | **핵심 원인** |
+| 2 | `handleFcmIntent(getIntent())`를 `super.onCreate()` 직후 호출 → Capacitor Bridge 미초기화 → `getBridge()` 예외 발생 | Bridge 타이밍 |
+| 3 | catch 블록에서 `getBridge().getWebView().postDelayed()` 재호출 → 동일 예외 반복 → 무음 실패 | 논리 오류 |
+
+### 변경 내용
+
+| 파일 | 변경 전 | 변경 후 |
+|------|---------|---------|
+| `src/fcm.ts` | `notification` 필드 포함 (OS가 알림 직접 표시) | `notification` 제거, data-only 메시지 전환. title/body를 data 맵에 포함 |
+| `MainActivity.java` | `handleFcmIntent()`를 onCreate에서 즉시 호출 → Bridge 미준비 예외 | `pendingFcmIntent` 패턴: onCreate/onNewIntent에 저장 → onResume에서 Bridge 준비 후 처리 |
+| `MainActivity.java` | `protected void onResume()` 선언 | `public void onResume()` 수정 (BridgeActivity.onResume()이 public이므로 컴파일 에러 해결) |
+
+### 동작 시나리오 (수정 후)
+
+```
+[앱 종료 상태]
+서버: FCM data-only 전송 (notification 필드 없음)
+→ Firebase SDK → onMessageReceived() 호출 → showNotification() → Intent Extra 세팅
+→ 알림 탭 → MainActivity.onCreate() → pendingFcmIntent 저장
+→ onResume() (Bridge 준비 완료) → 1000ms 후 executeNavigateJs()
+→ window._navigateByNotif({type, ref_type, ref_id})
+
+[앱 실행 중/백그라운드]
+서버: FCM data-only 전송
+→ onMessageReceived() → showNotification() → Intent Extra 세팅
+→ 알림 탭 → MainActivity.onNewIntent() → pendingFcmIntent 저장
+→ onResume() → 1000ms 후 executeNavigateJs()
+```
+
+### 컴파일 에러 수정 (v1.4.18 빌드 실패 → 재빌드)
+
+```
+// 에러 원인
+protected void onResume() {  // ← BridgeActivity.onResume()이 public이므로 컴파일 에러
+
+// 수정
+@Override
+public void onResume() {     // ← public으로 선언하여 에러 해결
+```
+
+---
+
 ## [FEAT-218] FCM 알림 클릭 화면 이동 — 알림 탭 시 해당 화면으로 직접 이동 (세션 145)
 
 > **대상**: `android-overrides/MyFirebaseMessagingService.java`, `android-overrides/MainActivity.java`, `src/routes/tasks.ts`, `public/static/app.js`

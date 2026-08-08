@@ -21,8 +21,11 @@
 
 ---
 
-> 최종 업데이트: 2026-08-07 (세션 145 — FEAT-218 FCM 알림 클릭 화면 이동 + 문서 정리)
-> **GitHub 최신 (safetynote-server): `27dc822`** — docs: [세션145] FEAT-218 FCM 알림 클릭 화면 이동 커밋 009dd2e / APK v1.4.17(04782ca) 반영
+> 최종 업데이트: 2026-08-08 (세션 146 — FEAT-218 BUG-FIX FCM 알림 탭 무반응 근본 수정 + APK v1.4.18)
+> **GitHub 최신 (safetynote-server): `f458aff`** — fix: [FEAT-218 BUG-FIX] FCM data-only 메시지로 전환 (notification 필드 제거)
+> **GitHub 최신 (safetynote-android): `13f2a60`** — fix: [FEAT-218 BUG-FIX] MainActivity.java onResume() protected→public 컴파일 에러 수정 / APK v1.4.18
+> **이전 커밋 (safetynote-android): `bdfdc6e`** — fix: [FEAT-218 BUG-FIX] MainActivity pendingFcmIntent 패턴 — onCreate/onNewIntent 저장, onResume 처리로 Bridge 초기화 타이밍 수정
+> **이전 커밋 (safetynote-server): `27dc822`** — docs: [세션145] FEAT-218 FCM 알림 클릭 화면 이동 커밋 009dd2e / APK v1.4.17(04782ca) 반영
 > **이전 커밋 (safetynote-server): `009dd2e`** — feat: [FEAT-218] FCM 알림 클릭 화면 이동 — tasks.ts FCM 발송 추가 + app.js tbm/edu 타입 처리 (v=20260807b)
 > **이전 커밋 (safetynote-server): `7f95653`** — docs: [세션144] FEAT-217 알람 수신 대상 수정 커밋 5eb1153 반영
 > **이전 커밋 (safetynote-server): `5eb1153`** — fix: [FEAT-217] 알람 수신 대상 공사담당자+현장대리인+안전관리자 한정
@@ -12582,4 +12585,50 @@ Android 앱(Capacitor 6.x WebView)에서 FCM 알림이 도착해도 탭하면 �
 **빌드**: `npm run build` ✅ (302.94 kB)  
 **APK**: `v1.4.17` ✅ — https://github.com/gisubhan-droid/safetynote-android/releases/download/v1.4.17/safetynote-v1.4.17.apk
 
+---
+
+## 세션 146 (2026-08-08) — FEAT-218 BUG-FIX FCM 알림 탭 무반응 근본 수정 (APK v1.4.18)
+
+### 작업: FEAT-218 BUG-FIX — v1.4.17 실기기 테스트 실패 → 근본 원인 3가지 수정
+
+**배경**  
+v1.4.17 설치 후 실기기 테스트 결과 알림 탭 시 여전히 아무 반응 없음.  
+v1.4.17의 구현은 근본 원인을 해결하지 못한 상태였음.
+
+**근본 원인 3가지 분석**
+
+| # | 원인 | 파일 |
+|---|------|------|
+| 1 | `fcm.ts`에 `notification` 필드 존재 → 백그라운드/종료 상태에서 Firebase SDK가 OS에 알림 직접 위임 → `onMessageReceived()` 미호출 → FCM data가 Intent Extra에 절대 미전달 | `src/fcm.ts` |
+| 2 | `handleFcmIntent(getIntent())`를 `super.onCreate()` 직후 즉시 호출 → Capacitor Bridge/WebView 미초기화 → `getBridge()` 예외 발생 | `MainActivity.java` |
+| 3 | catch 블록에서 `getBridge().getWebView().postDelayed()` 재호출 → 동일 예외 반복 → 무음 실패 | `MainActivity.java` |
+
+**변경 사항**
+
+**① src/fcm.ts** (서버)
+- `notification` 필드 완전 제거 → **data-only 메시지**로 전환
+- `title`, `body`를 `data` 맵에 포함 (`data.title`, `data.body`)
+- data-only 메시지는 항상 `onMessageReceived()` 호출 → `showNotification()` → Intent Extra 정상 세팅
+- 커밋: `f458aff`, NAS 자동 배포 완료
+
+**② android-overrides/MainActivity.java** (android)
+- `handleFcmIntent()` 방식 → **`pendingFcmIntent` 패턴**으로 전면 교체
+  - `onCreate()`: Intent 저장만 (`pendingFcmIntent = getIntent()`)
+  - `onNewIntent()`: Intent 저장만 (`pendingFcmIntent = intent`)
+  - `onResume()`: Bridge 준비 완료 후 처리 → 1000ms 지연 후 `executeNavigateJs()`
+- `Handler`, `Looper` import 추가
+- `protected void onResume()` → **`public void onResume()`** 수정
+  - `BridgeActivity.onResume()`이 `public`이므로 하위 클래스에서 `protected` 선언 시 Java 컴파일 에러
+  - v1.4.18 빌드 실패 후 수정한 핵심 에러 해결
+- 커밋: `bdfdc6e` (pendingFcmIntent 패턴), `13f2a60` (onResume public 수정)
+
+**v1.4.18 빌드 과정**
+- 1차 빌드 (`bdfdc6e`) → ❌ 컴파일 에러: `onResume() protected → public` 필요
+- `protected void onResume()` → `public void onResume()` 수정 → 커밋 `13f2a60`
+- 2차 빌드 트리거 → ✅ 빌드 진행 중
+
+**커밋 (서버)**: `f458aff` — fix: [FEAT-218 BUG-FIX] FCM data-only 메시지로 전환  
+**커밋 (android)**: `bdfdc6e` — fix: [FEAT-218 BUG-FIX] MainActivity pendingFcmIntent 패턴  
+**커밋 (android)**: `13f2a60` — fix: [FEAT-218 BUG-FIX] MainActivity onResume() protected→public  
+**APK**: `v1.4.18` ✅ — https://github.com/gisubhan-droid/safetynote-android/releases/download/v1.4.18/safetynote-v1.4.18.apk
 

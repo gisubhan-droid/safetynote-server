@@ -1,7 +1,7 @@
 # SafetyNOTE — 서버 빌드 & 배포 가이드
 
 > 최초 작성: 세션 87 (2026-07-26)
-> 마지막 업데이트: 세션 145 (2026-08-07)
+> 마지막 업데이트: 세션 146 (2026-08-08)
 > 목적: **에이전트 전용 참조 파일** — 다음 세션에서 빌드/배포 요청 시 이 파일을 먼저 읽는다.
 
 ---
@@ -169,16 +169,18 @@ NAS 자동 처리:
 | 세션 144 | 2026-08-07 | `5eb1153` | FEAT-217: 알람 수신 대상 공사담당자+현장대리인+안전관리자 한정 | |
 | 세션 144 | 2026-08-07 | `7f95653` | docs: [세션144] FEAT-217 커밋 5eb1153 반영 | docs only |
 | 세션 145 | 2026-08-07 | `009dd2e` | FEAT-218: FCM 알림 클릭 화면 이동 — tasks.ts FCM 발송 + app.js tbm/edu 타입 | 캐시버스팅 `v=20260807b` |
+| 세션 146 | 2026-08-08 | `f458aff` | FEAT-218 BUG-FIX: FCM data-only 메시지 전환 — notification 필드 제거(fcm.ts) | 서버만 수정 |
+| 세션 146 | 2026-08-08 | `13f2a60`(android) | FEAT-218 BUG-FIX: MainActivity pendingFcmIntent 패턴 + onResume public 수정 → APK v1.4.18 ✅ | android 저장소 |
 
 > **다음 배포 시 이 표에 행 추가할 것.**
 
 ---
 
-## 7. 현재 상태 (세션 145 기준)
+## 7. 현재 상태 (세션 146 기준)
 
 ```
-safetynote-server  main  009dd2e  ✅ 최신 (FEAT-218)
-safetynote-android main  04782ca  ✅ 최신 (APK v1.4.17 빌드 중)
+safetynote-server  main  f458aff  ✅ 최신 (FEAT-218 BUG-FIX: data-only FCM)
+safetynote-android main  13f2a60  ✅ 최신 (APK v1.4.18 ✅ 빌드 완료)
 캐시 버스팅              ?v=20260807b
 NAS001 (LinkMax 본사)    https://linkmax.myds.me:3443  ✅ 활성
 ```
